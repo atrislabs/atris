@@ -471,10 +471,10 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Updates local atris.md to latest package version. `--all` propagates across every atris project under cwd.
 
-- **Entry point (single project):** `commands/sync.js:430` (syncAtris function)
-- **Entry point (workspace):** `commands/sync.js:867` (syncAtrisAll function)
+- **Entry point (single project):** `commands/sync.js:478` (syncAtris function)
+- **Entry point (workspace):** `commands/sync.js:976` (syncAtrisAll function)
 - **Startup/help guard:** `bin/atris.js:207-212` skips global and project skill sync for every help invocation; `bin/atris.js:1765-1791` dispatches `update|sync --help` before command-specific template sync work
-- **Discovery helper:** `commands/sync.js:783` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
+- **Discovery helper:** `commands/sync.js:892` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -2337,7 +2337,7 @@ Partial socket scan warning: `lib/engine-resource.js:278` names agent sockets un
 - `lib/member-up.js:75` confirms each pending run once before printing wake/start with the claimed title; late confirmations cannot affect a newer run. Pending children still reserve capacity.
 - `commands/member.js:10773` sends `member_task_claimed` only after a real supervised claim; `commands/member.js:10775` carries it over the child IPC channel and `commands/member.js:11013` wires the callback.
 - `test/member-wake-announce-after-claim.test.js:1` exercises real CLI processes and the production spawner against an isolated real task database: a lost preview stays idle, and a replacement job is announced only after its row is claimed. Verify: `node --test test/member-wake-announce-after-claim.test.js`.
-- Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
+- Bounded member progress: `lib/member-progress.js:16` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
 
 Younger replacement agent protection: `lib/engine-resource.js:325` keeps each final agent reading, and `lib/engine-resource.js:334` skips a candidate whose age decreased. Regression: `test/engine-resource.test.js:2456` runs the real cleanup CLI against two owned agents with staged ages, verifies the unchanged one stops, and checks the replacement socket still answers. Equal-age reuse and replacement after the final scan remain outside this check.
 
