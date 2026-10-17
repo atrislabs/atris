@@ -2,28 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  try {
-    require('node:sqlite');
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+const { hasNodeSqlite, makeTempDir: makeRawTempDir, cleanupTempDir } = createTaskHelpFixture('atris-task-plan-result-');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-plan-result-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
+  return makeRawTempDir();
 }
 
 function writePassingTest(root) {
