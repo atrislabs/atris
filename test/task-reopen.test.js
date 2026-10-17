@@ -106,21 +106,45 @@ async function withMemberTask(fn) {
 // Stop the actual CLI at its claim confirmation, before it needs a model.
 // This exercises the real idle check, recovery, SQLite claim, and IPC handoff.
 function takeInCli(dir, env) {
+  const barrierPath = path.join(dir, 'pause-after-claim.cjs');
+  fs.writeFileSync(barrierPath, [
+    "'use strict';",
+    "const send = process.send;",
+    "process.send = function(message) {",
+    "  const result = Reflect.apply(send, this, arguments);",
+    "  if (message?.type === 'member_task_claimed') {",
+    "    const cell = new Int32Array(new SharedArrayBuffer(4));",
+    "    for (;;) Atomics.wait(cell, 0, 0);",
+    "  }",
+    "  return result;",
+    "};",
+    ""
+  ].join('\n'));
   return new Promise((resolve, reject) => {
     const child = fork(cliPath, ['member', 'go', 'executor', '--needs-check', '--json'],
-      { cwd: dir, env, silent: true });
+      { cwd: dir, env, silent: true, execArgv: [...process.execArgv, '--require', barrierPath] });
     let claimed;
+    let failure;
+    let hardStopAttempted = false;
     let output = '';
-    const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('claim confirmation timed out')); }, 15000);
+    const hardStop = (error) => {
+      failure ||= error;
+      if (hardStopAttempted || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
+      hardStopAttempted = true;
+      try { child.kill('SIGKILL'); } catch (error) { failure ||= error; }
+    };
+    const timer = setTimeout(() => hardStop(new Error('claim confirmation timed out')), 15000);
     child.stdout.on('data', (data) => { output += data; });
     child.stderr.on('data', (data) => { output += data; });
     child.on('message', (message) => {
       if (message.type === 'member_task_claimed') { claimed = message.task; child.kill('SIGTERM'); }
     });
-    child.on('error', reject);
+    child.on('error', hardStop);
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      if (failure) return reject(failure);
       if (!claimed) return reject(new Error(`CLI did not claim: ${code} ${signal} ${output}`));
+      if (signal !== 'SIGTERM') return reject(new Error(`CLI did not stop after the claim: ${code} ${signal} ${output}`));
       resolve({ claimed, code, signal });
     });
   });

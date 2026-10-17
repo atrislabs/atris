@@ -2356,7 +2356,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - `lib/member-task-pick.js:82` includes a member's own claims only when the caller opts in after checking it has no live run. `lib/member-task-pick.js:98` releases the selected claim and uses the normal atomic claim gate again.
 - `lib/task-db.js:622` accepts an optional expected update timestamp for claim release, refusing to release a changed claim.
 - `commands/member.js:567` treats an active mission with a known dead process as idle, while live and missing process records hold. `commands/member.js:10649` checks both mission and driver liveness before recovering. `commands/member.js:10842` previews recoverable claims for the supervisor, which already excludes busy members.
-- `test/task-reopen.test.js:129` runs actual task revision, member preview, and member claim confirmation against an isolated SQLite database. `test/task-reopen.test.js:152` reproduces a closed process with its running mission row still present. Live, unknown, other-member, protected, human-held, missing-check, and changed-claim cases stay held.
+- `test/task-reopen.test.js:153` runs actual task revision, member preview, and member claim confirmation against an isolated SQLite database. `test/task-reopen.test.js:176` reproduces a closed process with its running mission row still present. Live, unknown, other-member, protected, human-held, missing-check, and changed-claim cases stay held.
 
 # Shared member maintenance
 
