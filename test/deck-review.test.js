@@ -13,6 +13,18 @@ const {
   CLIP_LIMITS,
 } = require('../lib/deck-review');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('extractPresentationId accepts raw id or edit URL', () => {
   assert.equal(extractPresentationId('abc123'), 'abc123');
   assert.equal(
@@ -101,7 +113,7 @@ test('every shipped deck spec lints without errors', () => {
 });
 
 test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  const tmp = tmpDir('deck-auto-');
   const good = path.join(tmp, 'good.png');
   const blank = path.join(tmp, 'blank.png');
   fs.writeFileSync(good, Buffer.alloc(500, 1));
@@ -119,7 +131,7 @@ test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones
 });
 
 test('autoReviewSlides invokes an optional vision hook and honors its verdict', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  const tmp = tmpDir('deck-auto-');
   const png = path.join(tmp, 'a.png');
   fs.writeFileSync(png, Buffer.alloc(500, 1));
   const summary = await autoReviewSlides([{ index: 1, thumbnail: png }], {
@@ -130,7 +142,7 @@ test('autoReviewSlides invokes an optional vision hook and honors its verdict', 
 });
 
 test('reviewDeck with auto attaches an autoReview summary to the manifest', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const tmp = tmpDir('deck-review-');
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
@@ -158,7 +170,7 @@ test('reviewDeck with auto attaches an autoReview summary to the manifest', asyn
 });
 
 test('reviewDeck downloads thumbnails and writes manifest', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const tmp = tmpDir('deck-review-');
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
@@ -199,7 +211,7 @@ test('reviewDeck downloads thumbnails and writes manifest', async () => {
 });
 
 test('confirmReview marks manifest ready', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const tmp = tmpDir('deck-review-');
   const dir = path.join(tmp, 'deck999');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'review.json'), `${JSON.stringify({
@@ -216,7 +228,7 @@ test('confirmReview marks manifest ready', () => {
 });
 
 test('confirmReview emits a Center Study receipt next to the manifest and on the ledger', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const tmp = tmpDir('deck-review-');
   const ledger = path.join(tmp, 'deck-receipts.jsonl');
   const dir = path.join(tmp, 'deckCS');
   fs.mkdirSync(dir, { recursive: true });
