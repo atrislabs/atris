@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
 const { ensureRunIgnore } = require('../lib/gitignore');
@@ -809,7 +809,7 @@ function syncSkills({ silent = false } = {}) {
   }
 
   let updated = 0;
-  const homeDir = os.homedir();
+  const homeDir = stateHome();
 
   const skillFolders = fs.readdirSync(packageSkillsDir).filter(f =>
     fs.statSync(path.join(packageSkillsDir, f)).isDirectory()
