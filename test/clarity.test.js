@@ -22,7 +22,7 @@ function runCli(args, cwd) {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...scrubAgentEnv(), HOME: cwd, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
 }
 

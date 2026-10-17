@@ -24,6 +24,7 @@ function runCli(args, { cwd, input } = {}) {
     timeout: 15000,
     env: {
       ...process.env,
+      HOME: cwd,
       ATRIS_SKIP_UPDATE_CHECK: '1',
     },
   });

@@ -38,7 +38,7 @@ function runCli(args, { cwd, input, env } = {}) {
     input,
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...baseEnv(), ...(env || {}) },
+    env: { ...baseEnv(), HOME: cwd, ...(env || {}) },
   });
   if (result.error) throw result.error;
   return result;
