@@ -57,8 +57,16 @@ function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function learnWorkspace() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-learn-save-'));
+  madeDirs.push(cwd);
   fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
   return cwd;
 }
