@@ -4,20 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { runWishCli } = require('./helpers/wish-fixture');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-
-function runCli(args, cwd) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_WISH_NO_DRIVER: '1', NODE_NO_WARNINGS: '1' },
-  });
-}
+const runCli = (args, cwd) => runWishCli(args, { cwd });
 
 test('wish improve ingests unprocessed reviews into LESSONS.md, then reruns clean', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-improve-'));
@@ -90,12 +79,13 @@ test('wishLessonsBrief includes lessons when present, empty when file absent', (
   }
 });
 
-test('pruneWishLessons removes a lesson whose after-window average dropped, keeps the rest', () => {
+test('pruneWishLessons removes a lesson whose after-window average dropped, keeps the rest', (t) => {
   const { pruneWishLessons, lessonsFile, appendWishRecord } = require('../lib/wish-store');
   const fs = require('fs');
   const path = require('path');
   const os = require('os');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-prune-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   // reviews: before 2026-07-01 avg 3, after avg 1 (3 reviews -> prune eligible)
   appendWishRecord(root, { kind: 'review', wish_id: 'w1', ts: '2026-06-20T00:00:00Z', review_score: 3, review_text: 'good' });
   appendWishRecord(root, { kind: 'review', wish_id: 'w2', ts: '2026-06-25T00:00:00Z', review_score: 3, review_text: 'good' });
@@ -123,12 +113,13 @@ test('pruneWishLessons removes a lesson whose after-window average dropped, keep
   assert.equal(pruneWishLessons(root, { quiet: true }).length, 0);
 });
 
-test('wishLessonsSummary reports alive, pruned, inbox, and score stats', () => {
+test('wishLessonsSummary reports alive, pruned, inbox, and score stats', (t) => {
   const { wishLessonsSummary, lessonsFile, appendWishRecord } = require('../lib/wish-store');
   const fs = require('fs');
   const path = require('path');
   const os = require('os');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-summary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   appendWishRecord(root, { kind: 'review', wish_id: 'w1', ts: '2026-07-01T00:00:00Z', review_score: 2 });
   appendWishRecord(root, { kind: 'review', wish_id: 'w2', ts: '2026-07-02T00:00:00Z', review_score: 4 });
   const file = lessonsFile(root);
