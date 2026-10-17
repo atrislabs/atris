@@ -72,7 +72,7 @@ test('atris member board prints the last result for real, in text and json', () 
     ],
   });
   try {
-    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
+    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir, ATRIS_SKIP_UPDATE_CHECK: '1' };
     const text = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /^member\s+state\s+last result\s+/m);
