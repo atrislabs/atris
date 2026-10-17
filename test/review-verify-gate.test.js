@@ -8,8 +8,16 @@ const path = require('path');
 
 const taskDb = require('../lib/task-db');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function freshDb() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-gate-'));
+  madeDirs.push(dir);
   const db = taskDb.open(path.join(dir, 'tasks.db'));
   return { dir, db };
 }
