@@ -12,9 +12,12 @@ const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
 // A codex session around the suite would make member run pick codex_goal.
 for (const name of ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME']) delete process.env[name];
 
-function workspace(t) {
+function workspace(t, beforeCleanup) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-start-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(async () => {
+    if (beforeCleanup) await beforeCleanup(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   fs.mkdirSync(path.join(root, 'atris', 'team', 'demo'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'demo', 'MEMBER.md'), '---\nname: demo\nrole: Builder\n---\n');
   return root;
@@ -224,7 +227,7 @@ test('member run prints checkout and dependency link before work finishes', asyn
 });
 
 test('member run detach and dry-run do not require a completed work step', (t) => {
-  const root = workspace(t);
+  const root = workspace(t, waitForMissionDriverExit);
   const bin = fakeClaude(root);
   const detached = run(root, ['bounded work', '--runner', 'claude', '--no-verify', '--detach'], bin);
   assert.equal(detached.status, 0, detached.stderr || detached.stdout);
@@ -274,4 +277,115 @@ test('ignited member run says where to watch, and json or quiet skip it', (t) =>
 
   const quiet = run(root, [...base, '--quiet'], bin);
   assert.doesNotMatch(quiet.stdout + quiet.stderr, /watch: tail -f|board: atris member board/);
+});
+
+
+async function waitForMissionDriverExit(root, timeout = 60000) {
+  const stateDir = path.join(root, '.atris', 'state');
+  const deadline = Date.now() + timeout;
+  let identity;
+  while (Date.now() < deadline) {
+    const names = fs.readdirSync(stateDir).filter((name) => /^mission-driver-.*\.json$/.test(name));
+    if (names.length > 1) throw new Error('more than one detached mission driver');
+    if (names.length === 1) {
+      let state;
+      try { state = JSON.parse(fs.readFileSync(path.join(stateDir, names[0]), 'utf8')); }
+      catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+      if (state) {
+        const suffix = typeof state.mission_id === 'string' && state.mission_id.trim().slice(-8).replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!suffix || names[0] !== `mission-driver-${suffix}.json` || !Number.isInteger(state.pid) || state.pid <= 0 || typeof state.started_at !== 'string' || !Number.isFinite(Date.parse(state.started_at))) {
+          throw new Error('invalid detached mission driver identity');
+        }
+        identity ||= { name: names[0], mission_id: state.mission_id, pid: state.pid, started_at: state.started_at };
+        if (names[0] === identity.name && state.mission_id === identity.mission_id && state.pid === identity.pid && state.started_at === identity.started_at
+          && typeof state.exited_at === 'string' && Number.isFinite(Date.parse(state.exited_at)) && Date.parse(state.exited_at) >= Date.parse(state.started_at)) return;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('timed out waiting for the detached mission driver to finish');
+}
+
+function ownedDriverWriter(root, control) {
+  const script = [
+    "const fs = require('node:fs'), path = require('node:path');",
+    "const root = process.argv[1], mission_id = 'cleanup-12345678';",
+    "const stateDir = path.join(root, '.atris', 'state'), file = path.join(stateDir, 'mission-driver-12345678.json');",
+    "const state = { mission_id, pid: process.pid, started_at: new Date().toISOString() };",
+    "fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify(state));",
+    "process.send({ ready: true, pid: process.pid, mission_id });",
+    "process.on('message', (command) => {",
+    "  if (command === 'mismatch') { fs.writeFileSync(file, JSON.stringify({ ...state, pid: process.pid + 1, exited_at: new Date().toISOString() })); process.send('mismatch'); return; }",
+    "  if (command === 'finish') {",
+    "    const logDir = path.join(root, 'atris', 'logs'); fs.mkdirSync(logDir, { recursive: true });",
+    "    fs.appendFileSync(path.join(logDir, 'mission-12345678-driver.log'), 'last owned write before completion\\n');",
+    "    fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ ...state, exited_at: new Date().toISOString() }));",
+    "  }",
+    "  process.disconnect();",
+    "});",
+  ].join('\n');
+  const child = spawn(process.execPath, ['-e', script, root], { cwd: control, env: { ...process.env }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], timeout: 5000 });
+  let error = null;
+  let stderr = '';
+  child.on('error', (value) => { error = value; });
+  child.stderr.on('data', (value) => { stderr += value; });
+  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal, error, stderr })));
+  const message = () => new Promise((resolve, reject) => {
+    child.once('message', resolve);
+    closed.then((result) => reject(result.error || new Error(result.stderr || 'owned writer closed before its message')));
+  });
+  let released = false;
+  const release = (command) => { if (!released && child.connected) { released = true; child.send(command); } };
+  return { child, closed, message, release };
+}
+
+test('detached cleanup keeps the root until its owned writer finishes', async (t) => {
+  const control = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-driver-cleanup-control-'));
+  t.after(() => fs.rmSync(control, { recursive: true, force: true }));
+  let cleanup;
+  const root = workspace({ after(fn) { cleanup = fn; } }, waitForMissionDriverExit);
+  const writer = ownedDriverWriter(root, control);
+  try {
+    const ready = await writer.message();
+    assert.equal(ready.pid, writer.child.pid);
+    let settled = false;
+    const cleaning = Promise.resolve().then(() => cleanup());
+    cleaning.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(fs.existsSync(root), true);
+    assert.equal(settled, false);
+    writer.release('finish');
+    await cleaning;
+    assert.equal(fs.existsSync(root), false);
+  } finally {
+    writer.release('finish');
+    const result = await writer.closed;
+    fs.rmSync(root, { recursive: true, force: true });
+    assert.deepEqual(result, { code: 0, signal: null, error: null, stderr: '' });
+  }
+});
+
+test('detached cleanup rejects a mismatched completion and keeps its root', async (t) => {
+  const control = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-driver-cleanup-control-'));
+  t.after(() => fs.rmSync(control, { recursive: true, force: true }));
+  let cleanup;
+  const root = workspace({ after(fn) { cleanup = fn; } }, (dir) => waitForMissionDriverExit(dir, 100));
+  const writer = ownedDriverWriter(root, control);
+  try {
+    await writer.message();
+    const cleaning = Promise.resolve().then(() => cleanup()).then(() => null, (error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(fs.existsSync(root), true);
+    const mismatch = writer.message();
+    writer.child.send('mismatch');
+    await mismatch;
+    const error = await cleaning;
+    assert.match(error?.message || 'cleanup resolved', /timed out waiting for the detached mission driver/);
+    assert.equal(fs.existsSync(root), true);
+  } finally {
+    writer.release('stop');
+    const result = await writer.closed;
+    fs.rmSync(root, { recursive: true, force: true });
+    assert.deepEqual(result, { code: 0, signal: null, error: null, stderr: '' });
+  }
 });
