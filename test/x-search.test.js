@@ -23,8 +23,20 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function applyWorkspace(source, filled = false) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-apply-'));
+  const cwd = tmpDir('atris-x-search-apply-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
   if (filled && source) {
     const rel = xSearchApplyRel(source);
@@ -1097,7 +1109,7 @@ function seedSavedXSearch(cwd, source) {
 }
 
 test('x-search unsave that removes files prints one youtube search next-step', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-'));
+  const cwd = tmpDir('atris-x-search-unsave-');
   seedSavedXSearch(cwd, 'MCP agents');
   const output = [];
   let apiCalls = 0;
@@ -1123,7 +1135,7 @@ test('x-search unsave that removes files prints one youtube search next-step', a
 });
 
 test('x-search unsave of a missing source prints already gone and one youtube search next-step', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-gone-'));
+  const cwd = tmpDir('atris-x-search-unsave-gone-');
   const output = [];
   let apiCalls = 0;
   const status = await xSearchCommand(['unsave', 'gone query'], {
@@ -1170,7 +1182,7 @@ test('x-search unsave without a target prints usage and no next line', async () 
 });
 
 test('x-search unsave --json and multi-target print the search next-step once or not at all', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-json-'));
+  const cwd = tmpDir('atris-x-search-unsave-json-');
   const jsonOut = [];
   const jsonStatus = await xSearchCommand(['unsave', '--json', 'gone query'], {
     cwd,
