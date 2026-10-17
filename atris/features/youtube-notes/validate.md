@@ -44,6 +44,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 
 - **Action:** from the repo root, `env HOME="$(mktemp -d)" TMPDIR="$(mktemp -d)" PATH=/usr/bin:/bin "$(command -v node)" bin/atris.js youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'; echo "exit=$?"`
 - **Expect:** A message that yt-dlp is missing, the install command, and `exit=2`. It must not say the video has no captions.
+- **Rerun live on 2026-10-17:** passes. exit 2 in 0.12 seconds, the yt-dlp install line for Mac and any computer, and no line about captions.
 
 The fresh `TMPDIR` matters. A transcript left over from an earlier run of the same video is reused, which hides the missing downloader.
 
@@ -51,6 +52,8 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 
 - **Action:** `node --test --test-name-pattern 'writer' test/ytnotes.test.js`, which runs the script with yt-dlp present and no writer on the PATH.
 - **Expect:** Exit code 3, a list of writers to install, and the transcript kept at `$TMPDIR/ytnotes/yt_<id>.clean.txt`. No blank notes file.
+- **Rerun on 2026-10-17:** passes. The test: exit 0, 17 pass, 0 fail. Live, with only node and yt-dlp linked into a fresh folder on the PATH plus `/usr/bin:/bin`, on `Z3JyAqh4ixg`: exit 3 in 2.9 seconds, the line naming all four writers to install, the 4,038-word transcript kept, no notes file.
+- **Clear the writer pin first** with `env -u ATRIS_YTNOTES_ENGINE`. A shell that sets it to `haiku` skips the writer list and prints only that `claude` is not installed, which looks like a bug but is the pinned path.
 
 ### Step 5: The scorecard
 
