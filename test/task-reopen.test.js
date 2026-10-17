@@ -14,11 +14,21 @@ const taskStore = require('../lib/task-db');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
+const sqliteAvailability = new Set();
+
 function hasNodeSqlite() {
+  const env = { ...process.env, NODE_NO_WARNINGS: '1' };
+  const key = JSON.stringify([
+    process.execPath,
+    process.cwd(),
+    Object.keys(env).sort().map(name => [name, env[name]]),
+  ]);
+  if (sqliteAvailability.has(key)) return true;
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+    env,
   });
+  if (result.status === 0 && !result.error && !result.signal) sqliteAvailability.add(key);
   return result.status === 0;
 }
 
