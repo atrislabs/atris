@@ -1002,6 +1002,8 @@ test('ytnotes auto writer starts Haiku when Gemini is slow and takes the first a
   assert.match(result.stderr, /^notes by Haiku$/m);
   assert.match(fs.readFileSync(path.join(dir, 'yt_slowgem.md'), 'utf8'), /# No Caption Talk/);
   assert.ok(Date.now() - started < 7000, 'the run did not wait for the slow Gemini');
+  // Stopping the losing writer must not print the shell's job report.
+  assert.doesNotMatch(result.stderr, /Terminated/);
 });
 
 test('ytnotes auto writer does not let a fast Haiku refusal win over Gemini notes', () => {
