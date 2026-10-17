@@ -37,13 +37,25 @@ const {
 const fixture = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 const CREDS = async () => ({ credentials: { token: 'token-123', agent_token: 'token-123', agent_token_scopes: ['x-search', 'youtube'], agent_token_expires_at: '2099-01-01T00:00:00Z' } });
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+function tmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function noNetwork() {
   return async () => { throw new Error('network is off in tests'); };
 }
 
 function searchDeps(extra = {}) {
   const output = [];
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-post-check-'));
+  const cwd = tmp('atris-x-post-check-');
   return {
     output,
     deps: {
@@ -428,7 +440,7 @@ test('bench offline-check passes on the saved answer', async () => {
 });
 
 test('bench keeps the full output of a failed paid case', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xsearch-bench-out-'));
+  const dir = tmp('xsearch-bench-out-');
   const file = saveFailedOutput(dir, 'topic', '2026-09-29T08:47:25.053Z', 'the whole answer');
   assert.equal(path.basename(file), 'xsearch-topic-2026-09-29T08-47-25-053Z.txt');
   assert.equal(fs.readFileSync(file, 'utf8'), 'the whole answer');
