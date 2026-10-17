@@ -52,6 +52,30 @@ function runFounder(cwd, args, now) {
   return run;
 }
 
+// The identical one-commit alpha repo is built once and copied into each
+// test's scan root; each test still gets a private .git and room binding.
+let seedAlpha = null;
+
+function buildSeedAlpha() {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-founder-seed-'));
+  const scanRoot = path.join(fixtureRoot, 'arena');
+  fs.mkdirSync(scanRoot, { recursive: true });
+  const alpha = initRepo(scanRoot, 'alpha');
+  commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+  return { fixtureRoot, alpha };
+}
+
+test.after(() => {
+  if (seedAlpha) fs.rmSync(seedAlpha.fixtureRoot, { recursive: true, force: true });
+});
+
+function seedAlphaInto(scanRoot) {
+  seedAlpha ??= buildSeedAlpha();
+  const alpha = path.join(scanRoot, 'alpha');
+  fs.cpSync(seedAlpha.alpha, alpha, { recursive: true });
+  return alpha;
+}
+
 function writeTaskProjection(scanRoot, tasks) {
   const file = path.join(scanRoot, '.atris', 'state', 'tasks.projection.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -141,8 +165,7 @@ test('counts default-branch commits and closed tasks in rolling 7-day windows, t
 test('score alias uses 28 days and reports missing task data without failing', () => {
   const { fixtureRoot, scanRoot } = makeFixture();
   try {
-    const alpha = initRepo(scanRoot, 'alpha');
-    commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    const alpha = seedAlphaInto(scanRoot);
     bindRoom(alpha);
 
     const run = runFounder(alpha, ['score'], '2026-08-07');
@@ -162,8 +185,7 @@ test('score alias uses 28 days and reports missing task data without failing', (
 test('malformed task data is treated as unavailable', () => {
   const { fixtureRoot, scanRoot } = makeFixture();
   try {
-    const alpha = initRepo(scanRoot, 'alpha');
-    commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    const alpha = seedAlphaInto(scanRoot);
     bindRoom(alpha);
     const projection = path.join(scanRoot, '.atris', 'state', 'tasks.projection.json');
     fs.mkdirSync(path.dirname(projection), { recursive: true });
@@ -180,8 +202,7 @@ test('malformed task data is treated as unavailable', () => {
 test('founder --json emits a parseable scorecard', () => {
   const { fixtureRoot, scanRoot } = makeFixture();
   try {
-    const alpha = initRepo(scanRoot, 'alpha');
-    commitAt(alpha, '2026-08-06T12:00:00Z', 'one current commit');
+    const alpha = seedAlphaInto(scanRoot);
     bindRoom(alpha);
     const run = runFounder(alpha, ['--json', '--root', scanRoot], '2026-08-07T12:00:00Z');
     assert.equal(run.status, 0, run.stderr);
