@@ -40,9 +40,10 @@ function writePassingTest(root) {
 // Accept paths gate on agent env markers, so results must not depend on which
 // agent (if any) is running this suite. Strip the markers from the base env;
 // tests that exercise the gate re-add one explicitly via their env override.
-function baseEnv(env = {}) {
+function baseEnv(env = {}, cwd) {
   const merged = {
     ...process.env,
+    HOME: cwd,
     ATRIS_SKIP_UPDATE_CHECK: '1',
     NODE_NO_WARNINGS: '1',
   };
@@ -55,7 +56,7 @@ function baseEnv(env = {}) {
 function runCli(args, { cwd, env = {} } = {}) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
-    env: baseEnv(env),
+    env: baseEnv(env, cwd),
     encoding: 'utf8',
   });
 }
@@ -64,7 +65,7 @@ function runCliAsync(args, { cwd, env = {} } = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd,
-      env: baseEnv(env),
+      env: baseEnv(env, cwd),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
