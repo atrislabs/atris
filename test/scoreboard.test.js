@@ -1,6 +1,6 @@
 'use strict';
 
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -17,6 +17,37 @@ function daysAgo(n) {
   d.setDate(d.getDate() - n);
   return localDate(d);
 }
+
+// Immutable git history built once per variant and copied into each test's own
+// sandbox; the per-test gh script and counts stay per-sandbox.
+let seedStandard = null;
+let seedOld = null;
+
+function buildSeed(oldCommit) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scoreboard-seed-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const git = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  git('init', '-q');
+  git('config', 'user.email', 'me@example.com');
+  git('config', 'user.name', 'me');
+  if (oldCommit) {
+    const when = new Date(Date.now() - 3 * 86400000).toISOString();
+    spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'old work'], {
+      cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+    });
+  }
+  git('commit', '-q', '--allow-empty', '-m', 'mine');
+  git('commit', '-q', '--allow-empty', '-m', `member work\n\n${TRAILER}`);
+  git('commit', '-q', '--allow-empty', '-m', `more member work\n\n${TRAILER}`);
+  return { dir, repo };
+}
+
+after(() => {
+  for (const seed of [seedStandard, seedOld]) {
+    if (seed) fs.rmSync(seed.dir, { recursive: true, force: true });
+  }
+});
 
 // Fake gh: answers `gh api graphql` with a calendar. Today's count is read from
 // counts.json, one value per call, so --watch sees it climb.
@@ -38,21 +69,10 @@ days.push({ date: ${JSON.stringify(daysAgo(0))}, contributionCount: today });
 process.stdout.write(JSON.stringify({ data: { viewer: { contributionsCollection: { contributionCalendar: { weeks: [{ contributionDays: days }] } } } } }));
 `, { mode: 0o755 });
 
+  const seed = oldCommit ? (seedOld ??= buildSeed(true)) : (seedStandard ??= buildSeed(false));
   const repo = path.join(dir, 'repo');
-  fs.mkdirSync(repo);
+  fs.cpSync(seed.repo, repo, { recursive: true });
   const git = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
-  git('init', '-q');
-  git('config', 'user.email', 'me@example.com');
-  git('config', 'user.name', 'me');
-  if (oldCommit) {
-    const when = new Date(Date.now() - 3 * 86400000).toISOString();
-    spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'old work'], {
-      cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
-    });
-  }
-  git('commit', '-q', '--allow-empty', '-m', 'mine');
-  git('commit', '-q', '--allow-empty', '-m', `member work\n\n${TRAILER}`);
-  git('commit', '-q', '--allow-empty', '-m', `more member work\n\n${TRAILER}`);
   return { dir, repo, git, env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` } };
 }
 
