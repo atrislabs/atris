@@ -85,8 +85,14 @@ function findPython() {
 
 const pythonCmd = findPython();
 
+const searchWorkspaces = new Set();
+test.after(() => {
+  for (const cwd of searchWorkspaces) fs.rmSync(cwd, { recursive: true, force: true });
+});
+
 function searchWorkspace() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-search-'));
+  searchWorkspaces.add(cwd);
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   return cwd;
 }
