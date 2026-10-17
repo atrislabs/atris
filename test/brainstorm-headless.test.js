@@ -210,6 +210,7 @@ test('brainstorm with an idea returns even when stdin looks like a TTY', async (
   const prevTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
   const logs = [];
   const origLog = console.log;
+  let deadline;
   try {
     initWorkspace(dir, home);
     process.chdir(dir);
@@ -226,7 +227,7 @@ test('brainstorm with an idea returns even when stdin looks like a TTY', async (
     await Promise.race([
       brainstormAtris(),
       new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('brainstorm hung on a TTY prompt')), 3000);
+        deadline = setTimeout(() => reject(new Error('brainstorm hung on a TTY prompt')), 3000);
       }),
     ]);
 
@@ -234,6 +235,7 @@ test('brainstorm with an idea returns even when stdin looks like a TTY', async (
     assert.match(out, /captured I\d+: add search to the lane CLI/);
     assert.doesNotMatch(out, WIZARD_RE);
   } finally {
+    clearTimeout(deadline);
     console.log = origLog;
     process.argv = prevArgv;
     process.chdir(prevCwd);

@@ -6,17 +6,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  return spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  }).status === 0;
-}
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function runCli(args, { cwd, env }) {
   const result = spawnSync(process.execPath, [cliPath, ...withTaskReadyResult(args)], {
