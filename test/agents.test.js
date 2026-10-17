@@ -1,18 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 
 const { buildAgentRows, renderAgentLines, ownerState } = require('../commands/agents');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-agents-test-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-agents-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function missionsPath(root) {
   return path.join(root, '.atris', 'state', 'missions.jsonl');

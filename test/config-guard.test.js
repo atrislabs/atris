@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const {
@@ -20,13 +20,8 @@ const {
 } = require('../lib/pack-capabilities');
 const { upsertClaudeVoiceHook } = require('../lib/voice-card');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-config-guard-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-config-guard-');
+const makeTempDir = () => makeFixtureDir();
 
 function hashFile(file) {
   return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
