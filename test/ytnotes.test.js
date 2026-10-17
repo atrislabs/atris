@@ -1004,6 +1004,24 @@ test('ytnotes auto writer starts Haiku when Gemini is slow and takes the first a
   assert.ok(Date.now() - started < 7000, 'the run did not wait for the slow Gemini');
 });
 
+test('ytnotes auto writer does not let a fast Haiku refusal win over Gemini notes', () => {
+  const { result, dir } = runNoCaptionNotes('refuse1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: {
+      agy: '#!/bin/sh\n[ "$1" = models ] && { echo gemini-3.8-flash-low; exit 0; }\nsleep 3\nprintf "%s\\n" "# From Gemini"\n',
+      claude: '#!/bin/sh\ncat > /dev/null\nprintf "%s\\n" "I cannot produce those notes as requested."\n',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /^notes by Gemini/m);
+  const notes = fs.readFileSync(path.join(dir, 'yt_refuse1.md'), 'utf8');
+  assert.match(notes, /# From Gemini/);
+  assert.doesNotMatch(notes, /produce those notes/);
+});
+
 test('ytnotes auto writer sends no second Gemini request after a quota error, then skips Gemini', () => {
   const calls = path.join(tmpDir('atris-ytnotes-quota-'), 'agy.calls');
   const quotaAgy = [

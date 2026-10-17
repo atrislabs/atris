@@ -639,7 +639,8 @@ start_writer() {
   WRITER_PID=$!
 }
 
-writer_ok() { [ "$(cat "$1.rc" 2>/dev/null)" = 0 ] && grep -q '[[:alnum:]]' "$1"; }
+# Notes open with a # title. A refusal has none, so it never wins the race.
+writer_ok() { [ "$(cat "$1.rc" 2>/dev/null)" = 0 ] && grep -q '^#' "$1"; }
 
 stop_writer() { pkill -P "$1" 2>/dev/null || true; kill "$1" 2>/dev/null || true; }
 
@@ -712,7 +713,7 @@ run_auto() {
     if [ -n "$tried" ]; then
       echo "$tried did not answer; writing the notes with $label instead." >&2
     fi
-    if out=$(run_writer "$cmd" "$model" "$effort" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
+    if out=$(run_writer "$cmd" "$model" "$effort" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '^#'; then
       printf '%s\n' "$out"
       echo "notes by $label" >&2
       return 0
