@@ -2444,3 +2444,5 @@ Python discovery for tests: `test/helpers/find-python.js:5` tries real `python3 
 Environment test fixture: `test/helpers/agent-env.js:37` preserves the current shallow-copy scrub with a local mutable marker list. `test/agent-env.test.js:9` checks a fresh actual process for production imports, and `test/agent-env.test.js:40` compares the real task producer export to catch marker drift. Check: `node --test test/agent-env.test.js`.
 
 Task cleanup command setup: `test/helpers/task-admin-cli.js:8` supplies the unchanged real command runner for `test/task-clear-done.test.js`, `test/task-list-keeper.test.js` and `test/task-list-sim.test.js`; each keeps its own database capability guards, workspace cleanup and complete behavior checks.
+
+Task entry test setup: `test/helpers/task-next-fixture.js:30` keeps first-minute command setup with its original child identity and twenty-second deadline. `test/helpers/task-help-fixture.js:43` supplies step-help setup with raw temporary paths and the twelve-second deadline; `test/task-first-minute.test.js` and `test/task-step-help.test.js` keep their complete behavior checks.
