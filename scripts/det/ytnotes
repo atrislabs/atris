@@ -197,21 +197,10 @@ if ! command -v yt-dlp >/dev/null 2>&1; then
 fi
 
 # YouTube blocks old yt-dlp copies, and the failure looks like "no captions".
-# Warn when the version date (YYYY.MM.DD, maybe .N) is too old; keep going.
-# A version that does not parse stays silent.
-YTDLP_VERSION=$(yt-dlp --version 2>/dev/null) || true
-YTDLP_AGE=$(perl -MTime::Local -e '
-  my ($v, $max) = @ARGV;
-  exit 0 unless $max =~ /\A\d+\z/;
-  my ($y, $m, $d) = $v =~ /\A\s*(\d{4})\.(\d{1,2})\.(\d{1,2})(?:\.\d+)?\s*\z/ or exit 0;
-  my $t = eval { timelocal(0, 0, 12, $d, $m - 1, $y) };
-  exit 0 unless defined $t;
-  my $age = int((time - $t) / 86400);
-  print $age if $age > $max;
-' "$YTDLP_VERSION" "${ATRIS_YTNOTES_YTDLP_MAX_AGE_DAYS:-60}" 2>/dev/null) || true
-if [ -n "$YTDLP_AGE" ]; then
-  echo "Your yt-dlp is $YTDLP_AGE days old, and YouTube often blocks old copies. Update it: brew upgrade yt-dlp (Mac) or pipx upgrade yt-dlp" >&2
-fi
+# The version check runs beside the caption fetch (0.2s warm, 1.7s cold) and
+# is read once the fetch is done.
+yt-dlp --version >"yt_version.$$.out" 2>/dev/null &
+YTDLP_VERSION_PID=$!
 
 existing=""
 for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
@@ -233,6 +222,23 @@ META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
 CAPTIONS_BLOCKED=0
 grep -qiE "not a bot|sign in to confirm" "yt_captions.$$.err" 2>/dev/null && CAPTIONS_BLOCKED=1
 rm -f "yt_captions.$$.err"
+# Warn when the version date (YYYY.MM.DD, maybe .N) is too old; keep going.
+# A version that does not parse stays silent.
+wait "$YTDLP_VERSION_PID" 2>/dev/null || true
+YTDLP_VERSION=$(cat "yt_version.$$.out" 2>/dev/null) || true
+rm -f "yt_version.$$.out"
+YTDLP_AGE=$(perl -MTime::Local -e '
+  my ($v, $max) = @ARGV;
+  exit 0 unless $max =~ /\A\d+\z/;
+  my ($y, $m, $d) = $v =~ /\A\s*(\d{4})\.(\d{1,2})\.(\d{1,2})(?:\.\d+)?\s*\z/ or exit 0;
+  my $t = eval { timelocal(0, 0, 12, $d, $m - 1, $y) };
+  exit 0 unless defined $t;
+  my $age = int((time - $t) / 86400);
+  print $age if $age > $max;
+' "$YTDLP_VERSION" "${ATRIS_YTNOTES_YTDLP_MAX_AGE_DAYS:-60}" 2>/dev/null) || true
+if [ -n "$YTDLP_AGE" ]; then
+  echo "Your yt-dlp is $YTDLP_AGE days old, and YouTube often blocks old copies. Update it: brew upgrade yt-dlp (Mac) or pipx upgrade yt-dlp" >&2
+fi
 # Skip WARNING/ERROR/INFO print leaks and NA/None sentinels. Keep the last
 # id|title line so notes stay on yt_<id>.md and keep can find them after a
 # later error. Same sentinel bar as watch/search looksLikeFlatVideoId.
