@@ -635,6 +635,20 @@ function findStalePages(cwd, atrisDir) {
 }
 
 /**
+ * When a source last changed. A checkout or rebase touches mtimes without
+ * changing content, so a file git holds unchanged counts from its last commit.
+ */
+function contentChangedAt(sourcePath, mtime) {
+  const dir = path.dirname(sourcePath);
+  const name = path.basename(sourcePath);
+  const status = spawnSync('git', ['status', '--porcelain', '--', name], { cwd: dir, encoding: 'utf8' });
+  if (status.status !== 0 || status.stdout.trim()) return mtime;
+  const log = spawnSync('git', ['log', '-1', '--format=%cI', '--', name], { cwd: dir, encoding: 'utf8' });
+  const committed = log.status === 0 ? log.stdout.trim() : '';
+  return committed ? new Date(committed) : mtime;
+}
+
+/**
  * Parse frontmatter from a markdown file and check if any source is newer than last_compiled.
  * Returns { page, staleSource, compiledDate, sourceDate } or null if not stale.
  */
@@ -678,12 +692,13 @@ function checkPageStaleness(cwd, filePath) {
     const sourcePath = path.isAbsolute(filePart) ? filePart : path.join(cwd, filePart);
     try {
       const stat = fs.statSync(sourcePath);
-      if (stat.mtime > compiledDate) {
+      const changed = stat.mtime > compiledDate ? contentChangedAt(sourcePath, stat.mtime) : null;
+      if (changed && changed > compiledDate) {
         return {
           page: filePath,
           staleSource: source,
           compiledDate: compiledMatch[1],
-          sourceDate: stat.mtime.toISOString().split('T')[0]
+          sourceDate: changed.toISOString().split('T')[0]
         };
       }
     } catch {

@@ -209,3 +209,29 @@ test('atris zen tidies the workspace too, and --check only names it', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen saves a side copy nobody touched in days, then puts it away', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const old = path.join(base, 'old');
+    git(checkout, 'worktree', 'add', '-q', old, '-b', 'old-branch');
+    write(old, 'wip.js', 'forgotten\n');
+    write(old, 'app.js', 'half done\n');
+    const days = new Date(Date.now() - 5 * 86400000);
+    const gitDir = path.resolve(old, git(old, 'rev-parse', '--git-dir'));
+    for (const f of [path.join(old, 'wip.js'), path.join(old, 'app.js'), path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')]) {
+      fs.utimesSync(f, days, days);
+    }
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /saved 1 side copy untouched for 3 days to zen-backup\/ and put it away/);
+    assert.ok(!fs.existsSync(old));
+    const [kept] = branches(checkout, 'zen-backup/*-old');
+    assert.ok(kept, branches(checkout, '*').join(','));
+    assert.equal(git(checkout, 'show', `${kept}:wip.js`), 'forgotten');
+    assert.equal(git(checkout, 'show', `${kept}:app.js`), 'half done');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

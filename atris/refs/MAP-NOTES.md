@@ -945,8 +945,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:604`): Scan atris/ for markdown with `last_compiled` frontmatter, compare source mtime
-- `checkPageStaleness()` (`commands/clean.js:624`): Parse frontmatter, check each source file's mtime vs compiled date
+- `findStalePages()` (`commands/clean.js:604`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
+- `checkPageStaleness()` (`commands/clean.js:655`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`)
 - dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions)
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections
