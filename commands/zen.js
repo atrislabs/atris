@@ -1,44 +1,63 @@
 'use strict';
 
 const { checkZen } = require('../lib/zen');
+const { applyZen } = require('../lib/zen-apply');
 
 function showZenHelp() {
-  console.log('usage: atris zen [--no-fetch] [--json]');
+  console.log('usage: atris zen [--check] [--no-fetch] [--json]');
   console.log('');
-  console.log('Checks whether this repo is in zen state. It changes nothing.');
-  console.log('Zen: code matches origin, no stray code edits, no old stashes,');
-  console.log('no idle side copies, no merged branches. Team notes in atris/');
-  console.log('and agent config stay as they are.');
+  console.log('Brings this repo to zen: code matches origin, nothing left lying around.');
+  console.log('Old stashes are archived, idle side copies put away, finished branches');
+  console.log('cleared, stray code edits saved to a zen-backup/ branch, and the main');
+  console.log('branch caught up. Only branches already on origin are cleared, so nothing');
+  console.log('is lost, and everything else can be brought back. Team notes');
+  console.log('in atris/ and agent config stay as they are. Anything touched in the last');
+  console.log('30 minutes is left alone.');
   console.log('');
-  console.log('  --no-fetch   Compare against the last fetched origin instead of fetching.');
+  console.log('  --check      Only look. Report what is out of place and change nothing.');
+  console.log('  --no-fetch   Use the last fetched origin instead of fetching.');
   console.log('  --json       Print machine-readable results.');
   console.log('');
   console.log('Add more team-state paths in .atris/zen.json: {"team_state": ["logs/"]}');
 }
 
-function zenCommand(args = [], cwd = process.cwd()) {
-  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    showZenHelp();
-    return 0;
-  }
+function pause(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
-  const result = checkZen({ cwd, fetch: !args.includes('--no-fetch') });
+function makeOut(calm) {
+  const dim = (text) => (calm ? `\x1b[2m${text}\x1b[0m` : text);
+  const line = (text = '', ms = 110) => {
+    console.log(text);
+    if (calm && text) pause(ms);
+  };
+  // One raked line, drawn left to right.
+  const rake = (width = 34) => {
+    if (!calm) {
+      console.log(`  ${'─'.repeat(width)}`);
+      return;
+    }
+    process.stdout.write('  ');
+    for (let i = 0; i < width; i += 1) {
+      process.stdout.write(dim('─'));
+      pause(14);
+    }
+    process.stdout.write('\n');
+    pause(160);
+  };
+  return { dim, line, rake };
+}
 
-  if (args.includes('--json')) {
-    console.log(JSON.stringify(result, null, 2));
-    return result.ok ? (result.zen ? 0 : 1) : 2;
-  }
+function teamLine(n) {
+  if (!n) return 'no team notes changed.';
+  return n === 1 ? '1 team note kept as it is.' : `${n} team notes kept as they are.`;
+}
 
-  if (!result.ok) {
-    console.log(`zen: can't check, ${result.error}.`);
-    return 2;
-  }
-
+function printCheck(result) {
   const kept = result.team_files
-    ? `${result.team_files} team ${result.team_files === 1 ? 'file' : 'files'} kept as they are`
+    ? (result.team_files === 1 ? '1 team file kept as it is' : `${result.team_files} team files kept as they are`)
     : 'no team files changed';
   const stale = result.fetched === false ? ' (could not reach origin, using last fetch)' : '';
-
   if (result.zen) {
     console.log('zen: yes');
     console.log(`  code matches ${result.upstream}${stale}`);
@@ -48,13 +67,73 @@ function zenCommand(args = [], cwd = process.cwd()) {
     console.log(`zen: no, ${n} ${n === 1 ? 'thing is' : 'things are'} out of place${stale}`);
     for (const problem of result.problems) console.log(`  - ${problem.text}`);
     console.log(`  ${kept}`);
+    console.log('  run atris zen to make it zen');
   }
-
   const busy = result.worktrees_with_work.length;
   if (busy) {
     console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}`);
   }
+}
 
+function printApply(result, out) {
+  const { dim, line, rake } = out;
+  line('');
+  line('  atris zen', 200);
+  line('');
+  rake();
+  line('');
+  for (const text of result.done) line(`  ${text}`);
+  if (result.left.length || result.notes.length) {
+    if (result.done.length) line('');
+    for (const text of [...result.left, ...result.notes]) line(dim(`  ${text}`));
+  }
+  if (result.done.length || result.left.length || result.notes.length) line('');
+  if (result.zen) {
+    line(`  ${result.already ? 'already zen.' : 'zen.'}`, 260);
+  } else {
+    line('  almost zen. still out of place:');
+    for (const text of result.remaining) line(dim(`  - ${text}`));
+  }
+  line(dim(`  ${teamLine(result.team_files)}`));
+  if (result.saved.length) {
+    line(dim('  everything is kept: git for-each-ref refs/archive refs/heads/zen-backup'));
+  }
+  line('');
+}
+
+function zenCommand(args = [], cwd = process.cwd()) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showZenHelp();
+    return 0;
+  }
+  const fetch = !args.includes('--no-fetch');
+  const json = args.includes('--json');
+
+  if (args.includes('--check')) {
+    const result = checkZen({ cwd, fetch });
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+      return result.ok ? (result.zen ? 0 : 1) : 2;
+    }
+    if (!result.ok) {
+      console.log(`zen: can't check, ${result.error}.`);
+      return 2;
+    }
+    printCheck(result);
+    return result.zen ? 0 : 1;
+  }
+
+  const result = applyZen({ cwd, fetch });
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return result.ok ? (result.zen ? 0 : 1) : 2;
+  }
+  if (!result.ok) {
+    console.log(`zen: can't start, ${result.error}.`);
+    return 2;
+  }
+  const calm = Boolean(process.stdout.isTTY) && !process.env.CI;
+  printApply(result, makeOut(calm));
   return result.zen ? 0 : 1;
 }
 
