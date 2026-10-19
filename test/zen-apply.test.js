@@ -183,3 +183,29 @@ test('atris zen moves back to the main branch and keeps the other one', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen tidies the workspace too, and --check only names it', () => {
+  const { base, checkout } = createRepo();
+  try {
+    commit(checkout, 'atris/logs/2026/2026-01-02.md', 'an old day\n', 'old journal');
+    git(checkout, 'push', '-q');
+
+    const check = zen(checkout, 0, '--check');
+    assert.equal(check.status, 1, check.stdout + check.stderr);
+    assert.match(check.stdout, /zen: almost, the code is calm and the workspace has 1 thing to tidy/);
+    assert.match(check.stdout, /1 old journal to archive/);
+    assert.ok(fs.existsSync(path.join(checkout, 'atris/logs/2026/2026-01-02.md')));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /archived 1 old journal/);
+    assert.match(cli.stdout, /^ {2}zen\.$/m);
+    assert.equal(
+      fs.readFileSync(path.join(checkout, 'atris/logs/archive/2026/2026-01-02.md'), 'utf8'),
+      'an old day\n',
+    );
+    assert.equal(checkZen({ cwd: checkout, fetch: false }).zen, true);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

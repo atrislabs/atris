@@ -2,6 +2,7 @@
 
 const { checkZen } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
+const { workspaceZen } = require('../lib/zen-workspace');
 
 function showZenHelp() {
   console.log('usage: atris zen [--check] [--no-fetch] [--json]');
@@ -12,7 +13,8 @@ function showZenHelp() {
   console.log('branch caught up. Only branches already on origin are cleared, so nothing');
   console.log('is lost, and everything else can be brought back. Team notes');
   console.log('in atris/ and agent config stay as they are. Anything touched in the last');
-  console.log('30 minutes is left alone.');
+  console.log('30 minutes is left alone. Then the workspace is tidied with atris clean, and');
+  console.log('anything only you can do is listed with the one command that does it.');
   console.log('');
   console.log('  --check      Only look. Report what is out of place and change nothing.');
   console.log('  --no-fetch   Use the last fetched origin instead of fetching.');
@@ -53,12 +55,23 @@ function teamLine(n) {
   return n === 1 ? '1 team note kept as it is.' : `${n} team notes kept as they are.`;
 }
 
-function printCheck(result) {
+function printYours(yours, line, dim) {
+  const width = Math.max(...yours.map((item) => item.text.length));
+  for (const item of yours) line(`  ${item.text.padEnd(width)}   ${dim(item.cmd)}`);
+}
+
+function printCheck(result, workspace) {
   const kept = result.team_files
     ? (result.team_files === 1 ? '1 team file kept as it is' : `${result.team_files} team files kept as they are`)
     : 'no team files changed';
   const stale = result.fetched === false ? ' (could not reach origin, using last fetch)' : '';
-  if (result.zen) {
+  const tidy = workspace?.todo.length || 0;
+  if (result.zen && tidy) {
+    console.log(`zen: almost, the code is calm and the workspace has ${tidy} ${tidy === 1 ? 'thing' : 'things'} to tidy`);
+    console.log(`  code matches ${result.upstream}${stale}`);
+    console.log(`  ${kept}`);
+    console.log('  run atris zen to make it zen');
+  } else if (result.zen) {
     console.log('zen: yes');
     console.log(`  code matches ${result.upstream}${stale}`);
     console.log(`  ${kept}`);
@@ -73,6 +86,14 @@ function printCheck(result) {
   if (busy) {
     console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}`);
   }
+  if (workspace?.todo.length) {
+    console.log('workspace:');
+    for (const text of workspace.todo) console.log(`  - ${text}`);
+  }
+  if (workspace?.yours.length) {
+    console.log('for you:');
+    printYours(workspace.yours, (text) => console.log(text), (text) => text);
+  }
 }
 
 function printApply(result, out) {
@@ -82,12 +103,23 @@ function printApply(result, out) {
   line('');
   rake();
   line('');
+  line(dim('  code'));
+  if (!result.done.length && result.zen) line(`  matches ${result.upstream || 'origin'}`);
   for (const text of result.done) line(`  ${text}`);
-  if (result.left.length || result.notes.length) {
-    if (result.done.length) line('');
-    for (const text of [...result.left, ...result.notes]) line(dim(`  ${text}`));
+  for (const text of [...result.left, ...result.notes]) line(dim(`  ${text}`));
+  line('');
+  const ws = result.workspace || { done: [], yours: [] };
+  if (ws.ran) {
+    line(dim('  workspace'));
+    if (!ws.done.length) line('  tidy');
+    for (const text of ws.done) line(`  ${text}`);
+    line('');
   }
-  if (result.done.length || result.left.length || result.notes.length) line('');
+  if (ws.yours?.length) {
+    line(dim('  for you'));
+    printYours(ws.yours, line, dim);
+    line('');
+  }
   if (result.zen) {
     line(`  ${result.already ? 'already zen.' : 'zen.'}`, 260);
   } else {
@@ -119,8 +151,9 @@ function zenCommand(args = [], cwd = process.cwd()) {
       console.log(`zen: can't check, ${result.error}.`);
       return 2;
     }
-    printCheck(result);
-    return result.zen ? 0 : 1;
+    const workspace = workspaceZen({ root: result.root, dryRun: true });
+    printCheck(result, workspace);
+    return result.zen && !workspace.todo.length ? 0 : 1;
   }
 
   const result = applyZen({ cwd, fetch });
