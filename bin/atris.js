@@ -698,7 +698,7 @@ function showHelpAll() {
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
   console.log('  sync-checkout - fetch and fast-forward a clean current branch');
-  console.log('  zen        - check this repo is calm and current (changes nothing)');
+  console.log('  zen        - make this repo calm and current, keeping everything (--check to only look)');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
   console.log('  live       - Keep a business brain fresh (doctor, pull, watch, push)');
   console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');

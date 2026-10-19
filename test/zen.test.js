@@ -85,7 +85,7 @@ test('a synced repo with only team notes changed is zen', () => {
     assert.equal(result.upstream, 'origin/master');
     assert.equal(result.team_files, 3);
 
-    const cli = runCli(checkout, 'zen');
+    const cli = runCli(checkout, 'zen', '--check');
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /^zen: yes/m);
     assert.match(cli.stdout, /code matches origin\/master/);
@@ -126,14 +126,14 @@ test('leftovers, drift and stray code each break zen', () => {
     assert.equal(by.idle_worktrees.count, 1);
     assert.equal(result.worktrees_with_work.length, 1);
 
-    const cli = runCli(checkout, 'zen');
+    const cli = runCli(checkout, 'zen', '--check');
     assert.equal(cli.status, 1);
     assert.match(cli.stdout, /^zen: no, 6 things are out of place/m);
     assert.match(cli.stdout, /1 commit behind origin\/master/);
     assert.match(cli.stdout, /1 old stash/);
     assert.match(cli.stdout, /1 side copy has unsaved work/);
 
-    const json = JSON.parse(runCli(checkout, 'zen', '--json', '--no-fetch').stdout);
+    const json = JSON.parse(runCli(checkout, 'zen', '--check', '--json', '--no-fetch').stdout);
     assert.equal(json.zen, false);
     assert.equal(json.stashes, 1);
   } finally {
@@ -141,14 +141,14 @@ test('leftovers, drift and stray code each break zen', () => {
   }
 });
 
-test('zen checks changed nothing in the repo', () => {
+test('zen --check changes nothing in the repo', () => {
   const { base, checkout } = createZenRepo();
   try {
     fs.writeFileSync(path.join(checkout, 'app.js'), 'stashed\n');
     git(checkout, 'stash', 'push', '-q');
     git(checkout, 'branch', 'old');
     const before = git(checkout, 'for-each-ref');
-    runCli(checkout, 'zen');
+    runCli(checkout, 'zen', '--check');
     assert.equal(git(checkout, 'for-each-ref'), before);
     assert.equal(git(checkout, 'stash', 'list').split('\n').length, 1);
   } finally {
@@ -177,7 +177,7 @@ test('off the main branch is not zen, and extra team paths come from .atris/zen.
 test('outside a git repo zen says it cannot check', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-nogit-'));
   try {
-    const cli = runCli(dir, 'zen');
+    const cli = runCli(dir, 'zen', '--check');
     assert.equal(cli.status, 2);
     assert.match(cli.stdout, /zen: can't check, not a git repository/);
   } finally {
