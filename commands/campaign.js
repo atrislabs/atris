@@ -14,7 +14,7 @@ const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign
 const { decide, paysDollars } = require('../lib/campaign-core');
 const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
-const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
+const { confirmedReading, judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
 const { campaignHome, changedProtected, checkoutTop, headCommit, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 const schedules = require('../lib/campaign-schedule');
@@ -561,7 +561,9 @@ async function cmdJudge(args, ctx) {
   if (error !== undefined) return error;
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
-  const reading = await ctx.judge(view.judge, timeout, view.id);
+  // A pass that would finish the campaign must pass a second, fresh run first.
+  const run = () => ctx.judge(view.judge, timeout, view.id);
+  const reading = view.standing ? await run() : await confirmedReading(run);
   ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
   const after = getCampaign(ctx.store, view.id);
   const verdict = reading.passed ? 'passed' : 'failed';

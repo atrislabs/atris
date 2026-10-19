@@ -109,14 +109,47 @@ test('the judge verb records each reading; a pass finishes the campaign', async 
   await run(store, ['event', 'cmp-ship', 'mission_started', '--data', '{"mission_id":"m1","member":"builder"}']);
   await run(store, ['event', 'cmp-ship', 'mission_ended', '--data', '{"mission_id":"m1","outcome":"kept","cost_usd":2.22}']);
   assert.equal(getCampaign(store, 'cmp-ship').judge_due, true);
-  const result = await run(store, ['judge', 'cmp-ship'], [{ passed: true, exit: 0, summary: 'judge passes: every surface agrees', seconds: 3 }]);
+  const pass = { passed: true, exit: 0, summary: 'judge passes: every surface agrees', seconds: 3 };
+  const result = await run(store, ['judge', 'cmp-ship'], [pass, { ...pass }]);
   assert.equal(result.code, 0);
-  assert.match(result.out, /judge passed in 3s/);
+  assert.match(result.out, /judge passed in 6s/);
   const view = getCampaign(store, 'cmp-ship');
   assert.equal(view.state, 'done');
   assert.equal(view.stop_reason, 'judge_passed');
   assert.deepEqual(view.answer, { text: 'judge passes: every surface agrees', confidence: 'answered' });
   assert.equal(view.budget.spent, 2.22);
+});
+
+test('a lucky pass does not finish the campaign: a fresh second run must pass too', async () => {
+  const store = createMemoryStore();
+  await run(store, startArgs);
+  const lucky = await run(store, ['judge', 'cmp-ship'], [
+    { passed: true, exit: 0, summary: '3 of 3', seconds: 1 },
+    { passed: false, exit: 1, summary: '2 of 3', seconds: 1 },
+  ]);
+  assert.equal(lucky.code, 1);
+  let view = getCampaign(store, 'cmp-ship');
+  assert.notEqual(view.state, 'done');
+  assert.equal(view.stop_reason, null);
+  assert.equal(view.judge_runs, 2, 'start reading plus one recorded reading, not one per run');
+  assert.equal(view.answer.text, 'passed once, then failed a fresh run: 2 of 3');
+
+  const real = await run(store, ['judge', 'cmp-ship'], [
+    { passed: true, exit: 0, summary: '3 of 3', seconds: 1 },
+    { passed: true, exit: 0, summary: '3 of 3', seconds: 1 },
+  ]);
+  assert.equal(real.code, 0);
+  view = getCampaign(store, 'cmp-ship');
+  assert.equal(view.state, 'done');
+  assert.equal(view.stop_reason, 'judge_passed');
+});
+
+test('a failing reading runs the judge once; only a pass is run again', async () => {
+  const store = createMemoryStore();
+  await run(store, startArgs);
+  const readings = [{ passed: false, exit: 1, summary: 'not yet', seconds: 1 }, { passed: true, exit: 0, summary: 'should stay unread', seconds: 1 }];
+  await run(store, ['judge', 'cmp-ship'], readings);
+  assert.equal(readings.length, 1);
 });
 
 test('pause, resume, and stop; the list puts what needs you first', async () => {

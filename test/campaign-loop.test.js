@@ -52,7 +52,7 @@ const proposals = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ o
 test('the loop proposes, runs missions at once, judges, and stops when the judge passes', async () => {
   const store = campaign(10);
   const { cli, calls } = fakeCli(store);
-  const readings = [{ passed: false, summary: '1 of 3' }, { passed: true, summary: '3 of 3' }];
+  const readings = [{ passed: false, summary: '1 of 3' }, { passed: true, summary: '3 of 3' }, { passed: true, summary: '3 of 3' }];
   const asks = [];
   const loop = makeLoop('/x', { parallel: 2 }, {
     store, cli, log: () => {}, skipReconcile: true,
@@ -73,6 +73,42 @@ test('the loop proposes, runs missions at once, judges, and stops when the judge
   assert.deepEqual(calls.slice().sort(), ['mission run', 'mission run', 'mission start', 'mission start']);
   assert.equal(asks.length, 1);
   assert.match(asks[0], /Judge \(the campaign is done when this command exits 0\): npm test/);
+});
+
+test('the loop does not stop on a lucky pass: it keeps working until a pass repeats', async () => {
+  const store = campaign(10);
+  const { cli } = fakeCli(store);
+  const readings = [
+    { passed: false, summary: '1 of 3' },
+    { passed: true, summary: '3 of 3' }, { passed: false, summary: '2 of 3' },
+    { passed: true, summary: '3 of 3' }, { passed: true, summary: '3 of 3' },
+  ];
+  let judged = 0;
+  const loop = makeLoop('/x', { parallel: 1 }, {
+    store, cli, log: () => {}, skipReconcile: true,
+    judge: () => { judged += 1; return readings.shift(); },
+    ask: async () => ({ ok: true, engine: 'claude', text: JSON.stringify([{ objective: `Fix part ${judged}`, member: 'builder', estimate_usd: 1 }]) }),
+  });
+  const result = await loop.run('cmp-loop', 20);
+  assert.equal(result.reason, 'finished');
+  assert.equal(judged, 5);
+  const view = getCampaign(store, 'cmp-loop');
+  assert.equal(view.stop_reason, 'judge_passed');
+  assert.equal(view.judge_runs, 3, 'one recorded reading per check, the lucky one recorded as a fail');
+  assert.ok(view.missions.filter((m) => !m.id.startsWith('plan-')).length >= 2, 'work went on after the lucky pass');
+});
+
+test('a standing campaign reads its judge once per check', async () => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  store.append({ campaign_id: 'cmp-loop', type: 'campaign_started', actor: 'mission-lead', data: { title: 'Loop', judge: 'npm test', budget: 10, owner: 'mission-lead', standing: true } });
+  let judged = 0;
+  const loop = makeLoop('/x', {}, {
+    store, cli: async () => ({ code: 0 }), log: () => {}, skipReconcile: true,
+    judge: () => { judged += 1; return { passed: true, summary: 'healthy' }; },
+    ask: async () => ({ ok: true, text: '[]' }),
+  });
+  await loop.run('cmp-loop', 1);
+  assert.equal(judged, 1);
 });
 
 test('the loop stops for money, for asks, and when nothing usable is proposed', async () => {
