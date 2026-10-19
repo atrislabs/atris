@@ -13,7 +13,8 @@ function showZenHelp() {
   console.log('branch caught up. Only branches already on origin are cleared, so nothing');
   console.log('is lost, and everything else can be brought back. Team notes');
   console.log('in atris/ and agent config stay as they are. Anything touched in the last');
-  console.log('30 minutes is left alone. Then the workspace is tidied with atris clean, and');
+  console.log('30 minutes is left alone. A side copy with unsaved work nobody has touched in');
+  console.log('3 days is saved to a zen-backup/ branch and put away. Then the workspace is tidied with atris clean, and');
   console.log('anything only you can do is listed with the one command that does it.');
   console.log('');
   console.log('  --check      Only look. Report what is out of place and change nothing.');
