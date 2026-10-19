@@ -12,7 +12,7 @@ tags:
 
 # Campaigns
 
-A campaign is a goal plus a judge. The judge is a command that exits 0 only when the goal is met. The campaign runs missions until the judge passes, a budget (cloud only) runs out, or a person has to decide something.
+A campaign is a goal plus a judge. The judge is a command that exits 0 only when the goal is met. The campaign runs missions until the judge passes, a budget (cloud only) runs out, or a person has to decide something. A pass only counts when a second, fresh run of the judge passes right after it; a pass that does not repeat is recorded as a failure, so a flaky judge cannot end a campaign by luck.
 
 ## Size it first
 

@@ -81,6 +81,7 @@ Not written by hand:
 
 - `id`: generated at `campaign_started`.
 - `stop`: judge passes (unless standing), budget spent, or a `stopped` event.
+  The runner (CLI loop and `atris campaign judge`) runs a passing judge a second time before it records the reading. Only a repeated pass is written as `passed: true`; a pass that does not repeat is written as a failure that says so. The fold itself is unchanged.
 - `state`, `answer` and confidence, `spent`, `asks`, `missions`: folded from events, never stored.
 - `created_from`: payload of `campaign_started`.
 - `parent`: an `attached` event written by an action.
