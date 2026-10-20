@@ -87,6 +87,11 @@ function printCheck(result, workspace) {
   if (busy) {
     console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}`);
   }
+  const live = result.worktrees_in_use?.length || 0;
+  if (live) {
+    const mins = result.fresh_minutes;
+    console.log(`  ${live} side ${live === 1 ? 'copy was' : 'copies were'} used in the last ${mins} ${mins === 1 ? 'minute' : 'minutes'}, left alone`);
+  }
   if (workspace?.todo.length) {
     console.log('workspace:');
     for (const text of workspace.todo) console.log(`  - ${text}`);

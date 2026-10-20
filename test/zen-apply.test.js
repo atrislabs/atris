@@ -350,3 +350,29 @@ test('atris zen leaves a side copy alone when a scheduled job uses it', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a side copy left alone for being in use does not count as out of place', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const copy = path.join(base, 'live');
+    git(checkout, 'worktree', 'add', '-q', '-b', 'live-work', copy);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy was used in the last 30 minutes/);
+    assert.match(cli.stdout, /zen\./);
+    assert.doesNotMatch(cli.stdout, /still out of place/);
+    assert.ok(fs.existsSync(copy));
+
+    const check = run(process.execPath, [cliPath, 'zen', '--check', '--no-fetch'], checkout, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '30',
+    });
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.match(check.stdout, /^zen: yes/m);
+    assert.match(check.stdout, /1 side copy was used in the last 30 minutes, left alone/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
