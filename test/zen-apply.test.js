@@ -322,3 +322,31 @@ test('atris zen moves back to main even when team notes are edited on both branc
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen leaves a side copy alone when a scheduled job uses it', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const job = path.join(base, 'pruner');
+    git(checkout, 'worktree', 'add', '-q', '--detach', job);
+    const gitDir = path.resolve(job, git(job, 'rev-parse', '--git-dir'));
+    const days = new Date(Date.now() - 5 * 86400000);
+    for (const f of [path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')]) {
+      if (fs.existsSync(f)) fs.utimesSync(f, days, days);
+    }
+    const schedule = path.join(base, 'crontab.txt');
+    fs.writeFileSync(schedule, `5 6 * * * cd ${job} && python3 scripts/prune.py\n`);
+
+    const cli = run(process.execPath, [cliPath, 'zen'], checkout, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '30',
+      ATRIS_ZEN_SCHEDULE_FILE: schedule,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy is used by a scheduled job, so it stays/);
+    assert.match(cli.stdout, /zen\./);
+    assert.ok(fs.existsSync(job));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

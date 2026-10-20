@@ -1774,6 +1774,14 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
   return logPath;
 }
 
+// Shorten at a word boundary so a lesson never ends mid-word.
+function clipWords(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : text.slice(0, max)).replace(/[\s,;:.-]+$/, '')}...`;
+}
+
 function crystallizeMemberSkillLesson(owner, entry = {}, root = process.cwd()) {
   const dir = memberDir(owner, root);
   if (!dir) return null;
@@ -1782,38 +1790,47 @@ function crystallizeMemberSkillLesson(owner, entry = {}, root = process.cwd()) {
   const skillDir = path.join(dir, 'skills', 'auto-learned');
   fs.mkdirSync(skillDir, { recursive: true });
   const skillPath = path.join(skillDir, 'SKILL.md');
-  const existingBullets = [];
+  let lines = null;
   if (fs.existsSync(skillPath)) {
     try {
-      const raw = fs.readFileSync(skillPath, 'utf8');
-      for (const line of raw.split(/\r?\n/)) {
-        if (line.trim().startsWith('- **')) existingBullets.push(line.trim());
-      }
+      lines = fs.readFileSync(skillPath, 'utf8').split(/\r?\n/);
     } catch {}
   }
+  const bulletAt = (lines || []).map((line, i) => (line.trim().startsWith('- **') ? i : -1)).filter((i) => i >= 0);
+  const existingBullets = bulletAt.map((i) => lines[i].trim());
   const verifierText = String(entry.verifier || '').replace(/\s+/g, ' ').trim();
   const nextPushText = String(entry.next_push || '').replace(/\s+/g, ' ').trim();
   const layerLabel = String(entry.layer || 'capabilities').trim();
-  const parts = [`- **${todayName()} (${layerLabel})**: ${summary.slice(0, 140)}`];
-  if (verifierText) parts.push(`Verify: \`${verifierText.slice(0, 80)}\``);
-  if (nextPushText) parts.push(`Next push: ${nextPushText.slice(0, 120)}`);
+  const parts = [`- **${todayName()} (${layerLabel})**: ${clipWords(summary, 240)}`];
+  // A cut-off command cannot be run, so a long one is left out, never clipped.
+  if (verifierText && verifierText.length <= 300) parts.push(`Verify: \`${verifierText}\``);
+  if (nextPushText) parts.push(`Next push: ${clipWords(nextPushText, 200)}`);
   const newBullet = parts.join(' -> ');
   const deduped = [
     newBullet,
     ...existingBullets.filter((b) => !b.includes(summary.slice(0, 80))),
   ].slice(0, 5);
 
-  const content = [
-    '---',
-    'name: auto-learned',
-    `description: Verified patterns crystallized from passing runs for ${owner}. Bounded to 5 newest patterns so context never bloats.`,
-    '---',
-    '',
-    '# Auto-Learned Verified Patterns',
-    '',
-    ...deduped,
-    '',
-  ].join('\n');
+  let content;
+  if (bulletAt.length) {
+    // Keep whatever a person or reviewer wrote around the lessons; only the
+    // lesson list itself is rewritten.
+    const first = bulletAt[0];
+    const last = bulletAt[bulletAt.length - 1];
+    content = [...lines.slice(0, first), ...deduped, ...lines.slice(last + 1)].join('\n');
+  } else {
+    content = [
+      '---',
+      'name: auto-learned',
+      `description: Verified patterns crystallized from passing runs for ${owner}. Bounded to 5 newest patterns so context never bloats.`,
+      '---',
+      '',
+      '# Auto-Learned Verified Patterns',
+      '',
+      ...deduped,
+      '',
+    ].join('\n');
+  }
   fs.writeFileSync(skillPath, content, 'utf8');
   return skillPath;
 }
@@ -12724,6 +12741,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
   missionCommand,
