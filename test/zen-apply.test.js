@@ -235,3 +235,30 @@ test('atris zen saves a side copy nobody touched in days, then puts it away', ()
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen keeps team notes from unpushed commits in the tree', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'app.js', 'two\n', 'newer app');
+    git(seed, 'push', '-q');
+    // A job commits its report and a team note to main and never pushes.
+    write(checkout, 'reports/health.json', '{}\n');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 5', 'line 5 from the job'));
+    git(checkout, 'add', '-A');
+    git(checkout, 'commit', '-q', '-m', 'weekly job');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /moved 1 unpushed commit to zen-backup\//);
+    assert.match(cli.stdout, /kept 1 team note from it in the tree/);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /line 5 from the job/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+    assert.ok(!fs.existsSync(path.join(checkout, 'reports/health.json')));
+    const [kept] = branches(checkout, 'zen-backup/*-unpushed');
+    assert.equal(git(checkout, 'show', `${kept}:reports/health.json`), '{}');
+    assert.equal(checkZen({ cwd: checkout, fetch: false }).zen, true);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
