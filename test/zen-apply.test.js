@@ -262,3 +262,27 @@ test('atris zen keeps team notes from unpushed commits in the tree', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen only says it refreshed the map when the map changed', () => {
+  const { base, checkout } = createRepo();
+  try {
+    write(checkout, 'atris/MAP.md', '# Map\n');
+    write(checkout, 'scripts/refresh_map_active.py', 'pass\n');
+    git(checkout, 'add', '-A');
+    git(checkout, 'commit', '-q', '-m', 'map and a refresh script that changes nothing');
+    git(checkout, 'push', '-q');
+
+    const quiet = zen(checkout, 0);
+    assert.equal(quiet.status, 0, quiet.stdout + quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /refreshed the map/);
+    assert.match(quiet.stdout, /already zen\./);
+
+    write(checkout, 'scripts/refresh_map_active.py', "open('atris/MAP.md', 'a').write('- new row\\n')\n");
+    git(checkout, 'commit', '-q', '-am', 'a refresh script that adds a row');
+    git(checkout, 'push', '-q');
+    const loud = zen(checkout, 0);
+    assert.match(loud.stdout, /refreshed the map/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
