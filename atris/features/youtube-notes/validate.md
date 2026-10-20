@@ -16,11 +16,11 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 
 - [x] **Tests pass**
   - Command: `node --test test/ytnotes.test.js test/ytquote-repair.test.js test/youtube.test.js`
-  - Expect: 0 failures. On 2026-09-28 this was 111 passing; on 2026-10-13, with test/ytrail-bench.test.js in place of test/ytquote-repair.test.js, 142 passing. Rerun on 2026-10-15: exit 0, 131 passing, 0 failing.
+  - Expect: 0 failures. On 2026-09-28 this was 111 passing; on 2026-10-13, with test/ytrail-bench.test.js in place of test/ytquote-repair.test.js, 142 passing. Rerun on 2026-10-15: exit 0, 131 passing, 0 failing. Rerun on 2026-10-19: exit 0, 137 passing, 0 failing, in 38 seconds.
 
 - [x] **Tools present**
   - Command: `command -v yt-dlp agy claude mlx_whisper`
-  - Expect: yt-dlp and at least one writer. `mlx_whisper` is needed only for videos with no captions. Rerun on 2026-10-15: exit 0, all four found (yt-dlp, agy, claude, mlx_whisper).
+  - Expect: yt-dlp and at least one writer. `mlx_whisper` is needed only for videos with no captions. Rerun on 2026-10-15: exit 0, all four found (yt-dlp, agy, claude, mlx_whisper). Rerun on 2026-10-19: exit 0, all four found, yt-dlp 2026.08.19.
 
 ---
 
