@@ -286,3 +286,39 @@ test('atris zen only says it refreshed the map when the map changed', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('atris zen never rolls back a live database file', () => {
+  const { base, checkout } = createRepo();
+  try {
+    commit(checkout, 'crm.db', 'rows v1\n', 'database');
+    git(checkout, 'push', '-q');
+    write(checkout, 'crm.db', 'rows v2, written by the running app\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /stray edit/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'crm.db'), 'utf8'), 'rows v2, written by the running app\n');
+    assert.deepEqual(branches(checkout, 'zen-backup/*'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen moves back to main even when team notes are edited on both branches', () => {
+  const { base, checkout } = createRepo();
+  try {
+    git(checkout, 'checkout', '-q', '-b', 'side');
+    commit(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 on side'), 'side note');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 on side').replace('line 1\n', 'line 1 mine\n'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /moved back to master \(side is kept\)/);
+    assert.equal(git(checkout, 'symbolic-ref', '--short', 'HEAD'), 'master');
+    assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /line 1 mine/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+    assert.deepEqual(branches(checkout, 'side'), ['side']);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
