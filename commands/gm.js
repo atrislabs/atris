@@ -646,8 +646,13 @@ function render(state) {
 // ---- front office board -------------------------------------------------
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-const PLAY_KEYS = 'keys: r run  w wake  s sleep  l landing check  enter refresh  q quit';
+const PLAY_KEYS = 'keys: p play  r run  w wake  s sleep  l landing check  enter refresh  q quit';
 const MEMBER_NAME_RE = /^[a-zA-Z0-9._-]+$/;
+const REFRESH_MS = 10 * 1000;
+const PLAY_DEFAULT_MINUTES = 30;
+const PLAY_DEFAULT_WHO = '3';
+const PLAY_MAX_MINUTES = 480;
+const PLAY_MAX_COUNT = 12;
 
 function pad(value, width) {
   const text = String(value == null ? '' : value);
@@ -670,37 +675,50 @@ function boardWorkspaceRoot(args = []) {
   return taskDb.workspaceRoot(path.resolve(workspaceArg));
 }
 
-function loadBoard(workspaceRoot, options = {}) {
+function loadBoard(workspaceRoot, { seen = null } = {}) {
   const season = require('../lib/gm-season');
-  return season.seasonBoard(season.loadSeason(workspaceRoot, options));
+  return season.seasonBoard(season.loadSeason(workspaceRoot), { seen });
 }
 
-// One screen, about 30 rows. Pure: board in, lines out.
+// One screen, under 40 rows. Pure: board in, lines out.
 function renderBoardLines(board, { interactive = false } = {}) {
+  const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}`);
   lines.push(board.mood.line);
   if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
   lines.push('');
 
-  lines.push('roster');
+  lines.push('roster, last 30 days');
   if (board.roster.length) {
-    lines.push(`  ${pad('name', 18)}${pad('ovr', 8)}${pad('form', 7)}status`);
+    lines.push(`  ${pad('name', 18)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
     for (const row of board.roster) {
-      lines.push(`  ${pad(row.name, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${row.status}`);
+      const record = `landed ${row.landed} of ${row.took}`;
+      lines.push(`  ${pad(row.name, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${pad(record, 18)}${row.status}`);
     }
   } else {
-    lines.push('  no graded work in the last 30 days');
+    lines.push('  no jobs taken in the last 30 days');
   }
   lines.push('');
 
-  lines.push('box scores, last 5');
+  lines.push('box scores, last 5 finished jobs');
   if (board.box_scores.length) {
     for (const score of board.box_scores) {
       lines.push(`  ${pad(score.member, 18)}${pad(score.outcome, 11)}${pad(hoursLabel(score.hours), 6)}${score.title}`);
     }
   } else {
-    lines.push('  nothing graded yet');
+    lines.push('  nothing finished yet');
+  }
+  lines.push('');
+
+  lines.push('last plays');
+  if (board.last_plays && board.last_plays.length) {
+    for (const play of board.last_plays) {
+      const tag = play.fresh ? '  new' : '';
+      lines.push(`  ${pad(clockLabel(play.at, board.now), 17)}${pad(`${play.member} ${play.play}`, 26)}${play.title}${tag}`);
+    }
+  } else {
+    lines.push('  no plays yet');
   }
   lines.push('');
 
@@ -717,9 +735,9 @@ function renderBoardLines(board, { interactive = false } = {}) {
   lines.push('');
 
   lines.push('key');
-  lines.push('  ovr: 60 to 99 by share of work kept, rookie until 3 graded');
-  lines.push('  form: last 5 results, newest on the right, k kept, x sent back');
-  lines.push('  hours: from claiming the job to the result');
+  lines.push('  ovr: 60 to 99 by share of finished jobs landed, rookie under 3 finished');
+  lines.push('       drops count here, so it is stricter than the website rating on purpose');
+  lines.push('  form: last 5 finished, newest on the right, k landed, d dropped, x sent back');
   lines.push(interactive ? `  ${PLAY_KEYS}` : '  run atris gm in a terminal to play');
   return lines;
 }
@@ -738,14 +756,53 @@ function displayCommand(args) {
   return ['atris', ...args].map(quoteArg).join(' ');
 }
 
-// What each key runs. r and w start agents, so they ask for y first.
-function playAction(key, { name = '', job = '' } = {}) {
+function playMinutes(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return PLAY_DEFAULT_MINUTES;
+  if (!/^\d+$/.test(text)) return null;
+  const minutes = Number(text);
+  return minutes >= 1 && minutes <= PLAY_MAX_MINUTES ? minutes : null;
+}
+
+// p sends the team out for a session:
+//   one name -> atris member wake <name> --minutes N
+//               one wake, then one work step with an N minute budget; ends itself
+//   a count  -> atris member wake <count>  (same as atris member up --max <count>)
+//   names    -> atris member wake a b      (same as atris member up --only a,b)
+//               both keep members picking up jobs with no end of their own, so
+//               gm stops it after N minutes; runs already started finish
+function playSession({ who = '', minutes = '' } = {}) {
+  const span = playMinutes(minutes);
+  if (span == null) return null;
+  const words = String(who || PLAY_DEFAULT_WHO).split(/[\s,]+/).filter(Boolean);
+  if (!words.length) return null;
+  if (words.length === 1 && /^\d+$/.test(words[0])) {
+    const count = Number(words[0]);
+    if (count < 1 || count > PLAY_MAX_COUNT) return null;
+    return { args: ['member', 'wake', String(count)], confirm: true, stopAfterMs: span * 60 * 1000, minutes: span };
+  }
+  if (!words.every(word => MEMBER_NAME_RE.test(word))) return null;
+  if (words.length === 1) {
+    return { args: ['member', 'wake', words[0], '--minutes', String(span)], confirm: true, stopAfterMs: null, minutes: span };
+  }
+  return { args: ['member', 'wake', ...words], confirm: true, stopAfterMs: span * 60 * 1000, minutes: span };
+}
+
+// What each key runs. p, r and w start agents, so they ask for y first.
+function playAction(key, { name = '', job = '', who = '', minutes = '' } = {}) {
   if (key === 'l') return { args: ['land', '--dry-run'], confirm: false };
+  if (key === 'p') return playSession({ who, minutes });
   if (!MEMBER_NAME_RE.test(name)) return null;
   if (key === 'r') return { args: ['member', 'run', name, ...(job ? [job] : [])], confirm: true };
   if (key === 'w') return { args: ['member', 'wake', name], confirm: true };
   if (key === 's') return { args: ['member', 'sleep', name], confirm: false };
   return null;
+}
+
+function actionLabel(action) {
+  const shown = displayCommand(action.args);
+  if (!action.stopAfterMs) return shown;
+  return `${shown}  (gm stops it after ${action.minutes} min; runs already started finish)`;
 }
 
 async function gmPlay(args = []) {
@@ -762,10 +819,15 @@ async function gmPlay(args = []) {
 
   readline.emitKeypressEvents(input);
 
-  const draw = (note) => {
+  let seen = null;
+  let note = '';
+  const draw = () => {
     output.write('\x1b[2J\x1b[H');
     try {
-      write(renderBoardLines(loadBoard(workspaceRoot), { interactive: true }).join('\n'));
+      const board = loadBoard(workspaceRoot, { seen });
+      seen = new Set(board.last_plays.map(play => play.id));
+      write(renderBoardLines(board, { interactive: true }).join('\n'));
+      write(`  board refreshes every ${REFRESH_MS / 1000}s`);
     } catch (err) {
       write(`could not load the board: ${err.message}`);
     }
@@ -808,25 +870,39 @@ async function gmPlay(args = []) {
     });
   });
 
-  const runAtris = cmdArgs => new Promise((resolve) => {
+  // Ctrl-C while a command runs reaches the command, not gm, so gm comes back.
+  const runAtris = (cmdArgs, { stopAfterMs = null } = {}) => new Promise((resolve) => {
     setRaw(false);
     input.pause();
+    const keepGm = () => {};
+    process.on('SIGINT', keepGm);
     const child = spawn(process.execPath, [cliPath, ...cmdArgs], {
       cwd: workspaceRoot,
       stdio: 'inherit',
       env: process.env,
     });
-    child.on('error', err => resolve({ code: 1, error: err.message }));
-    child.on('close', code => resolve({ code }));
+    const timer = stopAfterMs ? setTimeout(() => child.kill('SIGTERM'), stopAfterMs) : null;
+    const finish = (result) => {
+      if (timer) clearTimeout(timer);
+      process.off('SIGINT', keepGm);
+      resolve(result);
+    };
+    child.on('error', err => finish({ code: 1, error: err.message }));
+    child.on('close', code => finish({ code }));
   });
 
   const doAction = async (key) => {
     let action;
+    write('');
     if (key === 'l') {
       action = playAction('l');
+    } else if (key === 'p') {
+      const minutes = await ask(`session length in minutes (enter for ${PLAY_DEFAULT_MINUTES}): `);
+      const who = await ask(`who: a member name, names, or how many (enter for ${PLAY_DEFAULT_WHO}): `);
+      action = playAction('p', { who, minutes });
+      if (!action) return `cancelled, need 1 to ${PLAY_MAX_MINUTES} minutes and member names or a count up to ${PLAY_MAX_COUNT}`;
     } else {
       const verb = { r: 'run', w: 'wake', s: 'sleep' }[key];
-      write('');
       const name = await ask(`${verb} which member? `);
       if (!name) return 'cancelled, no member named';
       const job = key === 'r' ? await ask('job (optional, enter to skip): ') : '';
@@ -835,34 +911,43 @@ async function gmPlay(args = []) {
     }
     const shown = displayCommand(action.args);
     write('');
-    write(`this will run: ${shown}`);
+    write(`this will run: ${actionLabel(action)}`);
     if (action.confirm) {
-      write('this starts an agent. press y to go, any other key to cancel');
+      write('this starts agents. press y to go, any other key to cancel');
       queue.length = 0; // only a fresh key press can start an agent
       const { str } = await nextKey();
       if (String(str || '').toLowerCase() !== 'y') return `cancelled: ${shown}`;
     }
     write('');
-    const result = await runAtris(action.args);
+    const result = await runAtris(action.args, { stopAfterMs: action.stopAfterMs });
     write('');
-    const exit = result.code == null ? 'unknown' : result.code;
+    const exit = result.code == null ? 'stopped' : result.code;
     write(`${shown} finished with exit ${exit}${result.error ? ` (${result.error})` : ''}`);
     write('press any key to go back to the board');
     await nextKey();
     return `last: ${shown}`;
   };
 
+  let atBoard = false;
+  const refresh = setInterval(() => {
+    if (atBoard) draw();
+  }, REFRESH_MS);
+
   draw();
   for (;;) {
+    atBoard = true;
     const { str, key } = await nextKey();
+    atBoard = false;
     const name = (key && key.name) || str;
     if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
     if (name === 'space' || name === 'return' || name === 'enter') {
       draw();
-    } else if (['r', 'w', 's', 'l'].includes(name)) {
-      draw(await doAction(name));
+    } else if (['p', 'r', 'w', 's', 'l'].includes(name)) {
+      note = await doAction(name);
+      draw();
     }
   }
+  clearInterval(refresh);
   input.off('keypress', onKeypress);
   setRaw(false);
   input.pause();
