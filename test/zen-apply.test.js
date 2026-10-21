@@ -469,6 +469,62 @@ test('a clashing note from an unpushed commit stays on its backup branch, with n
   }
 });
 
+test('when one unsaved note was deleted upstream, the other notes still land', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/old.md', NOTES, 'old note');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    git(seed, 'rm', '-q', 'atris/old.md');
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 upstream'), 'drop old note');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/old.md', NOTES.replace('line 3', 'line 3 mine'));
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 1\n', 'line 1 mine\n'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    const todo = fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8');
+    assert.match(todo, /line 1 mine/);
+    assert.match(todo, /line 10 upstream/);
+    assert.equal(fs.existsSync(path.join(checkout, 'atris/old.md')), false);
+    const said = cli.stdout.match(/atris\/old\.md no longer fits the new changes; your copy is in (\S+)/);
+    assert.ok(said, cli.stdout);
+    assert.match(fs.readFileSync(said[1], 'utf8'), /line 3 mine/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('when an unpushed note was deleted upstream, the other notes from that commit still land', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/old.md', NOTES, 'old note');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    git(seed, 'rm', '-q', 'atris/old.md');
+    git(seed, 'commit', '-q', '-m', 'drop old note');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/old.md', NOTES.replace('line 3', 'line 3 from the job'));
+    write(checkout, 'atris/report.md', 'weekly\n');
+    git(checkout, 'add', '-A');
+    git(checkout, 'commit', '-q', '-m', 'weekly job');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/report.md'), 'utf8'), 'weekly\n');
+    assert.equal(fs.existsSync(path.join(checkout, 'atris/old.md')), false);
+    assert.match(cli.stdout, /kept 1 team note from it in the tree/);
+    const [kept] = branches(checkout, 'zen-backup/*-unpushed');
+    assert.match(cli.stdout, new RegExp(`atris/old\\.md no longer fits the new changes; yours is on ${kept}`));
+    assert.match(git(checkout, 'show', `${kept}:atris/old.md`), /line 3 from the job/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('git rewriting a side copy history file does not make the copy look freshly used', () => {
   const { base, checkout } = createRepo();
   try {
