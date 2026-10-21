@@ -1,8 +1,8 @@
 # YouTube Notes
 
-> **Status:** complete (the `atris youtube bench` scorecard is in review)
+> **Status:** complete (the `atris youtube bench` scorecard is shipped; the full bench passed 5 of 5 live on 2026-10-21)
 > **Created:** 2026-08-15
-> **Last Updated:** 2026-10-13
+> **Last Updated:** 2026-10-21
 
 ---
 
