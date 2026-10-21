@@ -1326,7 +1326,10 @@ async function gmCommand(...args) {
     return gmReplay([...args.slice(0, at), ...args.slice(at + 1)]);
   }
 
-  const member = wakeableMember(args);
+  // "gm <member>" wakes that member, but never when the ask is a read: any
+  // --board, --league, or --json request only looks.
+  const readOnly = hasExactFlag(args, '--board') || hasExactFlag(args, '--league') || hasFlagOrValue(args, '--json');
+  const member = readOnly ? null : wakeableMember(args);
   if (member) {
     const { isMemberAwake } = require('../lib/member-switches');
     if (!isMemberAwake(member)) {
