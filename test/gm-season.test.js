@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const season = require('../lib/gm-season');
-const { renderBoardLines, renderLeagueLines, pickClub, playAction, displayCommand } = require('../commands/gm');
+const { renderBoardLines, renderLeagueLines, renderReplayFrameLines, replayPlainLines, runReplay, pickClub, playAction, displayCommand } = require('../commands/gm');
 const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
 const HOUR = 60 * 60 * 1000;
@@ -346,7 +346,7 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(itext, /\(u to unstick\)/);
   assert.match(itext, /p play {2}r run {2}w wake {2}s sleep {2}u unstick/);
   assert.match(itext, /u unstick {2}l landing check/);
-  assert.match(itext, /g league {2}c switch club {2}enter refresh {2}q quit/);
+  assert.match(itext, /g league {2}c switch club {2}v replay {2}enter refresh {2}q quit/);
   assert.match(itext, /tidy the help {2}new$/m);
 });
 
@@ -769,5 +769,174 @@ test('gm --league --board prints the league once and exits 0', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^league \| 30 days \| 0 clubs$/m);
     assert.match(res.stdout, /no club finished 3 or more jobs/);
+  });
+});
+
+// ---- replay ---------------------------------------------------------------
+
+test('since parses spans, last-seen, and falls back to 12 hours', () => {
+  const seen = NOW - 30 * HOUR;
+  assert.deepEqual(season.parseSince('12h', { now: NOW }), { since: NOW - 12 * HOUR, label: '12h' });
+  assert.deepEqual(season.parseSince('2d', { now: NOW }), { since: NOW - 48 * HOUR, label: '2d' });
+  assert.deepEqual(season.parseSince('30m', { now: NOW }), { since: NOW - 30 * 60 * 1000, label: '30m' });
+  assert.deepEqual(season.parseSince('last-seen', { now: NOW, lastSeen: seen }), { since: seen, label: 'your last look' });
+  assert.deepEqual(season.parseSince(undefined, { now: NOW, lastSeen: seen }), { since: seen, label: 'your last look' });
+  assert.equal(season.parseSince(undefined, { now: NOW }).since, NOW - 12 * HOUR);
+  assert.equal(season.parseSince('last-seen', { now: NOW }).since, NOW - 12 * HOUR);
+  assert.equal(season.parseSince('soon', { now: NOW }), null);
+  assert.equal(season.parseSince('0h', { now: NOW }), null);
+});
+
+test('replay speed fits the window in about 75s within the per-play bounds', () => {
+  assert.equal(season.replayDelayMs(0), 0);
+  assert.equal(season.replayDelayMs(1), 1500);
+  assert.equal(season.replayDelayMs(2), 1500);
+  assert.equal(season.replayDelayMs(40), 1500);
+  assert.equal(season.replayDelayMs(100), 750);
+  assert.equal(season.replayDelayMs(500), 150);
+  assert.equal(season.replayDelayMs(5000), 150);
+  assert.equal(season.replayDelayMs(100, 2), 375);
+  for (const n of [1, 2, 7, 40, 100, 499, 501, 5000]) {
+    const per = season.replayDelayMs(n);
+    assert.ok(per >= 150, `${n} plays: ${per}ms each`);
+    assert.ok(per * n >= 1500, `${n} plays: ${per * n}ms total`);
+  }
+});
+
+function replayPlays() {
+  return [
+    play('builder', 'took', NOW - 10 * HOUR, { title: 'ship it', club: 'cli' }),
+    play('scout', 'took', NOW - 9 * HOUR, { title: 'look', club: 'web' }),
+    play('builder', 'landed', NOW - 8 * HOUR, { title: 'ship it', club: 'cli' }),
+    play('scout', 'dropped', NOW - 7 * HOUR, { title: 'look', club: 'web' }),
+    play('builder', 'sent_back', NOW - 6 * HOUR, { title: 'redo', club: 'cli' }),
+    play('builder', 'abandoned', NOW - 5 * HOUR, { title: 'old', club: 'cli' }),
+    play('scout', 'landed', NOW - 4 * HOUR, { title: 'look again', club: 'web' }),
+    play('builder', 'landed', NOW - 3 * HOUR, { title: 'ship more', club: 'cli' }),
+  ];
+}
+
+test('a replay frame holds running tallies, a six-play ticker, and a +1 on a landing', () => {
+  const plays = replayPlays();
+  const first = season.replayFrame(plays, 0);
+  assert.deepEqual(first.rows.map(r => r.key), ['builder', 'scout']);
+  assert.deepEqual(first.rows.map(r => [r.landed, r.dropped, r.sent_back, r.abandoned]), [[0, 0, 0, 0], [0, 0, 0, 0]]);
+  assert.equal(first.ticker.length, 1);
+  assert.equal(first.at, NOW - 10 * HOUR);
+
+  const landing = season.replayFrame(plays, 2);
+  assert.equal(landing.rows[0].landed, 1);
+  assert.equal(landing.rows[0].bump, true);
+  assert.equal(landing.rows[1].bump, false);
+
+  const last = season.replayFrame(plays, plays.length - 1);
+  assert.deepEqual(last.rows.map(r => [r.key, r.landed, r.dropped, r.sent_back, r.abandoned]), [['builder', 2, 0, 1, 1], ['scout', 1, 1, 0, 0]]);
+  assert.equal(last.ticker.length, 6);
+  assert.equal(last.ticker[0].newest, true);
+  assert.equal(last.ticker[0].title, 'ship more');
+  assert.ok(last.ticker.slice(1).every(p => !p.newest));
+  assert.equal(last.index, 7);
+  assert.equal(last.total, 8);
+
+  const clubs = season.replayFrame(plays, plays.length - 1, { byClub: true });
+  assert.deepEqual(clubs.rows.map(r => [r.key, r.landed]), [['cli', 2], ['web', 1]]);
+
+  const empty = season.replayFrame([], 0);
+  assert.deepEqual([empty.rows, empty.ticker, empty.at, empty.total], [[], [], null, 0]);
+});
+
+test('the replay summary totals the window and names the jams', () => {
+  const plays = replayPlays();
+  assert.equal(season.replaySummary(plays, { since: NOW - 12 * HOUR, now: NOW, stuck: [{ member: 'builder' }] }),
+    'night total: 3 landed, 1 dropped, 1 sent back, 1 abandoned, 1 stuck jam at builder');
+  assert.equal(season.replaySummary(plays, { since: NOW - 3 * 24 * HOUR, now: NOW, stuck: [] }),
+    'window total: 3 landed, 1 dropped, 1 sent back, 1 abandoned, no stuck jams');
+});
+
+test('a replay frame renders a clock, tallies with +1, and the newest play marked', () => {
+  const plays = replayPlays();
+  const frame = season.replayFrame(plays, 2);
+  const lines = renderReplayFrameLines(frame, { since: NOW - 12 * HOUR, now: NOW, interactive: true });
+  const text = lines.join('\n');
+  assert.equal(lines[0], 'replaying 12:00 am to now, at 4:00 am (play 3 of 8)');
+  assert.match(text, /^ {2}name +landed +dropped +sent back +abandoned$/m);
+  assert.match(text, /^ {2}builder +1 +0 +0 +0 +\+1$/m);
+  assert.match(text, /^ {2}scout +0 +0 +0 +0$/m);
+  assert.match(text, /^> 4:00 am +builder landed +ship it$/m);
+  assert.match(text, /^ {2}2:00 am +builder took +ship it$/m);
+  assert.match(text, /space pause {2}f faster {2}q quit/);
+  assert.doesNotMatch(text, /\u001b/);
+  const paused = renderReplayFrameLines(frame, { since: NOW - 12 * HOUR, now: NOW, paused: true })[0];
+  assert.match(paused, /, paused\)$/);
+});
+
+test('plain replay lines list every play in order', () => {
+  const lines = replayPlainLines(replayPlays(), { now: NOW });
+  assert.equal(lines.length, 8);
+  assert.match(lines[0], /^2:00 am +builder took +ship it$/);
+  assert.match(lines[4], /^6:00 am +builder sent back +redo$/);
+  assert.match(lines[5], /^7:00 am +builder abandoned +old$/);
+  const league = replayPlainLines(replayPlays(), { now: NOW, byClub: true });
+  assert.match(league[1], /^3:00 am +web: scout took +look$/);
+});
+
+test('runReplay draws every frame in place and q stops it early', async () => {
+  const plays = replayPlays();
+  let out = '';
+  const done = await runReplay({ plays, since: NOW - 12 * HOUR, now: NOW, speed: 1000 }, {
+    write: (text) => { out += text; },
+    poll: () => [],
+    interactive: false,
+  });
+  assert.equal(done, 'done');
+  assert.ok(out.startsWith('\u001b[2J'));
+  assert.equal((out.match(/\u001b\[H/g) || []).length, plays.length + 1);
+  assert.match(out, /play 8 of 8/);
+  let calls = 0;
+  let quitOut = '';
+  const quit = await runReplay({ plays, since: NOW - 12 * HOUR, now: NOW }, {
+    write: (text) => { quitOut += text; },
+    poll: () => (++calls === 2 ? ['q'] : []),
+    interactive: false,
+  });
+  assert.equal(quit, 'quit');
+  assert.doesNotMatch(quitOut, /play 8 of 8/);
+});
+
+test('gm replay --plain prints plays from a real db in order, then the total', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('T1', 'ship the board', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR);
+    t.task('T2', 'too old to replay', 'archived', 'builder', now - 5 * 24 * HOUR, now - 6 * 24 * HOUR);
+    t.event('E1', 'T1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
+    t.event('E2', 'T1', 'autoland', 'completed', { action: 'merged' }, now - HOUR);
+    t.event('E3', 'T2', 'builder', 'claimed', { claimed_by: 'builder' }, now - 5 * 24 * HOUR);
+    t.close();
+    for (const args of [['gm', 'replay', '--since', '2d', '--plain', '--workspace', dir], ['gm', 'replay', '--since', '2d', '--workspace', dir]]) {
+      const res = runCli(dir, t.dbPath, args);
+      assert.equal(res.status, 0, res.stderr);
+      const lines = res.stdout.trim().split('\n');
+      assert.match(lines[0], /^replay of .+ since .+ \(2d\), 2 plays$/);
+      assert.match(lines[1], /builder took +ship the board$/);
+      assert.match(lines[2], /builder landed +ship the board$/);
+      assert.equal(lines[3], 'window total: 1 landed, 0 dropped, 0 sent back, 0 abandoned, no stuck jams');
+      assert.doesNotMatch(res.stdout, /too old to replay|\u001b/);
+    }
+  });
+});
+
+test('gm replay with nothing in the window says so and exits 0', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    t.close();
+    const res = runCli(dir, t.dbPath, ['gm', 'replay', '--since', '12h', '--plain', '--workspace', dir]);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout.trim(), /^nothing happened since .+(am|pm)$/);
+    const bad = runCli(dir, t.dbPath, ['gm', 'replay', '--since', 'soon', '--workspace', dir]);
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /--since takes a span/);
   });
 });

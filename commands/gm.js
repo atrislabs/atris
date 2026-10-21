@@ -1175,7 +1175,7 @@ function renderReplayFrameLines(frame, { since, now, byClub = false, speed = 1, 
   const state = paused ? ', paused' : (speed !== 1 ? `, ${speed}x` : '');
   lines.push(`replaying ${clockLabel(since, now)} to now, at ${at} (play ${frame.index + 1} of ${frame.total}${state})`);
   lines.push('');
-  lines.push(`  ${pad(byClub ? 'club' : 'name', 20)}${pad('landed', 8)}${pad('dropped', 9)}${pad('sent back', 11)}${pad('abandoned', 11)}`);
+  lines.push(`  ${pad(byClub ? 'club' : 'name', 20)}${pad('landed', 8)}${pad('dropped', 9)}${pad('sent back', 11)}abandoned`);
   for (const row of frame.rows) {
     lines.push(`  ${pad(row.key, 20)}${pad(row.landed, 8)}${pad(row.dropped, 9)}${pad(row.sent_back, 11)}${pad(row.abandoned, 11)}${row.bump ? '+1' : ''}`.replace(/\s+$/, ''));
   }
@@ -1273,7 +1273,9 @@ async function gmReplay(args = []) {
       ...replayPlainLines(model.plays, { now, byClub }),
       summary,
     ];
-    process.stdout.write(`${lines.join('\n')}\n`);
+    // wait for the write to drain: the caller exits right after, and a pipe
+    // write can still be in flight
+    await new Promise(resolve => process.stdout.write(`${lines.join('\n')}\n`, resolve));
     return;
   }
   const readline = require('readline');
