@@ -337,7 +337,7 @@ function fixtureBoard({ seen = null, lastSeen = NOW - 2 * 24 * HOUR, claims } = 
 }
 
 test('board renders one lowercase screen with recap, stuck, last plays, and key', () => {
-  const lines = renderBoardLines(fixtureBoard());
+  const lines = renderBoardLines(fixtureBoard(), { width: 140 });
   const text = lines.join('\n');
   assert.ok(lines.length <= 40, `board is ${lines.length} rows`);
   assert.equal(lines[0], 'front office | demo | week of oct 19');
@@ -349,8 +349,8 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(text, /^stuck with the player, claimed with no move for 6h or more$/m);
   assert.match(text, /^ {2}mapper +4d +CLI-8 +map the old flags$/m);
   assert.doesNotMatch(text, /CLI-9 +write the release note/);
-  assert.match(text, /^ {2}11:00 am +builder dropped +1h +tidy the help$/m);
-  assert.match(text, /^ {2}8:00 am +builder abandoned +5h +old idea$/m);
+  assert.match(text, /^ {2}11:00 am +builder +dropped +1h +tidy the help$/m);
+  assert.match(text, /^ {2}8:00 am +builder +abandoned +5h +old idea$/m);
   assert.doesNotMatch(text, /box scores/);
   assert.match(text, /^ {2}CLI-7 +write the docs$/m);
   assert.match(text, /stricter than the website rating on purpose \(drops and abandons count\)/);
@@ -523,7 +523,7 @@ test('gm --board reads a real task db and prints honest records', () => {
     const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^front office \| /m);
-    assert.match(res.stdout, /, 1 abandoned, 1 waiting on review, 1 stuck$/m);
+    assert.match(res.stdout, /, 1 abandoned, 1 waiting on review,\n {2}1 stuck$/m);
     assert.match(res.stdout, /^since you looked \(2d ago\): 2 landed, 1 dropped, 0 sent back, 1 abandoned$/m);
     // T1 and T7 landed, T4 dropped, T6 abandoned, T8 is in review and pending
     assert.match(res.stdout, /^ {2}builder +80 +kadk +landed 2 of 4 +waiting on review 2h$/m);
@@ -535,8 +535,8 @@ test('gm --board reads a real task db and prints honest records', () => {
     assert.match(stuckBlock, /a claim nobody touched/);
     assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 0 +stuck 3d$/m);
     assert.match(res.stdout, /^ {2}scout +3d +[A-Z0-9]+-\d+ +a claim nobody touched$/m);
-    assert.match(res.stdout, /builder landed +2h +ship the board$/m);
-    assert.match(res.stdout, /builder dropped +1h +abandoned job$/m);
+    assert.match(res.stdout, /builder +landed +2h +ship the board$/m);
+    assert.match(res.stdout, /builder +dropped +1h +abandoned job$/m);
     assert.doesNotMatch(res.stdout, /other workspace job/);
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
     // --board reads the last look but never moves it, and never writes into the workspace.
@@ -896,8 +896,8 @@ test('a replay frame renders a clock, tallies with +1, and the newest play marke
   assert.match(text, /^ {2}name +landed +dropped +sent back +abandoned$/m);
   assert.match(text, /^ {2}builder +1 +0 +0 +0 +\+1$/m);
   assert.match(text, /^ {2}scout +0 +0 +0 +0$/m);
-  assert.match(text, /^> 4:00 am +builder landed +ship it$/m);
-  assert.match(text, /^ {2}2:00 am +builder took +ship it$/m);
+  assert.match(text, /^> 4:00 am +builder +landed +ship it$/m);
+  assert.match(text, /^ {2}2:00 am +builder +took +ship it$/m);
   assert.match(text, /space pause {2}f faster {2}q quit/);
   assert.doesNotMatch(text, /\u001b/);
   const paused = renderReplayFrameLines(frame, { since: NOW - 12 * HOUR, now: NOW, paused: true })[0];
@@ -907,11 +907,11 @@ test('a replay frame renders a clock, tallies with +1, and the newest play marke
 test('plain replay lines list every play in order', () => {
   const lines = replayPlainLines(replayPlays(), { now: NOW });
   assert.equal(lines.length, 8);
-  assert.match(lines[0], /^2:00 am +builder took +ship it$/);
-  assert.match(lines[4], /^6:00 am +builder sent back +redo$/);
-  assert.match(lines[5], /^7:00 am +builder abandoned +old$/);
+  assert.match(lines[0], /^2:00 am +builder +took +ship it$/);
+  assert.match(lines[4], /^6:00 am +builder +sent back +redo$/);
+  assert.match(lines[5], /^7:00 am +builder +abandoned +old$/);
   const league = replayPlainLines(replayPlays(), { now: NOW, byClub: true });
-  assert.match(league[1], /^3:00 am +web: scout took +look$/);
+  assert.match(league[1], /^3:00 am +web: scout +took +look$/);
 });
 
 test('runReplay draws every frame in place and q stops it early', async () => {
@@ -953,8 +953,8 @@ test('gm replay --plain prints plays from a real db in order, then the total', (
       assert.equal(res.status, 0, res.stderr);
       const lines = res.stdout.trim().split('\n');
       assert.match(lines[0], /^replay of .+ since .+ \(2d\), 2 plays$/);
-      assert.match(lines[1], /builder took +ship the board$/);
-      assert.match(lines[2], /builder landed +ship the board$/);
+      assert.match(lines[1], /builder +took +ship the board$/);
+      assert.match(lines[2], /builder +landed +ship the board$/);
       assert.equal(lines[3], 'window total: 1 landed, 0 dropped, 0 sent back, 0 abandoned, no stuck jams');
       assert.doesNotMatch(res.stdout, /too old to replay|\u001b/);
     }
@@ -1291,4 +1291,77 @@ test('roster engine reads the declared roster, never what is installed', () => {
   assert.equal(season.rosterEngine('builder', '/w', opts({ role: 'Builder', hasCard: false })), null);
   // no section for the job: nothing recorded
   assert.equal(season.rosterEngine('validator', '/w', opts({ role: 'Validator' })), null);
+});
+
+// ---- long names and terminal width -------------------------------------------
+
+const LONG = 'a-really-long-member-name-that-never-ends';
+const MID = 'chat-experience-lead';
+const LONG_TITLE = 'a title long enough that it must give way before any name, outcome word, or hour column does on a narrow screen';
+
+function longBoard() {
+  const rows = [
+    play(MID, 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 4 * HOUR, title: LONG_TITLE }),
+    play(LONG, 'abandoned', NOW - 2 * HOUR, { claimed_at: NOW - 128 * HOUR, title: LONG_TITLE }),
+    play(LONG, 'sent_back', NOW - HOUR, { title: LONG_TITLE }),
+  ];
+  return season.seasonBoard({
+    workspace_name: 'demo',
+    now: NOW,
+    outcomes: rows,
+    claims: [{ task_id: 'T1', ref: 'OBL-2371', title: LONG_TITLE, member: LONG, last_event_at: NOW - 3 * 24 * HOUR }],
+    reviews: [{ task_id: 'T2', ref: 'OBL-2302', title: LONG_TITLE, member: MID, since: NOW - 5 * 24 * HOUR }],
+    asleep: [],
+    open_tasks: [{ ref: 'OBL-9', title: LONG_TITLE, created_at: 1, owner: LONG }],
+    missions: [],
+  });
+}
+
+test('names are sized to the longest shown, capped at 24, and marked when shortened', () => {
+  const text = renderBoardLines(longBoard(), { width: 100 }).join('\n');
+  const short = `${LONG.slice(0, 21)}...`;
+  assert.match(text, new RegExp(`^ {2}${MID} +\\d+`, 'm'), 'roster keeps a 20 letter name whole');
+  assert.match(text, new RegExp(`^ {2}${short.replace(/\./g, '\\.')} +rookie`, 'm'), 'roster');
+  assert.match(text, new RegExp(`^ {2}${MID} +5d +OBL-2302 +a title`, 'm'), 'waiting on review');
+  assert.match(text, new RegExp(`^ {2}${short.replace(/\./g, '\\.')} +3d +OBL-2371 +a title`, 'm'), 'stuck');
+  assert.doesNotMatch(text, /chat-experience-l /);
+  assert.doesNotMatch(text, new RegExp(`${LONG.slice(0, 22)}[^.]`));
+});
+
+test('the outcome word in last plays is never cut; the title gives way', () => {
+  const lines = renderBoardLines(longBoard(), { width: 100 });
+  const plays = lines.slice(lines.indexOf('last plays') + 1, lines.indexOf('last plays') + 4).join('\n');
+  assert.match(plays, / sent back +a title/);
+  assert.match(plays, / abandoned 126h +a title/);
+  assert.match(plays, / landed +1h +a title/);
+  assert.match(plays, /\.\.\.$/m);
+});
+
+test('every board, league, card, and replay line fits the terminal width', () => {
+  const widthOf = line => [...line].length;
+  for (const width of [100, 72]) {
+    const board = renderBoardLines(longBoard(), { width, interactive: true });
+    assert.ok(board.every(l => widthOf(l) <= width), `board at ${width}: ${board.find(l => widthOf(l) > width)}`);
+  }
+  const leagueRows = season.leagueRows([
+    { root: `/w/${LONG}`, outcomes: [play(LONG, 'landed', NOW - HOUR), play(LONG, 'landed', NOW - 2 * HOUR), play(LONG, 'landed', NOW - 3 * HOUR)], claims: [] },
+  ], NOW);
+  const league = renderLeagueLines({ now: NOW, days: 30, rows: leagueRows, hidden: 0 }, { width: 100 });
+  assert.ok(league.every(l => widthOf(l) <= 100), league.find(l => widthOf(l) > 100));
+  assert.match(league.join('\n'), / 99$/m, 'the best player rating always shows');
+  assert.match(league.join('\n'), /\.\.\. 99$/m, 'a long best player name gives way first');
+
+  const card = season.memberCard(LONG, { ...cardSeason(), outcomes: [play(LONG, 'abandoned', NOW - HOUR, { title: LONG_TITLE })] }, { now: NOW });
+  const cardLines = renderCardLines(card, { width: 80 });
+  assert.ok(cardLines.every(l => widthOf(l) <= 80), cardLines.find(l => widthOf(l) > 80));
+  assert.match(cardLines.join('\n'), / abandoned +a title/);
+
+  const plays = [play(LONG, 'sent_back', NOW - HOUR, { title: LONG_TITLE, club: 'club' }), play(MID, 'landed', NOW - 30 * 60 * 1000, { title: LONG_TITLE, club: 'club' })];
+  const frame = renderReplayFrameLines(season.replayFrame(plays, 1), { since: NOW - 12 * HOUR, now: NOW, width: 90 });
+  assert.ok(frame.every(l => widthOf(l) <= 90), frame.find(l => widthOf(l) > 90));
+  assert.match(frame.join('\n'), / sent back +a title/);
+  assert.match(frame.join('\n'), new RegExp(`^ {2}${MID} +1 `, 'm'));
+  const plain = replayPlainLines(plays, { now: NOW, width: 90 });
+  assert.ok(plain.every(l => widthOf(l) <= 90), plain.find(l => widthOf(l) > 90));
+  assert.match(plain[0], /\.\.\. +sent back +a title/);
 });
