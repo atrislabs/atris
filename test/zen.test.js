@@ -114,7 +114,9 @@ test('leftovers, drift and stray code each break zen', () => {
     // nobody has switched or committed in the idle copy for an hour
     const idleGit = path.resolve(base, 'idle', git(path.join(base, 'idle'), 'rev-parse', '--git-dir'));
     const hourAgo = new Date(Date.now() - 3600000);
-    for (const f of ['HEAD', 'logs/HEAD']) fs.utimesSync(path.join(idleGit, f), hourAgo, hourAgo);
+    const idleLog = path.join(idleGit, 'logs', 'HEAD');
+    const epoch = Math.floor(hourAgo.getTime() / 1000);
+    fs.writeFileSync(idleLog, fs.readFileSync(idleLog, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
     fs.writeFileSync(path.join(base, 'busy', 'wip.js'), 'wip\n');
     // stray code edit
     fs.writeFileSync(path.join(checkout, 'app.js'), 'edited\n');

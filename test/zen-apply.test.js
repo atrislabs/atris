@@ -43,6 +43,16 @@ function commit(cwd, file, content, message) {
   git(cwd, 'commit', '-q', '-m', message);
 }
 
+// Make a side copy's history say its last switch or commit was at `when`.
+function ageHistory(copy, when) {
+  const gitDir = path.resolve(copy, git(copy, 'rev-parse', '--git-dir'));
+  const log = path.join(gitDir, 'logs', 'HEAD');
+  const epoch = Math.floor(when.getTime() / 1000);
+  fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
+  for (const f of [log, path.join(gitDir, 'HEAD')]) fs.utimesSync(f, when, when);
+  return gitDir;
+}
+
 const NOTES = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
 
 function createRepo() {
@@ -218,10 +228,8 @@ test('atris zen saves a side copy nobody touched in days, then puts it away', ()
     write(old, 'wip.js', 'forgotten\n');
     write(old, 'app.js', 'half done\n');
     const days = new Date(Date.now() - 5 * 86400000);
-    const gitDir = path.resolve(old, git(old, 'rev-parse', '--git-dir'));
-    for (const f of [path.join(old, 'wip.js'), path.join(old, 'app.js'), path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')]) {
-      fs.utimesSync(f, days, days);
-    }
+    for (const f of [path.join(old, 'wip.js'), path.join(old, 'app.js')]) fs.utimesSync(f, days, days);
+    ageHistory(old, days);
 
     const cli = zen(checkout, 30);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
@@ -456,6 +464,29 @@ test('a clashing note from an unpushed commit stays on its backup branch, with n
     assert.match(cli.stdout, new RegExp(`kept the new atris/TODO\\.md; yours is on ${kept}`));
     assert.match(git(checkout, 'show', `${kept}:atris/TODO.md`), /line 5 from the job/);
     assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('git rewriting a side copy history file does not make the copy look freshly used', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const old = path.join(base, 'old');
+    git(checkout, 'worktree', 'add', '-q', old, '-b', 'old-branch');
+    write(old, 'wip.js', 'forgotten\n');
+    const days = new Date(Date.now() - 5 * 86400000);
+    fs.utimesSync(path.join(old, 'wip.js'), days, days);
+    const gitDir = ageHistory(old, days);
+    // Routine git upkeep (gc, reflog expire) rewrites the file without a new entry.
+    const now = new Date();
+    for (const f of ['HEAD', 'logs/HEAD']) fs.utimesSync(path.join(gitDir, f), now, now);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /used in the last 30 minutes/);
+    assert.match(cli.stdout, /saved 1 side copy untouched for 3 days to zen-backup\/ and put it away/);
+    assert.ok(!fs.existsSync(old));
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
