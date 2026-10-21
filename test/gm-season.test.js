@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const season = require('../lib/gm-season');
-const { renderBoardLines, playAction, displayCommand } = require('../commands/gm');
+const { renderBoardLines, renderLeagueLines, pickClub, playAction, displayCommand } = require('../commands/gm');
 const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
 const HOUR = 60 * 60 * 1000;
@@ -314,7 +314,8 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(itext, /refreshes every 10s/);
   assert.match(itext, /\(u to unstick\)/);
   assert.match(itext, /p play {2}r run {2}w wake {2}s sleep {2}u unstick/);
-  assert.match(itext, /l landing check {2}enter refresh {2}q quit/);
+  assert.match(itext, /u unstick {2}l landing check/);
+  assert.match(itext, /g league {2}c switch club {2}enter refresh {2}q quit/);
   assert.match(itext, /tidy the help {2}new$/m);
 });
 
@@ -495,5 +496,150 @@ test('jobs count claim episodes, so an old claim landing beside a new open one i
     const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^ {2}builder +rookie +k +landed 1 of 2 +on a job$/m);
+  });
+});
+
+// ---- league ---------------------------------------------------------------
+
+test('club roots leave out temp scratch runs and agent worktrees', () => {
+  assert.equal(season.isClubRoot('/Users/k/arena/project-obelisk'), true);
+  assert.equal(season.isClubRoot('/Users/k/arena/math-lab/families/007-records'), true);
+  assert.equal(season.isClubRoot('/private/tmp/pr-runs/r1'), false);
+  assert.equal(season.isClubRoot('/private/tmp/push-race/fleet'), false);
+  assert.equal(season.isClubRoot('/private/tmp/atris-approve-MMPK'), false);
+  assert.equal(season.isClubRoot('/tmp'), false);
+  assert.equal(season.isClubRoot(path.join(os.tmpdir(), 'atris-review-lane-test-abc')), false);
+  assert.equal(season.isClubRoot('/Users/k/arena/.agent-worktrees/atris-cli/architect-job-20261014'), false);
+  assert.equal(season.isClubRoot('/Users/k/arena/atrisos-backend/.agent-worktrees/prod-ready'), false);
+  assert.equal(season.isClubRoot('/Users/k/arena/atris-cli/.claude/worktrees/agent-a1'), false);
+  assert.equal(season.isClubRoot(''), false);
+  assert.equal(season.isClubRoot('relative/path'), false);
+});
+
+function club(root, outcomes = [], { claims = [], lastEventAt = 0 } = {}) {
+  return { root, outcomes, claims, last_event_at: lastEventAt };
+}
+
+test('league rows rate each club over all its jobs and name the best non-rookie', () => {
+  const outcomes = [
+    play('ace', 'landed', NOW - 3 * HOUR), play('ace', 'landed', NOW - 4 * HOUR), play('ace', 'landed', NOW - 5 * HOUR),
+    play('mid', 'landed', NOW - 40 * HOUR), play('mid', 'dropped', NOW - 41 * HOUR), play('mid', 'dropped', NOW - 6 * 24 * HOUR),
+    play('kid', 'landed', NOW - 2 * HOUR),
+  ];
+  const [row] = season.leagueRows([club('/w/alpha', outcomes, {
+    claims: [claim('mid', 2 * 24 * HOUR), claim('ace', HOUR)],
+    lastEventAt: NOW - 20 * 60 * 1000,
+  })], NOW);
+  assert.equal(row.club, 'alpha');
+  assert.equal(row.ovr, Math.round(60 + 39 * 5 / 7));
+  assert.equal(row.landed_week, 5);
+  assert.equal(row.landed_30d, 5);
+  assert.equal(row.dropped_30d, 2);
+  assert.equal(row.stuck, 1);
+  assert.equal(row.last_play, '20m');
+  assert.deepEqual(row.best_player, { name: 'ace', ovr: 99 });
+});
+
+test('league sorts by landed this week, then ovr with rookies last, then recent activity', () => {
+  const landedNow = n => Array.from({ length: n }, (_, i) => play(`m${i}`, 'landed', NOW - (i + 1) * HOUR));
+  const strong = [...[1, 2, 3].map(i => play('a', 'landed', MONDAY - i * 24 * HOUR))];
+  const weak = [play('b', 'landed', MONDAY - 2 * HOUR), play('b', 'dropped', MONDAY - 3 * HOUR), play('b', 'dropped', MONDAY - 4 * HOUR)];
+  const rows = season.leagueRows([
+    club('/w/rookie-old', [], { lastEventAt: NOW - 9 * 24 * HOUR }),
+    club('/w/weak', weak),
+    club('/w/busy', landedNow(2)),
+    club('/w/strong', strong),
+    club('/w/rookie-new', [], { lastEventAt: NOW - HOUR }),
+  ], NOW);
+  assert.deepEqual(rows.map(r => r.club), ['busy', 'strong', 'weak', 'rookie-new', 'rookie-old']);
+  assert.equal(rows[0].landed_week, 2);
+  assert.equal(rows[3].ovr, null);
+  assert.equal(rows[3].best_player, null);
+});
+
+test('league last play shows the newest task event in minutes, hours, or days', () => {
+  const rows = season.leagueRows([
+    club('/w/a', [play('x', 'took', NOW - 3 * 24 * HOUR)], { lastEventAt: NOW - 4 * 60 * 1000 }),
+    club('/w/b', [play('x', 'took', NOW - 7 * HOUR)], { lastEventAt: NOW - 4 * 24 * HOUR }),
+    club('/w/c', [], { lastEventAt: NOW - 4 * 24 * HOUR }),
+    club('/w/d', [], {}),
+  ], NOW);
+  const byClub = Object.fromEntries(rows.map(r => [r.club, r.last_play]));
+  assert.deepEqual(byClub, { a: '4m', b: '7h', c: '4d', d: '-' });
+});
+
+test('clubs with the same folder name get their parent folder in front', () => {
+  const rows = season.leagueRows([club('/w/one/referee'), club('/w/two/referee'), club('/w/solo')], NOW);
+  assert.deepEqual(rows.map(r => r.club).sort(), ['one/referee', 'solo', 'two/referee']);
+});
+
+test('league renders a header, one row per club, a cap, and the key', () => {
+  const rows = season.leagueRows([
+    club('/w/project-obelisk', [play('integrator', 'landed', NOW - HOUR), play('integrator', 'landed', NOW - 2 * HOUR), play('integrator', 'landed', NOW - 3 * HOUR)], { lastEventAt: NOW - 4 * 60 * 1000 }),
+    ...Array.from({ length: 24 }, (_, i) => club(`/w/quiet-${i}`, [], { lastEventAt: NOW - (i + 1) * 24 * HOUR })),
+  ], NOW);
+  const lines = renderLeagueLines({ now: NOW, days: 30, rows, error: null });
+  const text = lines.join('\n');
+  assert.equal(lines[0], 'league | 30 days | 25 clubs');
+  assert.match(text, /^ {2}club +ovr +week +30d +drop +stuck +last +best player$/m);
+  assert.match(text, /^ {2}project-obelisk +99 +3 +3 +0 +0 +4m +integrator 99$/m);
+  assert.match(text, /^ {2}quiet-0 +rookie +0 +0 +0 +0 +1d +-$/m);
+  assert.match(text, /and 5 more quiet clubs/);
+  assert.ok(lines.length <= 40, `league is ${lines.length} rows`);
+  assert.doesNotMatch(text, /—/);
+  assert.match(renderLeagueLines({ now: NOW, days: 30, rows, error: null }, { interactive: true }).join('\n'), /g back to the club {2}c switch club/);
+});
+
+test('c picks a club by league name or folder name', () => {
+  const rows = [{ club: 'one/referee', root: '/w/one/referee' }, { club: 'atris-cli', root: '/w/atris-cli' }];
+  assert.equal(pickClub('Atris-CLI', rows), '/w/atris-cli');
+  assert.equal(pickClub('one/referee', rows), '/w/one/referee');
+  assert.equal(pickClub('referee', rows), '/w/one/referee');
+  assert.equal(pickClub('nope', rows), null);
+  assert.equal(pickClub('', rows), null);
+});
+
+test('league loader groups plays by workspace and skips folders that are not clubs', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const alpha = path.join(dir, 'alpha');
+    const beta = path.join(dir, 'beta');
+    const scratch = path.join(dir, 'scratch');
+    for (const folder of [alpha, beta, scratch]) fs.mkdirSync(folder, { recursive: true });
+    const now = Date.now();
+    t.task('A1', 'alpha job', 'archived', 'ace', now - 3 * HOUR, now - 4 * HOUR, alpha);
+    t.task('B1', 'beta job', 'claimed', 'bee', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR, beta);
+    t.task('S1', 'scratch job', 'archived', 'ace', now - 3 * HOUR, now - 4 * HOUR, scratch);
+    t.event('E1', 'A1', 'ace', 'claimed', { claimed_by: 'ace' }, now - 3 * HOUR, alpha);
+    t.event('E2', 'A1', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, now - HOUR, alpha);
+    t.event('E3', 'B1', 'bee', 'claimed', { claimed_by: 'bee' }, now - 3 * 24 * HOUR, beta);
+    t.event('E4', 'S1', 'autoland', 'completed', { action: 'merged' }, now - HOUR, scratch);
+    t.event('E5', 'A1', 'ace', 'gone', {}, now - 40 * 24 * HOUR, path.join(dir, 'old'));
+    t.close();
+    const league = season.loadLeague({ dbPath: t.dbPath, now, isClub: root => root !== scratch });
+    const board = season.leagueBoard(league);
+    assert.deepEqual(board.rows.map(r => r.club), ['alpha', 'beta']);
+    assert.equal(board.rows[0].landed_30d, 1);
+    assert.equal(board.rows[0].last_play, '1h');
+    assert.equal(board.rows[1].stuck, 1);
+    assert.equal(board.rows[1].last_play, '3d');
+  });
+});
+
+test('gm --league --board prints the league once and exits 0', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    t.close();
+    const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--league', '--board'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, ATRIS_TASKS_DB: t.dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /^league \| 30 days \| 0 clubs$/m);
+    assert.match(res.stdout, /no project folder had task events/);
   });
 });
