@@ -36,6 +36,10 @@ function showHelp() {
   console.log('  landed (accepted or merged), dropped (claim let go), or sent back.');
   console.log('  ovr = round(60 + 39 * landed / finished), rookie under 3 finished.');
   console.log('  Drops count, so this is stricter than the website rating on purpose.');
+  console.log('  "on a job" means the claimed task moved in the last 6 hours; a claim');
+  console.log('  that sat longer shows as stuck, with its age and task id.');
+  console.log('  The line above the roster recaps what happened since your last look');
+  console.log('  (saved in .atris/state/gm-last-seen.json by the playable board only).');
   console.log('');
   console.log('  In a terminal, gm is playable and refreshes every 10 seconds:');
   console.log('    p  send the team out for a session (asks minutes, who, then y)');
@@ -47,6 +51,8 @@ function showHelp() {
   console.log('    r  run a member, with an optional job (asks y first)');
   console.log('    w  wake a member (asks y first)');
   console.log('    s  put a member to sleep');
+  console.log('    u  unstick: let go of a stuck claim (asks y first)');
+  console.log('         atris task release <id> --as <member holding it>');
   console.log('    l  landing check (atris land --dry-run)');
   console.log('    enter or space  refresh,  q  quit');
   console.log('  Every key shows the exact command before it runs.');
@@ -800,10 +806,26 @@ function playSession({ who = '', minutes = '' } = {}) {
   return { args: ['member', 'wake', ...words], confirm: true, stopAfterMs: span * 60 * 1000, minutes: span };
 }
 
-// What each key runs. p, r and w start agents, so they ask for y first.
-function playAction(key, { name = '', job = '', who = '', minutes = '' } = {}) {
+// u lets go of a stuck claim with the real release verb. `atris task release`
+// only works as the member holding the claim, so it runs --as that member,
+// and the drop lands on the member that held the job.
+function unstickAction(answer, stuck = []) {
+  const wanted = String(answer || '').trim().toLowerCase();
+  if (!wanted) return null;
+  const row = stuck.find(s => [s.ref, s.task_id].filter(Boolean).some(id => String(id).toLowerCase() === wanted));
+  if (!row || !MEMBER_NAME_RE.test(row.member)) return null;
+  return {
+    args: ['task', 'release', row.ref || row.task_id, '--as', row.member],
+    confirm: true,
+    confirmText: 'this releases the claim and counts a drop for that member',
+  };
+}
+
+// What each key runs. p, r, w and u ask for y first.
+function playAction(key, { name = '', job = '', who = '', minutes = '', stuck = [] } = {}) {
   if (key === 'l') return { args: ['land', '--dry-run'], confirm: false };
   if (key === 'p') return playSession({ who, minutes });
+  if (key === 'u') return unstickAction(name, stuck);
   if (!MEMBER_NAME_RE.test(name)) return null;
   if (key === 'r') return { args: ['member', 'run', name, ...(job ? [job] : [])], confirm: true };
   if (key === 'w') return { args: ['member', 'wake', name], confirm: true };
@@ -831,15 +853,22 @@ async function gmPlay(args = []) {
 
   readline.emitKeypressEvents(input);
 
+  // The recap compares against the look before this session, pinned for the
+  // whole session; this session's look is saved on open and on quit.
+  const season = require('../lib/gm-season');
+  const lastSeen = season.readLastSeen(workspaceRoot);
+  season.writeLastSeen(workspaceRoot);
+
   let seen = null;
   let note = '';
+  let stuck = [];
   const draw = () => {
     output.write('\x1b[2J\x1b[H');
     try {
-      const board = loadBoard(workspaceRoot, { seen });
+      const board = loadBoard(workspaceRoot, { seen, lastSeen });
       seen = new Set(board.last_plays.map(play => play.id));
+      stuck = board.stuck || [];
       write(renderBoardLines(board, { interactive: true }).join('\n'));
-      write(`  board refreshes every ${REFRESH_MS / 1000}s`);
     } catch (err) {
       write(`could not load the board: ${err.message}`);
     }
@@ -913,6 +942,11 @@ async function gmPlay(args = []) {
       const who = await ask(`who: a member name, names, or how many (enter for ${PLAY_DEFAULT_WHO}): `);
       action = playAction('p', { who, minutes });
       if (!action) return `cancelled, need 1 to ${PLAY_MAX_MINUTES} minutes and member names or a count up to ${PLAY_MAX_COUNT}`;
+    } else if (key === 'u') {
+      if (!stuck.length) return 'nothing is stuck';
+      const id = await ask(`unstick which task? (${stuck.map(s => s.ref).join(', ')}): `);
+      action = playAction('u', { name: id, stuck });
+      if (!action) return id ? `cancelled, "${clip(id, 40)}" is not in the stuck list` : 'cancelled, no task named';
     } else {
       const verb = { r: 'run', w: 'wake', s: 'sleep' }[key];
       const name = await ask(`${verb} which member? `);
@@ -925,8 +959,8 @@ async function gmPlay(args = []) {
     write('');
     write(`this will run: ${actionLabel(action)}`);
     if (action.confirm) {
-      write('this starts agents. press y to go, any other key to cancel');
-      queue.length = 0; // only a fresh key press can start an agent
+      write(`${action.confirmText || 'this starts agents'}. press y to go, any other key to cancel`);
+      queue.length = 0; // only a fresh key press can confirm
       const { str } = await nextKey();
       if (String(str || '').toLowerCase() !== 'y') return `cancelled: ${shown}`;
     }
@@ -954,12 +988,13 @@ async function gmPlay(args = []) {
     if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
     if (name === 'space' || name === 'return' || name === 'enter') {
       draw();
-    } else if (['p', 'r', 'w', 's', 'l'].includes(name)) {
+    } else if (['p', 'r', 'w', 's', 'u', 'l'].includes(name)) {
       note = await doAction(name);
       draw();
     }
   }
   clearInterval(refresh);
+  season.writeLastSeen(workspaceRoot);
   input.off('keypress', onKeypress);
   setRaw(false);
   input.pause();
