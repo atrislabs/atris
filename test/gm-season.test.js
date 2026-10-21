@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const season = require('../lib/gm-season');
-const { renderBoardLines, renderLeagueLines, renderReplayFrameLines, replayPlainLines, runReplay, pickClub, playAction, displayCommand } = require('../commands/gm');
+const { renderBoardLines, renderCardLines, renderLeagueLines, renderReplayFrameLines, replayPlainLines, runReplay, pickClub, playAction, displayCommand } = require('../commands/gm');
 const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
 const HOUR = 60 * 60 * 1000;
@@ -367,7 +367,7 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(itext, /\(u to unstick\)/);
   assert.match(itext, /p play {2}r run {2}w wake {2}s sleep {2}u unstick/);
   assert.match(itext, /u unstick {2}l landing check/);
-  assert.match(itext, /g league {2}c switch club {2}v replay {2}enter refresh {2}q quit/);
+  assert.match(itext, /g league {2}c switch club {2}v replay {2}i card {2}enter refresh {2}q quit/);
   assert.match(itext, /tidy the help {2}new$/m);
 });
 
@@ -1018,5 +1018,126 @@ test('a reopen ends the claim, so a later archive is not also the holder abandon
       'R2:scout:took',
       'R2:scout:abandoned',
     ]);
+  });
+});
+
+// ---- player card ------------------------------------------------------------
+
+test('weekly ratings use the honest formula per monday-to-monday week, oldest first', () => {
+  const at = (m, d, h = 12) => new Date(2026, m, d, h).getTime();
+  const rows = [
+    play('a', 'landed', at(8, 29)),
+    play('a', 'landed', at(9, 6)), play('a', 'landed', at(9, 7)), play('a', 'dropped', at(9, 8)),
+    play('a', 'landed', at(9, 12, 0)), play('a', 'landed', at(9, 14)), play('a', 'landed', new Date(2026, 9, 18, 23, 59).getTime()),
+    play('a', 'took', at(9, 15)),
+    play('a', 'landed', new Date(2026, 9, 19, 0, 0).getTime()),
+  ];
+  assert.deepEqual(season.weeklyRatings(rows, NOW), [null, null, null, 86, 99, null]);
+  assert.equal(season.weeklyRatings(rows, NOW, 2).length, 2);
+});
+
+test('median landing hours ignore other outcomes and handle odd, even, and none', () => {
+  const landed = (h, i) => play('a', 'landed', NOW - i * HOUR, { claimed_at: NOW - i * HOUR - h * HOUR });
+  assert.equal(season.medianLandingHours([landed(1, 1), landed(10, 2), landed(3, 3), play('a', 'dropped', NOW, { claimed_at: NOW - 99 * HOUR })]), 3);
+  assert.equal(season.medianLandingHours([landed(1, 1), landed(3, 2)]), 2);
+  assert.equal(season.medianLandingHours([play('a', 'landed', NOW)]), null);
+  assert.equal(season.medianLandingHours([]), null);
+});
+
+test('scouting names the most common miss over the last 30 finished, or a clean sheet', () => {
+  const many = (kind, n, offset) => Array.from({ length: n }, (_, i) => play('a', kind, offset + i));
+  assert.equal(season.scoutingLine([...many('landed', 5, 0), ...many('took', 3, 10)]), 'clean sheet: landed all 5 of its last 5 finished');
+  assert.equal(season.scoutingLine([...many('landed', 19, 0), ...many('dropped', 9, 100), ...many('abandoned', 2, 200)]), 'drops jobs: 9 of last 30 finished');
+  assert.equal(season.scoutingLine([...many('dropped', 20, 0), ...many('landed', 25, 100), ...many('abandoned', 5, 200)]), 'abandons jobs: 5 of last 30 finished');
+  assert.equal(season.scoutingLine([...many('sent_back', 2, 0), ...many('landed', 3, 10)]), 'gets sent back: 2 of last 5 finished');
+  assert.equal(season.scoutingLine([play('a', 'took', 1)]), 'no finished jobs to scout yet');
+});
+
+test('close names find typos, prefixes, and contained names', () => {
+  const names = ['builder', 'auto-improver', 'codex-executor', 'executor', 'architect'];
+  assert.deepEqual(season.closeNames('biulder', names), ['builder']);
+  assert.deepEqual(season.closeNames('exec', names), ['executor', 'codex-executor']);
+  assert.deepEqual(season.closeNames('zzzzzz', names), []);
+});
+
+function cardSeason() {
+  return {
+    workspace_name: 'demo',
+    now: NOW,
+    outcomes: [
+      play('builder', 'took', NOW - 40 * HOUR, { title: 'ship the board' }),
+      play('builder', 'landed', NOW - 30 * HOUR, { claimed_at: NOW - 40 * HOUR, title: 'ship the board' }),
+      play('builder', 'landed', NOW - 20 * HOUR, { claimed_at: NOW - 22 * HOUR, title: 'fix the loader' }),
+      play('builder', 'dropped', NOW - 10 * HOUR, { title: 'tidy the help' }),
+      play('builder', 'landed', NOW - 50 * 24 * HOUR, { title: 'too old for 30 days' }),
+      play('scout', 'landed', NOW - HOUR, { title: 'not builder' }),
+    ],
+    claims: [{ task_id: 'T1', ref: 'CLI-1', title: 'map the old flags', member: 'builder', last_event_at: NOW - 3 * 24 * HOUR }],
+    missions: [],
+    asleep: ['builder'],
+  };
+}
+
+test('a member card holds status, ovr, weekly line, record, median, scouting, and plays', () => {
+  const card = season.memberCard('builder', cardSeason(), { role: 'Builder', engine: null, now: NOW });
+  assert.equal(card.awake, false);
+  assert.deepEqual(card.status, { state: 'stuck 3d', title: 'map the old flags' });
+  assert.equal(card.ovr, 86);
+  assert.deepEqual(card.record_30d, { landed: 2, dropped: 1, sent_back: 0, abandoned: 0 });
+  assert.equal(card.median_landing_hours, 6);
+  assert.equal(card.scouting, 'drops jobs: 1 of last 4 finished');
+  assert.equal(card.last_plays.length, 5);
+  assert.equal(card.last_plays[0].outcome, 'dropped');
+  assert.ok(card.last_plays.every(p => p.title !== 'not builder'));
+
+  const lines = renderCardLines(card);
+  const text = lines.join('\n');
+  assert.equal(lines[0], 'card | builder | demo');
+  assert.equal(lines[1], 'role: Builder | asleep | stuck 3d: map the old flags');
+  assert.match(text, /^ovr 86 \| last 6 weeks, oldest first: - - - - - 86$/m);
+  assert.match(text, /^record 30d: 2 landed, 1 dropped, 0 sent back, 0 abandoned \| median 6h from claim to landing$/m);
+  assert.match(text, /^engine: not recorded$/m);
+  assert.match(text, /^scouting: drops jobs: 1 of last 4 finished$/m);
+  assert.match(text, /^ {2}2:00 am +dropped +tidy the help$/m);
+  assert.doesNotMatch(text, /—/);
+  const withEngine = renderCardLines({ ...card, role: null, engine: { engine: 'claude', model: 'claude-opus-5-5', source: '~/.atris/ROSTER.md line 31' } }).join('\n');
+  assert.match(withEngine, /^role: not recorded \|/m);
+  assert.match(withEngine, /^engine: claude \(claude-opus-5-5\), from ~\/\.atris\/ROSTER\.md line 31$/m);
+});
+
+test('gm card reads a real db: role and engine from MEMBER.md, missing MEMBER.md, unknown member', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const memberDir = path.join(dir, 'atris', 'team', 'builder');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '---\nname: builder\nrole: Builder\nengine: codex\nmodel: gpt-5.6\n---\n# Builder\n');
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('T1', 'ship the board', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR);
+    t.event('E1', 'T1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
+    t.event('E2', 'T1', 'autoland', 'completed', { action: 'merged' }, now - HOUR);
+    t.task('T2', 'a job by a member with no card', 'archived', 'ghost', now - 3 * HOUR, now - 4 * HOUR);
+    t.event('E3', 'T2', 'ghost', 'claimed', { claimed_by: 'ghost' }, now - 3 * HOUR);
+    t.close();
+
+    const card = runCli(dir, t.dbPath, ['gm', 'card', 'builder', '--workspace', dir]);
+    assert.equal(card.status, 0, card.stderr);
+    assert.match(card.stdout, /^card \| builder \| /m);
+    assert.match(card.stdout, /^role: Builder \| awake \| idle$/m);
+    assert.match(card.stdout, /^engine: codex \(gpt-5\.6\), from atris\/team\/builder\/MEMBER\.md$/m);
+    assert.match(card.stdout, /^record 30d: 1 landed, 0 dropped, 0 sent back, 0 abandoned \| median 2h from claim to landing$/m);
+
+    const ghost = runCli(dir, t.dbPath, ['gm', 'card', 'ghost', '--workspace', dir, '--json']);
+    assert.equal(ghost.status, 0, ghost.stderr);
+    const body = JSON.parse(ghost.stdout);
+    assert.equal(body.schema, 'atris.gm_card.v1');
+    assert.equal(body.role, null);
+    assert.equal(body.last_plays[0].outcome, 'took');
+
+    const unknown = runCli(dir, t.dbPath, ['gm', 'card', 'biulder', '--workspace', dir]);
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /no member called "biulder"/);
+    assert.match(unknown.stderr, /close names: builder/);
+    assert.equal(unknown.stdout, '');
   });
 });
