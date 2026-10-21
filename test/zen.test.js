@@ -62,6 +62,13 @@ function kinds(result) {
   return result.problems.map((p) => p.kind).sort();
 }
 
+test('side copy places use ~ for home and name at most three', () => {
+  const { namePlaces } = require('../lib/zen');
+  const home = os.homedir();
+  assert.equal(namePlaces([path.join(home, 'work', 'a')]), path.join('~', 'work', 'a'));
+  assert.equal(namePlaces(['/x/a', '/x/b', '/x/c', '/x/d', '/x/e']), '/x/a, /x/b, /x/c and 2 more');
+});
+
 test('team-state matching covers folders and exact files', () => {
   assert.ok(isTeamState('atris/logs/2026/today.md', DEFAULT_TEAM_STATE));
   assert.ok(isTeamState('.claude/agents/x.md', DEFAULT_TEAM_STATE));
@@ -137,7 +144,7 @@ test('leftovers, drift and stray code each break zen', () => {
     assert.match(cli.stdout, /^zen: no, 6 things are out of place/m);
     assert.match(cli.stdout, /1 commit behind origin\/master/);
     assert.match(cli.stdout, /1 old stash/);
-    assert.match(cli.stdout, /1 side copy has unsaved work/);
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner: \S*\/busy$/m);
 
     const json = JSON.parse(runCli(checkout, 'zen', '--check', '--json', '--no-fetch').stdout);
     assert.equal(json.zen, false);
