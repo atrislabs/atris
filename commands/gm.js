@@ -31,11 +31,19 @@ function showHelp() {
   console.log('');
   console.log('Description:');
   console.log('  The front office for your team. The board shows each member\'s rating,');
-  console.log('  their last five results, who is on a job, the last five graded results,');
-  console.log('  and what is up next. Ratings come from the last 30 days: work kept');
-  console.log('  (accepted or merged) against work sent back.');
+  console.log('  their last five finished jobs, who is on a job, the last plays, and');
+  console.log('  what is up next. Every job a member takes in the last 30 days ends');
+  console.log('  landed (accepted or merged), dropped (claim let go), or sent back.');
+  console.log('  ovr = round(60 + 39 * landed / finished), rookie under 3 finished.');
+  console.log('  Drops count, so this is stricter than the website rating on purpose.');
   console.log('');
-  console.log('  In a terminal, gm is playable:');
+  console.log('  In a terminal, gm is playable and refreshes every 10 seconds:');
+  console.log('    p  send the team out for a session (asks minutes, who, then y)');
+  console.log('         one name:  atris member wake <name> --minutes N');
+  console.log('                    one wake plus one work step with an N minute budget');
+  console.log('         a count:   atris member wake <count>, names: atris member wake a b');
+  console.log('                    keeps members picking up jobs; gm stops it after N');
+  console.log('                    minutes and runs already started finish');
   console.log('    r  run a member, with an optional job (asks y first)');
   console.log('    w  wake a member (asks y first)');
   console.log('    s  put a member to sleep');
@@ -693,7 +701,7 @@ function renderBoardLines(board, { interactive = false } = {}) {
   if (board.roster.length) {
     lines.push(`  ${pad('name', 18)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
     for (const row of board.roster) {
-      const record = `landed ${row.landed} of ${row.took}`;
+      const record = `landed ${row.landed} of ${row.jobs}`;
       lines.push(`  ${pad(row.name, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${pad(record, 18)}${row.status}`);
     }
   } else {
