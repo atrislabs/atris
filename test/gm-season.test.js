@@ -126,7 +126,7 @@ test('owner line splits landed by autoland and by you, this week only, and count
     play('b', 'abandoned', MONDAY - 5 * HOUR),
   ];
   const mood = season.ownerMood(rows, NOW, 3);
-  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped, 1 abandoned, 3 stuck');
+  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped, 1 abandoned, 0 waiting on review, 3 stuck');
   const sunday = new Date(2026, 9, 25, 23, 59).getTime();
   assert.equal(season.weekStart(sunday), MONDAY);
 });
@@ -341,12 +341,12 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   const text = lines.join('\n');
   assert.ok(lines.length <= 40, `board is ${lines.length} rows`);
   assert.equal(lines[0], 'front office | demo | week of oct 19');
-  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 abandoned, 1 stuck');
+  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 abandoned, 0 waiting on review, 1 stuck');
   assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back, 1 abandoned');
   assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
   assert.match(text, /^ {2}scout +rookie +x +landed 0 of 1 +asleep$/m);
   assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 0 +stuck 4d$/m);
-  assert.match(text, /^stuck, claimed with no move for 6h or more$/m);
+  assert.match(text, /^stuck with the player, claimed with no move for 6h or more$/m);
   assert.match(text, /^ {2}mapper +4d +CLI-8 +map the old flags$/m);
   assert.doesNotMatch(text, /CLI-9 +write the release note/);
   assert.match(text, /^ {2}11:00 am +builder dropped +1h +tidy the help$/m);
@@ -523,10 +523,16 @@ test('gm --board reads a real task db and prints honest records', () => {
     const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^front office \| /m);
-    assert.match(res.stdout, /, 1 abandoned, 1 stuck$/m);
+    assert.match(res.stdout, /, 1 abandoned, 1 waiting on review, 1 stuck$/m);
     assert.match(res.stdout, /^since you looked \(2d ago\): 2 landed, 1 dropped, 0 sent back, 1 abandoned$/m);
     // T1 and T7 landed, T4 dropped, T6 abandoned, T8 is in review and pending
-    assert.match(res.stdout, /^ {2}builder +80 +kadk +landed 2 of 4 +idle$/m);
+    assert.match(res.stdout, /^ {2}builder +80 +kadk +landed 2 of 4 +waiting on review 2h$/m);
+    // T8 handed in a proof: it waits on review, it is not stuck with the player
+    assert.match(res.stdout, /^waiting on review, age since the proof$/m);
+    assert.match(res.stdout, /^ {2}builder +2h +[A-Z0-9]+-\d+ +still in review$/m);
+    const stuckBlock = (res.stdout.match(/^stuck with the player.*\n((?: {2}.*\n)*)/m) || [])[1] || '';
+    assert.doesNotMatch(stuckBlock, /still in review/);
+    assert.match(stuckBlock, /a claim nobody touched/);
     assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 0 +stuck 3d$/m);
     assert.match(res.stdout, /^ {2}scout +3d +[A-Z0-9]+-\d+ +a claim nobody touched$/m);
     assert.match(res.stdout, /builder landed +2h +ship the board$/m);

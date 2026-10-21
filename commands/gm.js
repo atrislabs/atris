@@ -757,8 +757,18 @@ function renderBoardLines(board, { interactive = false } = {}) {
   }
   lines.push('');
 
+  // review waits first: handed in, waiting on a reviewer, the usual jam
+  if (board.waiting_on_review && board.waiting_on_review.length) {
+    const total = board.waiting_on_review_total || board.waiting_on_review.length;
+    const more = total > board.waiting_on_review.length ? `, ${total} in all, oldest first` : '';
+    lines.push(`waiting on review, age since the proof${more}`);
+    for (const row of board.waiting_on_review) {
+      lines.push(`  ${pad(row.member, 18)}${pad(row.age, 6)}${pad(row.ref, 11)}${row.title}`);
+    }
+    lines.push('');
+  }
   if (board.stuck && board.stuck.length) {
-    lines.push(`stuck, claimed with no move for 6h or more${interactive ? ' (u to unstick)' : ''}`);
+    lines.push(`stuck with the player, claimed with no move for 6h or more${interactive ? ' (u to unstick)' : ''}`);
     for (const row of board.stuck) {
       lines.push(`  ${pad(row.member, 18)}${pad(row.age, 6)}${pad(row.ref, 11)}${row.title}`);
     }
@@ -1332,6 +1342,7 @@ function gmTargetCommand(args = []) {
     if (board.target) console.log(gmTarget.targetLine(board.target));
     else console.log(`no target for the ${weekLabel(board.week_of)}. suggested: ${targetSummary(board.target_default)}`);
     if (board.record) console.log(gmTarget.recordLine(board.record));
+    if (board.no_history) console.log('no task history yet');
     return undefined;
   }
   const base = board.target ? board.target.target : board.target_default;
@@ -1349,6 +1360,7 @@ function gmTargetCommand(args = []) {
   console.log(`target for the ${weekLabel(board.week_of)}: ${targetSummary(built.target)}`);
   const after = loadBoard(workspaceRoot);
   if (after.target) console.log(gmTarget.targetLine(after.target));
+  if (after.no_history) console.log('no task history yet');
   return undefined;
 }
 

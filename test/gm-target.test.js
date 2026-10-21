@@ -39,7 +39,7 @@ test('a target is saved against its week and carries forward until changed or cl
     assert.deepEqual(target.readTargets(ws, { dir }), { weeks: {} });
     assert.equal(target.writeTarget(ws, T(8), { dir, now: OCT5 + 2 * DAY }), true);
     let store = target.readTargets(ws, { dir });
-    assert.deepEqual(Object.keys(store.weeks), [String(OCT5)]);
+    assert.deepEqual(Object.keys(store.weeks), ['2026-10-05']);
     assert.equal(target.targetForWeek(store, SEP28), null);
     assert.deepEqual(target.targetForWeek(store, OCT5), T(8));
     assert.deepEqual(target.targetForWeek(store, OCT19), T(8), 'carries forward');
@@ -261,4 +261,80 @@ test('the league shows a target column only when some club has a target', () => 
   assert.match(text, /^ {2}beta +\d+ .* - +builder/m);
   const plain = renderLeagueLines({ now: NOW, days: 30, rows: rows.map(r => ({ ...r, target: null })), hidden: 0 }).join('\n');
   assert.doesNotMatch(plain, /target/);
+});
+
+// ---- review of the weekly target ---------------------------------------------
+
+function withTz(tz, fn) {
+  const saved = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    return fn();
+  } finally {
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
+  }
+}
+
+test('a claim in review at week end is waiting on the reviewer, not stuck with the player', () => {
+  const end = OCT19;
+  const byTask = new Map([
+    ['in-review', [{ event_type: 'claimed', actor: 'a', created_at: end - 4 * DAY }, { event_type: 'proof_ready', actor: 'a', created_at: end - 3 * DAY }]],
+    ['sent-back', [{ event_type: 'claimed', actor: 'b', created_at: end - 4 * DAY }, { event_type: 'proof_ready', actor: 'b', created_at: end - 3 * DAY }, { event_type: 'revision_requested', actor: 'k', created_at: end - 2 * DAY }]],
+    ['reopened', [{ event_type: 'claimed', actor: 'c', created_at: end - 4 * DAY }, { event_type: 'proof_ready', actor: 'c', created_at: end - 3 * DAY }, { event_type: 'reopened', actor: 'k', created_at: end - 2 * DAY }]],
+    ['plain', [{ event_type: 'claimed', actor: 'd', created_at: end - 2 * DAY }]],
+  ]);
+  assert.equal(target.stuckOverDayAt(byTask, end), 3);
+  byTask.delete('sent-back');
+  byTask.delete('reopened');
+  assert.equal(target.stuckOverDayAt(byTask, end), 1);
+});
+
+test('the history cutoff is 26 calendar weeks back even across a daylight saving change', () => {
+  withTz('America/Los_Angeles', () => {
+    const monday = new Date(2026, 10, 9).getTime();
+    const floor = target.historyStart({ weeks: { '2026-01-05': T(1) } }, monday + 12 * HOUR);
+    assert.equal(floor, new Date(2026, 4, 11).getTime());
+    assert.equal(new Date(floor).getHours(), 0);
+  });
+});
+
+test('weeks are keyed by the monday date, so a target set in one time zone holds in another', () => {
+  const dir = tempDir();
+  try {
+    const ws = path.join(dir, 'club');
+    withTz('America/Los_Angeles', () => target.writeTarget(ws, T(7), { dir, now: new Date(2026, 9, 21, 20, 0).getTime() }));
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, fs.readdirSync(dir)[0]), 'utf8'));
+    assert.deepEqual(Object.keys(raw.weeks), ['2026-10-19']);
+    withTz('America/New_York', () => {
+      const store = target.readTargets(ws, { dir });
+      assert.deepEqual(target.targetForWeek(store, new Date(2026, 9, 21, 23, 30).getTime()), T(7));
+    });
+    // an older timestamp key still reads, and a date key for the same week wins
+    fs.writeFileSync(path.join(dir, fs.readdirSync(dir)[0]), JSON.stringify({ weeks: { [String(OCT12)]: T(4), [String(OCT19)]: T(9), '2026-10-19': T(6) } }));
+    const store = target.readTargets(ws, { dir });
+    assert.deepEqual(target.targetForWeek(store, OCT12 + DAY), T(4));
+    assert.deepEqual(target.targetForWeek(store, OCT19 + DAY), T(6));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('gm target works with no task database yet', () => {
+  const dir = tempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const missing = path.join(dir, 'no-such.db');
+    const show = cli(dir, missing, ['gm', 'target', '--workspace', dir]);
+    assert.equal(show.status, 0, show.stderr);
+    assert.match(show.stdout, /suggested: 1 landed, at most 2 abandoned, at most 0 stuck over a day/);
+    assert.match(show.stdout, /^no task history yet$/m);
+    const set = cli(dir, missing, ['gm', 'target', '--landed', '2', '--workspace', dir]);
+    assert.equal(set.status, 0, set.stderr);
+    assert.match(set.stdout, /^target: 0 of 2 landed \| abandoned 0 of max 2 \| stuck over a day 0, max 0 \(behind\)$/m);
+    assert.match(set.stdout, /^no task history yet$/m);
+    assert.equal(fs.existsSync(missing), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
