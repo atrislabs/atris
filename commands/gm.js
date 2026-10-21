@@ -30,6 +30,7 @@ function showHelp() {
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
+  console.log('       atris gm phone [--port 7777] [--send]  decision cards on your phone');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -81,6 +82,22 @@ function showHelp() {
   console.log('  three held. The header keeps the season record of won and lost weeks.');
   console.log('  Saved in ~/.atris/state/gm-targets/, one file per workspace.');
   console.log('');
+  console.log('  atris gm phone opens a page your phone can reach on the same wifi. It');
+  console.log('  prints a link with a random key and a QR code; anything without the key');
+  console.log('  gets nothing. The page shows this week\'s target, the team, and one');
+  console.log('  decision card at a time, at most five a session:');
+  console.log('    jobs waiting on review: have the reviewer check them');
+  console.log('         atris task auto-accept-certified --json --certify-first');
+  console.log('         (offered only while autoland is on), or approve / send back the');
+  console.log('         oldest 3 one at a time: atris task accept <id>,');
+  console.log('         atris task revise <id> --note "..."');
+  console.log('    stuck claims: atris task release <id> --as <holder> for each, or');
+  console.log('         atris member wake <holder> for each holder');
+  console.log('    no target: set this week\'s target (5 seconds to undo)');
+  console.log('  Anything that starts agents, frees claims, or lands work needs a second');
+  console.log('  tap. Every tap is logged to ~/.atris/state/gm-phone-actions.jsonl.');
+  console.log('  --send texts the link to the number saved with atris autoland on --to.');
+  console.log('');
   console.log('  The league treats every real project folder with task events in the');
   console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
   console.log('  drops, abandons, stuck claims, last task event, and best player.');
@@ -97,6 +114,8 @@ function showHelp() {
   console.log('  --workspace <p>   Read another Atris workspace.');
   console.log('  --watch           Append new GM events until Ctrl+C.');
   console.log('  --interval <sec>  Watch polling interval. Defaults to 10.');
+  console.log('  --port <n>        gm phone port. Defaults to 7777.');
+  console.log('  --send            gm phone: text the link to your saved number.');
   console.log('  --no-seed         Do not create a starter player mission.');
   console.log('  --json            Print machine-readable mode state.');
   console.log('  --help, -h        Show this help.');
@@ -1427,6 +1446,110 @@ function gmTargetCommand(args = []) {
   return undefined;
 }
 
+// ---- phone ------------------------------------------------------------------
+
+// gm phone: serve the decision cards to a phone on the same wifi. The link
+// carries a random token; every request without it gets 403. Ctrl-C stops it.
+// Commands started from the phone keep running on their own after that.
+async function gmPhone(args = []) {
+  const http = require('http');
+  const crypto = require('crypto');
+  const phone = require('../lib/gm-phone');
+  const { phonePage } = require('../lib/gm-phone-page');
+  const gmTarget = require('../lib/gm-target');
+  const { atrisHome } = require('../lib/state-home');
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const portRaw = flag(args, '--port');
+  const port = portRaw == null ? 7777 : Number(portRaw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error('--port takes a whole number from 1 to 65535');
+    process.exitCode = 2;
+    return undefined;
+  }
+  const lan = phone.lanAddress();
+  const addresses = [...new Set([lan, '127.0.0.1'].filter(Boolean))];
+  const hosts = [...addresses.map(a => `${a}:${port}`), `localhost:${port}`];
+  const token = crypto.randomBytes(32).toString('base64url');
+  const stateDir = path.join(atrisHome(), 'state');
+  const handler = phone.createPhoneHandler({
+    workspaceRoot,
+    token,
+    hosts,
+    loadView: () => phone.loadPhoneView(workspaceRoot),
+    runStep: phone.makeStepRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot, logDir: path.join(stateDir, 'gm-phone-runs') }),
+    writeTarget: target => gmTarget.writeTarget(workspaceRoot, target),
+    snapshotTarget: () => phone.targetSnapshot(workspaceRoot),
+    logPath: path.join(stateDir, 'gm-phone-actions.jsonl'),
+    page: phonePage,
+  });
+
+  const servers = [];
+  try {
+    for (const address of addresses) {
+      const server = http.createServer((req, res) => { handler(req, res); });
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, address, resolve);
+      });
+      servers.push(server);
+    }
+  } catch (err) {
+    for (const server of servers) server.close();
+    console.error(err && err.code === 'EADDRINUSE' ? `port ${port} is taken. try --port ${port + 1}` : `could not start: ${err.message}`);
+    process.exitCode = 1;
+    return undefined;
+  }
+
+  const link = `http://${lan || '127.0.0.1'}:${port}/?t=${token}`;
+  console.log('');
+  console.log(`your front office for ${path.basename(workspaceRoot)} is open.`);
+  if (lan) {
+    console.log('scan this with your phone camera, or open the link on the same wifi:');
+    console.log('');
+    try {
+      const { qrLines } = require('../lib/qr');
+      console.log(qrLines(link, { color: Boolean(process.stdout.isTTY) }).map(line => `  ${line}`).join('\n'));
+      console.log('');
+    } catch {
+      // the link below still works without the picture
+    }
+  } else {
+    console.log('no wifi address found, so only this mac can open it:');
+  }
+  console.log(`  ${link}`);
+  console.log('');
+  console.log('anyone with this link can act for you until you stop it. ctrl-c stops it.');
+
+  if (hasExactFlag(args, '--send')) {
+    const autoland = require('../lib/autoland');
+    const to = String((autoland.readPolicy(workspaceRoot) || {}).imessage_to || '').trim();
+    if (!to) {
+      console.log('not texted: no number saved for texts. save one with: atris autoland on --to <your number>');
+    } else {
+      const sent = autoland.sendImessage(workspaceRoot, to, `your front office: ${link}`);
+      console.log(sent.ok ? `texted the link to ${to}` : `could not text the link: ${sent.output}`);
+    }
+  }
+
+  await new Promise((resolve) => {
+    const stop = () => {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      for (const server of servers) {
+        server.close();
+        if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+      }
+      const running = handler.actions.filter(a => a.status === 'running').length;
+      console.log('');
+      console.log(running ? `phone page stopped. ${running} started from the phone still running on their own.` : 'phone page stopped.');
+      resolve();
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+  return undefined;
+}
+
 // ---- player card ------------------------------------------------------------
 
 // One member's profile page as lines. Pure: card in, lines out.
@@ -1662,6 +1785,11 @@ async function gmCommand(...args) {
   if (positional(args)[0] === 'card') {
     const at = args.indexOf('card');
     return gmCard([...args.slice(0, at), ...args.slice(at + 1)]);
+  }
+
+  if (positional(args)[0] === 'phone') {
+    const at = args.indexOf('phone');
+    return gmPhone([...args.slice(0, at), ...args.slice(at + 1)]);
   }
 
   if (positional(args)[0] === 'replay') {
