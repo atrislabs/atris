@@ -1183,3 +1183,74 @@ test('an unreadable task db exits 1 on board, league, board json, card, and repl
     }
   });
 });
+
+// ---- final review -----------------------------------------------------------
+
+test('a traversal holder from task data gets a card but nothing is read outside atris/team', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const holder = '../../templates/members/host';
+    const t = makeTaskDb(dir);
+    const decoy = path.join(t.ws, 'templates', 'members', 'host');
+    fs.mkdirSync(decoy, { recursive: true });
+    fs.writeFileSync(path.join(decoy, 'MEMBER.md'), '---\nname: host\nrole: The Host\nengine: codex\n---\n');
+    fs.mkdirSync(path.join(t.ws, 'atris', 'team'), { recursive: true });
+    const now = Date.now();
+    t.task('T1', 'held by a strange name', 'claimed', holder, now - HOUR, now - 2 * HOUR);
+    t.event('E1', 'T1', holder, 'claimed', { claimed_by: holder }, now - HOUR);
+    t.close();
+    const result = season.loadCard(t.ws, holder, { dbPath: t.dbPath, now });
+    assert.ok(result.card, result.error);
+    assert.equal(result.card.role, null);
+    assert.equal(result.card.engine, null);
+    assert.equal(result.card.status.state, 'on a job');
+    assert.equal(result.card.last_plays[0].outcome, 'took');
+    assert.doesNotMatch(renderCardLines(result.card).join('\n'), /The Host|codex/);
+    assert.match(renderCardLines(result.card).join('\n'), /^role: not recorded \|/m);
+    for (const bad of [holder, '.', '..', '.hidden', 'a/b', 'a\\b', '']) assert.equal(season.isSafeMemberName(bad), false, bad);
+    for (const good of ['builder', 'codex-executor', 'v1.2_x']) assert.equal(season.isSafeMemberName(good), true, good);
+  });
+});
+
+test('a roster job section names the engine with its file and line when the member job is known', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const team = path.join(t.ws, 'atris', 'team');
+    fs.mkdirSync(path.join(team, 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(team, 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n# Builder\n');
+    fs.writeFileSync(path.join(t.ws, 'atris', 'ROSTER.md'), [
+      '# roster',
+      '',
+      '## build',
+      '- claude code, model: opus 5.5, max: 45 min',
+      '',
+    ].join('\n'));
+    const now = Date.now();
+    t.task('T1', 'ship it', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR);
+    t.event('E1', 'T1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
+    t.task('T2', 'a job by a member with no card', 'archived', 'ghost', now - 3 * HOUR, now - 4 * HOUR);
+    t.event('E2', 'T2', 'ghost', 'claimed', { claimed_by: 'ghost' }, now - 3 * HOUR);
+    t.close();
+    const builder = season.loadCard(t.ws, 'builder', { dbPath: t.dbPath, now }).card;
+    assert.ok(builder.engine, 'builder engine from the build job');
+    assert.equal(builder.engine.engine, 'claude');
+    assert.match(builder.engine.source, /^the build job in .*ROSTER\.md line 4$/);
+    assert.match(renderCardLines(builder).join('\n'), /^engine: claude \(.+\), from the build job in .*ROSTER\.md line 4$/m);
+    // no member card means no known job, so nothing is claimed for it
+    const ghost = season.loadCard(t.ws, 'ghost', { dbPath: t.dbPath, now }).card;
+    assert.equal(ghost.engine, null);
+  });
+});
+
+test('roster engine stays unrecorded for router picks and missing job sections', () => {
+  const jobPick = { found: true, engine: { id: 'claude' }, model: 'claude-opus-5-5', roster_backed: true, file: null, job: 'build', job_key: 'executor', pick_source: 'machine' };
+  const state = { machine: { file: '~/.atris/ROSTER.md', picks: { executor: { workers: [{ engine: 'claude', line: 12 }] } } } };
+  assert.deepEqual(season.rosterEngine('builder', '/w', { resolve: () => jobPick, rosterState: state }),
+    { engine: 'claude', model: 'claude-opus-5-5', source: 'the build job in ~/.atris/ROSTER.md line 12' });
+  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, roster_backed: false }), rosterState: state }), null);
+  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, found: false }), rosterState: state }), null);
+  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, job_key: 'searcher' }), rosterState: state }), null);
+  assert.deepEqual(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, file: '~/.atris/ROSTER.md', line: 31 }), rosterState: state }),
+    { engine: 'claude', model: 'claude-opus-5-5', source: '~/.atris/ROSTER.md line 31' });
+});
