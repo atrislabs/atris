@@ -1141,3 +1141,45 @@ test('gm card reads a real db: role and engine from MEMBER.md, missing MEMBER.md
     assert.equal(unknown.stdout, '');
   });
 });
+
+// ---- fourth review --------------------------------------------------------
+
+test('league replay keeps same-named clubs apart with the league labels', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const one = path.join(dir, 'one', 'app');
+    const two = path.join(dir, 'two', 'app');
+    const now = Date.now();
+    t.task('A', 'first app job', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR, one);
+    t.task('B', 'second app job', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR, two);
+    t.event('E1', 'A', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR, one);
+    t.event('E2', 'A', 'autoland', 'completed', { action: 'merged' }, now - 2 * HOUR, one);
+    t.event('E3', 'B', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR, two);
+    t.close();
+    const model = season.loadReplay({ since: now - 12 * HOUR, now, dbPath: t.dbPath, league: true, isClub: root => root === one || root === two });
+    assert.deepEqual([...new Set(model.plays.map(p => p.club))].sort(), ['one/app', 'two/app']);
+    const frame = season.replayFrame(model.plays, model.plays.length - 1, { byClub: true });
+    assert.deepEqual(frame.rows.map(r => [r.key, r.landed]).sort(), [['one/app', 1], ['two/app', 0]]);
+  });
+});
+
+test('an unreadable task db exits 1 on board, league, board json, card, and replay', () => {
+  withTempWorkspace((dir) => {
+    const dbPath = path.join(dir, 'tasks.db');
+    fs.writeFileSync(dbPath, 'this is not a sqlite database, just text that is long enough to fill a header page\n'.repeat(20));
+    const runs = [
+      ['gm', '--board', '--workspace', dir],
+      ['gm', '--league', '--board'],
+      ['gm', '--board', '--json', '--workspace', dir],
+      ['gm', 'card', 'builder', '--workspace', dir],
+      ['gm', 'replay', '--since', '2d', '--plain', '--workspace', dir],
+    ];
+    for (const args of runs) {
+      const res = runCli(dir, dbPath, args);
+      assert.equal(res.status, 1, `${args.join(' ')}: ${res.stdout}`);
+      assert.match(res.stderr, /could not read the task list/, args.join(' '));
+      assert.doesNotMatch(res.stdout, /nothing happened|front office|league \|/, args.join(' '));
+    }
+  });
+});
