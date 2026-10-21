@@ -245,3 +245,20 @@ test('gm target sets, shows, and clears the target; the board and json carry it'
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the league shows a target column only when some club has a target', () => {
+  const { renderLeagueLines } = require('../commands/gm');
+  const season = require('../lib/gm-season');
+  const outcomes = [play('landed', NOW - HOUR), play('landed', NOW - 2 * HOUR), play('dropped', NOW - 3 * HOUR)];
+  const status = target.currentStatus({ store: { weeks: { [String(OCT19)]: T(5) } }, outcomes, claims: [], now: NOW });
+  const rows = season.leagueRows([
+    { root: '/w/alpha', outcomes, claims: [], target: status },
+    { root: '/w/beta', outcomes, claims: [] },
+  ], NOW);
+  const text = renderLeagueLines({ now: NOW, days: 30, rows, hidden: 0 }).join('\n');
+  assert.match(text, /^ {2}club +ovr +week +30d +drop +aband +stuck +last +target +best player$/m);
+  assert.match(text, /^ {2}alpha +\d+ .* behind +builder/m);
+  assert.match(text, /^ {2}beta +\d+ .* - +builder/m);
+  const plain = renderLeagueLines({ now: NOW, days: 30, rows: rows.map(r => ({ ...r, target: null })), hidden: 0 }).join('\n');
+  assert.doesNotMatch(plain, /target/);
+});
