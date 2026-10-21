@@ -60,6 +60,7 @@ test/escape-regexp.test.js
 test/file-ops-inbox.test.js
 test/fleet.test.js
 test/front-doors.test.js
+test/gm-season.test.js
 test/golden-path-help.test.js
 test/help-pipe-drain.test.js
 test/html-render.test.js
