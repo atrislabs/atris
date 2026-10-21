@@ -49,6 +49,18 @@ test('ovr counts drops and send backs against landed', () => {
   assert.equal(season.ovr(dropped), 60);
 });
 
+test('abandoned jobs count against ovr and in jobs; took does not', () => {
+  const rows = [
+    ...Array.from({ length: 44 }, (_, i) => play('integrator', 'landed', i)),
+    ...Array.from({ length: 31 }, (_, i) => play('integrator', 'abandoned', 100 + i)),
+    ...Array.from({ length: 10 }, (_, i) => play('integrator', 'took', 200 + i)),
+  ];
+  assert.equal(season.ovr(rows), Math.round(60 + 39 * 44 / 75));
+  assert.equal(season.ovr(rows), 83);
+  const [row] = season.rosterRows({ outcomes: rows });
+  assert.deepEqual([row.landed, row.abandoned, row.jobs, row.took], [44, 31, 75, 10]);
+});
+
 test('form shows the last five finished jobs with drops, oldest to newest', () => {
   const rows = [
     play('a', 'landed', 70),
@@ -60,6 +72,7 @@ test('form shows the last five finished jobs with drops, oldest to newest', () =
     play('a', 'landed', 40),
   ];
   assert.equal(season.form(rows), 'dkkdk');
+  assert.equal(season.form([...rows, play('a', 'abandoned', 80)]), 'kkdka');
   assert.equal(season.form(rows.slice(0, 2)), 'xk');
   assert.equal(season.form([play('a', 'took', 1)]), '');
 });
@@ -76,6 +89,9 @@ test('plays come from events with the right member for each kind', () => {
     { event_id: '8', task_id: 'g', event_type: 'reopened', actor: 'keshavrao', payload: null, created_at: 80, claimed_by: null, claim_actor: 'generalist', title: 'seven' },
     { event_id: '9', task_id: 'h', event_type: 'completed', actor: 'orb-autoaccept', payload: '{"action":"accepted"}', created_at: 90, claimed_by: 'builder', title: 'eight' },
     { event_id: '10', task_id: 'i', event_type: 'completed', actor: 'x', payload: 'not json', created_at: 95, claimed_by: 'builder', title: 'nine' },
+    { event_id: '11', task_id: 'j', event_type: 'archived', actor: 'keshavrao', payload: '{}', created_at: 96, claimed_by: null, claim_actor: 'scout', claim_event_id: 'c11', abandons: 1, title: 'ten' },
+    { event_id: '12', task_id: 'k', event_type: 'archived', actor: 'keshavrao', payload: '{}', created_at: 97, claim_actor: 'scout', claim_event_id: 'c12', abandons: 0, title: 'landed first' },
+    { event_id: '13', task_id: 'l', event_type: 'archived', actor: 'keshavrao', payload: '{}', created_at: 98, claimed_by: 'scout', abandons: 1, title: 'never claimed' },
   ];
   const out = season.outcomesFromEvents(rows);
   assert.deepEqual(out.map(o => [o.event_id, o.kind, o.member, o.landed_by]), [
@@ -87,6 +103,7 @@ test('plays come from events with the right member for each kind', () => {
     ['7', 'sent_back', 'builder', null],
     ['8', 'sent_back', 'generalist', null],
     ['9', 'landed', 'builder', 'autoland'],
+    ['11', 'abandoned', 'scout', null],
   ]);
   assert.equal(out[0].claimed_at, null);
   assert.equal(out[1].claimed_at, 10);
@@ -105,9 +122,11 @@ test('owner line splits landed by autoland and by you, this week only, and count
     play('b', 'dropped', NOW - 2 * HOUR),
     play('b', 'dropped', NOW - 3 * HOUR),
     play('b', 'took', NOW - 4 * HOUR),
+    play('b', 'abandoned', NOW - 5 * HOUR),
+    play('b', 'abandoned', MONDAY - 5 * HOUR),
   ];
   const mood = season.ownerMood(rows, NOW, 3);
-  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped, 3 stuck');
+  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped, 1 abandoned, 3 stuck');
   const sunday = new Date(2026, 9, 25, 23, 59).getTime();
   assert.equal(season.weekStart(sunday), MONDAY);
 });
@@ -179,24 +198,35 @@ test('since you looked counts finished plays after the last look', () => {
     play('a', 'landed', NOW - 10 * HOUR),
     play('b', 'landed', NOW - 9 * HOUR),
     play('b', 'dropped', NOW - 8 * HOUR),
+    play('b', 'abandoned', NOW - 7 * HOUR),
   ];
   assert.equal(season.sinceLastLook(rows, null, NOW), null);
-  assert.equal(season.sinceLastLook(rows, NOW - 2 * 24 * HOUR, NOW).line, 'since you looked (2d ago): 2 landed, 1 dropped, 0 sent back');
+  assert.equal(season.sinceLastLook(rows, NOW - 2 * 24 * HOUR, NOW).line, 'since you looked (2d ago): 2 landed, 1 dropped, 0 sent back, 1 abandoned');
   assert.equal(season.sinceLastLook(rows, NOW - 4 * HOUR, NOW).line, 'nothing happened since you looked 4h ago');
 });
 
-test('last seen round-trips through .atris/state/gm-last-seen.json', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-seen-'));
+test('last seen lives in one home file keyed by workspace, never in the workspace', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-seen-'));
+  const file = path.join(home, '.atris', 'state', 'gm-last-seen.json');
   try {
-    assert.equal(season.readLastSeen(dir), null);
-    assert.equal(season.writeLastSeen(dir, NOW), true);
-    assert.equal(season.readLastSeen(dir), NOW);
-    const raw = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'gm-last-seen.json'), 'utf8'));
-    assert.equal(raw.last_seen_at, NOW);
-    fs.writeFileSync(path.join(dir, '.atris', 'state', 'gm-last-seen.json'), 'not json');
-    assert.equal(season.readLastSeen(dir), null);
+    const wsA = path.join(home, 'club-a');
+    const wsB = path.join(home, 'club-b');
+    assert.equal(season.readLastSeen(wsA, { file }), null);
+    assert.equal(season.writeLastSeen(wsA, NOW, { file }), true);
+    assert.equal(season.writeLastSeen(wsB, NOW - HOUR, { file }), true);
+    assert.equal(season.readLastSeen(wsA, { file }), NOW);
+    assert.equal(season.readLastSeen(wsB, { file }), NOW - HOUR);
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(raw.workspaces[path.resolve(wsA)].last_seen_at, NOW);
+    assert.equal(fs.existsSync(path.join(wsA, '.atris')), false);
+    fs.writeFileSync(file, 'not json');
+    assert.equal(season.readLastSeen(wsA, { file }), null);
+    // An unwritable home means no recap next time, never a crash.
+    const blocked = path.join(home, 'a-file');
+    fs.writeFileSync(blocked, 'x');
+    assert.equal(season.writeLastSeen(wsA, NOW, { file: path.join(blocked, 'state', 'gm-last-seen.json') }), false);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -267,6 +297,7 @@ function fixtureBoard({ seen = null, lastSeen = NOW - 2 * 24 * HOUR, claims } = 
     play('builder', 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 5 * HOUR, title: 'ship the board', claim_id: 'c1' }),
     play('builder', 'landed', NOW - 2 * HOUR, { claimed_at: NOW - 3 * HOUR, title: 'fix the loader', landed_by: 'you' }),
     play('builder', 'dropped', NOW - HOUR, { claimed_at: NOW - 2 * HOUR, title: 'tidy the help' }),
+    play('builder', 'abandoned', NOW - 4 * HOUR, { claimed_at: NOW - 9 * HOUR, title: 'old idea' }),
     play('scout', 'sent_back', NOW - 30 * HOUR, { title: 'look around' }),
   ];
   return season.seasonBoard({
@@ -289,20 +320,20 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   const text = lines.join('\n');
   assert.ok(lines.length <= 40, `board is ${lines.length} rows`);
   assert.equal(lines[0], 'front office | demo | week of oct 19');
-  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 stuck');
-  assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back');
-  assert.match(text, /^ {2}builder +86 +kkd +landed 2 of 4 +on a job$/m);
+  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 abandoned, 1 stuck');
+  assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back, 1 abandoned');
+  assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
   assert.match(text, /^ {2}scout +rookie +x +landed 0 of 1 +asleep$/m);
-  assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 1 +stuck 4d$/m);
+  assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 0 +stuck 4d$/m);
   assert.match(text, /^stuck, claimed with no move for 6h or more$/m);
   assert.match(text, /^ {2}mapper +4d +CLI-8 +map the old flags$/m);
   assert.doesNotMatch(text, /CLI-9 +write the release note/);
   assert.match(text, /^ {2}11:00 am +builder dropped +1h +tidy the help$/m);
-  assert.match(text, /^ {2}oct 20 6:00 am +scout sent back +look around$/m);
+  assert.match(text, /^ {2}8:00 am +builder abandoned +5h +old idea$/m);
   assert.doesNotMatch(text, /box scores/);
   assert.match(text, /^ {2}CLI-7 +write the docs$/m);
-  assert.match(text, /stricter than the website rating on purpose/);
-  assert.match(text, /k landed, d dropped, x sent back/);
+  assert.match(text, /stricter than the website rating on purpose \(drops and abandons count\)/);
+  assert.match(text, /k landed, d dropped, x sent back, a abandoned/);
   assert.match(text, /run atris gm in a terminal to play/);
   assert.doesNotMatch(text, /\bnew$/m);
   assert.doesNotMatch(text, /—/);
@@ -400,13 +431,18 @@ function makeTaskDb(dir) {
   };
 }
 
-function runBoard(dir, dbPath) {
-  return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--board', '--workspace', dir], {
+// Runs the CLI with its own HOME so ~/.atris/state stays inside the test.
+function runCli(dir, dbPath, args, home = path.join(dir, 'home')) {
+  return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], {
     cwd: dir,
     encoding: 'utf8',
     timeout: 15000,
-    env: { ...process.env, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...process.env, HOME: home, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
+}
+
+function runBoard(dir, dbPath) {
+  return runCli(dir, dbPath, ['gm', '--board', '--workspace', dir]);
 }
 
 function withTempWorkspace(fn) {
@@ -419,6 +455,10 @@ function withTempWorkspace(fn) {
   }
 }
 
+function homeSeenFile(dir) {
+  return path.join(dir, 'home', '.atris', 'state', 'gm-last-seen.json');
+}
+
 test('gm --board reads a real task db and prints honest records', () => {
   if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
   withTempWorkspace((dir) => {
@@ -429,33 +469,116 @@ test('gm --board reads a real task db and prints honest records', () => {
     t.task('T3', 'other workspace job', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR, '/elsewhere');
     t.task('T4', 'abandoned job', 'open', null, null, now - 5 * HOUR);
     t.task('T5', 'a claim nobody touched', 'claimed', 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR);
+    t.task('T6', 'archived before landing', 'archived', 'builder', now - 9 * HOUR, now - 10 * HOUR);
+    t.task('T7', 'archived after landing', 'archived', 'builder', now - 9 * HOUR, now - 10 * HOUR);
+    t.task('T8', 'still in review', 'review', 'builder', now - 2 * HOUR, now - 3 * HOUR);
     t.event('E1', 'T1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
     t.event('E2', 'T1', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, now - HOUR);
     t.event('E3', 'T3', 'autoland', 'completed', { action: 'merged' }, now - HOUR, '/elsewhere');
     t.event('E4', 'T4', 'builder', 'claimed', { claimed_by: 'builder' }, now - 5 * HOUR);
     t.event('E5', 'T4', 'builder', 'claim_released', { released_by: 'builder', previous_claimed_by: 'builder' }, now - 4 * HOUR);
     t.event('E6', 'T5', 'scout', 'claimed', { claimed_by: 'scout' }, now - 3 * 24 * HOUR);
+    t.event('E7', 'T6', 'builder', 'claimed', { claimed_by: 'builder' }, now - 9 * HOUR);
+    t.event('E8', 'T6', 'builder', 'proof_ready', {}, now - 8 * HOUR);
+    t.event('E9', 'T6', 'keshavrao', 'archived', { reason: 'sat untouched' }, now - 6 * HOUR);
+    t.event('E10', 'T7', 'builder', 'claimed', { claimed_by: 'builder' }, now - 9 * HOUR);
+    t.event('E11', 'T7', 'autoland', 'completed', { action: 'merged' }, now - 8 * HOUR);
+    t.event('E12', 'T7', 'keshavrao', 'archived', {}, now - 7 * HOUR);
+    t.event('E13', 'T8', 'builder', 'claimed', { claimed_by: 'builder' }, now - 2 * HOUR);
+    t.event('E14', 'T8', 'builder', 'proof_ready', {}, now - 90 * 60 * 1000);
     t.close();
     const seenAt = now - 2 * 24 * HOUR;
-    const seenFile = path.join(t.ws, '.atris', 'state', 'gm-last-seen.json');
+    const seenFile = homeSeenFile(dir);
     fs.mkdirSync(path.dirname(seenFile), { recursive: true });
-    fs.writeFileSync(seenFile, JSON.stringify({ last_seen_at: seenAt }));
+    fs.writeFileSync(seenFile, JSON.stringify({ workspaces: { [t.ws]: { last_seen_at: seenAt } } }));
 
     const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^front office \| /m);
-    assert.match(res.stdout, /, 1 stuck$/m);
-    assert.match(res.stdout, /^since you looked \(2d ago\): 1 landed, 1 dropped, 0 sent back$/m);
-    assert.match(res.stdout, /^ {2}builder +rookie +dk +landed 1 of 2 +idle$/m);
-    assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 1 +stuck 3d$/m);
+    assert.match(res.stdout, /, 1 abandoned, 1 stuck$/m);
+    assert.match(res.stdout, /^since you looked \(2d ago\): 2 landed, 1 dropped, 0 sent back, 1 abandoned$/m);
+    // T1 and T7 landed, T4 dropped, T6 abandoned, T8 is in review and pending
+    assert.match(res.stdout, /^ {2}builder +80 +kadk +landed 2 of 4 +idle$/m);
+    assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 0 +stuck 3d$/m);
     assert.match(res.stdout, /^ {2}scout +3d +[A-Z0-9]+-\d+ +a claim nobody touched$/m);
     assert.match(res.stdout, /builder landed +2h +ship the board$/m);
     assert.match(res.stdout, /builder dropped +1h +abandoned job$/m);
-    assert.match(res.stdout, /builder took +abandoned job/);
     assert.doesNotMatch(res.stdout, /other workspace job/);
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
-    // --board reads the last look but never moves it.
-    assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last_seen_at, seenAt);
+    // --board reads the last look but never moves it, and never writes into the workspace.
+    assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).workspaces[t.ws].last_seen_at, seenAt);
+    assert.equal(fs.existsSync(path.join(t.ws, '.atris', 'state', 'gm-last-seen.json')), false);
+  });
+});
+
+test('the recap reaches back past the 30 day window to the last look', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('OLD', 'landed 35 days ago', 'archived', 'builder', now - 36 * 24 * HOUR, now - 37 * 24 * HOUR);
+    t.task('NEW', 'landed today', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR);
+    t.event('E1', 'OLD', 'builder', 'claimed', { claimed_by: 'builder' }, now - 36 * 24 * HOUR);
+    t.event('E2', 'OLD', 'autoland', 'completed', { action: 'merged' }, now - 35 * 24 * HOUR);
+    t.event('E3', 'NEW', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
+    t.event('E4', 'NEW', 'autoland', 'completed', { action: 'merged' }, now - HOUR);
+    t.close();
+    const board = season.seasonBoard(season.loadSeason(t.ws, { dbPath: t.dbPath, lastSeen: now - 40 * 24 * HOUR, now }));
+    assert.equal(board.since_last_look.line, 'since you looked (40d ago): 2 landed, 0 dropped, 0 sent back, 0 abandoned');
+    // the roster still rates only the 30 day window
+    assert.equal(board.roster[0].landed, 1);
+  });
+});
+
+test('gm --board --json is read only: no starter task, no db writes', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    // one team member and no tasks is exactly what makes plain gm seed a task
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'justin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'START_HERE.md'), '# Justin\n');
+    const t = makeTaskDb(dir);
+    t.close();
+    const before = fs.statSync(t.dbPath).mtimeMs;
+    for (const args of [['gm', '--board', '--json'], ['gm', '--board', '--json', '--league']]) {
+      const res = runCli(dir, t.dbPath, args);
+      assert.equal(res.status, 0, res.stderr);
+      const body = JSON.parse(res.stdout);
+      assert.equal(body.schema, 'atris.gm_board.v1');
+      assert.ok(body.season && Array.isArray(body.season.roster));
+      assert.equal('league' in body, args.includes('--league'));
+    }
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(t.dbPath, { readOnly: true });
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 0);
+    db.close();
+    assert.equal(fs.statSync(t.dbPath).mtimeMs, before);
+  });
+});
+
+test('u only releases when the claim is still stuck at the moment of release', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('STALE', 'sat for days', 'claimed', 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR);
+    t.event('E1', 'STALE', 'scout', 'claimed', { claimed_by: 'scout' }, now - 3 * 24 * HOUR);
+    t.task('RESUMED', 'holder came back', 'claimed', 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR);
+    t.event('E2', 'RESUMED', 'scout', 'claimed', { claimed_by: 'scout' }, now - 3 * 24 * HOUR);
+    t.event('E3', 'RESUMED', 'scout', 'message', { note: 'back on it' }, now - 60 * 1000);
+    t.task('HANDED', 'someone else took it', 'claimed', 'builder', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR);
+    t.event('E4', 'HANDED', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * 24 * HOUR);
+    t.task('LET-GO', 'already released', 'open', null, null, now - 4 * 24 * HOUR);
+    t.event('E5', 'LET-GO', 'scout', 'claimed', { claimed_by: 'scout' }, now - 3 * 24 * HOUR);
+    t.close();
+    const opts = { dbPath: t.dbPath, now };
+    assert.equal(season.stillStuck('STALE', 'scout', opts), true);
+    assert.equal(season.stillStuck('RESUMED', 'scout', opts), false);
+    assert.equal(season.stillStuck('HANDED', 'scout', opts), false);
+    assert.equal(season.stillStuck('LET-GO', 'scout', opts), false);
+    assert.equal(season.stillStuck('MISSING', 'scout', opts), false);
+    // the action u builds carries what to recheck
+    const action = playAction('u', { name: 'CLI-1', stuck: [{ task_id: 'STALE', ref: 'CLI-1', member: 'scout' }] });
+    assert.deepEqual(action.recheck, { task_id: 'STALE', member: 'scout' });
   });
 });
 
@@ -472,30 +595,13 @@ test('two claims in the same millisecond credit the later claim by version', () 
     t.event('A-beta-claim', 'T1', 'beta', 'claimed', { claimed_by: 'beta' }, at);
     t.event('E-land', 'T1', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, at + 2 * HOUR);
     t.close();
-    const season = require('../lib/gm-season').loadSeason(t.ws, { dbPath: t.dbPath });
-    const landed = season.outcomes.find(o => o.kind === 'landed');
+    const loaded = season.loadSeason(t.ws, { dbPath: t.dbPath });
+    const landed = loaded.outcomes.find(o => o.kind === 'landed');
     assert.equal(landed.member, 'beta');
     assert.equal(landed.claim_id, 'A-beta-claim');
     assert.equal(landed.claimed_at, at);
-    const dropped = season.outcomes.find(o => o.kind === 'dropped');
+    const dropped = loaded.outcomes.find(o => o.kind === 'dropped');
     assert.equal(dropped.claim_id, 'Z-alpha-claim');
-  });
-});
-
-test('jobs count claim episodes, so an old claim landing beside a new open one is two jobs', () => {
-  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
-  withTempWorkspace((dir) => {
-    const t = makeTaskDb(dir);
-    const now = Date.now();
-    t.task('OLD', 'claimed before the window', 'archived', 'builder', now - 40 * 24 * HOUR, now - 41 * 24 * HOUR);
-    t.task('NEW', 'claimed this week', 'claimed', 'builder', now - HOUR, now - 2 * HOUR);
-    t.event('E1', 'OLD', 'builder', 'claimed', { claimed_by: 'builder' }, now - 40 * 24 * HOUR);
-    t.event('E2', 'OLD', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, now - 2 * HOUR);
-    t.event('E3', 'NEW', 'builder', 'claimed', { claimed_by: 'builder' }, now - HOUR);
-    t.close();
-    const res = runBoard(dir, t.dbPath);
-    assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /^ {2}builder +rookie +k +landed 1 of 2 +on a job$/m);
   });
 });
 
@@ -581,10 +687,10 @@ test('league renders a header, one row per club, a cap, and the key', () => {
   const lines = renderLeagueLines({ now: NOW, days: 30, rows, error: null });
   const text = lines.join('\n');
   assert.equal(lines[0], 'league | 30 days | 25 clubs');
-  assert.match(text, /^ {2}club +ovr +week +30d +drop +stuck +last +best player$/m);
-  assert.match(text, /^ {2}project-obelisk +99 +3 +3 +0 +0 +4m +integrator 99$/m);
-  assert.match(text, /^ {2}quiet-0 +rookie +0 +0 +0 +0 +1d +-$/m);
-  assert.match(text, /and 5 more quiet clubs/);
+  assert.match(text, /^ {2}club +ovr +week +30d +drop +aband +stuck +last +best player$/m);
+  assert.match(text, /^ {2}project-obelisk +99 +3 +3 +0 +0 +0 +4m +integrator 99$/m);
+  assert.match(text, /^ {2}quiet-0 +rookie +0 +0 +0 +0 +0 +1d +-$/m);
+  assert.match(text, /and 5 more clubs/);
   assert.ok(lines.length <= 40, `league is ${lines.length} rows`);
   assert.doesNotMatch(text, /—/);
   assert.match(renderLeagueLines({ now: NOW, days: 30, rows, error: null }, { interactive: true }).join('\n'), /g back to the club {2}c switch club/);
@@ -618,13 +724,35 @@ test('league loader groups plays by workspace and skips folders that are not clu
     t.event('E5', 'A1', 'ace', 'gone', {}, now - 40 * 24 * HOUR, path.join(dir, 'old'));
     t.close();
     const league = season.loadLeague({ dbPath: t.dbPath, now, isClub: root => root !== scratch });
+    const all = season.leagueRows(league.clubs, now);
+    assert.deepEqual(all.map(r => r.club), ['alpha', 'beta']);
+    assert.equal(all[0].landed_30d, 1);
+    assert.equal(all[0].last_play, '1h');
+    assert.equal(all[1].stuck, 1);
+    assert.equal(all[1].last_play, '3d');
+    // both clubs finished fewer than 3 jobs, so the table hides them
     const board = season.leagueBoard(league);
-    assert.deepEqual(board.rows.map(r => r.club), ['alpha', 'beta']);
-    assert.equal(board.rows[0].landed_30d, 1);
-    assert.equal(board.rows[0].last_play, '1h');
-    assert.equal(board.rows[1].stuck, 1);
-    assert.equal(board.rows[1].last_play, '3d');
+    assert.deepEqual(board.rows, []);
+    assert.equal(board.hidden, 2);
+    assert.deepEqual(board.hidden_clubs.map(c => c.club), ['alpha', 'beta']);
   });
+});
+
+test('league hides clubs under 3 finished jobs and says how many', () => {
+  const busy = [
+    play('a', 'landed', NOW - HOUR), play('a', 'abandoned', NOW - 2 * HOUR), play('a', 'dropped', NOW - 3 * HOUR),
+  ];
+  const board = season.leagueBoard({
+    now: NOW,
+    clubs: [club('/w/busy', busy), club('/w/two', busy.slice(0, 2)), club('/w/none', [], { lastEventAt: NOW - HOUR })],
+  });
+  assert.deepEqual(board.rows.map(r => r.club), ['busy']);
+  assert.equal(board.rows[0].abandoned_30d, 1);
+  assert.equal(board.hidden, 2);
+  const text = renderLeagueLines(board).join('\n');
+  assert.match(text, /^league \| 30 days \| 1 clubs$/m);
+  assert.match(text, /^ {2}2 quiet clubs hidden \(under 3 finished jobs in 30 days\)$/m);
+  assert.match(text, /^ {2}busy +73 +1 +1 +1 +1 +0 /m);
 });
 
 test('gm --league --board prints the league once and exits 0', () => {
@@ -632,14 +760,9 @@ test('gm --league --board prints the league once and exits 0', () => {
   withTempWorkspace((dir) => {
     const t = makeTaskDb(dir);
     t.close();
-    const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--league', '--board'], {
-      cwd: dir,
-      encoding: 'utf8',
-      timeout: 15000,
-      env: { ...process.env, ATRIS_TASKS_DB: t.dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
-    });
+    const res = runCli(dir, t.dbPath, ['gm', '--league', '--board']);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^league \| 30 days \| 0 clubs$/m);
-    assert.match(res.stdout, /no project folder had task events/);
+    assert.match(res.stdout, /no club finished 3 or more jobs/);
   });
 });
