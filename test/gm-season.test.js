@@ -263,8 +263,8 @@ test('up next lists open tasks first, then running or ready missions, three at m
 
 function fixtureBoard({ seen = null, lastSeen = NOW - 2 * 24 * HOUR, claims } = {}) {
   const rows = [
-    play('builder', 'took', NOW - 6 * HOUR, { title: 'ship the board' }),
-    play('builder', 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 5 * HOUR, title: 'ship the board' }),
+    play('builder', 'took', NOW - 6 * HOUR, { title: 'ship the board', claim_id: 'c1' }),
+    play('builder', 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 5 * HOUR, title: 'ship the board', claim_id: 'c1' }),
     play('builder', 'landed', NOW - 2 * HOUR, { claimed_at: NOW - 3 * HOUR, title: 'fix the loader', landed_by: 'you' }),
     play('builder', 'dropped', NOW - HOUR, { claimed_at: NOW - 2 * HOUR, title: 'tidy the help' }),
     play('scout', 'sent_back', NOW - 30 * HOUR, { title: 'look around' }),
@@ -291,9 +291,9 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.equal(lines[0], 'front office | demo | week of oct 19');
   assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 stuck');
   assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back');
-  assert.match(text, /^ {2}builder +86 +kkd +landed 2 of 3 +on a job$/m);
+  assert.match(text, /^ {2}builder +86 +kkd +landed 2 of 4 +on a job$/m);
   assert.match(text, /^ {2}scout +rookie +x +landed 0 of 1 +asleep$/m);
-  assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 0 +stuck 4d$/m);
+  assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 1 +stuck 4d$/m);
   assert.match(text, /^stuck, claimed with no move for 6h or more$/m);
   assert.match(text, /^ {2}mapper +4d +CLI-8 +map the old flags$/m);
   assert.doesNotMatch(text, /CLI-9 +write the release note/);
@@ -368,56 +368,86 @@ test('p picks one bounded wake for a name and a timed team session for a count',
   assert.equal(playAction('p', { who: 'bad;name', minutes: '30' }), null);
 });
 
-test('gm --board reads a real task db and prints honest records', () => {
-  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+// A throwaway task db with the real schema columns gm reads.
+function makeTaskDb(dir) {
+  const { DatabaseSync } = require('node:sqlite');
+  const taskDb = require('../lib/task-db');
+  const ws = taskDb.workspaceRoot(dir);
+  const dbPath = path.join(dir, 'tasks.db');
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', tag TEXT,
+      workspace_root TEXT NOT NULL, source_key TEXT, claimed_by TEXT, claimed_at INTEGER, created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL, done_at INTEGER, metadata TEXT);
+    CREATE TABLE task_events (event_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, version INTEGER NOT NULL,
+      workspace_root TEXT NOT NULL, actor TEXT, event_type TEXT NOT NULL, payload TEXT, created_at INTEGER NOT NULL);
+  `);
+  const insertTask = db.prepare('INSERT INTO tasks (id, title, status, workspace_root, claimed_by, claimed_at, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const insertEvent = db.prepare('INSERT INTO task_events (event_id, task_id, version, workspace_root, actor, event_type, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const versions = new Map();
+  return {
+    ws,
+    dbPath,
+    task: (id, title, status, claimedBy, claimedAt, createdAt, root = ws) => insertTask.run(id, title, status, root, claimedBy, claimedAt, createdAt, Date.now(), '{}'),
+    // versions count up per task, like appendTaskEvent
+    event: (id, taskId, actor, type, payload, at, root = ws) => {
+      const version = (versions.get(taskId) || 0) + 1;
+      versions.set(taskId, version);
+      insertEvent.run(id, taskId, version, root, actor, type, JSON.stringify(payload), at);
+    },
+    close: () => db.close(),
+  };
+}
+
+function runBoard(dir, dbPath) {
+  return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--board', '--workspace', dir], {
+    cwd: dir,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: { ...process.env, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+}
+
+function withTempWorkspace(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-season-'));
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const dbPath = path.join(dir, 'tasks.db');
-    const { DatabaseSync } = require('node:sqlite');
-    const taskDb = require('../lib/task-db');
-    const ws = taskDb.workspaceRoot(dir);
-    const db = new DatabaseSync(dbPath);
-    db.exec(`
-      CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', tag TEXT,
-        workspace_root TEXT NOT NULL, source_key TEXT, claimed_by TEXT, claimed_at INTEGER, created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL, done_at INTEGER, metadata TEXT);
-      CREATE TABLE task_events (event_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, version INTEGER NOT NULL,
-        workspace_root TEXT NOT NULL, actor TEXT, event_type TEXT NOT NULL, payload TEXT, created_at INTEGER NOT NULL);
-    `);
+    return fn(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('gm --board reads a real task db and prints honest records', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
     const now = Date.now();
-    const addTask = db.prepare('INSERT INTO tasks (id, title, status, workspace_root, claimed_by, claimed_at, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    const addEvent = db.prepare('INSERT INTO task_events (event_id, task_id, version, workspace_root, actor, event_type, payload, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)');
-    addTask.run('T1', 'ship the board', 'archived', ws, 'builder', now - 3 * HOUR, now - 4 * HOUR, now, '{}');
-    addTask.run('T2', 'write the docs', 'open', ws, null, null, now - HOUR, now, '{}');
-    addTask.run('T3', 'other workspace job', 'archived', '/elsewhere', 'builder', now - 3 * HOUR, now - 4 * HOUR, now, '{}');
-    addTask.run('T4', 'abandoned job', 'open', ws, null, null, now - 5 * HOUR, now, '{}');
-    addEvent.run('E1', 'T1', ws, 'builder', 'claimed', '{"claimed_by":"builder"}', now - 3 * HOUR);
-    addEvent.run('E2', 'T1', ws, 'autoland', 'completed', '{"action":"merged","auto_accepted":true}', now - HOUR);
-    addEvent.run('E3', 'T3', '/elsewhere', 'autoland', 'completed', '{"action":"merged"}', now - HOUR);
-    addEvent.run('E4', 'T4', ws, 'builder', 'claimed', '{"claimed_by":"builder"}', now - 5 * HOUR);
-    addEvent.run('E5', 'T4', ws, 'builder', 'claim_released', '{"released_by":"builder","previous_claimed_by":"builder"}', now - 4 * HOUR);
-    addTask.run('T5', 'a claim nobody touched', 'claimed', ws, 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR, now, '{}');
-    addEvent.run('E6', 'T5', ws, 'scout', 'claimed', '{"claimed_by":"scout"}', now - 3 * 24 * HOUR);
-    db.close();
+    t.task('T1', 'ship the board', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR);
+    t.task('T2', 'write the docs', 'open', null, null, now - HOUR);
+    t.task('T3', 'other workspace job', 'archived', 'builder', now - 3 * HOUR, now - 4 * HOUR, '/elsewhere');
+    t.task('T4', 'abandoned job', 'open', null, null, now - 5 * HOUR);
+    t.task('T5', 'a claim nobody touched', 'claimed', 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR);
+    t.event('E1', 'T1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 3 * HOUR);
+    t.event('E2', 'T1', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, now - HOUR);
+    t.event('E3', 'T3', 'autoland', 'completed', { action: 'merged' }, now - HOUR, '/elsewhere');
+    t.event('E4', 'T4', 'builder', 'claimed', { claimed_by: 'builder' }, now - 5 * HOUR);
+    t.event('E5', 'T4', 'builder', 'claim_released', { released_by: 'builder', previous_claimed_by: 'builder' }, now - 4 * HOUR);
+    t.event('E6', 'T5', 'scout', 'claimed', { claimed_by: 'scout' }, now - 3 * 24 * HOUR);
+    t.close();
     const seenAt = now - 2 * 24 * HOUR;
-    const seenFile = path.join(ws, '.atris', 'state', 'gm-last-seen.json');
+    const seenFile = path.join(t.ws, '.atris', 'state', 'gm-last-seen.json');
     fs.mkdirSync(path.dirname(seenFile), { recursive: true });
     fs.writeFileSync(seenFile, JSON.stringify({ last_seen_at: seenAt }));
 
-    const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--board', '--workspace', dir], {
-      cwd: dir,
-      encoding: 'utf8',
-      timeout: 15000,
-      env: { ...process.env, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
-    });
+    const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^front office \| /m);
     assert.match(res.stdout, /, 1 stuck$/m);
     assert.match(res.stdout, /^since you looked \(2d ago\): 1 landed, 1 dropped, 0 sent back$/m);
     assert.match(res.stdout, /^ {2}builder +rookie +dk +landed 1 of 2 +idle$/m);
     assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 1 +stuck 3d$/m);
-    assert.match(res.stdout, /^ {2}scout +3d +[A-Z]+-\d+ +a claim nobody touched$/m);
+    assert.match(res.stdout, /^ {2}scout +3d +[A-Z0-9]+-\d+ +a claim nobody touched$/m);
     assert.match(res.stdout, /builder landed +2h +ship the board$/m);
     assert.match(res.stdout, /builder dropped +1h +abandoned job$/m);
     assert.match(res.stdout, /builder took +abandoned job/);
@@ -425,7 +455,45 @@ test('gm --board reads a real task db and prints honest records', () => {
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
     // --board reads the last look but never moves it.
     assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last_seen_at, seenAt);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  });
+});
+
+test('two claims in the same millisecond credit the later claim by version', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const at = Date.now() - 5 * HOUR;
+    t.task('T1', 'same moment job', 'archived', 'beta', at, at - HOUR);
+    // alpha claims and lets go, beta claims, all in one millisecond; ids sort
+    // so a timestamp-only lookup would pick alpha.
+    t.event('Z-alpha-claim', 'T1', 'alpha', 'claimed', { claimed_by: 'alpha' }, at);
+    t.event('Z-alpha-release', 'T1', 'alpha', 'claim_released', { released_by: 'alpha', previous_claimed_by: 'alpha' }, at);
+    t.event('A-beta-claim', 'T1', 'beta', 'claimed', { claimed_by: 'beta' }, at);
+    t.event('E-land', 'T1', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, at + 2 * HOUR);
+    t.close();
+    const season = require('../lib/gm-season').loadSeason(t.ws, { dbPath: t.dbPath });
+    const landed = season.outcomes.find(o => o.kind === 'landed');
+    assert.equal(landed.member, 'beta');
+    assert.equal(landed.claim_id, 'A-beta-claim');
+    assert.equal(landed.claimed_at, at);
+    const dropped = season.outcomes.find(o => o.kind === 'dropped');
+    assert.equal(dropped.claim_id, 'Z-alpha-claim');
+  });
+});
+
+test('jobs count claim episodes, so an old claim landing beside a new open one is two jobs', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('OLD', 'claimed before the window', 'archived', 'builder', now - 40 * 24 * HOUR, now - 41 * 24 * HOUR);
+    t.task('NEW', 'claimed this week', 'claimed', 'builder', now - HOUR, now - 2 * HOUR);
+    t.event('E1', 'OLD', 'builder', 'claimed', { claimed_by: 'builder' }, now - 40 * 24 * HOUR);
+    t.event('E2', 'OLD', 'autoland', 'completed', { action: 'merged', auto_accepted: true }, now - 2 * HOUR);
+    t.event('E3', 'NEW', 'builder', 'claimed', { claimed_by: 'builder' }, now - HOUR);
+    t.close();
+    const res = runBoard(dir, t.dbPath);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /^ {2}builder +rookie +k +landed 1 of 2 +on a job$/m);
+  });
 });
