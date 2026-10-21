@@ -27,6 +27,7 @@ function showHelp() {
   console.log('Usage: atris gm                  play the front office (in a terminal)');
   console.log('       atris gm --board          print the front office board once');
   console.log('       atris gm --league         print the league, every project as a club');
+  console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -58,8 +59,16 @@ function showHelp() {
   console.log('    l  landing check (atris land --dry-run)');
   console.log('    g  switch between this club and the league (read only)');
   console.log('    c  switch to another club from the league (read only, like --workspace)');
+  console.log('    v  replay what happened since your last look, then back to the board');
   console.log('    enter or space  refresh,  q  quit');
   console.log('  Every key that runs a command shows it first.');
+  console.log('');
+  console.log('  atris gm replay plays a window back as a time-lapse in about 75 seconds:');
+  console.log('  a clock, each member\'s running tally, and the last six plays. Keys:');
+  console.log('  space pause, f faster, q quit. Off a terminal, or with --plain, it prints');
+  console.log('  each play as a line. --since takes 30m, 12h, 2d, or last-seen (the');
+  console.log('  default, else 12h); --speed 2 plays twice as fast; --league plays every');
+  console.log('  club at once.');
   console.log('');
   console.log('  The league treats every real project folder with task events in the');
   console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
@@ -674,9 +683,9 @@ function render(state) {
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const PLAY_KEYS = [
   'keys: p play  r run  w wake  s sleep  u unstick  l landing check',
-  '      g league  c switch club  enter refresh  q quit',
+  '      g league  c switch club  v replay  enter refresh  q quit',
 ];
-const LEAGUE_KEYS = 'keys: g back to the club  c switch club  enter refresh  q quit';
+const LEAGUE_KEYS = 'keys: g back to the club  c switch club  v replay  enter refresh  q quit';
 const LEAGUE_MAX_ROWS = 20;
 const MEMBER_NAME_RE = /^[a-zA-Z0-9._-]+$/;
 const REFRESH_MS = 10 * 1000;
@@ -1075,6 +1084,29 @@ async function gmPlay(args = []) {
     return `last: ${shown}`;
   };
 
+  // v: replay what happened since the look this session started from (or the
+  // last 12 hours), for this club or the league, then come back.
+  const replayHere = async () => {
+    const now = Date.now();
+    const window = season.parseSince('', { now, lastSeen });
+    const byClub = view === 'league';
+    const model = season.loadReplay({ workspaceRoot, since: window.since, now, league: byClub });
+    if (!model.plays.length) return `nothing happened since ${season.clockLabel(window.since, now)}`;
+    queue.length = 0;
+    setRaw(true);
+    input.resume();
+    const outcome = await runReplay({ plays: model.plays, since: window.since, now, byClub }, {
+      write: text => output.write(text),
+      poll: () => queue.splice(0).map(({ str, key }) => replayKeyName(str, key)),
+    });
+    const summary = season.replaySummary(model.plays, { stuck: model.stuck, since: window.since, now });
+    write('');
+    write(outcome === 'quit' ? `stopped early. ${summary}` : summary);
+    write('press any key to go back to the board');
+    await nextKey();
+    return summary;
+  };
+
   let atBoard = false;
   const refresh = setInterval(() => {
     if (atBoard) draw();
@@ -1094,8 +1126,14 @@ async function gmPlay(args = []) {
         view = view === 'league' ? 'club' : 'league';
         note = '';
         draw();
+      } else if (name === 'v') {
+        note = await replayHere();
+        draw();
       } else if (name === 'c') {
-        if (!leagueRowsSeen.length) leagueRowsSeen = loadLeagueBoard().rows;
+        if (!leagueRowsSeen.length) {
+          const fresh = loadLeagueBoard();
+          leagueRowsSeen = [...fresh.rows, ...(fresh.hidden_clubs || [])];
+        }
         write('');
         const names = leagueRowsSeen.slice(0, 6).map(row => row.club).join(', ');
         const answer = await ask(`switch to which club? (${names}${leagueRowsSeen.length > 6 ? ', ...' : ''}): `);
@@ -1371,4 +1409,7 @@ module.exports = {
   playAction,
   renderBoardLines,
   renderLeagueLines,
+  renderReplayFrameLines,
+  replayPlainLines,
+  runReplay,
 };
