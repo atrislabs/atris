@@ -262,10 +262,6 @@ function captionTrackCandidates(info = {}) {
   return candidates;
 }
 
-function chooseCaptionTrack(info = {}) {
-  return captionTrackCandidates(info)[0] || null;
-}
-
 function formatTimestampFromMs(ms) {
   const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
   const hours = Math.floor(totalSeconds / 3600);
