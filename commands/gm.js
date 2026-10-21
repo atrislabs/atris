@@ -899,16 +899,27 @@ async function gmPlay(args = []) {
     return new Promise((resolve) => { waiter = resolve; });
   };
 
+  // Resolves the typed answer, or null when the prompt is cancelled with
+  // Ctrl-C or closed, so a cancel never falls through to a default.
   const ask = question => new Promise((resolve) => {
     capturing = false;
     queue.length = 0;
     setRaw(false);
     const rl = readline.createInterface({ input, output, terminal: true });
-    rl.question(question, (answer) => {
-      rl.close();
+    let settled = false;
+    const settle = (answer) => {
+      if (settled) return;
+      settled = true;
       capturing = true;
-      resolve(String(answer || '').trim());
+      rl.close();
+      resolve(answer);
+    };
+    rl.on('SIGINT', () => {
+      output.write('\n');
+      settle(null);
     });
+    rl.on('close', () => settle(null));
+    rl.question(question, answer => settle(String(answer || '').trim()));
   });
 
   // Ctrl-C while a command runs reaches the command, not gm, so gm comes back.
@@ -932,6 +943,7 @@ async function gmPlay(args = []) {
     child.on('close', code => finish({ code }));
   });
 
+  const CANCELLED = 'cancelled, nothing ran';
   const doAction = async (key) => {
     let action;
     write('');
@@ -939,19 +951,24 @@ async function gmPlay(args = []) {
       action = playAction('l');
     } else if (key === 'p') {
       const minutes = await ask(`session length in minutes (enter for ${PLAY_DEFAULT_MINUTES}): `);
+      if (minutes === null) return CANCELLED;
       const who = await ask(`who: a member name, names, or how many (enter for ${PLAY_DEFAULT_WHO}): `);
+      if (who === null) return CANCELLED;
       action = playAction('p', { who, minutes });
       if (!action) return `cancelled, need 1 to ${PLAY_MAX_MINUTES} minutes and member names or a count up to ${PLAY_MAX_COUNT}`;
     } else if (key === 'u') {
       if (!stuck.length) return 'nothing is stuck';
       const id = await ask(`unstick which task? (${stuck.map(s => s.ref).join(', ')}): `);
+      if (id === null) return CANCELLED;
       action = playAction('u', { name: id, stuck });
       if (!action) return id ? `cancelled, "${clip(id, 40)}" is not in the stuck list` : 'cancelled, no task named';
     } else {
       const verb = { r: 'run', w: 'wake', s: 'sleep' }[key];
       const name = await ask(`${verb} which member? `);
+      if (name === null) return CANCELLED;
       if (!name) return 'cancelled, no member named';
       const job = key === 'r' ? await ask('job (optional, enter to skip): ') : '';
+      if (job === null) return CANCELLED;
       action = playAction(key, { name, job });
       if (!action) return `cancelled, "${clip(name, 40)}" is not a member name`;
     }
@@ -979,26 +996,29 @@ async function gmPlay(args = []) {
     if (atBoard) draw();
   }, REFRESH_MS);
 
-  draw();
-  for (;;) {
-    atBoard = true;
-    const { str, key } = await nextKey();
-    atBoard = false;
-    const name = (key && key.name) || str;
-    if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
-    if (name === 'space' || name === 'return' || name === 'enter') {
-      draw();
-    } else if (['p', 'r', 'w', 's', 'u', 'l'].includes(name)) {
-      note = await doAction(name);
-      draw();
+  try {
+    draw();
+    for (;;) {
+      atBoard = true;
+      const { str, key } = await nextKey();
+      atBoard = false;
+      const name = (key && key.name) || str;
+      if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
+      if (name === 'space' || name === 'return' || name === 'enter') {
+        draw();
+      } else if (['p', 'r', 'w', 's', 'u', 'l'].includes(name)) {
+        note = await doAction(name);
+        draw();
+      }
     }
+  } finally {
+    clearInterval(refresh);
+    season.writeLastSeen(workspaceRoot);
+    input.off('keypress', onKeypress);
+    setRaw(false);
+    input.pause();
+    write('');
   }
-  clearInterval(refresh);
-  season.writeLastSeen(workspaceRoot);
-  input.off('keypress', onKeypress);
-  setRaw(false);
-  input.pause();
-  write('');
 }
 
 function wantsPlay(args = []) {
