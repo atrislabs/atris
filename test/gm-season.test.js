@@ -486,6 +486,11 @@ test('gm --board reads a real task db and prints honest records', () => {
     t.event('E12', 'T7', 'keshavrao', 'archived', {}, now - 7 * HOUR);
     t.event('E13', 'T8', 'builder', 'claimed', { claimed_by: 'builder' }, now - 2 * HOUR);
     t.event('E14', 'T8', 'builder', 'proof_ready', {}, now - 90 * 60 * 1000);
+    // done with no accept, then tidied away: neither landed nor abandoned
+    t.task('T9', 'done without an accept', 'archived', 'builder', now - 9 * HOUR, now - 10 * HOUR);
+    t.event('E15', 'T9', 'builder', 'claimed', { claimed_by: 'builder' }, now - 9 * HOUR);
+    t.event('E16', 'T9', 'builder', 'completed', { status: 'done' }, now - 8 * HOUR);
+    t.event('E17', 'T9', 'keshavrao', 'archived', { reason: 'finished work left the list' }, now - 7 * HOUR);
     t.close();
     const seenAt = now - 2 * 24 * HOUR;
     const seenFile = homeSeenFile(dir);
