@@ -830,13 +830,24 @@ function pickClub(answer, rows = []) {
   return null;
 }
 
+// An unreadable task db is a failure, not an empty board: say so, exit 1.
+function failRead(error) {
+  console.error(`could not read the task list: ${clip(error, 120)}`);
+  process.exitCode = 1;
+}
+
 function printLeague() {
-  console.log(renderLeagueLines(loadLeagueBoard()).join('\n'));
+  const board = loadLeagueBoard();
+  if (board.error) return failRead(board.error);
+  console.log(renderLeagueLines(board).join('\n'));
+  return undefined;
 }
 
 function printBoard(args = []) {
-  const lines = renderBoardLines(loadBoard(boardWorkspaceRoot(args)));
-  console.log(lines.join('\n'));
+  const board = loadBoard(boardWorkspaceRoot(args));
+  if (board.error) return failRead(board.error);
+  console.log(renderBoardLines(board).join('\n'));
+  return undefined;
 }
 
 function quoteArg(value) {
@@ -1334,7 +1345,10 @@ async function gmReplay(args = []) {
   const speed = Number(flag(args, '--speed')) > 0 ? Number(flag(args, '--speed')) : 1;
   const model = season.loadReplay({ workspaceRoot, since: window.since, now, league: byClub });
   const where = byClub ? 'the league' : path.basename(workspaceRoot);
-  if (model.error) console.error(`could not read the task list: ${clip(model.error, 80)}`);
+  if (model.error) {
+    failRead(model.error);
+    return;
+  }
   if (!model.plays.length) {
     console.log(`nothing happened since ${season.clockLabel(window.since, now)}`);
     return;
@@ -1436,6 +1450,11 @@ async function gmCommand(...args) {
       season: loadBoard(workspaceRoot),
     };
     if (hasExactFlag(args, '--league')) body.league = loadLeagueBoard();
+    const readError = body.season.error || (body.league && body.league.error);
+    if (readError) {
+      failRead(readError);
+      return;
+    }
     console.log(JSON.stringify(body, null, 2));
     return;
   }
