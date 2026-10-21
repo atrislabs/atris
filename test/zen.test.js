@@ -111,6 +111,10 @@ test('leftovers, drift and stray code each break zen', () => {
     // an idle side copy and a busy one
     git(checkout, 'worktree', 'add', '-q', path.join(base, 'idle'), '-b', 'idle-branch');
     git(checkout, 'worktree', 'add', '-q', path.join(base, 'busy'), '-b', 'busy-branch');
+    // nobody has switched or committed in the idle copy for an hour
+    const idleGit = path.resolve(base, 'idle', git(path.join(base, 'idle'), 'rev-parse', '--git-dir'));
+    const hourAgo = new Date(Date.now() - 3600000);
+    for (const f of ['HEAD', 'logs/HEAD']) fs.utimesSync(path.join(idleGit, f), hourAgo, hourAgo);
     fs.writeFileSync(path.join(base, 'busy', 'wip.js'), 'wip\n');
     // stray code edit
     fs.writeFileSync(path.join(checkout, 'app.js'), 'edited\n');
