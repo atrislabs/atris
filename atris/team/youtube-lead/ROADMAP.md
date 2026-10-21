@@ -25,7 +25,7 @@ Goal: the fastest honest video-to-knowledge loop anywhere, and it compounds. Eac
 - CI passes again (#1068), which unblocked the 3.62.0 release.
 - Clear answers on a fresh computer (#1069). A missing yt-dlp is named with its install command, and a missing writer exits 3 with the transcript kept, never blank notes.
 - Paid lane charging confirmed live: 5 credits in `credit_transactions`, refunded on failure.
-- Upkeep: the Sunday 05:00 Mac job `ai.atris.youtube-tools-update` upgrades yt-dlp and mlx-whisper.
+- Upkeep: a Sunday 05:00 Mac job `ai.atris.youtube-tools-update` was meant to upgrade yt-dlp and mlx-whisper. On 2026-10-21 it was not installed on this Mac (no plist, no logs, yt-dlp 62 days old), and no installer for it is in the repo.
 
 Measured that day: `Am7IWP8IpEc` (85 min, captioned) 11 to 19 seconds with Gemini, 65 with Haiku only. `6DRlX5vIOE0` (no captions) 59 seconds, and `N10zZ1VBDOk` (10 min, no captions) 150 seconds.
 

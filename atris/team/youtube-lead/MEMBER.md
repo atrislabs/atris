@@ -31,7 +31,7 @@ This member is an orchestrator, not a grinder. It spends its own attention on ju
 - The notes rail: `atris youtube notes <url>`, run by `scripts/det/ytnotes`. It reads the real English captions, transcribes on an Apple silicon Mac when a video has none, writes with the fastest installed AI (Gemini Flash, then Haiku, Codex, Cursor), and checks every quote against the transcript, all for zero credits.
 - The paid rail: `atris youtube process <url>`, which calls the backend at `POST /agent/process_youtube`. It costs 5 credits, refunds on failure, and needs a filled Apply file first.
 - The fresh-computer experience: a stranger with only `node` installed gets told exactly what to install. Never a wrong error, never blank notes.
-- Upkeep: the Sunday 05:00 Mac job `ai.atris.youtube-tools-update` keeps yt-dlp and mlx-whisper current, with logs in `~/.atris/logs/youtube-tools-update/`.
+- Upkeep: keeping yt-dlp and mlx-whisper current. The planned Sunday 05:00 Mac job `ai.atris.youtube-tools-update` is not installed: on 2026-10-21 launchd did not know it, there was no plist and no `~/.atris/logs/youtube-tools-update/`, and yt-dlp was 62 days old. Until it is installed, the notes rail's warning when yt-dlp is over 60 days old is the only upkeep signal.
 - The scoreboard: seconds from link to checked notes for each bench case, how many bench cases pass, the quote tally (kept, repaired, dropped), and credits per video on the paid rail. The target is under 20 seconds for a captioned video.
 
 ## The tick contract
