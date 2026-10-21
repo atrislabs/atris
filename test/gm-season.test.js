@@ -205,26 +205,47 @@ test('since you looked counts finished plays after the last look', () => {
   assert.equal(season.sinceLastLook(rows, NOW - 4 * HOUR, NOW).line, 'nothing happened since you looked 4h ago');
 });
 
-test('last seen lives in one home file keyed by workspace, never in the workspace', () => {
+test('last seen is one small file per workspace in the home state dir, never in the workspace', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-seen-'));
-  const file = path.join(home, '.atris', 'state', 'gm-last-seen.json');
+  const dir = path.join(home, '.atris', 'state', 'gm-last-seen');
   try {
     const wsA = path.join(home, 'club-a');
     const wsB = path.join(home, 'club-b');
-    assert.equal(season.readLastSeen(wsA, { file }), null);
-    assert.equal(season.writeLastSeen(wsA, NOW, { file }), true);
-    assert.equal(season.writeLastSeen(wsB, NOW - HOUR, { file }), true);
-    assert.equal(season.readLastSeen(wsA, { file }), NOW);
-    assert.equal(season.readLastSeen(wsB, { file }), NOW - HOUR);
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    assert.equal(raw.workspaces[path.resolve(wsA)].last_seen_at, NOW);
+    assert.equal(season.readLastSeen(wsA, { dir }), null);
+    assert.equal(season.writeLastSeen(wsA, NOW, { dir }), true);
+    assert.equal(season.writeLastSeen(wsB, NOW - HOUR, { dir }), true);
+    assert.equal(season.readLastSeen(wsA, { dir }), NOW);
+    assert.equal(season.readLastSeen(wsB, { dir }), NOW - HOUR);
+    const sha = require('node:crypto').createHash('sha1').update(path.resolve(wsA)).digest('hex');
+    const files = fs.readdirSync(dir).sort();
+    assert.equal(files.length, 2);
+    assert.ok(files.includes(`${sha}.json`));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, `${sha}.json`), 'utf8')).last_seen_at, NOW);
     assert.equal(fs.existsSync(path.join(wsA, '.atris')), false);
-    fs.writeFileSync(file, 'not json');
-    assert.equal(season.readLastSeen(wsA, { file }), null);
+    // writing one club never touches another club's file
+    assert.equal(season.writeLastSeen(wsA, NOW + 1, { dir }), true);
+    assert.equal(season.readLastSeen(wsB, { dir }), NOW - HOUR);
+    fs.writeFileSync(path.join(dir, `${sha}.json`), 'not json');
+    assert.equal(season.readLastSeen(wsA, { dir }), null);
     // An unwritable home means no recap next time, never a crash.
     const blocked = path.join(home, 'a-file');
     fs.writeFileSync(blocked, 'x');
-    assert.equal(season.writeLastSeen(wsA, NOW, { file: path.join(blocked, 'state', 'gm-last-seen.json') }), false);
+    assert.equal(season.writeLastSeen(wsA, NOW, { dir: path.join(blocked, 'gm-last-seen') }), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the older single last-seen map is still read when no per-workspace file exists', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-seen-'));
+  const dir = path.join(home, 'state', 'gm-last-seen');
+  try {
+    const ws = path.join(home, 'club-a');
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    fs.writeFileSync(path.join(home, 'state', 'gm-last-seen.json'), JSON.stringify({ workspaces: { [path.resolve(ws)]: { last_seen_at: NOW - HOUR } } }));
+    assert.equal(season.readLastSeen(ws, { dir }), NOW - HOUR);
+    season.writeLastSeen(ws, NOW, { dir });
+    assert.equal(season.readLastSeen(ws, { dir }), NOW);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -455,8 +476,10 @@ function withTempWorkspace(fn) {
   }
 }
 
-function homeSeenFile(dir) {
-  return path.join(dir, 'home', '.atris', 'state', 'gm-last-seen.json');
+// The per-workspace last-look file the CLI reads under the test HOME.
+function homeSeenFile(dir, ws) {
+  const sha = require('node:crypto').createHash('sha1').update(path.resolve(ws)).digest('hex');
+  return path.join(dir, 'home', '.atris', 'state', 'gm-last-seen', `${sha}.json`);
 }
 
 test('gm --board reads a real task db and prints honest records', () => {
@@ -493,9 +516,9 @@ test('gm --board reads a real task db and prints honest records', () => {
     t.event('E17', 'T9', 'keshavrao', 'archived', { reason: 'finished work left the list' }, now - 7 * HOUR);
     t.close();
     const seenAt = now - 2 * 24 * HOUR;
-    const seenFile = homeSeenFile(dir);
+    const seenFile = homeSeenFile(dir, t.ws);
     fs.mkdirSync(path.dirname(seenFile), { recursive: true });
-    fs.writeFileSync(seenFile, JSON.stringify({ workspaces: { [t.ws]: { last_seen_at: seenAt } } }));
+    fs.writeFileSync(seenFile, JSON.stringify({ last_seen_at: seenAt }));
 
     const res = runBoard(dir, t.dbPath);
     assert.equal(res.status, 0, res.stderr);
@@ -511,7 +534,7 @@ test('gm --board reads a real task db and prints honest records', () => {
     assert.doesNotMatch(res.stdout, /other workspace job/);
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
     // --board reads the last look but never moves it, and never writes into the workspace.
-    assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).workspaces[t.ws].last_seen_at, seenAt);
+    assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last_seen_at, seenAt);
     assert.equal(fs.existsSync(path.join(t.ws, '.atris', 'state', 'gm-last-seen.json')), false);
   });
 });
@@ -679,9 +702,11 @@ test('league last play shows the newest task event in minutes, hours, or days', 
   assert.deepEqual(byClub, { a: '4m', b: '7h', c: '4d', d: '-' });
 });
 
-test('clubs with the same folder name get their parent folder in front', () => {
+test('clubs with the same folder name get parent folders until the label is unique', () => {
   const rows = season.leagueRows([club('/w/one/referee'), club('/w/two/referee'), club('/w/solo')], NOW);
   assert.deepEqual(rows.map(r => r.club).sort(), ['one/referee', 'solo', 'two/referee']);
+  const deep = season.leagueRows([club('/one/common/app'), club('/two/common/app'), club('/x/app2')], NOW);
+  assert.deepEqual(deep.map(r => r.club).sort(), ['app2', 'one/common/app', 'two/common/app']);
 });
 
 test('league renders a header, one row per club, a cap, and the key', () => {
@@ -701,13 +726,16 @@ test('league renders a header, one row per club, a cap, and the key', () => {
   assert.match(renderLeagueLines({ now: NOW, days: 30, rows, error: null }, { interactive: true }).join('\n'), /g back to the club {2}c switch club/);
 });
 
-test('c picks a club by league name or folder name', () => {
+test('c picks a club by unique label or folder name, and refuses an ambiguous one', () => {
   const rows = [{ club: 'one/referee', root: '/w/one/referee' }, { club: 'atris-cli', root: '/w/atris-cli' }];
-  assert.equal(pickClub('Atris-CLI', rows), '/w/atris-cli');
-  assert.equal(pickClub('one/referee', rows), '/w/one/referee');
-  assert.equal(pickClub('referee', rows), '/w/one/referee');
+  assert.deepEqual(pickClub('Atris-CLI', rows), { root: '/w/atris-cli' });
+  assert.deepEqual(pickClub('one/referee', rows), { root: '/w/one/referee' });
+  assert.deepEqual(pickClub('referee', rows), { root: '/w/one/referee' });
   assert.equal(pickClub('nope', rows), null);
   assert.equal(pickClub('', rows), null);
+  const twins = season.leagueRows([club('/one/common/app'), club('/two/common/app')], NOW);
+  assert.deepEqual(pickClub('app', twins), { ambiguous: twins.map(r => r.club) });
+  assert.deepEqual(pickClub('two/common/app', twins), { root: '/two/common/app' });
 });
 
 test('league loader groups plays by workspace and skips folders that are not clubs', () => {
@@ -938,5 +966,57 @@ test('gm replay with nothing in the window says so and exits 0', () => {
     const bad = runCli(dir, t.dbPath, ['gm', 'replay', '--since', 'soon', '--workspace', dir]);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /--since takes a span/);
+  });
+});
+
+// ---- third review ---------------------------------------------------------
+
+test('gm <member> with --board, --league, or --json only reads and never wakes', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const memberDir = path.join(dir, 'atris', 'team', 'alice');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '---\nname: alice\nrole: Test Navigator\n---\n# Alice\n');
+    const t = makeTaskDb(dir);
+    t.close();
+    for (const args of [['gm', 'alice', '--board', '--json'], ['gm', 'alice', '--board'], ['gm', 'alice', '--league', '--board']]) {
+      const res = runCli(dir, t.dbPath, args);
+      assert.equal(res.status, 0, res.stderr);
+      assert.doesNotMatch(res.stdout + res.stderr, /waking up|is asleep/i, args.join(' '));
+      if (args.includes('--json')) assert.equal(JSON.parse(res.stdout).schema, 'atris.gm_board.v1');
+    }
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(t.dbPath, { readOnly: true });
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 0);
+    db.close();
+  });
+});
+
+test('a reopen ends the claim, so a later archive is not also the holder abandon', () => {
+  if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
+  withTempWorkspace((dir) => {
+    const t = makeTaskDb(dir);
+    const now = Date.now();
+    t.task('R1', 'reopened then tidied', 'archived', null, null, now - 10 * HOUR);
+    t.event('E1', 'R1', 'builder', 'claimed', { claimed_by: 'builder' }, now - 9 * HOUR);
+    t.event('E2', 'R1', 'builder', 'proof_ready', {}, now - 8.5 * HOUR);
+    t.event('E3', 'R1', 'keshavrao', 'reopened', {}, now - 8 * HOUR);
+    t.event('E4', 'R1', 'keshavrao', 'archived', { reason: 'not needed' }, now - 6 * HOUR);
+    // a fresh claim after the reopen that is archived unlanded is that claim's abandon
+    t.task('R2', 'reopened, reclaimed, tidied', 'archived', null, null, now - 10 * HOUR);
+    t.event('F1', 'R2', 'builder', 'claimed', { claimed_by: 'builder' }, now - 7.5 * HOUR);
+    t.event('F2', 'R2', 'keshavrao', 'reopened', {}, now - 7 * HOUR);
+    t.event('F3', 'R2', 'scout', 'claimed', { claimed_by: 'scout' }, now - 6.5 * HOUR);
+    t.event('F4', 'R2', 'keshavrao', 'archived', {}, now - 5 * HOUR);
+    t.close();
+    const loaded = season.loadSeason(t.ws, { dbPath: t.dbPath, now });
+    assert.deepEqual(loaded.outcomes.map(o => `${o.task_id}:${o.member}:${o.kind}`), [
+      'R1:builder:took',
+      'R1:builder:sent_back',
+      'R2:builder:took',
+      'R2:builder:sent_back',
+      'R2:scout:took',
+      'R2:scout:abandoned',
+    ]);
   });
 });
