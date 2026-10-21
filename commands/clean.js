@@ -715,6 +715,22 @@ function checkPageStaleness(cwd, filePath) {
   return null;
 }
 
+// A day can already be archived when a late entry lands in its journal.
+// Renaming over the archive would erase it, so the late entry is added to the
+// end instead, unless the archive already holds it word for word.
+function moveIntoArchive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.renameSync(src, dest);
+    return;
+  }
+  const late = fs.readFileSync(src, 'utf8');
+  const kept = fs.readFileSync(dest, 'utf8');
+  if (late.trim() && !kept.includes(late.trim())) {
+    fs.writeFileSync(dest, `${kept.replace(/\n*$/, '\n')}\n${late}`);
+  }
+  fs.rmSync(src);
+}
+
 /**
  * Archive journals older than 30 days
  */
@@ -749,7 +765,7 @@ function archiveOldJournals(atrisDir, dryRun = false) {
           }
           const src = path.join(yearDir, file);
           const dest = path.join(archiveYearDir, file);
-          fs.renameSync(src, dest);
+          moveIntoArchive(src, dest);
         }
         archived++;
       }
