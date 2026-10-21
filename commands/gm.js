@@ -34,13 +34,14 @@ function showHelp() {
   console.log('  The front office for your team. The board shows each member\'s rating,');
   console.log('  their last five finished jobs, who is on a job, the last plays, and');
   console.log('  what is up next. Every job a member takes in the last 30 days ends');
-  console.log('  landed (accepted or merged), dropped (claim let go), or sent back.');
+  console.log('  landed (accepted or merged), dropped (claim let go), sent back, or');
+  console.log('  abandoned (archived without landing). Jobs in review are pending.');
   console.log('  ovr = round(60 + 39 * landed / finished), rookie under 3 finished.');
-  console.log('  Drops count, so this is stricter than the website rating on purpose.');
+  console.log('  Drops and abandons count, so this is stricter than the website rating.');
   console.log('  "on a job" means the claimed task moved in the last 6 hours; a claim');
   console.log('  that sat longer shows as stuck, with its age and task id.');
   console.log('  The line above the roster recaps what happened since your last look');
-  console.log('  (saved in .atris/state/gm-last-seen.json by the playable board only).');
+  console.log('  (saved in ~/.atris/state/gm-last-seen.json by the playable board only).');
   console.log('');
   console.log('  In a terminal, gm is playable and refreshes every 10 seconds:');
   console.log('    p  send the team out for a session (asks minutes, who, then y)');
@@ -62,11 +63,13 @@ function showHelp() {
   console.log('');
   console.log('  The league treats every real project folder with task events in the');
   console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
-  console.log('  drops, stuck claims, last task event, and best player. Scratch folders');
-  console.log('  under the temp dirs and agent worktree checkouts are left out.');
+  console.log('  drops, abandons, stuck claims, last task event, and best player.');
+  console.log('  Scratch folders under the temp dirs and agent worktree checkouts are');
+  console.log('  left out, and clubs under 3 finished jobs are counted but hidden.');
   console.log('');
   console.log('Options:');
-  console.log('  --board           Print the board once and exit, no keys.');
+  console.log('  --board           Print the board once and exit, no keys. Read only, even');
+  console.log('                    with --json (schema atris.gm_board.v1, never seeds).');
   console.log('  --league          Print the league once and exit; with --json, adds league.');
   console.log('  --manager <id>    Manager id. Defaults to game-manager when present.');
   console.log('  --as <id>         Alias for --player.');
@@ -705,7 +708,7 @@ function boardWorkspaceRoot(args = []) {
 
 function loadBoard(workspaceRoot, options = {}) {
   const season = require('../lib/gm-season');
-  return season.seasonBoard(season.loadSeason(workspaceRoot), options);
+  return season.seasonBoard(season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen }), options);
 }
 
 // One screen, about 40 rows at most. Pure: board in, lines out.
@@ -762,10 +765,10 @@ function renderBoardLines(board, { interactive = false } = {}) {
   }
   lines.push('');
 
-  lines.push('key: ovr 60 to 99 by share of finished jobs landed, rookie under 3 finished');
-  lines.push('     drops count here, so it is stricter than the website rating on purpose');
-  lines.push('     form: last 5 finished, newest right, k landed, d dropped, x sent back');
-  lines.push('     hours: claim to result. on a job means its task moved in the last 6h');
+  lines.push('key: ovr 60 to 99 = share of finished jobs landed, rookie under 3 finished,');
+  lines.push('     stricter than the website rating on purpose (drops and abandons count)');
+  lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
+  lines.push('     hours: claim to result. on a job: moved in the last 6h. review: pending');
   if (interactive) for (const line of PLAY_KEYS) lines.push(line);
   else lines.push('     run atris gm in a terminal to play');
   return lines;
@@ -784,20 +787,21 @@ function renderLeagueLines(board, { interactive = false } = {}) {
   if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
   lines.push('');
   if (!board.rows.length) {
-    lines.push('  no project folder had task events in the last 30 days');
+    lines.push('  no club finished 3 or more jobs in the last 30 days');
   } else {
-    lines.push(`  ${pad('club', 20)}${pad('ovr', 8)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('stuck', 7)}${pad('last', 6)}best player`);
+    lines.push(`  ${pad('club', 18)}${pad('ovr', 7)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('aband', 7)}${pad('stuck', 7)}${pad('last', 6)}best player`);
     for (const row of board.rows.slice(0, LEAGUE_MAX_ROWS)) {
       const best = row.best_player ? `${row.best_player.name} ${row.best_player.ovr}` : '-';
-      lines.push(`  ${pad(row.club, 20)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${best}`);
+      lines.push(`  ${pad(row.club, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 7)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.abandoned_30d, 7)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${best}`);
     }
     const more = board.rows.length - LEAGUE_MAX_ROWS;
-    if (more > 0) lines.push(`  and ${more} more quiet clubs (atris gm --league --json lists all)`);
+    if (more > 0) lines.push(`  and ${more} more clubs (atris gm --league --json lists all)`);
   }
+  if (board.hidden) lines.push(`  ${board.hidden} quiet clubs hidden (under 3 finished jobs in 30 days)`);
   lines.push('');
-  lines.push('key: week and 30d count landed jobs, drop counts dropped jobs in 30 days');
-  lines.push('     stuck: claims with no move for 6h or more. last: newest task event');
-  lines.push('     ovr: same honest rating as the club board, over every job in the club');
+  lines.push('key: week and 30d count landed jobs; drop and aband count dropped and');
+  lines.push('     abandoned jobs in 30 days. stuck: claims with no move for 6h or more');
+  lines.push('     last: newest task event. ovr: the club board rating over every job');
   lines.push(interactive ? LEAGUE_KEYS : '     run atris gm in a terminal, then g, to play');
   return lines;
 }
@@ -873,6 +877,7 @@ function unstickAction(answer, stuck = []) {
     args: ['task', 'release', row.ref || row.task_id, '--as', row.member],
     confirm: true,
     confirmText: 'this releases the claim and counts a drop for that member',
+    recheck: { task_id: row.task_id, member: row.member },
   };
 }
 
@@ -911,10 +916,10 @@ async function gmPlay(args = []) {
   readline.emitKeypressEvents(input);
 
   // The recap compares against the look before this session, pinned per club
-  // for the session; each club's look is saved when it opens and on quit.
+  // for the session. What gets saved as the new look is the time of the last
+  // club snapshot actually drawn, so a landing after it still shows next time.
   const season = require('../lib/gm-season');
   let lastSeen = season.readLastSeen(workspaceRoot);
-  season.writeLastSeen(workspaceRoot);
 
   let view = 'club';
   let seen = null;
@@ -926,13 +931,14 @@ async function gmPlay(args = []) {
     try {
       if (view === 'league') {
         const board = loadLeagueBoard();
-        leagueRowsSeen = board.rows;
+        leagueRowsSeen = [...board.rows, ...(board.hidden_clubs || [])];
         write(renderLeagueLines(board, { interactive: true }).join('\n'));
       } else {
         const board = loadBoard(workspaceRoot, { seen, lastSeen });
         seen = new Set(board.last_plays.map(play => play.id));
         stuck = board.stuck || [];
         write(renderBoardLines(board, { interactive: true }).join('\n'));
+        season.writeLastSeen(workspaceRoot, board.now);
       }
     } catch (err) {
       write(`could not load the board: ${err.message}`);
@@ -941,10 +947,8 @@ async function gmPlay(args = []) {
   };
 
   const switchClub = (root) => {
-    season.writeLastSeen(workspaceRoot);
     workspaceRoot = root;
     lastSeen = season.readLastSeen(workspaceRoot);
-    season.writeLastSeen(workspaceRoot);
     seen = null;
     stuck = [];
     view = 'club';
@@ -1056,6 +1060,11 @@ async function gmPlay(args = []) {
       const { str } = await nextKey();
       if (String(str || '').toLowerCase() !== 'y') return `cancelled: ${shown}`;
     }
+    // The stuck list can be minutes old: if the holder moved while the y
+    // prompt was open, releasing now would take an active job away.
+    if (action.recheck && !season.stillStuck(action.recheck.task_id, action.recheck.member)) {
+      return 'not stuck anymore, nothing ran';
+    }
     write('');
     const result = await runAtris(action.args, { stopAfterMs: action.stopAfterMs });
     write('');
@@ -1105,7 +1114,6 @@ async function gmPlay(args = []) {
     }
   } finally {
     clearInterval(refresh);
-    season.writeLastSeen(workspaceRoot);
     input.off('keypress', onKeypress);
     setRaw(false);
     input.pause();
@@ -1145,6 +1153,22 @@ async function gmCommand(...args) {
     const { memberCommand } = require('./member');
     const passthrough = args.filter(arg => arg !== member);
     return memberCommand('wake', member, ...passthrough);
+  }
+
+  // Any --board is read-only: it never seeds a starter task or touches the
+  // task db for writing, even with --json or --league.
+  if (hasExactFlag(args, '--board') && hasFlagOrValue(args, '--json')) {
+    const workspaceRoot = boardWorkspaceRoot(args);
+    const body = {
+      schema: 'atris.gm_board.v1',
+      generated_at: new Date().toISOString(),
+      workspace_root: workspaceRoot,
+      workspace_name: path.basename(workspaceRoot),
+      season: loadBoard(workspaceRoot),
+    };
+    if (hasExactFlag(args, '--league')) body.league = loadLeagueBoard();
+    console.log(JSON.stringify(body, null, 2));
+    return;
   }
 
   // --league prints the league once (with or without --board); in --json it
