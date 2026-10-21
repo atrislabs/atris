@@ -210,13 +210,32 @@ done
 
 # Captions never need the stream lists, so skip fetching them (about 0.2s).
 # A live video may have no other streams; keep going so its captions still land.
-META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
+yt-dlp --no-update --quiet --no-warnings --skip-download \
   --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
   --extractor-args "youtube:skip=hls,dash" --ignore-no-formats-error \
   --no-simulate \
   -o "yt_%(id)s" \
   --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
-  "$URL" 2>"yt_captions.$$.err") || true
+  "$URL" >"yt_meta.$$.out" 2>"yt_captions.$$.err" </dev/null &
+CAPTIONS_PID=$!
+# The notes read the original English track first. Once it is whole, stop
+# yt-dlp before it asks for the auto "en" copy, which took about 0.5s and
+# usually ends in a 429. yt-dlp prints the id line just before it writes
+# captions, and renames a track's .part file only when the track is whole.
+while kill -0 "$CAPTIONS_PID" 2>/dev/null; do
+  cid=$(sed -n 's/^\([A-Za-z0-9_-]\{1,\}\)|.*/\1/p' "yt_meta.$$.out" 2>/dev/null | tail -n 1)
+  if [ -n "$cid" ] && [ -s "yt_${cid}.en-orig.vtt" ] && [ ! -e "yt_${cid}.en-orig.vtt.part" ]; then
+    # A quiet wait ends the moment yt-dlp does, with no "Terminated" line.
+    kill "$CAPTIONS_PID" 2>/dev/null || true
+    wait "$CAPTIONS_PID" 2>/dev/null || true
+    rm -f "yt_${cid}".*.part
+    break
+  fi
+  sleep 0.05
+done
+wait "$CAPTIONS_PID" 2>/dev/null || true
+META=$(cat "yt_meta.$$.out" 2>/dev/null) || true
+rm -f "yt_meta.$$.out"
 # A sign-in wall on the caption fetch is a blocked connection, not a video
 # without captions. A bare 429 is not: the auto "en" track 429s on its own.
 CAPTIONS_BLOCKED=0
