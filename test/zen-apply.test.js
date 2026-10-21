@@ -525,6 +525,27 @@ test('when an unpushed note was deleted upstream, the other notes from that comm
   }
 });
 
+test('a wiki over budget in several places is one line to prune, not one per place', () => {
+  const { workspaceZen } = require('../lib/zen-workspace');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-wiki-'));
+  try {
+    const wiki = path.join(root, 'atris', 'wiki');
+    fs.mkdirSync(path.join(wiki, 'briefs'), { recursive: true });
+    for (let i = 0; i < 35; i += 1) fs.writeFileSync(path.join(wiki, 'briefs', `b${i}.md`), `# brief ${i}\n`);
+    fs.writeFileSync(path.join(wiki, 'index.md'), Array.from({ length: 45 }, (_, i) => `- entry ${i}`).join('\n') + '\n');
+
+    const wikiLines = workspaceZen({ root, dryRun: true }).yours.filter((y) => /wiki/.test(y.text) && y.cmd === 'atris wiki consolidate');
+    assert.equal(wikiLines.length, 1, JSON.stringify(wikiLines));
+    assert.equal(wikiLines[0].text, 'wiki needs pruning in 2 places: index.md 45 of 40, briefs/ 35 of 30');
+
+    fs.rmSync(path.join(wiki, 'index.md'));
+    const [only] = workspaceZen({ root, dryRun: true }).yours.filter((y) => y.cmd === 'atris wiki consolidate');
+    assert.equal(only.text, 'wiki briefs/ has 35 pages, its budget is 30');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('git rewriting a side copy history file does not make the copy look freshly used', () => {
   const { base, checkout } = createRepo();
   try {
