@@ -29,6 +29,7 @@ function showHelp() {
   console.log('       atris gm --league         print the league, every project as a club');
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
+  console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -62,6 +63,7 @@ function showHelp() {
   console.log('    c  switch to another club from the league (read only, like --workspace)');
   console.log('    v  replay what happened since your last look, then back to the board');
   console.log('    i  a member\'s card: rating by week, record, engine, scouting (read only)');
+  console.log('    o  set this week\'s owner target: landed, max abandoned, max stuck over a day');
   console.log('    enter or space  refresh,  q  quit');
   console.log('  Every key that runs a command shows it first.');
   console.log('');
@@ -71,6 +73,13 @@ function showHelp() {
   console.log('  each play as a line. --since takes 30m, 12h, 2d, or last-seen (the');
   console.log('  default, else 12h); --speed 2 plays twice as fast; --league plays every');
   console.log('  club at once.');
+  console.log('');
+  console.log('  The owner target is the win condition: landed this week, at most N');
+  console.log('  abandoned, at most N claims stuck over a day. It carries forward to new');
+  console.log('  weeks until changed. During the week a landed shortfall is behind and a');
+  console.log('  broken limit is missed; a week is won only once it is over and all');
+  console.log('  three held. The header keeps the season record of won and lost weeks.');
+  console.log('  Saved in ~/.atris/state/gm-targets/, one file per workspace.');
   console.log('');
   console.log('  The league treats every real project folder with task events in the');
   console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
@@ -685,7 +694,7 @@ function render(state) {
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const PLAY_KEYS = [
   'keys: p play  r run  w wake  s sleep  u unstick  l landing check',
-  '      g league  c switch club  v replay  i card  enter refresh  q quit',
+  '      g league  c switch club  v replay  i card  o target  enter refresh  q quit',
 ];
 const LEAGUE_KEYS = 'keys: g back to the club  c switch club  v replay  enter refresh  q quit';
 const LEAGUE_MAX_ROWS = 20;
@@ -726,9 +735,12 @@ function loadBoard(workspaceRoot, options = {}) {
 function renderBoardLines(board, { interactive = false } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
+  const gmTarget = require('../lib/gm-target');
   const live = interactive ? ` | refreshes every ${REFRESH_MS / 1000}s` : '';
-  lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}${live}`);
+  const record = board.record ? ` | ${gmTarget.recordLine(board.record)}` : '';
+  lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}${record}${live}`);
   lines.push(board.mood.line);
+  if (board.target) lines.push(gmTarget.targetLine(board.target));
   if (board.since_last_look) lines.push(board.since_last_look.line);
   if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
   lines.push('');
@@ -800,10 +812,14 @@ function renderLeagueLines(board, { interactive = false } = {}) {
   if (!board.rows.length) {
     lines.push('  no club finished 3 or more jobs in the last 30 days');
   } else {
-    lines.push(`  ${pad('club', 18)}${pad('ovr', 7)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('aband', 7)}${pad('stuck', 7)}${pad('last', 6)}best player`);
+    // the target column shows only when some club has a target
+    const withTarget = board.rows.some(row => row.target);
+    const targetHead = withTarget ? pad('target', 10) : '';
+    lines.push(`  ${pad('club', 18)}${pad('ovr', 7)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('aband', 7)}${pad('stuck', 7)}${pad('last', 6)}${targetHead}best player`);
     for (const row of board.rows.slice(0, LEAGUE_MAX_ROWS)) {
       const best = row.best_player ? `${row.best_player.name} ${row.best_player.ovr}` : '-';
-      lines.push(`  ${pad(row.club, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 7)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.abandoned_30d, 7)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${best}`);
+      const targetCell = withTarget ? pad(row.target || '-', 10) : '';
+      lines.push(`  ${pad(row.club, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 7)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.abandoned_30d, 7)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${targetCell}${best}`);
     }
     const more = board.rows.length - LEAGUE_MAX_ROWS;
     if (more > 0) lines.push(`  and ${more} more clubs (atris gm --league --json lists all)`);
@@ -952,6 +968,7 @@ async function gmPlay(args = []) {
   let note = '';
   let stuck = [];
   let leagueRowsSeen = [];
+  let lastBoard = null;
   const draw = () => {
     output.write('\x1b[2J\x1b[H');
     try {
@@ -961,6 +978,7 @@ async function gmPlay(args = []) {
         write(renderLeagueLines(board, { interactive: true }).join('\n'));
       } else {
         const board = loadBoard(workspaceRoot, { seen, lastSeen });
+        lastBoard = board;
         seen = new Set(board.last_plays.map(play => play.id));
         stuck = board.stuck || [];
         write(renderBoardLines(board, { interactive: true }).join('\n'));
@@ -1154,6 +1172,24 @@ async function gmPlay(args = []) {
       } else if (name === 'v') {
         note = await replayHere();
         draw();
+      } else if (name === 'o' && view === 'club') {
+        // owner target: three numbers, enter keeps the default shown
+        const gmTarget = require('../lib/gm-target');
+        const base = (lastBoard && lastBoard.target_default) || { landed: 1, max_abandoned: 2, max_stuck: 0 };
+        write('');
+        write(`owner target for the ${weekLabel(lastBoard ? lastBoard.week_of : Date.now())}`);
+        const landed = await ask(`landed this week (enter for ${base.landed}): `);
+        const maxAbandoned = landed === null ? null : await ask(`max abandoned (enter for ${base.max_abandoned}): `);
+        const maxStuck = maxAbandoned === null ? null : await ask(`max stuck over a day (enter for ${base.max_stuck}): `);
+        if (landed === null || maxAbandoned === null || maxStuck === null) {
+          note = 'cancelled, target unchanged';
+        } else {
+          const built = targetFromInput(base, { landed, maxAbandoned, maxStuck });
+          if (built.error) note = `target unchanged: ${built.error}`;
+          else if (!gmTarget.writeTarget(workspaceRoot, built.target)) note = 'could not save the target';
+          else note = `target set: ${targetSummary(built.target)}`;
+        }
+        draw();
       } else if (name === 'i') {
         write('');
         const who = await ask('card for which member? ');
@@ -1239,6 +1275,81 @@ function trapSignals(cleanup, { ignoreInt = () => false } = {}) {
   return () => {
     for (const sig of Object.keys(handlers)) process.off(sig, handlers[sig]);
   };
+}
+
+// ---- owner target -----------------------------------------------------------
+
+// A whole number typed at a prompt or flag: empty means the default, below
+// `min` or not a number means no.
+function parseWhole(text, fallback, min = 0) {
+  const raw = String(text == null ? '' : text).trim();
+  if (!raw) return fallback;
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n >= min ? n : null;
+}
+
+// The target to save from what was typed, over a base target. Pure.
+// Returns { target } or { error }.
+function targetFromInput(base, { landed, maxAbandoned, maxStuck } = {}) {
+  const next = {
+    landed: parseWhole(landed, base.landed, 1),
+    max_abandoned: parseWhole(maxAbandoned, base.max_abandoned, 0),
+    max_stuck: parseWhole(maxStuck, base.max_stuck, 0),
+  };
+  if (next.landed == null) return { error: 'landed takes a whole number, 1 or more' };
+  if (next.max_abandoned == null) return { error: 'max abandoned takes a whole number, 0 or more' };
+  if (next.max_stuck == null) return { error: 'max stuck takes a whole number, 0 or more' };
+  return { target: next };
+}
+
+function targetSummary(target) {
+  return `${target.landed} landed, at most ${target.max_abandoned} abandoned, at most ${target.max_stuck} stuck over a day`;
+}
+
+// gm target: show this week's target, or set or clear it. Only the target
+// file under ~/.atris/state/gm-targets is written.
+function gmTargetCommand(args = []) {
+  const gmTarget = require('../lib/gm-target');
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const board = loadBoard(workspaceRoot);
+  if (board.error) return failRead(board.error);
+  if (hasExactFlag(args, '--clear')) {
+    if (!gmTarget.writeTarget(workspaceRoot, { cleared: true })) {
+      console.error('could not save the target');
+      process.exitCode = 1;
+      return undefined;
+    }
+    console.log(`target cleared from the ${weekLabel(board.week_of)} on`);
+    return undefined;
+  }
+  const given = {
+    landed: flag(args, '--landed'),
+    maxAbandoned: flag(args, '--max-abandoned'),
+    maxStuck: flag(args, '--max-stuck'),
+  };
+  if (given.landed == null && given.maxAbandoned == null && given.maxStuck == null) {
+    if (board.target) console.log(gmTarget.targetLine(board.target));
+    else console.log(`no target for the ${weekLabel(board.week_of)}. suggested: ${targetSummary(board.target_default)}`);
+    if (board.record) console.log(gmTarget.recordLine(board.record));
+    return undefined;
+  }
+  const base = board.target ? board.target.target : board.target_default;
+  const built = targetFromInput(base, given);
+  if (built.error) {
+    console.error(`target: ${built.error}`);
+    process.exitCode = 1;
+    return undefined;
+  }
+  if (!gmTarget.writeTarget(workspaceRoot, built.target)) {
+    console.error('could not save the target');
+    process.exitCode = 1;
+    return undefined;
+  }
+  console.log(`target for the ${weekLabel(board.week_of)}: ${targetSummary(built.target)}`);
+  const after = loadBoard(workspaceRoot);
+  if (after.target) console.log(gmTarget.targetLine(after.target));
+  return undefined;
 }
 
 // ---- player card ------------------------------------------------------------
@@ -1459,6 +1570,11 @@ async function gmCommand(...args) {
     return;
   }
 
+  if (positional(args)[0] === 'target') {
+    const at = args.indexOf('target');
+    return gmTargetCommand([...args.slice(0, at), ...args.slice(at + 1)]);
+  }
+
   if (positional(args)[0] === 'card') {
     const at = args.indexOf('card');
     return gmCard([...args.slice(0, at), ...args.slice(at + 1)]);
@@ -1562,6 +1678,7 @@ module.exports = {
   playAction,
   renderBoardLines,
   renderCardLines,
+  targetFromInput,
   renderLeagueLines,
   renderReplayFrameLines,
   replayPlainLines,

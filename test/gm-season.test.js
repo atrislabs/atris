@@ -367,7 +367,7 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(itext, /\(u to unstick\)/);
   assert.match(itext, /p play {2}r run {2}w wake {2}s sleep {2}u unstick/);
   assert.match(itext, /u unstick {2}l landing check/);
-  assert.match(itext, /g league {2}c switch club {2}v replay {2}i card {2}enter refresh {2}q quit/);
+  assert.match(itext, /g league {2}c switch club {2}v replay {2}i card {2}o target {2}enter refresh {2}q quit/);
   assert.match(itext, /tidy the help {2}new$/m);
 });
 
