@@ -28,6 +28,7 @@ function showHelp() {
   console.log('       atris gm --board          print the front office board once');
   console.log('       atris gm --league         print the league, every project as a club');
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
+  console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -60,6 +61,7 @@ function showHelp() {
   console.log('    g  switch between this club and the league (read only)');
   console.log('    c  switch to another club from the league (read only, like --workspace)');
   console.log('    v  replay what happened since your last look, then back to the board');
+  console.log('    i  a member\'s card: rating by week, record, engine, scouting (read only)');
   console.log('    enter or space  refresh,  q  quit');
   console.log('  Every key that runs a command shows it first.');
   console.log('');
@@ -683,7 +685,7 @@ function render(state) {
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const PLAY_KEYS = [
   'keys: p play  r run  w wake  s sleep  u unstick  l landing check',
-  '      g league  c switch club  v replay  enter refresh  q quit',
+  '      g league  c switch club  v replay  i card  enter refresh  q quit',
 ];
 const LEAGUE_KEYS = 'keys: g back to the club  c switch club  v replay  enter refresh  q quit';
 const LEAGUE_MAX_ROWS = 20;
@@ -1133,6 +1135,25 @@ async function gmPlay(args = []) {
       } else if (name === 'v') {
         note = await replayHere();
         draw();
+      } else if (name === 'i') {
+        write('');
+        const who = await ask('card for which member? ');
+        if (who === null || !who) {
+          note = 'cancelled, nothing shown';
+        } else {
+          const result = season.loadCard(workspaceRoot, who);
+          if (result.card) {
+            output.write('\x1b[2J\x1b[H');
+            write(renderCardLines(result.card).join('\n'));
+            write('');
+            write('press any key to go back to the board');
+            await nextKey();
+            note = '';
+          } else {
+            note = `${result.error}${result.close && result.close.length ? `. close names: ${result.close.join(', ')}` : ''}`;
+          }
+        }
+        draw();
       } else if (name === 'c') {
         if (!leagueRowsSeen.length) {
           const fresh = loadLeagueBoard();
@@ -1163,6 +1184,57 @@ async function gmPlay(args = []) {
     input.pause();
     write('');
   }
+}
+
+// ---- player card ------------------------------------------------------------
+
+// One member's profile page as lines. Pure: card in, lines out.
+function renderCardLines(card) {
+  const { clockLabel } = require('../lib/gm-season');
+  const lines = [];
+  lines.push(`card | ${card.name} | ${card.workspace_name}`);
+  const status = card.status.title ? `${card.status.state}: ${clip(card.status.title, 50)}` : card.status.state;
+  lines.push(`role: ${card.role || 'not recorded'} | ${card.awake ? 'awake' : 'asleep'} | ${status}`);
+  lines.push('');
+  const weekly = card.weekly.map(v => (v == null ? '-' : String(v))).join(' ');
+  lines.push(`ovr ${card.ovr == null ? 'rookie' : card.ovr} | last 6 weeks, oldest first: ${weekly}`);
+  const r = card.record_30d;
+  const median = card.median_landing_hours == null ? 'no landings to time' : `median ${card.median_landing_hours}h from claim to landing`;
+  lines.push(`record 30d: ${r.landed} landed, ${r.dropped} dropped, ${r.sent_back} sent back, ${r.abandoned} abandoned | ${median}`);
+  const engine = card.engine
+    ? `engine: ${card.engine.engine}${card.engine.model ? ` (${card.engine.model})` : ''}, from ${card.engine.source}`
+    : 'engine: not recorded';
+  lines.push(engine);
+  lines.push(`scouting: ${card.scouting}`);
+  lines.push('');
+  lines.push('last 8 plays');
+  if (card.last_plays.length) {
+    for (const play of card.last_plays) {
+      lines.push(`  ${pad(clockLabel(play.at, card.now), 17)}${pad(play.outcome, 11)}${play.title}`);
+    }
+  } else {
+    lines.push('  no plays in the last 6 weeks');
+  }
+  return lines;
+}
+
+// gm card <member>: read only. Unknown names exit 1 with the closest names.
+function gmCard(args = []) {
+  const season = require('../lib/gm-season');
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const name = positional(args)[0];
+  const result = season.loadCard(workspaceRoot, name);
+  if (!result.card) {
+    console.error(result.error);
+    if (result.close && result.close.length) console.error(`close names: ${result.close.join(', ')}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (hasFlagOrValue(args, '--json')) {
+    console.log(JSON.stringify({ schema: 'atris.gm_card.v1', ...result.card }, null, 2));
+    return;
+  }
+  console.log(renderCardLines(result.card).join('\n'));
 }
 
 // ---- replay: the night as a two-minute time-lapse -------------------------
@@ -1327,6 +1399,11 @@ async function gmCommand(...args) {
     return;
   }
 
+  if (positional(args)[0] === 'card') {
+    const at = args.indexOf('card');
+    return gmCard([...args.slice(0, at), ...args.slice(at + 1)]);
+  }
+
   if (positional(args)[0] === 'replay') {
     const at = args.indexOf('replay');
     return gmReplay([...args.slice(0, at), ...args.slice(at + 1)]);
@@ -1419,6 +1496,7 @@ module.exports = {
   pickClub,
   playAction,
   renderBoardLines,
+  renderCardLines,
   renderLeagueLines,
   renderReplayFrameLines,
   replayPlainLines,
