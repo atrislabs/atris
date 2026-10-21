@@ -220,6 +220,27 @@ test('atris zen tidies the workspace too, and --check only names it', () => {
   }
 });
 
+test('a late entry for an archived day joins the archive instead of erasing it', () => {
+  const { base, checkout } = createRepo();
+  try {
+    commit(checkout, 'atris/logs/archive/2026/2026-01-02.md', '# 2026-01-02\n\nthe whole day\n', 'archived day');
+    commit(checkout, 'atris/logs/2026/2026-01-02.md', '## late entry\n', 'late note');
+    commit(checkout, 'atris/logs/2026/2026-01-03.md', 'the next day\n', 'next day');
+    commit(checkout, 'atris/logs/archive/2026/2026-01-03.md', 'the next day\n', 'next day archived');
+    git(checkout, 'push', '-q');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    const archive = path.join(checkout, 'atris/logs/archive/2026');
+    assert.equal(fs.readFileSync(path.join(archive, '2026-01-02.md'), 'utf8'), '# 2026-01-02\n\nthe whole day\n\n## late entry\n');
+    assert.equal(fs.readFileSync(path.join(archive, '2026-01-03.md'), 'utf8'), 'the next day\n');
+    assert.equal(fs.existsSync(path.join(checkout, 'atris/logs/2026/2026-01-02.md')), false);
+    assert.equal(fs.existsSync(path.join(checkout, 'atris/logs/2026/2026-01-03.md')), false);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen saves a side copy nobody touched in days, then puts it away', () => {
   const { base, checkout } = createRepo();
   try {
