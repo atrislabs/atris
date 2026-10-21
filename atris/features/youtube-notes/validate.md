@@ -47,6 +47,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 - **Action:** from the repo root, `env HOME="$(mktemp -d)" TMPDIR="$(mktemp -d)" PATH=/usr/bin:/bin "$(command -v node)" bin/atris.js youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'; echo "exit=$?"`
 - **Expect:** A message that yt-dlp is missing, the install command, and `exit=2`. It must not say the video has no captions.
 - **Rerun live on 2026-10-17:** passes. exit 2 in 0.12 seconds, the yt-dlp install line for Mac and any computer, and no line about captions.
+- **Rerun live on 2026-10-21** from the youtube-lead branch with a fresh home and temp folder: passes. exit 2 in 0.24 seconds, the yt-dlp install line for Mac and any computer, no line saying the video has no captions, and no transcript or notes left in the temp folder.
 
 The fresh `TMPDIR` matters. A transcript left over from an earlier run of the same video is reused, which hides the missing downloader.
 
