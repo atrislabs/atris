@@ -406,3 +406,57 @@ test('a side copy locked by its owner stays and does not count as out of place',
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a team note that truly clashes keeps the new version, saves yours, and never leaves conflict marks', () => {
+  const { base, checkout } = createRepo();
+  try {
+    commit(checkout, 'atris/plan.md', NOTES, 'plan');
+    git(checkout, 'push', '-q', 'origin', 'master');
+    git(checkout, 'checkout', '-q', '-b', 'side');
+    commit(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 on side'), 'side todo');
+    commit(checkout, 'atris/plan.md', NOTES.replace('line 10', 'line 10 on side'), 'side plan');
+    // Unsaved edits: one clashes with master, one is clean.
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 mine'));
+    write(checkout, 'atris/plan.md', NOTES.replace('line 10', 'line 10 on side').replace('line 1\n', 'line 1 mine\n'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /moved back to master/);
+    const todo = fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8');
+    assert.doesNotMatch(todo, /^(<<<<<<<|=======|>>>>>>>)/m);
+    assert.equal(todo, NOTES);
+    assert.match(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), /line 1 mine/);
+    const said = cli.stdout.match(/kept the new atris\/TODO\.md; your copy is in (\S+)/);
+    assert.ok(said, cli.stdout);
+    assert.match(fs.readFileSync(said[1], 'utf8'), /line 10 mine/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a clashing note from an unpushed commit stays on its backup branch, with no conflict marks', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 5', 'line 5 upstream'), 'upstream note');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 5', 'line 5 from the job'));
+    write(checkout, 'atris/report.md', 'weekly\n');
+    git(checkout, 'add', '-A');
+    git(checkout, 'commit', '-q', '-m', 'weekly job');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    const todo = fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8');
+    assert.doesNotMatch(todo, /^(<<<<<<<|=======|>>>>>>>)/m);
+    assert.match(todo, /line 5 upstream/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/report.md'), 'utf8'), 'weekly\n');
+    assert.match(cli.stdout, /kept 1 team note from it in the tree/);
+    const [kept] = branches(checkout, 'zen-backup/*-unpushed');
+    assert.match(cli.stdout, new RegExp(`kept the new atris/TODO\\.md; yours is on ${kept}`));
+    assert.match(git(checkout, 'show', `${kept}:atris/TODO.md`), /line 5 from the job/);
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
