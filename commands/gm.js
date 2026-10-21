@@ -24,20 +24,31 @@ const ROLE_PLAYERS_TO_IGNORE = new Set([
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris gm [--manager <id>] [--player <id>] [--workspace <path>] [--json]');
+  console.log('Usage: atris gm                  play the front office (in a terminal)');
+  console.log('       atris gm --board          print the front office board once');
+  console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
   console.log('Description:');
-  console.log('  Enter AgentXP General Manager mode for the current Atris workspace.');
-  console.log('  Shows local players, active missions, review queue, and the next command');
-  console.log('  that moves the same AgentXP game loop forward.');
-  console.log('  Watch mode keeps that first board, then appends new mission, review, and feed events.');
+  console.log('  The front office for your team. The board shows each member\'s rating,');
+  console.log('  their last five results, who is on a job, the last five graded results,');
+  console.log('  and what is up next. Ratings come from the last 30 days: work kept');
+  console.log('  (accepted or merged) against work sent back.');
+  console.log('');
+  console.log('  In a terminal, gm is playable:');
+  console.log('    r  run a member, with an optional job (asks y first)');
+  console.log('    w  wake a member (asks y first)');
+  console.log('    s  put a member to sleep');
+  console.log('    l  landing check (atris land --dry-run)');
+  console.log('    enter or space  refresh,  q  quit');
+  console.log('  Every key shows the exact command before it runs.');
   console.log('');
   console.log('Options:');
+  console.log('  --board           Print the board once and exit, no keys.');
   console.log('  --manager <id>    Manager id. Defaults to game-manager when present.');
   console.log('  --as <id>         Alias for --player.');
   console.log('  --player <id>     Preferred player when seeding a first local mission.');
-  console.log('  --workspace <p>   Read missions from another Atris workspace.');
+  console.log('  --workspace <p>   Read another Atris workspace.');
   console.log('  --watch           Append new GM events until Ctrl+C.');
   console.log('  --interval <sec>  Watch polling interval. Defaults to 10.');
   console.log('  --no-seed         Do not create a starter player mission.');
@@ -632,6 +643,214 @@ function render(state) {
   for (const command of state.next_commands) console.log(`- ${command}`);
 }
 
+// ---- front office board -------------------------------------------------
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const PLAY_KEYS = 'keys: r run  w wake  s sleep  l landing check  enter refresh  q quit';
+const MEMBER_NAME_RE = /^[a-zA-Z0-9._-]+$/;
+
+function pad(value, width) {
+  const text = String(value == null ? '' : value);
+  return text.length >= width ? `${text.slice(0, width - 1)} ` : text + ' '.repeat(width - text.length);
+}
+
+function weekLabel(ms) {
+  const d = new Date(ms);
+  return `week of ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+function hoursLabel(hours) {
+  if (hours == null) return '-';
+  return hours >= 10 ? `${Math.round(hours)}h` : `${hours}h`;
+}
+
+function boardWorkspaceRoot(args = []) {
+  const taskDb = require('../lib/task-db');
+  const workspaceArg = flag(args, '--workspace') || flag(args, '--root') || process.cwd();
+  return taskDb.workspaceRoot(path.resolve(workspaceArg));
+}
+
+function loadBoard(workspaceRoot, options = {}) {
+  const season = require('../lib/gm-season');
+  return season.seasonBoard(season.loadSeason(workspaceRoot, options));
+}
+
+// One screen, about 30 rows. Pure: board in, lines out.
+function renderBoardLines(board, { interactive = false } = {}) {
+  const lines = [];
+  lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}`);
+  lines.push(board.mood.line);
+  if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
+  lines.push('');
+
+  lines.push('roster');
+  if (board.roster.length) {
+    lines.push(`  ${pad('name', 18)}${pad('ovr', 8)}${pad('form', 7)}status`);
+    for (const row of board.roster) {
+      lines.push(`  ${pad(row.name, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${row.status}`);
+    }
+  } else {
+    lines.push('  no graded work in the last 30 days');
+  }
+  lines.push('');
+
+  lines.push('box scores, last 5');
+  if (board.box_scores.length) {
+    for (const score of board.box_scores) {
+      lines.push(`  ${pad(score.member, 18)}${pad(score.outcome, 11)}${pad(hoursLabel(score.hours), 6)}${score.title}`);
+    }
+  } else {
+    lines.push('  nothing graded yet');
+  }
+  lines.push('');
+
+  lines.push('up next');
+  if (board.up_next.length) {
+    for (const item of board.up_next) {
+      const label = item.kind === 'task' ? (item.ref || 'task') : 'mission';
+      const owner = item.owner ? ` (${item.owner})` : '';
+      lines.push(`  ${pad(label, 12)}${item.title}${owner}`);
+    }
+  } else {
+    lines.push('  no open tasks or active missions');
+  }
+  lines.push('');
+
+  lines.push('key');
+  lines.push('  ovr: 60 to 99 by share of work kept, rookie until 3 graded');
+  lines.push('  form: last 5 results, newest on the right, k kept, x sent back');
+  lines.push('  hours: from claiming the job to the result');
+  lines.push(interactive ? `  ${PLAY_KEYS}` : '  run atris gm in a terminal to play');
+  return lines;
+}
+
+function printBoard(args = []) {
+  const lines = renderBoardLines(loadBoard(boardWorkspaceRoot(args)));
+  console.log(lines.join('\n'));
+}
+
+function quoteArg(value) {
+  const text = String(value);
+  return /^[a-zA-Z0-9._/:=-]+$/.test(text) ? text : `"${text.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+function displayCommand(args) {
+  return ['atris', ...args].map(quoteArg).join(' ');
+}
+
+// What each key runs. r and w start agents, so they ask for y first.
+function playAction(key, { name = '', job = '' } = {}) {
+  if (key === 'l') return { args: ['land', '--dry-run'], confirm: false };
+  if (!MEMBER_NAME_RE.test(name)) return null;
+  if (key === 'r') return { args: ['member', 'run', name, ...(job ? [job] : [])], confirm: true };
+  if (key === 'w') return { args: ['member', 'wake', name], confirm: true };
+  if (key === 's') return { args: ['member', 'sleep', name], confirm: false };
+  return null;
+}
+
+async function gmPlay(args = []) {
+  const readline = require('readline');
+  const { spawn } = require('child_process');
+  const input = process.stdin;
+  const output = process.stdout;
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const write = text => output.write(`${text}\n`);
+  const setRaw = (on) => {
+    if (input.isTTY && typeof input.setRawMode === 'function') input.setRawMode(on);
+  };
+
+  readline.emitKeypressEvents(input);
+
+  const draw = (note) => {
+    output.write('\x1b[2J\x1b[H');
+    try {
+      write(renderBoardLines(loadBoard(workspaceRoot), { interactive: true }).join('\n'));
+    } catch (err) {
+      write(`could not load the board: ${err.message}`);
+    }
+    if (note) write(`\n${note}`);
+  };
+
+  const nextKey = () => new Promise((resolve) => {
+    setRaw(true);
+    input.resume();
+    input.once('keypress', (str, key) => resolve({ str, key }));
+  });
+
+  const ask = question => new Promise((resolve) => {
+    setRaw(false);
+    const rl = readline.createInterface({ input, output, terminal: true });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(String(answer || '').trim());
+    });
+  });
+
+  const runAtris = cmdArgs => new Promise((resolve) => {
+    setRaw(false);
+    input.pause();
+    const child = spawn(process.execPath, [cliPath, ...cmdArgs], {
+      cwd: workspaceRoot,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    child.on('error', err => resolve({ code: 1, error: err.message }));
+    child.on('close', code => resolve({ code }));
+  });
+
+  const doAction = async (key) => {
+    let action;
+    if (key === 'l') {
+      action = playAction('l');
+    } else {
+      const verb = { r: 'run', w: 'wake', s: 'sleep' }[key];
+      write('');
+      const name = await ask(`${verb} which member? `);
+      if (!name) return 'cancelled, no member named';
+      const job = key === 'r' ? await ask('job (optional, enter to skip): ') : '';
+      action = playAction(key, { name, job });
+      if (!action) return `cancelled, "${clip(name, 40)}" is not a member name`;
+    }
+    const shown = displayCommand(action.args);
+    write('');
+    write(`this will run: ${shown}`);
+    if (action.confirm) {
+      write('this starts an agent. press y to go, any other key to cancel');
+      const { str } = await nextKey();
+      if (String(str || '').toLowerCase() !== 'y') return `cancelled: ${shown}`;
+    }
+    write('');
+    const result = await runAtris(action.args);
+    write('');
+    const exit = result.code == null ? 'unknown' : result.code;
+    write(`${shown} finished with exit ${exit}${result.error ? ` (${result.error})` : ''}`);
+    write('press any key to go back to the board');
+    await nextKey();
+    return `last: ${shown}`;
+  };
+
+  draw();
+  for (;;) {
+    const { str, key } = await nextKey();
+    const name = (key && key.name) || str;
+    if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
+    if (name === 'space' || name === 'return' || name === 'enter') {
+      draw();
+    } else if (['r', 'w', 's', 'l'].includes(name)) {
+      draw(await doAction(name));
+    }
+  }
+  setRaw(false);
+  input.pause();
+  write('');
+}
+
+function wantsPlay(args = []) {
+  if (hasFlagOrValue(args, '--json') || hasFlagOrValue(args, '--watch')) return false;
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
 // `gm <name>` is how people greet a team member in chat ("gm maze"). When the
 // positional names a real member (and not the manager persona), the same phrase
 // works in the terminal: wake that member instead of entering manager mode.
@@ -661,6 +880,16 @@ async function gmCommand(...args) {
     return memberCommand('wake', member, ...passthrough);
   }
 
+  if (hasExactFlag(args, '--board') && !hasFlagOrValue(args, '--json')) {
+    printBoard(args);
+    return;
+  }
+
+  if (wantsPlay(args)) {
+    await gmPlay(args);
+    return;
+  }
+
   if (!hasFlagOrValue(args, '--json') && !hasFlagOrValue(args, '--watch')) {
     try {
       const { gameCommand } = require('./game');
@@ -673,6 +902,11 @@ async function gmCommand(...args) {
 
   const state = gmState(args);
   if (hasFlagOrValue(args, '--json')) {
+    try {
+      state.season = loadBoard(state.workspace_root);
+    } catch {
+      state.season = null;
+    }
     console.log(JSON.stringify(state, null, 2));
     return;
   }
@@ -683,5 +917,8 @@ async function gmCommand(...args) {
 }
 
 module.exports = {
+  displayCommand,
   gmCommand,
+  playAction,
+  renderBoardLines,
 };
