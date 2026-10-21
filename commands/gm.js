@@ -24,8 +24,9 @@ const ROLE_PLAYERS_TO_IGNORE = new Set([
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris gm                  play the front office (in a terminal)');
+  console.log('Usage: atris gm                  play the front office in a terminal; off one, print the board');
   console.log('       atris gm --board          print the front office board once');
+  console.log('       atris gm --classic        the older AgentXP list (may seed a starter task)');
   console.log('       atris gm --league         print the league, every project as a club');
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
@@ -88,6 +89,9 @@ function showHelp() {
   console.log('  left out, and clubs under 3 finished jobs are counted but hidden.');
   console.log('');
   console.log('Options:');
+  console.log('  --classic         The older AgentXP players and missions list. It may create a');
+  console.log('                    starter task (--no-seed stops that); --as, --player, --manager,');
+  console.log('                    --no-seed, --json, and --watch also use it.');
   console.log('  --board           Print the board once and exit, no keys. Read only, even');
   console.log('                    with --json (schema atris.gm_board.v1, never seeds).');
   console.log('  --league          Print the league once and exit; with --json, adds league.');
@@ -1561,8 +1565,16 @@ async function gmReplay(args = []) {
 }
 
 function wantsPlay(args = []) {
-  if (hasFlagOrValue(args, '--json') || hasFlagOrValue(args, '--watch')) return false;
+  if (hasFlagOrValue(args, '--json') || hasFlagOrValue(args, '--watch') || hasExactFlag(args, '--classic')) return false;
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+// The old AgentXP list: asked for by name, or by a flag or manager name that
+// only it understands. Everything else gets the board.
+const CLASSIC_FLAGS = ['--classic', '--json', '--watch', '--manager', '--player', '--as', '--user', '--no-seed', '--interval'];
+function wantsClassic(args = []) {
+  if (CLASSIC_FLAGS.some(name => hasFlagOrValue(args, name))) return true;
+  return positional(args).length > 0;
 }
 
 // `gm <name>` is how people greet a team member in chat ("gm maze"). When the
@@ -1647,6 +1659,14 @@ async function gmCommand(...args) {
 
   if (wantsPlay(args)) {
     await gmPlay(args);
+    return;
+  }
+
+  // Off a terminal, plain gm prints the same read-only board people see, and
+  // never seeds a task. The old AgentXP list stays behind --classic, and the
+  // flags that belong to it (--json, --watch, --as, --no-seed, ...) keep it.
+  if (!wantsClassic(args)) {
+    printBoard(args);
     return;
   }
 
