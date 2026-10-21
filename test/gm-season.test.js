@@ -1212,9 +1212,26 @@ test('a traversal holder from task data gets a card but nothing is read outside 
   });
 });
 
+// Runs fn with HOME pointed at a temp dir and roster env cleared, so nothing
+// from this machine (its ~/.atris roster, its session) can leak in.
+function withHermeticRosterEnv(home, fn) {
+  const keys = ['HOME', 'ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROSTER_SESSION'];
+  const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  process.env.HOME = home;
+  try {
+    return fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+
 test('a roster job section names the engine with its file and line when the member job is known', () => {
   if (!hasNodeSqlite({ NODE_NO_WARNINGS: '1' })) return;
-  withTempWorkspace((dir) => {
+  withTempWorkspace((dir) => withHermeticRosterEnv(path.join(dir, 'home'), () => {
     const t = makeTaskDb(dir);
     const team = path.join(t.ws, 'atris', 'team');
     fs.mkdirSync(path.join(team, 'builder'), { recursive: true });
@@ -1240,17 +1257,32 @@ test('a roster job section names the engine with its file and line when the memb
     // no member card means no known job, so nothing is claimed for it
     const ghost = season.loadCard(t.ws, 'ghost', { dbPath: t.dbPath, now }).card;
     assert.equal(ghost.engine, null);
-  });
+  }));
 });
 
-test('roster engine stays unrecorded for router picks and missing job sections', () => {
-  const jobPick = { found: true, engine: { id: 'claude' }, model: 'claude-opus-5-5', roster_backed: true, file: null, job: 'build', job_key: 'executor', pick_source: 'machine' };
-  const state = { machine: { file: '~/.atris/ROSTER.md', picks: { executor: { workers: [{ engine: 'claude', line: 12 }] } } } };
-  assert.deepEqual(season.rosterEngine('builder', '/w', { resolve: () => jobPick, rosterState: state }),
+test('roster engine reads the declared roster, never what is installed', () => {
+  const state = {
+    session: null,
+    project: { file: 'atris/ROSTER.md', picks: {}, team: [] },
+    machine: {
+      file: '~/.atris/ROSTER.md',
+      picks: {
+        executor: { workers: [{ engine: 'claude', model: 'claude-opus-5-5', line: 12 }, { engine: 'codex', line: 13 }] },
+        navigator: { workers: [{ engine: 'claude', model: 'claude-haiku-5-5', line: 7 }] },
+      },
+      team: [{ member: 'judge', value: 'codex', file: '~/.atris/ROSTER.md', line: 31 }, { member: 'scout2', value: 'search', line: 33 }],
+    },
+  };
+  const opts = extra => ({ rosterState: state, ...extra });
+  // job from the member card's role: builder builds, researcher searches
+  assert.deepEqual(season.rosterEngine('builder', '/w', opts({ role: 'Builder' })),
     { engine: 'claude', model: 'claude-opus-5-5', source: 'the build job in ~/.atris/ROSTER.md line 12' });
-  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, roster_backed: false }), rosterState: state }), null);
-  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, found: false }), rosterState: state }), null);
-  assert.equal(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, job_key: 'searcher' }), rosterState: state }), null);
-  assert.deepEqual(season.rosterEngine('builder', '/w', { resolve: () => ({ ...jobPick, file: '~/.atris/ROSTER.md', line: 31 }), rosterState: state }),
-    { engine: 'claude', model: 'claude-opus-5-5', source: '~/.atris/ROSTER.md line 31' });
+  assert.deepEqual(season.rosterEngine('researcher', '/w', opts({ role: 'Researcher' })),
+    { engine: 'claude', model: 'claude-haiku-5-5', source: 'the search job in ~/.atris/ROSTER.md line 7' });
+  // a team line naming a job uses that job's section
+  assert.equal(season.rosterEngine('scout2', '/w', opts({ hasCard: false })).source, 'the search job in ~/.atris/ROSTER.md line 7');
+  // no card and no team line: the job is not known
+  assert.equal(season.rosterEngine('builder', '/w', opts({ role: 'Builder', hasCard: false })), null);
+  // no section for the job: nothing recorded
+  assert.equal(season.rosterEngine('validator', '/w', opts({ role: 'Validator' })), null);
 });
