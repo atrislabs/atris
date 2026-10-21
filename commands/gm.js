@@ -1027,12 +1027,13 @@ async function gmPlay(args = []) {
     rl.question(question, answer => settle(String(answer || '').trim()));
   });
 
-  // Ctrl-C while a command runs reaches the command, not gm, so gm comes back.
+  // Ctrl-C while a command runs reaches the command, not gm, so gm comes back:
+  // the signal trap below ignores SIGINT while a child runs.
+  let childRunning = false;
   const runAtris = (cmdArgs, { stopAfterMs = null } = {}) => new Promise((resolve) => {
     setRaw(false);
     input.pause();
-    const keepGm = () => {};
-    process.on('SIGINT', keepGm);
+    childRunning = true;
     const child = spawn(process.execPath, [cliPath, ...cmdArgs], {
       cwd: workspaceRoot,
       stdio: 'inherit',
@@ -1041,7 +1042,7 @@ async function gmPlay(args = []) {
     const timer = stopAfterMs ? setTimeout(() => child.kill('SIGTERM'), stopAfterMs) : null;
     const finish = (result) => {
       if (timer) clearTimeout(timer);
-      process.off('SIGINT', keepGm);
+      childRunning = false;
       resolve(result);
     };
     child.on('error', err => finish({ code: 1, error: err.message }));
@@ -1128,6 +1129,13 @@ async function gmPlay(args = []) {
   const refresh = setInterval(() => {
     if (atBoard) draw();
   }, REFRESH_MS);
+  // A signal from outside (kill, a closed window) still hands the terminal
+  // back the way it was found.
+  const untrap = trapSignals(() => {
+    clearInterval(refresh);
+    input.off('keypress', onKeypress);
+    setRaw(false);
+  }, { ignoreInt: () => childRunning });
 
   try {
     draw();
@@ -1189,12 +1197,48 @@ async function gmPlay(args = []) {
       }
     }
   } finally {
+    untrap();
     clearInterval(refresh);
     input.off('keypress', onKeypress);
     setRaw(false);
     input.pause();
     write('');
   }
+}
+
+const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
+
+// Restores the terminal and exits with the usual code when a signal arrives:
+// raw mode off, cursor shown, then 130 / 143 / 129. Returns the function that
+// removes the handlers on a normal exit. `ignoreInt` lets SIGINT pass to a
+// running child instead.
+function trapSignals(cleanup, { ignoreInt = () => false } = {}) {
+  const handlers = {};
+  for (const sig of Object.keys(SIGNAL_EXIT_CODES)) {
+    handlers[sig] = () => {
+      if (sig === 'SIGINT' && ignoreInt()) return;
+      try {
+        cleanup();
+      } catch {
+        // restoring is best effort; the exit below still happens
+      }
+      try {
+        if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(false);
+      } catch {
+        // stdin may already be gone
+      }
+      try {
+        process.stdout.write('\x1b[?25h\n');
+      } catch {
+        // stdout may already be gone
+      }
+      process.exit(SIGNAL_EXIT_CODES[sig]);
+    };
+    process.on(sig, handlers[sig]);
+  }
+  return () => {
+    for (const sig of Object.keys(handlers)) process.off(sig, handlers[sig]);
+  };
 }
 
 // ---- player card ------------------------------------------------------------
@@ -1378,6 +1422,7 @@ async function gmReplay(args = []) {
   if (typeof input.setRawMode === 'function') input.setRawMode(true);
   input.resume();
   input.on('keypress', onKey);
+  const untrap = trapSignals(() => input.off('keypress', onKey));
   try {
     await runReplay({ plays: model.plays, since: window.since, now, byClub, speed }, {
       write: text => process.stdout.write(text),
@@ -1385,6 +1430,7 @@ async function gmReplay(args = []) {
     });
     process.stdout.write(`\n${summary}\n`);
   } finally {
+    untrap();
     input.off('keypress', onKey);
     if (typeof input.setRawMode === 'function') input.setRawMode(false);
     input.pause();
