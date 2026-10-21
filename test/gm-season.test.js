@@ -93,25 +93,7 @@ test('plays come from events with the right member for each kind', () => {
   assert.equal(out[3].claimed_at, 45);
 });
 
-test('box scores are the last five finished jobs, drops included, with hours from claim', () => {
-  const rows = [
-    play('a', 'landed', NOW - 10 * HOUR, { claimed_at: NOW - 12.5 * HOUR }),
-    play('b', 'sent_back', NOW - 5 * HOUR, { claimed_at: NOW - 6 * HOUR, title: 'a title that is long enough to need clipping on the board' }),
-    play('c', 'dropped', NOW - 4 * HOUR, { claimed_at: null }),
-    play('z', 'took', NOW - 3.5 * HOUR),
-    play('d', 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 2 * HOUR }),
-    play('e', 'dropped', NOW - 2 * HOUR, { claimed_at: NOW - 2.25 * HOUR }),
-    play('f', 'landed', NOW - HOUR, { claimed_at: NOW - 30 * HOUR }),
-  ];
-  const box = season.boxScores(rows);
-  assert.deepEqual(box.map(b => b.member), ['f', 'e', 'd', 'c', 'b']);
-  assert.deepEqual(box.map(b => b.outcome), ['landed', 'dropped', 'landed', 'dropped', 'sent back']);
-  assert.deepEqual(box.map(b => b.hours), [29, 0.3, null, null, 1]);
-  assert.ok(box[4].title.length <= 42);
-  assert.ok(box[4].title.endsWith('...'));
-});
-
-test('owner line splits landed by autoland and by you, this week only', () => {
+test('owner line splits landed by autoland and by you, this week only, and counts stuck', () => {
   assert.equal(season.weekStart(NOW), MONDAY);
   const rows = [
     play('a', 'landed', MONDAY - 1),
@@ -124,10 +106,98 @@ test('owner line splits landed by autoland and by you, this week only', () => {
     play('b', 'dropped', NOW - 3 * HOUR),
     play('b', 'took', NOW - 4 * HOUR),
   ];
-  const mood = season.ownerMood(rows, NOW);
-  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped');
+  const mood = season.ownerMood(rows, NOW, 3);
+  assert.equal(mood.line, 'this week: 2 landed by autoland, 1 by you, 1 sent back, 2 dropped, 3 stuck');
   const sunday = new Date(2026, 9, 25, 23, 59).getTime();
   assert.equal(season.weekStart(sunday), MONDAY);
+});
+
+function claim(member, ageMs, ref = `CLI-${member.length}`, title = `${member} job`) {
+  return { task_id: `id-${member}-${ageMs}`, ref, title, member, last_event_at: NOW - ageMs };
+}
+
+test('age labels round to minutes, hours, then days', () => {
+  assert.equal(season.ageLabel(20 * 60 * 1000), '20m');
+  assert.equal(season.ageLabel(7.2 * HOUR), '7h');
+  assert.equal(season.ageLabel(23.4 * HOUR), '23h');
+  assert.equal(season.ageLabel(36 * HOUR), '2d');
+  assert.equal(season.ageLabel(4 * 24 * HOUR), '4d');
+});
+
+test('a claim is on a job under 6h without a move, stuck at 6h and after', () => {
+  const roster = season.rosterRows({
+    claims: [
+      claim('fresh', 6 * HOUR - 60 * 1000),
+      claim('edge', 6 * HOUR),
+      claim('old', 4 * 24 * HOUR),
+      claim('sleepy', 10 * HOUR),
+    ],
+    missions: [
+      { owner: 'pilot', status: 'running', last_at: NOW - HOUR },
+      { owner: 'ghost', status: 'running', last_at: NOW - 2 * 24 * HOUR },
+    ],
+    asleep: ['sleepy'],
+    now: NOW,
+    limit: 10,
+  });
+  const status = Object.fromEntries(roster.map(r => [r.name, r.status]));
+  assert.deepEqual(status, { edge: 'stuck 6h', fresh: 'on a job', old: 'stuck 4d', pilot: 'on a job', sleepy: 'asleep' });
+});
+
+test('a member with a live claim and a stuck one is on a job; stuck shows the freshest stale age', () => {
+  const both = season.rosterRows({ claims: [claim('a', HOUR), claim('a', 3 * 24 * HOUR)], now: NOW });
+  assert.equal(both[0].status, 'on a job');
+  const twoStale = season.rosterRows({ claims: [claim('a', 9 * HOUR), claim('a', 3 * 24 * HOUR)], now: NOW });
+  assert.equal(twoStale[0].status, 'stuck 9h');
+});
+
+test('stuck rows list stale claims oldest first, five at most, with the task id', () => {
+  const claims = [
+    claim('a', HOUR, 'CLI-1'),
+    claim('b', 7 * HOUR, 'CLI-2'),
+    claim('c', 5 * 24 * HOUR, 'CLI-3'),
+    claim('d', 2 * 24 * HOUR, 'CLI-4'),
+    claim('e', 3 * 24 * HOUR, 'CLI-5'),
+    claim('f', 4 * 24 * HOUR, 'CLI-6'),
+    claim('g', 9 * HOUR, 'CLI-7'),
+  ];
+  const rows = season.stuckRows(claims, NOW);
+  assert.deepEqual(rows.map(r => [r.ref, r.member, r.age]), [
+    ['CLI-3', 'c', '5d'],
+    ['CLI-6', 'f', '4d'],
+    ['CLI-5', 'e', '3d'],
+    ['CLI-4', 'd', '2d'],
+    ['CLI-7', 'g', '9h'],
+  ]);
+  assert.deepEqual(season.stuckRows([claim('a', HOUR)], NOW), []);
+});
+
+test('since you looked counts finished plays after the last look', () => {
+  const rows = [
+    play('a', 'landed', NOW - 3 * 24 * HOUR),
+    play('a', 'took', NOW - 20 * HOUR),
+    play('a', 'landed', NOW - 10 * HOUR),
+    play('b', 'landed', NOW - 9 * HOUR),
+    play('b', 'dropped', NOW - 8 * HOUR),
+  ];
+  assert.equal(season.sinceLastLook(rows, null, NOW), null);
+  assert.equal(season.sinceLastLook(rows, NOW - 2 * 24 * HOUR, NOW).line, 'since you looked (2d ago): 2 landed, 1 dropped, 0 sent back');
+  assert.equal(season.sinceLastLook(rows, NOW - 4 * HOUR, NOW).line, 'nothing happened since you looked 4h ago');
+});
+
+test('last seen round-trips through .atris/state/gm-last-seen.json', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gm-seen-'));
+  try {
+    assert.equal(season.readLastSeen(dir), null);
+    assert.equal(season.writeLastSeen(dir, NOW), true);
+    assert.equal(season.readLastSeen(dir), NOW);
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'gm-last-seen.json'), 'utf8'));
+    assert.equal(raw.last_seen_at, NOW);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'gm-last-seen.json'), 'not json');
+    assert.equal(season.readLastSeen(dir), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('roster sorts by ovr with rookies last and shows landed of took', () => {
@@ -138,21 +208,29 @@ test('roster sorts by ovr with rookies last and shows landed of took', () => {
     play('clean', 'landed', 8), play('clean', 'landed', 9), play('clean', 'landed', 10),
     play('new', 'took', 11), play('new', 'landed', 12),
   ];
-  const roster = season.rosterRows({ outcomes: rows, busy: ['clean', 'waiting'], asleep: ['sloppy'] });
+  const roster = season.rosterRows({
+    outcomes: rows,
+    claims: [claim('clean', HOUR), claim('waiting', 2 * HOUR)],
+    asleep: ['sloppy'],
+    now: NOW,
+  });
   assert.deepEqual(roster.map(r => r.name), ['clean', 'sloppy', 'new', 'waiting']);
   assert.deepEqual([roster[0].ovr, roster[0].landed, roster[0].took, roster[0].status], [99, 3, 3, 'on a job']);
   assert.deepEqual([roster[1].ovr, roster[1].landed, roster[1].took, roster[1].form, roster[1].status], [73, 1, 4, 'kdd', 'asleep']);
   assert.equal(roster[2].ovr, null);
+  assert.equal(roster[2].status, 'idle');
   assert.equal(roster[3].took, 0);
   assert.equal(season.rosterRows({ outcomes: rows, limit: 2 }).length, 2);
 });
 
-test('last plays are the newest five of any kind and tag plays not seen before', () => {
-  const rows = [1, 2, 3, 4, 5, 6].map(i => play('a', i % 2 ? 'took' : 'landed', NOW - i * HOUR));
+test('last plays are the newest five of any kind, carry hours when finished, and tag new ones', () => {
+  const rows = [1, 2, 3, 4, 5, 6].map(i => play('a', i % 2 ? 'took' : 'landed', NOW - i * HOUR, { claimed_at: NOW - (i + 2) * HOUR }));
   const first = season.lastPlays(rows);
   assert.equal(first.length, 5);
   assert.equal(first[0].at, NOW - HOUR);
   assert.equal(first[0].play, 'took');
+  assert.equal(first[0].hours, null);
+  assert.equal(first[1].hours, 2);
   assert.ok(first.every(p => !p.fresh));
   const seen = new Set(first.map(p => p.id));
   const newer = play('b', 'dropped', NOW);
@@ -183,7 +261,7 @@ test('up next lists open tasks first, then running or ready missions, three at m
   assert.equal(items[2].owner, 'architect');
 });
 
-function fixtureBoard(seen = null) {
+function fixtureBoard({ seen = null, lastSeen = NOW - 2 * 24 * HOUR, claims } = {}) {
   const rows = [
     play('builder', 'took', NOW - 6 * HOUR, { title: 'ship the board' }),
     play('builder', 'landed', NOW - 3 * HOUR, { claimed_at: NOW - 5 * HOUR, title: 'ship the board' }),
@@ -195,24 +273,33 @@ function fixtureBoard(seen = null) {
     workspace_name: 'demo',
     now: NOW,
     outcomes: rows,
-    busy: ['builder'],
+    claims: claims || [
+      { task_id: 'T9', ref: 'CLI-9', title: 'write the release note', member: 'builder', last_event_at: NOW - HOUR },
+      { task_id: 'T8', ref: 'CLI-8', title: 'map the old flags', member: 'mapper', last_event_at: NOW - 4 * 24 * HOUR },
+    ],
     asleep: ['scout'],
     open_tasks: [{ ref: 'CLI-7', title: 'write the docs', created_at: 1 }],
     missions: [],
+    last_seen_at: lastSeen,
   }, { seen });
 }
 
-test('board renders one lowercase screen with record, box scores, last plays, and key', () => {
+test('board renders one lowercase screen with recap, stuck, last plays, and key', () => {
   const lines = renderBoardLines(fixtureBoard());
   const text = lines.join('\n');
   assert.ok(lines.length <= 40, `board is ${lines.length} rows`);
   assert.equal(lines[0], 'front office | demo | week of oct 19');
-  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped');
+  assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 stuck');
+  assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back');
   assert.match(text, /^ {2}builder +86 +kkd +landed 2 of 3 +on a job$/m);
   assert.match(text, /^ {2}scout +rookie +x +landed 0 of 1 +asleep$/m);
-  assert.match(text, /^ {2}builder +dropped +1h +tidy the help$/m);
-  assert.match(text, /^ {2}11:00 am +builder dropped +tidy the help$/m);
+  assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 0 +stuck 4d$/m);
+  assert.match(text, /^stuck, claimed with no move for 6h or more$/m);
+  assert.match(text, /^ {2}mapper +4d +CLI-8 +map the old flags$/m);
+  assert.doesNotMatch(text, /CLI-9 +write the release note/);
+  assert.match(text, /^ {2}11:00 am +builder dropped +1h +tidy the help$/m);
   assert.match(text, /^ {2}oct 20 6:00 am +scout sent back +look around$/m);
+  assert.doesNotMatch(text, /box scores/);
   assert.match(text, /^ {2}CLI-7 +write the docs$/m);
   assert.match(text, /stricter than the website rating on purpose/);
   assert.match(text, /k landed, d dropped, x sent back/);
@@ -220,9 +307,31 @@ test('board renders one lowercase screen with record, box scores, last plays, an
   assert.doesNotMatch(text, /\bnew$/m);
   assert.doesNotMatch(text, /—/);
   assert.doesNotMatch(text, /\b[A-Z]{3,}\b(?<!CLI)/);
-  const interactive = renderBoardLines(fixtureBoard(new Set()), { interactive: true }).join('\n');
-  assert.match(interactive, /p play {2}r run {2}w wake {2}s sleep {2}l landing check {2}enter refresh {2}q quit/);
-  assert.match(interactive, /tidy the help {2}new$/m);
+
+  const interactive = renderBoardLines(fixtureBoard({ seen: new Set() }), { interactive: true });
+  assert.ok(interactive.length <= 40, `interactive board is ${interactive.length} rows`);
+  const itext = interactive.join('\n');
+  assert.match(itext, /refreshes every 10s/);
+  assert.match(itext, /\(u to unstick\)/);
+  assert.match(itext, /p play {2}r run {2}w wake {2}s sleep {2}u unstick/);
+  assert.match(itext, /l landing check {2}enter refresh {2}q quit/);
+  assert.match(itext, /tidy the help {2}new$/m);
+});
+
+test('board drops the stuck block and the recap when there is nothing to show', () => {
+  const text = renderBoardLines(fixtureBoard({ lastSeen: null, claims: [] })).join('\n');
+  assert.doesNotMatch(text, /^stuck/m);
+  assert.doesNotMatch(text, /since you looked/);
+  assert.match(text, /0 stuck$/m);
+  const quiet = renderBoardLines(fixtureBoard({ lastSeen: NOW - 30 * 60 * 1000, claims: [] })).join('\n');
+  assert.match(quiet, /^nothing happened since you looked 30m ago$/m);
+});
+
+test('a full stuck block still fits in about 40 rows', () => {
+  const claims = Array.from({ length: 8 }, (_, i) => ({ task_id: `T${i}`, ref: `CLI-${i}`, title: `job ${i}`, member: `m${i}`, last_event_at: NOW - (i + 1) * 24 * HOUR }));
+  const lines = renderBoardLines(fixtureBoard({ claims, seen: new Set() }), { interactive: true });
+  assert.ok(lines.length <= 41, `board is ${lines.length} rows`);
+  assert.equal(lines.filter(l => /^ {2}m\d +\d+d +CLI-\d/.test(l)).length, 5);
 });
 
 test('play keys map to exact commands and every agent start asks for y', () => {
@@ -232,6 +341,18 @@ test('play keys map to exact commands and every agent start asks for y', () => {
   assert.deepEqual(playAction('l'), { args: ['land', '--dry-run'], confirm: false });
   assert.equal(playAction('r', { name: 'bad name; rm -rf' }), null);
   assert.equal(displayCommand(['member', 'run', 'builder', 'fix the help']), 'atris member run builder "fix the help"');
+});
+
+test('u releases only a task from the stuck list, as the member holding it, after y', () => {
+  const stuck = fixtureBoard().stuck;
+  const action = playAction('u', { name: 'cli-8', stuck });
+  assert.deepEqual(action.args, ['task', 'release', 'CLI-8', '--as', 'mapper']);
+  assert.equal(action.confirm, true);
+  assert.match(action.confirmText, /releases the claim/);
+  assert.equal(displayCommand(action.args), 'atris task release CLI-8 --as mapper');
+  assert.deepEqual(playAction('u', { name: 'T8', stuck }).args, ['task', 'release', 'CLI-8', '--as', 'mapper']);
+  assert.equal(playAction('u', { name: 'CLI-9', stuck }), null);
+  assert.equal(playAction('u', { name: '', stuck }), null);
 });
 
 test('p picks one bounded wake for a name and a timed team session for a count', () => {
@@ -276,7 +397,13 @@ test('gm --board reads a real task db and prints honest records', () => {
     addEvent.run('E3', 'T3', '/elsewhere', 'autoland', 'completed', '{"action":"merged"}', now - HOUR);
     addEvent.run('E4', 'T4', ws, 'builder', 'claimed', '{"claimed_by":"builder"}', now - 5 * HOUR);
     addEvent.run('E5', 'T4', ws, 'builder', 'claim_released', '{"released_by":"builder","previous_claimed_by":"builder"}', now - 4 * HOUR);
+    addTask.run('T5', 'a claim nobody touched', 'claimed', ws, 'scout', now - 3 * 24 * HOUR, now - 4 * 24 * HOUR, now, '{}');
+    addEvent.run('E6', 'T5', ws, 'scout', 'claimed', '{"claimed_by":"scout"}', now - 3 * 24 * HOUR);
     db.close();
+    const seenAt = now - 2 * 24 * HOUR;
+    const seenFile = path.join(ws, '.atris', 'state', 'gm-last-seen.json');
+    fs.mkdirSync(path.dirname(seenFile), { recursive: true });
+    fs.writeFileSync(seenFile, JSON.stringify({ last_seen_at: seenAt }));
 
     const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'gm', '--board', '--workspace', dir], {
       cwd: dir,
@@ -286,12 +413,18 @@ test('gm --board reads a real task db and prints honest records', () => {
     });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^front office \| /m);
+    assert.match(res.stdout, /, 1 stuck$/m);
+    assert.match(res.stdout, /^since you looked \(2d ago\): 1 landed, 1 dropped, 0 sent back$/m);
     assert.match(res.stdout, /^ {2}builder +rookie +dk +landed 1 of 2 +idle$/m);
-    assert.match(res.stdout, /^ {2}builder +landed +2h +ship the board$/m);
-    assert.match(res.stdout, /^ {2}builder +dropped +1h +abandoned job$/m);
+    assert.match(res.stdout, /^ {2}scout +rookie +- +landed 0 of 1 +stuck 3d$/m);
+    assert.match(res.stdout, /^ {2}scout +3d +[A-Z]+-\d+ +a claim nobody touched$/m);
+    assert.match(res.stdout, /builder landed +2h +ship the board$/m);
+    assert.match(res.stdout, /builder dropped +1h +abandoned job$/m);
     assert.match(res.stdout, /builder took +abandoned job/);
     assert.doesNotMatch(res.stdout, /other workspace job/);
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
+    // --board reads the last look but never moves it.
+    assert.equal(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last_seen_at, seenAt);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
