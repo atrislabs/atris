@@ -26,6 +26,7 @@ function showHelp() {
   console.log('');
   console.log('Usage: atris gm                  play the front office (in a terminal)');
   console.log('       atris gm --board          print the front office board once');
+  console.log('       atris gm --league         print the league, every project as a club');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -54,11 +55,19 @@ function showHelp() {
   console.log('    u  unstick: let go of a stuck claim (asks y first)');
   console.log('         atris task release <id> --as <member holding it>');
   console.log('    l  landing check (atris land --dry-run)');
+  console.log('    g  switch between this club and the league (read only)');
+  console.log('    c  switch to another club from the league (read only, like --workspace)');
   console.log('    enter or space  refresh,  q  quit');
-  console.log('  Every key shows the exact command before it runs.');
+  console.log('  Every key that runs a command shows it first.');
+  console.log('');
+  console.log('  The league treats every real project folder with task events in the');
+  console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
+  console.log('  drops, stuck claims, last task event, and best player. Scratch folders');
+  console.log('  under the temp dirs and agent worktree checkouts are left out.');
   console.log('');
   console.log('Options:');
   console.log('  --board           Print the board once and exit, no keys.');
+  console.log('  --league          Print the league once and exit; with --json, adds league.');
   console.log('  --manager <id>    Manager id. Defaults to game-manager when present.');
   console.log('  --as <id>         Alias for --player.');
   console.log('  --player <id>     Preferred player when seeding a first local mission.');
@@ -793,6 +802,15 @@ function renderLeagueLines(board, { interactive = false } = {}) {
   return lines;
 }
 
+// The club a typed name means: its league name, or its folder name.
+function pickClub(answer, rows = []) {
+  const wanted = String(answer || '').trim().toLowerCase();
+  if (!wanted) return null;
+  const hit = rows.find(row => String(row.club).toLowerCase() === wanted)
+    || rows.find(row => path.basename(String(row.root)).toLowerCase() === wanted);
+  return hit ? hit.root : null;
+}
+
 function printLeague() {
   console.log(renderLeagueLines(loadLeagueBoard()).join('\n'));
 }
@@ -881,7 +899,9 @@ async function gmPlay(args = []) {
   const { spawn } = require('child_process');
   const input = process.stdin;
   const output = process.stdout;
-  const workspaceRoot = boardWorkspaceRoot(args);
+  // The club in view. c switches it, the same as --workspace; every command a
+  // key runs then runs in that club's folder.
+  let workspaceRoot = boardWorkspaceRoot(args);
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   const write = text => output.write(`${text}\n`);
   const setRaw = (on) => {
@@ -890,26 +910,44 @@ async function gmPlay(args = []) {
 
   readline.emitKeypressEvents(input);
 
-  // The recap compares against the look before this session, pinned for the
-  // whole session; this session's look is saved on open and on quit.
+  // The recap compares against the look before this session, pinned per club
+  // for the session; each club's look is saved when it opens and on quit.
   const season = require('../lib/gm-season');
-  const lastSeen = season.readLastSeen(workspaceRoot);
+  let lastSeen = season.readLastSeen(workspaceRoot);
   season.writeLastSeen(workspaceRoot);
 
+  let view = 'club';
   let seen = null;
   let note = '';
   let stuck = [];
+  let leagueRowsSeen = [];
   const draw = () => {
     output.write('\x1b[2J\x1b[H');
     try {
-      const board = loadBoard(workspaceRoot, { seen, lastSeen });
-      seen = new Set(board.last_plays.map(play => play.id));
-      stuck = board.stuck || [];
-      write(renderBoardLines(board, { interactive: true }).join('\n'));
+      if (view === 'league') {
+        const board = loadLeagueBoard();
+        leagueRowsSeen = board.rows;
+        write(renderLeagueLines(board, { interactive: true }).join('\n'));
+      } else {
+        const board = loadBoard(workspaceRoot, { seen, lastSeen });
+        seen = new Set(board.last_plays.map(play => play.id));
+        stuck = board.stuck || [];
+        write(renderBoardLines(board, { interactive: true }).join('\n'));
+      }
     } catch (err) {
       write(`could not load the board: ${err.message}`);
     }
     if (note) write(`\n${note}`);
+  };
+
+  const switchClub = (root) => {
+    season.writeLastSeen(workspaceRoot);
+    workspaceRoot = root;
+    lastSeen = season.readLastSeen(workspaceRoot);
+    season.writeLastSeen(workspaceRoot);
+    seen = null;
+    stuck = [];
+    view = 'club';
   };
 
   // Keys arrive in bursts (type-ahead while a command runs lands as one chunk),
@@ -1043,7 +1081,24 @@ async function gmPlay(args = []) {
       if ((key && key.ctrl && key.name === 'c') || name === 'q' || name === 'escape') break;
       if (name === 'space' || name === 'return' || name === 'enter') {
         draw();
-      } else if (['p', 'r', 'w', 's', 'u', 'l'].includes(name)) {
+      } else if (name === 'g') {
+        view = view === 'league' ? 'club' : 'league';
+        note = '';
+        draw();
+      } else if (name === 'c') {
+        if (!leagueRowsSeen.length) leagueRowsSeen = loadLeagueBoard().rows;
+        write('');
+        const names = leagueRowsSeen.slice(0, 6).map(row => row.club).join(', ');
+        const answer = await ask(`switch to which club? (${names}${leagueRowsSeen.length > 6 ? ', ...' : ''}): `);
+        const root = answer ? pickClub(answer, leagueRowsSeen) : null;
+        if (root) {
+          switchClub(root);
+          note = `now looking at ${path.basename(root)}`;
+        } else {
+          note = answer ? `no club called "${clip(answer, 40)}" in the league` : 'stayed on this club';
+        }
+        draw();
+      } else if (view === 'club' && ['p', 'r', 'w', 's', 'u', 'l'].includes(name)) {
         note = await doAction(name);
         draw();
       }
@@ -1145,6 +1200,8 @@ async function gmCommand(...args) {
 module.exports = {
   displayCommand,
   gmCommand,
+  pickClub,
   playAction,
   renderBoardLines,
+  renderLeagueLines,
 };
