@@ -491,3 +491,28 @@ test('git rewriting a side copy history file does not make the copy look freshly
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a local note identical to the incoming one is not reported as kept', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/logs/archive/a.md', 'old journal a\n', 'archive a');
+    commit(seed, 'atris/logs/archive/b.md', 'old journal b\n', 'archive b');
+    commit(seed, 'atris/logs/archive/c.md', 'old journal c\n', 'archive c');
+    git(seed, 'push', '-q');
+    // The same archiving ran here too, so two copies match; one was edited.
+    write(checkout, 'atris/logs/archive/a.md', 'old journal a\n');
+    write(checkout, 'atris/logs/archive/b.md', 'old journal b\n');
+    write(checkout, 'atris/logs/archive/c.md', 'old journal c, with my note\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /caught up 3 commits/);
+    assert.doesNotMatch(cli.stdout, /atris\/logs\/archive\/[ab]\.md/);
+    assert.match(cli.stdout, /kept the new atris\/logs\/archive\/c\.md; your copy is in (\S+)/);
+    const saved = cli.stdout.match(/your copy is in (\S+)/)[1];
+    assert.equal(fs.readFileSync(saved, 'utf8'), 'old journal c, with my note\n');
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/logs/archive/a.md'), 'utf8'), 'old journal a\n');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
