@@ -14,7 +14,8 @@ function showZenHelp() {
   console.log('is lost, and everything else can be brought back. Team notes');
   console.log('in atris/ and agent config stay as they are. Anything touched in the last');
   console.log('30 minutes is left alone. A side copy with unsaved work nobody has touched in');
-  console.log('3 days is saved to a zen-backup/ branch and put away. Then the workspace is tidied with atris clean, and');
+  console.log('3 days is saved to a zen-backup/ branch and put away. A side copy locked with git worktree lock');
+  console.log('always stays. Then the workspace is tidied with atris clean, and');
   console.log('anything only you can do is listed with the one command that does it.');
   console.log('');
   console.log('  --check      Only look. Report what is out of place and change nothing.');
@@ -86,6 +87,10 @@ function printCheck(result, workspace) {
   const busy = result.worktrees_with_work.length;
   if (busy) {
     console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}`);
+  }
+  const held = result.worktrees_locked?.length || 0;
+  if (held) {
+    console.log(`  ${held} side ${held === 1 ? 'copy is locked by its owner' : 'copies are locked by their owners'}, left alone`);
   }
   const live = result.worktrees_in_use?.length || 0;
   if (live) {

@@ -376,3 +376,33 @@ test('a side copy left alone for being in use does not count as out of place', (
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a side copy locked by its owner stays and does not count as out of place', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const copy = path.join(base, 'agent-copy');
+    git(checkout, 'worktree', 'add', '-q', '-b', 'agent-work', copy);
+    git(checkout, 'worktree', 'lock', '--reason', 'claude agent a1 (pid 1 start Mon Oct 19 03:23:14 2026)', copy);
+    const gitDir = path.resolve(copy, git(copy, 'rev-parse', '--git-dir'));
+    const hourAgo = new Date(Date.now() - 3600000);
+    for (const f of ['HEAD', 'logs/HEAD']) fs.utimesSync(path.join(gitDir, f), hourAgo, hourAgo);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy is locked by its owner, so it stays/);
+    assert.doesNotMatch(cli.stdout, /unsaved work/);
+    assert.match(cli.stdout, /zen\./);
+    assert.ok(fs.existsSync(copy));
+
+    const check = run(process.execPath, [cliPath, 'zen', '--check', '--no-fetch'], checkout, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '30',
+    });
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.match(check.stdout, /^zen: yes/m);
+    assert.match(check.stdout, /1 side copy is locked by its owner, left alone/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
