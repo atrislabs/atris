@@ -67,7 +67,7 @@ test('a missing, corrupt, or nonsense target file reads as no target and never t
     const file = path.join(dir, fs.readdirSync(dir)[0]);
     fs.writeFileSync(file, 'not json');
     assert.deepEqual(target.readTargets(ws, { dir }), { weeks: {} });
-    fs.writeFileSync(file, JSON.stringify({ weeks: { [OCT19]: { landed: 0, max_abandoned: 1, max_stuck: 0 }, junk: T(4) } }));
+    fs.writeFileSync(file, JSON.stringify({ weeks: { '2026-10-19': { landed: 0, max_abandoned: 1, max_stuck: 0 }, junk: T(4) } }));
     assert.deepEqual(target.readTargets(ws, { dir }), { weeks: {} });
     assert.equal(target.writeTarget(ws, { landed: -1, max_abandoned: 0, max_stuck: 0 }, { dir, now: NOW }), false);
     const blocked = path.join(dir, 'a-file');
@@ -101,7 +101,7 @@ test('the default target is the last 4 full weeks average landed, rounded up, at
 });
 
 test('this week rolls over at monday 00:00 local', () => {
-  const store = { weeks: { [String(OCT12)]: T(2, 0, 0) } };
+  const store = { weeks: { '2026-10-12': T(2, 0, 0) } };
   const rows = [
     play('landed', new Date(2026, 9, 18, 23, 59).getTime()),
     play('landed', OCT19),
@@ -113,7 +113,7 @@ test('this week rolls over at monday 00:00 local', () => {
   assert.equal(status.abandoned, 1);
   assert.equal(status.verdict, 'missed');
   assert.equal(target.targetLine(status), 'target: 1 of 2 landed | abandoned 1 of max 0 | stuck over a day 0, max 0 (missed)');
-  const stuck = target.currentStatus({ store: { weeks: { [String(OCT19)]: T(5, 2, 0) } }, outcomes: [], claims: [{ member: 'a', last_event_at: NOW - 30 * HOUR }, { member: 'b', last_event_at: NOW - 2 * HOUR }], now: NOW });
+  const stuck = target.currentStatus({ store: { weeks: { '2026-10-19': T(5, 2, 0) } }, outcomes: [], claims: [{ member: 'a', last_event_at: NOW - 30 * HOUR }, { member: 'b', last_event_at: NOW - 2 * HOUR }], now: NOW });
   assert.equal(stuck.stuck, 1);
   assert.equal(target.currentStatus({ store: { weeks: {} }, outcomes: rows, claims: [], now: NOW }), null);
 });
@@ -130,7 +130,7 @@ test('claims stuck over a day are counted at the moment a week ends', () => {
 });
 
 test('the season record scores completed target weeks with the target in force then', () => {
-  const store = { weeks: { [String(SEP28)]: T(2, 1, 0), [String(OCT12)]: T(3, 1, 0) } };
+  const store = { weeks: { '2026-09-28': T(2, 1, 0), '2026-10-12': T(3, 1, 0) } };
   const rows = [
     play('landed', SEP28 + DAY), play('landed', SEP28 + 2 * DAY),
     play('landed', OCT5 + DAY), play('abandoned', OCT5 + 2 * DAY), play('abandoned', OCT5 + 3 * DAY),
@@ -250,7 +250,7 @@ test('the league shows a target column only when some club has a target', () => 
   const { renderLeagueLines } = require('../commands/gm');
   const season = require('../lib/gm-season');
   const outcomes = [play('landed', NOW - HOUR), play('landed', NOW - 2 * HOUR), play('dropped', NOW - 3 * HOUR)];
-  const status = target.currentStatus({ store: { weeks: { [String(OCT19)]: T(5) } }, outcomes, claims: [], now: NOW });
+  const status = target.currentStatus({ store: { weeks: { '2026-10-19': T(5) } }, outcomes, claims: [], now: NOW });
   const rows = season.leagueRows([
     { root: '/w/alpha', outcomes, claims: [], target: status },
     { root: '/w/beta', outcomes, claims: [] },
@@ -283,11 +283,15 @@ test('a claim in review at week end is waiting on the reviewer, not stuck with t
     ['sent-back', [{ event_type: 'claimed', actor: 'b', created_at: end - 4 * DAY }, { event_type: 'proof_ready', actor: 'b', created_at: end - 3 * DAY }, { event_type: 'revision_requested', actor: 'k', created_at: end - 2 * DAY }]],
     ['reopened', [{ event_type: 'claimed', actor: 'c', created_at: end - 4 * DAY }, { event_type: 'proof_ready', actor: 'c', created_at: end - 3 * DAY }, { event_type: 'reopened', actor: 'k', created_at: end - 2 * DAY }]],
     ['plain', [{ event_type: 'claimed', actor: 'd', created_at: end - 2 * DAY }]],
+    ['reclaimed', [{ event_type: 'claimed', actor: 'e', created_at: end - 5 * DAY }, { event_type: 'reopened', actor: 'k', created_at: end - 4 * DAY }, { event_type: 'claimed', actor: 'f', created_at: end - 3 * DAY }]],
   ]);
+  // sent-back keeps its holder (stuck), plain is stuck, reclaimed is stuck with
+  // its new holder; in-review waits on review and reopened has no holder
   assert.equal(target.stuckOverDayAt(byTask, end), 3);
   byTask.delete('sent-back');
-  byTask.delete('reopened');
+  byTask.delete('reclaimed');
   assert.equal(target.stuckOverDayAt(byTask, end), 1);
+  assert.equal(target.stuckOverDayAt(new Map([['reopened', byTask.get('reopened')]]), end), 0);
 });
 
 test('the history cutoff is 26 calendar weeks back even across a daylight saving change', () => {
@@ -310,10 +314,11 @@ test('weeks are keyed by the monday date, so a target set in one time zone holds
       const store = target.readTargets(ws, { dir });
       assert.deepEqual(target.targetForWeek(store, new Date(2026, 9, 21, 23, 30).getTime()), T(7));
     });
-    // an older timestamp key still reads, and a date key for the same week wins
-    fs.writeFileSync(path.join(dir, fs.readdirSync(dir)[0]), JSON.stringify({ weeks: { [String(OCT12)]: T(4), [String(OCT19)]: T(9), '2026-10-19': T(6) } }));
+    // only "YYYY-MM-DD" keys are valid; anything else is ignored
+    fs.writeFileSync(path.join(dir, fs.readdirSync(dir)[0]), JSON.stringify({ weeks: { [String(OCT12)]: T(4), 'oct 19': T(9), '2026-10-19': T(6) } }));
     const store = target.readTargets(ws, { dir });
-    assert.deepEqual(target.targetForWeek(store, OCT12 + DAY), T(4));
+    assert.deepEqual(Object.keys(store.weeks), ['2026-10-19']);
+    assert.equal(target.targetForWeek(store, OCT12 + DAY), null);
     assert.deepEqual(target.targetForWeek(store, OCT19 + DAY), T(6));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
