@@ -1460,15 +1460,16 @@ async function gmPhone(args = []) {
   const { atrisHome } = require('../lib/state-home');
   const workspaceRoot = boardWorkspaceRoot(args);
   const portRaw = flag(args, '--port');
-  const port = portRaw == null ? 7777 : Number(portRaw);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  const firstPort = portRaw == null ? 7777 : Number(portRaw);
+  if (!Number.isInteger(firstPort) || firstPort < 1 || firstPort > 65535) {
     console.error('--port takes a whole number from 1 to 65535');
     process.exitCode = 2;
     return undefined;
   }
   const lan = phone.lanAddress();
   const addresses = [...new Set([lan, '127.0.0.1'].filter(Boolean))];
-  const hosts = [...addresses.map(a => `${a}:${port}`), `localhost:${port}`];
+  // filled in once a port is open; the handler reads it on every request
+  const hosts = [];
   const token = crypto.randomBytes(32).toString('base64url');
   const stateDir = path.join(atrisHome(), 'state');
   const handler = phone.createPhoneHandler({
@@ -1483,22 +1484,39 @@ async function gmPhone(args = []) {
     page: phonePage,
   });
 
-  const servers = [];
-  try {
-    for (const address of addresses) {
-      const server = http.createServer((req, res) => { handler(req, res); });
-      await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(port, address, resolve);
-      });
-      servers.push(server);
+  const listenAll = async (port) => {
+    const opened = [];
+    try {
+      for (const address of addresses) {
+        const server = http.createServer((req, res) => { handler(req, res); });
+        await new Promise((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(port, address, resolve);
+        });
+        opened.push(server);
+      }
+      return opened;
+    } catch (err) {
+      for (const server of opened) server.close();
+      throw err;
     }
-  } catch (err) {
-    for (const server of servers) server.close();
-    console.error(err && err.code === 'EADDRINUSE' ? `port ${port} is taken. try --port ${port + 1}` : `could not start: ${err.message}`);
-    process.exitCode = 1;
-    return undefined;
+  };
+  // With no --port, a taken 7777 moves on to the next free port (up to 10).
+  let servers = null;
+  let port = firstPort;
+  for (let tries = portRaw == null ? 10 : 1; tries > 0 && !servers; tries -= 1) {
+    try {
+      servers = await listenAll(port);
+    } catch (err) {
+      if (!(err && err.code === 'EADDRINUSE' && tries > 1)) {
+        console.error(err && err.code === 'EADDRINUSE' ? `port ${port} is taken. try --port ${port + 1}` : `could not start: ${err.message}`);
+        process.exitCode = 1;
+        return undefined;
+      }
+      port += 1;
+    }
   }
+  hosts.push(...addresses.map(a => `${a}:${port}`), `localhost:${port}`);
 
   const link = `http://${lan || '127.0.0.1'}:${port}/?t=${token}`;
   console.log('');
