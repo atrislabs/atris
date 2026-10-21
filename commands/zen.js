@@ -1,6 +1,6 @@
 'use strict';
 
-const { checkZen } = require('../lib/zen');
+const { checkZen, namePlaces } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
 const { workspaceZen } = require('../lib/zen-workspace');
 
@@ -86,7 +86,7 @@ function printCheck(result, workspace) {
   }
   const busy = result.worktrees_with_work.length;
   if (busy) {
-    console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}`);
+    console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}: ${namePlaces(result.worktrees_with_work)}`);
   }
   const held = result.worktrees_locked?.length || 0;
   if (held) {
