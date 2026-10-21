@@ -1121,6 +1121,144 @@ async function gmPlay(args = []) {
   }
 }
 
+// ---- replay: the night as a two-minute time-lapse -------------------------
+
+const REPLAY_KEYS = 'keys: space pause  f faster  q quit';
+
+function replayWho(play, byClub) {
+  return byClub ? `${play.club}: ${play.member}` : play.member;
+}
+
+// One frame of the replay as lines. Pure: frame in, lines out.
+function renderReplayFrameLines(frame, { since, now, byClub = false, speed = 1, paused = false, interactive = false } = {}) {
+  const { clockLabel } = require('../lib/gm-season');
+  const lines = [];
+  const at = frame.at ? clockLabel(frame.at, now) : 'the start';
+  const state = paused ? ', paused' : (speed !== 1 ? `, ${speed}x` : '');
+  lines.push(`replaying ${clockLabel(since, now)} to now, at ${at} (play ${frame.index + 1} of ${frame.total}${state})`);
+  lines.push('');
+  lines.push(`  ${pad(byClub ? 'club' : 'name', 20)}${pad('landed', 8)}${pad('dropped', 9)}${pad('sent back', 11)}${pad('abandoned', 11)}`);
+  for (const row of frame.rows) {
+    lines.push(`  ${pad(row.key, 20)}${pad(row.landed, 8)}${pad(row.dropped, 9)}${pad(row.sent_back, 11)}${pad(row.abandoned, 11)}${row.bump ? '+1' : ''}`.replace(/\s+$/, ''));
+  }
+  lines.push('');
+  lines.push('plays, newest first');
+  for (const play of frame.ticker) {
+    const mark = play.newest ? '> ' : '  ';
+    lines.push(`${mark}${pad(clockLabel(play.at, now), 17)}${pad(`${replayWho(play, byClub)} ${play.play}`, byClub ? 40 : 32)}${clip(play.title, 30)}`);
+  }
+  if (interactive) {
+    lines.push('');
+    lines.push(REPLAY_KEYS);
+  }
+  return lines;
+}
+
+// Plain mode: every play in order, one line each, no redraw. Pure.
+function replayPlainLines(plays, { now, byClub = false } = {}) {
+  const { clockLabel } = require('../lib/gm-season');
+  return plays.map(play => `${pad(clockLabel(play.at, now), 17)}${pad(`${replayWho(play, byClub)} ${play.play || play.kind.replace('_', ' ')}`, byClub ? 40 : 32)}${clip(play.title, 40)}`);
+}
+
+function replaySleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Plays the frames in place. `poll` returns key names pressed since the last
+// call (space, f, q). Resolves 'done' or 'quit'.
+async function runReplay(model, { write, poll, interactive = true }) {
+  const season = require('../lib/gm-season');
+  const { plays, since, now, byClub } = model;
+  const rows = season.replayRows(plays, { byClub });
+  let speed = Number(model.speed) > 0 ? Number(model.speed) : 1;
+  let paused = false;
+  let index = 0;
+  const draw = () => {
+    const frame = season.replayFrame(plays, index, { byClub, rows });
+    const lines = renderReplayFrameLines(frame, { since, now, byClub, speed, paused, interactive });
+    write(`\x1b[H${lines.map(line => `${line}\x1b[K`).join('\n')}\n\x1b[J`);
+  };
+  write('\x1b[2J');
+  while (index < plays.length) {
+    draw();
+    let waited = 0;
+    while (paused || waited < season.replayDelayMs(plays.length, speed)) {
+      for (const key of poll()) {
+        if (key === 'q') return 'quit';
+        if (key === 'space') paused = !paused;
+        if (key === 'f') speed *= 2;
+        if (key === 'space' || key === 'f') draw();
+      }
+      await replaySleep(50);
+      if (!paused) waited += 50;
+    }
+    index += 1;
+  }
+  index = plays.length - 1;
+  draw();
+  return 'done';
+}
+
+function replayKeyName(str, key) {
+  if (key && key.ctrl && key.name === 'c') return 'q';
+  return (key && key.name) || str;
+}
+
+async function gmReplay(args = []) {
+  const season = require('../lib/gm-season');
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const byClub = hasExactFlag(args, '--league');
+  const now = Date.now();
+  const window = season.parseSince(flag(args, '--since'), { now, lastSeen: season.readLastSeen(workspaceRoot) });
+  if (!window) {
+    console.error('replay: --since takes a span like 30m, 12h, 2d, or last-seen');
+    process.exitCode = 1;
+    return;
+  }
+  const speed = Number(flag(args, '--speed')) > 0 ? Number(flag(args, '--speed')) : 1;
+  const model = season.loadReplay({ workspaceRoot, since: window.since, now, league: byClub });
+  const where = byClub ? 'the league' : path.basename(workspaceRoot);
+  if (model.error) console.error(`could not read the task list: ${clip(model.error, 80)}`);
+  if (!model.plays.length) {
+    console.log(`nothing happened since ${season.clockLabel(window.since, now)}`);
+    return;
+  }
+  const summary = season.replaySummary(model.plays, { stuck: model.stuck, since: window.since, now });
+  const plain = hasExactFlag(args, '--plain') || !(process.stdout.isTTY && process.stdin.isTTY);
+  if (plain) {
+    // A reader like head may close the pipe early; that is a normal end.
+    process.stdout.on('error', (err) => {
+      if (err && err.code === 'EPIPE') process.exit(0);
+    });
+    const lines = [
+      `replay of ${where} since ${season.clockLabel(window.since, now)} (${window.label}), ${model.plays.length} plays`,
+      ...replayPlainLines(model.plays, { now, byClub }),
+      summary,
+    ];
+    process.stdout.write(`${lines.join('\n')}\n`);
+    return;
+  }
+  const readline = require('readline');
+  const input = process.stdin;
+  const pressed = [];
+  const onKey = (str, key) => pressed.push(replayKeyName(str, key));
+  readline.emitKeypressEvents(input);
+  if (typeof input.setRawMode === 'function') input.setRawMode(true);
+  input.resume();
+  input.on('keypress', onKey);
+  try {
+    await runReplay({ plays: model.plays, since: window.since, now, byClub, speed }, {
+      write: text => process.stdout.write(text),
+      poll: () => pressed.splice(0),
+    });
+    process.stdout.write(`\n${summary}\n`);
+  } finally {
+    input.off('keypress', onKey);
+    if (typeof input.setRawMode === 'function') input.setRawMode(false);
+    input.pause();
+  }
+}
+
 function wantsPlay(args = []) {
   if (hasFlagOrValue(args, '--json') || hasFlagOrValue(args, '--watch')) return false;
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -1141,6 +1279,11 @@ async function gmCommand(...args) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showHelp();
     return;
+  }
+
+  if (positional(args)[0] === 'replay') {
+    const at = args.indexOf('replay');
+    return gmReplay([...args.slice(0, at), ...args.slice(at + 1)]);
   }
 
   const member = wakeableMember(args);
