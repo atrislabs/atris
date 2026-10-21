@@ -661,9 +661,11 @@ function render(state) {
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const PLAY_KEYS = [
-  'keys: p play  r run  w wake  s sleep  u unstick',
-  '      l landing check  enter refresh  q quit',
+  'keys: p play  r run  w wake  s sleep  u unstick  l landing check',
+  '      g league  c switch club  enter refresh  q quit',
 ];
+const LEAGUE_KEYS = 'keys: g back to the club  c switch club  enter refresh  q quit';
+const LEAGUE_MAX_ROWS = 20;
 const MEMBER_NAME_RE = /^[a-zA-Z0-9._-]+$/;
 const REFRESH_MS = 10 * 1000;
 const PLAY_DEFAULT_MINUTES = 30;
@@ -758,6 +760,41 @@ function renderBoardLines(board, { interactive = false } = {}) {
   if (interactive) for (const line of PLAY_KEYS) lines.push(line);
   else lines.push('     run atris gm in a terminal to play');
   return lines;
+}
+
+function loadLeagueBoard(options = {}) {
+  const season = require('../lib/gm-season');
+  return season.leagueBoard(season.loadLeague(options));
+}
+
+// The league: one row per club, best this week first. Pure: board in, lines out.
+function renderLeagueLines(board, { interactive = false } = {}) {
+  const lines = [];
+  const live = interactive ? ` | refreshes every ${REFRESH_MS / 1000}s` : '';
+  lines.push(`league | ${board.days} days | ${board.rows.length} clubs${live}`);
+  if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
+  lines.push('');
+  if (!board.rows.length) {
+    lines.push('  no project folder had task events in the last 30 days');
+  } else {
+    lines.push(`  ${pad('club', 20)}${pad('ovr', 8)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('stuck', 7)}${pad('last', 6)}best player`);
+    for (const row of board.rows.slice(0, LEAGUE_MAX_ROWS)) {
+      const best = row.best_player ? `${row.best_player.name} ${row.best_player.ovr}` : '-';
+      lines.push(`  ${pad(row.club, 20)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${best}`);
+    }
+    const more = board.rows.length - LEAGUE_MAX_ROWS;
+    if (more > 0) lines.push(`  and ${more} more quiet clubs (atris gm --league --json lists all)`);
+  }
+  lines.push('');
+  lines.push('key: week and 30d count landed jobs, drop counts dropped jobs in 30 days');
+  lines.push('     stuck: claims with no move for 6h or more. last: newest task event');
+  lines.push('     ovr: same honest rating as the club board, over every job in the club');
+  lines.push(interactive ? LEAGUE_KEYS : '     run atris gm in a terminal, then g, to play');
+  return lines;
+}
+
+function printLeague() {
+  console.log(renderLeagueLines(loadLeagueBoard()).join('\n'));
 }
 
 function printBoard(args = []) {
@@ -1055,6 +1092,13 @@ async function gmCommand(...args) {
     return memberCommand('wake', member, ...passthrough);
   }
 
+  // --league prints the league once (with or without --board); in --json it
+  // adds a `league` field instead, so plain --json stays a one-folder read.
+  if (hasExactFlag(args, '--league') && !hasFlagOrValue(args, '--json')) {
+    printLeague();
+    return;
+  }
+
   if (hasExactFlag(args, '--board') && !hasFlagOrValue(args, '--json')) {
     printBoard(args);
     return;
@@ -1081,6 +1125,13 @@ async function gmCommand(...args) {
       state.season = loadBoard(state.workspace_root);
     } catch {
       state.season = null;
+    }
+    if (hasExactFlag(args, '--league')) {
+      try {
+        state.league = loadLeagueBoard();
+      } catch {
+        state.league = null;
+      }
     }
     console.log(JSON.stringify(state, null, 2));
     return;
