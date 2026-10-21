@@ -56,6 +56,8 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 - **Action:** `node --test --test-name-pattern 'writer' test/ytnotes.test.js`, which runs the script with yt-dlp present and no writer on the PATH.
 - **Expect:** Exit code 3, a list of writers to install, and the transcript kept at `$TMPDIR/ytnotes/yt_<id>.clean.txt`. No blank notes file.
 - **Rerun on 2026-10-17:** passes. The test: exit 0, 17 pass, 0 fail. Live, with only node and yt-dlp linked into a fresh folder on the PATH plus `/usr/bin:/bin`, on `Z3JyAqh4ixg`: exit 3 in 2.9 seconds, the line naming all four writers to install, the 4,038-word transcript kept, no notes file.
+- **Rerun on 2026-10-21:** passes. The test: exit 0, 17 pass, 0 fail. Live, with only node and yt-dlp linked into a fresh folder on the PATH plus `/usr/bin:/bin`, a fresh home, and a fresh temp folder, on `Z3JyAqh4ixg`: exit 3 in 5.08 seconds, the line naming all four writers to install, the 4,038-word transcript kept, no notes file.
+- **Use a fresh home too.** The notes script also looks in `~/.local/bin`, where Claude Code installs, so with your real home the run finds Haiku and writes notes (exit 0 in 7.8 seconds on 2026-10-21). That is correct for you, but it is not the stranger case.
 - **Clear the writer pin first** with `env -u ATRIS_YTNOTES_ENGINE`. A shell that sets it to `haiku` skips the writer list and prints only that `claude` is not installed, which looks like a bug but is the pinned path.
 
 ### Step 5: The scorecard
