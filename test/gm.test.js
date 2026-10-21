@@ -61,7 +61,7 @@ test('gm mode shows local players missions and next review action', () => {
     const ready = runCli(['task', 'ready', ref, '--proof', 'artifact + verifier passed'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
 
-    const gm = runCli(['gm'], { cwd: dir, env });
+    const gm = runCli(['gm', '--classic'], { cwd: dir, env });
     assert.equal(gm.status, 0, gm.stderr);
     assert.match(gm.stdout, /AgentXP General Manager/);
     assert.match(gm.stdout, /Manager game-manager/);
@@ -104,7 +104,7 @@ test('gm mode bootstraps a starter mission for a fresh single-player workspace',
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'justin'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'START_HERE.md'), '# Justin\n');
 
-    const gm = runCli(['gm'], { cwd: dir, env });
+    const gm = runCli(['gm', '--classic'], { cwd: dir, env });
     assert.equal(gm.status, 0, gm.stderr);
     assert.match(gm.stdout, /Starter mission created locally/);
     assert.match(gm.stdout, /justin/);
@@ -179,6 +179,35 @@ test('gm <member> wakes the member instead of entering manager mode', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /maze is waking up/);
     assert.doesNotMatch(res.stdout, /AgentXP General Manager/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('plain gm off a terminal prints the read-only board and seeds nothing', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', USER: 'owner' };
+  try {
+    // one team member and no tasks: exactly what makes --classic seed a task
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'justin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'START_HERE.md'), '# Justin\n');
+
+    const gm = runCli(['gm'], { cwd: dir, env });
+    assert.equal(gm.status, 0, gm.stderr);
+    assert.match(gm.stdout, /^front office \| /m);
+    assert.doesNotMatch(gm.stdout, /AgentXP General Manager|Starter mission created locally/);
+
+    const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr);
+    assert.equal(JSON.parse(list.stdout).tasks.length, 0);
+
+    // the older list stays one flag away
+    const classic = runCli(['gm', '--classic', '--no-seed'], { cwd: dir, env });
+    assert.equal(classic.status, 0, classic.stderr);
+    assert.match(classic.stdout, /AgentXP General Manager/);
+    assert.doesNotMatch(classic.stdout, /Starter mission created locally/);
   } finally {
     cleanupTempDir(dir);
   }
