@@ -772,17 +772,38 @@ async function gmPlay(args = []) {
     if (note) write(`\n${note}`);
   };
 
-  const nextKey = () => new Promise((resolve) => {
+  // Keys arrive in bursts (type-ahead while a command runs lands as one chunk),
+  // so queue them instead of keeping only the first.
+  const queue = [];
+  let waiter = null;
+  let capturing = true;
+  const onKeypress = (str, key) => {
+    if (!capturing) return;
+    if (waiter) {
+      const resolve = waiter;
+      waiter = null;
+      resolve({ str, key });
+    } else {
+      queue.push({ str, key });
+    }
+  };
+  input.on('keypress', onKeypress);
+
+  const nextKey = () => {
     setRaw(true);
     input.resume();
-    input.once('keypress', (str, key) => resolve({ str, key }));
-  });
+    if (queue.length) return Promise.resolve(queue.shift());
+    return new Promise((resolve) => { waiter = resolve; });
+  };
 
   const ask = question => new Promise((resolve) => {
+    capturing = false;
+    queue.length = 0;
     setRaw(false);
     const rl = readline.createInterface({ input, output, terminal: true });
     rl.question(question, (answer) => {
       rl.close();
+      capturing = true;
       resolve(String(answer || '').trim());
     });
   });
@@ -817,6 +838,7 @@ async function gmPlay(args = []) {
     write(`this will run: ${shown}`);
     if (action.confirm) {
       write('this starts an agent. press y to go, any other key to cancel');
+      queue.length = 0; // only a fresh key press can start an agent
       const { str } = await nextKey();
       if (String(str || '').toLowerCase() !== 'y') return `cancelled: ${shown}`;
     }
@@ -841,6 +863,7 @@ async function gmPlay(args = []) {
       draw(await doAction(name));
     }
   }
+  input.off('keypress', onKeypress);
   setRaw(false);
   input.pause();
   write('');
