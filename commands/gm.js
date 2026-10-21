@@ -815,13 +815,17 @@ function renderLeagueLines(board, { interactive = false } = {}) {
   return lines;
 }
 
-// The club a typed name means: its league name, or its folder name.
+// The club a typed name means: its unique league label, or a folder name
+// that only one club has. Returns { root }, { ambiguous: [labels] }, or null.
 function pickClub(answer, rows = []) {
   const wanted = String(answer || '').trim().toLowerCase();
   if (!wanted) return null;
-  const hit = rows.find(row => String(row.club).toLowerCase() === wanted)
-    || rows.find(row => path.basename(String(row.root)).toLowerCase() === wanted);
-  return hit ? hit.root : null;
+  const exact = rows.filter(row => String(row.club).toLowerCase() === wanted);
+  if (exact.length === 1) return { root: exact[0].root };
+  const byFolder = exact.length ? exact : rows.filter(row => path.basename(String(row.root)).toLowerCase() === wanted);
+  if (byFolder.length === 1) return { root: byFolder[0].root };
+  if (byFolder.length > 1) return { ambiguous: byFolder.map(row => row.club) };
+  return null;
 }
 
 function printLeague() {
@@ -1137,10 +1141,12 @@ async function gmPlay(args = []) {
         write('');
         const names = leagueRowsSeen.slice(0, 6).map(row => row.club).join(', ');
         const answer = await ask(`switch to which club? (${names}${leagueRowsSeen.length > 6 ? ', ...' : ''}): `);
-        const root = answer ? pickClub(answer, leagueRowsSeen) : null;
-        if (root) {
-          switchClub(root);
-          note = `now looking at ${path.basename(root)}`;
+        const picked = answer ? pickClub(answer, leagueRowsSeen) : null;
+        if (picked && picked.root) {
+          switchClub(picked.root);
+          note = `now looking at ${path.basename(picked.root)}`;
+        } else if (picked && picked.ambiguous) {
+          note = `more than one club is called that: ${picked.ambiguous.join(', ')}. type the full name`;
         } else {
           note = answer ? `no club called "${clip(answer, 40)}" in the league` : 'stayed on this club';
         }
