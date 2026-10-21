@@ -654,7 +654,10 @@ function render(state) {
 // ---- front office board -------------------------------------------------
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-const PLAY_KEYS = 'keys: p play  r run  w wake  s sleep  l landing check  enter refresh  q quit';
+const PLAY_KEYS = [
+  'keys: p play  r run  w wake  s sleep  u unstick',
+  '      l landing check  enter refresh  q quit',
+];
 const MEMBER_NAME_RE = /^[a-zA-Z0-9._-]+$/;
 const REFRESH_MS = 10 * 1000;
 const PLAY_DEFAULT_MINUTES = 30;
@@ -673,7 +676,7 @@ function weekLabel(ms) {
 }
 
 function hoursLabel(hours) {
-  if (hours == null) return '-';
+  if (hours == null) return '';
   return hours >= 10 ? `${Math.round(hours)}h` : `${hours}h`;
 }
 
@@ -683,17 +686,19 @@ function boardWorkspaceRoot(args = []) {
   return taskDb.workspaceRoot(path.resolve(workspaceArg));
 }
 
-function loadBoard(workspaceRoot, { seen = null } = {}) {
+function loadBoard(workspaceRoot, options = {}) {
   const season = require('../lib/gm-season');
-  return season.seasonBoard(season.loadSeason(workspaceRoot), { seen });
+  return season.seasonBoard(season.loadSeason(workspaceRoot), options);
 }
 
-// One screen, under 40 rows. Pure: board in, lines out.
+// One screen, about 40 rows at most. Pure: board in, lines out.
 function renderBoardLines(board, { interactive = false } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
-  lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}`);
+  const live = interactive ? ` | refreshes every ${REFRESH_MS / 1000}s` : '';
+  lines.push(`front office | ${board.workspace_name} | ${weekLabel(board.week_of)}${live}`);
   lines.push(board.mood.line);
+  if (board.since_last_look) lines.push(board.since_last_look.line);
   if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
   lines.push('');
 
@@ -709,21 +714,19 @@ function renderBoardLines(board, { interactive = false } = {}) {
   }
   lines.push('');
 
-  lines.push('box scores, last 5 finished jobs');
-  if (board.box_scores.length) {
-    for (const score of board.box_scores) {
-      lines.push(`  ${pad(score.member, 18)}${pad(score.outcome, 11)}${pad(hoursLabel(score.hours), 6)}${score.title}`);
+  if (board.stuck && board.stuck.length) {
+    lines.push(`stuck, claimed with no move for 6h or more${interactive ? ' (u to unstick)' : ''}`);
+    for (const row of board.stuck) {
+      lines.push(`  ${pad(row.member, 18)}${pad(row.age, 6)}${pad(row.ref, 11)}${row.title}`);
     }
-  } else {
-    lines.push('  nothing finished yet');
+    lines.push('');
   }
-  lines.push('');
 
   lines.push('last plays');
   if (board.last_plays && board.last_plays.length) {
     for (const play of board.last_plays) {
       const tag = play.fresh ? '  new' : '';
-      lines.push(`  ${pad(clockLabel(play.at, board.now), 17)}${pad(`${play.member} ${play.play}`, 26)}${play.title}${tag}`);
+      lines.push(`  ${pad(clockLabel(play.at, board.now), 17)}${pad(`${play.member} ${play.play}`, 25)}${pad(hoursLabel(play.hours), 6)}${play.title}${tag}`);
     }
   } else {
     lines.push('  no plays yet');
@@ -742,11 +745,12 @@ function renderBoardLines(board, { interactive = false } = {}) {
   }
   lines.push('');
 
-  lines.push('key');
-  lines.push('  ovr: 60 to 99 by share of finished jobs landed, rookie under 3 finished');
-  lines.push('       drops count here, so it is stricter than the website rating on purpose');
-  lines.push('  form: last 5 finished, newest on the right, k landed, d dropped, x sent back');
-  lines.push(interactive ? `  ${PLAY_KEYS}` : '  run atris gm in a terminal to play');
+  lines.push('key: ovr 60 to 99 by share of finished jobs landed, rookie under 3 finished');
+  lines.push('     drops count here, so it is stricter than the website rating on purpose');
+  lines.push('     form: last 5 finished, newest right, k landed, d dropped, x sent back');
+  lines.push('     hours: claim to result. on a job means its task moved in the last 6h');
+  if (interactive) for (const line of PLAY_KEYS) lines.push(line);
+  else lines.push('     run atris gm in a terminal to play');
   return lines;
 }
 
