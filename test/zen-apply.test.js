@@ -516,3 +516,23 @@ test('a local note identical to the incoming one is not reported as kept', () =>
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('zen does not say already zen after it put work away', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const old = path.join(base, 'old');
+    git(checkout, 'worktree', 'add', '-q', old, '-b', 'old-branch');
+    write(old, 'wip.js', 'forgotten\n');
+    const days = new Date(Date.now() - 5 * 86400000);
+    fs.utimesSync(path.join(old, 'wip.js'), days, days);
+    ageHistory(old, days);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /saved 1 side copy untouched for 3 days/);
+    assert.doesNotMatch(cli.stdout, /already zen/);
+    assert.match(cli.stdout, /^ {2}zen\.$/m);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
