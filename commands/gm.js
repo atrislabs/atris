@@ -710,6 +710,53 @@ function pad(value, width) {
   return text.length >= width ? `${text.slice(0, width - 1)} ` : text + ' '.repeat(width - text.length);
 }
 
+const DEFAULT_WIDTH = 100;
+const NAME_CAP = 24;
+
+// The terminal's width when there is one, else 100 columns.
+function termWidth() {
+  const cols = process.stdout.isTTY ? Number(process.stdout.columns) : 0;
+  return cols >= 40 ? cols : DEFAULT_WIDTH;
+}
+
+// A column cell that never cuts mid-word silently: text that does not fit
+// ends in "..." so it reads as shortened. Always one space after.
+function cell(value, width) {
+  const text = String(value == null ? '' : value);
+  const room = Math.max(1, width - 1);
+  if (text.length <= room) return text + ' '.repeat(width - text.length);
+  const short = `${text.slice(0, Math.max(1, width - 5))}...`;
+  return short + ' '.repeat(Math.max(1, width - short.length));
+}
+
+// A name column wide enough for the longest name shown, capped at 24.
+function nameWidth(names, min = 12, cap = NAME_CAP) {
+  const longest = Math.max(0, ...names.filter(Boolean).map(n => String(n).length));
+  return Math.max(min, Math.min(cap, longest)) + 2;
+}
+
+// The free text at the end of a line (a title) takes whatever room is left.
+function tail(text, used, width) {
+  return clip(text, Math.max(10, width - used));
+}
+
+// Last guard on width: a long line breaks after a comma onto an indented
+// line; anything still too long ends in "...".
+function fitLines(lines, width) {
+  const out = [];
+  for (const line of lines) {
+    let rest = line;
+    while (rest.length > width) {
+      const cut = rest.lastIndexOf(', ', width - 1);
+      if (cut <= 0) break;
+      out.push(rest.slice(0, cut + 1));
+      rest = `  ${rest.slice(cut + 2)}`;
+    }
+    out.push(rest.length > width ? `${rest.slice(0, width - 3)}...` : rest);
+  }
+  return out;
+}
+
 function weekLabel(ms) {
   const d = new Date(ms);
   return `week of ${MONTHS[d.getMonth()]} ${d.getDate()}`;
@@ -732,9 +779,15 @@ function loadBoard(workspaceRoot, options = {}) {
 }
 
 // One screen, about 40 rows at most. Pure: board in, lines out.
-function renderBoardLines(board, { interactive = false } = {}) {
+function renderBoardLines(board, { interactive = false, width = termWidth() } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
+  const nameW = nameWidth([
+    ...board.roster.map(r => r.name),
+    ...(board.waiting_on_review || []).map(r => r.member),
+    ...(board.stuck || []).map(r => r.member),
+    ...(board.last_plays || []).map(p => p.member),
+  ], 16);
   const gmTarget = require('../lib/gm-target');
   const live = interactive ? ` | refreshes every ${REFRESH_MS / 1000}s` : '';
   const record = board.record ? ` | ${gmTarget.recordLine(board.record)}` : '';
@@ -747,10 +800,10 @@ function renderBoardLines(board, { interactive = false } = {}) {
 
   lines.push('roster, last 30 days');
   if (board.roster.length) {
-    lines.push(`  ${pad('name', 18)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
+    lines.push(`  ${pad('name', nameW)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
     for (const row of board.roster) {
       const record = `landed ${row.landed} of ${row.jobs}`;
-      lines.push(`  ${pad(row.name, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${pad(record, 18)}${row.status}`);
+      lines.push(`  ${cell(row.name, nameW)}${pad(row.ovr == null ? 'rookie' : row.ovr, 8)}${pad(row.form || '-', 7)}${pad(record, 18)}${row.status}`);
     }
   } else {
     lines.push('  no jobs taken in the last 30 days');
@@ -763,23 +816,27 @@ function renderBoardLines(board, { interactive = false } = {}) {
     const more = total > board.waiting_on_review.length ? `, ${total} in all, oldest first` : '';
     lines.push(`waiting on review, age since the proof${more}`);
     for (const row of board.waiting_on_review) {
-      lines.push(`  ${pad(row.member, 18)}${pad(row.age, 6)}${pad(row.ref, 11)}${row.title}`);
+      const head = `  ${cell(row.member, nameW)}${pad(row.age, 6)}${cell(row.ref, 11)}`;
+      lines.push(`${head}${tail(row.title, head.length, width)}`);
     }
     lines.push('');
   }
   if (board.stuck && board.stuck.length) {
     lines.push(`stuck with the player, claimed with no move for 6h or more${interactive ? ' (u to unstick)' : ''}`);
     for (const row of board.stuck) {
-      lines.push(`  ${pad(row.member, 18)}${pad(row.age, 6)}${pad(row.ref, 11)}${row.title}`);
+      const head = `  ${cell(row.member, nameW)}${pad(row.age, 6)}${cell(row.ref, 11)}`;
+      lines.push(`${head}${tail(row.title, head.length, width)}`);
     }
     lines.push('');
   }
 
+  // the outcome word is its own column and never cut; the title gives way
   lines.push('last plays');
   if (board.last_plays && board.last_plays.length) {
     for (const play of board.last_plays) {
       const tag = play.fresh ? '  new' : '';
-      lines.push(`  ${pad(clockLabel(play.at, board.now), 17)}${pad(`${play.member} ${play.play}`, 25)}${pad(hoursLabel(play.hours), 6)}${play.title}${tag}`);
+      const head = `  ${pad(clockLabel(play.at, board.now), 17)}${cell(play.member, nameW)}${pad(play.play, 10)}${pad(hoursLabel(play.hours), 6)}`;
+      lines.push(`${head}${tail(play.title, head.length + tag.length, width)}${tag}`);
     }
   } else {
     lines.push('  no plays yet');
@@ -790,8 +847,9 @@ function renderBoardLines(board, { interactive = false } = {}) {
   if (board.up_next.length) {
     for (const item of board.up_next) {
       const label = item.kind === 'task' ? (item.ref || 'task') : 'mission';
-      const owner = item.owner ? ` (${item.owner})` : '';
-      lines.push(`  ${pad(label, 12)}${item.title}${owner}`);
+      const owner = item.owner ? ` (${clip(item.owner, NAME_CAP)})` : '';
+      const head = `  ${cell(label, 12)}`;
+      lines.push(`${head}${tail(item.title, head.length + owner.length, width)}${owner}`);
     }
   } else {
     lines.push('  no open tasks or active missions');
@@ -804,7 +862,7 @@ function renderBoardLines(board, { interactive = false } = {}) {
   lines.push('     hours: claim to result. on a job: moved in the last 6h. review: pending');
   if (interactive) for (const line of PLAY_KEYS) lines.push(line);
   else lines.push('     run atris gm in a terminal to play');
-  return lines;
+  return fitLines(lines, width);
 }
 
 function loadLeagueBoard(options = {}) {
@@ -813,8 +871,9 @@ function loadLeagueBoard(options = {}) {
 }
 
 // The league: one row per club, best this week first. Pure: board in, lines out.
-function renderLeagueLines(board, { interactive = false } = {}) {
+function renderLeagueLines(board, { interactive = false, width = termWidth() } = {}) {
   const lines = [];
+  const clubW = nameWidth(board.rows.slice(0, LEAGUE_MAX_ROWS).map(r => r.club), 16);
   const live = interactive ? ` | refreshes every ${REFRESH_MS / 1000}s` : '';
   lines.push(`league | ${board.days} days | ${board.rows.length} clubs${live}`);
   if (board.error) lines.push(`could not read the task list: ${clip(board.error, 80)}`);
@@ -825,11 +884,15 @@ function renderLeagueLines(board, { interactive = false } = {}) {
     // the target column shows only when some club has a target
     const withTarget = board.rows.some(row => row.target);
     const targetHead = withTarget ? pad('target', 10) : '';
-    lines.push(`  ${pad('club', 18)}${pad('ovr', 7)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('aband', 7)}${pad('stuck', 7)}${pad('last', 6)}${targetHead}best player`);
+    lines.push(`  ${pad('club', clubW)}${pad('ovr', 7)}${pad('week', 6)}${pad('30d', 6)}${pad('drop', 6)}${pad('aband', 7)}${pad('stuck', 7)}${pad('last', 6)}${targetHead}best player`);
     for (const row of board.rows.slice(0, LEAGUE_MAX_ROWS)) {
-      const best = row.best_player ? `${row.best_player.name} ${row.best_player.ovr}` : '-';
       const targetCell = withTarget ? pad(row.target || '-', 10) : '';
-      lines.push(`  ${pad(row.club, 18)}${pad(row.ovr == null ? 'rookie' : row.ovr, 7)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.abandoned_30d, 7)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${targetCell}${best}`);
+      const head = `  ${cell(row.club, clubW)}${pad(row.ovr == null ? 'rookie' : row.ovr, 7)}${pad(row.landed_week, 6)}${pad(row.landed_30d, 6)}${pad(row.dropped_30d, 6)}${pad(row.abandoned_30d, 7)}${pad(row.stuck, 7)}${pad(row.last_play, 6)}${targetCell}`;
+      // the rating always shows; a long best player name gives way first
+      const best = row.best_player
+        ? `${clip(row.best_player.name, Math.max(6, Math.min(NAME_CAP, width - head.length - 4)))} ${row.best_player.ovr}`
+        : '-';
+      lines.push(`${head}${best}`);
     }
     const more = board.rows.length - LEAGUE_MAX_ROWS;
     if (more > 0) lines.push(`  and ${more} more clubs (atris gm --league --json lists all)`);
@@ -840,7 +903,7 @@ function renderLeagueLines(board, { interactive = false } = {}) {
   lines.push('     abandoned jobs in 30 days. stuck: claims with no move for 6h or more');
   lines.push('     last: newest task event. ovr: the club board rating over every job');
   lines.push(interactive ? LEAGUE_KEYS : '     run atris gm in a terminal, then g, to play');
-  return lines;
+  return fitLines(lines, width);
 }
 
 // The club a typed name means: its unique league label, or a folder name
@@ -1367,12 +1430,13 @@ function gmTargetCommand(args = []) {
 // ---- player card ------------------------------------------------------------
 
 // One member's profile page as lines. Pure: card in, lines out.
-function renderCardLines(card) {
+function renderCardLines(card, { width = termWidth() } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   lines.push(`card | ${card.name} | ${card.workspace_name}`);
-  const status = card.status.title ? `${card.status.state}: ${clip(card.status.title, 50)}` : card.status.state;
-  lines.push(`role: ${card.role || 'not recorded'} | ${card.awake ? 'awake' : 'asleep'} | ${status}`);
+  const roleHead = `role: ${card.role || 'not recorded'} | ${card.awake ? 'awake' : 'asleep'} | `;
+  const status = card.status.title ? `${card.status.state}: ${tail(card.status.title, roleHead.length + card.status.state.length + 2, width)}` : card.status.state;
+  lines.push(`${roleHead}${status}`);
   lines.push('');
   const weekly = card.weekly.map(v => (v == null ? '-' : String(v))).join(' ');
   lines.push(`ovr ${card.ovr == null ? 'rookie' : card.ovr} | last 6 weeks, oldest first: ${weekly}`);
@@ -1388,12 +1452,13 @@ function renderCardLines(card) {
   lines.push('last 8 plays');
   if (card.last_plays.length) {
     for (const play of card.last_plays) {
-      lines.push(`  ${pad(clockLabel(play.at, card.now), 17)}${pad(play.outcome, 11)}${play.title}`);
+      const head = `  ${pad(clockLabel(play.at, card.now), 17)}${pad(play.outcome, 11)}`;
+      lines.push(`${head}${tail(play.title, head.length, width)}`);
     }
   } else {
     lines.push('  no plays in the last 6 weeks');
   }
-  return lines;
+  return fitLines(lines, width);
 }
 
 // gm card <member>: read only. Unknown names exit 1 with the closest names.
@@ -1424,34 +1489,41 @@ function replayWho(play, byClub) {
 }
 
 // One frame of the replay as lines. Pure: frame in, lines out.
-function renderReplayFrameLines(frame, { since, now, byClub = false, speed = 1, paused = false, interactive = false } = {}) {
+function renderReplayFrameLines(frame, { since, now, byClub = false, speed = 1, paused = false, interactive = false, width = termWidth() } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   const at = frame.at ? clockLabel(frame.at, now) : 'the start';
   const state = paused ? ', paused' : (speed !== 1 ? `, ${speed}x` : '');
   lines.push(`replaying ${clockLabel(since, now)} to now, at ${at} (play ${frame.index + 1} of ${frame.total}${state})`);
   lines.push('');
-  lines.push(`  ${pad(byClub ? 'club' : 'name', 20)}${pad('landed', 8)}${pad('dropped', 9)}${pad('sent back', 11)}abandoned`);
+  const keyW = nameWidth(frame.rows.map(r => r.key), 18);
+  lines.push(`  ${pad(byClub ? 'club' : 'name', keyW)}${pad('landed', 8)}${pad('dropped', 9)}${pad('sent back', 11)}abandoned`);
   for (const row of frame.rows) {
-    lines.push(`  ${pad(row.key, 20)}${pad(row.landed, 8)}${pad(row.dropped, 9)}${pad(row.sent_back, 11)}${pad(row.abandoned, 11)}${row.bump ? '+1' : ''}`.replace(/\s+$/, ''));
+    lines.push(`  ${cell(row.key, keyW)}${pad(row.landed, 8)}${pad(row.dropped, 9)}${pad(row.sent_back, 11)}${pad(row.abandoned, 11)}${row.bump ? '+1' : ''}`.replace(/\s+$/, ''));
   }
   lines.push('');
   lines.push('plays, newest first');
+  const whoW = nameWidth(frame.ticker.map(p => replayWho(p, byClub)), 16, byClub ? NAME_CAP * 2 : NAME_CAP);
   for (const play of frame.ticker) {
     const mark = play.newest ? '> ' : '  ';
-    lines.push(`${mark}${pad(clockLabel(play.at, now), 17)}${pad(`${replayWho(play, byClub)} ${play.play}`, byClub ? 40 : 32)}${clip(play.title, 30)}`);
+    const head = `${mark}${pad(clockLabel(play.at, now), 17)}${cell(replayWho(play, byClub), whoW)}${pad(play.play, 10)}`;
+    lines.push(`${head}${tail(play.title, head.length, width)}`);
   }
   if (interactive) {
     lines.push('');
     lines.push(REPLAY_KEYS);
   }
-  return lines;
+  return fitLines(lines, width);
 }
 
 // Plain mode: every play in order, one line each, no redraw. Pure.
-function replayPlainLines(plays, { now, byClub = false } = {}) {
+function replayPlainLines(plays, { now, byClub = false, width = termWidth() } = {}) {
   const { clockLabel } = require('../lib/gm-season');
-  return plays.map(play => `${pad(clockLabel(play.at, now), 17)}${pad(`${replayWho(play, byClub)} ${play.play || play.kind.replace('_', ' ')}`, byClub ? 40 : 32)}${clip(play.title, 40)}`);
+  const whoW = nameWidth(plays.map(p => replayWho(p, byClub)), 16, byClub ? NAME_CAP * 2 : NAME_CAP);
+  return plays.map((play) => {
+    const head = `${pad(clockLabel(play.at, now), 17)}${cell(replayWho(play, byClub), whoW)}${pad(play.play || play.kind.replace('_', ' '), 10)}`;
+    return `${head}${tail(play.title, head.length, width)}`;
+  });
 }
 
 function replaySleep(ms) {
