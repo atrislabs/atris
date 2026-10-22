@@ -425,3 +425,18 @@ test('a merge more than a day old is left for a person, so old work is not count
     assert.deepEqual(readQueue(fx), {});
   });
 });
+
+test('a mission run\'s pass refreshes the members\' code copy like the team loop, and keeps the quiet warning', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    queue(fx, [builderJob(fx)]);
+    let seen = null;
+    sweepAfterMissionRun({
+      cwd: fx.main, now: AFTER_1319, codeRoot: '/code/copy',
+      maintenance: (opts) => { seen = opts; return { results: [] }; },
+    });
+    assert.equal(seen.codeRoot, '/code/copy');
+    assert.equal(seen.announceQuiet, false);
+    assert.equal(seen.cwd, fx.main);
+  });
+});
