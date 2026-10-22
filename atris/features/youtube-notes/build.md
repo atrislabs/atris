@@ -1,6 +1,6 @@
 # YouTube Notes: Build Plan
 
-> **For Executor Agent.** This describes the feature as it stands on 2026-10-16. Use it to find the code before changing it.
+> **For Executor Agent.** This describes the feature as it stands on 2026-10-21. Use it to find the code before changing it.
 
 ---
 
@@ -136,6 +136,21 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 **Validation:**
 - `node --test test/ytnotes.test.js` (the slow-Gemini and quota tests)
+
+---
+
+### Step 8: The caption fetch stops once the original English track lands (2026-10-21)
+
+**File:** `scripts/det/ytnotes` (the caption fetch loop after the `yt-dlp` call that asks for `en-orig,en,en-US,en-GB`)
+
+**What it does:**
+- yt-dlp runs in the background while a 0.05s loop watches for `yt_<id>.en-orig.vtt`. Once that file has content and its `.part` file is gone, the track is whole, so the loop ends yt-dlp and removes any leftover `.part` files.
+- Before this, yt-dlp went on to ask for the auto `en` copy, which took about 0.5s, usually ended in a 429, and was never read.
+- Five alternating pairs of the caption step: median 2.63s before, 2.50s after, and the new code faster in 5 of 5. The transcript came out byte-identical.
+
+**Validation:**
+- `node --test test/ytnotes.test.js` still passes. No test targets the watcher itself.
+- `node scripts/det/ytrail-bench.js --quick --score` on the captioned video is the live check.
 
 ---
 
