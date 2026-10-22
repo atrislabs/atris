@@ -965,6 +965,34 @@ test('queue: bets older than 6 hours are dropped, and a restart picks up the fre
   assert.equal(again.d.view().queue, 3, 'the queue lives in the ledger, a reload wastes nothing');
 });
 
+test('queue: bets made under older rules are dropped as stale with why on load, and the first tap never shows them', async () => {
+  const root = workspace();
+  const ledgerFile = path.join(root, 'gm-bets.jsonl');
+  const at = new Date(NOW - 60 * 60000).toISOString();
+  const old = (id, bet) => ledgerRow(ledgerFile, root, id, { created_at: at, status: 'queued', bet: { ...bet, check_date: '2026-10-30' } });
+  // the live bug: a plumbing bet from before members and verify
+  old('plumbing', { ...goodBet({ title: 'Run one landing day that merges the five waiting branch jobs' }), target: { metric: 'queue_landed', baseline: 0, goal: 5, job_ids: ['j1'] }, verify: undefined, steps: [{ text: 'merge the five branches', who: 'team', public: false }, { text: 'approve the merges', who: 'you', public: false }] });
+  old('nomember', { ...goodBet({ title: 'Record a demo video of the phone front office' }), steps: [{ text: 'record the demo', who: 'team', public: false }, goodBet().steps[2]] });
+  old('ghost', { ...goodBet({ title: 'Email ten recent installers a three question survey' }), steps: [{ text: 'draft the survey', who: 'team', member: 'sales-bot', public: false }, goodBet().steps[2]] });
+  old('noverify', { ...goodBet({ title: 'Add a pricing comparison table for teams' }), verify: 'git diff --check' });
+  old('good', goodBet({ title: 'Write a getting started page for atris gm phone with a 30 second screen recording' }));
+  const h = desk(root, { ledgerFile });
+  assert.equal(h.d.view().queue, 1, 'only the bet that meets today\'s rules is kept');
+  const byId = Object.fromEntries(h.ledger().map(r => [r.id, r]));
+  assert.deepEqual(['plumbing', 'nomember', 'ghost', 'noverify', 'good'].map(id => [id, byId[id].status, byId[id].stale_reason || null]), [
+    ['plumbing', 'stale', 'its target queue_landed measures team plumbing, not a business move'],
+    ['nomember', 'stale', 'step 1 names no member on the team'],
+    ['ghost', 'stale', 'step 1 names no member on the team'],
+    ['noverify', 'stale', 'verify "git diff --check" is always true or only checks formatting; it must prove the deliverable (a test file, a file that must exist, a count read back)'],
+    ['good', 'queued', null],
+  ]);
+  const first = h.d.next();
+  assert.equal(first.bet.title, 'Write a getting started page for atris gm phone with a 30 second screen recording');
+  assert.equal(h.gen.calls.length, 1, 'the queue refills behind the dropped bets');
+  assert.equal(gmBet.queuedProblem(goodBet(), [{ name: 'builder' }, { name: 'launcher' }]), null);
+  assert.equal(gmBet.queuedProblem({ title: 'x' }, null), 'it is not a whole bet');
+});
+
 test('queue: two failed background bets in a row stop the prefetch until the next tap', async () => {
   const gen = stubGenerator({ fail: n => n < 2 });
   const h = desk(workspace(), { gen });
@@ -1478,6 +1506,9 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.match(html, /wait: function \(\) \{\n {8}pace = 1;/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
+  // under the orb only business numbers show as they are; plumbing facts never reach the line
+  assert.match(html, /if \(e\.key === 'installs' \|\| e\.key === 'installs_best'\) return e\.line;\n\s+return SOURCE_WORDS\[e\.key\] \|\| 'reading what is true right now';/);
+  assert.match(html, /season: 'reading the target for this week'/);
   assert.match(html, /\/bet\/think/);
   assert.match(html, /\/bet\/do/);
   // a team step shows its member in place of "team"
