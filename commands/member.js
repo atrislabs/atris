@@ -10636,11 +10636,13 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const required = require('../lib/member-task-pick').taskCheck(task).command;
   const checked = mission.verifier_result && mission.verifier_result.passed === true
     && (!required || String(mission.verifier_result.command || '').trim() === required);
-  if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked) {
+  // The commit comes from the member's own work copy, not the main folder.
+  const workRoot = (result && result.worktree && result.worktree.path) || (mission.worktree && mission.worktree.path) || undefined;
+  const passed = !thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked;
+  const changedNothing = passed && selfWrittenJob(task) && !runChangedSomething(taskDb, db, task, result, workRoot);
+  if (passed && !changedNothing) {
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
-    // The commit comes from the member's own work copy, not the main folder.
-    const workRoot = (result.worktree && result.worktree.path) || (mission.worktree && mission.worktree.path) || undefined;
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof, workRoot });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
     // Its change already merged and the merge line closed the job.
@@ -10650,6 +10652,7 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');
   const outOfTime = /timeout|wall-exceeded/.test(lastReason);
   const why = thrown ? thrown.message
+    : changedNothing ? 'the run passed its check but changed nothing: no new commit, no pushed branch, no pull request'
     : outOfTime ? 'ran out of time before the work finished'
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
@@ -10676,6 +10679,28 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const released = taskDb.releaseTask(db, { id: task.id, actor: owner });
   const outcome = released.released ? (held ? 'needs_human' : 'released') : 'left_claimed';
   return { id: task.id, title: task.title, outcome, reason, ...(held && forReview ? { held_for: 'review' } : {}) };
+}
+
+// A job the member wrote for itself from its mission ("next step toward:").
+function selfWrittenJob(task) {
+  return String((task && task.source_key) || '').startsWith('self-next:')
+    || (task && task.metadata && task.metadata.source === 'member mission');
+}
+
+// Did the run leave something for review? A pushed branch, a pull request,
+// or a local landing counts, and so does a commit in the work copy that
+// changes files since the job started. With no start commit on record there
+// is nothing to compare, so the run is taken at its word.
+function runChangedSomething(taskDb, db, task, result, workRoot) {
+  const landed = result && result.autoland;
+  if (landed && (landed.pushed || landed.url || landed.merged)) return true;
+  const start = String((taskDb.getTask(db, task.id) || task)?.metadata?.start_commit || '').trim();
+  if (!start) return true;
+  const cwd = workRoot || task.workspace_root || process.cwd();
+  const diff = spawnSync('git', ['diff', '--quiet', start, 'HEAD'], { cwd, encoding: 'utf8' });
+  // Exit 0 means no change. Exit 1 means the code differs; anything else
+  // could not be read, so the run is taken at its word.
+  return diff.status !== 0;
 }
 
 const MEMBER_GO_STRIKES = 3;
