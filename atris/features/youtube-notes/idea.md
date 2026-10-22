@@ -94,7 +94,7 @@ Pin one writer with the second argument (`atris youtube notes <url> haiku`) or w
 
 **Upkeep on Keshav's Mac.** A scheduled Mac job, `ai.atris.youtube-tools-update`, upgrades yt-dlp and mlx-whisper every Sunday at 05:00. Its logs land in `~/.atris/logs/youtube-tools-update/`.
 
-**In review, not shipped.** `atris youtube bench` runs five real cases and appends each run to `~/.atris/benchmarks/ytrail.jsonl`, and `--quick` runs three. A warning when yt-dlp is more than 60 days old is in the same review.
+**Bench and upkeep warning.** `atris youtube bench` runs five real cases and appends each run to `~/.atris/benchmarks/ytrail.jsonl`, and `--quick` runs three. Notes also warn when yt-dlp is more than 60 days old. Both shipped in #1072.
 
 **Known gaps.**
 
