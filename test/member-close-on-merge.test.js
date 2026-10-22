@@ -362,3 +362,66 @@ test('a clashing change someone else pushed to, or already closed, stays as it i
     });
   }
 });
+
+// 2026-10-15: the team loop swept for the last time at 07:03 UTC. The
+// builder's change #1319 merged at its own commit at 07:05, and its job
+// (01M4Z4YVHB) sat in review for a week while 46 mission runs came and went.
+// A finished mission run now looks at the merge line too.
+const MERGED_1319 = '2026-10-15T07:05:48Z';
+const AFTER_1319 = Date.parse('2026-10-15T07:20:00Z');
+
+function builderJob(fx) {
+  return taskDb.addTask(fx.db, {
+    title: 'next step toward: Members work for hours without a person stepping in.',
+    workspaceRoot: fx.main, status: 'review', claimedBy: 'builder',
+  }).id;
+}
+
+test('a mission run closes a member job whose own change merged while the team loop was down', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const out = sweepAfterMissionRun({ cwd: fx.worktree, now: AFTER_1319 });
+    assert.equal(out.closed, 1, out && out.line);
+    assert.equal(statusOf(fx, id), 'done');
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('mission runs share the team loop\'s five-minute pass, so GitHub is read once', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    queue(fx, [builderJob(fx)]);
+    sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 });
+    const reads = () => fs.readFileSync(fx.log, 'utf8').trim().split('\n').length;
+    const first = reads();
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 + 60 * 1000 }).results.length, 0);
+    assert.equal(reads(), first);
+  });
+});
+
+test('a mission run with nothing in the merge line, or self-landing off, never calls GitHub', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    queue(fx, [builderJob(fx)]);
+    fs.writeFileSync(path.join(fx.main, '.atris', 'policy', 'autoland.json'), '{"enabled":false}');
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    assert.equal(fs.existsSync(fx.log), false);
+  });
+});
+
+test('a merge more than a day old is left for a person, so old work is not counted as this week\'s', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const out = requeueDroppedAutolands({ cwd: fx.main, now: Date.parse('2026-10-22T09:00:00Z') });
+    assert.equal(out.closed, 0, out.line);
+    assert.equal(statusOf(fx, id), 'review');
+    assert.match(out.results[0].line, /merged over a day ago; its job is left for you/);
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
