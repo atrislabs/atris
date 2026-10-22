@@ -60,21 +60,25 @@ test('yes lock: a held publish exits 77 and files the yes card; the yes lets exa
     assert.equal(held.status, 77);
     assert.equal(held.stdout, '', 'the real npm never ran');
     assert.match(held.stderr, /^held: "npm publish --access public" would publish or release a package, and step 2 \("release the gm game to npm"\) needs the owner's yes first\. a yes card is now on the owner's phone\./);
-    assert.equal(run('gh release create v1.0.0').status, 77);
-    assert.equal(run('git push origin v1.0.0').status, 77, 'a tag pushed by name is a tag push');
     assert.equal(run('atris twitter post "we shipped"').status, 77);
     // pushing a branch is not an owner step in this bet
     assert.equal(run('git push -q origin master').status, 0);
-    assert.deepEqual(yesLock.askedYesLocks(stateDir, 'mission-x').map(l => [l.step, l.held_command]), [[2, 'git push origin v1.0.0'], [3, 'atris twitter post we shipped']], 'each card shows the newest held command for its step');
-    // yes on step 2 lets one publish-class run through, and only step 2
+    assert.deepEqual(yesLock.askedYesLocks(stateDir, 'mission-x').map(l => [l.step, l.held_command]), [[2, 'npm publish --access public'], [3, 'atris twitter post we shipped']], 'each card shows the command it would let through');
+    // yes on step 2 lets that one command through once, and only step 2
     yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
     assert.equal(run('npm publish --access public').stdout.trim(), 'ran npm publish --access public');
-    assert.equal(run('gh release create v1.0.0').status, 77, 'the yes was used by the publish; the release needs its own');
+    assert.equal(run('npm publish --access public').status, 77, 'the yes was used; a second publish needs its own');
     assert.equal(run('atris twitter post "we shipped"').status, 77, 'the post still waits for its own yes');
-    // --tags is closed outright while owner steps wait, even with a yes
+    // a release and a tag push each need a yes for that exact command
+    assert.equal(run('gh release create v1.0.0').status, 77);
     yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
-    assert.equal(run('git push origin --tags').status, 77);
-    assert.equal(run('git push -q origin v1.0.0').status, 0, 'one named tag, with a yes');
+    assert.equal(run('gh release create v1.0.0').stdout.trim(), 'ran gh release create v1.0.0');
+    assert.equal(run('git push origin v1.0.0').status, 77, 'a tag pushed by name is a tag push');
+    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    assert.equal(run('git push origin --tags').status, 77, '--tags is closed outright, even with a yes');
+    assert.equal(run('git push -q origin v1.0.0').status, 77, 'asking for --tags replaced the yes for the named tag');
+    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    assert.equal(run('git push -q origin v1.0.0').status, 0, 'one named tag, with its own yes');
   } finally {
     guard.cleanup();
   }

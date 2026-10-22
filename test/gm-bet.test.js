@@ -1408,7 +1408,7 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
   assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
   assert.ok(yesLock.effectiveLocks(root, 'm-new', seal).locks[0].approved_at);
-  assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] }), { consume: [3] }, 'now it runs, once');
+  assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] }).consume, [3], 'now it runs, once');
   // the job is told about the lock in its own words
   const start = h.cli.find(a => a[1] === 'start');
   assert.match(start[2], /a step marked "your yes" is locked until the owner says yes: publishing, pushing tags, releases, posting, sending, and merging to master are held by the guard on your PATH/);

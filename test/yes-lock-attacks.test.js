@@ -40,7 +40,9 @@ function lockedJob(steps) {
   git('checkout', '-q', '-b', 'feature');
   git('commit', '-q', '--allow-empty', '-m', 'work');
   fs.mkdirSync(bin);
-  for (const tool of ['npm', 'gh', 'atris', 'npx']) fs.writeFileSync(path.join(bin, tool), `#!/bin/sh\necho "ran ${tool} $*"\n`, { mode: 0o755 });
+  for (const tool of ['gh', 'atris', 'npx']) fs.writeFileSync(path.join(bin, tool), `#!/bin/sh\necho "ran ${tool} $*"\n`, { mode: 0o755 });
+  // npm takes a second to publish (so two runs can race) and fails on ./broken
+  fs.writeFileSync(path.join(bin, 'npm'), '#!/bin/sh\ncase " $* " in *" ./broken "*) echo "ran npm $*"; exit 1;; esac\n[ "$1" = publish ] && sleep 1\necho "ran npm $*"\n', { mode: 0o755 });
   const gitDir = path.dirname(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim());
   const pathValue = [bin, path.dirname(process.execPath), gitDir, '/usr/bin', '/bin'].join(path.delimiter);
   const id = 'mission-attack';
@@ -158,6 +160,94 @@ test('attack 6: one yes covers one successful run, then the step closes', () => 
     j.approve(2);
     assert.equal(j.run('npm publish').stdout.trim(), 'ran npm publish', 'the yes lets one publish through');
     assert.ok(held(j.run('npm publish ../package-B')), 'a second publish needs a new yes');
+  } finally {
+    j.cleanup();
+  }
+});
+
+// ---- the second attack, on the rewritten lock (commit fbf3d4d0) -------------------------
+
+test('attack 7: an unknown npm option cannot swallow the next word to hide a publish', () => {
+  const j = lockedJob(PUBLISH);
+  try {
+    assert.ok(held(j.run('npm --heading test publish')));
+    assert.match(j.run('npm --heading test publish').stderr, /write it as --heading=<value>/);
+    assert.ok(held(j.run('npm --heading=test publish')), 'with = the command is plain, and it is a publish');
+    assert.equal(j.run('npm --silent test').stdout.trim(), 'ran npm --silent test');
+  } finally {
+    j.cleanup();
+  }
+});
+
+test('attack 8: gh api takes the last method and clustered short flags', () => {
+  const j = lockedJob([...PUBLISH, { text: 'merge it to master', who: 'you', public: false }]);
+  try {
+    assert.ok(held(j.run('gh api -X GET -X PUT repos/o/r/pulls/1/merge')));
+    assert.ok(held(j.run('gh api repos/o/r/releases -if tag_name=v1')));
+    assert.ok(held(j.run('gh api -iXPOST repos/o/r/releases')));
+    assert.equal(j.run('gh api -X PUT -X GET repos/o/r/pulls/1').status, 0, 'the last method is a read');
+  } finally {
+    j.cleanup();
+  }
+});
+
+test('attack 9: short refnames and abbreviated options are read the way git reads them', () => {
+  const j = lockedJob([...MERGE, { text: 'push the version tag', who: 'you', public: true }]);
+  try {
+    assert.ok(held(j.run('git push origin HEAD:heads/master')));
+    assert.ok(held(j.run('git push origin HEAD:tags/v2')));
+    assert.ok(held(j.run('git push --tag origin')));
+    assert.ok(held(j.run('git push --mir origin')));
+    assert.ok(held(j.run('git push --follow origin')));
+  } finally {
+    j.cleanup();
+  }
+});
+
+test('attack 10: low-level pushes, fetch into master, and update-ref --stdin are closed', () => {
+  const j = lockedJob(MERGE);
+  try {
+    assert.ok(held(j.run(`git send-pack ${j.remote} HEAD:refs/heads/master`)));
+    assert.ok(held(j.run('git fetch . HEAD:refs/heads/master')));
+    assert.ok(held(j.run('echo "update refs/heads/master HEAD" | git update-ref --stdin')));
+    assert.ok(held(j.run('git checkout -B master')));
+    assert.equal(j.run('git fetch -q origin').status, 0, 'a plain fetch is fine');
+  } finally {
+    j.cleanup();
+  }
+});
+
+test('attack 11: two runs racing on one yes: only one gets through', () => {
+  const j = lockedJob(PUBLISH);
+  try {
+    assert.ok(held(j.run('npm publish')));
+    j.approve(2);
+    const both = j.run('npm publish & npm publish & wait; echo done');
+    const ran = (both.stdout.match(/ran npm publish/g) || []).length;
+    assert.equal(ran, 1, 'one yes, one publish');
+    assert.match(both.stderr, /held: "npm publish"/);
+  } finally {
+    j.cleanup();
+  }
+});
+
+test('attack 12: a yes covers the exact command the owner saw, in the same folder; a failed run gives it back', () => {
+  const j = lockedJob(PUBLISH);
+  try {
+    assert.ok(held(j.run('npm publish ./a')));
+    j.approve(2);
+    assert.ok(held(j.run('npm publish ./b')), 'a different package needs its own yes');
+    assert.ok(held(j.run('npm publish ./a')), 'asking for ./b replaced the yes the owner gave for ./a');
+    j.approve(2);
+    fs.mkdirSync(path.join(j.root, 'sub'), { recursive: true });
+    assert.ok(held(j.run('npm publish ./a', path.join(j.root, 'sub'))), 'the same words in another folder are another command');
+    j.approve(2);
+    assert.equal(j.run('npm publish ./a', path.join(j.root, 'sub')).stdout.trim(), 'ran npm publish ./a');
+    // a run that fails does not use up the yes
+    assert.ok(held(j.run('npm publish ./broken')));
+    j.approve(2);
+    assert.equal(j.run('npm publish ./broken').status, 1);
+    assert.equal(j.run('npm publish ./broken').status, 1, 'the yes is still there after a failed run');
   } finally {
     j.cleanup();
   }
