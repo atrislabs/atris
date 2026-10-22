@@ -83,6 +83,18 @@ test('an empty list gets one self-written job the member can take', () => {
   });
 });
 
+// 2026-10-22: atris-cli had 15 "next step toward" jobs in review at once,
+// because a job waiting for review freed the member to write the next one.
+test('a self-written job waiting for review still holds the member\'s one seat', () => {
+  withProject(({ db, write }) => {
+    const { task } = write();
+    db.prepare("UPDATE tasks SET status = 'review' WHERE id = ?").run(task.id);
+    assert.match(write().skip, /waiting for review/);
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(task.id);
+    assert.ok(write().task.id);
+  });
+});
+
 test('a member writes at most a few jobs for itself per day', () => {
   withProject(({ db, write }) => {
     for (let i = 0; i < MAX_PER_DAY; i += 1) {

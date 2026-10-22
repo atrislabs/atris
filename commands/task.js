@@ -29,10 +29,10 @@ const {
   parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
-  runVerifyCommandCached,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -10645,22 +10645,44 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     reason: (result && result.reason) || null,
     ran_at: new Date().toISOString(),
     ran_by: actor,
-    code_sha: currentHeadSha(workspaceRoot),
+    // The commit the check ran on: the job's own code when it has some,
+    // else the folder the job lives in.
+    code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
+    code_source: (result && result.code_source) || 'checkout',
   };
+  // A check is not a touch. Bumping updated_at here put every failed job at
+  // the front of the next pass, so the same six failing jobs won every hour.
   db.prepare(`
     UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
+       SET metadata = ?
      WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  `).run(JSON.stringify(metadata), taskId);
+}
+
+// When a review job was last given a second check; never checked reads 0.
+function lastCheckedMs(task) {
+  const ranAt = Date.parse(String(task?.metadata?.verify_cache?.ran_at || ''));
+  return Number.isFinite(ranAt) ? ranAt : 0;
+}
+
+// The check already failed on exactly this code: running it again proves
+// nothing until the code changes.
+function failedOnSameCode(task, verify, codeSha) {
+  const cache = task?.metadata?.verify_cache;
+  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
+    && cache.command === verify && codeSha && cache.code_sha === codeSha);
 }
 
 function cachedVerifyVerdict(task, root) {
   const metadata = (task && task.metadata) || {};
   const cache = metadata.verify_cache;
   if (!cache || typeof cache !== 'object') return { fresh: false, command: metadata.verify || null };
+  // A check run on the job's own code stays fresh until that code changes.
+  const currentCode = cache.code_source && cache.code_source !== 'checkout'
+    ? checkedCodeSha(task, root)
+    : currentHeadSha(task.workspace_root || root);
   const fresh = cache.command === metadata.verify
-    && (!cache.code_sha || cache.code_sha === currentHeadSha(task.workspace_root || root));
+    && (!cache.code_sha || cache.code_sha === currentCode);
   return { ...cache, fresh: Boolean(fresh) };
 }
 
@@ -10711,7 +10733,7 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
-  const result = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+  const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
   stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
@@ -10731,7 +10753,10 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
 }
 
 function cmdCertifyVerified(args, options = {}) {
-  const dryRun = hasFlag(args, '--dry-run');
+  // preview: the hourly pass's dry run. Reads the named workspace's jobs and
+  // writes nothing, not even the task list file.
+  const preview = options.preview === true;
+  const dryRun = preview || hasFlag(args, '--dry-run');
   const asJson = wantsJson(args);
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
@@ -10741,13 +10766,18 @@ function cmdCertifyVerified(args, options = {}) {
 
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection } = writeDefaultProjection(taskDb, db);
+  const projection = preview
+    ? enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: options.workspaceRoot || taskDb.workspaceRoot(), limit: 500 }))
+    : writeDefaultProjection(taskDb, db).projection;
+  // Least recently checked first, oldest first among never-checked jobs. The
+  // limit counts checks that actually run, so skipped rows never use a turn.
   const candidates = (projection.tasks || [])
     .filter((t) => t && t.status === 'review')
-    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
-    .slice(0, max);
+    .sort((a, b) => lastCheckedMs(a) - lastCheckedMs(b) || Number(a.updated_at || 0) - Number(b.updated_at || 0));
   const results = [];
+  let checks = 0;
   for (const item of candidates) {
+    if (checks >= max) break;
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
@@ -10809,11 +10839,16 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+      results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
+      continue;
+    }
+    checks += 1;
     if (dryRun) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+    const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
     stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
@@ -10840,7 +10875,7 @@ function cmdCertifyVerified(args, options = {}) {
     const certifiedNow = readied.event?.payload?.agent_certified === true;
     results.push({ ref, action: certifiedNow ? 'certified' : 'pass_recorded', verify });
   }
-  const { outPath } = writeDefaultProjection(taskDb, db);
+  const outPath = preview ? null : writeDefaultProjection(taskDb, db).outPath;
   const certified = results.filter((r) => r.action === 'certified').length;
   const payload = {
     ok: true,
@@ -13698,6 +13733,7 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  cmdCertifyVerified,
   refreshKeptTaskList,
   keptCount,
   projectionMissions,
