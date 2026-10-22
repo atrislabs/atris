@@ -149,7 +149,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 - Five alternating pairs of the caption step: median 2.63s before, 2.50s after, and the new code faster in 5 of 5. The transcript came out byte-identical.
 
 **Validation:**
-- `node --test test/ytnotes.test.js` still passes. No test targets the watcher itself.
+- `node --test --test-name-pattern 'stops the caption fetch' test/ytnotes.test.js` checks that yt-dlp never reaches the `en` copy and no `.part` file is left. It fails with the watcher turned off.
 - `node scripts/det/ytrail-bench.js --quick --score` on the captioned video is the live check.
 
 ---
