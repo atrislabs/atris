@@ -53,10 +53,20 @@ function npmBody() {
   return { downloads };
 }
 
+const WAITING_JOBS = [
+  { id: 't1', title: 'fix the flaky login test' },
+  { id: 't2', title: 'add the install page' },
+  { id: 't3', title: 'next step toward: members work for hours' },
+  { id: 't4', title: 'next step toward: every repeat problem gets a tool' },
+  { id: 't5', title: 'retire the old sync job' },
+];
+const QUEUE_KIND = { t1: 'branch', t2: 'merged_open', t3: 'placeholder', t4: 'placeholder', t5: 'branch' };
+
 const PASS = JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'a getting started page is what new installs hit first.' });
 
 const fixtureDeps = {
-  seasonFacts: () => ({ landed: 4, target: { landed: 4, goal: 6, verdict: 'behind' }, record: { won: 2, lost: 1 }, waiting_on_review: 3, waiting_jobs: [{ id: 't1', title: 'fix the flaky login test' }, { id: 't2', title: 'add the install page' }, { id: 't3', title: 'retire the old sync job' }], stuck: 0 }),
+  seasonFacts: () => ({ landed: 4, target: { landed: 4, goal: 6, verdict: 'behind' }, record: { won: 2, lost: 1 }, waiting_on_review: 5, waiting_jobs: WAITING_JOBS, stuck: 0 }),
+  classifyQueue: (root, jobs) => jobs.map(j => ({ ...j, kind: QUEUE_KIND[j.id] })),
   gitLanded: () => ['gm phone: decision cards', 'bench: agy engine', 'second review runs joined checks', 'scoped token fix'],
   fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? { version: '3.71.3' } : npmBody()),
   releaseGap: () => ({ count: 67 }),
@@ -64,7 +74,7 @@ const fixtureDeps = {
   runSkeptic: async () => ({ ok: true, text: PASS }),
 };
 
-const SOURCE_KEYS = ['now', 'season', 'landed', 'installs', 'installs_best', 'release', 'briefs', 'ledger'];
+const SOURCE_KEYS = ['now', 'season', 'queue', 'landed', 'installs', 'installs_best', 'release', 'briefs', 'ledger'];
 
 function goodBet(over = {}) {
   return {
@@ -99,7 +109,8 @@ test('bundle: every source is read in order, each event carries a real fact', as
   assert.ok(events.every(e => e.kind === 'source'));
   const line = Object.fromEntries(events.map(e => [e.key, e.line]));
   assert.equal(line.now, 'read now.md, last updated 2026-10-20 at 09:00 local time');
-  assert.equal(line.season, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 3 waiting on review, 0 stuck');
+  assert.equal(line.season, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 5 waiting on review, 0 stuck');
+  assert.equal(line.queue, '5 waiting: 2 with work on a branch, 1 already merged but open, 2 placeholders with no check');
   assert.equal(line.landed, 'changes merged this week: 4');
   assert.equal(line.installs, 'installs last week: 1,400 (week before: 1,300)');
   assert.equal(line.installs_best, 'best week for installs in the last 2 months: 1,550');
@@ -153,11 +164,13 @@ test('ambition: installs must beat the best recent week, half the review queue m
   const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1550 }), 'target goal 1,550 does not beat our best installs week of the last 2 months, 1,550; the goal must be above 1,550');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1551 }), '', 'one more than the best week is enough');
-  // the fixture season has 3 jobs waiting on review: at least 2 must land, counted from 0
-  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 1 }), 'target goal 1 does not land half the review queue: 3 wait now, so the goal must be at least 2');
+  // 5 jobs wait, 3 have real work (2 are placeholders): at least 2 of those 3 must land, counted from 0
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 1 }), 'target goal 1 does not land half the waiting jobs with real work: 3 have real work, so the goal must be at least 2');
   assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 2 }), '');
   assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 3 }), '');
-  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 4 }), 'target goal 4 is more than the 3 jobs waiting now');
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 4 }), 'target goal 4 is more than the 3 waiting jobs with real work');
+  const hollow = await bundleFor(workspace(), { ...fixtureDeps, classifyQueue: (root, jobs) => jobs.map(j => ({ ...j, kind: 'placeholder' })) });
+  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 1 } }), { bundle: hollow.bundle, today: TODAY }).reasons.join(' | '), 'none of the 5 waiting jobs has real work behind it, so none can land; pick another metric');
   // the queue size and changes merged are not metrics: closing jobs empties one, filler jobs inflate the other
   assert.equal(check({ metric: 'waiting', baseline: 3, goal: 1 }), 'target metric must be one we can read here: installs or queue_landed, got "waiting"');
   assert.equal(check({ metric: 'landed', baseline: 4, goal: 40 }), 'target metric must be one we can read here: installs or queue_landed, got "landed"');
@@ -171,9 +184,11 @@ test('ambition: installs must beat the best recent week, half the review queue m
   assert.match(prompt, /the most ambitious move this team can start this week, one that would beat our best installs week of the last 2 months or land at least half of the jobs waiting on review if it works/);
   assert.match(prompt, /Small safe bets get rejected/);
   assert.ok(prompt.includes('"installs" (npm installs in the 7 days that end on the check date; baseline 1400; the best week in the last 2 months was 1,550, so the goal must be above 1,550)'));
-  assert.ok(prompt.includes('"queue_landed" (jobs waiting on review today that land (accepted or merged) by the check date; closing, dropping, or parking one counts zero; baseline 0; 3 wait now, so the goal must be at least 2 of them landed)'));
+  assert.ok(prompt.includes('"queue_landed" (jobs waiting on review today with real work behind them (a commit on a branch or on master that touches their own check) that land, accepted or merged, by the check date; placeholders do not count, and closing, dropping, or parking one counts zero; baseline 0; 3 of the 5 waiting jobs have real work, so the goal must be at least 2 of those landed)'));
   // the writer and the skeptic both see which jobs count
-  assert.match(gmBet.bundleText(bundle), /## jobs waiting on review now \(3; only these count toward queue_landed\)\n- fix the flaky login test\n- add the install page\n- retire the old sync job/);
+  const text = gmBet.bundleText(bundle);
+  assert.ok(text.includes('## jobs waiting on review now (5; only the 3 with real work count toward queue_landed)\nwith work on a branch (counts):\n- fix the flaky login test\n- retire the old sync job\nalready merged on master but the job is still open (counts):\n- add the install page\nplaceholder with no check of its own (does not count):\n- next step toward: members work for hours'));
+  assert.match(text, /- 5 waiting: 2 with work on a branch, 1 already merged but open, 2 placeholders with no check/);
   assert.doesNotMatch(prompt, /swing/);
 });
 
@@ -194,8 +209,9 @@ test('a passing bet carries its target, the snapshot of waiting jobs, and one sh
   assert.equal(out.bet.goal_line, 'goal 1,700, best week in 2 months 1,550');
   const queue = await run(goodBet({ title: 'Review the three oldest waiting jobs with a second checker lane', target: { metric: 'queue_landed', baseline: 0, goal: 2 } }));
   assert.equal(queue.ok, true, queue.reason);
-  assert.deepEqual(queue.bet.target, { metric: 'queue_landed', baseline: 0, goal: 2, job_ids: ['t1', 't2', 't3'] });
-  assert.equal(queue.bet.goal_line, 'goal 2 of the 3 waiting jobs landed');
+  // placeholders are left out of the snapshot
+  assert.deepEqual(queue.bet.target, { metric: 'queue_landed', baseline: 0, goal: 2, job_ids: ['t1', 't2', 't5'] });
+  assert.equal(queue.bet.goal_line, 'goal 2 of the 3 jobs with work landed');
   assert.ok(out.bet.goal_line.length <= 48 && queue.bet.goal_line.length <= 48, 'fits one short line on a phone');
 });
 
@@ -491,6 +507,57 @@ test('scorer: a queue bet counts only snapshotted jobs that landed by the check 
   const missing = path.join(root, 'none.jsonl');
   ledgerRow(missing, root, 'm', { status: 'doing', bet: { ...goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3, job_ids } }), check_date: '2026-10-17' } });
   assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile: missing, today: TODAY, deps: { taskDbPath: path.join(root, 'nope.db') } }), [], 'no task db yet is a wait, not a loss');
+});
+
+test('queue split: real work is read from git and the task db, placeholders and unknowns are left out of the snapshot', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-queue-'));
+  const DAY = 24 * 60 * 60;
+  const nowS = Math.floor(Date.now() / 1000);
+  const git = (date, ...args) => require('node:child_process').execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_AUTHOR_DATE: `@${date} +0000`, GIT_COMMITTER_DATE: `@${date} +0000` } });
+  const write = (file) => { fs.mkdirSync(path.join(repo, path.dirname(file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), `// ${file}\n`); };
+  git(nowS - 3 * DAY, 'init', '-q', '-b', 'master');
+  write('test/old.test.js');
+  git(nowS - 3 * DAY, 'add', '.');
+  git(nowS - 3 * DAY, 'commit', '-q', '-m', 'an old test, from before the jobs were made');
+  // the jobs are made two days ago; only commits after that count
+  git(nowS - 1 * DAY, 'checkout', '-q', '-b', 'feat');
+  write('test/feat-a.test.js');
+  git(nowS - 1 * DAY, 'add', '.');
+  git(nowS - 1 * DAY, 'commit', '-q', '-m', 'work for job a, on a branch');
+  git(nowS, 'checkout', '-q', 'master');
+  write('test/feat-b.test.js');
+  git(nowS, 'add', '.');
+  git(nowS, 'commit', '-q', '-m', 'work for job b, merged');
+  git(nowS, 'update-ref', 'refs/remotes/origin/master', 'HEAD');
+
+  const dbPath = path.join(repo, 'tasks.db');
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('CREATE TABLE tasks (id TEXT, created_at INTEGER, metadata TEXT)');
+  const made = (nowS - 2 * DAY) * 1000;
+  const addJob = db.prepare('INSERT INTO tasks VALUES (?, ?, ?)');
+  addJob.run('a', made, JSON.stringify({ verify: 'node --test test/feat-a.test.js' }));
+  addJob.run('b', made, JSON.stringify({ verify: 'node --test test/feat-b.test.js' }));
+  addJob.run('c', made, JSON.stringify({ verify: 'node --test test/feat-c.test.js' }));
+  addJob.run('old', made, JSON.stringify({ verify: 'node --test test/old.test.js' }));
+  addJob.run('ph', made, JSON.stringify({ verify: 'npm run test:fast' }));
+  db.close();
+  const jobs = ['a', 'b', 'c', 'old', 'ph', 'gone'].map(id => ({ id, title: `job ${id}` }));
+  const base = { readNow: () => null, readBriefs: () => null, gitLanded: () => null, packageName: null, seasonFacts: () => ({ landed: 0, target: null, record: null, waiting_on_review: jobs.length, waiting_jobs: jobs, stuck: 0 }) };
+  const read = async (root, deps) => (await gmBet.readBundle(root, { deps: { ...base, ...deps }, ledgerFile: path.join(repo, 'b.jsonl') })).sources.queue;
+
+  const queue = await read(repo, { taskDbPath: dbPath });
+  assert.deepEqual(Object.fromEntries(queue.jobs.map(j => [j.id, j.kind])), { a: 'branch', b: 'merged_open', c: 'no_work', old: 'no_work', ph: 'placeholder', gone: 'unknown' });
+  assert.equal(queue.fact, '6 waiting: 1 with work on a branch, 1 already merged but open, 2 with a check but no work yet, 1 placeholder with no check, 1 unknown');
+  // only real work is snapshotted, and the bar is half of it
+  const bundle = await gmBet.readBundle(repo, { deps: { ...base, taskDbPath: dbPath }, ledgerFile: path.join(repo, 'b.jsonl') });
+  assert.match(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3 } }), { bundle, today: TODAY }).reasons.join(' | '), /target goal 3 is more than the 2 waiting jobs with real work/);
+  // git that cannot tell is unknown, never a guess; a missing db makes every job unknown
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-nogit-'));
+  const noGit = await read(bare, { taskDbPath: dbPath });
+  assert.deepEqual(Object.fromEntries(noGit.jobs.map(j => [j.id, j.kind])), { a: 'unknown', b: 'unknown', c: 'unknown', old: 'unknown', ph: 'placeholder', gone: 'unknown' });
+  const noDb = await read(repo, { taskDbPath: path.join(repo, 'nope.db') });
+  assert.equal(noDb.fact, '6 waiting: 6 unknown');
 });
 
 test('scorer: installs are read from the npm range for exactly those 7 days, and never scored from a partial week', async () => {
