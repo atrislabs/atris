@@ -147,7 +147,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 ### Integration Tests
 
-- `atris youtube bench --quick` runs three real cases, and `atris youtube bench` runs all five. This command is in review, not shipped yet.
+- `atris youtube bench --quick` runs three real cases, and `atris youtube bench` runs all five. Both shipped in #1072; the full bench passed 5 of 5 live on 2026-10-21.
 
 ### Manual Testing
 
