@@ -1158,9 +1158,9 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   const names = [...html.matchAll(/function ([A-Za-z]\w*)\(/g)].map(m => m[1]);
   assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
   assert.match(html, /navigator\.vibrate\(10\)/);
-  // two speeds by truth: a queued bet plays the landing curves at a fifth of
+  // two speeds by truth: a queued bet plays the landing curves at two fifths of
   // their length, a bet being made plays them at full length
-  assert.match(html, /var FAST = 0\.2;/);
+  assert.match(html, /var FAST = 0\.4;/);
   assert.match(html, /var GROW_MS = 1050, MAX_SCALE = 3\.2;/);
   assert.match(html, /\(GROW_MS \* pace\)/);
   assert.match(html, /\(SETTLE_MS \* pace\)/);

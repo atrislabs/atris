@@ -441,9 +441,9 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   assert.doesNotThrow(() => new Function(script));
   const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
   // the card fades out softly in place, never a cut
-  assert.match(html, /\.bet\.leave \{ opacity: 0; transform: none; transition: opacity 0\.18s ease-out; \}/);
+  assert.match(html, /\.bet\.leave \{ opacity: 0; transform: none; transition: opacity 0\.4s ease-out; \}/);
   assert.doesNotMatch(script, /reduced \? 200 : 60/);
-  assert.equal(num('LEAVE_MS'), 180);
+  assert.equal(num('LEAVE_MS'), 400);
   // the small orb glides to where the sphere will sit, read before anything moves
   assert.match(script, /var to = sphereSpot\(\);/);
   assert.match(script, /orb\.melt\(then, to, swap\)/);
@@ -458,5 +458,6 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   // tap to card on the fast path: glide, beat, pull, bloom, settle, card fade
   const pull = 1.05 * num('FAST') * 1000;
   const total = num('GLIDE_MS') + num('BEAT_MS') + pull + num('FAST_GROW_MS') + num('FAST_SETTLE_MS') + 120;
-  assert.ok(total <= 1250, `fast re-tap budget ${total}ms`);
+  // unhurried but never a wait: about two seconds
+  assert.ok(total >= 1800 && total <= 2500, `fast re-tap budget ${total}ms`);
 });
