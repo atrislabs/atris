@@ -390,7 +390,7 @@ test('a mission run closes a member job whose own change merged while the team l
   });
 });
 
-test('mission runs share the team loop\'s five-minute pass, so GitHub is read once', () => {
+test('back-to-back mission runs read GitHub once per five minutes', () => {
   withFixture((fx) => {
     const { sweepAfterMissionRun } = require('../lib/member-autoland');
     queue(fx, [builderJob(fx)]);
@@ -464,5 +464,41 @@ test('a change queued while the sweep runs stays on the list', () => {
     });
     assert.equal(out.closed, 1, out.line);
     assert.deepEqual(readQueue(fx), { [late.branch]: late });
+  });
+});
+
+test('a mission run keeps its own timer, so the team loop still gets its turn right after', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const { memberMaintenance } = require('../lib/member-up');
+    queue(fx, [builderJob(fx)]);
+    sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 });
+    const state = path.join(fx.main, '.atris', 'state');
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.json')), false);
+    let loopRan = false;
+    memberMaintenance({ cwd: fx.main, now: AFTER_1319 + 1000, requeueDropped: () => { loopRan = true; return { results: [] }; } });
+    assert.equal(loopRan, true);
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.lock')), false);
+  });
+});
+
+// While the team loop is up it closes merged jobs itself, along with its code
+// refresh and two-hour warning; a mission run stays out of its way. A loop
+// that died leaves its file behind (2026-10-15), which must not count.
+test('a live team loop does the closing itself; a dead one left behind does not stop the mission run', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const upFile = path.join(fx.main, '.atris', 'state', 'member-up.json');
+    fs.writeFileSync(upFile, JSON.stringify({ pid: process.pid, started_at: '2026-10-15T06:41:53.787Z' }));
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    assert.equal(statusOf(fx, id), 'review');
+    assert.equal(fs.existsSync(fx.log), false);
+    const dead = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' });
+    fs.writeFileSync(upFile, JSON.stringify({ pid: dead.pid, started_at: '2026-10-15T06:41:53.787Z' }));
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }).closed, 1);
+    assert.equal(statusOf(fx, id), 'done');
   });
 });
