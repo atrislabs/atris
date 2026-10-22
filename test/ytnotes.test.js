@@ -176,6 +176,51 @@ test('ytnotes gets en-orig when the translated en track is rate limited', () => 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
+test('ytnotes stops the caption fetch once en-orig is whole, before the en copy', () => {
+  const tmp = tmpDir('atris-ytnotes-enstop-');
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+
+  // Like yt-dlp: print the id line, write en-orig through a .part file, then
+  // start on the auto en copy. That copy is slow here, so only a stopped
+  // fetch skips it.
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    'printf "%s\\n" "ntstop1|Stop Early|Chan|0:02"',
+    'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The original track is here." > yt_ntstop1.en-orig.vtt.part',
+    'sleep 0.2',
+    'mv yt_ntstop1.en-orig.vtt.part yt_ntstop1.en-orig.vtt',
+    ': > yt_ntstop1.en.vtt.part',
+    'sleep 4',
+    `echo asked > "${tmp}/asked-en"`,
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'printf "%s\\n" "# Stop Early" "" "The original track is here."',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntstop1'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntstop1.md'), 'utf8'), /original track/);
+  assert.equal(fs.existsSync(path.join(tmp, 'asked-en')), false, 'yt-dlp went on to the en copy');
+  assert.deepEqual(fs.readdirSync(path.join(work, 'ytnotes')).filter((f) => f.endsWith('.part')), []);
+});
+
 test('ytnotes skips a leaked warning print line when choosing the video id', () => {
   const tmp = tmpDir('atris-ytnotes-warn-id-');
   const bin = path.join(tmp, 'bin');
