@@ -108,7 +108,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | wiki ingest library | `lib/wiki.js` | ingest and query helpers |
 | login and token code | `commands/auth.js`, `test/auth-security.test.js` | login, agent tokens; environment login mints stay off disk and billed commands reuse valid tokens in process memory |
 | stored auth token reader and browser launch | `utils/auth.js`, `test/auth-security.test.js` | local credentials loaded and stored; browser URLs passed as arguments without a command shell |
-| api client | `utils/api.js` | HTTPS calls |
+| api client and credentialed redirects | `utils/api.js`, `lib/site-publish.js`, `test/api-redirect.test.js` | credentialed headers and bodies stay on the original origin; local-server tests cover API, refresh, client sign-in, design and site uploads |
 | cli config | `utils/config.js` | local config |
 | backend root and owner identity | `utils/backend-root.js` `utils/owner-identity.js` | portable local roots; installed CLI sibling fenced under node tests, ATRIS_BACKEND_INSTALL_SIBLING=1 opts in and 0 disables the probe |
 | update check | `utils/update-check.js` | version check |

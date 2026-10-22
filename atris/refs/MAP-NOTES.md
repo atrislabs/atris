@@ -1782,7 +1782,9 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 **Key functions (utils/api.js):**
 
 - Lines 23-37: URL builders (`getApiBaseUrl`, `getAppBaseUrl`, `buildApiUrl`): env-overridable via `ATRIS_API_URL` / `ATRIS_APP_URL`
-- Lines 39-82: `httpRequest()`: Low-level Node https/http with 10s timeout
+- `utils/api.js:61`: `httpRequest()` uses Node https/http with a configurable timeout; redirects at `utils/api.js:79` drain the response and reject a changed origin before replaying headers or bodies.
+- `lib/site-publish.js:327`: credentialed fetch uses manual redirects; the origin check at `lib/site-publish.js:342` rejects another origin and reports only its host.
+- `test/api-redirect.test.js:88`: real local-server tests preserve same-origin credentials and refuse another port before any request reaches it, covering API bearer tokens, refresh tokens, client secrets, design and site uploads.
 - Lines 84-147: `apiRequestJson()`: Generic API: auto-sets Bearer token, User-Agent, X-Atris-Client headers, JSON body serialization
 - Lines 149-239: `streamProChat()`: SSE streaming for chat (text/event-stream)
 - Lines 241-293: `spawnClaudeCodeSession()`: Non-streaming backend call
