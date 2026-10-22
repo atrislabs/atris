@@ -1496,6 +1496,7 @@ async function gmPhone(args = []) {
       return gmBet.createBetDesk({
         workspaceRoot,
         ledgerFile: gmBet.ledgerPath(stateDir),
+        attemptsFile: gmBet.attemptsPath(stateDir),
         runCli: gmBet.makeCliRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot }),
         log,
       });

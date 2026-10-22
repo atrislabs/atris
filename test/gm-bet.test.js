@@ -55,7 +55,7 @@ function goodBet(over = {}) {
     title: 'Write a getting started page for atris gm phone with a 30 second screen recording',
     why_now: 'installs last week were 1,400 and the phone page just landed, so new installs have nothing to try first.',
     expect: '150 more npm installs in the week after it goes up',
-    check_date: '2026-10-30',
+    check_in_days: 9,
     metric_source: 'npm installs for atris',
     cost: 'about 4 hours of agent time, $0',
     steps: [
@@ -82,7 +82,7 @@ test('bundle: every source is read in order, each event carries a real fact', as
   assert.ok(events.every(e => e.kind === 'source'));
   assert.equal(events[0].line, 'read now.md, last updated 2026-10-20 at 09:00 local time');
   assert.equal(events[1].line, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 3 waiting on review, 0 stuck');
-  assert.equal(events[2].line, 'landed this week: 4 changes');
+  assert.equal(events[2].line, 'changes merged this week: 4');
   assert.equal(events[3].line, 'installs last week: 1,400 (week before: 700)');
   assert.equal(events[4].line, 'read 3 research briefs, newest: brief newest');
   assert.equal(events[5].line, 'past bets: none yet');
@@ -125,9 +125,13 @@ test('validate: vague title, bad date, all-you steps, uncited why_now, and a pos
   assert.match(check({ title: 'Improve onboarding for new users of the product' }), /vague verb "improve"/);
   assert.match(check({ title: 'Ship it' }), /too short/);
   assert.match(check({ title: 'Make things better for growth and engagement' }), /no concrete deliverable/);
-  assert.match(check({ check_date: '2026-11-20' }), /within 14 days/);
-  assert.match(check({ check_date: '2026-10-21' }), /after 2026-10-21/);
-  assert.match(check({ check_date: '2026-02-31' }), /not a real/);
+  assert.match(check({ check_in_days: 15 }), /check_in_days must be a whole number from 1 to 14, got 15/);
+  assert.match(check({ check_in_days: 0 }), /got 0/);
+  assert.match(check({ check_in_days: 3.5 }), /got 3\.5/);
+  assert.match(check({ check_in_days: '7' }), /got "7"/);
+  assert.match(check({ check_in_days: undefined }), /check_in_days is missing/);
+  // a date the model writes is ignored; only the number of days counts
+  assert.equal(gmBet.validateBet(goodBet({ check_date: '1999-01-01' }), { bundle, today: TODAY }).ok, true);
   assert.match(check({ steps: goodBet().steps.map(s => ({ ...s, who: 'you' })) }), /no step is for the team/);
   assert.match(check({ why_now: 'people would probably like a nicer first run experience overall.' }), /does not quote a fact/);
   assert.match(check({ steps: [{ text: 'post the thread on x', who: 'team', public: false }, goodBet().steps[0]] }), /step 1 reaches the outside world/);
@@ -181,8 +185,8 @@ test('generate: a second good answer passes, and the order of events is sources,
       now: () => (n += 5000),
       runModel: async (prompt, { onProgress }) => {
         const retry = /was rejected/.test(prompt);
-        onProgress({ thinking: 300, chars: 0 });
-        onProgress({ thinking: 300, chars: 420 });
+        onProgress({ thinking: 300, chars: 0, text: '' });
+        onProgress({ thinking: 300, chars: 40, text: '{"title": "write the page' });
         return { ok: true, text: retry ? `\`\`\`json\n${JSON.stringify(goodBet())}\n\`\`\`` : 'not json at all' };
       },
     },
@@ -190,9 +194,14 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(out.ok, true, out.reason);
   assert.equal(out.attempts, 2);
   assert.equal(out.bet.title, goodBet().title);
-  assert.deepEqual(events.map(e => e.kind), ['source', 'source', 'source', 'source', 'source', 'source', 'model', 'thinking', 'writing', 'reject', 'model', 'thinking', 'writing', 'check']);
-  assert.equal(events[7].line, 'thinking: about 300 tokens so far');
-  assert.equal(events[8].line, 'writing the bet: 420 characters');
+  assert.deepEqual(events.map(e => e.kind), ['source', 'source', 'source', 'source', 'source', 'source', 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'check']);
+  assert.equal(events[6].line, 'asking the model for one bet');
+  assert.equal(events[7].line, 'thinking...');
+  assert.equal(events[8].line, 'thinking... 4 words written');
+  assert.ok(events.every(e => !/token|character/.test(e.line)));
+  // the date is worked out from the owner's today, in calendar days
+  assert.equal(out.bet.check_in_days, 9);
+  assert.equal(out.bet.check_date, '2026-10-30');
 });
 
 // ---- the model process ------------------------------------------------------------
@@ -222,7 +231,7 @@ out({ type: 'result', is_error: false, result: JSON.stringify({ keys, prompt: pr
   });
   assert.equal(res.ok, true, res.reason);
   assert.deepEqual(JSON.parse(res.text), { keys: [], prompt: 'the prompt' });
-  assert.deepEqual(progress, [{ thinking: 120, chars: 0 }, { thinking: 120, chars: 5 }, { thinking: 120, chars: 7 }]);
+  assert.deepEqual(progress.map(p => [p.thinking, p.chars, p.text]), [[120, 0, ''], [120, 5, '{"a":'], [120, 7, '{"a":1}']]);
   const env = gmBet.modelEnv({ ANTHROPIC_API_KEY: 'a', ANTHROPIC_AUTH_TOKEN: 'b', PATH: '/bin' });
   assert.deepEqual(env, { PATH: '/bin' });
   const args = gmBet.claudeArgs('p');
@@ -496,4 +505,65 @@ test('page: the orb, the bet card, and the lava stop once the card is up', () =>
   assert.match(html, /your yes/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
+});
+
+test('addDays counts calendar days, so the clock change on nov 1 cannot push the date out', () => {
+  assert.equal(gmBet.addDays('2026-10-21', 14), '2026-11-04');
+  assert.equal(gmBet.addDays('2026-10-21', 1), '2026-10-22');
+  assert.equal(gmBet.addDays('2026-12-25', 10), '2027-01-04');
+  assert.equal(gmBet.addDays('2026-03-01', 7), '2026-03-08');
+});
+
+test('attempts log: every model answer is saved with its raw text, parse result, reasons, and timing', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  let n = 0;
+  const out = await gmBet.generateBet({
+    workspaceRoot: root,
+    today: TODAY,
+    ledgerFile: path.join(root, 'bets.jsonl'),
+    attemptsFile,
+    deps: {
+      ...fixtureDeps,
+      now: () => (n += 1000),
+      runModel: async prompt => ({ ok: true, text: /was rejected/.test(prompt) ? JSON.stringify(goodBet({ check_in_days: 40 })) : 'sure, here is a bet' }),
+    },
+  });
+  assert.equal(out.ok, false);
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(r => [r.attempt, r.parse, r.passed]), [[1, 'the answer was not JSON', false], [2, 'ok', false]]);
+  assert.equal(rows[0].raw, 'sure, here is a bet');
+  assert.match(rows[1].raw, /"check_in_days":40/);
+  assert.deepEqual(rows[1].reasons, ['check_in_days must be a whole number from 1 to 14, got 40']);
+  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true));
+});
+
+test('attempts log: a model that fails outright is saved too', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    deps: { ...fixtureDeps, runModel: async () => ({ ok: false, reason: 'the model gave an empty answer' }) },
+  });
+  const row = JSON.parse(fs.readFileSync(attemptsFile, 'utf8').trim());
+  assert.equal(row.model_ok, false);
+  assert.deepEqual(row.reasons, ['the model gave an empty answer']);
+});
+
+test('merged changes: one per first-parent commit, merges named by their pull request title', () => {
+  const git = (...args) => require('node:child_process').execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-git-'));
+  git('init', '-q', '-b', 'master');
+  git('commit', '-q', '--allow-empty', '-m', 'direct fix on master');
+  git('checkout', '-q', '-b', 'feature');
+  git('commit', '-q', '--allow-empty', '-m', 'inside the branch one');
+  git('commit', '-q', '--allow-empty', '-m', 'inside the branch two');
+  git('checkout', '-q', 'master');
+  git('merge', '-q', '--no-ff', 'feature', '-m', 'Merge pull request #7 from org/feature', '-m', 'add the phone page');
+  git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+  return gmBet.readBundle(repo, { deps: { readNow: () => null, seasonFacts: () => null, readBriefs: () => null, packageName: null }, ledgerFile: path.join(repo, 'b.jsonl') }).then((bundle) => {
+    assert.equal(bundle.sources.landed.fact, 'changes merged this week: 2');
+    assert.deepEqual(bundle.sources.landed.subjects, ['add the phone page', 'direct fix on master']);
+  });
 });
