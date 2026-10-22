@@ -10647,12 +10647,27 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     ran_by: actor,
     code_sha: currentHeadSha(workspaceRoot),
   };
+  // A check is not a touch. Bumping updated_at here put every failed job at
+  // the front of the next pass, so the same six failing jobs won every hour.
   db.prepare(`
     UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
+       SET metadata = ?
      WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  `).run(JSON.stringify(metadata), taskId);
+}
+
+// When a review job was last given a second check; never checked reads 0.
+function lastCheckedMs(task) {
+  const ranAt = Date.parse(String(task?.metadata?.verify_cache?.ran_at || ''));
+  return Number.isFinite(ranAt) ? ranAt : 0;
+}
+
+// The check already failed on exactly this code: running it again proves
+// nothing until the code changes.
+function failedOnSameCode(task, verify, codeSha) {
+  const cache = task?.metadata?.verify_cache;
+  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
+    && cache.command === verify && codeSha && cache.code_sha === codeSha);
 }
 
 function cachedVerifyVerdict(task, root) {
@@ -10742,12 +10757,15 @@ function cmdCertifyVerified(args, options = {}) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const { projection } = writeDefaultProjection(taskDb, db);
+  // Least recently checked first, oldest first among never-checked jobs. The
+  // limit counts checks that actually run, so skipped rows never use a turn.
   const candidates = (projection.tasks || [])
     .filter((t) => t && t.status === 'review')
-    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
-    .slice(0, max);
+    .sort((a, b) => lastCheckedMs(a) - lastCheckedMs(b) || Number(a.updated_at || 0) - Number(b.updated_at || 0));
   const results = [];
+  let checks = 0;
   for (const item of candidates) {
+    if (checks >= max) break;
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
@@ -10809,6 +10827,11 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
+    if (failedOnSameCode(task, verify, currentHeadSha(task.workspace_root || process.cwd()))) {
+      results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
+      continue;
+    }
+    checks += 1;
     if (dryRun) {
       results.push({ ref, action: 'would_certify', verify });
       continue;

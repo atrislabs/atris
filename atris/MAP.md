@@ -141,6 +141,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | lesson ledger | `lib/lesson-ledger.js` | compounding lessons |
 | receipt block builder | `lib/receipt-block.js` | proof receipts |
 | autoland gate | `lib/autoland.js` | certified landings |
+| second check reaches every review job | `commands/task.js:10748` (`cmdCertifyVerified`), `commands/task.js:10660` (`lastCheckedMs`), `commands/task.js:10667` (`failedOnSameCode`), `test/certify-no-starve.test.js` | least recently checked first (never checked, oldest first); the limit (6) counts checks that run, not rows looked at; a job whose check already failed on the same code is skipped as `failed_on_this_code` until its code changes; stamping a check result no longer bumps `updated_at` |
 | autoland command | `commands/autoland.js` | atris autoland |
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp, which also serves the campaign tools |
