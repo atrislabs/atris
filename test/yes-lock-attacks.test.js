@@ -252,3 +252,17 @@ test('attack 12: a yes covers the exact command the owner saw, in the same folde
     j.cleanup();
   }
 });
+
+// ---- the third attack, on commit d11ae576 (the review was cut off after this finding) ----
+
+test('attack 13: an option value that looks like a method flag is a value, not a method', () => {
+  const j = lockedJob([...PUBLISH, { text: 'merge it to master', who: 'you', public: false }]);
+  try {
+    assert.ok(held(j.run('gh api -X PUT repos/o/r/pulls/1/merge --template -XGET')));
+    assert.ok(held(j.run('gh api -X PUT repos/o/r/pulls/1/merge -t -XGET')));
+    assert.ok(held(j.run('gh api -tXGET -X PUT repos/o/r/pulls/1/merge')), 'a short -t takes the rest of its cluster as the template');
+    assert.equal(j.run('gh api repos/o/r/pulls/1 --jq .title').status, 0, 'a read with an output filter still runs');
+  } finally {
+    j.cleanup();
+  }
+});
