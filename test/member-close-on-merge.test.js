@@ -390,7 +390,7 @@ test('a mission run closes a member job whose own change merged while the team l
   });
 });
 
-test('mission runs share the team loop\'s five-minute pass, so GitHub is read once', () => {
+test('back-to-back mission runs read GitHub once per five minutes', () => {
   withFixture((fx) => {
     const { sweepAfterMissionRun } = require('../lib/member-autoland');
     queue(fx, [builderJob(fx)]);
@@ -426,17 +426,17 @@ test('a merge more than a day old is left for a person, so old work is not count
   });
 });
 
-test('a mission run\'s pass refreshes the members\' code copy like the team loop, and keeps the quiet warning', () => {
+test('a mission run keeps its own timer, so the team loop still gets its turn right after', () => {
   withFixture((fx) => {
     const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const { memberMaintenance } = require('../lib/member-up');
     queue(fx, [builderJob(fx)]);
-    let seen = null;
-    sweepAfterMissionRun({
-      cwd: fx.main, now: AFTER_1319, codeRoot: '/code/copy',
-      maintenance: (opts) => { seen = opts; return { results: [] }; },
-    });
-    assert.equal(seen.codeRoot, '/code/copy');
-    assert.equal(seen.announceQuiet, false);
-    assert.equal(seen.cwd, fx.main);
+    sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 });
+    const state = path.join(fx.main, '.atris', 'state');
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.json')), false);
+    let loopRan = false;
+    memberMaintenance({ cwd: fx.main, now: AFTER_1319 + 1000, requeueDropped: () => { loopRan = true; return { results: [] }; } });
+    assert.equal(loopRan, true);
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.lock')), false);
   });
 });

@@ -11310,10 +11310,7 @@ async function runMission(args) {
 // Merged member work closes its jobs even when the team loop is down.
 function sweepMergedMemberWork(context) {
   try {
-    const out = require('../lib/member-autoland').sweepAfterMissionRun({
-      cwd: context.cwd || process.cwd(),
-      codeRoot: path.resolve(__dirname, '..'),
-    });
+    const out = require('../lib/member-autoland').sweepAfterMissionRun({ cwd: context.cwd || process.cwd() });
     if (out && out.closed > 0 && !context.asJson) console.log(out.line);
   } catch {}
 }

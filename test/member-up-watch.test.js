@@ -331,17 +331,3 @@ test('the members code copy advances only when it is a clean detached plain clon
   assert.equal(fs.readFileSync(path.join(copy, 'code.txt'), 'utf8'), 'after\n');
   assert.notEqual(spawnSync('git', ['symbolic-ref', '-q', 'HEAD'], { cwd: copy }).status, 0);
 });
-
-// A finished mission run uses the same pass. It must not swallow the two-hour
-// warning: nothing prints it there, and the team loop would then stay quiet.
-test('a pass that does not announce leaves the quiet warning for the team loop', (t) => {
-  const { root } = maintenanceFixture(t);
-  let now = Date.now();
-  const results = [{ state: 'queued' }];
-  const pass = (announceQuiet) => memberMaintenance({ cwd: root, now, announceQuiet, requeueDropped: () => ({ results }) }).results;
-  pass(true);
-  now += 2 * 60 * 60 * 1000;
-  assert.equal(pass(false).some((r) => r.state === 'stalled'), false);
-  now += REQUEUE_MS;
-  assert.equal(pass(true).filter((r) => r.state === 'stalled').length, 1);
-});
