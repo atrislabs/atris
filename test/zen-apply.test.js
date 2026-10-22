@@ -634,3 +634,49 @@ test('zen does not say already zen after it put work away', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('an idle side copy holding only team notes is saved and put away', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const hours = new Date(Date.now() - 2 * 3600000);
+    const age = (copy, files) => {
+      for (const f of files) fs.utimesSync(path.join(copy, f), hours, hours);
+      ageHistory(copy, hours);
+    };
+    // notes only, idle for two hours: zen's to tidy
+    const notes = path.join(base, 'notes');
+    git(checkout, 'worktree', 'add', '-q', notes, '-b', 'notes-branch');
+    write(notes, 'atris/TODO.md', NOTES.replace('line 2\n', 'line 2 from the side copy\n'));
+    write(notes, 'atris/logs/2026/2026-10-21.md', 'boot note\n');
+    age(notes, ['atris/TODO.md', 'atris/logs/2026/2026-10-21.md']);
+    // notes plus a live database: never counts as notes
+    const data = path.join(base, 'data');
+    git(checkout, 'worktree', 'add', '-q', data, '-b', 'data-branch');
+    write(data, 'atris/TODO.md', NOTES.replace('line 3\n', 'line 3 changed\n'));
+    write(data, 'app.db', 'rows\n');
+    age(data, ['atris/TODO.md', 'app.db']);
+    // notes only, but written a minute ago: still in use
+    const fresh = path.join(base, 'fresh');
+    git(checkout, 'worktree', 'add', '-q', fresh, '-b', 'fresh-branch');
+    ageHistory(fresh, hours);
+    write(fresh, 'atris/TODO.md', NOTES.replace('line 4\n', 'line 4 just now\n'));
+
+    const check = zen(checkout, 30, '--check', '--no-fetch');
+    assert.match(check.stdout, /1 idle side copy holds only team notes/);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /saved the team notes from 1 idle side copy to zen-backup\/ and put it away/);
+    assert.ok(!fs.existsSync(notes));
+    const [kept] = branches(checkout, 'zen-backup/*-notes');
+    assert.ok(kept, branches(checkout, '*').join(','));
+    assert.match(git(checkout, 'show', `${kept}:atris/TODO.md`), /line 2 from the side copy/);
+    assert.equal(git(checkout, 'show', `${kept}:atris/logs/2026/2026-10-21.md`), 'boot note');
+
+    assert.ok(fs.existsSync(path.join(data, 'app.db')));
+    assert.ok(fs.existsSync(path.join(fresh, 'atris', 'TODO.md')));
+    assert.match(cli.stdout, /2 side copies have unsaved work, left for their owners/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
