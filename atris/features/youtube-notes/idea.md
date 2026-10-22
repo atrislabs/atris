@@ -98,7 +98,7 @@ Pin one writer with the second argument (`atris youtube notes <url> haiku`) or w
 
 **Known gaps.**
 
-- The `atris-fast` writer breaks on long videos, because it caps at 8 parallel jobs.
+- The `atris-fast` writer cannot handle a transcript over about 55 KB, such as the 85-minute bench video, because one engine run takes at most 8 jobs and 64 KB. It says so and writes no notes.
 - Free transcription only works on Apple silicon Macs with `mlx_whisper` installed.
 - Other people's yt-dlp does not update itself, and YouTube changes break old copies.
 - For a video with no captions on a non-Mac, the paid lane's Apply form adds friction.

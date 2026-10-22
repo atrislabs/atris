@@ -542,7 +542,10 @@ NODE
 let raw = ""
 process.stdin.on("data", (chunk) => { raw += chunk })
 process.stdin.on("end", () => {
-  const receipt = JSON.parse(raw)
+  // A refused run (too many chunks, too many bytes) prints its reason and no
+  // receipt; fail as a writer instead of a stack trace.
+  let receipt
+  try { receipt = JSON.parse(raw) } catch { process.exit(2) }
   const answers = [...(receipt.answers || [])].sort((a, b) => a.label.localeCompare(b.label))
   if (!answers.length || answers.some((answer) => !answer.ok)) process.exit(2)
 

@@ -217,4 +217,4 @@ Two. Rerun `node --test test/ytnotes.test.js test/ytquote-repair.test.js test/yo
 
 - Read the tally line, not just the notes. If it says `0 kept, 0 repaired, 0 dropped` on a long video, the quote checker probably did not recognize the layout.
 - Test as a stranger too: a shell with only `node` on the PATH shows failures a fully loaded Mac hides.
-- `atris-fast` breaks on long videos because of its 8-job cap. Do not make it the default until that is fixed.
+- `atris-fast` breaks on long videos. It splits the transcript into 11 KB chunks and sends them in one `atris engine ask` run, which takes at most 8 jobs and 64 KB of prompts, so a transcript over about 55 KB is refused (the 85-minute bench video is 101 KB, 10 chunks). Since 2026-10-21 it says so and writes no notes, instead of a stack trace. Do not make it the default until it sends more than one run.
