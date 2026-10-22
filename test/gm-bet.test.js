@@ -240,11 +240,12 @@ require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(kid.pid));
 setInterval(() => {}, 1000);
 `);
   const started = Date.now();
-  const res = await gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 600 });
+  // long enough for a busy machine to start the stub and its child first
+  const res = await gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 3000 });
   assert.equal(res.ok, false);
   assert.equal(res.timed_out, true);
-  assert.match(res.reason, /longer than 1 seconds|longer than 0 seconds|was stopped/);
-  assert.ok(Date.now() - started < 5000);
+  assert.equal(res.reason, 'the model took longer than 3 seconds and was stopped');
+  assert.ok(Date.now() - started < 10000);
   const kid = Number(fs.readFileSync(pidFile, 'utf8'));
   let alive = true;
   for (let i = 0; i < 40 && alive; i += 1) {
