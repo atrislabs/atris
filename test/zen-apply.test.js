@@ -313,6 +313,26 @@ test('a note committed without pushing and edited again comes back with the late
   }
 });
 
+test('a note committed on a side branch and edited again comes back whole on main', () => {
+  const { base, checkout } = createRepo();
+  try {
+    git(checkout, 'checkout', '-q', '-b', 'side');
+    commit(checkout, 'atris/TODO.md', `${NOTES}committed on the branch\n`, 'branch note');
+    write(checkout, 'atris/TODO.md', `${NOTES}committed on the branch\nwritten after\n`);
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /moved back to master \(side is kept\)/);
+    assert.doesNotMatch(cli.stdout, /kept the new|no longer fits/);
+    assert.equal(git(checkout, 'branch', '--show-current'), 'master');
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), `${NOTES}committed on the branch\nwritten after\n`);
+    assert.equal(git(checkout, 'show', 'side:atris/TODO.md'), `${NOTES}committed on the branch`.trim());
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
@@ -465,6 +485,11 @@ test('a team note that truly clashes keeps the new version, saves yours, and nev
     git(checkout, 'checkout', '-q', '-b', 'side');
     commit(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 on side'), 'side todo');
     commit(checkout, 'atris/plan.md', NOTES.replace('line 10', 'line 10 on side'), 'side plan');
+    // Master changes the same line of TODO.md, so that note truly clashes.
+    git(checkout, 'checkout', '-q', 'master');
+    commit(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 on master'), 'master todo');
+    git(checkout, 'push', '-q', 'origin', 'master');
+    git(checkout, 'checkout', '-q', 'side');
     // Unsaved edits: one clashes with master, one is clean.
     write(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 mine'));
     write(checkout, 'atris/plan.md', NOTES.replace('line 10', 'line 10 on side').replace('line 1\n', 'line 1 mine\n'));
@@ -474,7 +499,7 @@ test('a team note that truly clashes keeps the new version, saves yours, and nev
     assert.match(cli.stdout, /moved back to master/);
     const todo = fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8');
     assert.doesNotMatch(todo, /^(<<<<<<<|=======|>>>>>>>)/m);
-    assert.equal(todo, NOTES);
+    assert.equal(todo, NOTES.replace('line 10', 'line 10 on master'));
     assert.match(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), /line 1 mine/);
     const said = cli.stdout.match(/kept the new atris\/TODO\.md; your copy is in (\S+)/);
     assert.ok(said, cli.stdout);
