@@ -680,3 +680,37 @@ test('an idle side copy holding only team notes is saved and put away', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('two versions of one day\'s log are joined, not shelved', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    const day = 'atris/team/guard/logs/2026-10-22.md';
+    const todo = 'atris/logs/2026/2026-10-22.md';
+    commit(seed, todo, '# 2026-10-22\n- 01:00 first\n', 'shared journal');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    // origin: a new member log and a journal entry
+    commit(seed, day, '## review\n- fixed the gate\n', 'guard log');
+    commit(seed, todo, '# 2026-10-22\n- 01:00 first\n- 02:00 from origin\n', 'origin entry');
+    git(seed, 'push', '-q');
+    // here: the same member log written locally, and a local journal entry
+    write(checkout, day, '# guard\n- 00:05 operate stopped\n- 00:20 operate stopped\n');
+    write(checkout, todo, '# 2026-10-22\n- 01:00 first\n- 01:30 mine\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /caught up 2 commits/);
+    assert.match(cli.stdout, new RegExp(`joined your ${day.replace(/[./]/g, '\\$&')} onto the new one`));
+    assert.doesNotMatch(cli.stdout, /your copy is in/);
+    assert.equal(
+      fs.readFileSync(path.join(checkout, day), 'utf8'),
+      '## review\n- fixed the gate\n\n# guard\n- 00:05 operate stopped\n- 00:20 operate stopped\n',
+    );
+    const journal = fs.readFileSync(path.join(checkout, todo), 'utf8');
+    assert.match(journal, /- 02:00 from origin/);
+    assert.match(journal, /- 01:30 mine/);
+    assert.equal(journal.match(/01:00 first/g).length, 1);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
