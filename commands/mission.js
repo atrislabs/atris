@@ -9457,7 +9457,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id });
     } catch (error) {
       resolve({
         ok: false,
@@ -9642,7 +9642,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id });
     } catch (error) {
       resolve({
         ok: false,
@@ -10470,7 +10470,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id });
         } catch (error) {
           result = {
             ...result,
