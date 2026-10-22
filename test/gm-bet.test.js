@@ -669,6 +669,10 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   // progress and failure lines use plain words
   assert.match(html, /couldn\\'t land on a good bet\. tap to try again/);
   assert.doesNotMatch(html, /tokens/);
+  // one script scope: a function declared twice silently replaces the first
+  const names = [...html.matchAll(/function ([A-Za-z]\w*)\(/g)].map(m => m[1]);
+  assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
+  assert.match(html, /navigator\.vibrate\(10\)/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
   assert.match(html, /\/bet\/think/);
