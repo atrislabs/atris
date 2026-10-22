@@ -34,7 +34,7 @@
 
 **Upkeep (Keshav's Mac only, not in this repo):**
 
-- Scheduled Mac job `ai.atris.youtube-tools-update`, every Sunday at 05:00. Logs in `~/.atris/logs/youtube-tools-update/`.
+- Planned Mac job `ai.atris.youtube-tools-update`, every Sunday at 05:00, logging to `~/.atris/logs/youtube-tools-update/`. Not installed: on 2026-10-21 launchd had no such job and there was no plist or log folder. Upgrade by hand with `brew upgrade yt-dlp` until it is.
 
 ---
 
