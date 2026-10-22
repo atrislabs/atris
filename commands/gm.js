@@ -99,7 +99,8 @@ function showHelp() {
   console.log('  api key) reads now.md, this week\'s target, the changes merged on master');
   console.log('  this week, npm installs, the newest research briefs, and past bets,');
   console.log('  then proposes one new move with a prediction, a check date (it picks the');
-  console.log('  number of days, 1 to 14), and steps. Every answer it gives is saved to');
+  console.log('  number of days, 1 to 14), and steps. The Mac keeps 3 bets ready so a tap');
+  console.log('  rarely waits; tap the orb again for the next one. Every answer is saved to');
   console.log('  ~/.atris/state/gm-bet-attempts.jsonl.');
   console.log('  do it starts a mission: atris mission start "<bet and steps>"');
   console.log('  --owner <member> --runner claude, then atris mission run <id> --detach.');
