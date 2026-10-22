@@ -168,7 +168,10 @@ test('the dry run names what would close and closes nothing', () => {
     const preview = tick(fx, ['--dry-run']);
     assert.equal(preview.dry_run, true);
     assert.deepEqual(preview.merged_close.would_close.map((c) => c.id), [id]);
+    assert.ok(Array.isArray(preview.second_check.would_check), JSON.stringify(preview));
+    assert.equal(preview.second_check_error, undefined);
     assert.equal(done(fx, id), 'review');
+    assert.equal(fs.existsSync(path.join(fx.repo, '.atris', 'state', 'tasks.projection.json')), false, 'a dry run writes no task list');
     assert.equal(fs.existsSync(path.join(fx.repo, 'atris', 'runs')), false, 'a dry run writes no receipt');
   } finally {
     cleanup(fx);

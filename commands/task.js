@@ -10753,7 +10753,10 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
 }
 
 function cmdCertifyVerified(args, options = {}) {
-  const dryRun = hasFlag(args, '--dry-run');
+  // preview: the hourly pass's dry run. Reads the named workspace's jobs and
+  // writes nothing, not even the task list file.
+  const preview = options.preview === true;
+  const dryRun = preview || hasFlag(args, '--dry-run');
   const asJson = wantsJson(args);
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
@@ -10763,7 +10766,9 @@ function cmdCertifyVerified(args, options = {}) {
 
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection } = writeDefaultProjection(taskDb, db);
+  const projection = preview
+    ? enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: options.workspaceRoot || taskDb.workspaceRoot(), limit: 500 }))
+    : writeDefaultProjection(taskDb, db).projection;
   // Least recently checked first, oldest first among never-checked jobs. The
   // limit counts checks that actually run, so skipped rows never use a turn.
   const candidates = (projection.tasks || [])
@@ -10870,7 +10875,7 @@ function cmdCertifyVerified(args, options = {}) {
     const certifiedNow = readied.event?.payload?.agent_certified === true;
     results.push({ ref, action: certifiedNow ? 'certified' : 'pass_recorded', verify });
   }
-  const { outPath } = writeDefaultProjection(taskDb, db);
+  const outPath = preview ? null : writeDefaultProjection(taskDb, db).outPath;
   const certified = results.filter((r) => r.action === 'certified').length;
   const payload = {
     ok: true,
@@ -13728,6 +13733,7 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  cmdCertifyVerified,
   refreshKeptTaskList,
   keptCount,
   projectionMissions,

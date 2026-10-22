@@ -776,6 +776,18 @@ async function runTick(root, args) {
 function runTickPreview(root, { json, receipt }) {
   receipt.dry_run = true;
   runMergedWorkClose(root, receipt, { dryRun: true });
+  // The second check's next turn, in the order it would take the jobs.
+  try {
+    const taskDb = require('../lib/task-db');
+    const workspaceRoot = taskDb.workspaceRoot(mainCheckoutRoot(root) || root);
+    const certify = require('./task').cmdCertifyVerified([], { preview: true, silent: true, workspaceRoot });
+    receipt.second_check = {
+      would_check: certify.results.filter((r) => r.action === 'would_certify').map((r) => ({ ref: r.ref, verify: r.verify })),
+      skipped: certify.results.filter((r) => r.action === 'skipped').map((r) => ({ ref: r.ref, reason: r.reason })),
+    };
+  } catch (err) {
+    receipt.second_check_error = String((err && err.message) || err).slice(0, 200);
+  }
   if (json) {
     console.log(JSON.stringify(receipt));
     return 0;
@@ -786,6 +798,10 @@ function runTickPreview(root, { json, receipt }) {
   for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
   for (const line of close.merge_line || []) console.log(`  ${line}`);
   if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
+  const check = receipt.second_check || { would_check: [], skipped: [] };
+  console.log(`second check: would check ${check.would_check.length} job${check.would_check.length === 1 ? '' : 's'} next, ${check.skipped.length} skipped`);
+  for (const row of check.would_check) console.log(`  check ${row.ref}: ${row.verify}`);
+  if (receipt.second_check_error) console.log(`  could not preview the second check: ${receipt.second_check_error}`);
   return 0;
 }
 
