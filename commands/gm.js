@@ -94,6 +94,15 @@ function showHelp() {
   console.log('    stuck claims: atris task release <id> --as <holder> for each, or');
   console.log('         atris member wake <holder> for each holder');
   console.log('    no target: set this week\'s target (5 seconds to undo)');
+  console.log('  On top sits the bet: tap think and a smart model (claude -p, your');
+  console.log('  subscription, never an api key) reads now.md, this week\'s target, what');
+  console.log('  landed on master, npm installs, the newest research briefs, and past');
+  console.log('  bets, then proposes one new move with a prediction, a check date, and');
+  console.log('  steps. do it starts a mission: atris mission start "<bet and steps>"');
+  console.log('  --owner <member> --runner claude, then atris mission run <id> --detach.');
+  console.log('  steps marked your yes become decision cards; yes sends');
+  console.log('  atris mission ping <id> "..." --from gm-phone and nothing else.');
+  console.log('  Bets are kept in ~/.atris/state/gm-bets.jsonl.');
   console.log('  Anything that starts agents, frees claims, or lands work needs a second');
   console.log('  tap. Every tap is logged to ~/.atris/state/gm-phone-actions.jsonl.');
   console.log('  --send texts the link to the number saved with atris autoland on --to.');
@@ -1482,6 +1491,15 @@ async function gmPhone(args = []) {
     snapshotTarget: () => phone.targetSnapshot(workspaceRoot),
     logPath: path.join(stateDir, 'gm-phone-actions.jsonl'),
     page: phonePage,
+    makeBetDesk: (log) => {
+      const gmBet = require('../lib/gm-bet');
+      return gmBet.createBetDesk({
+        workspaceRoot,
+        ledgerFile: gmBet.ledgerPath(stateDir),
+        runCli: gmBet.makeCliRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot }),
+        log,
+      });
+    },
   });
 
   const listenAll = async (port) => {
