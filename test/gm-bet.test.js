@@ -227,39 +227,92 @@ test('release gap: published version and the changes on master not in its tag, o
   assert.deepEqual(offline.find(e => e.key === 'release'), { kind: 'skip', key: 'release', line: 'could not read the published version from npm, left out' });
 });
 
-test('skeptic: a fail is fed into the one retry with the missing step, then a pass ships with its verdict', async () => {
+test('skeptic: a named blocker becomes the next bet, not a patch on the blocked idea', async () => {
   const root = workspace();
   const attemptsFile = path.join(root, 'attempts.jsonl');
   const prompts = [];
   const judged = [];
   const fail = { verdict: 'fail', missing_first: 'release the gm game, it is merged but not on npm', moves_metric: false, reason: 'people who install from the post get 3.71.3, which has no gm game.' };
-  const fixed = goodBet({ steps: [{ text: 'release the merged gm game to npm', who: 'you', public: true }, ...goodBet().steps] });
+  const release = goodBet({
+    title: 'Release 3.72 with the gm game and a two minute install check on a clean laptop',
+    target: { metric: 'installs', baseline: 1400, goal: 1600 },
+    steps: [{ text: 'run the release checks on master', who: 'team', public: false }, { text: 'release the merged gm game to npm', who: 'you', public: true }],
+  });
   const events = [];
   const out = await gmBet.generateBet({
     workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
     deps: {
       ...fixtureDeps,
-      runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? goodBet() : fixed) }; },
-      runSkeptic: async (prompt) => { judged.push(prompt); return { ok: true, text: JSON.stringify(judged.length === 1 ? fail : { verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'the release step comes first now.' }) }; },
+      runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? goodBet() : release) }; },
+      runSkeptic: async (prompt) => { judged.push(prompt); return { ok: true, text: JSON.stringify(judged.length === 1 ? fail : { verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'the release is the move now.' }) }; },
     },
   });
   assert.equal(out.ok, true, out.reason);
   assert.equal(out.attempts, 2);
-  assert.equal(out.bet.steps[0].text, 'release the merged gm game to npm');
-  assert.deepEqual(out.bet.skeptic, { verdict: 'pass', moves_metric: true, missing_first: 'nothing', reason: 'the release step comes first now.' });
+  assert.equal(out.bet.title, release.title);
+  assert.deepEqual(out.bet.skeptic, { verdict: 'pass', moves_metric: true, missing_first: 'nothing', reason: 'the release is the move now.' });
   // the skeptic sees the bet and the same facts, including the release gap
   assert.match(judged[0], /You are a skeptical cofounder/);
   assert.match(judged[0], /published 3\.71\.3; 67 changes on master not published yet/);
   assert.match(judged[0], /"goal": 1700/);
   assert.doesNotMatch(judged[0], /You are the strategist/);
-  // the retry carries the skeptic's reason, the missing step, and the last answer
-  assert.match(prompts[1], /Your last answer was rejected: a skeptic turned it down: people who install from the post get 3\.71\.3, which has no gm game\. it would not move the target number\. missing first: release the gm game, it is merged but not on npm\. if the missing piece is something we can do, add it as a step \(a release, or anything public, is a step for "you"\)/);
-  assert.match(prompts[1], /Your last answer was:\n\{"title":"Write a getting started page/);
-  assert.deepEqual(events.filter(e => ['model', 'skeptic', 'reject', 'check'].includes(e.kind)).map(e => e.kind), ['model', 'skeptic', 'reject', 'model', 'skeptic', 'check']);
+  // the retry makes the blocker the bet: no patch, no last answer to fix
+  assert.ok(prompts[1].includes(`The last idea ("${goodBet().title}") is blocked by: release the gm game, it is merged but not on npm. Don't patch that idea. Make clearing this blocker the bet, as big as this team can do in the window, with its own target.`));
+  assert.doesNotMatch(prompts[1], /Your last answer was/);
+  assert.ok(prompts[1].includes(`- ${goodBet().title}`), 'the blocked idea is on the list to differ from');
+  assert.deepEqual(events.filter(e => ['model', 'skeptic', 'reject', 'check'].includes(e.kind)).map(e => e.line.split(':')[0]), ['asking the model for one bet', 'a second model is checking that it makes sense', 'first answer turned down', 'asking again', 'a second model is checking that it makes sense', 'checked the bet']);
   const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
-  assert.deepEqual(rows.map(r => [r.kind, r.attempt, r.passed]), [['writer', 1, true], ['skeptic', 1, false], ['writer', 2, true], ['skeptic', 2, true]]);
+  assert.deepEqual(rows.map(r => [r.kind, r.attempt, r.strategy, r.passed]), [['writer', 1, 'first', true], ['skeptic', 1, 'first', false], ['writer', 2, 'blocker', true], ['skeptic', 2, 'blocker', true]]);
+  assert.equal(rows[2].blocker, 'release the gm game, it is merged but not on npm');
   assert.equal(rows[1].verdict.verdict, 'fail');
   assert.equal(rows[1].title, goodBet().title);
+});
+
+test('retry paths: code rejects and a skeptic fail with no blocker patch the last answer; a patch of the blocked idea is turned down', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const prompts = [];
+  const answers = [
+    goodBet({ check_in_days: 3 }),
+    goodBet(),
+    // after the blocker, the writer patches the blocked idea anyway
+    goodBet({ title: 'Write a getting started page for atris gm phone with a 30 second clip and a release' }),
+  ];
+  const verdicts = [
+    { verdict: 'fail', missing_first: 'a public build that has the phone page', moves_metric: false, reason: 'the page shows a feature nobody can install.' },
+  ];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    deps: {
+      ...fixtureDeps,
+      runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(answers[prompts.length - 1]) }; },
+      runSkeptic: async () => ({ ok: true, text: JSON.stringify(verdicts.shift()) }),
+    },
+  });
+  assert.equal(out.ok, false);
+  // try 2 patches the code reject with the last answer
+  assert.match(prompts[1], /Your last answer was:\n\{/);
+  assert.match(prompts[1], /Your last answer was rejected: check_in_days must be a whole number from 7 to 14, got 3/);
+  // try 3 is the blocker, and the near copy of the blocked idea fails the code check
+  assert.match(prompts[2], /is blocked by: a public build that has the phone page\. Don't patch that idea\./);
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.map(r => [r.kind, r.strategy, r.passed]), [['writer', 'first', false], ['writer', 'patch', true], ['skeptic', 'patch', false], ['writer', 'blocker', false]]);
+  assert.match(rows[3].reasons.join(' | '), /too close to a bet already shown or waiting: "Write a getting started page/);
+  // a skeptic fail that names nothing missing is a patch with its reason
+  const plain = [];
+  const again = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    deps: {
+      ...fixtureDeps,
+      runModel: async (prompt) => { plain.push(prompt); return { ok: true, text: JSON.stringify(goodBet()) }; },
+      runSkeptic: async () => ({ ok: true, text: JSON.stringify({ verdict: plain.length < 2 ? 'fail' : 'pass', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new.' }) }),
+    },
+  });
+  assert.equal(again.ok, true, again.reason);
+  assert.match(plain[1], /Your last answer was rejected: a skeptic turned it down: a page alone reaches nobody new\./);
+  assert.doesNotMatch(plain[1], /Don't patch that idea/);
+  // the writer prompt names the review jam as a blocker for new code
+  assert.match(plain[0], /if the facts show nothing landed this week and jobs are waiting on review, any idea that needs new code merged is blocked by that, so prefer the move that unblocks\./);
 });
 
 test('skeptic: two fails end honestly; pass without moving the number is a fail; a broken skeptic stops the bet', async () => {
