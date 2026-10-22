@@ -37,24 +37,41 @@ function workspace({ now = true, briefs = true } = {}) {
   return root;
 }
 
+// 60 days ending 2026-09-30: 4 days before the first full week, then 8 full
+// weeks. Last week is 1,400 (200 a day); every week before it is 1,300, so the
+// biggest week-over-week change is 100.
 function npmBody() {
   const downloads = [];
-  for (let i = 0; i < 30; i += 1) downloads.push({ day: `2026-09-${String(i + 1).padStart(2, '0')}`, downloads: i >= 23 ? 200 : 100 });
+  const n = 60;
+  for (let i = 0; i < n; i += 1) {
+    const d = new Date(Date.UTC(2026, 8, 30 - (n - 1 - i)));
+    const back = n - 1 - i;
+    const value = back < 7 ? 200 : (back % 7 === 6 ? 160 : 190);
+    downloads.push({ day: d.toISOString().slice(0, 10), downloads: value });
+  }
   return { downloads };
 }
+
+const PASS = JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'a getting started page is what new installs hit first.' });
 
 const fixtureDeps = {
   seasonFacts: () => ({ landed: 4, target: { landed: 4, goal: 6, verdict: 'behind' }, record: { won: 2, lost: 1 }, waiting_on_review: 3, stuck: 0 }),
   gitLanded: () => ['gm phone: decision cards', 'bench: agy engine', 'second review runs joined checks', 'scoped token fix'],
-  fetchJson: async () => npmBody(),
+  landedWeeks: () => [4, 9, 6, 5, 7, 3, 6, 5],
+  fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? { version: '3.71.3' } : npmBody()),
+  releaseGap: () => ({ count: 67 }),
   packageName: 'atris',
+  runSkeptic: async () => ({ ok: true, text: PASS }),
 };
+
+const SOURCE_KEYS = ['now', 'season', 'landed', 'landed_swing', 'installs', 'installs_swing', 'release', 'briefs', 'ledger'];
 
 function goodBet(over = {}) {
   return {
     title: 'Write a getting started page for atris gm phone with a 30 second screen recording',
     why_now: 'installs last week were 1,400 and the phone page just landed, so new installs have nothing to try first.',
-    expect: '150 more npm installs in the week after it goes up',
+    expect: '300 more npm installs in the week before the check date',
+    target: { metric: 'installs', baseline: 1400, goal: 1700 },
     check_in_days: 9,
     metric_source: 'npm installs for atris',
     cost: 'about 4 hours of agent time, $0',
@@ -78,14 +95,19 @@ async function bundleFor(root, deps = fixtureDeps) {
 test('bundle: every source is read in order, each event carries a real fact', async () => {
   const root = workspace();
   const { bundle, events } = await bundleFor(root);
-  assert.deepEqual(events.map(e => e.key), ['now', 'season', 'landed', 'installs', 'briefs', 'ledger']);
+  assert.deepEqual(events.map(e => e.key), SOURCE_KEYS);
   assert.ok(events.every(e => e.kind === 'source'));
-  assert.equal(events[0].line, 'read now.md, last updated 2026-10-20 at 09:00 local time');
-  assert.equal(events[1].line, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 3 waiting on review, 0 stuck');
-  assert.equal(events[2].line, 'changes merged this week: 4');
-  assert.equal(events[3].line, 'installs last week: 1,400 (week before: 700)');
-  assert.equal(events[4].line, 'read 3 research briefs, newest: brief newest');
-  assert.equal(events[5].line, 'past bets: none yet');
+  const line = Object.fromEntries(events.map(e => [e.key, e.line]));
+  assert.equal(line.now, 'read now.md, last updated 2026-10-20 at 09:00 local time');
+  assert.equal(line.season, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 3 waiting on review, 0 stuck');
+  assert.equal(line.landed, 'changes merged this week: 4');
+  assert.equal(line.landed_swing, 'normal weekly swing in changes merged: up to 5 over the last 8 weeks');
+  assert.equal(line.installs, 'installs last week: 1,400 (week before: 1,300)');
+  assert.equal(line.installs_swing, 'normal weekly swing in installs: up to 100 over the last 8 weeks');
+  assert.equal(line.release, 'published 3.71.3; 67 changes on master not published yet');
+  assert.equal(line.briefs, 'read 3 research briefs, newest: brief newest');
+  assert.equal(line.ledger, 'past bets: none yet');
+  assert.match(gmBet.bundleText(bundle), /## release\npublished on npm: 3\.71\.3\nchanges on master not in it: 67/);
   assert.equal(bundle.sources.briefs.briefs.length, 3);
   assert.ok(!bundle.sources.briefs.briefs.some(b => b.name === 'old.md'));
   assert.match(gmBet.bundleText(bundle), /scoped token fix/);
@@ -99,16 +121,243 @@ test('bundle: missing sources are left out, never invented', async () => {
     fetchJson: async () => { throw new Error('offline'); },
     packageName: 'atris',
   });
-  assert.deepEqual(events.map(e => `${e.kind}:${e.key}`), ['skip:now', 'skip:season', 'skip:landed', 'skip:installs', 'skip:briefs', 'source:ledger']);
+  assert.deepEqual(events.map(e => `${e.kind}:${e.key}`), ['skip:now', 'skip:season', 'skip:landed', 'skip:installs', 'skip:release', 'skip:briefs', 'source:ledger']);
   assert.deepEqual(Object.keys(bundle.sources), ['ledger']);
   assert.deepEqual(bundle.facts, ['past bets: none yet']);
   const text = gmBet.bundleText(bundle);
-  assert.doesNotMatch(text, /now\.md|installs|landed on master|research brief/);
+  assert.doesNotMatch(text, /now\.md|installs|landed on master|research brief|published|swing/);
+  // with nothing readable, a target cannot be set, and the reason says so
+  assert.match(gmBet.validateBet(goodBet(), { bundle, today: TODAY }).reasons.join(' | '), /no number we can read here for a target/);
 });
 
 test('installWeeks sums the newest 7 days and the 7 before', () => {
-  assert.deepEqual(gmBet.installWeeks(npmBody()), { last_week: 1400, week_before: 700, through: '2026-09-30' });
+  assert.deepEqual(gmBet.installWeeks(npmBody()), { last_week: 1400, week_before: 1300, through: '2026-09-30' });
   assert.equal(gmBet.installWeeks({ downloads: [] }), null);
+});
+
+// ---- gate one: ambitious, past normal swing ---------------------------------------
+
+test('noise floor: the biggest week-over-week change over the last 8 full weeks', () => {
+  // newest full blocks first; the 4 leading days are not a full week
+  assert.deepEqual(gmBet.installTotals(npmBody()), [1400, 1300, 1300, 1300, 1300, 1300, 1300, 1300]);
+  assert.deepEqual(gmBet.weeklySwing([1511, 1382, 1450, 1400]), { swing: 129, weeks: 4 });
+  assert.deepEqual(gmBet.weeklySwing([5, 9, 6, 5, 7, 3, 6, 5, 400]), { swing: 4, weeks: 8 }, 'only the newest 8 weeks count');
+  assert.equal(gmBet.weeklySwing([12]), null, 'one week has no swing');
+  // days before the package had any installs are not weeks it existed
+  const young = { downloads: [...Array(20).fill(0), ...Array(14).fill(10)].map((n, i) => ({ day: `2026-01-${String(i + 1).padStart(2, '0')}`, downloads: n })) };
+  assert.deepEqual(gmBet.installTotals(young), [70, 70]);
+  // merged changes: commit times counted into 7-day blocks ending now
+  const DAY = 24 * 60 * 60;
+  const nowMs = Date.UTC(2026, 9, 21);
+  const t = nowMs / 1000;
+  const times = [t - 1 * DAY, t - 2 * DAY, t - 3 * DAY, t - 8 * DAY, t - 15 * DAY, t - 16 * DAY, t - 17 * DAY, t - 18 * DAY, t - 19 * DAY];
+  assert.deepEqual(gmBet.countWeeks(times, nowMs, { weeks: 4 }), [3, 1, 5, 0]);
+  assert.deepEqual(gmBet.countWeeks(times, nowMs, { weeks: 4, since: nowMs - 20 * DAY * 1000 }), [3, 1], 'a week before the first commit is left out');
+});
+
+test('ambition: a target inside normal swing is turned down with the numbers', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
+  assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1460 }), 'target is inside normal swing: goal 1,460 is 60 over the baseline 1,400, but installs already swing up to 100 in a normal week, so the goal must be at least 1,600');
+  assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1600 }), '', 'exactly twice the swing is enough');
+  assert.equal(check({ metric: 'landed', baseline: 4, goal: 10 }), 'target is inside normal swing: goal 10 is 6 over the baseline 4, but changes merged already swing up to 5 in a normal week, so the goal must be at least 14');
+  assert.equal(check({ metric: 'landed', baseline: 4, goal: 14 }), '');
+  assert.match(check({ metric: 'installs', baseline: 1400, goal: 1300 }), /goal 1,300 must be above the baseline 1,400/);
+  assert.match(check(undefined), /target is missing/);
+  assert.match(check({ metric: 'stars', baseline: 1, goal: 100 }), /target metric must be one we can read here: installs or landed, got "stars"/);
+  // the check is a week out at least, so every day read is after the start
+  assert.match(gmBet.validateBet(goodBet({ check_in_days: 5 }), { bundle, today: TODAY }).reasons.join(' | '), /from 7 to 14, got 5/);
+  // the prompt names the readable metrics with their baselines and the bar to clear
+  const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.match(prompt, /the most ambitious move this team can start this week/);
+  assert.match(prompt, /Small safe bets get rejected/);
+  assert.ok(prompt.includes('"installs" (npm installs in a week; baseline 1400; normal weekly swing up to 100, so the goal must be at least 1,600)'));
+  assert.ok(prompt.includes('"landed" (changes merged on master in a week; baseline 4; normal weekly swing up to 5, so the goal must be at least 14)'));
+});
+
+test('ambition: a baseline that is not the real number is turned down', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
+  assert.equal(check({ metric: 'installs', baseline: 1511, goal: 2000 }), 'target baseline 1,511 does not match the real number: installs last week is 1,400');
+  assert.equal(check({ metric: 'landed', baseline: 40, goal: 100 }), 'target baseline 40 does not match the real number: changes merged this week is 4');
+  assert.match(check({ metric: 'installs', baseline: '1400', goal: 2000 }), /target baseline must be a number/);
+});
+
+test('a passing bet carries its target and one short goal line for the card', async () => {
+  const root = workspace();
+  const out = await gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }) } });
+  assert.equal(out.ok, true, out.reason);
+  assert.deepEqual(out.bet.target, { metric: 'installs', baseline: 1400, goal: 1700 });
+  assert.equal(out.bet.swing, 100);
+  assert.equal(out.bet.goal_line, 'goal 1,700 from 1,400, normal swing 100');
+  assert.ok(out.bet.goal_line.length <= 48, 'fits one short line on a phone');
+});
+
+// ---- gate two: makes sense (the release gap and the skeptic) ----------------------------
+
+function gitRepo() {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-rel-'));
+  const git = (...args) => require('node:child_process').execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  git('init', '-q', '-b', 'master');
+  return { repo, git };
+}
+
+test('release gap: published version and the changes on master not in its tag, or unknown without a tag', async () => {
+  const { repo, git } = gitRepo();
+  git('commit', '-q', '--allow-empty', '-m', 'first');
+  git('tag', 'v1.4.0');
+  git('commit', '-q', '--allow-empty', '-m', 'merged after the release');
+  git('commit', '-q', '--allow-empty', '-m', 'and another');
+  git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+  assert.deepEqual(gmBet.defaultReleaseGap(repo, '1.4.0'), { count: 2 });
+  assert.deepEqual(gmBet.defaultReleaseGap(repo, '1.5.0'), { count: null, why: 'no v1.5.0 tag here' });
+  const deps = { readNow: () => null, seasonFacts: () => null, readBriefs: () => null, landedWeeks: () => null, packageName: 'atris' };
+  const at = async (version) => {
+    const events = [];
+    await gmBet.readBundle(repo, { deps: { ...deps, fetchJson: async url => (url === 'https://registry.npmjs.org/atris/latest' ? { version } : npmBody()) }, emit: e => events.push(e), ledgerFile: path.join(repo, 'b.jsonl') });
+    return events.find(e => e.key === 'release');
+  };
+  assert.deepEqual(await at('1.4.0'), { kind: 'source', key: 'release', line: 'published 1.4.0; 2 changes on master not published yet' });
+  assert.deepEqual(await at('1.5.0'), { kind: 'source', key: 'release', line: 'published 1.5.0; changes on master not published yet: unknown (no v1.5.0 tag here)' });
+  assert.equal(gmBet.releaseFact('2.0.0', { count: 0 }), 'published 2.0.0; everything on master is published');
+  assert.equal(gmBet.releaseFact('2.0.0', { count: 1 }), 'published 2.0.0; 1 change on master not published yet');
+  const offline = [];
+  await gmBet.readBundle(repo, { deps: { ...deps, fetchJson: async () => { throw new Error('offline'); } }, emit: e => offline.push(e), ledgerFile: path.join(repo, 'b.jsonl') });
+  assert.deepEqual(offline.find(e => e.key === 'release'), { kind: 'skip', key: 'release', line: 'could not read the published version from npm, left out' });
+});
+
+test('skeptic: a fail is fed into the one retry with the missing step, then a pass ships with its verdict', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const prompts = [];
+  const judged = [];
+  const fail = { verdict: 'fail', missing_first: 'release the gm game, it is merged but not on npm', moves_metric: false, reason: 'people who install from the post get 3.71.3, which has no gm game.' };
+  const fixed = goodBet({ steps: [{ text: 'release the merged gm game to npm', who: 'you', public: true }, ...goodBet().steps] });
+  const events = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    deps: {
+      ...fixtureDeps,
+      runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? goodBet() : fixed) }; },
+      runSkeptic: async (prompt) => { judged.push(prompt); return { ok: true, text: JSON.stringify(judged.length === 1 ? fail : { verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'the release step comes first now.' }) }; },
+    },
+  });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.attempts, 2);
+  assert.equal(out.bet.steps[0].text, 'release the merged gm game to npm');
+  assert.deepEqual(out.bet.skeptic, { verdict: 'pass', moves_metric: true, missing_first: 'nothing', reason: 'the release step comes first now.' });
+  // the skeptic sees the bet and the same facts, including the release gap
+  assert.match(judged[0], /You are a skeptical cofounder/);
+  assert.match(judged[0], /published 3\.71\.3; 67 changes on master not published yet/);
+  assert.match(judged[0], /"goal": 1700/);
+  assert.doesNotMatch(judged[0], /You are the strategist/);
+  // the retry carries the skeptic's reason, the missing step, and the last answer
+  assert.match(prompts[1], /Your last answer was rejected: a skeptic turned it down: people who install from the post get 3\.71\.3, which has no gm game\. it would not move the target number\. missing first: release the gm game, it is merged but not on npm\. if the missing piece is something we can do, add it as a step \(a release, or anything public, is a step for "you"\)/);
+  assert.match(prompts[1], /Your last answer was:\n\{"title":"Write a getting started page/);
+  assert.deepEqual(events.filter(e => ['model', 'skeptic', 'reject', 'check'].includes(e.kind)).map(e => e.kind), ['model', 'skeptic', 'reject', 'model', 'skeptic', 'check']);
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.map(r => [r.kind, r.attempt, r.passed]), [['writer', 1, true], ['skeptic', 1, false], ['writer', 2, true], ['skeptic', 2, true]]);
+  assert.equal(rows[1].verdict.verdict, 'fail');
+  assert.equal(rows[1].title, goodBet().title);
+});
+
+test('skeptic: two fails end honestly; pass without moving the number is a fail; a broken skeptic stops the bet', async () => {
+  const root = workspace();
+  const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
+  const twice = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'fail', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new.' }) }));
+  assert.equal(twice.ok, false);
+  assert.match(twice.reason, /turned down twice \(a skeptic turned it down: a page alone reaches nobody new\. if the missing piece/);
+  let calls = 0;
+  const contradicts = await run(async () => { calls += 1; return { ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: '', moves_metric: false, reason: 'fine, though it reaches nobody.' }) }; });
+  assert.equal(contradicts.ok, false, 'a pass that does not move the number does not ship');
+  assert.equal(calls, 2);
+  const down = await run(async () => ({ ok: false, reason: 'the model took longer than 120 seconds and was stopped' }));
+  assert.deepEqual([down.ok, down.reason], [false, 'the skeptic could not check the bet: the model took longer than 120 seconds and was stopped']);
+  const garbled = await run(async () => ({ ok: true, text: '{"verdict": "maybe"}' }));
+  assert.deepEqual([garbled.ok, garbled.reason], [false, 'the skeptic could not check the bet: the skeptic gave no pass or fail verdict']);
+  assert.deepEqual(gmBet.parseVerdict('nope'), { error: "the skeptic's answer: the answer was not JSON" });
+  // the real skeptic is its own claude -p call on the subscription path
+  const args = gmBet.skepticCommand().args('judge this');
+  assert.deepEqual(args.slice(0, 4), ['-p', 'judge this', '--model', 'opus']);
+  assert.equal(gmBet.skepticCommand().bin, 'claude');
+});
+
+// ---- gate three: what works (score bets, feed results back) ------------------------
+
+let rowClock = 0;
+function ledgerRow(file, root, id, over) {
+  rowClock += 1;
+  fs.appendFileSync(file, `${JSON.stringify({ id, workspace: root, created_at: new Date(Date.UTC(2026, 9, 1) + rowClock * 1000).toISOString(), ...over })}\n`);
+}
+
+test('scorer: doing bets past their check date are scored won or lost from the same source; proposed and future ones are not', async () => {
+  const root = workspace();
+  const file = path.join(root, 'bets.jsonl');
+  const bet = (title, over = {}) => ({ ...goodBet({ title }), check_date: '2026-10-10', ...over });
+  ledgerRow(file, root, 'won', { status: 'doing', bet: bet('Write the gm phone getting started page') });
+  ledgerRow(file, root, 'lost', { status: 'doing', bet: bet('Record a demo video of the front office', { target: { metric: 'landed', baseline: 4, goal: 20 } }) });
+  ledgerRow(file, root, 'notarget', { status: 'doing', bet: bet('An old bet from before targets', { target: undefined }) });
+  ledgerRow(file, root, 'proposed', { status: 'proposed', bet: bet('A proposed bet nobody started') });
+  ledgerRow(file, root, 'future', { status: 'doing', bet: bet('A bet still running', { check_date: '2026-10-25' }) });
+  ledgerRow(file, root, 'late', { status: 'doing', bet: bet('A bet npm has not counted yet', { check_date: '2026-10-19' }) });
+  ledgerRow(file, root, 'toolate', { status: 'doing', bet: bet('A bet npm never counted', { check_date: '2026-10-01' }) });
+  const reads = [];
+  const readMetricWeek = async (metric, { start, end }) => {
+    reads.push([metric, start, end]);
+    if (end === '2026-10-19' || end === '2026-10-01') return { error: `npm has not counted every day up to ${end} yet`, transient: true };
+    return { value: metric === 'installs' ? 1800 : 12 };
+  };
+  const events = [];
+  const scored = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { readMetricWeek }, emit: e => events.push(e) });
+  assert.deepEqual(scored.map(s => [s.id, s.status]), [['won', 'won'], ['lost', 'lost'], ['notarget', 'unreadable'], ['toolate', 'unreadable']]);
+  assert.deepEqual(reads.find(r => r[2] === '2026-10-10'), ['installs', '2026-10-04', '2026-10-10'], 'the 7 days that end on the check date');
+  assert.ok(!reads.some(r => r[2] === '2026-10-25'), 'a bet not yet due is not read');
+  const byId = Object.fromEntries(gmBet.readLedger(file, root).map(r => [r.id, r]));
+  assert.deepEqual([byId.won.status, byId.won.actual, byId.won.window], ['won', 1800, '2026-10-04 to 2026-10-10']);
+  assert.deepEqual([byId.lost.status, byId.lost.actual], ['lost', 12]);
+  assert.deepEqual([byId.notarget.status, byId.notarget.why], ['unreadable', 'the bet has no target number to read']);
+  assert.deepEqual([byId.toolate.status, byId.toolate.why], ['unreadable', 'npm has not counted every day up to 2026-10-01 yet']);
+  assert.equal(byId.late.status, 'doing', 'late data inside the grace window waits for the next run');
+  assert.equal(byId.proposed.status, 'proposed', 'a proposed bet is never scored');
+  assert.equal(byId.future.status, 'doing');
+  assert.equal(events[0].line, 'scored a past bet: won, Write the gm phone getting started page (goal 1,700, got 1,800)');
+  // a second run scores nothing new
+  assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { readMetricWeek } }), []);
+});
+
+test('scorer: installs are read from the npm range for exactly those 7 days, and never scored from a partial week', async () => {
+  const root = workspace();
+  const file = path.join(root, 'bets.jsonl');
+  ledgerRow(file, root, 'a', { status: 'doing', bet: { ...goodBet(), check_date: '2026-10-17' } });
+  const urls = [];
+  const week = days => ({ downloads: Array.from({ length: days }, (_, i) => ({ day: `2026-10-${String(11 + i).padStart(2, '0')}`, downloads: 250 })) });
+  const partial = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { packageName: 'atris', fetchJson: async (u) => { urls.push(u); return week(5); } } });
+  assert.deepEqual(partial, [], 'five of seven days counted is not a score yet');
+  assert.equal(urls[0], 'https://api.npmjs.org/downloads/range/2026-10-11:2026-10-17/atris');
+  const full = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { packageName: 'atris', fetchJson: async () => week(7) } });
+  assert.deepEqual(full.map(s => [s.status, s.actual]), [['won', 1750]]);
+  const none = path.join(root, 'none.jsonl');
+  ledgerRow(none, root, 'b', { status: 'doing', bet: { ...goodBet(), check_date: '2026-10-10' } });
+  const unpublished = await gmBet.scoreBets(root, { ledgerFile: none, today: TODAY, deps: { packageName: null } });
+  assert.deepEqual(unpublished.map(s => [s.status, s.why]), [['unreadable', 'no published package here to read installs from']]);
+});
+
+test('results: readBundle scores first, then past bets show won and lost with numbers, and the prompt leans on them', async () => {
+  const root = workspace();
+  const file = path.join(root, 'bets.jsonl');
+  ledgerRow(file, root, 'w', { status: 'doing', bet: { ...goodBet({ title: 'Write the gm phone getting started page' }), check_date: '2026-10-10' } });
+  ledgerRow(file, root, 'l', { status: 'doing', bet: { ...goodBet({ title: 'Post a sixty second gm clip on x' }), check_date: '2026-10-11' } });
+  const readMetricWeek = async (metric, { end }) => ({ value: end === '2026-10-10' ? 1900 : 1450 });
+  const events = [];
+  const bundle = await gmBet.readBundle(root, { deps: { ...fixtureDeps, readMetricWeek }, emit: e => events.push(e), ledgerFile: file, today: TODAY });
+  assert.deepEqual(events.slice(0, 2).map(e => e.kind), ['score', 'score'], 'scoring runs first');
+  assert.equal(bundle.sources.ledger.fact, 'past bets: 2 (1 won, 1 lost, 0 open, 0 skipped)');
+  const text = gmBet.bundleText(bundle);
+  assert.ok(text.includes('- won: Write the gm phone getting started page (goal 1,700, got 1,900)'));
+  assert.ok(text.includes('- lost: Post a sixty second gm clip on x (goal 1,700, got 1,450)'));
+  const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.match(prompt, /lean toward moves like the winners and away from the losers, and when you do, say so in why_now/);
+  assert.ok(prompt.includes('- lost: Post a sixty second gm clip on x (goal 1,700, got 1,450)'));
 });
 
 // ---- validation -----------------------------------------------------------------
@@ -125,7 +374,7 @@ test('validate: vague title, bad date, all-you steps, uncited why_now, and a pos
   assert.match(check({ title: 'Improve onboarding for new users of the product' }), /vague verb "improve"/);
   assert.match(check({ title: 'Ship it' }), /too short/);
   assert.match(check({ title: 'Make things better for growth and engagement' }), /no concrete deliverable/);
-  assert.match(check({ check_in_days: 15 }), /check_in_days must be a whole number from 1 to 14, got 15/);
+  assert.match(check({ check_in_days: 15 }), /check_in_days must be a whole number from 7 to 14, got 15/);
   assert.match(check({ check_in_days: 0 }), /got 0/);
   assert.match(check({ check_in_days: 3.5 }), /got 3\.5/);
   assert.match(check({ check_in_days: '7' }), /got "7"/);
@@ -179,8 +428,8 @@ test('generate: a turned-down answer is retried once with the reasons, then fail
   assert.equal(prompts.length, 2);
   assert.doesNotMatch(prompts[0], /was rejected/);
   assert.match(prompts[1], /Your last answer was rejected: .*vague verb "optimize"/);
-  assert.match(out.reason, /broke the rules twice/);
-  assert.deepEqual(events.slice(6).map(e => e.kind), ['model', 'reject', 'model', 'reject']);
+  assert.match(out.reason, /turned down twice/);
+  assert.deepEqual(events.slice(SOURCE_KEYS.length).map(e => e.kind), ['model', 'reject', 'model', 'reject']);
 });
 
 test('generate: a second good answer passes, and the order of events is sources, model, check', async () => {
@@ -206,10 +455,10 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(out.ok, true, out.reason);
   assert.equal(out.attempts, 2);
   assert.equal(out.bet.title, goodBet().title);
-  assert.deepEqual(events.map(e => e.kind), ['source', 'source', 'source', 'source', 'source', 'source', 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'check']);
-  assert.equal(events[6].line, 'asking the model for one bet');
-  assert.equal(events[7].line, 'thinking...');
-  assert.equal(events[8].line, 'thinking... 4 words written');
+  assert.deepEqual(events.map(e => e.kind), [...SOURCE_KEYS.map(() => 'source'), 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'skeptic', 'check']);
+  assert.equal(events[SOURCE_KEYS.length].line, 'asking the model for one bet');
+  assert.equal(events[SOURCE_KEYS.length + 1].line, 'thinking...');
+  assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking... 4 words written');
   assert.ok(events.every(e => !/token|character/.test(e.line)));
   // the date is worked out from the owner's today, in calendar days
   assert.equal(out.bet.check_in_days, 9);
@@ -689,6 +938,10 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.match(html, /'your yes' : 'team'/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
+  // the card grows by at most one short line: the goal and the swing it beats, under expect
+  assert.match(html, /if \(t\[0\] === 'expect' && b\.goal_line\) d\.appendChild\(el\('span', 'sub', b\.goal_line\)\);/);
+  assert.match(html, /\.terms \.sub \{ display: block; color: var\(--text-3\); font-size: 12px;/);
+  assert.match(html, /if \(e\.kind === 'skeptic'\) return 'a second look: does it make sense';/);
 });
 
 test('addDays counts calendar days, so the clock change on nov 1 cannot push the date out', () => {
@@ -719,8 +972,8 @@ test('attempts log: every model answer is saved with its raw text, parse result,
   assert.deepEqual(rows.map(r => [r.attempt, r.parse, r.passed]), [[1, 'the answer was not JSON', false], [2, 'ok', false]]);
   assert.equal(rows[0].raw, 'sure, here is a bet');
   assert.match(rows[1].raw, /"check_in_days":40/);
-  assert.deepEqual(rows[1].reasons, ['check_in_days must be a whole number from 1 to 14, got 40']);
-  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true));
+  assert.deepEqual(rows[1].reasons, ['check_in_days must be a whole number from 7 to 14, got 40']);
+  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true && r.kind === 'writer'));
 });
 
 test('attempts log: a model that fails outright is saved too', async () => {
