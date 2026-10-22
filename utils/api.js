@@ -77,8 +77,21 @@ function httpRequest(urlString, options) {
     const req = transport.request(requestOptions, (res) => {
       // Follow redirects (301, 302, 307, 308)
       if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
-        const redirectUrl = new URL(res.headers.location, urlString).toString();
-        resolve(httpRequest(redirectUrl, options));
+        res.resume();
+        let redirectUrl;
+        try {
+          redirectUrl = new URL(res.headers.location, parsed);
+        } catch {
+          reject(new Error('invalid redirect target'));
+          return;
+        }
+        // Headers and bodies can both contain credentials. Never replay them
+        // to another origin, including a different port or an HTTPS downgrade.
+        if (redirectUrl.origin !== parsed.origin) {
+          reject(new Error(`refusing cross-origin redirect to ${redirectUrl.host || redirectUrl.protocol}`));
+          return;
+        }
+        resolve(httpRequest(redirectUrl.toString(), options));
         return;
       }
 
