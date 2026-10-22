@@ -60,6 +60,7 @@ test/escape-regexp.test.js
 test/file-ops-inbox.test.js
 test/fleet.test.js
 test/front-doors.test.js
+test/gm-bet.test.js
 test/gm-phone.test.js
 test/gm-season.test.js
 test/gm-target.test.js

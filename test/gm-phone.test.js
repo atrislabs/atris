@@ -423,6 +423,11 @@ test('page: one accent, no em dashes, text goes in as text', () => {
   const html = phonePage('NONCE');
   assert.equal((html.match(/nonce="NONCE"/g) || []).length, 2);
   assert.equal(html.includes(String.fromCharCode(0x2014)), false);
-  assert.doesNotMatch(html, /innerHTML|gradient|backdrop-filter|@keyframes|animation/);
+  assert.doesNotMatch(html, /innerHTML|backdrop-filter|infinite/);
+  // the only motion that loops is the ported lava orb's drift, and it is
+  // paused once the bet card is up and off under reduced motion
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
+  assert.match(html, /prefers-reduced-motion: reduce\) \{\n {2}\.lava \.tx, \.lava \.ty, \.lava \.blob \{ animation: none; \}/);
   assert.match(html, /min-height: 56px/);
 });
