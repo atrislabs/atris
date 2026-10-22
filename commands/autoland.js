@@ -794,7 +794,10 @@ function runTickPreview(root, { json, receipt }) {
   }
   const close = receipt.merged_close || {};
   console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} clashing job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
-  for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || `pull request #${row.number} merged`}`);
+  const prLine = (row) => (row.action === 'merged_earlier'
+    ? `merged earlier, closed without counting it as a new landing: its own pull request #${row.number} merged over a day ago`
+    : `its own pull request #${row.number} merged`);
+  for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || prLine(row)}`);
   for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
   for (const line of close.merge_line || []) console.log(`  ${line}`);
   if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
