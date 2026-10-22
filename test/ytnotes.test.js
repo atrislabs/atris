@@ -221,6 +221,49 @@ test('ytnotes stops the caption fetch once en-orig is whole, before the en copy'
   assert.deepEqual(fs.readdirSync(path.join(work, 'ytnotes')).filter((f) => f.endsWith('.part')), []);
 });
 
+test('ytnotes atris-fast says why a refused engine run wrote no notes, with no stack trace', () => {
+  const tmp = tmpDir('atris-ytnotes-fastrefused-');
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  const caller = path.join(tmp, 'caller');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+  fs.mkdirSync(path.join(caller, 'atris'), { recursive: true });
+
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    'printf "%s\\n" "ntfast1|Long Talk|Chan|1:25:00"',
+    'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The long talk starts here." > yt_ntfast1.en-orig.vtt',
+    '',
+  ].join('\n'));
+  // Like engine ask on a long video: the reason on stderr, no receipt.
+  writeExec(path.join(bin, 'atris'), [
+    '#!/bin/sh',
+    'echo "engine ask: engine ask accepts at most 8 jobs per run" >&2',
+    'exit 1',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntfast1', 'atris-fast'], {
+    cwd: caller,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.notEqual(result.status, 0, out);
+  assert.match(out, /at most 8 jobs per run/);
+  assert.match(out, /No notes were written/);
+  assert.doesNotMatch(out, /SyntaxError|at JSON\.parse/);
+  assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_ntfast1.md')), false);
+});
+
 test('ytnotes skips a leaked warning print line when choosing the video id', () => {
   const tmp = tmpDir('atris-ytnotes-warn-id-');
   const bin = path.join(tmp, 'bin');
