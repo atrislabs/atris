@@ -491,18 +491,33 @@ test('over http: think, poll, do it needs a second tap, and your-yes cards lead 
   }
 });
 
-test('page: the orb, the bet card, and the lava stop once the card is up', () => {
+test('page: one dark theme, the orb is the button, the lava stops once the card is up', () => {
   const html = phonePage('NONCE');
-  assert.match(html, /<canvas id="orb"/);
+  // the orb in the middle is the button, with a keyboard path and a label
+  assert.match(html, /<canvas id="orb" tabindex="0" role="button" aria-label="the atris orb\. tap to think of one new bet for the business"><\/canvas>/);
+  assert.match(html, /e\.key === 'Enter' \|\| e\.key === ' '/);
+  assert.match(html, /<p class="line" id="line" aria-live="polite">tap to think<\/p>/);
+  assert.doesNotMatch(html, /id="think"/);
   assert.match(html, /id="lava"/);
-  assert.match(html, /id="betcard"/);
-  assert.match(html, /id="think"/);
+  assert.match(html, /<article class="bet" id="bet" hidden>/);
+  // the homepage letter's dark brand values and serif, amber the only accent
+  for (const v of ['--bg: #141110', '--text: #eae3d9', '--text-2: #a39b92', '--text-3: #9a9187', '--line: #3d332d', '--amber: rgb(255, 140, 66)']) assert.ok(html.includes(v), v);
+  assert.match(html, /--serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;/);
+  assert.doesNotMatch(html, /#fff\b|#ffffff|#f6f5f2|background: white/i);
+  // the owner's decisions sit behind one quiet link, the team row is gone
+  assert.match(html, /things only you can do/);
+  assert.doesNotMatch(html, /id="team"/);
+  assert.match(html, /tap again to start/);
+  assert.match(html, /sharper idea/);
+  assert.match(html, /not now/);
+  // progress and failure lines use plain words
+  assert.match(html, /couldn\\'t land on a good bet\. tap to try again/);
+  assert.doesNotMatch(html, /tokens/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
   assert.match(html, /\/bet\/think/);
   assert.match(html, /\/bet\/do/);
-  assert.match(html, /team does it/);
-  assert.match(html, /your yes/);
+  assert.match(html, /'your yes' : 'team'/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
 });

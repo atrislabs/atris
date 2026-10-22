@@ -428,6 +428,8 @@ test('page: one accent, no em dashes, text goes in as text', () => {
   // paused once the bet card is up and off under reduced motion
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
-  assert.match(html, /prefers-reduced-motion: reduce\) \{\n {2}\.lava \.tx, \.lava \.ty, \.lava \.blob \{ animation: none; \}/);
-  assert.match(html, /min-height: 56px/);
+  assert.match(html, /prefers-reduced-motion: reduce\) \{\n {2}\.lava \.tx, \.lava \.ty, \.lava \.blob \{ animation: none !important; \}/);
+  // tap targets stay at least 44px
+  assert.match(html, /\.pill \{\n {2}min-width: 12rem; height: 44px;/);
+  assert.match(html, /\.choice \{ width: 100%; min-height: 52px;/);
 });
