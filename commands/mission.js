@@ -3216,6 +3216,7 @@ function missionFromArgs(args) {
     '--base',
     '--task',
     '--ask',
+    '--yes-lock',
     '--campaign',
     '--reserve',
     '--mission-id',
@@ -3259,6 +3260,7 @@ function missionFromArgs(args) {
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
+  const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -3295,6 +3297,8 @@ function missionFromArgs(args) {
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
+    // the sealed owner steps: the guard holds what each locks until the owner says yes
+    ...(yesLocks.length ? { yes_locks: { steps: yesLocks, sealed_at: stampIso() } } : {}),
     ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
@@ -3311,6 +3315,22 @@ function missionFromArgs(args) {
   }
   if (alwaysOn) mission.next_action = nextCandidateTickAction(mission);
   return mission;
+}
+
+// --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
+// steps a job may not do before the owner says yes. Bad input stops the start.
+const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
+function readYesLockSeal(raw, asJson) {
+  if (!raw) return [];
+  let list;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    exitMissionError('--yes-lock takes a JSON list of {step, text, categories}', 2, asJson);
+  }
+  const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
+  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy', 2, asJson);
+  return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
 function applyMissionStartPatch(mission, patch) {
@@ -9457,7 +9477,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9642,7 +9662,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -10470,7 +10490,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,
