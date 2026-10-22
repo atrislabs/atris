@@ -433,3 +433,30 @@ test('page: one accent, no em dashes, text goes in as text', () => {
   assert.match(html, /\.pill \{\n {2}min-width: 12rem; height: 44px;/);
   assert.match(html, /\.choice \{ width: 100%; min-height: 52px;/);
 });
+
+test('page: a tap on a card fades it, glides home to the sphere, and the fast bloom stays contained', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // the page script parses
+  assert.doesNotThrow(() => new Function(script));
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  // the card fades out softly in place, never a cut
+  assert.match(html, /\.bet\.leave \{ opacity: 0; transform: none; transition: opacity 0\.18s ease-out; \}/);
+  assert.doesNotMatch(script, /reduced \? 200 : 60/);
+  assert.equal(num('LEAVE_MS'), 180);
+  // the small orb glides to where the sphere will sit, read before anything moves
+  assert.match(script, /var to = sphereSpot\(\);/);
+  assert.match(script, /orb\.melt\(then, to, swap\)/);
+  // the sphere grows back and holds for a beat before the next reveal
+  assert.ok(num('BEAT_MS') >= 200);
+  // the queued bet's bloom stays under 80% of the smaller window side and never dims the page
+  assert.ok(num('BLOOM') < 0.8);
+  assert.match(script, /BLOOM \* Math\.min\(window\.innerWidth, window\.innerHeight\) \/ 2/);
+  assert.match(script, /dim\.style\.opacity = contained \? '0'/);
+  // the bet still being made keeps the full grow toward the farthest corner
+  assert.match(script, /var growMs = contained \? FAST_GROW_MS : \(GROW_MS \* pace\);/);
+  // tap to card on the fast path: glide, beat, pull, bloom, settle, card fade
+  const pull = 1.05 * num('FAST') * 1000;
+  const total = num('GLIDE_MS') + num('BEAT_MS') + pull + num('FAST_GROW_MS') + num('FAST_SETTLE_MS') + 120;
+  assert.ok(total <= 1250, `fast re-tap budget ${total}ms`);
+});
