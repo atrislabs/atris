@@ -1388,12 +1388,17 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   // the lock is written between start and run, for the bet's your-yes step
   const order = h.cli.map(a => a[1]);
   assert.deepEqual(order.slice(0, 2), ['start', 'run']);
-  const locks = yesLock.readYesLocks(root, 'm-new');
-  assert.deepEqual(locks.locks.map(l => [l.step, l.categories, l.asked_at]), [[3, ['publish', 'tag', 'post'], null]]);
+  // the seal goes into the mission record at start; approvals live beside the ledger
+  const start0 = h.cli.find(a => a[1] === 'start');
+  const seal = JSON.parse(start0[start0.indexOf('--yes-lock') + 1]);
+  assert.deepEqual(seal, [{ step: 3, text: 'publish the page and post the recording on x', categories: ['publish', 'tag', 'post'] }]);
+  const locks = yesLock.effectiveLocks(root, 'm-new', seal);
+  assert.equal(locks.trusted, true);
+  assert.deepEqual(locks.locks.map(l => [l.step, l.categories, l.asked_at]), [[3, ['post', 'publish', 'tag'], null]]);
   assert.ok(h.logs.some(l => l.choice === 'lock' && l.exit_code === 0));
   // the job tries to publish: the guard holds it, and the next tap is the yes card
-  const held = yesLock.holdIfLocked({ root, missionId: 'm-new', tool: 'npm', args: ['publish'] });
-  assert.equal(held.step, 3);
+  const held = yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] });
+  assert.deepEqual([held.hold, held.steps], [true, [3]]);
   h.d.pollJobs();
   const card = h.d.next();
   assert.deepEqual([card.kind, card.job.ask], ['yes', 'publish the page and post the recording on x']);
@@ -1402,8 +1407,8 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   const ping = h.cli.find(a => a[1] === 'ping');
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
   assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
-  assert.ok(yesLock.readYesLocks(root, 'm-new').locks[0].approved_at);
-  assert.equal(yesLock.holdIfLocked({ root, missionId: 'm-new', tool: 'npm', args: ['publish'] }), null, 'now it runs');
+  assert.ok(yesLock.effectiveLocks(root, 'm-new', seal).locks[0].approved_at);
+  assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] }), { consume: [3] }, 'now it runs, once');
   // the job is told about the lock in its own words
   const start = h.cli.find(a => a[1] === 'start');
   assert.match(start[2], /a step marked "your yes" is locked until the owner says yes: publishing, pushing tags, releases, posting, sending, and merging to master are held by the guard on your PATH/);
