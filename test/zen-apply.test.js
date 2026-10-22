@@ -292,6 +292,27 @@ test('atris zen keeps team notes from unpushed commits in the tree', () => {
   }
 });
 
+test('a note committed without pushing and edited again comes back with the later edit', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'app.js', 'two\n', 'newer app');
+    git(seed, 'push', '-q');
+    // A job commits a note, never pushes, then keeps writing to it.
+    commit(checkout, 'atris/TODO.md', `${NOTES}committed by the job\n`, 'job note');
+    write(checkout, 'atris/TODO.md', `${NOTES}committed by the job\nwritten after\n`);
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /kept 1 team note from it in the tree/);
+    assert.doesNotMatch(cli.stdout, /kept the new|no longer fits/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), `${NOTES}committed by the job\nwritten after\n`);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
