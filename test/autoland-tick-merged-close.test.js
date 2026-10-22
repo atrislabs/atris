@@ -67,7 +67,9 @@ function mergeMemberWork(fx, { file, branch, when }) {
   return work;
 }
 
-function reviewJob(fx, { title, metadata, createdAt }) {
+// Written the day before the merges below, the way a member job is written
+// before its work is committed.
+function reviewJob(fx, { title, metadata, createdAt = '2026-10-14T01:00:00Z' }) {
   const id = taskDb.addTask(fx.db, {
     title, workspaceRoot: fx.repo, status: 'review', claimedBy: 'builder', metadata: { approval_status: 'pending', ...metadata },
   }).id;
@@ -174,6 +176,71 @@ test('the dry run names what would close and closes nothing', () => {
     assert.equal(fs.existsSync(path.join(fx.repo, '.atris', 'state', 'tasks.projection.json')), false, 'a dry run writes no task list');
     assert.equal(fs.existsSync(path.join(fx.repo, 'atris', 'runs')), false, 'a dry run writes no receipt');
   } finally {
+    cleanup(fx);
+  }
+});
+
+// Codex review, 2026-10-22: the matchers must not close work that did not
+// land, or that landed and was taken back out.
+const { closeMergedReviewJobs } = require('../lib/merged-review-close');
+const reviewRows = (fx) => taskDb.listTasks(fx.db, { workspaceRoot: fx.repo, status: 'review' });
+
+test('a redo with its own unmerged commit, or two jobs sharing one new test, are not closed by the test file', () => {
+  const fx = project();
+  try {
+    git(['checkout', '-q', '-b', 'codex/redo', fx.start], fx.repo);
+    fs.writeFileSync(path.join(fx.repo, 'redo.js'), 'module.exports = 2;\n');
+    git(['add', '.'], fx.repo);
+    git(['commit', '-qm', 'redo work, never merged'], fx.repo, at('2026-10-15T00:00:00Z'));
+    const redoWork = git(['rev-parse', 'HEAD'], fx.repo);
+    git(['checkout', '-q', 'master'], fx.repo);
+    const redo = reviewJob(fx, { title: 'redo', metadata: { verify: 'node --test test/shared.test.js', work_commit: redoWork, start_commit: fx.start }, createdAt: '2026-10-14T10:00:00Z' });
+    const a = reviewJob(fx, { title: 'first of two', metadata: { verify: 'node --test test/pair.test.js' }, createdAt: '2026-10-14T10:00:00Z' });
+    const b = reviewJob(fx, { title: 'second of two', metadata: { verify: 'node --test test/pair.test.js' }, createdAt: '2026-10-14T10:00:00Z' });
+    mergeMemberWork(fx, { file: 'test/shared.test.js', branch: 'codex/original', when: '2026-10-14T12:00:00Z' });
+    mergeMemberWork(fx, { file: 'test/pair.test.js', branch: 'codex/pair', when: '2026-10-14T12:30:00Z' });
+    const out = closeMergedReviewJobs({ root: fx.repo, tasks: reviewRows(fx), dryRun: true });
+    assert.deepEqual(out.matched.map((m) => m.title), [], JSON.stringify(out.matched));
+    for (const id of [redo, a, b]) assert.equal(done(fx, id), 'review');
+  } finally {
+    cleanup(fx);
+  }
+});
+
+test('reverted work, a commit older than the job, or a check run from another folder do not close', () => {
+  const fx = project();
+  try {
+    const reverted = mergeMemberWork(fx, { file: 'test/gift.test.js', branch: 'codex/gift', when: '2026-10-15T01:00:00Z' });
+    const mergeSha = git(['rev-parse', 'HEAD'], fx.repo);
+    git(['revert', '--no-edit', '-m', '1', mergeSha], fx.repo, at('2026-10-15T02:00:00Z'));
+    reviewJob(fx, { title: 'gift', metadata: { work_commit: reverted, start_commit: fx.start }, createdAt: '2026-10-14T23:00:00Z' });
+    reviewJob(fx, { title: 'gift test', metadata: { verify: 'node --test test/gift.test.js' }, createdAt: '2026-10-14T23:00:00Z' });
+    const early = mergeMemberWork(fx, { file: 'lib/early.js', branch: 'codex/early', when: '2026-10-15T03:00:00Z' });
+    reviewJob(fx, { title: 'written after the commit', metadata: { work_commit: early, start_commit: fx.start }, createdAt: '2026-10-16T00:00:00Z' });
+    mergeMemberWork(fx, { file: 'test/sub.test.js', branch: 'codex/sub', when: '2026-10-15T04:00:00Z' });
+    reviewJob(fx, { title: 'check in a subfolder', metadata: { verify: 'cd backend && node --test test/sub.test.js' }, createdAt: '2026-10-14T23:00:00Z' });
+    const out = closeMergedReviewJobs({ root: fx.repo, tasks: reviewRows(fx), dryRun: true });
+    assert.deepEqual(out.matched.map((m) => m.title), [], JSON.stringify(out.matched));
+  } finally {
+    cleanup(fx);
+  }
+});
+
+test('a job given new proof after the scan read it is not closed by the old read', () => {
+  const fx = project();
+  const saved = process.env.ATRIS_TASKS_DB;
+  try {
+    const work = mergeMemberWork(fx, { file: 'lib/closer.js', branch: 'codex/builder-closer', when: '2026-10-15T07:05:00Z' });
+    const id = reviewJob(fx, { title: 'resubmitted', metadata: { work_commit: work, start_commit: fx.start } });
+    const snapshot = reviewRows(fx);
+    fx.db.prepare('UPDATE tasks SET updated_at = updated_at + 5000 WHERE id = ?').run(id);
+    process.env.ATRIS_TASKS_DB = fx.dbPath;
+    const out = closeMergedReviewJobs({ root: fx.repo, tasks: snapshot });
+    assert.equal(out.closed.length, 0);
+    assert.equal(done(fx, id), 'review');
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = saved;
     cleanup(fx);
   }
 });

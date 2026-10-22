@@ -443,3 +443,26 @@ test('the dry run reads the merge line and changes nothing', () => {
     assert.equal(fs.readFileSync(queuePath(fx), 'utf8'), before);
   });
 });
+
+// Codex review, 2026-10-22: a mission that queues its change while the sweep
+// is reading GitHub must not be dropped when the sweep saves the list.
+test('a change queued while the sweep runs stays on the list', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const late = { branch: 'codex/late', base: 'master', number: 8, pushed: 'b'.repeat(40), requeues: 0, task_ids: ['late-job'] };
+    const out = requeueDroppedAutolands({
+      cwd: fx.main,
+      now: AFTER_1319,
+      closeTask: () => {
+        const file = JSON.parse(fs.readFileSync(queuePath(fx), 'utf8'));
+        file.entries[late.branch] = late;
+        fs.writeFileSync(queuePath(fx), JSON.stringify(file));
+        return { updated: true };
+      },
+    });
+    assert.equal(out.closed, 1, out.line);
+    assert.deepEqual(readQueue(fx), { [late.branch]: late });
+  });
+});

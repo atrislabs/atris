@@ -83,8 +83,85 @@ test('the second check runs the test that lives only on the job\'s branch, then 
     assert.equal(cache.ok, true);
     assert.equal(cache.code_sha, fx.work, 'the check names the code it ran on');
     assert.equal(git(['worktree', 'list', '--porcelain'], fx.repo).split('\n').filter((l) => l.startsWith('worktree ')).length, 1);
-    assert.deepEqual(scratchDirs(), before);
+    assert.deepEqual(scratchDirs().filter((n) => !before.includes(n)), [], 'no scratch copy left behind');
     assert.equal(fs.existsSync(path.join(fx.repo, 'test', 'branch-only.test.js')), false, 'the main folder is untouched');
+  } finally {
+    taskDb.close();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+// Codex review, 2026-10-22.
+test('a recorded commit this repo no longer holds is a check that cannot run, not a main-folder run', () => {
+  const fx = project();
+  try {
+    const id = reviewJob(fx);
+    const row = taskDb.getTask(fx.db, id);
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?')
+      .run(JSON.stringify({ ...row.metadata, work_commit: 'f'.repeat(40) }), id);
+    // Even with the test on master, the job is not judged by the main folder.
+    git(['merge', '-q', '--no-ff', '-m', 'merge', 'codex/builder-branch-only'], fx.repo);
+    const out = cli(fx, ['task', 'certify-verified', '--json']);
+    assert.equal(out.results[0].action, 'verify_failed', JSON.stringify(out.results));
+    assert.equal(taskDb.getTask(fx.db, id).metadata.verify_cache.reason, 'verify_unrunnable');
+  } finally {
+    taskDb.close();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+test('the commit autoland queued wins over the builder\'s stamp, and a job in a subfolder runs there', () => {
+  const fx = project();
+  try {
+    // The queued catch-up adds the subfolder project's own test.
+    git(['checkout', '-q', 'codex/builder-branch-only'], fx.repo);
+    fs.mkdirSync(path.join(fx.repo, 'backend', 'test'), { recursive: true });
+    fs.writeFileSync(path.join(fx.repo, 'backend', 'test', 'branch-only.test.js'), 'require("node:test")("backend copy", () => {});\n');
+    git(['add', '.'], fx.repo);
+    git(['commit', '-qm', 'catch-up with the backend test'], fx.repo);
+    const queued = git(['rev-parse', 'HEAD'], fx.repo);
+    git(['checkout', '-q', 'master'], fx.repo);
+    // A nested project of its own inside the repo.
+    fs.mkdirSync(path.join(fx.repo, 'backend', 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(fx.repo, 'backend', 'atris', 'atris.md'), '# backend\n');
+    fs.mkdirSync(path.join(fx.repo, '.atris', 'state'), { recursive: true });
+    const verify = 'node --test test/branch-only.test.js';
+    const backend = path.join(fx.repo, 'backend');
+    const id = taskDb.addTask(fx.db, { title: 'Backend check', workspaceRoot: backend, tag: 'test', metadata: { verify } }).id;
+    taskDb.claimTask(fx.db, { id, claimedBy: 'codex' });
+    taskDb.readyTask(fx.db, { id, actor: 'codex', proof: `${'context '.repeat(35)}Checks: ${verify} passed.` });
+    const row = taskDb.getTask(fx.db, id);
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?')
+      .run(JSON.stringify({ ...row.metadata, start_commit: fx.start, work_commit: fx.work }), id);
+    fs.writeFileSync(path.join(fx.repo, '.atris', 'state', 'autoland-queue.json'), JSON.stringify({
+      schema: 'atris.autoland_queue.v1',
+      entries: { 'codex/builder-branch-only': { branch: 'codex/builder-branch-only', base: 'master', number: 7, pushed: queued, task_ids: [id] } },
+    }));
+    const env = { ...process.env, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
+    delete env.NODE_TEST_CONTEXT;
+    const res = spawnSync(process.execPath, [CLI, 'task', 'certify-verified', '--json'], { cwd: backend, encoding: 'utf8', env, timeout: 240000 });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const cache = taskDb.getTask(fx.db, id).metadata.verify_cache;
+    assert.equal(cache.ok, true, JSON.stringify(JSON.parse(res.stdout).results));
+    assert.equal(cache.code_sha, queued);
+    assert.equal(cache.code_source, 'queued_branch');
+  } finally {
+    taskDb.close();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+test('a scratch copy left by a killed pass is cleaned up by the next one', () => {
+  const fx = project();
+  try {
+    const stale = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-job-check-'));
+    git(['worktree', 'add', '-q', '--detach', stale, fx.work], fx.repo);
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(stale, old, old);
+    reviewJob(fx);
+    cli(fx, ['task', 'certify-verified', '--json']);
+    assert.equal(fs.existsSync(stale), false);
+    assert.equal(git(['worktree', 'list', '--porcelain'], fx.repo).split('\n').filter((l) => l.startsWith('worktree ')).length, 1);
   } finally {
     taskDb.close();
     fs.rmSync(fx.base, { recursive: true, force: true });
