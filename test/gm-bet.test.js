@@ -19,6 +19,12 @@ const { phonePage } = require('../lib/gm-phone-page');
 const TODAY = '2026-10-21';
 const NOW = new Date(2026, 9, 21, 12, 0, 0).getTime();
 
+const TEAM = [
+  ['builder', 'Builder', 'Writes and tests the code'],
+  ['launcher', 'Launcher', 'Writes posts, pages, and launch copy'],
+  ['researcher', 'Deep Researcher', 'Finds ground truth on any topic'],
+];
+
 function workspace({ now = true, briefs = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-ws-'));
   fs.mkdirSync(path.join(root, 'atris', 'wiki', 'briefs'), { recursive: true });
@@ -30,9 +36,9 @@ function workspace({ now = true, briefs = true } = {}) {
       fs.utimesSync(file, new Date(NOW - (10 - i) * 1000), new Date(NOW - (10 - i) * 1000));
     }
   }
-  for (const m of ['builder', 'launcher']) {
+  for (const [m, role, description] of TEAM) {
     fs.mkdirSync(path.join(root, 'atris', 'team', m), { recursive: true });
-    fs.writeFileSync(path.join(root, 'atris', 'team', m, 'MEMBER.md'), `---\nname: ${m}\n---\n`);
+    fs.writeFileSync(path.join(root, 'atris', 'team', m, 'MEMBER.md'), `---\nname: ${m}\nrole: ${role}\ndescription: ${description}\n---\n\n# ${m}\n`);
   }
   return root;
 }
@@ -74,7 +80,7 @@ const fixtureDeps = {
   runSkeptic: async () => ({ ok: true, text: PASS }),
 };
 
-const SOURCE_KEYS = ['now', 'season', 'queue', 'landed', 'installs', 'installs_best', 'release', 'briefs', 'ledger'];
+const SOURCE_KEYS = ['now', 'season', 'landed', 'installs', 'installs_best', 'release', 'team', 'briefs', 'ledger'];
 
 function goodBet(over = {}) {
   return {
@@ -84,10 +90,11 @@ function goodBet(over = {}) {
     target: { metric: 'installs', baseline: 1400, goal: 1700 },
     check_in_days: 9,
     metric_source: 'npm installs for atris',
+    verify: 'test -s docs/gm-phone.md',
     cost: 'about 4 hours of agent time, $0',
     steps: [
-      { text: 'draft the getting started page', detail: 'docs/gm-phone.md, about 300 words', who: 'team', public: false },
-      { text: 'record a 30 second screen capture of the phone page', who: 'team', public: false },
+      { text: 'draft the getting started page', detail: 'docs/gm-phone.md, about 300 words', who: 'team', member: 'builder', public: false },
+      { text: 'record a 30 second screen capture of the phone page', who: 'team', member: 'launcher', public: false },
       { text: 'publish the page and post the recording on x', who: 'you', public: true },
     ],
     ...over,
@@ -110,7 +117,10 @@ test('bundle: every source is read in order, each event carries a real fact', as
   const line = Object.fromEntries(events.map(e => [e.key, e.line]));
   assert.equal(line.now, 'read now.md, last updated 2026-10-20 at 09:00 local time');
   assert.equal(line.season, 'this week: 4 of 6 landed, behind, season 2 won 1 lost, 5 waiting on review, 0 stuck');
-  assert.equal(line.queue, '5 waiting: 2 with work on a branch, 1 already merged but open, 2 placeholders with no check');
+  // the queue split is kept as data for the team, never a fact the owner or the writer sees
+  assert.equal(bundle.sources.queue.fact, '5 waiting: 2 with work on a branch, 1 already merged but open, 2 placeholders with no check');
+  assert.ok(!bundle.facts.some(f => /waiting:/.test(f)));
+  assert.doesNotMatch(gmBet.bundleText(bundle), /jobs waiting on review now|placeholder/);
   assert.equal(line.landed, 'changes merged this week: 4');
   assert.equal(line.installs, 'installs last week: 1,400 (week before: 1,300)');
   assert.equal(line.installs_best, 'best week for installs in the last 2 months: 1,550');
@@ -131,9 +141,9 @@ test('bundle: missing sources are left out, never invented', async () => {
     fetchJson: async () => { throw new Error('offline'); },
     packageName: 'atris',
   });
-  assert.deepEqual(events.map(e => `${e.kind}:${e.key}`), ['skip:now', 'skip:season', 'skip:landed', 'skip:installs', 'skip:release', 'skip:briefs', 'source:ledger']);
-  assert.deepEqual(Object.keys(bundle.sources), ['ledger']);
-  assert.deepEqual(bundle.facts, ['past bets: none yet']);
+  assert.deepEqual(events.map(e => `${e.kind}:${e.key}`), ['skip:now', 'skip:season', 'skip:landed', 'skip:installs', 'skip:release', 'source:team', 'skip:briefs', 'source:ledger']);
+  assert.deepEqual(Object.keys(bundle.sources), ['team', 'ledger']);
+  assert.deepEqual(bundle.facts, ['team: 3 members in atris/team', 'past bets: none yet']);
   const text = gmBet.bundleText(bundle);
   assert.doesNotMatch(text, /now\.md|installs|landed on master|research brief|published|swing/);
   // with nothing readable, a target cannot be set, and the reason says so
@@ -159,9 +169,12 @@ test('best week: the biggest weekly total of the last 8 full weeks', () => {
   assert.deepEqual(gmBet.installTotals(young), [70, 70]);
 });
 
-test('ambition: installs must beat the best recent week, half the review queue must land, with the numbers', async () => {
+test('ambition: installs must beat the best recent week; an owner card never picks the team-only queue metric', async () => {
   const { bundle } = await bundleFor(workspace());
-  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
+  const owner = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
+  assert.equal(owner({ metric: 'queue_landed', baseline: 0, goal: 2 }), 'target metric queue_landed measures team plumbing, not a business move; an owner bet moves installs');
+  // the team can still use it, with its own bar
+  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY, allowTeamMetrics: true }).reasons.join(' | ');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1550 }), 'target goal 1,550 does not beat our best installs week of the last 2 months, 1,550; the goal must be above 1,550');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1551 }), '', 'one more than the best week is enough');
   // 5 jobs wait, 3 have real work (2 are placeholders): at least 2 of those 3 must land, counted from 0
@@ -170,31 +183,33 @@ test('ambition: installs must beat the best recent week, half the review queue m
   assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 3 }), '');
   assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 4 }), 'target goal 4 is more than the 3 waiting jobs with real work');
   const hollow = await bundleFor(workspace(), { ...fixtureDeps, classifyQueue: (root, jobs) => jobs.map(j => ({ ...j, kind: 'placeholder' })) });
-  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 1 } }), { bundle: hollow.bundle, today: TODAY }).reasons.join(' | '), 'none of the 5 waiting jobs has real work behind it, so none can land; pick another metric');
+  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 1 } }), { bundle: hollow.bundle, today: TODAY, allowTeamMetrics: true }).reasons.join(' | '), 'none of the 5 waiting jobs has real work behind it, so none can land; pick another metric');
   // the queue size and changes merged are not metrics: closing jobs empties one, filler jobs inflate the other
   assert.equal(check({ metric: 'waiting', baseline: 3, goal: 1 }), 'target metric must be one we can read here: installs or queue_landed, got "waiting"');
   assert.equal(check({ metric: 'landed', baseline: 4, goal: 40 }), 'target metric must be one we can read here: installs or queue_landed, got "landed"');
   assert.match(check(undefined), /target is missing/);
   const empty = await bundleFor(workspace(), { ...fixtureDeps, seasonFacts: () => ({ landed: 0, target: null, record: null, waiting_on_review: 0, waiting_jobs: [], stuck: 0 }) });
-  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 0 } }), { bundle: empty.bundle, today: TODAY }).reasons.join(' | '), 'nothing is waiting on review, so there is no queue to land; pick another metric');
+  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 0 } }), { bundle: empty.bundle, today: TODAY, allowTeamMetrics: true }).reasons.join(' | '), 'nothing is waiting on review, so there is no queue to land; pick another metric');
   // the check is a week out at least, so every day read is after the start
   assert.match(gmBet.validateBet(goodBet({ check_in_days: 5 }), { bundle, today: TODAY }).reasons.join(' | '), /from 7 to 14, got 5/);
   // the prompt names the readable metrics with their baselines and the bar to clear
   const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
-  assert.match(prompt, /the most ambitious move this team can start this week, one that would beat our best installs week of the last 2 months or land at least half of the jobs waiting on review if it works/);
+  assert.match(prompt, /the most ambitious move this team can start this week, one that would beat our best installs week of the last 2 months if it works/);
+  // business moves only; plumbing is the team's job
+  assert.match(prompt, /Propose only a business move: customers, revenue, reach, or product people use\. Plumbing is the team's job and happens without asking: releases, review queues, unmerged or stuck jobs, test speed, and fixing counts are never the bet\./);
+  assert.match(prompt, /the release is one step for "you" inside the move, never the move itself/);
+  assert.doesNotMatch(prompt, /queue_landed|waiting on review, any idea/);
   assert.match(prompt, /Small safe bets get rejected/);
   assert.ok(prompt.includes('"installs" (npm installs in the 7 days that end on the check date; baseline 1400; the best week in the last 2 months was 1,550, so the goal must be above 1,550)'));
-  assert.ok(prompt.includes('"queue_landed" (jobs waiting on review today with real work behind them (a commit on a branch or on master that touches their own check) that land, accepted or merged, by the check date; placeholders do not count, and closing, dropping, or parking one counts zero; baseline 0; 3 of the 5 waiting jobs have real work, so the goal must be at least 2 of those landed)'));
+
   // the writer and the skeptic both see which jobs count
-  const text = gmBet.bundleText(bundle);
-  assert.ok(text.includes('## jobs waiting on review now (5; only the 3 with real work count toward queue_landed)\nwith work on a branch (counts):\n- fix the flaky login test\n- retire the old sync job\nalready merged on master but the job is still open (counts):\n- add the install page\nplaceholder with no check of its own (does not count):\n- next step toward: members work for hours'));
-  assert.match(text, /- 5 waiting: 2 with work on a branch, 1 already merged but open, 2 placeholders with no check/);
+
   assert.doesNotMatch(prompt, /swing/);
 });
 
 test('ambition: a baseline that is not the real number is turned down', async () => {
   const { bundle } = await bundleFor(workspace());
-  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
+  const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY, allowTeamMetrics: true }).reasons.join(' | ');
   assert.equal(check({ metric: 'installs', baseline: 1511, goal: 2000 }), 'target baseline 1,511 does not match the real number: installs last week is 1,400');
   assert.equal(check({ metric: 'queue_landed', baseline: 3, goal: 2 }), 'target baseline 3 does not match the real number: jobs landed from today\'s review queue is 0');
   assert.match(check({ metric: 'installs', baseline: '1400', goal: 2000 }), /target baseline must be a number/);
@@ -207,7 +222,11 @@ test('a passing bet carries its target, the snapshot of waiting jobs, and one sh
   assert.equal(out.ok, true, out.reason);
   assert.deepEqual(out.bet.target, { metric: 'installs', baseline: 1400, goal: 1700 });
   assert.equal(out.bet.goal_line, 'goal 1,700, best week in 2 months 1,550');
-  const queue = await run(goodBet({ title: 'Review the three oldest waiting jobs with a second checker lane', target: { metric: 'queue_landed', baseline: 0, goal: 2 } }));
+  const queueBet = goodBet({ title: 'Review the three oldest waiting jobs with a second checker lane', target: { metric: 'queue_landed', baseline: 0, goal: 2 } });
+  const refused = await run(queueBet);
+  assert.equal(refused.ok, false, 'an owner card never measures plumbing');
+  assert.match(refused.reason, /measures team plumbing, not a business move/);
+  const queue = await gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), allowTeamMetrics: true, deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(queueBet) }) } });
   assert.equal(queue.ok, true, queue.reason);
   // placeholders are left out of the snapshot
   assert.deepEqual(queue.bet.target, { metric: 'queue_landed', baseline: 0, goal: 2, job_ids: ['t1', 't2', 't5'] });
@@ -257,7 +276,7 @@ test('skeptic: a named blocker becomes the next bet, not a patch on the blocked 
   const release = goodBet({
     title: 'Release 3.72 with the gm game and a two minute install check on a clean laptop',
     target: { metric: 'installs', baseline: 1400, goal: 1600 },
-    steps: [{ text: 'run the release checks on master', who: 'team', public: false }, { text: 'release the merged gm game to npm', who: 'you', public: true }],
+    steps: [{ text: 'run the release checks on master', who: 'team', member: 'builder', public: false }, { text: 'release the merged gm game to npm', who: 'you', public: true }],
   });
   const events = [];
   const out = await gmBet.generateBet({
@@ -277,6 +296,10 @@ test('skeptic: a named blocker becomes the next bet, not a patch on the blocked 
   assert.match(judged[0], /published 3\.71\.3; 67 changes on master not published yet/);
   assert.match(judged[0], /"goal": 1700/);
   assert.doesNotMatch(judged[0], /You are the strategist/);
+  // plumbing as the whole deliverable fails; as one step inside a business move it is fine
+  assert.match(judged[0], /is the deliverable internal plumbing \(a release, a review queue, merging or unsticking jobs, test speed, fixing a count or a dashboard\)\? that is the team's job and never an owner bet, so fail it\./);
+  assert.match(judged[0], /it is not obviously wrong, and it is not plumbing\. otherwise "fail"/);
+  assert.match(prompts[1], /If the blocker is team plumbing \(a release, a merge, a review, a fix to the build or a count\), it is never the bet: keep a business move and put the plumbing in as one step\./);
   // the retry makes the blocker the bet: no patch, no last answer to fix
   assert.ok(prompts[1].includes(`The last idea ("${goodBet().title}") is blocked by: release the gm game, it is merged but not on npm. Don't patch that idea. Make clearing this blocker the bet, as big as this team can do in the window, with its own target.`));
   assert.doesNotMatch(prompts[1], /Your last answer was/);
@@ -333,14 +356,15 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
   assert.match(plain[1], /Your last answer was rejected: a skeptic turned it down: a page alone reaches nobody new\./);
   assert.doesNotMatch(plain[1], /Don't patch that idea/);
   // the writer prompt names the review jam as a blocker for new code
-  assert.match(plain[0], /if the facts show nothing landed this week and jobs are waiting on review, any idea that needs new code merged is blocked by that, so prefer the move that unblocks\./);
+  assert.match(plain[0], /Propose only a business move/);
+  assert.doesNotMatch(plain[0], /prefer the move that unblocks/);
 });
 
 test('trim: a format-only reject gets one free repair turn in the same try, then the skeptic still runs', async () => {
   const root = workspace();
   const attemptsFile = path.join(root, 'attempts.jsonl');
-  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', public: false }, goodBet().steps[2]] });
-  const short = goodBet({ steps: [{ text: 'draft the getting started page and a readme section', who: 'team', public: false }, goodBet().steps[2]] });
+  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
+  const short = goodBet({ steps: [{ text: 'draft the getting started page and a readme section', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
   const prompts = [];
   let judged = 0;
   const events = [];
@@ -377,8 +401,8 @@ test('trim: a format-only reject gets one free repair turn in the same try, then
 test('trim: a trim that changes more than the long fields, or a mixed reject, is a normal reject that uses the try', async () => {
   const root = workspace();
   const attemptsFile = path.join(root, 'attempts.jsonl');
-  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', public: false }, goodBet().steps[2]] });
-  const sneaky = goodBet({ target: { metric: 'installs', baseline: 1400, goal: 1600 }, steps: [{ text: 'draft the page', who: 'team', public: false }, goodBet().steps[2]] });
+  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
+  const sneaky = goodBet({ target: { metric: 'installs', baseline: 1400, goal: 1600 }, steps: [{ text: 'draft the page', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
   const prompts = [];
   const out = await gmBet.generateBet({
     workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
@@ -551,7 +575,7 @@ test('queue split: real work is read from git and the task db, placeholders and 
   assert.equal(queue.fact, '6 waiting: 1 with work on a branch, 1 already merged but open, 2 with a check but no work yet, 1 placeholder with no check, 1 unknown');
   // only real work is snapshotted, and the bar is half of it
   const bundle = await gmBet.readBundle(repo, { deps: { ...base, taskDbPath: dbPath }, ledgerFile: path.join(repo, 'b.jsonl') });
-  assert.match(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3 } }), { bundle, today: TODAY }).reasons.join(' | '), /target goal 3 is more than the 2 waiting jobs with real work/);
+  assert.match(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3 } }), { bundle, today: TODAY, allowTeamMetrics: true }).reasons.join(' | '), /target goal 3 is more than the 2 waiting jobs with real work/);
   // git that cannot tell is unknown, never a guess; a missing db makes every job unknown
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-nogit-'));
   const noGit = await read(bare, { taskDbPath: dbPath });
@@ -618,16 +642,16 @@ test('validate: vague title, bad date, all-you steps, uncited why_now, and a pos
   assert.equal(gmBet.validateBet(goodBet({ check_date: '1999-01-01' }), { bundle, today: TODAY }).ok, true);
   assert.match(check({ steps: goodBet().steps.map(s => ({ ...s, who: 'you' })) }), /no step is for the team/);
   assert.match(check({ why_now: 'people would probably like a nicer first run experience overall.' }), /does not quote a fact/);
-  assert.match(check({ steps: [{ text: 'post the thread on x', who: 'team', public: false }, goodBet().steps[0]] }), /step 1 reaches the outside world/);
-  assert.match(check({ steps: [{ text: 'draft and send the email to 20 users', who: 'team', public: false }, goodBet().steps[0]] }), /step 1 reaches the outside world/);
-  assert.doesNotMatch(check({ steps: [{ text: 'draft the launch post for review', who: 'team', public: false }, goodBet().steps[2]] }), /step 1/);
+  assert.match(check({ steps: [{ text: 'post the thread on x', who: 'team', member: 'builder', public: false }, goodBet().steps[0]] }), /step 1 reaches the outside world/);
+  assert.match(check({ steps: [{ text: 'draft and send the email to 20 users', who: 'team', member: 'builder', public: false }, goodBet().steps[0]] }), /step 1 reaches the outside world/);
+  assert.doesNotMatch(check({ steps: [{ text: 'draft the launch post for review', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] }), /step 1/);
   assert.match(check({ expect: 'more installs' }), /number and a metric/);
   assert.match(check({ metric_source: 'how people feel' }), /not a source we can read/);
   assert.match(check({ why_now: '' }), /why_now is missing/);
   // the card fits one phone screen: short why, at most 5 one-line steps, no paths or commands
   assert.match(check({ why_now: `installs last week were 1,400. ${'and the page is new. '.repeat(8)}` }), /why_now is \d+ characters, over 160/);
   assert.match(check({ why_now: 'installs were 1,400. the page is new. nobody has seen it.' }), /more than two sentences/);
-  const step = { text: 'draft one short section', who: 'team', public: false };
+  const step = { text: 'draft one short section', who: 'team', member: 'builder', public: false };
   assert.match(check({ steps: [step, step, step, step, step, step] }), /steps must have 2 to 5 items/);
   assert.match(check({ steps: [{ ...step, text: 'draft the getting started page and a matching readme section with screenshots' }, goodBet().steps[2]] }), /step 1 is 77 characters, over the 70 that fit one line/);
   assert.match(check({ steps: [{ ...step, text: 'rerun scripts/det/bakeoff.sh on both engines' }, goodBet().steps[2]] }), /step 1 has a file path or a command in it/);
@@ -1004,14 +1028,20 @@ test('do it: starts a real mission with every step and the your-yes rule, then r
   assert.deepEqual(start.slice(0, 2), ['mission', 'start']);
   const objective = start[2];
   assert.match(objective, /^Write a getting started page for atris gm phone/);
-  assert.match(objective, /1\. \[team\] draft the getting started page \(docs\/gm-phone\.md, about 300 words\)/);
+  // each step names its member; the owner hands the next member's step off by name
+  assert.match(objective, /1\. \[builder\] draft the getting started page \(docs\/gm-phone\.md, about 300 words\) 2\. \[launcher\] record a 30 second screen capture/);
   assert.match(objective, /3\. \[your yes\] publish the page and post the recording on x/);
+  const betId = h.ledger().find(r => r.mission_id).id;
+  assert.ok(objective.includes(`handoffs: you are builder; do your steps, then pass each step that belongs to another member with atris member handoff builder launcher "[${betId}] record a 30 second screen capture of the phone page".`));
+  assert.ok(objective.includes('done means this check passes: test -s docs/gm-phone.md'));
   assert.ok(objective.includes(gmBet.YES_RULE));
   const flag = name => start[start.indexOf(name) + 1];
-  assert.equal(flag('--owner'), 'launcher');
+  // the first team step's member starts it; the lane still comes from what the bet asks for
+  assert.equal(flag('--owner'), 'builder');
   assert.equal(flag('--lane'), 'launch');
   assert.equal(flag('--runner'), 'claude');
-  assert.equal(flag('--verify'), 'git diff --check');
+  // the bet's own check, not the formatting check
+  assert.equal(flag('--verify'), 'test -s docs/gm-phone.md');
   assert.ok(start.includes('--json'));
   assert.deepEqual(h.cli[1], ['mission', 'run', 'mission-2026-10-21-write-a-getting-abc', '--detach', '--json']);
   assert.equal(h.d.view().mission.line, 'launcher has it. the mission is running now.');
@@ -1040,14 +1070,57 @@ test('do it: a mission that will not start leaves the bet ready and says why', a
   assert.equal(cli.length, 1);
 });
 
-test('pickOwner: code bets go to the builder, everything unclear to the mission lead', () => {
+test('pickOwner: the first team step\'s member starts the job; the lane comes from what the bet asks for', () => {
   const root = workspace();
-  const code = goodBet({ title: 'Add an atris gm phone demo flag that seeds sample cards', steps: [{ text: 'build the flag and a test', who: 'team', public: false }, { text: 'release it', who: 'you', public: true }] });
+  const code = goodBet({ title: 'Add an atris gm phone demo flag that seeds sample cards', steps: [{ text: 'build the flag and a test', who: 'team', member: 'builder', public: false }, { text: 'release it', who: 'you', public: true }] });
   assert.deepEqual(gmBet.pickOwner(code, root), { owner: 'builder', lane: 'code' });
-  const post = goodBet({ title: 'Write a launch thread about the phone page for x', steps: [{ text: 'draft the thread', who: 'team', public: false }] });
-  assert.deepEqual(gmBet.pickOwner(post, root), { owner: 'launcher', lane: 'launch' });
-  const vague = goodBet({ title: 'Call three customers about renewal pricing tiers', steps: [{ text: 'list three customers from the ledger', who: 'team', public: false }] });
-  assert.deepEqual(gmBet.pickOwner(vague, root), { owner: 'mission-lead', lane: 'workspace' });
+  const post = goodBet({ title: 'Write a launch thread about the phone page for x', steps: [{ text: 'find three phone page facts worth a thread', who: 'team', member: 'researcher', public: false }, { text: 'draft the thread', who: 'team', member: 'launcher', public: false }] });
+  assert.deepEqual(gmBet.pickOwner(post, root), { owner: 'researcher', lane: 'launch' });
+  // a member that is not on this team is not trusted; the old pick stands
+  const ghost = goodBet({ title: 'Call three customers about renewal pricing tiers', steps: [{ text: 'list three customers from the ledger', who: 'team', member: 'sales-bot', public: false }] });
+  assert.deepEqual(gmBet.pickOwner(ghost, root), { owner: 'mission-lead', lane: 'workspace' });
+  const legacy = goodBet({ title: 'Write a launch thread about the phone page for x', steps: [{ text: 'draft the thread', who: 'team', public: false }] });
+  assert.deepEqual(gmBet.pickOwner(legacy, root), { owner: 'launcher', lane: 'launch' }, 'a bet from before members keeps the keyword pick');
+});
+
+// ---- the real team, step members, a real check ---------------------------------------------
+
+test('team: the writer sees every member with a one-line role, and each team step must name a real member', async () => {
+  const { bundle, events } = await bundleFor(workspace());
+  assert.equal(events.find(e => e.key === 'team').line, 'team: 3 members in atris/team');
+  const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.ok(prompt.includes('## the team (a team step names one of these as its member)\n- builder: Builder. Writes and tests the code\n- launcher: Launcher. Writes posts, pages, and launch copy\n- researcher: Deep Researcher. Finds ground truth on any topic'));
+  assert.match(prompt, /member: every team step names the one member of the team below who does it/);
+  assert.match(prompt, /"who": "team", "member": "builder"/);
+  const check = steps => gmBet.validateBet(goodBet({ steps }), { bundle, today: TODAY }).reasons.join(' | ');
+  const you = goodBet().steps[2];
+  assert.equal(check([{ text: 'draft the page', who: 'team', member: 'sales-bot', public: false }, you]), 'step 1 member "sales-bot" is not on the team; use a name from the team list');
+  assert.equal(check([{ text: 'draft the page', who: 'team', public: false }, you]), 'step 1 has no member; name the team member who does it');
+  assert.equal(check([{ text: 'find three facts for the page', who: 'team', member: 'researcher', public: false }, you]), '', 'a you step needs no member');
+  // with no team folder, steps name no member and nothing is turned down for it
+  const bare = await bundleFor(workspace(), { ...fixtureDeps, readTeam: () => null });
+  assert.equal(gmBet.validateBet(goodBet({ steps: [{ text: 'draft the page', who: 'team', public: false }, you] }), { bundle: bare.bundle, today: TODAY }).ok, true);
+  // a kept bet carries each member
+  const root = workspace();
+  const out = await gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }) } });
+  assert.deepEqual(out.bet.steps.map(st => st.member || null), ['builder', 'launcher', null]);
+  assert.equal(out.bet.verify, 'test -s docs/gm-phone.md');
+});
+
+test('verify: a check that is always true, or only checks formatting, is turned down; a real one passes', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const check = verify => gmBet.validateBet(goodBet({ verify }), { bundle, today: TODAY }).reasons.join(' | ');
+  assert.match(check(undefined), /^verify is missing; give one command that proves the deliverable/);
+  assert.match(check(''), /^verify is missing/);
+  for (const trivial of ['true', ':', 'exit 0', 'echo done', 'printf ok', 'git diff --check', 'git diff --check && true', 'test 1 -eq 1', '[ 2 -gt 1 ]']) {
+    assert.match(check(trivial), /is always true or only checks formatting; it must prove the deliverable/, trivial);
+  }
+  assert.match(check('node --test test/gm-phone.test.js || true'), /can never fail \(it ends in \|\| true\)/);
+  for (const real of ['node --test test/gm-phone.test.js', 'test -s docs/gm-phone.md', 'test "$(wc -l < atris/learnings.jsonl)" -ge 20', 'git diff --check && node --test test/gm-bet.test.js']) {
+    assert.equal(check(real), '', real);
+  }
+  // the writer is told what a real check looks like
+  assert.match(gmBet.buildPrompt(bundle, { today: TODAY }), /verify: one shell command, run from the repo root, that exits 0 only when the deliverable exists and works/);
 });
 
 // ---- flow state: jobs in flight, done and yes cards in the same deck ----------------------
@@ -1092,8 +1165,15 @@ function jobDesk(root, missions, over = {}) {
     generate: gen.generate,
     readMissions: () => new Map(Object.entries(missions)),
     readReceipt: m => (m.receipt_path ? RECEIPT : null),
+    readHandoffs: () => over.handoffs || [],
+    reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
+      if (args[0] === 'engine' && args[1] === 'ask') {
+        const review = over.review || { verdict: 'pass', reason: 'the page is there and the clip plays.' };
+        if (review.code) return { code: review.code, stdout: '', stderr: 'codex is out of credits' };
+        return { code: 0, stdout: JSON.stringify({ schema: 'atris.engine_ask.v1', answers: [{ engine: 'codex', ok: true, stdout: JSON.stringify(review) }] }) };
+      }
       if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
       if (args[0] === 'decide') return { code: 0, stdout: '{"ok":true}' };
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ mission: { id: 'm-new', owner: 'builder' } }) };
@@ -1119,8 +1199,12 @@ test('deck: a yes comes first, then a finished job, then the next bet; nothing i
     'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'atris/runs/r1.json', human_asks: [] },
   };
   const h = jobDesk(root, missions);
-  // the finished job is written once, with its proof; the bet stays doing so it is still scored
+  // a finished job is reviewed by the roster's reviewer before it counts as done
+  assert.deepEqual(h.d.view().working.map(w => w.owner).sort(), ['codex (reviewing)', 'launcher']);
+  await h.d.settle();
+  // then it is written once, with its proof and the review; the bet stays doing so it is still scored
   const finished = h.ledger().find(r => r.id === 'b-done');
+  assert.deepEqual(finished.review, { engine: 'codex', verdict: 'pass', reason: 'the page is there and the clip plays.' });
   assert.deepEqual([finished.status, finished.mission_result, finished.mission_checked, finished.mission_proof, finished.mission_changed], ['doing', 'done', 'passed', 'atris/runs/r1.json', 'added the getting started page and a 30 second clip.']);
   h.d.pollJobs();
   assert.equal(fs.readFileSync(file, 'utf8').split('\n').filter(l => l.includes('"mission_result"')).length, 1, 'read again, not written again');
@@ -1138,7 +1222,7 @@ test('deck: a yes comes first, then a finished job, then the next bet; nothing i
   assert.equal(h.d.view().kind, 'yes');
   const second = h.d.next();
   assert.equal(second.kind, 'done');
-  assert.deepEqual(second.job, { title: 'Write the getting started page', owner: 'builder', failed: false, halted: false, lines: ['added the getting started page and a 30 second clip.'], proof: 'proof: atris/runs/r1.json', check: 'passed its check' });
+  assert.deepEqual(second.job, { title: 'Write the getting started page', owner: 'builder', failed: false, halted: false, lines: ['added the getting started page and a 30 second clip.'], proof: 'proof: atris/runs/r1.json', check: 'passed its check', review: 'codex reviewed it: pass. the page is there and the clip plays.' });
   const third = h.d.next();
   assert.equal(third.kind, 'bet');
   assert.equal(third.bet.title, TITLES[0]);
@@ -1198,10 +1282,59 @@ test('yes and send back: a yes answers the right ask through atris decide; a fai
   const root2 = workspace();
   doingRow(path.join(root2, 'gm-bets.jsonl'), root2, 'b-ok', 'm-ok', 'Write the getting started page');
   const ok = jobDesk(root2, { 'm-ok': { id: 'm-ok', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } });
+  await ok.d.settle();
+  ok.cli.length = 0;
   ok.d.next();
   assert.deepEqual(await ok.d.sendBack(), { ok: false, reason: 'gone', message: 'there is no failed job on screen' });
   assert.deepEqual(ok.d.nice(), { ok: true, ack: 'nice.' });
   assert.equal(ok.cli.length, 0, 'nice runs nothing');
+});
+
+test('review: a failed review is a failed job; a review that cannot run is tried again, then counts as failed with why', async () => {
+  const done = { 'm1': { id: 'm1', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } };
+  const setup = () => { const root = workspace(); doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm1', 'Write the getting started page'); return root; };
+  const failed = jobDesk(setup(), done, { review: { verdict: 'fail', reason: 'the page exists but the clip link is broken.' } });
+  await failed.d.settle();
+  const card = failed.d.next();
+  assert.deepEqual([card.kind, card.job.failed, card.job.review], ['done', true, 'codex reviewed it: fail. the page exists but the clip link is broken.']);
+  // the reviewer reads the bet, its check, and what the worker says changed, and is asked for pass or fail
+  const ask = failed.cli.find(a => a[0] === 'engine');
+  assert.deepEqual([ask[1], ask[3], ask[4], ask[5], ask[6], ask[7]], ['ask', '--engine', 'codex', '--timeout', '900', '--json']);
+  assert.match(ask[2], /The check that had to pass: test -s docs\/gm-phone\.md/);
+  assert.match(ask[2], /What the worker says changed: added the getting started page and a 30 second clip\./);
+  assert.match(ask[2], /\{"verdict": "pass", "reason"/);
+  // the review cannot run: tried on each read, and after 3 it counts as failed with why
+  const root = setup();
+  const down = jobDesk(root, done, { review: { code: 1 } });
+  await down.d.settle();
+  assert.equal(down.ledger()[0].mission_result, undefined, 'one miss is not a verdict');
+  for (let i = 0; i < 2; i += 1) { down.d.pollJobs(); await down.d.settle(); }
+  const gave = down.ledger()[0];
+  assert.deepEqual([gave.mission_result, gave.review_tries, gave.review], ['failed', 3, { engine: 'codex', verdict: 'could not run', reason: 'the review exited with code 1' }]);
+  // no reviewer in the roster is said plainly
+  const none = jobDesk(setup(), done, { reviewer: null });
+  for (let i = 0; i < 2; i += 1) none.d.pollJobs();
+  assert.equal(none.ledger()[0].review.reason, 'no reviewer is set in the engine roster');
+  // a halted job is not reviewed; it is failed as it stands
+  const halted = jobDesk(setup(), { 'm1': { id: 'm1', owner: 'builder', status: 'stopped', stop_reason: 'stuck', human_asks: [] } });
+  assert.equal(halted.cli.length, 0);
+  assert.equal(halted.ledger()[0].mission_result, 'failed');
+});
+
+test('working: the member who has each job now follows its bet-tagged handoffs', () => {
+  const root = workspace();
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm1', 'Write the launch thread for the phone page');
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b2', 'm2', 'Record the demo video of the front office');
+  const missions = {
+    m1: { id: 'm1', owner: 'researcher', status: 'running', human_asks: [] },
+    m2: { id: 'm2', owner: 'builder', status: 'running', human_asks: [] },
+  };
+  const handoffs = [
+    { from: 'researcher', to: 'launcher', summary: '[b1] draft the thread', status: 'open' },
+    { from: 'builder', to: 'researcher', summary: 'an older handoff about something else', status: 'open' },
+  ];
+  const h = jobDesk(root, missions, { handoffs });
+  assert.deepEqual(h.d.view().working.map(w => [w.title, w.owner]), [['Write the launch thread for the phone page', 'launcher'], ['Record the demo video of the front office', 'builder']]);
 });
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
@@ -1347,7 +1480,8 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.match(html, /prefers-reduced-motion: reduce/);
   assert.match(html, /\/bet\/think/);
   assert.match(html, /\/bet\/do/);
-  assert.match(html, /'your yes' : 'team'/);
+  // a team step shows its member in place of "team"
+  assert.match(html, /st\.who === 'you' \? 'your yes' : \(st\.member \|\| 'team'\)/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
   // the card grows by at most one short line: the goal and the swing it beats, under expect

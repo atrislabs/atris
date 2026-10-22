@@ -101,16 +101,19 @@ function showHelp() {
   console.log('  the published version and how much on master is not in it, the newest');
   console.log('  research briefs, and past bets with won or lost, then proposes one new');
   console.log('  move with a target number, a check date (it picks the number of days,');
-  console.log('  7 to 14), and steps. An installs goal must beat the best recent week; a');
-  console.log('  review queue goal must land at least half of the waiting jobs with real');
-  console.log('  work behind them (a commit touching their own check); placeholders and');
-  console.log('  closed or dropped jobs count zero. A second model then');
-  console.log('  checks that the move makes sense. Bets the team is doing are scored won');
-  console.log('  or lost from the same numbers once the check date is over.');
+  console.log('  7 to 14), a check that proves the deliverable, and steps, each team step');
+  console.log('  naming a member of atris/team. Bets are business moves only (customers,');
+  console.log('  revenue, reach, product people use); plumbing is the team\'s job. An');
+  console.log('  installs goal must beat the best recent week. A second model then checks');
+  console.log('  that the move makes sense. When a job finishes, the reviewer in the engine');
+  console.log('  roster reads the work before it counts as done. Bets the team is doing are');
+  console.log('  scored won or lost from the same numbers once the check date is over.');
   console.log('  The Mac keeps 3 bets ready so a tap rarely waits; tap the orb again for');
   console.log('  the next one. Every answer is saved to ~/.atris/state/gm-bet-attempts.jsonl.');
-  console.log('  do it starts a mission: atris mission start "<bet and steps>"');
-  console.log('  --owner <member> --runner claude, then atris mission run <id> --detach.');
+  console.log('  do it starts a mission: atris mission start "<bet, steps, handoffs>"');
+  console.log('  --owner <first step member> --verify "<the bet check>" --runner claude,');
+  console.log('  then atris mission run <id> --detach. later steps go to their member with');
+  console.log('  atris member handoff <from> <to> "...".');
   console.log('  steps marked your yes become decision cards; yes sends');
   console.log('  atris mission ping <id> "..." --from gm-phone and nothing else.');
   console.log('  Bets are kept in ~/.atris/state/gm-bets.jsonl.');
@@ -1512,6 +1515,8 @@ async function gmPhone(args = []) {
         log,
         // read the started bets' missions every 25 seconds, read-only
         pollMs: gmBet.JOB_POLL_MS,
+        // the roster's reviewer gets up to 16 minutes to read the finished work
+        reviewCli: gmBet.makeCliRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot, timeoutMs: 16 * 60 * 1000 }),
       });
     },
   });
