@@ -29,10 +29,10 @@ const {
   parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
-  runVerifyCommandCached,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -10645,7 +10645,10 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     reason: (result && result.reason) || null,
     ran_at: new Date().toISOString(),
     ran_by: actor,
-    code_sha: currentHeadSha(workspaceRoot),
+    // The commit the check ran on: the job's own code when it has some,
+    // else the folder the job lives in.
+    code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
+    code_source: (result && result.code_source) || 'checkout',
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
@@ -10674,8 +10677,12 @@ function cachedVerifyVerdict(task, root) {
   const metadata = (task && task.metadata) || {};
   const cache = metadata.verify_cache;
   if (!cache || typeof cache !== 'object') return { fresh: false, command: metadata.verify || null };
+  // A check run on the job's own code stays fresh until that code changes.
+  const currentCode = cache.code_source && cache.code_source !== 'checkout'
+    ? checkedCodeSha(task, root)
+    : currentHeadSha(task.workspace_root || root);
   const fresh = cache.command === metadata.verify
-    && (!cache.code_sha || cache.code_sha === currentHeadSha(task.workspace_root || root));
+    && (!cache.code_sha || cache.code_sha === currentCode);
   return { ...cache, fresh: Boolean(fresh) };
 }
 
@@ -10726,7 +10733,7 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
-  const result = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+  const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
   stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
@@ -10827,7 +10834,7 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
-    if (failedOnSameCode(task, verify, currentHeadSha(task.workspace_root || process.cwd()))) {
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
       results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
       continue;
     }
@@ -10836,7 +10843,7 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+    const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
     stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
