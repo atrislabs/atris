@@ -198,6 +198,27 @@ test('off the main branch is not zen, and extra team paths come from .atris/zen.
   }
 });
 
+test('a checkout set to bare by mistake is named, with the undo', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-bare-')));
+  try {
+    git(dir, 'init', '-q');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(path.join(dir, 'src', 'app.js'), 'one\n');
+    git(dir, 'config', 'core.bare', 'true');
+    for (const cwd of [dir, path.join(dir, 'src')]) {
+      for (const args of [['--check'], []]) {
+        const cli = runCli(cwd, 'zen', ...args, '--no-fetch');
+        assert.equal(cli.status, 2);
+        assert.match(cli.stdout, /set to bare \(core\.bare is true\), so it ignores the files in this folder; git config core\.bare false undoes it/);
+        assert.doesNotMatch(cli.stdout, /not a git repository/);
+      }
+    }
+    assert.equal(git(dir, 'config', 'core.bare'), 'true', 'zen only names it, never flips it');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('outside a git repo zen says it cannot check', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-nogit-'));
   try {
