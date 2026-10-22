@@ -56,7 +56,7 @@ function npmBody() {
 const PASS = JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'a getting started page is what new installs hit first.' });
 
 const fixtureDeps = {
-  seasonFacts: () => ({ landed: 4, target: { landed: 4, goal: 6, verdict: 'behind' }, record: { won: 2, lost: 1 }, waiting_on_review: 3, stuck: 0 }),
+  seasonFacts: () => ({ landed: 4, target: { landed: 4, goal: 6, verdict: 'behind' }, record: { won: 2, lost: 1 }, waiting_on_review: 3, waiting_jobs: [{ id: 't1', title: 'fix the flaky login test' }, { id: 't2', title: 'add the install page' }, { id: 't3', title: 'retire the old sync job' }], stuck: 0 }),
   gitLanded: () => ['gm phone: decision cards', 'bench: agy engine', 'second review runs joined checks', 'scoped token fix'],
   fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? { version: '3.71.3' } : npmBody()),
   releaseGap: () => ({ count: 67 }),
@@ -148,28 +148,32 @@ test('best week: the biggest weekly total of the last 8 full weeks', () => {
   assert.deepEqual(gmBet.installTotals(young), [70, 70]);
 });
 
-test('ambition: installs must beat the best recent week, the review queue must drop to half, with the numbers', async () => {
+test('ambition: installs must beat the best recent week, half the review queue must land, with the numbers', async () => {
   const { bundle } = await bundleFor(workspace());
   const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1550 }), 'target goal 1,550 does not beat our best installs week of the last 2 months, 1,550; the goal must be above 1,550');
   assert.equal(check({ metric: 'installs', baseline: 1400, goal: 1551 }), '', 'one more than the best week is enough');
-  // the fixture season has 3 jobs waiting on review, so the goal is 1 or fewer
-  assert.equal(check({ metric: 'waiting', baseline: 3, goal: 2 }), 'target goal 2 does not cut the review queue in half: 3 wait now, so the goal must be 1 or fewer');
-  assert.equal(check({ metric: 'waiting', baseline: 3, goal: 1 }), '');
-  assert.equal(check({ metric: 'waiting', baseline: 3, goal: 0 }), '');
-  // changes merged is not a metric any more: filler jobs inflate it
-  assert.equal(check({ metric: 'landed', baseline: 4, goal: 40 }), 'target metric must be one we can read here: installs or waiting, got "landed"');
+  // the fixture season has 3 jobs waiting on review: at least 2 must land, counted from 0
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 1 }), 'target goal 1 does not land half the review queue: 3 wait now, so the goal must be at least 2');
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 2 }), '');
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 3 }), '');
+  assert.equal(check({ metric: 'queue_landed', baseline: 0, goal: 4 }), 'target goal 4 is more than the 3 jobs waiting now');
+  // the queue size and changes merged are not metrics: closing jobs empties one, filler jobs inflate the other
+  assert.equal(check({ metric: 'waiting', baseline: 3, goal: 1 }), 'target metric must be one we can read here: installs or queue_landed, got "waiting"');
+  assert.equal(check({ metric: 'landed', baseline: 4, goal: 40 }), 'target metric must be one we can read here: installs or queue_landed, got "landed"');
   assert.match(check(undefined), /target is missing/);
-  const empty = await bundleFor(workspace(), { ...fixtureDeps, seasonFacts: () => ({ landed: 0, target: null, record: null, waiting_on_review: 0, stuck: 0 }) });
-  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'waiting', baseline: 0, goal: 0 } }), { bundle: empty.bundle, today: TODAY }).reasons.join(' | '), 'nothing is waiting on review, so there is no queue to cut; pick another metric');
+  const empty = await bundleFor(workspace(), { ...fixtureDeps, seasonFacts: () => ({ landed: 0, target: null, record: null, waiting_on_review: 0, waiting_jobs: [], stuck: 0 }) });
+  assert.equal(gmBet.validateBet(goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 0 } }), { bundle: empty.bundle, today: TODAY }).reasons.join(' | '), 'nothing is waiting on review, so there is no queue to land; pick another metric');
   // the check is a week out at least, so every day read is after the start
   assert.match(gmBet.validateBet(goodBet({ check_in_days: 5 }), { bundle, today: TODAY }).reasons.join(' | '), /from 7 to 14, got 5/);
   // the prompt names the readable metrics with their baselines and the bar to clear
   const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
-  assert.match(prompt, /the most ambitious move this team can start this week, one that would beat our best installs week of the last 2 months or cut the review queue in half if it works/);
+  assert.match(prompt, /the most ambitious move this team can start this week, one that would beat our best installs week of the last 2 months or land at least half of the jobs waiting on review if it works/);
   assert.match(prompt, /Small safe bets get rejected/);
   assert.ok(prompt.includes('"installs" (npm installs in the 7 days that end on the check date; baseline 1400; the best week in the last 2 months was 1,550, so the goal must be above 1,550)'));
-  assert.ok(prompt.includes('"waiting" (jobs waiting on review, counted on the check date; baseline 3; the goal must be 1 or fewer, half of today or less)'));
+  assert.ok(prompt.includes('"queue_landed" (jobs waiting on review today that land (accepted or merged) by the check date; closing, dropping, or parking one counts zero; baseline 0; 3 wait now, so the goal must be at least 2 of them landed)'));
+  // the writer and the skeptic both see which jobs count
+  assert.match(gmBet.bundleText(bundle), /## jobs waiting on review now \(3; only these count toward queue_landed\)\n- fix the flaky login test\n- add the install page\n- retire the old sync job/);
   assert.doesNotMatch(prompt, /swing/);
 });
 
@@ -177,20 +181,21 @@ test('ambition: a baseline that is not the real number is turned down', async ()
   const { bundle } = await bundleFor(workspace());
   const check = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY }).reasons.join(' | ');
   assert.equal(check({ metric: 'installs', baseline: 1511, goal: 2000 }), 'target baseline 1,511 does not match the real number: installs last week is 1,400');
-  assert.equal(check({ metric: 'waiting', baseline: 22, goal: 1 }), 'target baseline 22 does not match the real number: jobs waiting on review now is 3');
+  assert.equal(check({ metric: 'queue_landed', baseline: 3, goal: 2 }), 'target baseline 3 does not match the real number: jobs landed from today\'s review queue is 0');
   assert.match(check({ metric: 'installs', baseline: '1400', goal: 2000 }), /target baseline must be a number/);
 });
 
-test('a passing bet carries its target and one short goal line for the card', async () => {
+test('a passing bet carries its target, the snapshot of waiting jobs, and one short goal line for the card', async () => {
   const root = workspace();
   const run = bet => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(bet) }) } });
   const out = await run(goodBet());
   assert.equal(out.ok, true, out.reason);
   assert.deepEqual(out.bet.target, { metric: 'installs', baseline: 1400, goal: 1700 });
   assert.equal(out.bet.goal_line, 'goal 1,700, best week in 2 months 1,550');
-  const queue = await run(goodBet({ title: 'Review the three oldest waiting jobs with a second checker lane', target: { metric: 'waiting', baseline: 3, goal: 1 } }));
+  const queue = await run(goodBet({ title: 'Review the three oldest waiting jobs with a second checker lane', target: { metric: 'queue_landed', baseline: 0, goal: 2 } }));
   assert.equal(queue.ok, true, queue.reason);
-  assert.equal(queue.bet.goal_line, 'goal 1 or fewer, 3 waiting now');
+  assert.deepEqual(queue.bet.target, { metric: 'queue_landed', baseline: 0, goal: 2, job_ids: ['t1', 't2', 't3'] });
+  assert.equal(queue.bet.goal_line, 'goal 2 of the 3 waiting jobs landed');
   assert.ok(out.bet.goal_line.length <= 48 && queue.bet.goal_line.length <= 48, 'fits one short line on a phone');
 });
 
@@ -315,6 +320,69 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
   assert.match(plain[0], /if the facts show nothing landed this week and jobs are waiting on review, any idea that needs new code merged is blocked by that, so prefer the move that unblocks\./);
 });
 
+test('trim: a format-only reject gets one free repair turn in the same try, then the skeptic still runs', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', public: false }, goodBet().steps[2]] });
+  const short = goodBet({ steps: [{ text: 'draft the getting started page and a readme section', who: 'team', public: false }, goodBet().steps[2]] });
+  const prompts = [];
+  let judged = 0;
+  const events = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    deps: {
+      ...fixtureDeps,
+      runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? long : short) }; },
+      runSkeptic: async () => { judged += 1; return { ok: true, text: PASS }; },
+    },
+  });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.attempts, 1, 'the trim did not use up a try');
+  assert.equal(judged, 1, 'the skeptic still judged the trimmed bet');
+  assert.equal(out.bet.steps[0].text, 'draft the getting started page and a readme section');
+  // the trim turn gets only the reasons and the last answer, and may change only those fields
+  assert.match(prompts[1], /^Your last answer below broke only these length or sentence limits:\n- step 1 is 77 characters, over the 70 that fit one line\n/);
+  assert.match(prompts[1], /Shorten only those fields so they fit\. Change nothing else/);
+  assert.match(prompts[1], /Your last answer:\n\{"title":"Write a getting started page/);
+  assert.doesNotMatch(prompts[1], /You are the strategist/);
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.map(r => [r.kind, r.attempt, r.strategy, r.passed]), [['writer', 1, 'first', false], ['writer', 1, 'trim', true], ['skeptic', 1, 'trim', true]]);
+  assert.ok(events.some(e => e.kind === 'model' && e.line === 'asking for the same bet, shorter'));
+  // what counts as format only: lengths and sentence counts, nothing else
+  const { bundle } = await bundleFor(workspace());
+  const v = over => gmBet.validateBet(goodBet(over), { bundle, today: TODAY });
+  assert.equal(v({ why_now: 'installs were 1,400. the page is new. nobody has seen it.' }).formatOnly, true);
+  assert.equal(v({ cost: 'x'.repeat(201) }).formatOnly, true);
+  assert.equal(v({ title: `Write a getting started page for atris gm phone ${'with more words '.repeat(7)}` }).formatOnly, true);
+  assert.equal(v({ title: 'Optimize the onboarding flow for new users this week', cost: 'x'.repeat(201) }).formatOnly, false, 'a vague verb is not a length problem');
+  assert.equal(v({ check_in_days: 3 }).formatOnly, false);
+});
+
+test('trim: a trim that changes more than the long fields, or a mixed reject, is a normal reject that uses the try', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const long = goodBet({ steps: [{ text: 'draft the getting started page and a matching readme section with screenshots', who: 'team', public: false }, goodBet().steps[2]] });
+  const sneaky = goodBet({ target: { metric: 'installs', baseline: 1400, goal: 1600 }, steps: [{ text: 'draft the page', who: 'team', public: false }, goodBet().steps[2]] });
+  const prompts = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 2 ? sneaky : (prompts.length === 1 ? long : goodBet())) }; } },
+  });
+  assert.equal(out.ok, true, out.reason);
+  assert.equal(out.attempts, 2, 'the bad trim used up the first try');
+  assert.match(prompts[2], /Your last answer was rejected: the trim changed more than the fields over a limit/);
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.filter(r => r.kind === 'writer').map(r => [r.attempt, r.strategy, r.passed]), [[1, 'first', false], [1, 'trim', false], [2, 'patch', true]]);
+  // a reject with a real problem besides a length gets no trim turn
+  const mixed = [];
+  await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    deps: { ...fixtureDeps, runModel: async (prompt) => { mixed.push(prompt); return { ok: true, text: JSON.stringify(mixed.length === 1 ? { ...long, check_in_days: 3 } : goodBet()) }; } },
+  });
+  assert.doesNotMatch(mixed[1], /broke only these length or sentence limits/);
+  assert.match(mixed[1], /Your last answer was rejected: .*check_in_days must be a whole number from 7 to 14, got 3/);
+});
+
 test('skeptic: two fails end honestly; pass without moving the number is a fail; a broken skeptic stops the bet', async () => {
   const root = workspace();
   const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
@@ -348,11 +416,13 @@ test('scorer: doing bets are scored won or lost from the same source once due; p
   const root = workspace();
   const file = path.join(root, 'bets.jsonl');
   const bet = (title, over = {}) => ({ ...goodBet({ title }), check_date: '2026-10-10', ...over });
-  const queue = { metric: 'waiting', baseline: 22, goal: 11 };
+  const queue = { metric: 'queue_landed', baseline: 0, goal: 11, job_ids: Array.from({ length: 22 }, (_, i) => `job-${i}`) };
   ledgerRow(file, root, 'won', { status: 'doing', bet: bet('Write the gm phone getting started page') });
-  ledgerRow(file, root, 'lost', { status: 'doing', bet: bet('Run two review lanes on the waiting jobs', { target: queue, check_date: '2026-10-21' }) });
+  ledgerRow(file, root, 'lost', { status: 'doing', bet: bet('Run two review lanes on the waiting jobs', { target: queue, check_date: '2026-10-19' }) });
   ledgerRow(file, root, 'qwon', { status: 'doing', bet: bet('Add a second checker to the review queue', { target: queue, check_date: '2026-10-20' }) });
-  ledgerRow(file, root, 'qlate', { status: 'doing', bet: bet('Clear the review queue by friday', { target: queue, check_date: '2026-10-15' }) });
+  ledgerRow(file, root, 'qtoday', { status: 'doing', bet: bet('Land half the queue by today', { target: queue, check_date: TODAY }) });
+  ledgerRow(file, root, 'qnoids', { status: 'doing', bet: bet('A queue bet with no snapshot', { target: { metric: 'queue_landed', baseline: 0, goal: 11 } }) });
+  ledgerRow(file, root, 'waiting', { status: 'doing', bet: bet('Cut the review queue in half', { target: { metric: 'waiting', baseline: 22, goal: 11 } }) });
   ledgerRow(file, root, 'landed', { status: 'doing', bet: bet('Land forty small fixes', { target: { metric: 'landed', baseline: 4, goal: 40 } }) });
   ledgerRow(file, root, 'notarget', { status: 'doing', bet: bet('An old bet from before targets', { target: undefined }) });
   ledgerRow(file, root, 'proposed', { status: 'proposed', bet: bet('A proposed bet nobody started') });
@@ -361,23 +431,27 @@ test('scorer: doing bets are scored won or lost from the same source once due; p
   ledgerRow(file, root, 'late', { status: 'doing', bet: bet('A bet npm has not counted yet', { check_date: '2026-10-19' }) });
   ledgerRow(file, root, 'toolate', { status: 'doing', bet: bet('A bet npm never counted', { check_date: '2026-10-01' }) });
   const reads = [];
-  const readMetric = async (metric, { start, end }) => {
+  const readMetric = async (metric, { start, end, target }) => {
     reads.push([metric, start, end]);
-    if (metric === 'waiting') return { value: end === TODAY ? 14 : 9 };
+    if (metric === 'queue_landed') {
+      if (!target.job_ids) return { error: 'the bet has no snapshot of the waiting jobs to score', transient: false };
+      return { value: end === '2026-10-19' ? 7 : 12 };
+    }
     if (end === '2026-10-19' || end === '2026-10-01') return { error: `npm has not counted every day up to ${end} yet`, transient: true };
     return { value: 1800 };
   };
   const events = [];
   const scored = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { readMetric }, emit: e => events.push(e) });
-  assert.deepEqual(scored.map(s => [s.id, s.status]), [['won', 'won'], ['lost', 'lost'], ['qwon', 'won'], ['qlate', 'unreadable'], ['landed', 'unreadable'], ['notarget', 'unreadable'], ['toolate', 'unreadable']]);
+  assert.deepEqual(scored.map(s => [s.id, s.status]), [['won', 'won'], ['lost', 'lost'], ['qwon', 'won'], ['qnoids', 'unreadable'], ['waiting', 'unreadable'], ['landed', 'unreadable'], ['notarget', 'unreadable'], ['toolate', 'unreadable']]);
   assert.deepEqual(reads.find(r => r[2] === '2026-10-10'), ['installs', '2026-10-04', '2026-10-10'], 'the 7 days that end on the check date');
-  assert.ok(!reads.some(r => r[2] === '2026-10-25' || (r[0] === 'installs' && r[2] === TODAY)), 'a bet not yet due, or a week not yet over, is not read');
+  assert.ok(!reads.some(r => r[2] === '2026-10-25' || r[2] === TODAY), 'a bet not yet due, or a check date not yet over, is not read');
   const byId = Object.fromEntries(gmBet.readLedger(file, root).map(r => [r.id, r]));
   assert.deepEqual([byId.won.status, byId.won.actual, byId.won.window], ['won', 1800, '2026-10-04 to 2026-10-10']);
-  // the review queue goes down: 14 is over the goal of 11, 9 is under it
-  assert.deepEqual([byId.lost.status, byId.lost.actual, byId.lost.window], ['lost', 14, `read on ${TODAY}`]);
-  assert.deepEqual([byId.qwon.status, byId.qwon.actual], ['won', 9]);
-  assert.deepEqual([byId.qlate.status, byId.qlate.why], ['unreadable', 'the review queue is a live count and was not read by the day after the check date (it is now 6 days after)']);
+  assert.deepEqual([byId.lost.status, byId.lost.actual, byId.lost.window], ['lost', 7, 'landed by the end of 2026-10-19, of 22 jobs waiting at the start']);
+  assert.deepEqual([byId.qwon.status, byId.qwon.actual], ['won', 12]);
+  assert.equal(byId.qtoday.status, 'doing', 'jobs can still land today, so the queue is read tomorrow');
+  assert.deepEqual([byId.qnoids.status, byId.qnoids.why], ['unreadable', 'the bet has no snapshot of the waiting jobs to score']);
+  assert.deepEqual([byId.waiting.status, byId.waiting.why], ['unreadable', 'there is no way to read "waiting"']);
   assert.deepEqual([byId.landed.status, byId.landed.why], ['unreadable', 'there is no way to read "landed"']);
   assert.deepEqual([byId.notarget.status, byId.notarget.why], ['unreadable', 'the bet has no target number to read']);
   assert.deepEqual([byId.toolate.status, byId.toolate.why], ['unreadable', 'npm has not counted every day up to 2026-10-01 yet']);
@@ -390,15 +464,33 @@ test('scorer: doing bets are scored won or lost from the same source once due; p
   assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { readMetric } }), []);
 });
 
-test('scorer: the review queue is read from the same task count the season board uses', async () => {
+test('scorer: a queue bet counts only snapshotted jobs that landed by the check date; closed, dropped, or parked count zero', async () => {
   const root = workspace();
+  const dbPath = path.join(root, 'tasks.db');
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('CREATE TABLE task_events (event_id TEXT, task_id TEXT, event_type TEXT, payload TEXT, created_at INTEGER)');
+  const at = (day, hour) => { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d, hour).getTime(); };
+  const add = db.prepare('INSERT INTO task_events VALUES (?, ?, ?, ?, ?)');
+  add.run('e1', 'j1', 'completed', JSON.stringify({ action: 'accepted' }), at('2026-10-15', 9));
+  add.run('e2', 'j2', 'completed', JSON.stringify({ action: 'merged' }), at('2026-10-17', 23));
+  add.run('e3', 'j3', 'completed', JSON.stringify({ action: 'merged' }), at('2026-10-18', 1));
+  add.run('e4', 'j4', 'completed', JSON.stringify({ action: 'closed' }), at('2026-10-15', 9));
+  add.run('e5', 'j5', 'archived', '{}', at('2026-10-15', 9));
+  add.run('e6', 'j6', 'claim_released', '{}', at('2026-10-15', 9));
+  add.run('e7', 'other', 'completed', JSON.stringify({ action: 'accepted' }), at('2026-10-15', 9));
+  add.run('e8', 'j1', 'completed', JSON.stringify({ action: 'accepted' }), at('2026-10-16', 9));
+  db.close();
   const file = path.join(root, 'bets.jsonl');
-  ledgerRow(file, root, 'q', { status: 'doing', bet: { ...goodBet({ target: { metric: 'waiting', baseline: 22, goal: 11 } }), check_date: TODAY } });
-  const out = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { seasonFacts: () => ({ waiting_on_review: 10 }) } });
-  assert.deepEqual(out.map(s => [s.status, s.actual]), [['won', 10]]);
-  const down = path.join(root, 'down.jsonl');
-  ledgerRow(down, root, 'd', { status: 'doing', bet: { ...goodBet({ target: { metric: 'waiting', baseline: 22, goal: 11 } }), check_date: TODAY } });
-  assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile: down, today: TODAY, deps: { seasonFacts: () => null } }), [], 'an unreadable task list on the check date waits a day');
+  const job_ids = ['j1', 'j2', 'j3', 'j4', 'j5', 'j6'];
+  ledgerRow(file, root, 'q', { status: 'doing', bet: { ...goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3, job_ids } }), check_date: '2026-10-17' } });
+  const out = await gmBet.scoreBets(root, { ledgerFile: file, today: TODAY, deps: { taskDbPath: dbPath } });
+  // j1 (accepted, counted once) and j2 (merged before midnight) landed; j3 landed after the check date;
+  // j4 closed, j5 archived, j6 dropped, and the job that was never in the queue count zero
+  assert.deepEqual(out.map(s => [s.status, s.actual, s.window]), [['lost', 2, 'landed by the end of 2026-10-17, of 6 jobs waiting at the start']]);
+  const missing = path.join(root, 'none.jsonl');
+  ledgerRow(missing, root, 'm', { status: 'doing', bet: { ...goodBet({ target: { metric: 'queue_landed', baseline: 0, goal: 3, job_ids } }), check_date: '2026-10-17' } });
+  assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile: missing, today: TODAY, deps: { taskDbPath: path.join(root, 'nope.db') } }), [], 'no task db yet is a wait, not a loss');
 });
 
 test('scorer: installs are read from the npm range for exactly those 7 days, and never scored from a partial week', async () => {
@@ -441,7 +533,7 @@ test('results: readBundle scores first, then past bets show won and lost with nu
 test('validate: a good bet passes', async () => {
   const { bundle } = await bundleFor(workspace());
   const out = gmBet.validateBet(goodBet(), { bundle, today: TODAY });
-  assert.deepEqual(out, { ok: true, reasons: [] });
+  assert.deepEqual(out, { ok: true, reasons: [], formatOnly: false });
 });
 
 test('validate: vague title, bad date, all-you steps, uncited why_now, and a posting team step are turned down', async () => {

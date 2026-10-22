@@ -102,9 +102,10 @@ function showHelp() {
   console.log('  research briefs, and past bets with won or lost, then proposes one new');
   console.log('  move with a target number, a check date (it picks the number of days,');
   console.log('  7 to 14), and steps. An installs goal must beat the best recent week; a');
-  console.log('  review queue goal must be half of today or less. A second model then');
+  console.log('  review queue goal must land at least half of the jobs waiting when the');
+  console.log('  bet is made (closed or dropped jobs count zero). A second model then');
   console.log('  checks that the move makes sense. Bets the team is doing are scored won');
-  console.log('  or lost from the same numbers once the check date comes.');
+  console.log('  or lost from the same numbers once the check date is over.');
   console.log('  The Mac keeps 3 bets ready so a tap rarely waits; tap the orb again for');
   console.log('  the next one. Every answer is saved to ~/.atris/state/gm-bet-attempts.jsonl.');
   console.log('  do it starts a mission: atris mission start "<bet and steps>"');
