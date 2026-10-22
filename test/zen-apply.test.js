@@ -361,6 +361,27 @@ test('a new note only staged does not stop zen when the same note arrives upstre
   }
 });
 
+test('an edited note that moved upstream does not stop zen, and the edit follows it', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    fs.mkdirSync(path.join(seed, 'atris/archive'));
+    git(seed, 'mv', 'atris/TODO.md', 'atris/archive/TODO.md');
+    git(seed, 'commit', '-q', '-m', 'archive the old list');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 2', 'line 2 mine'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /could not catch up/);
+    assert.match(cli.stdout, /atris\/TODO\.md moved to atris\/archive\/TODO\.md, and your edits went with it/);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.ok(!fs.existsSync(path.join(checkout, 'atris/TODO.md')));
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/archive/TODO.md'), 'utf8'), NOTES.replace('line 2', 'line 2 mine'));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
