@@ -1011,9 +1011,6 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   refreshLandingRefs(root);
-  // 1a. merged work closes its jobs and clashing work goes back on the list,
-  // every hour, whether or not a team loop is running.
-  runMergedWorkClose(root, receipt);
   const cliArgs =['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
@@ -1080,6 +1077,14 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
+  }
+
+  // 2a. merged work closes its jobs and clashing work goes back on the list,
+  // every hour, whether or not a team loop is running. After the accept step,
+  // so work that can be checked and landed the normal way is landed first.
+  const mergedClose = runMergedWorkClose(root, receipt);
+  if ((mergedClose.closed || []).length + (mergedClose.sent_back || []).length > 0) {
+    try { require('./task').refreshKeptTaskList(root); } catch {}
   }
 
   // 2b. tell the operator the moment something lands: one text, one landing
