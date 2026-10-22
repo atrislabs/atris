@@ -1510,6 +1510,8 @@ async function gmPhone(args = []) {
         attemptsFile: gmBet.attemptsPath(stateDir),
         runCli: gmBet.makeCliRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot }),
         log,
+        // read the started bets' missions every 25 seconds, read-only
+        pollMs: gmBet.JOB_POLL_MS,
       });
     },
   });

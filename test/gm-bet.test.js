@@ -1050,6 +1050,179 @@ test('pickOwner: code bets go to the builder, everything unclear to the mission 
   assert.deepEqual(gmBet.pickOwner(vague, root), { owner: 'mission-lead', lane: 'workspace' });
 });
 
+// ---- flow state: jobs in flight, done and yes cards in the same deck ----------------------
+
+const MS = Date.parse('2026-10-21T10:00:00Z');
+const RECEIPT = { result: { passed: true, landing: { changed: 'added the getting started page and a 30 second clip.', proof: 'Receipt saved at atris/runs/r1.json.' } } };
+
+test('jobs: mission status maps to working, yes, done, or gone, with proof only as the receipt says it', () => {
+  const row = { id: 'bet-1', owner: 'builder', bet: { title: 'Write the getting started page' } };
+  const at = (over = {}) => ({ id: 'm1', owner: 'builder', status: 'planning', created_at: new Date(MS - (2 * 60 + 5) * 60000).toISOString(), human_asks: [], ...over });
+  assert.deepEqual(gmBet.jobState(row, at(), null, MS), { bet_id: 'bet-1', mission_id: 'm1', title: 'Write the getting started page', owner: 'builder', since: MS - 125 * 60000, running_for: '2h 5m', status: 'planning', kind: 'working' });
+  assert.equal(gmBet.jobState(row, at({ status: 'running' }), null, MS).kind, 'working');
+  // an open ask is a yes; an answered one is not
+  const asked = gmBet.jobState(row, at({ human_asks: [{ text: 'post the clip on x?', answered_at: '2026-10-20T00:00:00Z' }, 'publish the page now?'] }), null, MS);
+  assert.equal(asked.kind, 'yes');
+  assert.deepEqual(asked.asks, [{ index: 1, text: 'publish the page now?', answered: false }]);
+  // finished with a passing receipt: what changed, the receipt as proof, passed
+  const done = gmBet.jobState(row, at({ status: 'complete', receipt_path: 'atris/runs/r1.json' }), RECEIPT, MS);
+  assert.deepEqual([done.kind, done.checked, done.failed, done.changed, done.proof], ['done', 'passed', false, 'added the getting started page and a 30 second clip.', 'atris/runs/r1.json']);
+  // finished with no receipt: it says so, it does not invent proof
+  const bare = gmBet.jobState(row, at({ status: 'complete' }), null, MS);
+  assert.deepEqual([bare.checked, bare.proof, bare.changed, bare.failed], ['none', null, null, false]);
+  // a failed check, or a halt nothing proved, can be sent back
+  assert.equal(gmBet.jobState(row, at({ status: 'complete', receipt_path: 'r' }), { result: { passed: false } }, MS).failed, true);
+  const halted = gmBet.jobState(row, at({ status: 'stopped', stop_reason: 'no progress across consecutive ticks' }), null, MS);
+  assert.deepEqual([halted.kind, halted.halted, halted.failed, halted.stop_reason], ['done', true, true, 'no progress across consecutive ticks']);
+  assert.equal(gmBet.jobState(row, null, null, MS).kind, 'gone');
+  assert.equal(gmBet.jobState(row, at({ status: 'archived' }), null, MS).kind, 'gone');
+});
+
+function jobDesk(root, missions, over = {}) {
+  const ledgerFile = path.join(root, 'gm-bets.jsonl');
+  const cli = [];
+  const logs = [];
+  let clock = NOW;
+  const gen = stubGenerator();
+  const d = gmBet.createBetDesk({
+    workspaceRoot: root,
+    ledgerFile,
+    now: () => clock,
+    log: row => logs.push(row),
+    generate: gen.generate,
+    readMissions: () => new Map(Object.entries(missions)),
+    readReceipt: m => (m.receipt_path ? RECEIPT : null),
+    runCli: over.runCli || (async (args) => {
+      cli.push(args);
+      if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
+      if (args[0] === 'decide') return { code: 0, stdout: '{"ok":true}' };
+      if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ mission: { id: 'm-new', owner: 'builder' } }) };
+      return { code: 0, stdout: JSON.stringify({ action: 'mission_run_detached', mission_id: 'm-new' }) };
+    }),
+  });
+  return { d, gen, cli, logs, ledgerFile, ledger: () => gmBet.readLedger(ledgerFile, root), tick: (ms) => { clock += ms; } };
+}
+
+function doingRow(file, root, id, missionId, title) {
+  ledgerRow(file, root, id, { status: 'doing', mission_id: missionId, owner: 'builder', bet: { ...goodBet({ title }), check_date: '2026-10-30' } });
+}
+
+test('deck: a yes comes first, then a finished job, then the next bet; nothing interrupts the card on screen', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-work', 'm-work', 'Record the demo video of the front office');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  doingRow(file, root, 'b-done', 'm-done', 'Write the getting started page');
+  const missions = {
+    'm-work': { id: 'm-work', owner: 'launcher', status: 'running', created_at: new Date(NOW - 40 * 60000).toISOString(), human_asks: [] },
+    'm-ask': { id: 'm-ask', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 90 * 60000).toISOString(), human_asks: ['post the thread on x now?'] },
+    'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'atris/runs/r1.json', human_asks: [] },
+  };
+  const h = jobDesk(root, missions);
+  // the finished job is written once, with its proof; the bet stays doing so it is still scored
+  const finished = h.ledger().find(r => r.id === 'b-done');
+  assert.deepEqual([finished.status, finished.mission_result, finished.mission_checked, finished.mission_proof, finished.mission_changed], ['doing', 'done', 'passed', 'atris/runs/r1.json', 'added the getting started page and a 30 second clip.']);
+  h.d.pollJobs();
+  assert.equal(fs.readFileSync(file, 'utf8').split('\n').filter(l => l.includes('"mission_result"')).length, 1, 'read again, not written again');
+  // the working line: only the job that is working, with who has it and for how long
+  assert.deepEqual(h.d.view().working, [{ title: 'Record the demo video of the front office', owner: 'launcher', running_for: '40m' }]);
+  // fill the bet queue, then tap: yes, then done, then a bet
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const first = h.d.next();
+  assert.equal(first.kind, 'yes');
+  assert.deepEqual(first.job, { title: 'Write the launch thread for the phone page', owner: 'launcher', ask: 'post the thread on x now?' });
+  assert.equal(first.bet, null);
+  // the card on screen stays until the owner moves on, even as jobs change
+  h.d.pollJobs();
+  assert.equal(h.d.view().kind, 'yes');
+  const second = h.d.next();
+  assert.equal(second.kind, 'done');
+  assert.deepEqual(second.job, { title: 'Write the getting started page', owner: 'builder', failed: false, halted: false, lines: ['added the getting started page and a 30 second clip.'], proof: 'proof: atris/runs/r1.json', check: 'passed its check' });
+  const third = h.d.next();
+  assert.equal(third.kind, 'bet');
+  assert.equal(third.bet.title, TITLES[0]);
+  // passing over a done card marks it seen; passing a yes waits for a later session
+  assert.ok(h.ledger().find(r => r.id === 'b-done').done_seen_at);
+  assert.equal(h.d.next().kind, 'bet', 'the yes already passed over does not come back this session');
+  // a fresh desk (a restart) brings the yes back, but not the seen done card
+  const again = jobDesk(root, missions);
+  assert.equal(again.d.next().kind, 'yes');
+  assert.notEqual(again.d.next().kind, 'done');
+});
+
+test('deck: after do it the next queued card comes on the next tap, with nothing recorded as passed', async () => {
+  const root = workspace();
+  const h = jobDesk(root, {});
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const shown = h.d.next();
+  const out = await h.d.doIt();
+  assert.equal(out.ok, true);
+  assert.equal(h.d.view().status, 'started');
+  assert.equal(h.d.view().mission.line, 'builder has it. the mission is running now.');
+  // the page taps for the owner after the line holds; the started bet is not passed over
+  const next = h.d.next();
+  assert.equal(next.kind, 'bet');
+  assert.notEqual(next.id, shown.id);
+  assert.equal(h.ledger().find(r => r.id === shown.id).status, 'doing');
+  // and the started job is on the working line right away
+  assert.equal(h.d.view().working.length, 0, 'the stub mission map has no such mission yet, so nothing is invented');
+});
+
+test('yes and send back: a yes answers the right ask through atris decide; a failed job goes back as a new mission', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  doingRow(file, root, 'b-fail', 'm-fail', 'Split the biggest test file into four');
+  const h = jobDesk(root, {
+    'm-ask': { id: 'm-ask', owner: 'launcher', status: 'running', human_asks: ['post the thread on x now?'] },
+    'm-fail': { id: 'm-fail', owner: 'builder', status: 'stopped', stop_reason: 'no progress across consecutive ticks', human_asks: [] },
+  });
+  assert.equal(h.d.next().kind, 'yes');
+  const yes = await h.d.answerYes();
+  assert.deepEqual([yes.ok, yes.ack], [true, 'launcher: got your yes']);
+  assert.deepEqual(h.cli.slice(0, 2), [['decide', '--json'], ['decide', '2', 'yes', '--json']], 'matched by mission and ask, not by place');
+  assert.equal(h.d.view().status, 'cleared');
+  const failed = h.d.next();
+  assert.equal(failed.kind, 'done');
+  assert.deepEqual([failed.job.failed, failed.job.halted, failed.job.lines[0], failed.job.proof, failed.job.check], [true, true, 'it stopped: no progress across consecutive ticks', 'no receipt was saved, so there is no proof yet', 'no check ran']);
+  const back = await h.d.sendBack();
+  assert.deepEqual([back.ok, back.ack], [true, 'sent back. builder has it again.']);
+  const start = h.cli.find(a => a[1] === 'start');
+  assert.match(start[2], /why now: the last run ended with: no check ran, no progress across consecutive ticks\. try again\./);
+  const row = h.ledger().find(r => r.id === 'b-fail');
+  assert.deepEqual([row.status, row.mission_id, row.mission_result], ['doing', 'm-new', null]);
+  assert.ok(row.sent_back_at && row.done_seen_at);
+  // nice on a passing job only dismisses it
+  const root2 = workspace();
+  doingRow(path.join(root2, 'gm-bets.jsonl'), root2, 'b-ok', 'm-ok', 'Write the getting started page');
+  const ok = jobDesk(root2, { 'm-ok': { id: 'm-ok', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } });
+  ok.d.next();
+  assert.deepEqual(await ok.d.sendBack(), { ok: false, reason: 'gone', message: 'there is no failed job on screen' });
+  assert.deepEqual(ok.d.nice(), { ok: true, ack: 'nice.' });
+  assert.equal(ok.cli.length, 0, 'nice runs nothing');
+});
+
+test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
+  const html = phonePage('NONCE');
+  assert.match(html, /<button type="button" class="quiet" id="working" hidden aria-expanded="false"><\/button><div class="jobs" id="jobs" hidden><\/div>/);
+  assert.match(html, /btn\.textContent = jobs\.length \+ ' working';/);
+  assert.match(html, /j\.owner \+ ' has it' \+ \(j\.running_for \? ', running ' \+ j\.running_for : ''\)/);
+  // no pulse or loop on the new pieces
+  const css = html.slice(html.indexOf('.foot .quiet + .quiet'), html.indexOf('.bet .kind.calm'));
+  assert.doesNotMatch(css, /animation|transition/);
+  // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
+  assert.match(html, /var AFTER_MS = 1500;/);
+  assert.match(html, /if \(r && r\.ok\) setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
+  // job cards: needs your yes, done with nice, send back only when it failed
+  assert.match(html, /box\.appendChild\(el\('span', 'kind', 'needs your yes'\)\);/);
+  assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
+  assert.match(html, /if \(j\.failed\) \{/);
+  assert.match(html, /api\('\/bet\/sendback', \{ confirm: true \}\)/);
+  assert.match(html, /if \(\(s\.bet \|\| s\.job\) && \(s\.status === 'ready'/);
+});
+
 // ---- over http: the routes and the deck ----------------------------------------------------
 
 test('over http: tap, do it needs a second tap, and your-yes cards lead the deck', async () => {
@@ -1106,6 +1279,9 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
     const once = await call('POST', '/bet/do', {});
     assert.equal(once.status, 409);
     assert.equal(once.json.reason, 'needs_confirm');
+    // a yes and a send back also start or unblock agents, so they need a second tap too
+    for (const route of ['/bet/yes', '/bet/sendback']) assert.equal((await call('POST', route, {})).json.reason, 'needs_confirm');
+    assert.equal((await call('POST', '/bet/nice', {})).json.reason, 'gone', 'nice with no finished job on screen does nothing');
     const twice = await call('POST', '/bet/do', { confirm: true });
     assert.equal(twice.status, 200);
     assert.equal(twice.json.mission.line, 'launcher has it. the mission is running now.');
