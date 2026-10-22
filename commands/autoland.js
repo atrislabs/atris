@@ -742,6 +742,7 @@ async function runTick(root, args) {
     else console.log('autoland is off; tick did nothing.');
     return 0;
   }
+  if (args.includes('--dry-run')) return runTickPreview(root, { json, receipt });
 
   // One live tick at a time: verify re-runs can take minutes each, and a
   // second hourly cron firing into the same snapshot double-accepts,
@@ -767,6 +768,25 @@ async function runTick(root, args) {
   } finally {
     try { fs.unlinkSync(lockPath); } catch {}
   }
+}
+
+// `atris autoland tick --dry-run`: what the hourly pass would close, send
+// back, and check, read only. No lock, no receipt, no GitHub writes, no job
+// changes, no fetch.
+function runTickPreview(root, { json, receipt }) {
+  receipt.dry_run = true;
+  runMergedWorkClose(root, receipt, { dryRun: true });
+  if (json) {
+    console.log(JSON.stringify(receipt));
+    return 0;
+  }
+  const close = receipt.merged_close || {};
+  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} clashing job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
+  for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || `pull request #${row.number} merged`}`);
+  for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
+  for (const line of close.merge_line || []) console.log(`  ${line}`);
+  if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
+  return 0;
 }
 
 function persistTickReceipt(root, receipt) {
@@ -916,6 +936,57 @@ function engineAnswerValidationLine(receipt) {
   return `graded ${graded} engine answer${graded === 1 ? '' : 's'}, scoreboard updated`;
 }
 
+// Merged work closes its jobs; clashing work goes back on the list. Until
+// 2026-10-22 this ran only inside the team wake loop, which last swept on
+// 2026-10-15, so four merged jobs waited a week. Two sources: the autoland
+// list (pull requests GitHub merged at the member's own commit, through the
+// team loop's shared five-minute pass) and git itself (lib/merged-review-close.js)
+// for jobs that left the list. dryRun reads and reports, and writes nothing.
+function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } = {}) {
+  const out = dryRun
+    ? { would_close: [], would_send_back: [], merge_line: [] }
+    : { closed: [], sent_back: [], merge_line: [] };
+  const closedList = dryRun ? out.would_close : out.closed;
+  const sentList = dryRun ? out.would_send_back : out.sent_back;
+  try {
+    const memberAutoland = require('../lib/member-autoland');
+    const queue = dryRun
+      ? memberAutoland.requeueDroppedAutolands({ cwd: root, now, dryRun: true })
+      : memberAutoland.sweepAfterMissionRun({ cwd: root, now });
+    for (const r of (queue && queue.results) || []) {
+      if (r.line) out.merge_line.push(r.line);
+      for (const id of r.closed || []) closedList.push({ id, how: 'pull_request', number: r.number, action: r.stale ? 'merged_earlier' : 'merged' });
+      for (const id of r.sent_back || []) sentList.push({ id, number: r.number });
+    }
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open();
+    const workspace = taskDb.workspaceRoot(mainCheckoutRoot(root) || root);
+    const tasks = taskDb.listTasks(db, { workspaceRoot: workspace, status: 'review' })
+      .filter((t) => !closedList.some((c) => c.id === t.id));
+    const scan = require('../lib/merged-review-close').closeMergedReviewJobs({ root, tasks, now, dryRun });
+    for (const row of dryRun ? scan.matched : scan.closed) closedList.push(row);
+    out.checked = scan.checked;
+  } catch (err) {
+    receipt.merged_close_error = String((err && err.message) || err).slice(0, 200);
+  }
+  receipt.merged_close = out;
+  return out;
+}
+
+function mainCheckoutRoot(root) {
+  const result = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0 || !result.stdout.trim()) return null;
+  return path.dirname(result.stdout.trim());
+}
+
+function mergedCloseNote(receipt) {
+  const closed = (receipt.merged_close?.closed || []).length;
+  const sent = (receipt.merged_close?.sent_back || []).length;
+  return (closed ? `, closed ${closed} merged job${closed === 1 ? '' : 's'}` : '')
+    + (sent ? `, sent ${sent} clashing job${sent === 1 ? '' : 's'} back on the list` : '')
+    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
+}
+
 async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
 
   try {
@@ -940,7 +1011,10 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   refreshLandingRefs(root);
-  const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
+  // 1a. merged work closes its jobs and clashing work goes back on the list,
+  // every hour, whether or not a team loop is running.
+  runMergedWorkClose(root, receipt);
+  const cliArgs =['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
   const pendingReviewRows = readProjection(root)
@@ -1312,7 +1386,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
@@ -1346,6 +1420,8 @@ function showHelp() {
   console.log('  atris autoland off                 back to approving every item');
   console.log('  atris autoland digest [--send]     the daily message, now');
   console.log('  atris autoland tick [--json]       one heartbeat (what the hourly cron runs)');
+  console.log('  atris autoland tick --dry-run      what the heartbeat would close, send back,');
+  console.log('                                     and check, without changing anything');
   console.log('');
   console.log('help is always read-only: atris autoland tick --help never lands work.');
   console.log('');

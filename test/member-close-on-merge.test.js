@@ -413,15 +413,33 @@ test('a mission run with nothing in the merge line, or self-landing off, never c
   });
 });
 
-test('a merge more than a day old is left for a person, so old work is not counted as this week\'s', () => {
+// The owner's rule (2026-10-22): merged work closes, whatever its age. A
+// merge more than a day old closes as "merged earlier", which the weekly
+// board does not count, so last week's work is never this week's landing.
+test('a merge more than a day old closes its job without counting it as this week\'s landing', () => {
   withFixture((fx) => {
     const id = builderJob(fx);
     queue(fx, [id]);
     setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
     const out = requeueDroppedAutolands({ cwd: fx.main, now: Date.parse('2026-10-22T09:00:00Z') });
-    assert.equal(out.closed, 0, out.line);
-    assert.equal(statusOf(fx, id), 'review');
-    assert.match(out.results[0].line, /merged over a day ago; its job is left for you/);
+    assert.equal(out.closed, 1, out.line);
+    assert.equal(statusOf(fx, id), 'done');
+    const completed = taskDb.listTaskEvents(fx.db, { taskId: id }).filter((e) => e.event_type === 'completed');
+    assert.equal(completed[completed.length - 1].payload.action, 'merged_earlier');
+    assert.match(out.results[0].line, /merged over a day ago/);
     assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('the dry run reads the merge line and changes nothing', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const before = fs.readFileSync(queuePath(fx), 'utf8');
+    const out = requeueDroppedAutolands({ cwd: fx.main, now: Date.parse('2026-10-22T09:00:00Z'), dryRun: true });
+    assert.deepEqual(out.results[0].closed, [id]);
+    assert.equal(statusOf(fx, id), 'review');
+    assert.equal(fs.readFileSync(queuePath(fx), 'utf8'), before);
   });
 });
