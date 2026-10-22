@@ -92,7 +92,7 @@ Pin one writer with the second argument (`atris youtube notes <url> haiku`) or w
 
 **Sibling.** The backend Notes API member lives at `atrisos-backend/atris/team/notes/` and serves `POST /api/notes` for 10 credits.
 
-**Upkeep on Keshav's Mac.** A scheduled Mac job, `ai.atris.youtube-tools-update`, upgrades yt-dlp and mlx-whisper every Sunday at 05:00. Its logs land in `~/.atris/logs/youtube-tools-update/`.
+**Upkeep on Keshav's Mac.** A Sunday 05:00 Mac job, `ai.atris.youtube-tools-update`, was planned to upgrade yt-dlp and mlx-whisper, but it is not installed. On 2026-10-21 launchd did not know it, there was no plist and no `~/.atris/logs/youtube-tools-update/`, no installer is in this repo, and yt-dlp was 62 days old. Until it is installed, the warning when yt-dlp is over 60 days old is the only upkeep signal.
 
 **Bench and upkeep warning.** `atris youtube bench` runs five real cases and appends each run to `~/.atris/benchmarks/ytrail.jsonl`, and `--quick` runs three. Notes also warn when yt-dlp is more than 60 days old. Both shipped in #1072.
 
