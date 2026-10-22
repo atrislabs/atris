@@ -333,6 +333,34 @@ test('a note committed on a side branch and edited again comes back whole on mai
   }
 });
 
+test('a new note only staged does not stop zen when the same note arrives upstream', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/logs/2026/2026-10-22.md', '# today\n- from the team\n', 'team log');
+    commit(seed, 'atris/plan.md', 'their plan\n', 'their plan');
+    git(seed, 'push', '-q');
+    // An agent stages its own copy of the same day's log and the same plan.
+    write(checkout, 'atris/logs/2026/2026-10-22.md', '# today\n- from me\n');
+    write(checkout, 'atris/plan.md', 'my plan\n');
+    git(checkout, 'add', 'atris');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /could not catch up/);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    const log = fs.readFileSync(path.join(checkout, 'atris/logs/2026/2026-10-22.md'), 'utf8');
+    assert.match(log, /from the team/);
+    assert.match(log, /from me/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), 'their plan\n');
+    const said = cli.stdout.match(/kept the new atris\/plan\.md; your copy is in (\S+)/);
+    assert.ok(said, cli.stdout);
+    assert.equal(fs.readFileSync(said[1], 'utf8'), 'my plan\n');
+    assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
