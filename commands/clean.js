@@ -648,6 +648,28 @@ function contentChangedAt(sourcePath, mtime) {
   return committed ? new Date(committed) : mtime;
 }
 
+function looksLikePath(text) {
+  if (!text || /\s/.test(text) || /^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return false;
+  return text.includes('/') || /\.[A-Za-z0-9]+$/.test(text);
+}
+
+// A relative source can be written from the repo root, the page's own folder,
+// or any folder in between (a brief citing "briefs/x.md" from the wiki root).
+// The first place it exists wins; if none, the repo-root path is reported.
+function resolveSource(cwd, pagePath, filePart) {
+  if (path.isAbsolute(filePart)) return filePart;
+  const root = path.resolve(cwd);
+  const fromRoot = path.join(root, filePart);
+  if (fs.existsSync(fromRoot)) return fromRoot;
+  let dir = path.dirname(path.resolve(pagePath));
+  while (dir.startsWith(root + path.sep)) {
+    const candidate = path.join(dir, filePart);
+    if (fs.existsSync(candidate)) return candidate;
+    dir = path.dirname(dir);
+  }
+  return fromRoot;
+}
+
 /**
  * Parse frontmatter from a markdown file and check if any source is newer than last_compiled.
  * Returns { page, staleSource, compiledDate, sourceDate } or null if not stale.
@@ -689,7 +711,10 @@ function checkPageStaleness(cwd, filePath) {
       .replace(/\s*\([^)]*\)\s*$/, '')   // drop trailing "(annotation)"
       .replace(/:\d+(-\d+)?$/, '')        // drop trailing ":N" or ":N-M"
       .trim();
-    const sourcePath = path.isAbsolute(filePart) ? filePart : path.join(cwd, filePart);
+    // A plain-language source ("Voyage AI documentation") or a web link names
+    // no file, so it can never be missing on disk. Only paths are checked.
+    if (!looksLikePath(filePart)) continue;
+    const sourcePath = resolveSource(cwd, filePath, filePart);
     try {
       const stat = fs.statSync(sourcePath);
       const changed = stat.mtime > compiledDate ? contentChangedAt(sourcePath, stat.mtime) : null;
