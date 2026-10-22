@@ -1151,6 +1151,18 @@ test('verify: a check that is always true, or only checks formatting, is turned 
   assert.match(gmBet.buildPrompt(bundle, { today: TODAY }), /verify: one shell command, run from the repo root, that exits 0 only when the deliverable exists and works/);
 });
 
+test('copy: expect is one plain sentence that follows why_now, with the numbers inside it', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const check = expect => gmBet.validateBet(goodBet({ expect }), { bundle, today: TODAY });
+  assert.equal(check('if it works, weekly installs pass 1,700 by oct 30, past our best week of 1,550.').ok, true);
+  const two = check('installs go up. we think by 300 a week.');
+  assert.deepEqual([two.reasons, two.formatOnly], [['expect is more than one sentence'], true]);
+  assert.match(check(`if it works, installs pass 1,700 ${'and more words here '.repeat(8)}.`).reasons.join(' | '), /expect is \d+ characters, over 160/);
+  const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.match(prompt, /expect: one plain sentence, under 160 characters, that follows why_now and says what we expect if it works, with the numbers inside it/);
+  assert.match(prompt, /the card shows why_now and expect together as one short paragraph, so they must read as one/);
+});
+
 // ---- flow state: jobs in flight, done and yes cards in the same deck ----------------------
 
 const MS = Date.parse('2026-10-21T10:00:00Z');
@@ -1250,7 +1262,7 @@ test('deck: a yes comes first, then a finished job, then the next bet; nothing i
   assert.equal(h.d.view().kind, 'yes');
   const second = h.d.next();
   assert.equal(second.kind, 'done');
-  assert.deepEqual(second.job, { title: 'Write the getting started page', owner: 'builder', failed: false, halted: false, lines: ['added the getting started page and a 30 second clip.'], proof: 'proof: atris/runs/r1.json', check: 'passed its check', review: 'codex reviewed it: pass. the page is there and the clip plays.' });
+  assert.deepEqual(second.job, { title: 'Write the getting started page', owner: 'builder', failed: false, halted: false, lines: ['added the getting started page and a 30 second clip.'], proof: 'the receipt is at atris/runs/r1.json', check: 'it passed its check', review: 'codex reviewed it: pass. the page is there and the clip plays.' });
   const third = h.d.next();
   assert.equal(third.kind, 'bet');
   assert.equal(third.bet.title, TITLES[0]);
@@ -1403,13 +1415,15 @@ test('page: the working line is static and lists who has each job; do it hands o
   assert.match(html, /btn\.textContent = jobs\.length \+ ' working';/);
   assert.match(html, /j\.owner \+ ' has it' \+ \(j\.running_for \? ', running ' \+ j\.running_for : ''\)/);
   // no pulse or loop on the new pieces
-  const css = html.slice(html.indexOf('.foot .quiet + .quiet'), html.indexOf('.bet .kind.calm'));
+  const css = html.slice(html.indexOf('.foot .quiet + .quiet'), html.indexOf('.jobs .meta'));
+  assert.ok(css.length > 40);
   assert.doesNotMatch(css, /animation|transition/);
   // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
   assert.match(html, /var AFTER_MS = 1500;/);
   assert.match(html, /if \(r && r\.ok\) setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
   // job cards: needs your yes, done with nice, send back only when it failed
-  assert.match(html, /box\.appendChild\(el\('span', 'kind', 'needs your yes'\)\);/);
+  assert.match(html, /sentence\(j\.owner \+ ' is working on ' \+ j\.title\) \+ ' this step waits for your yes\.'/);
+  assert.match(html, /var head = j\.failed \? \(j\.halted \? 'this stopped before it was done\.' : 'this did not pass\.'\) : 'this is done\.';/);
   assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
   assert.match(html, /if \(j\.failed\) \{/);
   assert.match(html, /api\('\/bet\/sendback', \{ confirm: true \}\)/);
@@ -1548,8 +1562,14 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
   // the card grows by at most one short line: the goal and the swing it beats, under expect
-  assert.match(html, /if \(t\[0\] === 'expect' && b\.goal_line\) d\.appendChild\(el\('span', 'sub', b\.goal_line\)\);/);
-  assert.match(html, /\.terms \.sub \{ display: block; color: var\(--text-3\); font-size: 12px;/);
+  // no eyebrow labels: the card is the title, one paragraph, the steps, and one quiet sentence
+  assert.doesNotMatch(html, /'why now'|el\('span', 'k'|\['expect', |\['cost', |'needs your yes'|class="terms"|\.terms /);
+  assert.match(html, /box\.appendChild\(el\('p', 'why', \[b\.why_now, b\.expect\]\.map\(sentence\)\.join\(' '\)\)\);/);
+  assert.match(html, /return \[day \? "we'll know by " \+ day : '', b\.cost\]\.filter\(Boolean\)\.map\(sentence\)\.join\(' '\);/);
+  assert.match(html, /box\.appendChild\(el\('p', 'when', whenLine\(b\)\)\);/);
+  // the served script keeps its date pattern (a template literal once ate the backslashes)
+  assert.ok(html.includes("var m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec"));
+  assert.match(html, /\.when \{ margin: 12px 0 0; color: var\(--text-3\); font-size: 14px; line-height: 1\.4; \}/);
   assert.match(html, /if \(e\.kind === 'skeptic'\) return 'a second look: does it make sense';/);
 });
 
