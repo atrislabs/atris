@@ -1,6 +1,6 @@
 'use strict';
 
-const { checkZen, namePlaces } = require('../lib/zen');
+const { abandonedDaysFromEnv, checkZen, sideCopyLines } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
 const { workspaceZen } = require('../lib/zen-workspace');
 
@@ -84,9 +84,8 @@ function printCheck(result, workspace) {
     console.log(`  ${kept}`);
     console.log('  run atris zen to make it zen');
   }
-  const busy = result.worktrees_with_work.length;
-  if (busy) {
-    console.log(`  ${busy} side ${busy === 1 ? 'copy has' : 'copies have'} unsaved work, left for ${busy === 1 ? 'its owner' : 'their owners'}: ${namePlaces(result.worktrees_with_work)}`);
+  if (result.worktrees_with_work.length) {
+    for (const text of sideCopyLines(result.worktrees_with_work, abandonedDaysFromEnv())) console.log(`  ${text}`);
   }
   const held = result.worktrees_locked?.length || 0;
   if (held) {

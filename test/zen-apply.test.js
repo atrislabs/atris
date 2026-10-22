@@ -107,7 +107,7 @@ test('atris zen makes a messy repo zen and keeps everything', () => {
     assert.match(cli.stdout, /moved 1 unpushed commit to zen-backup\//);
     assert.match(cli.stdout, /caught up 2 commits from origin\/master/);
     assert.match(cli.stdout, /cleared 1 finished branch/);
-    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner: \S*\/busy$/m);
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner\n {4}\S*\/busy\n {2}zen saves it to zen-backup\/ once nobody has touched it for 3 days$/m);
 
     assert.equal(checkZen({ cwd: checkout, fetch: false }).zen, true);
     // code matches origin, notes carry both edits
