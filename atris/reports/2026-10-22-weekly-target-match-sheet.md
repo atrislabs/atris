@@ -72,6 +72,27 @@ One. Merged member changes never flip their job to landed. Nine jobs prove it, i
 
 Two. This week's work never went through the job list at all. The tidy-up and game merges came from runs that file no job, so the board has nothing to count.
 
+## Step two: why each merged job never counted
+
+The board counts a job as landed only when the job list records it finished with "merged" or "accepted" (`lib/gm-season.js:310`). Nothing wrote that for any of the nine. The closer from #1270 (`lib/member-autoland.js`, closeMergedJobs) is the only thing that would, and it has closed 0 jobs since it shipped.
+
+The closer runs in one place: the team wake loop's five-minute sweep (`commands/member.js:11068`), plus a manual `atris land`. The wake loop started 2026-10-15 06:41 UTC, swept for the last time at 07:03 (`.atris/state/member-up-maintenance.json`), and has not run since. Its process is gone.
+
+| change | merged (UTC) | cause |
+|---|---|---|
+| #1318 | 10-15 07:05 | On the autoland list with its job, merged at the member's own commit. The sweep stopped 2 minutes earlier. Would close on the next sweep. |
+| #1319 | 10-15 07:05 | Same as #1318. |
+| #1314 | 10-15 21:02 | On the list with its job, but the owner merged master into the branch and added a commit before merging. The closer treats any newer commit as someone else's push and leaves the job for a person, even on a sync. |
+| #1259 | 10-15 02:23 | Merged 26 minutes before the closer existed. Nothing could close it. |
+| #1270 | 10-15 02:49 | The closer itself. Its job was handed off before its own code was running. |
+| #1271, #1277, #1280, #1306 | 10-15 02:53 to 06:33 | Left the list with no close recorded. The list forgets an entry once it merges, so whether the job id was attached is not recoverable. |
+
+Top cause, for step three: the closer only runs inside the wake loop, so when the loop is down, merged member work never closes and never counts. Repro job for the failing test: 01M4Z4YVHB, change #1319, still on the list and still waiting.
+
+Second cause: a sync from master by the owner blocks the close for good (#1314).
+
+Step three must not close the nine old jobs on its own. Running the sweep today would mark #1318 and #1319 landed this week, which is the owner's call in step four.
+
 ## What the owner decides (step four, not done)
 
 If the owner says yes to the nine merged rows, this week shows 9 of 19, past the goal of 6. Marking them now would credit this week for work merged last week, so that call is the owner's, row by row. The other 17 stay open.
