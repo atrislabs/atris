@@ -68,3 +68,62 @@ test('a single markdown file builds a one-page site', (t) => {
   assert.equal(res.pages.length, 1);
   assert.ok(fs.existsSync(res.indexPath));
 });
+
+test('serveSite refuses files in a sibling folder that shares the root prefix', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.mkdirSync(path.join(base, 'site-evil'));
+  fs.writeFileSync(path.join(base, 'site', 'index.html'), 'PUBLIC');
+  fs.writeFileSync(path.join(base, 'site-evil', 'secret.txt'), 'SECRET');
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: p }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    assert.equal((await get('/')).body, 'PUBLIC');
+    for (const p of ['/../site-evil/secret.txt', '/..%2fsite-evil%2fsecret.txt']) {
+      const r = await get(p);
+      assert.notEqual(r.body, 'SECRET', p);
+      assert.equal(r.status, 403, p);
+    }
+    assert.equal((await get('/%E0%A4%A')).status, 400);
+    assert.equal(server.address().address, '127.0.0.1');
+  } finally {
+    server.close();
+  }
+});
+
+test('serveSite refuses a symlink inside the site folder that points outside it', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-link-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.writeFileSync(path.join(base, 'outside.txt'), 'SECRET');
+  fs.writeFileSync(path.join(base, 'site', 'ok.txt'), 'FINE');
+  fs.symlinkSync(path.join(base, 'outside.txt'), path.join(base, 'site', 'leak.txt'));
+  fs.symlinkSync(path.join(base, 'site', 'ok.txt'), path.join(base, 'site', 'alias.txt'));
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: p }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    const leak = await get('/leak.txt');
+    assert.notEqual(leak.body, 'SECRET');
+    assert.equal(leak.status, 403);
+    assert.equal((await get('/alias.txt')).body, 'FINE', 'a link that stays inside the site still works');
+  } finally {
+    server.close();
+  }
+});
