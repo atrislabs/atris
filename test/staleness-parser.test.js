@@ -64,3 +64,29 @@ test('staleness still detects source mtime > last_compiled', (t) => {
   assert.ok(result, 'old last_compiled should flag');
   assert.equal(result.compiledDate, '2020-01-01');
 });
+
+test('a plain-language source or web link names no file and is never missing', (t) => {
+  const { dir, page } = makeTempPage(t, [
+    'https://blog.voyageai.com/2026/01/15/voyage-4/ (2026-01-15)',
+    'Voyage AI documentation (voyage-4, voyage-code-4)',
+    'training knowledge cutoff 2026-01',
+    'pgvector 0.8.3+ docs (halfvec, HNSW, iterative scans)',
+    'commands/foo.js (stub)',
+  ]);
+  assert.equal(checkPageStaleness(dir, page), null);
+});
+
+test('a relative source is found from the page folder or a folder above it', (t) => {
+  const { dir } = makeTempPage(t, []);
+  const wiki = path.join(dir, 'atris', 'wiki');
+  fs.mkdirSync(path.join(wiki, 'briefs'), { recursive: true });
+  const old = new Date('2020-06-01T00:00:00Z');
+  fs.writeFileSync(path.join(wiki, 'briefs', 'rag.md'), 'rag\n');
+  fs.utimesSync(path.join(wiki, 'briefs', 'rag.md'), old, old);
+  const page = path.join(wiki, 'briefs', 'stack.md');
+  fs.writeFileSync(page, '---\nlast_compiled: 2026-04-20\nsources:\n  - briefs/rag.md\n  - rag.md\n---\n\nbody\n');
+  assert.equal(checkPageStaleness(dir, page), null);
+
+  fs.writeFileSync(page, '---\nlast_compiled: 2026-04-20\nsources:\n  - briefs/gone.md\n---\n\nbody\n');
+  assert.match(checkPageStaleness(dir, page).staleSource, /briefs\/gone\.md \(missing\)/);
+});
