@@ -485,3 +485,158 @@ test('start saves HEAD as the start commit without --protect, and every judge ru
   assert.equal(out.status, 0, out.stderr);
   assert.equal(fs.readFileSync(none, 'utf8').trim(), '[unset]');
 });
+
+test('start --brief saves BRIEF.md and includes the brief in every proposed mission prompt; without --brief stays unchanged', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-brief-'));
+  const savedCwd = process.cwd();
+  t.after(() => {
+    process.chdir(savedCwd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  const briefFile = path.join(dir, 'notes.md');
+  const briefText = 'Keep all handlers under 40 lines and reuse lib/http.js.';
+  fs.writeFileSync(briefFile, `${briefText}\n`);
+  process.chdir(dir);
+
+  const store = createMemoryStore({ origin: 'laptop' });
+  const asksWithBrief = [];
+  const startedMissionsWithBrief = [];
+  const saved = { log: console.log, error: console.error };
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    const startBriefCode = await campaignCommand(
+      ['start', 'With brief', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-brief', '--brief', briefFile],
+      {
+        store,
+        actor: 'human:keshav',
+        runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      }
+    );
+    assert.equal(startBriefCode, 0);
+    const savedBriefPath = path.join(dir, 'atris', 'campaigns', 'cmp-brief', 'BRIEF.md');
+    assert.equal(fs.existsSync(savedBriefPath), true);
+    assert.equal(fs.readFileSync(savedBriefPath, 'utf8'), `${briefText}\n`);
+
+    await campaignCommand(['step', 'cmp-brief'], {
+      store,
+      actor: 'human:keshav',
+      runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      loopDeps: {
+        skipReconcile: true,
+        ask: async (root, view, prompt) => {
+          asksWithBrief.push(prompt);
+          return {
+            ok: true,
+            engine: 'claude',
+            text: JSON.stringify([
+              { objective: 'Split route A', member: 'mission-lead', estimate_usd: 1 },
+              { objective: 'Split route B', member: 'mission-lead', estimate_usd: 1 },
+            ]),
+          };
+        },
+      },
+    });
+
+    await campaignCommand(['step', 'cmp-brief'], {
+      store,
+      actor: 'human:keshav',
+      runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      loopDeps: {
+        skipReconcile: true,
+        cli: async (args) => {
+          if (args[1] === 'start') startedMissionsWithBrief.push(args[2]);
+          return { code: 0, out: '{}', err: '' };
+        },
+      },
+    });
+  } finally {
+    console.log = saved.log;
+    console.error = saved.error;
+  }
+
+  assert.equal(asksWithBrief.length, 1);
+  assert.ok(asksWithBrief[0].includes(briefText));
+  const proposedWithBrief = store.read('cmp-brief').filter((e) => e.type === 'mission_proposed');
+  assert.equal(proposedWithBrief.length, 2);
+  for (const event of proposedWithBrief) {
+    assert.ok(event.data.objective.includes(briefText));
+  }
+  assert.equal(startedMissionsWithBrief.length, 2);
+  for (const objective of startedMissionsWithBrief) {
+    assert.ok(objective.includes(briefText));
+  }
+
+  const plainStore = createMemoryStore({ origin: 'laptop' });
+  const asksPlain = [];
+  const startedMissionsPlain = [];
+  console.log = () => {};
+  console.error = () => {};
+  let expectedPlainPrompt;
+  try {
+    const startPlainCode = await campaignCommand(
+      ['start', 'With brief', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-plain'],
+      {
+        store: plainStore,
+        actor: 'human:keshav',
+        runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      }
+    );
+    assert.equal(startPlainCode, 0);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'campaigns', 'cmp-plain', 'BRIEF.md')), false);
+
+    const { proposalPrompt } = require('../lib/campaign-loop');
+    const { summarizeStoreRsi } = require('../lib/campaign-rsi');
+    expectedPlainPrompt = proposalPrompt(
+      getCampaign(plainStore, 'cmp-plain'),
+      3,
+      null,
+      '',
+      summarizeStoreRsi(plainStore),
+      plainStore.read('cmp-plain')
+    );
+
+    await campaignCommand(['step', 'cmp-plain'], {
+      store: plainStore,
+      actor: 'human:keshav',
+      runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      loopDeps: {
+        skipReconcile: true,
+        ask: async (root, view, prompt) => {
+          asksPlain.push(prompt);
+          return {
+            ok: true,
+            engine: 'claude',
+            text: JSON.stringify([{ objective: 'Split route A', member: 'mission-lead', estimate_usd: 1 }]),
+          };
+        },
+      },
+    });
+
+    await campaignCommand(['step', 'cmp-plain'], {
+      store: plainStore,
+      actor: 'human:keshav',
+      runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      loopDeps: {
+        skipReconcile: true,
+        cli: async (args) => {
+          if (args[1] === 'start') startedMissionsPlain.push(args[2]);
+          return { code: 0, out: '{}', err: '' };
+        },
+      },
+    });
+  } finally {
+    console.log = saved.log;
+    console.error = saved.error;
+  }
+
+  assert.equal(asksPlain.length, 1);
+  assert.equal(asksPlain[0], expectedPlainPrompt);
+  assert.equal(asksPlain[0].includes('Brief:'), false);
+  assert.equal(asksWithBrief[0], asksPlain[0].replace('Campaign: With brief\n', `Campaign: With brief\nBrief:\n${briefText}\n`));
+  const proposedPlain = plainStore.read('cmp-plain').filter((e) => e.type === 'mission_proposed');
+  assert.equal(proposedPlain.length, 1);
+  assert.equal(proposedPlain[0].data.objective, 'Split route A');
+  assert.deepEqual(startedMissionsPlain, ['Split route A']);
+});
