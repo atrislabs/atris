@@ -41,10 +41,10 @@ scratch: /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/agentxp-before-review-
 test at test/xp-workspace-root.test.js:437:3
 ✖ corrupt linked receipts are skipped without losing valid XP (2567.158417ms)
   AssertionError [ERR_ASSERTION]: Failed to collect local XP: Expected property name or '}' in JSON at position 1 (line 1 column 2)
-  
-  
+
+
   1 !== 0
-  
+
       at TestContext.<anonymous> (/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/agentxp-before-review-nfee8fhw/test/xp-workspace-root.test.js:477:16)
       at Test.runInAsyncScope (node:async_hooks:214:14)
       at Test.run (node:internal/test_runner/test:1062:25)
@@ -60,10 +60,10 @@ test at test/xp-workspace-root.test.js:437:3
 test at test/xp-workspace-root.test.js:437:3
 ✖ corrupt linked episodes are skipped without losing valid XP (2059.711542ms)
   AssertionError [ERR_ASSERTION]: Failed to collect local XP: Expected property name or '}' in JSON at position 1 (line 1 column 2)
-  
-  
+
+
   1 !== 0
-  
+
       at TestContext.<anonymous> (/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/agentxp-before-review-nfee8fhw/test/xp-workspace-root.test.js:477:16)
       at Test.runInAsyncScope (node:async_hooks:214:14)
       at Test.run (node:internal/test_runner/test:1062:25)
@@ -202,4 +202,3 @@ Review task remains pending human approval; no acceptance or merge.
 Progress: both pre-fix regressions reproduced, 56/56 current suite passes, 4/4 direct command cases pass.
 next_push: review the saved evidence and decide whether to approve the existing repair for merge.
 layer: capabilities
-
