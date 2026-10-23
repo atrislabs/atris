@@ -2305,8 +2305,12 @@ if (command === 'guide') {
   const laterCode = require('../commands/later').laterAtris(process.argv.slice(3));
   process.exit(Number.isInteger(laterCode) ? laterCode : 0);
 } else if (command === 'idea') {
-  const ideaCode = require('../commands/idea').ideaAtris(process.argv.slice(3));
-  process.exit(Number.isInteger(ideaCode) ? ideaCode : 0);
+  Promise.resolve(require('../commands/idea').ideaAtris(process.argv.slice(3))).then((ideaCode) => {
+    process.exit(Number.isInteger(ideaCode) ? ideaCode : 0);
+  }, (error) => {
+    console.error(`atris idea: ${error && error.message || error}`);
+    process.exit(1);
+  });
 } else if (command === 'done') {
   const doneCode = require('../commands/done').doneAtris(process.argv.slice(3));
   process.exit(Number.isInteger(doneCode) ? doneCode : 0);

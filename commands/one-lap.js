@@ -242,6 +242,18 @@ function lapModelPins(executor, validators = []) {
   };
 }
 
+// The roster pins, then a caller's overrides: a time cap for the build wins
+// over the roster's, and a caller's house rules ride at the end of the
+// builder's brief (atris idea tick sends both).
+function lapFlightPins(executor, validators = [], options = {}) {
+  const pins = lapModelPins(executor, validators);
+  const cap = Math.floor(Number(options.maxSeconds));
+  if (Number.isFinite(cap) && cap > 0) pins.maxSeconds = cap;
+  const brief = String(options.brief || '').trim();
+  if (brief) pins.brief = brief;
+  return pins;
+}
+
 function taskById(runCli, taskId) {
   const result = runCli(['task', 'show', taskId, '--json']);
   if (!result || result.status !== 0) return null;
@@ -426,10 +438,16 @@ async function runOneLap(ask, options = {}) {
   const asJson = options.asJson === true;
   const runCli = options.ownCli || ((args, cwd = root) => ownCli(root, args, cwd));
   const progress = options.progress || ((line) => process.stderr.write(`${line}\n`));
+  // A caller that drives laps itself (atris idea tick) reads the result object
+  // instead of parsing printed text, and can keep the lap quiet.
+  const report = (result) => {
+    if (typeof options.onResult === 'function') options.onResult(result);
+    if (options.quiet !== true) emit(result, asJson);
+  };
   const text = String(ask || '').replace(/\s+/g, ' ').trim();
   if (!text) {
     const result = { schema: 'atris.one_lap.v1', ok: false, status: 'stuck', reason: 'a request is required', next_action: 'atris "<request>"' };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
 
@@ -453,7 +471,7 @@ async function runOneLap(ask, options = {}) {
         : oneLapRetryCommand(text, options),
     });
     result.resumed = true;
-    emit(result, asJson);
+    report(result);
     return 0;
   }
 
@@ -467,7 +485,7 @@ async function runOneLap(ask, options = {}) {
       nextAction: wishAnswerCommand(existing.wish),
     });
     result.resumed = true;
-    emit(result, asJson);
+    report(result);
     return 0;
   }
 
@@ -483,7 +501,7 @@ async function runOneLap(ask, options = {}) {
       reason: 'the lap verifier is frozen after intake and cannot be replaced on retry',
       next_action: oneLapRetryCommand(text, { engine: options.engine || '', verifier: existingVerifier }),
     };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
   if (task && ['review', 'done'].includes(String(task.status || ''))) {
@@ -500,7 +518,7 @@ async function runOneLap(ask, options = {}) {
         reason: 'the matching task is in Review without a passing matching one-lap receipt',
         next_action: `atris task show ${shellQuote(task.display_id)}`,
       };
-      emit(result, asJson);
+      report(result);
       return 1;
     }
     const result = {
@@ -528,7 +546,7 @@ async function runOneLap(ask, options = {}) {
       master_changed: false,
       ...(prior && prior.receipt && prior.receipt.result ? { result: prior.receipt.result } : {}),
     };
-    emit(result, asJson);
+    report(result);
     return 0;
   }
   if (task && String(task.status || '') === 'claimed') {
@@ -543,7 +561,7 @@ async function runOneLap(ask, options = {}) {
         nextAction: `atris task show ${shellQuote(task.display_id)}`,
       });
       result.resumed = true;
-      emit(result, asJson);
+      report(result);
       return 0;
     }
     const released = runCli(['task', 'release', task.display_id, '--as', actor, '--json']);
@@ -555,7 +573,7 @@ async function runOneLap(ask, options = {}) {
         reason: `the abandoned one-lap claim could not be released: ${detail}`,
         next_action: `atris task show ${shellQuote(task.display_id)}`,
       };
-      emit(result, asJson);
+      report(result);
       return 1;
     }
     task = taskById(runCli, task.display_id);
@@ -568,7 +586,7 @@ async function runOneLap(ask, options = {}) {
       // still has a front door: `atris wish` runs it through the gated flow.
       // Hand the new person that exact command, not unactionable prose.
       const result = { ...resultBase({ status: 'stuck', ask: text }), reason: intakeSafetyIssue, next_action: `atris wish ${shellQuote(text)}` };
-      emit(result, asJson);
+      report(result);
       return 2;
     }
   }
@@ -578,12 +596,12 @@ async function runOneLap(ask, options = {}) {
     executor = readyExecutor(root, options.engine || '');
   } catch (error) {
     const result = { ...resultBase({ status: 'stuck', ask: text }), reason: error.message, next_action: 'atris engine' };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
   if (!executor) {
     const result = { ...resultBase({ status: 'stuck', ask: text }), reason: 'no ready executor engine is installed', next_action: 'atris engine' };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
 
@@ -593,7 +611,7 @@ async function runOneLap(ask, options = {}) {
       const parsedIntakeVerifier = parseVerifyCommand(intakeVerifier);
       if (!parsedIntakeVerifier.ok) {
         const result = { ...resultBase({ status: 'stuck', ask: text, engine: executor, verifier: intakeVerifier }), reason: `the verifier is not safe to run (${parsedIntakeVerifier.reason})`, next_action: 'choose a local test command' };
-        emit(result, asJson);
+        report(result);
         return 2;
       }
     }
@@ -609,7 +627,7 @@ async function runOneLap(ask, options = {}) {
     if (!payload) {
       const detail = String(captured && (captured.stderr || captured.stdout) || 'wish intake failed').trim().slice(-500);
       const result = { ...resultBase({ status: 'stuck', ask: text, engine: executor }), reason: detail, next_action: oneLapRetryCommand(text, { engine: executor.id, verifier: intakeVerifier }) };
-      emit(result, asJson);
+      report(result);
       return captured && captured.status === 2 ? 2 : 1;
     }
     const durableWish = readWishes(root).find((row) => row.id === payload.wish_id);
@@ -621,12 +639,12 @@ async function runOneLap(ask, options = {}) {
         question: Array.isArray(payload.questions) ? payload.questions[0] : '',
         nextAction: wishAnswerCommand(wish),
       });
-      emit(result, asJson);
+      report(result);
       return 0;
     }
     if (payload.status !== 'delegated' || !payload.task_id || !payload.mission_id) {
       const result = { ...resultBase({ status: 'stuck', ask: text, wish, engine: executor }), reason: 'wish intake did not produce one scoped task and mission', next_action: `atris wish show ${payload.wish_id}` };
-      emit(result, asJson);
+      report(result);
       return 2;
     }
     mission = listMissions(root).find((row) => row.id === payload.mission_id) || null;
@@ -635,13 +653,13 @@ async function runOneLap(ask, options = {}) {
 
   if (!mission || !task) {
     const result = { ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor }), reason: 'the scoped task or mission could not be loaded', next_action: wish && wish.id ? `atris wish show ${wish.id}` : 'atris wish list' };
-    emit(result, asJson);
+    report(result);
     return 1;
   }
   const safetyIssue = oneLapSafetyIssue(task);
   if (safetyIssue) {
     const result = { ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor }), reason: safetyIssue, next_action: `atris task show ${task.display_id}` };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
   let frozenVerifier = missionVerifier(mission);
@@ -652,7 +670,7 @@ async function runOneLap(ask, options = {}) {
       reason: 'the lap verifier is frozen after intake and cannot be replaced on retry',
       next_action: oneLapRetryCommand(text, { engine: options.engine || '', verifier: frozenVerifier }),
     };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
   const verifier = frozenVerifier || requestedVerifier || projectVerifier(root);
@@ -666,13 +684,13 @@ async function runOneLap(ask, options = {}) {
       nextAction: oneLapRetryCommand(text, { engine: options.engine || '', verifier: '<command>' }),
     });
     result.engine = executor.id;
-    emit(result, asJson);
+    report(result);
     return 0;
   }
   const parsedVerifier = parseVerifyCommand(verifier);
   if (!parsedVerifier.ok) {
     const result = { ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor, verifier }), reason: `the mission has no safe runnable verifier (${parsedVerifier.reason})`, next_action: `atris mission status ${mission.id}` };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
   if (!frozenVerifier) {
@@ -685,7 +703,7 @@ async function runOneLap(ask, options = {}) {
         reason: `the verifier could not be frozen before dispatch: ${error.message}`,
         next_action: `atris mission status ${mission.id}`,
       };
-      emit(result, asJson);
+      report(result);
       return 1;
     }
   }
@@ -697,7 +715,7 @@ async function runOneLap(ask, options = {}) {
       reason: 'no distinct ready validator engine is installed',
       next_action: 'atris engine',
     };
-    emit(result, asJson);
+    report(result);
     return 2;
   }
 
@@ -711,7 +729,7 @@ async function runOneLap(ask, options = {}) {
       reviewOnly: true,
       verifierCommand: verifier,
       validatorEngines: validators.map((entry) => entry.id),
-      ...lapModelPins(executor, validators),
+      ...lapFlightPins(executor, validators, options),
       actor: mission.owner || 'mission-lead',
       installedEngines: engineRegistryView(root)
         .filter((entry) => engineReadyAt(entry))
@@ -738,7 +756,7 @@ async function runOneLap(ask, options = {}) {
     });
   } catch (error) {
     const result = { ...resultBase({ status: 'stuck', ask: text, wish, mission, task, engine: executor, verifier }), reason: error.message || String(error), next_action: `atris task show ${task.display_id}` };
-    emit(result, asJson);
+    report(result);
     return 1;
   }
 
@@ -769,7 +787,7 @@ async function runOneLap(ask, options = {}) {
       worktree: paused.worktree || null,
       next_action: paused.worktree ? `cd ${shellQuote(paused.worktree)} && atris worktree guard` : `atris task show ${shellQuote(task.display_id)}`,
     };
-    emit(result, asJson);
+    report(result);
     return 1;
   }
 
@@ -790,7 +808,7 @@ async function runOneLap(ask, options = {}) {
       worktree: ready.worktree,
       next_action: `atris mission status ${mission.id}`,
     };
-    emit(result, asJson);
+    report(result);
     return 1;
   }
 
@@ -819,7 +837,7 @@ async function runOneLap(ask, options = {}) {
     master_changed: false,
     result: flight.result,
   };
-  emit(result, asJson);
+  report(result);
   return 0;
   } finally {
     releaseAskLock(lapLock);
@@ -832,4 +850,5 @@ module.exports = {
   readyExecutor,
   readyValidators,
   lapModelPins,
+  lapFlightPins,
 };
