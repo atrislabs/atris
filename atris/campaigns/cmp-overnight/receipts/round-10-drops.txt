@@ -10,3 +10,4 @@ DROP test/improve-vitals-html--mut-L160-7.test.js: Duplicates the closed-loop di
 DROP test/usage-cmd--mut-L28-1.test.js: Duplicates request-counter rendering already checked in test/usage-cmd--mut-L23-6.test.js.
 DROP test/watch-cmd--mut-L77-5.test.js: Uses the real clock; a delay of 30 seconds changes the expected age and fails the test.
 DROP test/zen-cmd--mut-L41-6.test.js: Leaves crontab discovery unmocked, allowing reads of real-home scripts referenced by the user's scheduled jobs.
+DROP test/done-cmd--mut-L205-7.test.js: passes locally but fails on the test server, which sets its own actor
