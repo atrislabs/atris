@@ -34,7 +34,7 @@ The final exam (round 17) put the last leader, v12, against the first instructio
 
 Each step looked like a gain, but each comparison was about 48 jobs a side, and always keeping the winner of a noisy comparison overstates the gain. The direct test against the starting point shows no net improvement on this task. Rewriting instructions alone did not make the agents better at it.
 
-What did hold up: 939 tests that each catch a break no earlier test caught, on master after review; a loop that ran for hours, set aside every losing version on its own, and caught its own failures (a usage limit that skipped reviews, tests that only passed on this Mac, flaky checks); and a final exam honest enough to catch the overstated story before it was posted.
+What did hold up: 1,017 tests that each catch a break no earlier test caught, on master after review; a loop that ran for hours, set aside every losing version on its own, and caught its own failures (a usage limit that skipped reviews, tests that only passed on this Mac, flaky checks); and a final exam honest enough to catch the overstated story before it was posted.
 
 ## Receipts
 
