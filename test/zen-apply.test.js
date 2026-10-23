@@ -306,6 +306,36 @@ test('atris zen says how long until a side copy with unsaved work gets saved', (
   }
 });
 
+test('a side copy whose only change is a node_modules link is put away like a clean one', () => {
+  const { base, checkout } = createRepo();
+  try {
+    fs.appendFileSync(path.join(checkout, '.git', 'info', 'exclude'), 'node_modules/\n');
+    const packages = path.join(base, 'packages');
+    fs.mkdirSync(packages);
+    fs.writeFileSync(path.join(packages, 'keep.js'), 'shared\n');
+    const linked = path.join(base, 'linked');
+    const working = path.join(base, 'working');
+    const hourAgo = new Date(Date.now() - 3600000);
+    for (const [copy, branch] of [[linked, 'linked-branch'], [working, 'working-branch']]) {
+      git(checkout, 'worktree', 'add', '-q', copy, '-b', branch);
+      fs.symlinkSync(packages, path.join(copy, 'node_modules'));
+      ageHistory(copy, hourAgo);
+    }
+    write(working, 'wip.js', 'half done\n');
+
+    const check = zen(checkout, 30, '--check');
+    assert.match(check.stdout, /1 side copy has unsaved work/);
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.ok(!fs.existsSync(linked), cli.stdout);
+    assert.ok(fs.existsSync(path.join(working, 'node_modules')));
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner/);
+    assert.equal(fs.readFileSync(path.join(packages, 'keep.js'), 'utf8'), 'shared\n');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen keeps team notes from unpushed commits in the tree', () => {
   const { base, seed, checkout } = createRepo();
   try {
