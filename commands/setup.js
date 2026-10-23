@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { loadCredentials, promptUser } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 

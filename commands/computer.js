@@ -35,7 +35,7 @@ const {
   runEngineDeviceLoginCommand,
   validEngineLoginSeat,
 } = require('./engine');
-const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
+const { consoleCommand } = require('./console');
 const { streamSession } = require('./serve');
 const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap');
 const { envForcesNonInteractive } = require('../lib/noninteractive');

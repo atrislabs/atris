@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const readline = require('readline');
 const { resolveClaudeRunnerBin } = require('../lib/runner-command');
 

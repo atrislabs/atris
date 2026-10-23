@@ -18,7 +18,6 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { parseScopeFlag } = require('../lib/cli-scope');
 
 // ── Config ──────────────────────────────────────────────
