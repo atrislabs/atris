@@ -1066,10 +1066,19 @@ function hasIndependentXpReview(episode) {
     && reviewActors.includes(verifier);
 }
 
+function readLinkedXpFile(filePath, options = {}) {
+  try {
+    return readJsonl(filePath, options);
+  } catch {
+    console.error(`warning: skipped unreadable linked xp file at ${filePath}`);
+    return [];
+  }
+}
+
 // Historical linked ledgers predate the shared writer. Require explicit
 // eligibility here; receipt conversion also enforces independent review.
 function recoverLinkedTaskEpisodes(workspace) {
-  return careerXpLinkedRoots(workspace).flatMap(root => readJsonl(path.join(root, TASK_EPISODES_FILE), { allowPartialTail: true }))
+  return careerXpLinkedRoots(workspace).flatMap(root => readLinkedXpFile(path.join(root, TASK_EPISODES_FILE), { allowPartialTail: true }))
     .filter(episode => episode?.state?.status === 'done' && episode?.career_xp?.eligible === true
       && String(episode.proof || '').trim()
       && asNumber(episode.career_xp.reward ?? episode.reward?.value) > 0
@@ -1078,7 +1087,7 @@ function recoverLinkedTaskEpisodes(workspace) {
 
 function recoverLinkedReceipts(workspace) {
   return careerXpLinkedRoots(workspace).flatMap(root => {
-    const chain = normalizeReceiptChain(readJsonl(path.join(root, CAREER_XP_RECEIPTS_FILE)), { allowLegacyUpgrade: false });
+    const chain = normalizeReceiptChain(readLinkedXpFile(path.join(root, CAREER_XP_RECEIPTS_FILE)), { allowLegacyUpgrade: false });
     return chain.integrity.status === 'verified' ? chain.receipts : [];
   });
 }

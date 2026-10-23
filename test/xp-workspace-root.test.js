@@ -433,6 +433,64 @@ test('verified linked receipts survive missing episodes and deduplicate recovere
   }
 });
 
+for (const kind of ['receipts', 'episodes']) {
+  test(`corrupt linked ${kind} are skipped without losing valid XP`, (t) => {
+    const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-corrupt-'));
+    const main = path.join(base, 'main');
+    const good = path.join(base, 'good');
+    const bad = path.join(base, 'bad');
+    const scratch = path.join(base, 'scratch');
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const env = { ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+    const state = root => path.join(root, '.atris', 'state');
+    const run = cwd => cp.spawnSync(process.execPath, [cli, 'xp', '--local', '--json'], {
+      cwd, env, encoding: 'utf8', timeout: 30000,
+    });
+    const seed = (root, id) => {
+      fs.mkdirSync(state(root), { recursive: true });
+      fs.writeFileSync(path.join(state(root), 'task_episodes.jsonl'), JSON.stringify(reviewEpisode(id, root)) + '\n');
+      const result = run(root);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.equal(JSON.parse(result.stdout).agent_xp, 1);
+      return fs.readFileSync(path.join(state(root), 'career_xp_receipts.jsonl'), 'utf8');
+    };
+    try {
+      fs.mkdirSync(main);
+      git(main, 'init', '-b', 'main');
+      git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+      seed(main, 'main-review');
+      const goodReceipt = seed(scratch, 'good-review');
+      fs.rmSync(scratch, { recursive: true });
+      const badReceipt = seed(scratch, 'bad-review');
+      fs.rmSync(scratch, { recursive: true });
+      git(main, 'worktree', 'add', '-b', 'good', good);
+      git(main, 'worktree', 'add', '-b', 'bad', bad);
+      fs.mkdirSync(state(good), { recursive: true });
+      fs.mkdirSync(state(bad), { recursive: true });
+      fs.writeFileSync(path.join(state(good), 'career_xp_receipts.jsonl'), goodReceipt);
+      const badFile = path.join(state(bad), kind === 'receipts' ? 'career_xp_receipts.jsonl' : 'task_episodes.jsonl');
+      const valid = kind === 'receipts' ? badReceipt : JSON.stringify(reviewEpisode('bad-review', bad)) + '\n';
+      const corrupt = valid + '{broken json}\n' + valid;
+      fs.writeFileSync(badFile, corrupt);
+      for (const cwd of [main, good]) {
+        const result = run(cwd);
+        assert.equal(result.status, 0, result.stderr || result.stdout);
+        const payload = JSON.parse(result.stdout);
+        assert.equal(payload.agent_xp, 2, 'main and good linked receipt count; entire corrupt file is skipped');
+        assert.equal(payload.integrity.status, 'verified');
+        const warnings = result.stderr.trim().split('\n');
+        assert.equal(warnings.length, 1, result.stderr);
+        assert.ok(warnings[0].startsWith('warning: skipped unreadable linked '), result.stderr);
+        assert.ok(warnings[0].includes(badFile), result.stderr);
+        t.diagnostic(`real xp --local --json: exit ${result.status}; ${JSON.stringify({ agent_xp: payload.agent_xp, integrity: payload.integrity.status })}; ${result.stderr.trim()}`);
+      }
+      assert.equal(fs.readFileSync(badFile, 'utf8'), corrupt, 'source file stays untouched');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
 test('overlapping real collectors cannot append against a stale receipt head', async (t) => {
   const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-race-'));
   const state = path.join(base, '.atris', 'state');
