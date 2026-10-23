@@ -7,11 +7,12 @@
 # treatment keeps the four opening lines; control strips them from every file.
 # Output: atris/campaigns/cmp-four-lines-real/evals/runs/<engine>/<arm>-<n>/
 #   workdir/ (no .git, no node_modules), transcript.log, meta.json
-# Env: FOUR_LINES_MODEL picks a model, FOUR_LINES_TIMEOUT caps seconds (900).
+# Env: FOUR_LINES_MODEL picks a model (codex defaults to gpt-6.1-sol),
+# FOUR_LINES_TIMEOUT caps seconds (900).
 set -euo pipefail
 
 ENGINE="${1:-}"; ARM="${2:-}"; N="${3:-}"
-usage() { echo "usage: $0 <claude> <treatment|control> <n>" >&2; exit 2; }
+usage() { echo "usage: $0 <claude|codex> <treatment|control> <n>" >&2; exit 2; }
 [ -n "$ENGINE" ] && [ -n "$N" ] || usage
 case "$ARM" in treatment|control) ;; *) usage ;; esac
 
@@ -23,7 +24,11 @@ LINE_RE='^- \*\*(Acceleration|Accuracy|Ambition|Agency)\.\*\* '
 
 case "$ENGINE" in
   claude) command -v claude >/dev/null || { echo "claude is not installed" >&2; exit 3; } ;;
-  *) echo "engine '$ENGINE' is not wired yet (claude only so far)" >&2; exit 3 ;;
+  codex)
+    command -v codex >/dev/null || { echo "codex is not installed" >&2; exit 3; }
+    [ -f "$HOME/.codex/auth.json" ] || { echo "codex is not logged in (no ~/.codex/auth.json)" >&2; exit 3; }
+    ;;
+  *) echo "engine '$ENGINE' is not wired yet (claude and codex so far)" >&2; exit 3 ;;
 esac
 
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
@@ -76,6 +81,26 @@ case "$ENGINE" in
         > "$OUT/transcript.log" 2>&1 < /dev/null
     CODE=$?
     ;;
+  codex)
+    # A temp CODEX_HOME holding only the login: no user config.toml, AGENTS.md,
+    # instructions, memories, skills, rules, or MCP servers load. HOME is a
+    # temp dir too, because codex also reads skills from ~/.agents. The sandbox
+    # lets shell commands write only inside the project. If the login token
+    # refreshes mid run, copy it back so the real login keeps working.
+    CH="$ROOT/codex-home"; mkdir -p "$CH" "$ROOT/home"
+    cp "$HOME/.codex/auth.json" "$CH/auth.json"; chmod 600 "$CH/auth.json"
+    PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" CODEX_HOME="$CH" HOME="$ROOT/home" \
+    env -u OPENAI_API_KEY -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED -u CODEX_THREAD_ID \
+      perl -e 'alarm shift; exec @ARGV' "$CAP" \
+      codex exec --model "${FOUR_LINES_MODEL:-gpt-6.1-sol}" \
+        --cd "$W" --sandbox workspace-write -c approval_policy='"never"' \
+        --ignore-user-config --ignore-rules --ephemeral --json --color never \
+        "$PROMPT" > "$OUT/transcript.log" 2>&1 < /dev/null
+    CODE=$?
+    node -e 'const f=require("fs"),[a,b]=process.argv.slice(1),r=p=>{try{return JSON.parse(f.readFileSync(p,"utf8")).last_refresh||""}catch{return ""}};
+      if (r(a) > r(b)) { f.copyFileSync(a, b); console.error("codex login refreshed during the run; saved it back"); }' \
+      "$CH/auth.json" "$HOME/.codex/auth.json" || true
+    ;;
 esac
 set -e
 ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SECS=$(( $(date +%s) - T0 ))
@@ -87,7 +112,7 @@ STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" node -e '
 const fs = require("fs"), crypto = require("crypto"), cp = require("child_process");
 const e = process.env, out = e.OUT;
 const sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex");
-let model = e.FOUR_LINES_MODEL || null;
+let model = e.FOUR_LINES_MODEL || (e.ENGINE === "codex" ? "gpt-6.1-sol" : null);
 for (const line of fs.readFileSync(out + "/transcript.log", "utf8").split("\n")) {
   try { const j = JSON.parse(line); if (j.type === "system" && j.subtype === "init") { model = j.model; break; } } catch {}
 }
@@ -96,7 +121,17 @@ let version = null; try { version = cp.execFileSync(e.ENGINE, ["--version"], { e
 const meta = {
   engine: e.ENGINE, engine_version: version, model, arm: e.ARM, n: Number(e.N),
   atris_md_sha256: sha,
-  isolation: {
+  isolation: e.ENGINE === "codex" ? {
+    workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
+    instructions: "CODEX_HOME is a new temp dir holding only auth.json, plus --ignore-user-config and --ignore-rules: no user config.toml, AGENTS.md, instructions, memories, MCP servers, or exec rules load; only the fresh project AGENTS.md does",
+    skills: "HOME is a temp dir so ~/.agents/skills does not load; only the four skills codex ships with remain",
+    memory: "--ephemeral and a new CODEX_HOME, so no past sessions or memories exist",
+    auth: "OPENAI_API_KEY unset; the copied ChatGPT login is used, and saved back only if it refreshed mid run",
+    writes: "--sandbox workspace-write with approval_policy never; shell writes outside the project fail",
+    stdin: "/dev/null, so codex never waits on input",
+    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    probe: "2026-10-23: probe run named only the project AGENTS.md and the four built-in codex skills; touch in the real home failed with Operation not permitted, touch ./ worked. Without the temp HOME it also listed ~/.agents/skills, which is why HOME is replaced",
+  } : {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "--setting-sources project,local: user CLAUDE.md, user settings, user hooks, user skills, and plugins do not load; only the fresh project files do",
     mcp: "--strict-mcp-config with an empty server list",
