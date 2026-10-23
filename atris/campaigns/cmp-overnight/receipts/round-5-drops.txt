@@ -1,0 +1,14 @@
+DROP test/align-cmd--mut-L222-7.test.js: Pins the entire console transcript, including unrelated spacing and progress messages.
+DROP test/app-cmd--mut-L157-0.test.js: Snapshots the entire generated manifest, including incidental prose and formatting.
+DROP test/cloud-cmd--mut-L199-4.test.js: Pins an internal 600ms timer call; delaying the first deletion is harmless.
+DROP test/decide-cmd--mut-L25-8.test.js: Duplicates running-mission ask listing already covered in test/decide.test.js.
+DROP test/dream-cmd--mut-L236-6.test.js: Duplicates successful default-runner launch coverage in test/engine-resource.test.js.
+DROP test/drill-cmd--mut-L206-6.test.js: Calls runDrill, which runs git config to set the sandbox repository's user name and email.
+DROP test/human-missions-cmd--mut-L344-5.test.js: Enforces a cosmetic distinction between equivalent durations, 60s and 1m 0s.
+DROP test/align-cmd--mut-L222-7.test.js: Pins the entire console transcript, including unrelated spacing and progress messages.
+DROP test/app-cmd--mut-L157-0.test.js: Snapshots the entire generated manifest, including incidental prose and formatting.
+DROP test/cloud-cmd--mut-L199-4.test.js: Pins an internal 600ms timer call; delaying the first deletion is harmless.
+DROP test/decide-cmd--mut-L25-8.test.js: Duplicates running-mission ask listing already covered in test/decide.test.js.
+DROP test/dream-cmd--mut-L236-6.test.js: Duplicates successful default-runner launch coverage in test/engine-resource.test.js.
+DROP test/drill-cmd--mut-L206-6.test.js: Calls runDrill, which runs git config to set the sandbox repository's user name and email.
+DROP test/human-missions-cmd--mut-L344-5.test.js: Enforces a cosmetic distinction between equivalent durations, 60s and 1m 0s.
