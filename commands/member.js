@@ -1002,8 +1002,12 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
-  pushFlagValue(startArgs, args, '--yes-lock');
-  pushFlagValue(startArgs, args, '--yes-lock-parent');
+  // a run inside a woken member's run keeps its seal: mission start reads it
+  // from the environment, never from these words
+  if (!process.env.ATRIS_HANDOFF_YES_LOCK) {
+    pushFlagValue(startArgs, args, '--yes-lock');
+    pushFlagValue(startArgs, args, '--yes-lock-parent');
+  }
   // Member runs choose and drive work immediately, so an absent check must not
   // leave autonomous callers with a mission that never ran. A check inferred
   // from the mission text counts as named.
@@ -1301,6 +1305,10 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
       console.error(`${name} is parked; running anyway`);
     }
   } catch { /* an unreadable card is requireMemberDir's problem, not this notice's */ }
+  if (args.filter(require('./mission').isYesLockWord).length > 1) {
+    return printMemberRunResult({ started: false, state: null, mission_id: null,
+      error: 'member run got more than one --yes-lock, so it is not clear which seal applies; nothing started' }, asJson, { quiet });
+  }
   const requestedVerifier = readFlag(args, '--verify', '') || memberRunConfiguredVerifier(paths);
   const missionText = memberRunMissionText(args);
   const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));
@@ -11391,11 +11399,16 @@ function startHandoffReceiver(root, to, step, parentMissionId = null) {
   // Every woken run is under the fixed handoff seal, whatever handed off:
   // outward commands and merging to master wait for the owner's yes. The
   // parent only says where its yes cards show.
-  const lockArgs = ['--yes-lock', JSON.stringify(require('../lib/yes-lock').handoffSeal()),
-    ...(parentMissionId ? ['--yes-lock-parent', parentMissionId] : [])];
+  // The seal goes by environment only, never on the command line the step
+  // text shares, and every job the woken run starts inherits it. A step that
+  // starts with "-" is quoted so it can never read as an option.
+  env.ATRIS_HANDOFF_YES_LOCK = JSON.stringify(require('../lib/yes-lock').handoffSeal());
+  if (parentMissionId) env.ATRIS_HANDOFF_YES_LOCK_PARENT = parentMissionId;
+  else delete env.ATRIS_HANDOFF_YES_LOCK_PARENT;
+  const stepText = /^\s*-/.test(String(step)) ? `step: ${String(step).trim()}` : String(step);
   const res = require('child_process').spawnSync(process.execPath, [
     path.join(__dirname, '..', 'bin', 'atris.js'),
-    'member', 'run', to, step, '--minutes', '15', '--no-verify', ...lockArgs, '--detach', '--json',
+    'member', 'run', to, stepText, '--minutes', '15', '--no-verify', '--detach', '--json',
   ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   let payload = null;
   const lines = String(res.stdout || '').trim().split('\n');

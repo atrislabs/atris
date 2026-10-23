@@ -3306,8 +3306,18 @@ function missionFromArgs(args) {
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
-  const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
-  const yesLockParent = yesLocks.length ? String(readFlag(args, '--yes-lock-parent', '') || '').trim() : '';
+  // The seal is never read from text a caller passes through: two
+  // --yes-lock words (one could be the objective) refuse the start, and a
+  // run woken by a handoff carries its seal in the environment, which every
+  // job it starts inherits. (Codex review round 6 on #1483.)
+  if (args.filter(isYesLockWord).length > 1) {
+    exitMissionError('mission start got more than one --yes-lock, so it is not clear which seal applies; nothing started', 2, wantsJson(args));
+  }
+  const handoffSeal = String(process.env.ATRIS_HANDOFF_YES_LOCK || '').trim();
+  const yesLocks = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLockParent = yesLocks.length
+    ? String((handoffSeal ? process.env.ATRIS_HANDOFF_YES_LOCK_PARENT : readFlag(args, '--yes-lock-parent', '')) || '').trim()
+    : '';
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -3369,7 +3379,12 @@ function missionFromArgs(args) {
 
 // --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
 // steps a job may not do before the owner says yes. Bad input stops the start.
-const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
+const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy', 'spend']);
+function isYesLockWord(arg) {
+  const text = String(arg || '').trim();
+  return text === '--yes-lock' || text.startsWith('--yes-lock=');
+}
+
 function readYesLockSeal(raw, asJson) {
   if (!raw) return [];
   let list;
@@ -3379,7 +3394,7 @@ function readYesLockSeal(raw, asJson) {
     exitMissionError('--yes-lock takes a JSON list of {step, text, categories}', 2, asJson);
   }
   const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
-  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy', 2, asJson);
+  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy, spend', 2, asJson);
   return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
@@ -12882,6 +12897,7 @@ module.exports = {
   recordMemberHandoff,
   updateMemberHandoff,
   resolveMemberWorkspaceRoot,
+  isYesLockWord,
   closeMemberHandoffsForReceiver,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,

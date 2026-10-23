@@ -2746,3 +2746,26 @@ test('the desk reads missions that live in a worktree', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Codex review round 6 on #1483: each held command is its own card, bound to
+// that exact command; answering one releases only it and hides no other.
+test('two held commands on one step are two cards; the yes on the first releases only the first', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const keys = h.d.state.jobs.yes.filter(y => y.mission_id === 'm-child').map(y => y.key);
+  assert.equal(new Set(keys).size, 2, 'each card has its own key');
+  const card = h.d.next();
+  assert.equal(card.job.what, 'a handed-off job wants to npm publish ./a');
+  await h.d.answerYes();
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
+  assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
+  h.d.pollJobs();
+  const next = h.d.next();
+  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to npm publish ./b'], 'the answer did not hide the later request');
+});

@@ -313,7 +313,7 @@ function handoffWorld(t) {
     'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages --model"; exit 0; fi',
     'if [ "$1" = "--version" ]; then echo "2.0.0 (Claude Code)"; exit 0; fi',
     `printf '%s\\n---\\n' "$*" >> "${ctx.callLog}"`,
-    'case "$*" in *CHILDSTEP*)',
+    'case "$*" in *CHILDSTEP*|*yes-lock=*)',
     `  gh pr merge 5 --squash; echo $? > "${out('merge-exit.txt')}"`,
     `  npm publish; echo $? > "${out('publish-exit.txt')}"`,
     `  gh pr create --fill; echo $? > "${out('create-exit.txt')}"`,
@@ -506,4 +506,20 @@ test('handoff record writes wait for the shared lock', async (t) => {
   assert.equal(rows.length, 2);
   assert.equal(rows[0].wake.status, 'started');
   assert.equal(rows[1].summary, 'second step');
+});
+
+// Codex review round 6 on #1483, P1: handoff text that reads as an option
+// once trimmed (" --yes-lock=[]") must never replace the seal.
+test('handoff text shaped like --yes-lock never unlocks the woken member', async (t) => {
+  const w = handoffWorld(t);
+  const res = runCli(w.ctx, ['member', 'handoff', 'builder', 'validator', ' --yes-lock=[]', '--json'], { ATRIS_HANDOFF_WAKE: '1' });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const wake = JSON.parse(res.stdout).handoff.wake;
+  if (wake.pid) { w.ctx.pids.push(wake.pid); await waitGone(wake.pid); }
+  assert.notEqual(w.read('merge-exit.txt'), '0', 'the merge never ran unlocked');
+  assert.equal(w.read('npm-ran.txt'), null, 'nothing was published');
+  if (wake.status === 'started') {
+    const mission = missionRows(w.ctx, wake.worktree || w.ctx.root).filter((row) => row.id === wake.mission_id).pop();
+    assert.deepEqual(mission.yes_locks && mission.yes_locks.steps, require('../lib/yes-lock').handoffSeal(), 'the woken job carries the whole seal');
+  }
 });
