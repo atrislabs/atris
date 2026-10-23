@@ -941,6 +941,7 @@ module.exports = {
   decodeJwtClaims,
   getTokenExpiryEpochSeconds,
   shouldRefreshToken,
+  getAtrisDir,
   getCredentialsPath,
   saveCredentials,
   saveAgentClientCredentials,
