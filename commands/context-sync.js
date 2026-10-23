@@ -223,65 +223,6 @@ async function businessDiff(slug) {
 
 
 /**
- * atris log <business-slug>
- * Shows human-readable commit history.
- */
-async function businessLog(slug) {
-  const biz = await resolveBusiness(slug);
-
-  if (!biz.workspaceId) {
-    console.error(`Business "${slug}" has no workspace.`);
-    process.exit(1);
-  }
-
-  const limit = 20;
-  const pathFilter = process.argv.includes('--path') ? process.argv[process.argv.indexOf('--path') + 1] : null;
-
-  const params = `limit=${limit}` + (pathFilter ? `&path=${encodeURIComponent(pathFilter)}` : '');
-  const result = await apiRequestJson(
-    `/business/${biz.businessId}/workspaces/${biz.workspaceId}/git/log?${params}`,
-    { method: 'GET', token: biz.token }
-  );
-
-  if (!result.ok) {
-    if (result.status === 409) {
-      console.log('\n  Computer is sleeping. Wake it first.\n');
-    } else {
-      console.error(`\n  Failed to get history: ${result.errorMessage || result.status}\n`);
-    }
-    process.exit(1);
-  }
-
-  const commits = result.data.commits || [];
-  if (commits.length === 0) {
-    console.log(`\n  ${biz.name}: no history yet.\n`);
-    return;
-  }
-
-  console.log(`\n  ${biz.name}: history\n`);
-
-  for (const commit of commits) {
-    const date = _timeSince(commit.date) || commit.date;
-    const msg = commit.message || '';
-
-    // Parse actor from message format "actor/name: message"
-    const colonIdx = msg.indexOf(': ');
-    let actor = '';
-    let description = msg;
-    if (colonIdx > 0 && colonIdx < 40) {
-      actor = msg.substring(0, colonIdx);
-      description = msg.substring(colonIdx + 2);
-    }
-
-    const actorDisplay = actor ? `  ${actor}` : '';
-    console.log(`  ${date.padEnd(12)} ${actorDisplay}`);
-    console.log(`               ${description}`);
-    console.log('');
-  }
-}
-
-
-/**
  * Convert ISO timestamp to human-readable relative time (e.g., "5m ago").
  * @param {string} isoString - ISO 8601 timestamp
  * @returns {string|null} Relative time string, or null if no input
@@ -300,4 +241,4 @@ function _timeSince(isoString) {
 }
 
 
-module.exports = { businessStatus, businessDiff, businessLog };
+module.exports = { businessStatus, businessDiff };
