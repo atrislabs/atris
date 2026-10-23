@@ -23,6 +23,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const phone = require('../lib/gm-phone');
 const { phonePage } = require('../lib/gm-phone-page');
+const { makeProfileDir, removeProfileDir, headlessArgs } = require('../lib/headless-chrome');
 
 const CHROMES = [
   process.env.CHROME_PATH,
@@ -97,12 +98,14 @@ async function serve(desk) {
 // ---- chrome over the devtools protocol --------------------------------------------
 
 async function launch(chromePath) {
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-trace-chrome-'));
-  const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank'];
+  const profile = makeProfileDir('gm-trace-chrome-');
+  const args = headlessArgs(profile, ['--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank']);
   // linux runners often refuse chrome's sandbox; the page is our own, served locally
   if (process.platform === 'linux') args.push('--no-sandbox');
+  // mac: a fresh profile asks the login keychain for chrome's storage key and pops a dialog; use a throwaway key instead
+  if (process.platform === 'darwin') args.push('--use-mock-keychain', '--password-store=basic');
   const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const quit = () => { try { proc.kill('SIGKILL'); } catch { /* gone */ } fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 }); };
+  const quit = () => { try { proc.kill('SIGKILL'); } catch { /* gone */ } removeProfileDir(profile); };
   try {
     const port = await new Promise((resolve, reject) => {
       let err = '';
@@ -771,7 +774,6 @@ const TABLE_LOOK = `(function () {
       var w = td.getBoundingClientRect().width;
       widths[heads[ci]] = Math.min(widths[heads[ci]] == null ? Infinity : widths[heads[ci]], Math.round(w));
       if (['member', 'ovr', 'engine'].indexOf(heads[ci]) >= 0) {
-        var lh = parseFloat(cs.lineHeight) || 24;
         var text = td.querySelector('button') || td;
         var r = document.createRange(); r.selectNodeContents(text);
         if (r.getClientRects().length > 1) oneLine.push(heads[ci] + ' of ' + tr.querySelector('.who').textContent);
@@ -838,7 +840,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
   }, viewport);
 }
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
+module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
