@@ -1,4 +1,4 @@
-# Validation — plan-review-by-validator
+# Validation: plan-review-by-validator
 
 > **Role:** System Validation Script
 > **Rule:** If ANY step fails, the feature is broken.
@@ -63,4 +63,4 @@ grep -qE "(fail|ℹ fail) 0" /tmp/atris-plan-review-suite.log
 - [ ] `atris autopilot --dry-run` does not falsely reject plan-review on reactive ticks (they skip the gate because `context.kind !== 'endgame'` or equivalent).
 - [ ] `atris update --all --dry-run` still scans cleanly (no import or export regressions).
 
-**Status:** Verified — 2026-04-19
+**Status:** Verified, 2026-04-19
