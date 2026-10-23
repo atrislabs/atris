@@ -31,6 +31,7 @@ function ideaUsage() {
     '       atris idea retry <n> [--repo <path>] [--verify "<cmd>"]',
     '       atris idea tick [--repo <path>] [--max-minutes <n>]',
     '       atris idea on|off [--repo <path>] [--dry-run]',
+    '       atris idea login|logout   (the Claude login sealed builds use)',
   ].join('\n');
 }
 
@@ -213,6 +214,35 @@ function retryIdea(ref, { repo, verify = '', json, log }) {
   return 0;
 }
 
+// One command for the login a sealed build needs: Claude's own setup-token
+// runs on the person's terminal, the token is picked off the screen (or
+// pasted when it cannot be), proven with a sign-in from a blank home, then
+// saved where only the owner can read it. Nothing is saved when it fails.
+function ideaLogin({ log = console.log, deps = {} } = {}) {
+  const login = { ...require('../lib/engine-login'), ...deps };
+  const tty = deps.isTTY !== undefined ? deps.isTTY : Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (!tty) {
+    log('run this in your own terminal: atris idea login');
+    return 2;
+  }
+  log('a browser window opens for Claude. approve it there; there is nothing to copy.');
+  let token = login.findToken(login.recordSetupToken().text);
+  if (!token && login.askToken) token = String(login.askToken() || '').trim();
+  if (!token) {
+    log('no login came back from claude setup-token. nothing saved.');
+    return 1;
+  }
+  const check = login.checkToken(token);
+  if (!check.ok) {
+    log(`that login did not sign in${check.detail ? `: ${check.detail}` : ''}. nothing saved.`);
+    return 1;
+  }
+  login.saveToken(token);
+  log('done. sealed builds now sign in to Claude on your subscription.');
+  log('undo: atris idea logout');
+  return 0;
+}
+
 function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = console.log, keepDeps = {} } = {}) {
   const list = Array.isArray(args) ? args : [];
   if (argsWantHelp(list)) {
@@ -224,6 +254,12 @@ function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = co
   const json = flags.json === true;
   const verb = words[0];
 
+  if (verb === 'login' && words.length === 1) return ideaLogin({ log, deps: keepDeps.login });
+  if (verb === 'logout' && words.length === 1) {
+    const { forgetToken } = require('../lib/engine-login');
+    log(forgetToken() ? 'sealed builds no longer have a Claude login.' : 'there was no saved login.');
+    return 0;
+  }
   if (verb === 'retry' && words.length <= 2) return retryIdea(words[1], { repo, verify: flags.verify || '', json, log });
   if ((verb === 'on' || verb === 'off') && words.length === 1) {
     return switchTimer(verb === 'on', { repo, dryRun: flags.dryRun === true, json, log, keepDeps });
