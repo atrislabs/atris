@@ -425,6 +425,40 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
   }
 });
 
+test('over http: a choice card picks through /bet/pick with the same checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const titles = ['Write a getting started page for the phone', 'Record a two minute demo video for the readme'];
+  let n = 0;
+  const bet = title => ({ title, why_now: 'installs last week were 1,400.', expect: 'more people try it by nov 1.', target: { metric: 'installs', baseline: 1400, goal: 1700 }, metric_source: 'npm', verify: 'test -s docs/a.md', cost: 'about 2 hours', check_date: '2026-10-30', steps: [{ text: 'draft it', who: 'team', member: 'builder', public: false }, { text: 'publish it', who: 'you', public: true }] });
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, readTeam: () => null, generate: () => Promise.resolve(n < 2 ? { ok: true, bet: bet(titles[n++]) } : new Promise(() => {})), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  try {
+    await new Promise(r => setTimeout(r, 30));
+    const tap = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(tap.json.kind, 'choice');
+    assert.deepEqual(tap.json.choice.options.map(o => o.title), titles);
+    assert.equal((await h.call('POST', '/bet/pick', { token: 'nope', body: { id: tap.json.choice.options[0].id } })).status, 403);
+    const picked = await h.call('POST', '/bet/pick', { body: { id: tap.json.choice.options[0].id } });
+    assert.deepEqual([picked.status, picked.json.kind, picked.json.bet.title], [200, 'bet', titles[0]]);
+    assert.equal((await h.call('POST', '/bet/pick', { body: { id: tap.json.choice.options[1].id } })).status, 409);
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: a choice card is big titles to tap, each with one plain line of why, and a pick opens the full card', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /if \(s\.kind === 'choice'\) \{ drawChoiceCard\(s\); return; \}/);
+  assert.match(script, /api\('\/bet\/pick', \{ id: o\.id \}\)\.then\(function \(r\) \{/);
+  assert.match(script, /showCard\(r, true, true\);/);
+  assert.match(html, /\.option \.t \{[^}]*font-size: 20px;/);
+  assert.match(html, /\.option \.w \{[^}]*font-size: 17px;/);
+  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\)/);
+});
+
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
   const gmTarget = require('../lib/gm-target');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-target-'));

@@ -912,6 +912,8 @@ function desk(root, over = {}) {
     ...(over.setTimer ? { setTimer: over.setTimer } : {}),
     ...(known ? { bundle: known } : {}),
     generateQuestion: qgen.generateQuestion,
+    // most tests read one idea per tap; the choice card has its own tests
+    choices: Boolean(over.choices),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ ok: true, action: 'mission_started', mission: { id: 'mission-2026-10-21-write-a-getting-abc', owner: 'launcher', status: 'planning' } }, null, 2), stderr: '' };
@@ -1386,6 +1388,49 @@ test('desk: a failed writer never reaches the screen', async () => {
   assert.deepEqual([v.status, v.kind, v.error, v.events], ['ready', 'wait', null, []]);
 });
 
+test('choice: with 2 or more ideas ready a tap shows up to 3 to pick from; one tap opens it, the rest are passed', async () => {
+  const h = await filled(workspace(), { choices: true });
+  const c = h.d.next();
+  assert.deepEqual([c.status, c.kind, c.bet], ['ready', 'choice', null]);
+  assert.deepEqual(c.choice.options.map(o => o.title), TITLES.slice(0, 3));
+  // each option: a one-line title and one plain line of why, the idea's expected result
+  assert.deepEqual(Object.keys(c.choice.options[0]), ['id', 'title', 'why']);
+  assert.equal(c.choice.options[0].why, '300 more npm installs in the week before nov 1.');
+  for (const o of c.choice.options) assert.doesNotMatch(`${o.title} ${o.why}`, gmBet.OWNER_BANNED);
+  // the why is one short clause, never cut mid word: the real lines from this repo's ideas
+  assert.equal(gmBet.choiceWhy('if it works, the 7 days ending nov 3 pass 2,500 installs, past our best week of 2,319, with launch day oct 28 counted in it.'), 'the 7 days ending nov 3 pass 2,500 installs.');
+  assert.equal(gmBet.choiceWhy('if it works, maintainers share their scores on launch day oct 27 and weekly installs pass 2,500 by nov 1, past our best week of 2,319.'), 'maintainers share their scores on launch day oct 27 and weekly installs pass 2,500 by nov 1.');
+  assert.equal(gmBet.choiceWhy('if it works, weekly installs pass 2,450 by nov 3, past our best week of 2,319, as people run the one line and share the result.'), 'weekly installs pass 2,450 by nov 3, past our best week of 2,319.');
+  // one tap picks: its full card shows, with do it as before
+  const picked = h.d.pick({ id: c.choice.options[1].id });
+  assert.deepEqual([picked.ok, picked.status, picked.kind, picked.bet.title], [true, 'ready', 'bet', TITLES[1]]);
+  const rows = Object.fromEntries(h.ledger().map(r => [r.id, r]));
+  assert.deepEqual([rows[c.choice.options[0].id].status, rows[c.choice.options[0].id].note], ['passed', 'not picked']);
+  assert.deepEqual([rows[c.choice.options[2].id].status, rows[c.choice.options[1].id].status], ['passed', 'proposed']);
+  assert.equal((await h.d.doIt()).ok, true);
+  // a pick with nothing on screen, or an id not on the card, does nothing
+  assert.deepEqual(h.d.pick({ id: 'nope' }), { ok: false, reason: 'gone', message: 'there is nothing to pick on screen' });
+  // one idea ready: the single card, as before
+  const one = desk(workspace(), { choices: true });
+  one.d.warm();
+  await one.gen.releaseOne();
+  assert.equal(one.d.next().kind, 'bet');
+});
+
+test('choice: the deck order holds: a yes, then a finished job, then the choice; a re-tap passes every option', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  const h = jobDesk(root, { 'm-ask': { id: 'm-ask', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['post the thread on x now?'] } }, { choices: true });
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  assert.equal(h.d.next().kind, 'yes');
+  const c = h.d.next();
+  assert.equal(c.kind, 'choice');
+  h.d.next();
+  for (const o of c.choice.options) assert.equal(h.ledger().find(r => r.id === o.id).status, 'passed');
+});
+
 test('do it: starts a real mission with every step and the your-yes rule, then runs it', async () => {
   const h = await filled(workspace());
   h.d.next();
@@ -1664,6 +1709,7 @@ function jobDesk(root, missions, over = {}) {
     readHandoffs: () => over.handoffs || [],
     reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
     warmOnCreate: false,
+    choices: Boolean(over.choices),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[0] === 'engine' && args[1] === 'ask') {
@@ -1894,7 +1940,7 @@ test('page: the working line is static and lists who has each job; do it hands o
   assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}box\.appendChild\(el\('p', 'why', j\.why\)\);/);
   assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
   assert.doesNotMatch(html, /sendback|send back/);
-  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question\) && \(s\.status === 'ready'/);
+  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\) && \(s\.status === 'ready'/);
 });
 
 // ---- over http: the routes and the deck ----------------------------------------------------
@@ -1924,6 +1970,7 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
       now: () => NOW,
       log,
       generate: gen.generate,
+      choices: false,
       runCli: async args => (args[1] === 'start'
         ? { code: 0, stdout: '{"mission":{"id":"mission-x","owner":"launcher"}}' }
         : { code: 0, stdout: '{"action":"mission_run_detached"}' }),
