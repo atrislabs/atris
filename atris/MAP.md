@@ -176,6 +176,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | tests | `test/commands-1.test.js` to `test/commands-8.test.js`, shared setup in `test/helpers/commands-fixtures.js` | node --test test/ |
 | parallel one-lap runtime tests | `test/one-lap-runtime.test.js`, `test/one-lap-runtime-2.test.js` through `test/one-lap-runtime-5.test.js`, `test/helpers/one-lap-runtime.js` | All 22 real runtime cases share isolated setup and run as five balanced files; Mac sandbox workflow runs the wildcard. |
 | test suite speed baseline | `atris/receipts/test-suite-speed-baseline-2026-10-22.md` | Untouched full-suite timing, existing failures and saved local test inventory before parallel splits. |
+| full suite after one-lap split | `atris/receipts/test-suite-speed-after-one-lap-2026-10-22.md` | Measured full-suite timing and exact failure comparison; three additional mission-process failures block acceptance. |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
