@@ -47,10 +47,10 @@ EOF
 run_engine() {
   local p="$1"
   case "$ENGINE" in
-    claude) env -u ANTHROPIC_API_KEY -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT tmo "$CAP" claude -p "$p" --model "$MODEL" \
+    claude) env -u ANTHROPIC_API_KEY -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT perl -e 'alarm shift; exec @ARGV' "$CAP" claude -p "$p" --model "$MODEL" \
               --permission-mode bypassPermissions --no-session-persistence \
               --strict-mcp-config --mcp-config '{"mcpServers":{}}' < /dev/null ;;
-    codex)  env -u OPENAI_API_KEY tmo "$CAP" codex exec --model "$MODEL" -c model_reasoning_effort='"low"' \
+    codex)  env -u OPENAI_API_KEY perl -e 'alarm shift; exec @ARGV' "$CAP" codex exec --model "$MODEL" -c model_reasoning_effort='"low"' \
               --cd "$W" --sandbox workspace-write -c approval_policy='"never"' --ephemeral "$p" < /dev/null ;;
     devin)  tmo "$CAP" devin --permission-mode dangerous --model "$MODEL" -p "$p" < /dev/null ;;
     grok)   tmo "$CAP" grok -p "$p" --model "$MODEL" --always-approve --no-memory < /dev/null ;;
