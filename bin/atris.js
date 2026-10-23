@@ -1194,7 +1194,7 @@ const { runOrb: orbCmd } = require('../commands/orb');
 if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').toLowerCase())) {
   const userInput = process.argv.slice(2).join(' ');
   planCmd(userInput)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Atris 2 failed: ${error.message || error}`);
       process.exit(1);
@@ -1333,7 +1333,7 @@ if (!command || !knownCommands.includes(command)) {
     optionError: natural.error,
     firstMinuteAlias,
   })
-    .then((code) => process.exit(Number.isInteger(code) ? code : 0))
+    .then((code) => exitAfterStdoutDrain(Number.isInteger(code) ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
@@ -2004,7 +2004,7 @@ if (command === 'guide') {
   initCmd();
   // Flow directly into interactive prompt
   interactiveEntry()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
@@ -2016,11 +2016,11 @@ if (command === 'guide') {
 } else if (command === 'task') {
   // SQLite-backed task plane. ~/.atris/tasks.db, gitignored, per-workspace.
   Promise.resolve().then(() => require('../commands/task').run(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'team') {
   Promise.resolve().then(() => require('../commands/team').teamCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'campaign') {
   Promise.resolve().then(() => require('../commands/campaign').campaignCommand(process.argv.slice(3)))
@@ -2028,19 +2028,19 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'who') {
   Promise.resolve().then(() => require('../commands/who').whoCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wish') {
   Promise.resolve().then(() => require('../commands/wish').wishCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drill') {
   Promise.resolve().then(() => require('../commands/drill').drillCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'bench') {
   Promise.resolve().then(() => require('../commands/bench').benchCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(2); });
 } else if (command === 'router') {
   const code = require('../commands/router').routerCommand(process.argv.slice(3));
@@ -2087,7 +2087,7 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'recover') {
   Promise.resolve().then(() => require('../commands/recover').recoverCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agents') {
   // Glanceable view of every member's state: stuck, waiting on you, working, resting.
@@ -2096,27 +2096,27 @@ if (command === 'guide') {
 } else if (command === 'pulse') {
   // Pulse: durable overnight self-improvement heartbeat (OS cron) for atris-cli.
   Promise.resolve().then(() => require('../commands/pulse').pulseCommand(process.argv.slice(3)))
-    .then((res) => process.exit(res && res.ok === false ? 1 : 0))
+    .then((res) => exitAfterStdoutDrain(res && res.ok === false ? 1 : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'probe') {
   // Chat-lane probe (TRR-22): one real /atris2/turn over the full tool relay.
   Promise.resolve().then(() => require('../commands/probe').probeCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
   Promise.resolve().then(() => require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'autoland') {
   Promise.resolve().then(() => require('../commands/autoland').autolandCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'land') {
   // landCommand can throw synchronously on empty repos; wrap so callers get a
   // one-line sentence instead of an uncaught stack from Promise.resolve(fn()).
   Promise.resolve()
     .then(() => require('../commands/land').landCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => {
       const msg = String(err && err.message || err || 'land could not run').split('\n')[0];
       console.log(msg);
@@ -2124,61 +2124,61 @@ if (command === 'guide') {
     });
 } else if (command === 'caretaker') {
   Promise.resolve().then(() => require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'close') {
   Promise.resolve().then(() => require('../commands/close').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'goal' || command === 'wtf') {
   Promise.resolve().then(() => require('../commands/goal').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'founder') {
   Promise.resolve().then(() => require('../commands/founder').founderCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drive') {
   // Drive: one self-driving tick, mission doctor -> auto-fix safe findings -> count disengagements.
   Promise.resolve().then(() => require('../commands/drive').driveCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'rsi') {
   // RSI: read the Dream-RSI attempt ledger (trees, attempts, policy, dreams).
   Promise.resolve().then(() => require('../commands/rsi').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'orb') {
   Promise.resolve().then(() => orbCmd(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nError: ${err.message || err}`); process.exit(1); });
 } else if (command === 'radar' || command === 'ctop') {
   const radarArgs = command === 'ctop' ? ['--agents', ...process.argv.slice(3)] : process.argv.slice(3);
   Promise.resolve().then(() => require('../commands/radar').radarCommand(radarArgs))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'stream') {
   Promise.resolve().then(() => require('../commands/stream').streamCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'truth') {
   // Truth: one table rolling up mission state, tasks, feature proof receipts, and loop heartbeats.
   Promise.resolve().then(() => require('../commands/truth').truthCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'codex-goal') {
   Promise.resolve().then(() => require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization, credit-metered citation drafting against the customer workspace.
   Promise.resolve().then(() => require('../commands/aeo').run(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'design') {
   // Design: extract a site's design system, check brand adherence, search brands.
   Promise.resolve().then(() => require('../commands/design').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'mcp') {
   // MCP: stdio Model Context Protocol server exposing the design tools.
@@ -2194,12 +2194,12 @@ if (command === 'guide') {
 } else if (command === 'improve') {
   // Improve: one paid RL tick via POST /api/improve (deducts credits), local autopilot fallback.
   Promise.resolve().then(() => require('../commands/improve').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'study') {
   // Study: on-demand learning feed ingest + local server + browser open.
   Promise.resolve().then(() => require('../commands/study').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'rainmaker') {
   {
@@ -2213,21 +2213,21 @@ if (command === 'guide') {
     const gate = requireAccountBound(process.argv.slice(3));
     if (!gate.ok) process.exit(refuseAccountGlobal());
     Promise.resolve().then(() => require('../commands/avail').availCommand(gate.args))
-      .then((code) => process.exit(typeof code === 'number' ? code : 0))
+      .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'scoreboard') {
   Promise.resolve().then(() => require('../commands/scoreboard').scoreboardCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'meet') {
   Promise.resolve().then(() => require('../commands/meet').meetCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
   Promise.resolve()
     .then(() => require('../commands/brain').brainCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => {
       const message = err.message || String(err);
       if (process.argv.slice(3).includes('--json')) {
@@ -2250,7 +2250,7 @@ if (command === 'guide') {
   const subcommand = logArgs[0];
   if (subcommand === 'sync') {
     require('../commands/log-sync').logSyncAtris()
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((error) => {
         console.error(`✗ Log sync failed: ${error.message || error}`);
         process.exit(1);
@@ -2335,14 +2335,14 @@ if (command === 'guide') {
   }
   if (isBusinessSync) {
     Promise.resolve().then(() => require('../commands/business-sync').businessSync(process.argv.slice(3)))
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else if (process.argv.includes('--all')) {
     const dryRun = process.argv.includes('--dry-run');
     const yes = process.argv.includes('--yes') || process.argv.includes('-y');
     const force = process.argv.includes('--force') || yes;
     Promise.resolve().then(() => syncAllCmd({ dryRun, force, yes }))
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     syncCmd({
@@ -2360,7 +2360,7 @@ if (command === 'guide') {
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat' && (process.argv[3] === '--personal' || process.argv[3] === '-p')) {
   require('../commands/ask').askAtris(process.argv.slice(4))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Ask failed: ${error.message || error}`);
       process.exit(1);
@@ -2376,14 +2376,14 @@ if (command === 'guide') {
     }
   }
   chatAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Chat failed: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'fast' || command === 'ax') {
   atrisFastChat()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Fast chat failed: ${error.message || error}`);
       process.exit(1);
@@ -2469,47 +2469,47 @@ if (command === 'guide') {
   require('../commands/auth').accountsCmd(args);
 } else if (command === 'balance') {
   Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'usage') {
   Promise.resolve().then(() => require('../commands/usage').usageCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'agent-client') {
   // Owner side of agent self-login: create, list, revoke, rotate agent clients.
   Promise.resolve().then(() => require('../commands/agent-client').agentClientCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(require('../utils/agent-client').scrub(err && err.message, [])); process.exit(1); });
 } else if (command === 'api-key') {
   Promise.resolve().then(() => require('../commands/api-key').apiKeyCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'topup') {
   Promise.resolve().then(() => require('../commands/topup').topupCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'buy') {
   // Buy: quote, then hand the person the approval step. Never charges.
   Promise.resolve().then(() => require('../commands/buy').buyCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'hire') {
   // One-call hire: member + inbox + allowance + overnight loop (POST /business/{id}/hire).
   Promise.resolve().then(() => require('../commands/hire').hireCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'hires') {
   Promise.resolve().then(() => require('../commands/hire').hiresCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'mail') {
   // Agent inboxes (@atrismail.com), not Gmail. Send asks first unless --yes.
   Promise.resolve().then(() => require('../commands/mail').mailCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'transactions') {
   Promise.resolve().then(() => require('../commands/transactions').transactionsCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === '_resolve') {
   // Hidden: resolve a profile name query → print exact profile name
@@ -2527,7 +2527,7 @@ if (command === 'guide') {
   require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
   require('../commands/visualize').visualizeAtris(process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'youtube') {
   require('../commands/youtube').youtubeCommand(process.argv.slice(3))
@@ -2698,14 +2698,14 @@ if (command === 'guide') {
     const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
 
     require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((error) => {
         console.error(`\u2717 Run failed: ${error.message || error}`);
         process.exit(1);
       });
   } else {
     runMissionFront(args)
-      .then((code) => process.exit(code || 0))
+      .then((code) => exitAfterStdoutDrain(code || 0))
       .catch((error) => {
         console.error(`\u2717 Run failed: ${error.message || error}`);
         process.exit(1);
@@ -2760,14 +2760,14 @@ if (command === 'guide') {
     };
 
     require('../commands/autopilot').autopilotAtris(description, options)
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((error) => {
         console.error(`✗ Autopilot failed: ${error.message || error}`);
         process.exit(1);
       });
   } else {
     Promise.resolve().then(() => require('../commands/autopilot-front').autopilotFront(args))
-      .then((code) => process.exit(code || 0))
+      .then((code) => exitAfterStdoutDrain(code || 0))
       .catch((error) => {
         console.error(`✗ Autopilot failed: ${error.message || error}`);
         process.exit(1);
@@ -2775,21 +2775,21 @@ if (command === 'guide') {
   }
 } else if (command === 'brainstorm') {
   require('../commands/brainstorm').brainstormAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Brainstorm failed: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'next') {
   Promise.resolve().then(() => require('../commands/next').nextCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'dream') {
   Promise.resolve().then(() => require('../commands/dream').dreamCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((error) => {
       console.log('No dreams tonight: could not finish dream');
       console.log('Run me nightly: atris dream');
@@ -2809,7 +2809,7 @@ if (command === 'guide') {
     verifier: natural.verifier,
     optionError: natural.error,
   })
-    .then((code) => process.exit(Number.isInteger(code) ? code : 0))
+    .then((code) => exitAfterStdoutDrain(Number.isInteger(code) ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
@@ -2821,7 +2821,7 @@ if (command === 'guide') {
     process.exit(0);
   }
   planCmd()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Plan failed: ${error.message || error}`);
       process.exit(1);
@@ -2833,7 +2833,7 @@ if (command === 'guide') {
     process.exit(0);
   }
   doCmd()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Do failed: ${error.message || error}`);
       process.exit(1);
@@ -2845,7 +2845,7 @@ if (command === 'guide') {
     process.exit(0);
   }
   reviewCmd()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((error) => {
       console.error(`✗ Review failed: ${error.message || error}`);
       process.exit(1);
@@ -2859,7 +2859,7 @@ if (command === 'guide') {
   let subcommand = process.argv[3];
   if (subcommand && !subcommand.startsWith('-')) {
     require('../commands/context-sync').businessStatus(subcommand)
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
@@ -2953,7 +2953,7 @@ if (command === 'guide') {
   }
   const dryRun = process.argv.includes('--dry-run');
   require('../commands/release').releaseAtris({ dryRun })
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'search') {
   const code = require('../commands/search').searchCommand(process.argv.slice(3));
@@ -2976,19 +2976,19 @@ if (command === 'guide') {
   process.exit(reportCommand(args));
 } else if (command === 'play') {
   require('../commands/play').playCommand(...process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'gm') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'game') {
   require('../commands/game').gameCommand(process.argv.slice(3))
-    .then((status) => process.exit(status === 1 ? 1 : 0))
+    .then((status) => exitAfterStdoutDrain(status === 1 ? 1 : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'ci') {
   Promise.resolve().then(() => require('../commands/ci').ciCommand(process.argv.slice(3)))
-    .then((status) => process.exit(status || 0))
+    .then((status) => exitAfterStdoutDrain(status || 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ').toLowerCase()); process.exit(1); });
 } else if (command === 'github') {
   const status = require('../commands/github').githubCommand(process.argv.slice(3));
@@ -3026,7 +3026,7 @@ if (command === 'guide') {
     const args = gate.args.slice(1);
     if (mailbox.mailboxAccountId) args.push('--account', mailbox.mailboxAccountId);
     gmailCommand(subcommand, ...args)
-      .then(() => process.exit(process.exitCode || 0))
+      .then(() => exitAfterStdoutDrain(process.exitCode || 0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'calendar') {
@@ -3034,7 +3034,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   calendarCommand(subcommand, ...args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'twitter') {
   {
@@ -3046,7 +3046,7 @@ if (command === 'guide') {
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
     twitterCommand(subcommand, ...args)
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'slack') {
@@ -3069,7 +3069,7 @@ if (command === 'guide') {
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
     slackCommand(subcommand, ...args)
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'imessage') {
@@ -3077,7 +3077,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   imessageCommand(subcommand, ...args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'integrations') {
   const args = process.argv.slice(3);
@@ -3087,7 +3087,7 @@ if (command === 'guide') {
   }
   const { integrationsStatus } = require('../commands/integrations');
   integrationsStatus(args)
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'apps') {
   // Keep APP.md app-pack operations independent from the heavier workspace boot
@@ -3095,7 +3095,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   Promise.resolve().then(() => require('../commands/apps').appsCommand(subcommand, ...args))
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'learn') {
   const subcommand = process.argv[3];
@@ -3107,7 +3107,7 @@ if (command === 'guide') {
   require('../commands/lesson')(subcommand, ...args);
 } else if (command === 'taste') {
   Promise.resolve().then(() => require('../commands/taste').tasteCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`taste could not continue: ${err.message || err}.`); process.exit(1); });
 } else if (command === 'teach') {
   const subcommand = process.argv[3];
@@ -3123,7 +3123,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   Promise.resolve().then(() => require('../commands/member').memberCommand(subcommand, ...args))
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'app') {
   const subcommand = process.argv[3];
@@ -3131,25 +3131,25 @@ if (command === 'guide') {
   require('../commands/app').appCommand(subcommand, ...args);
 } else if (command === 'pull') {
   require('../commands/pull').pullAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'push') {
   require('../commands/push').pushAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'live') {
   require('../commands/live').liveCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'align') {
   require('../commands/align').alignAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'cloud') {
   require('../commands/cloud').cloudAtris();
 } else if (command === 'terminal') {
   require('../commands/terminal').terminalAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'fleet-report') {
   require('../commands/fleet-report').fleetReport()
@@ -3168,7 +3168,7 @@ if (command === 'guide') {
   require('../commands/workflow').executeAgentSDKFast(userInput);
 } else if (command === 'computer') {
   require('../commands/computer').runComputer()
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'diff') {
   let diffSlug = process.argv[3];
@@ -3185,7 +3185,7 @@ if (command === 'guide') {
   }
   if (!diffSlug) { console.error('Usage: atris diff [business] [path]'); process.exit(1); }
   require('../commands/context-sync').businessDiff(diffSlug)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'business') {
   {
@@ -3200,18 +3200,18 @@ if (command === 'guide') {
     const subcommand = gate.args[0];
     const args = gate.args.slice(1);
     require('../commands/business').businessCommand(subcommand, ...args)
-      .then(() => process.exit(process.exitCode || 0))
+      .then(() => exitAfterStdoutDrain(process.exitCode || 0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'soul') {
   const args = process.argv.slice(3);
   require('../commands/soul').soul(args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'fleet') {
   const args = process.argv.slice(3);
   require('../commands/fleet').fleet(args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'loops' || command === 'self-improve') {
   try {
@@ -3233,7 +3233,7 @@ if (command === 'guide') {
 } else if (command === 'spaceship') {
   const args = process.argv.slice(3);
   require('../commands/spaceship').spaceship(args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'code-review' || command === 'cr') {
   const args = process.argv.slice(3);
@@ -3242,12 +3242,12 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/wiki').wikiCommand(subcommand, ...args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'ingest' || command === 'query' || command === 'lint') {
   const args = process.argv.slice(3);
   require('../commands/wiki').wikiCommand(command, ...args)
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'loop') {
   const args = process.argv.slice(3);
@@ -3256,12 +3256,12 @@ if (command === 'guide') {
     process.exit(0);
   }
   Promise.resolve().then(() => require('../commands/loop-front').loopFront(args))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
   const { cleanWorkspace } = require('../commands/workspace-clean');
   cleanWorkspace()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'plugin') {
   const subcommand = process.argv[3] || 'build';
@@ -3275,7 +3275,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   Promise.resolve().then(() => require('../commands/compile').compileCommand(subcommand, ...args))
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'engine' || command === 'engines') {
   // Engine: bring any intelligence. Roster of installed coding CLIs, default
@@ -3290,12 +3290,12 @@ if (command === 'guide') {
 } else if (command === 'link') {
   // Link: ask the roster's engine what two things could become together.
   Promise.resolve().then(() => require('../commands/link').linkCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'playbook') {
   Promise.resolve()
     .then(() => require('../commands/playbook').playbookCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`playbook could not continue: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sign') {
   // Sign: prepare-commit-msg hook that credits Atris as co-author on commits in atris workspaces.
@@ -3304,43 +3304,43 @@ if (command === 'guide') {
 } else if (command === 'slop') {
   // Slop: deterministic frontend-slop detector (no LLM). Exit 1 = slop found, for CI + the autopilot gate.
   Promise.resolve().then(() => require('../commands/slop').slopCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'voice') {
   Promise.resolve().then(() => require('../commands/voice').voiceCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'write') {
   // Write: guided writing sessions, human types every word, atris structures + reviews (plan-do-review for prose).
   Promise.resolve().then(() => require('../commands/write').writeCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'strings') {
   // Strings: content design system from live code (no LLM). Extracts UI strings, flags variants,
   // enforces preferred terms at the gate. Exit 1 = variants/banned terms found, for CI + the gate.
   Promise.resolve().then(() => require('../commands/strings').stringsCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'security-review' || command === 'secure') {
   // Security review: deterministic secrets/PII/code-risk scan (no LLM). Exit 1 = HIGH finding,
   // for the autopilot/mission/CI gate + a SOC 2 evidence artifact via --json.
   Promise.resolve().then(() => require('../commands/security-review').securityReviewCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'signup') {
   // Signup: one-call seedless agent signup → writes the active profile (install→signup→play seam).
   Promise.resolve().then(() => require('../commands/signup').signupCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'moves') {
   // Moves: your 3 next moves, approve one into the loop, kill, or skip.
   Promise.resolve().then(() => require('../commands/moves').movesCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'unknowns') {
   // Unknowns: blindspot pass from local territory context into the SQLite ledger.
   Promise.resolve().then(() => require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feed') {
   // Feed: read and post the business group feed, receipts and state changes only.
@@ -3351,17 +3351,17 @@ if (command === 'guide') {
 } else if (command === 'clarity') {
   // Clarity: interview yourself once; agents read how you work so you stop repeating it.
   Promise.resolve().then(() => require('../commands/clarity').clarityCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'interview') {
   // Interview: the interlinked 1-on-1, live interview that extracts judgment into a member file.
   Promise.resolve().then(() => require('../commands/interview').interviewCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'deck') {
   // Deck: premium Google Slides from a plain content spec, via the Atris deck engine (anti-slop design system).
   Promise.resolve().then(() => require('../commands/deck').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'site') {
   // Site: build markdown sites or publish static web folders.
@@ -3373,32 +3373,32 @@ if (command === 'guide') {
     const gate = deployWrite ? requireAccountBound(raw) : { ok: true, args: raw };
     if (!gate.ok) process.exit(refuseAccountGlobal());
     Promise.resolve().then(() => require('../commands/site').run(gate.args))
-      .then((code) => process.exit(typeof code === 'number' ? code : 0))
+      .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'theme') {
   // Theme: brand themes (.atris/theme.json) for the whole design system (deck/html/site).
   Promise.resolve().then(() => require('../commands/theme').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'card') {
   // Card: one line of text into an on-brand image (uses your theme + the design system).
   Promise.resolve().then(() => require('../commands/card').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brief') {
   // Brief: one-glance operator surface for landings, waits, and next moves.
   Promise.resolve().then(() => require('../commands/brief').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pack') {
   Promise.resolve().then(() => require('../commands/pack').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'reel') {
   // Reel: one line of text into a short on-brand video (an animated card; frames via Chrome + ffmpeg).
   Promise.resolve().then(() => require('../commands/reel').run(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'tree') {
   const subcommand = process.argv[3];
@@ -3416,27 +3416,27 @@ if (command === 'guide') {
     process.exit(0);
   }
   require('../commands/setup').setupAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'fork') {
   require('../commands/fork').forkAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'browse') {
   require('../commands/browse').browseAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'publish') {
   require('../commands/publish').publishAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sleep') {
   require('../commands/lifecycle').sleepAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wake') {
   require('../commands/lifecycle').wakeAtris()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feedback') {
   {
@@ -3444,7 +3444,7 @@ if (command === 'guide') {
     if (!gate.ok) process.exit(refuseAccountGlobal());
     process.argv = [process.argv[0], process.argv[1], 'feedback', ...gate.args];
     require('../commands/feedback').feedbackCommand()
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'errors') {
@@ -3455,34 +3455,34 @@ if (command === 'guide') {
     const errorArgs = gate.account ? ['--account', ...gate.args] : gate.args;
     process.argv = [process.argv[0], process.argv[1], 'errors', ...errorArgs];
     require('../commands/errors').errorsCommand()
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'host') {
   require('../commands/host').hostCommand();
 } else if (command === 'social') {
   require('../commands/social').socialCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'people') {
   require('../commands/social').peopleCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'follow') {
   require('../commands/social').followCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'unfollow') {
   require('../commands/social').unfollowCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'friends') {
   require('../commands/social').friendsCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'msg') {
   require('../commands/social').msgCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'inbox') {
   {
@@ -3490,24 +3490,24 @@ if (command === 'guide') {
     if (!gate.ok) process.exit(refuseAccountGlobal());
     process.argv = [process.argv[0], process.argv[1], 'inbox', ...gate.args];
     require('../commands/social').inboxCommand()
-      .then(() => process.exit(0))
+      .then(() => exitAfterStdoutDrain(0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'join') {
   require('../commands/social').joinCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'invite') {
   require('../commands/social').inviteCommand()
-    .then(() => process.exit(0))
+    .then(() => exitAfterStdoutDrain(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pay') {
   require('../commands/pay').payCommand()
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'trust') {
   require('../commands/trust').trustCommand()
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
   console.log(`Unknown command: ${command}`);
