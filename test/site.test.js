@@ -190,3 +190,33 @@ test('serveSite answers only requests addressed to this computer', async () => {
     server.close();
   }
 });
+
+test('serveSite rejects malformed targets and all writes while remaining available', async t => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const dir = tempDir(t, 'site-http-security-');
+  fs.writeFileSync(path.join(dir, 'index.html'), 'preview');
+  const { server } = await serveSite(dir, 0);
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const call = (target, { method = 'GET', body, headers = {} } = {}) => new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1', port: server.address().port, path: target, method,
+      headers: { ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body) }), ...headers },
+    }, res => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', error => { error.message += ` (${method} ${target}, ${Buffer.byteLength(body || '')} bytes)`; reject(error); });
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+    req.end(body);
+  });
+  for (const target of ['//x:99999', 'http://x:99999/', '/%ZZ', '/?q=%ZZ']) assert.equal(await call(target), 400);
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    assert.equal(await call('/', { method, body: '{', headers: { 'content-type': 'application/json' } }), 405);
+  }
+  assert.equal(await call('/', { body: 'x'.repeat(1_000_001), headers: { 'content-length': 1_000_001 } }), 400);
+  assert.equal(await call('/'), 200);
+  assert.equal(await call('/?q=%23%5C'), 200);
+  assert.equal(await call('/', { method: 'HEAD' }), 200);
+  assert.equal(server.address().address, '127.0.0.1');
+});

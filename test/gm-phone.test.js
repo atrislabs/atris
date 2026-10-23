@@ -183,6 +183,7 @@ test('token check: 403 without it, with a wrong one, or on a strange host', () =
   assert.equal(phone.checkRequest(req('GET', `/?t=${TOKEN}`), opts).ok, true);
   assert.equal(phone.checkRequest(req('GET', `/state?t=${TOKEN}`, { host: 'evil.example:7777' }), opts).status, 403);
   assert.equal(phone.tokenMatches('', ''), false);
+  assert.equal(phone.checkRequest(req('GET', '/state', { 'x-gm-token': TOKEN, 'content-length': '5000' }), opts).status, 400);
 });
 
 test('POST needs the token in a header and the same origin', () => {
@@ -194,6 +195,13 @@ test('POST needs the token in a header and the same origin', () => {
   assert.equal(phone.checkRequest(req('POST', '/action', { 'x-gm-token': TOKEN, ...origin }), opts).ok, true);
   assert.equal(phone.checkRequest(req('PUT', `/?t=${TOKEN}`), opts).status, 405);
   assert.equal(phone.checkRequest(req('PUT', '/'), opts).status, 403);
+});
+
+test('malformed phone URLs are rejected before checking credentials', () => {
+  const opts = { token: TOKEN, hosts: ['127.0.0.1:7777'] };
+  for (const target of ['//x:99999', 'http://x:99999/', '/%ZZ', '/%00']) {
+    assert.equal(phone.checkRequest(req('GET', target), opts).status, 400);
+  }
 });
 
 // ---- the handler over real http with a stubbed runner -------------------------------
@@ -219,9 +227,12 @@ async function startHandler(over = {}) {
     logPath: path.join(dir, 'gm-phone-actions.jsonl'),
     page: phonePage,
   });
-  const server = http.createServer((q, s) => { handler(q, s); });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const base = `127.0.0.1:${server.address().port}`;
+  const server = http.createServer((q, s) => {
+    handler(q, s).catch(() => { s.writeHead(500); s.end(); });
+  });
+  const address = over.listenAddress || '127.0.0.1';
+  await new Promise(resolve => server.listen(0, address, resolve));
+  const base = `${address}:${server.address().port}`;
   hosts.push(base);
   const call = async (method, p, { body, token = TOKEN, header = true, origin = `http://${base}` } = {}) => {
     const headers = {};
@@ -235,6 +246,7 @@ async function startHandler(over = {}) {
     return { status: res.status, text, json, headers: res.headers };
   };
   return {
+    base,
     handler,
     call,
     ran,
@@ -246,6 +258,43 @@ async function startHandler(over = {}) {
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); fs.rmSync(dir, { recursive: true, force: true }); }),
   };
 }
+
+test('over http: malformed phone requests return 4xx and leave the session alive', async () => {
+  const h = await startHandler();
+  const raw = (target, body) => new Promise((resolve, reject) => {
+    const q = http.request(`http://${h.base}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      path: target,
+      headers: body === undefined ? {} : {
+        'x-gm-token': TOKEN, origin: `http://${h.base}`, 'content-type': 'application/json',
+      },
+    }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    q.on('error', reject);
+    q.end(body);
+  });
+  try {
+    for (const target of ['//x:99999', 'http://x:99999/', '/%ZZ', '/%00']) {
+      assert.equal(await raw(target), 400);
+    }
+    for (const body of ['{', 'null', '[]', '"x"']) assert.equal(await raw('/action', body), 400);
+    assert.equal(await raw('/action', JSON.stringify({ padding: 'x'.repeat(5000) })), 413);
+    assert.equal((await h.call('GET', '/state')).status, 200);
+    assert.equal((await h.call('GET', '/state?label=%23%5C')).status, 200);
+    assert.equal(h.ran.length, 0);
+    assert.equal(h.writes.length, 0);
+  } finally { await h.close(); }
+});
+
+test('over http: the paired link and authenticated actions work on the wifi address', async t => {
+  const address = phone.lanAddress();
+  if (!address) return t.skip('no network interface available');
+  const h = await startHandler({ listenAddress: address });
+  try {
+    assert.equal((await h.call('GET', `/?t=${TOKEN}`, { header: false })).status, 200);
+    assert.equal((await h.call('POST', '/action', { header: false, body: { card: 'target', choice: 'later' } })).status, 403);
+    assert.equal((await h.call('POST', '/action', { body: { card: 'target', choice: 'later' } })).status, 200);
+  } finally { await h.close(); }
+});
 
 test('over http: 403 without the token, the page and state with it', async () => {
   const h = await startHandler();

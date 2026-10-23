@@ -31,10 +31,32 @@ const {
   fixtureFetch,
   runOfflineCheck,
   saveFailedOutput,
+  startCountingServer,
   summary,
 } = require('../scripts/det/xsearch-bench');
 
 const fixture = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+
+test('the benchmark HTTP listener stays local and denies malformed requests and writes', async t => {
+  const http = require('node:http');
+  const server = await startCountingServer();
+  t.after(() => server.close());
+  assert.equal(new URL(server.url).hostname, '127.0.0.1');
+  const call = (target, method = 'GET', body = '') => new Promise((resolve, reject) => {
+    const req = http.request(server.url, {
+      path: target, method,
+      headers: { host: 'evil.example', 'content-length': Buffer.byteLength(body) },
+    }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    req.on('error', reject);
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+    req.end(body);
+  });
+  assert.equal(await call('//x:99999'), 401);
+  assert.equal(await call('http://x:99999/'), 401);
+  assert.equal(await call('/', 'POST', '{'), 401);
+  assert.equal(await call('/', 'POST', 'x'.repeat(1_000_001)), 401);
+  assert.equal(await call('/'), 401);
+});
 const CREDS = async () => ({ credentials: { token: 'token-123', agent_token: 'token-123', agent_token_scopes: ['x-search', 'youtube'], agent_token_expires_at: '2099-01-01T00:00:00Z' } });
 
 function noNetwork() {

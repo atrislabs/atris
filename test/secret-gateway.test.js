@@ -79,7 +79,7 @@ function startUpstream(fixture, handler) {
   });
 }
 
-function gatewayRequest(baseUrl, { method = 'GET', path: reqPath = '/v1/items', headers = {}, rawUrl } = {}) {
+function gatewayRequest(baseUrl, { method = 'GET', path: reqPath = '/v1/items', headers = {}, rawUrl, body } = {}) {
   const url = new URL(baseUrl);
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -88,7 +88,7 @@ function gatewayRequest(baseUrl, { method = 'GET', path: reqPath = '/v1/items', 
       port: url.port,
       method,
       path: rawUrl || reqPath,
-      headers,
+      headers: { ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body) }), ...headers },
     }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
@@ -100,8 +100,9 @@ function gatewayRequest(baseUrl, { method = 'GET', path: reqPath = '/v1/items', 
         });
       });
     });
-    req.on('error', reject);
-    req.end();
+    req.on('error', error => { error.message += ` (${method} ${rawUrl || reqPath}, ${Buffer.byteLength(body || '')} bytes)`; reject(error); });
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+    req.end(body);
   });
 }
 
@@ -310,6 +311,27 @@ test('secret gateway fails closed on upstream redirects', async (t) => {
   assert.ok(gateway.receipts.some((entry) => entry.reason === 'redirect'));
   assertNoSecret(response.body);
   assertNoSecret(JSON.stringify(gateway.receipts));
+});
+
+test('secret gateway rejects malformed requests and writes without losing its listener', async t => {
+  const placeholder = createPlaceholder();
+  const gateway = await startSecretGateway({ grant: sampleGrant(), secret: GATEWAY_SECRET, placeholder });
+  t.after(() => gateway.close());
+  assert.equal(new URL(gateway.baseUrl).hostname, '127.0.0.1');
+  const headers = { authorization: placeholder };
+  for (const rawUrl of ['//x:99999', 'http://x:99999/', '/%ZZ', '/%00']) {
+    const response = await gatewayRequest(gateway.baseUrl, { rawUrl, headers });
+    assert.ok(response.status >= 400 && response.status < 500);
+  }
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const response = await gatewayRequest(gateway.baseUrl, { method, headers, body: '{' });
+    assert.equal(response.status, 405);
+  }
+  assert.equal((await gatewayRequest(gateway.baseUrl, {
+    headers: { ...headers, 'content-length': 1_000_001 }, body: 'x'.repeat(1_000_001),
+  })).status, 400);
+  assert.equal((await gatewayRequest(gateway.baseUrl)).status, 401);
+  assert.equal(gateway.isListening(), true);
 });
 
 test('review-only environment injects placeholder and never the real secret', {

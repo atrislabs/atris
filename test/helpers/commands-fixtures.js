@@ -293,7 +293,8 @@ function hasNodeSqlite() {
 function waitForOutput(child, pattern, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     let output = '';
-    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${pattern}; output=${output}`)), timeoutMs);
+    const safeOutput = () => output.replace(/([?&]t=)[A-Za-z0-9_-]+/g, '$1[redacted]');
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${pattern}; output=${safeOutput()}`)), timeoutMs);
     const onData = (chunk) => {
       output += chunk.toString();
       const match = output.match(pattern);
@@ -306,7 +307,7 @@ function waitForOutput(child, pattern, timeoutMs = 5000) {
     child.stderr.on('data', onData);
     child.on('exit', (code) => {
       clearTimeout(timer);
-      reject(new Error(`process exited ${code}; output=${output}`));
+      reject(new Error(`process exited ${code}; output=${safeOutput()}`));
     });
   });
 }

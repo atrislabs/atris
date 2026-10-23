@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const http = require('http');
+const crypto = require('crypto');
 const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
@@ -12482,7 +12483,7 @@ function taskBoardTemplate(model) {
     async function api(path, options = {}) {
       const res = await fetch(path, {
         ...options,
-        headers: { 'content-type': 'application/json', ...(options.headers || {}) }
+        headers: { 'content-type': 'application/json', 'x-atris-token': new URLSearchParams(location.search).get('t') || '', ...(options.headers || {}) }
       });
       const data = await res.json();
       if (!res.ok || data.ok === false) throw new Error(data.detail || data.reason || 'request failed');
@@ -12798,18 +12799,30 @@ function taskBoardHtml() {
 }
 
 function readJsonBody(req) {
+  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+    return Promise.reject(Object.assign(new Error('json required'), { statusCode: 415 }));
+  }
   return new Promise((resolve, reject) => {
-    let body = '';
+    let size = 0;
+    const chunks = [];
     req.on('data', chunk => {
-      body += chunk;
-      if (body.length > 1_000_000) {
-        reject(new Error('body too large'));
-        req.destroy();
+      if (size > 1_000_000) return;
+      size += chunk.length;
+      if (size > 1_000_000) {
+        reject(Object.assign(new Error('body too large'), { statusCode: 413 }));
+        return;
       }
+      chunks.push(chunk);
     });
     req.on('end', () => {
+      if (size > 1_000_000) return;
+      const body = Buffer.concat(chunks).toString('utf8');
       if (!body.trim()) return resolve({});
-      try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+      try {
+        const value = JSON.parse(body);
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('object required');
+        resolve(value);
+      } catch (e) { reject(Object.assign(e, { statusCode: 400 })); }
     });
     req.on('error', reject);
   });
@@ -12818,14 +12831,16 @@ function readJsonBody(req) {
 function sendJson(res, status, value, headers = {}) {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': 'http://localhost',
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
     ...headers,
   });
   res.end(JSON.stringify(value, null, 2));
 }
 
 function sendHtml(res, value) {
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' });
   res.end(value);
 }
 
@@ -13469,8 +13484,24 @@ function matchTaskApiRoute(req, url) {
   return null;
 }
 
-async function handleTaskApi(req, res, taskDb, db) {
-  const url = new URL(req.url, 'http://127.0.0.1');
+async function handleTaskApi(req, res, taskDb, db, token) {
+  let url;
+  try {
+    const target = req.url || '/';
+    url = new URL(target, 'http://127.0.0.1');
+    if (!target.startsWith('/') || target.startsWith('//') || /[\\#\0]/.test(target) || decodeURIComponent(url.pathname).includes('\0')) throw new Error('url');
+    decodeURIComponent(target);
+  } catch {
+    return sendJson(res, 400, { ok: false, reason: 'bad_url' });
+  }
+  const host = String(req.headers.host || '').toLowerCase();
+  const port = req.socket.localPort;
+  if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(host)) return sendJson(res, 403, { ok: false, reason: 'host' });
+  const provided = Buffer.from(String(req.headers['x-atris-token'] || (req.method === 'GET' && url.searchParams.get('t')) || ''));
+  const expected = Buffer.from(token);
+  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) return sendJson(res, 403, { ok: false, reason: 'token' });
+  if (req.method === 'GET' && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0)) return sendJson(res, 400, { ok: false, reason: 'body' });
+  if (req.method !== 'GET' && req.headers.origin !== undefined && req.headers.origin !== `http://${host}`) return sendJson(res, 403, { ok: false, reason: 'origin' });
   const matchedRoute = matchTaskApiRoute(req, url);
   if (!matchedRoute) return sendJson(res, 404, { ok: false, reason: 'not_found' });
   return matchedRoute.route.serve({
@@ -13486,26 +13517,32 @@ async function handleTaskApi(req, res, taskDb, db) {
 function createTaskApiServer(taskApi = {}) {
   const taskDb = taskApi.taskDb || getTaskDb();
   const db = taskApi.db || taskDb.open();
-  return http.createServer((req, res) => {
-    handleTaskApi(req, res, taskDb, db).catch((error) => {
-      sendJson(res, 500, { ok: false, reason: 'server_error', detail: String(error && error.message || error) });
-    });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const server = http.createServer((req, res) => {
+    handleTaskApi(req, res, taskDb, db, token).catch((error) => {
+      if (res.headersSent || res.destroyed) return res.destroy();
+      const status = error.statusCode || 500;
+      sendJson(res, status, { ok: false, reason: status < 500 ? 'bad_request' : 'server_error' });
+    }).catch(() => res.destroy());
   });
+  server.taskToken = token;
+  return server;
 }
 
 function cmdServe(args) {
   const host = String(flag(args, '--host') || '127.0.0.1');
+  if (!['127.0.0.1', 'localhost'].includes(host)) throw new Error('task board only listens on 127.0.0.1');
   const port = Number(flag(args, '--port') || process.env.PORT || 8787);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const server = createTaskApiServer({ taskDb, db });
   return new Promise((resolve, reject) => {
     server.on('error', reject);
-    server.listen(port, host, () => {
+    server.listen(port, '127.0.0.1', () => {
       const addr = server.address();
       const actualPort = addr && addr.port || port;
-      console.log(`Task board: http://${host}:${actualPort}`);
-      console.log(`Workspace: ${taskDb.workspaceRoot()}`);
+      console.log(`task board: http://${host}:${actualPort}/?t=${server.taskToken}`);
+      console.log(`workspace: ${taskDb.workspaceRoot()}`);
     });
 
     const shutdown = () => {

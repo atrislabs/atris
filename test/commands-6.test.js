@@ -2286,8 +2286,9 @@ test('task serve continue-work creates scoped follow-up', async () => {
       env: { ...process.env, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
+    const ready = await waitForOutput(child, /task board: (http:\/\/127\.0\.0\.1:\d+)\/\?t=([A-Za-z0-9_-]+)/);
     const base = ready.match[1];
+    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { 'x-atris-token': ready.match[2], ...options.headers } });
 
     const detail = await fetch(`${base}/api/tasks/${parent.id}`).then(r => r.json());
     assert.equal(detail.ok, true);
@@ -2338,8 +2339,9 @@ test('task serve rejects generic review next continuation', async () => {
       env: { ...process.env, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const readyServer = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
+    const readyServer = await waitForOutput(child, /task board: (http:\/\/127\.0\.0\.1:\d+)\/\?t=([A-Za-z0-9_-]+)/);
     const base = readyServer.match[1];
+    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { 'x-atris-token': readyServer.match[2], ...options.headers } });
 
     const created = await fetch(`${base}/api/tasks`, {
       method: 'POST',
@@ -2516,8 +2518,9 @@ test('task serve exposes review-lane-drain API', async () => {
       env: { ...process.env, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const readyServer = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
+    const readyServer = await waitForOutput(child, /task board: (http:\/\/127\.0\.0\.1:\d+)\/\?t=([A-Za-z0-9_-]+)/);
     const base = readyServer.match[1];
+    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { 'x-atris-token': readyServer.match[2], ...options.headers } });
 
     const capabilities = await fetch(`${base}/api/tasks/capabilities`).then(r => r.json());
     assert.equal(capabilities.ok, true);
