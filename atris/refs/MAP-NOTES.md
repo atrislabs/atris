@@ -21,7 +21,7 @@ Moved from atris/MAP.md on 2026-09-23 so boot reads a short routing table. `atri
 
 ## Quick Reference Index
 
-Project 99: `commands/ninety-nine.js:44` (`ninetyNineAtris`) reads and appends the local session log under a short exclusive lock; `lib/ninety-nine.js:10` (`parseSessionLog`) validates shared records, `lib/ninety-nine.js:29` (`foldSessions`) joins starts and ends, `lib/ninety-nine.js:68` (`endRecord`) stamps early stops or exact planned completion, and `lib/ninety-nine.js:96` (`sessionsToday`) scores local end dates. `utils/auth.js:176` (`getAtrisDir`) supplies the private home directory. Routing is `bin/atris.js:2292`, with registration in `lib/known-commands.js:3`; `test/ninety-nine.test.js` covers the contract and actual CLI.
+Project 99: `commands/ninety-nine.js:144` (`ninetyNineAtris`) retains local timer actions and adds health to today; `commands/ninety-nine.js:52` (`syncNinetyNine`) locks the append-only log and atomically saves account-scoped sync cursors. `lib/ninety-nine.js:26` validates session and health records, `lib/ninety-nine.js:53` deduplicates and stably sorts before replay, and `lib/ninety-nine.js:211` selects the latest health day without filling unknown totals. `lib/ninety-nine-sync.js:49` pages personal records and batches missing lines; `lib/ninety-nine-sync.js:82` reads one filtered workspace snapshot and sends its union through the existing file sync route. Both reuse `utils/api.js:140` and the credential loader at `utils/auth.js:473`. Routing: `bin/atris.js:2294` awaits sync; registration: `lib/known-commands.js:3`. Proof: `node --test test/ninety-nine.test.js`, with mocked HTTP transport only.
 
 | Route | Paths | Purpose |
 | --- | --- | --- |
