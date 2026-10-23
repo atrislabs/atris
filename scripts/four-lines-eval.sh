@@ -9,7 +9,14 @@
 #   workdir/ (no .git, no node_modules), transcript.log, meta.json
 # Env: FOUR_LINES_MODEL picks a model (codex defaults to gpt-6.1-sol, agy to
 # gemini-4-argon-high, grok to grok-4.7-build-fast),
-# FOUR_LINES_TIMEOUT caps seconds (900).
+# FOUR_LINES_TIMEOUT caps seconds (900). FOUR_LINES_PROMPT replaces the task
+# and FOUR_LINES_OUT the output folder, so an isolation probe runs the exact
+# engine command a real eval does.
+#
+# Every engine is barred from reading the real HOME by its own sandbox, so an
+# agent cannot open the owner's files by absolute path. Logins are copied into
+# the temp dir first (claude reads its own from the keychain, outside the
+# sandbox), so nothing under HOME is re-opened.
 set -euo pipefail
 
 ENGINE="${1:-}"; ARM="${2:-}"; N="${3:-}"
@@ -19,7 +26,7 @@ case "$ARM" in treatment|control) ;; *) usage ;; esac
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CAMP="$REPO/atris/campaigns/cmp-four-lines-real"
-OUT="$CAMP/evals/runs/$ENGINE/$ARM-$N"
+OUT="${FOUR_LINES_OUT:-$CAMP/evals/runs/$ENGINE/$ARM-$N}"
 CAP="${FOUR_LINES_TIMEOUT:-900}"
 LINE_RE='^- \*\*(Acceleration|Accuracy|Ambition|Agency)\.\*\* '
 
@@ -41,11 +48,15 @@ case "$ENGINE" in
 esac
 
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
+
 W="$ROOT/project"; SHIM="$ROOT/bin"; mkdir -p "$W" "$SHIM"
 
 # The project's own hooks call `atris`; make that this repo's code, not the
-# copy installed on this machine.
-printf '#!/bin/sh\nexec node "%s/bin/atris.js" "$@"\n' "$REPO" > "$SHIM/atris"
+# copy installed on this machine. It is packed into the temp dir because the
+# repo sits under HOME, which the agent cannot read.
+(cd "$REPO" && npm pack --ignore-scripts --silent --pack-destination "$ROOT" >/dev/null)
+tar -xzf "$ROOT"/atris-*.tgz -C "$ROOT" && mv "$ROOT/package" "$ROOT/atris-cli" && rm "$ROOT"/atris-*.tgz
+printf '#!/bin/sh\nexec node "%s/bin/atris.js" "$@"\n' "$ROOT/atris-cli" > "$SHIM/atris"
 chmod +x "$SHIM/atris"
 
 cd "$W"
@@ -66,7 +77,7 @@ fi
 cp -R "$CAMP/fixture/." "$W/"
 git add -A
 git -c user.name=four-lines-eval -c user.email=eval@localhost commit -qm "fresh project with fixture" --no-gpg-sign
-PROMPT="$(cat "$CAMP/fixture/TASK.md")"
+PROMPT="${FOUR_LINES_PROMPT:-$(cat "$CAMP/fixture/TASK.md")}"
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; T0=$(date +%s)
@@ -76,8 +87,13 @@ case "$ENGINE" in
     # Subscription login only: no API key. User-level settings, CLAUDE.md,
     # skills, plugins, and hooks stay out because only project and local
     # setting sources load. The sandbox confines shell writes to the project;
-    # acceptEdits only auto-approves file edits inside it.
+    # acceptEdits only auto-approves file edits inside it. HOME is read-denied
+    # twice: denyRead for shell commands, a Read deny rule for the file tools.
+    # git and npm get empty config files, since ~/.gitconfig is now unreadable
+    # and git stops on it; XDG_CONFIG_HOME moves git's ignore file lookup too.
+    : > "$ROOT/gitconfig"; : > "$ROOT/npmrc"; mkdir -p "$ROOT/xdg"
     PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" \
+    GIT_CONFIG_GLOBAL="$ROOT/gitconfig" NPM_CONFIG_USERCONFIG="$ROOT/npmrc" XDG_CONFIG_HOME="$ROOT/xdg" \
     env -u ANTHROPIC_API_KEY -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
       perl -e 'alarm shift; exec @ARGV' "$CAP" \
       claude -p "$PROMPT" ${FOUR_LINES_MODEL:+--model "$FOUR_LINES_MODEL"} \
@@ -85,7 +101,7 @@ case "$ENGINE" in
         --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
         --no-session-persistence \
         --permission-mode acceptEdits \
-        --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false}}' \
+        --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"filesystem":{"denyRead":["'"$HOME"'"]}},"permissions":{"deny":["Read(/'"$HOME"'/**)"]}}' \
         --output-format stream-json --verbose \
         > "$OUT/transcript.log" 2>&1 < /dev/null
     CODE=$?
@@ -93,8 +109,9 @@ case "$ENGINE" in
   codex)
     # A temp CODEX_HOME holding only the login: no user config.toml, AGENTS.md,
     # instructions, memories, skills, rules, or MCP servers load. HOME is a
-    # temp dir too, because codex also reads skills from ~/.agents. The sandbox
-    # lets shell commands write only inside the project. If the login token
+    # temp dir too, because codex also reads skills from ~/.agents. The
+    # permission profile matches workspace-write (writes in the project and the
+    # temp dirs, no network) and adds a read deny on the real HOME. If the login token
     # refreshes mid run, copy it back so the real login keeps working.
     CH="$ROOT/codex-home"; mkdir -p "$CH" "$ROOT/home"
     cp "$HOME/.codex/auth.json" "$CH/auth.json"; chmod 600 "$CH/auth.json"
@@ -102,7 +119,8 @@ case "$ENGINE" in
     env -u OPENAI_API_KEY -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED -u CODEX_THREAD_ID \
       perl -e 'alarm shift; exec @ARGV' "$CAP" \
       codex exec --model "${FOUR_LINES_MODEL:-gpt-6.1-sol}" \
-        --cd "$W" --sandbox workspace-write -c approval_policy='"never"' \
+        --cd "$W" -c approval_policy='"never"' -c default_permissions='"four-lines"' \
+        -c 'permissions.four-lines.filesystem={":root"="read",":project_roots"="write",":tmpdir"="write",":slash_tmp"="write","'"$HOME"'"="deny"}' \
         --ignore-user-config --ignore-rules --ephemeral --json --color never \
         "$PROMPT" > "$OUT/transcript.log" 2>&1 < /dev/null
     CODE=$?
@@ -116,15 +134,21 @@ case "$ENGINE" in
     # the real project path, or agy edits its own scratch folder instead.
     # --sandbox keeps shell writes out of everything but /tmp; file edits
     # still land in the project. The headless line stops the ask-first habit.
+    # The temp settings.json denies read_file on the real HOME, turns off file
+    # access outside the workspace, and sets proceed-in-sandbox: commands in
+    # the sandbox run unasked, and one that tries to leave it is refused.
+    # --dangerously-skip-permissions is gone because it approved those exits,
+    # and an unsandboxed cat read the owner's files.
     AH="$ROOT/agy-home/.gemini/antigravity-cli"; mkdir -p "$AH"
     cp "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" "$AH/"; chmod 600 "$AH/antigravity-oauth-token"
+    printf '{"toolPermission":"proceed-in-sandbox","allowNonWorkspaceAccess":false,"permissions":{"deny":["read_file(%s)"]}}\n' "$HOME" > "$AH/settings.json"
     PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" HOME="$ROOT/agy-home" \
     env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
       perl -e 'alarm shift; exec @ARGV' "$CAP" \
       agy -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation.
 
 $PROMPT" --model "${FOUR_LINES_MODEL:-gemini-4-argon-high}" \
-        --add-dir "$(pwd -P)" --mode accept-edits --dangerously-skip-permissions --sandbox \
+        --add-dir "$(pwd -P)" --mode accept-edits --sandbox \
         --output-format stream-json > "$OUT/transcript.log" 2>&1 < /dev/null
     CODE=$?
     ;;
@@ -134,12 +158,13 @@ $PROMPT" --model "${FOUR_LINES_MODEL:-gemini-4-argon-high}" \
     # including the ~/.claude ones grok reads for compat. Grok only reads a
     # folder's AGENTS.md and CLAUDE.md once the folder is trusted, so the temp
     # home trusts exactly this workdir. The sandbox profile is grok's
-    # workspace one with /tmp denied: writes land in the project, the temp
-    # grok home, and the per-user system temp dir grok itself needs to start.
+    # workspace one with /tmp and the real HOME denied (deny blocks reads too):
+    # writes land in the project, the temp grok home, and the per-user system
+    # temp dir grok itself needs to start.
     GH="$ROOT/grok-home"; mkdir -p "$GH" "$ROOT/home" "$ROOT/tmp"
     cp "$HOME/.grok/auth.json" "$GH/auth.json"; chmod 600 "$GH/auth.json"
     printf '[folders."%s"]\ntrusted = true\ndecided_at = %s\n' "$(pwd -P)" "$(date +%s)" > "$GH/trusted_folders.toml"
-    printf '[profiles.four-lines]\nextends = "workspace"\ndeny = ["/tmp", "/private/tmp"]\n' > "$GH/sandbox.toml"
+    printf '[profiles.four-lines]\nextends = "workspace"\ndeny = ["/tmp", "/private/tmp", "%s"]\n' "$HOME" > "$GH/sandbox.toml"
     PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" GROK_HOME="$GH" HOME="$ROOT/home" TMPDIR="$ROOT/tmp" \
     env -u XAI_API_KEY -u GROK_SANDBOX -u GROK_AGENT \
       perl -e 'alarm shift; exec @ARGV' "$CAP" \
@@ -177,11 +202,13 @@ const meta = {
     instructions: "GROK_HOME is a new temp dir holding only auth.json, a trust entry for this workdir alone, and the sandbox profile; HOME is a temp dir too. No user config.toml, global rules, ~/.claude CLAUDE.md, skills, plugins, MCP servers, or hooks load; the project AGENTS.md and CLAUDE.md do, because the workdir is trusted",
     memory: "--no-memory and a new GROK_HOME, so no past sessions or memories exist",
     auth: "XAI_API_KEY unset; the copied grok login is used, and saved back only if it refreshed mid run",
-    writes: "--always-approve inside a custom sandbox profile: grok workspace with /tmp denied. Writes land in the workdir, the temp grok home, and the per-user system temp dir; home and /tmp fail. Denying the system temp dir stops grok from starting",
+    writes: "--always-approve inside a custom sandbox profile: grok workspace with /tmp and the real HOME denied. Writes land in the workdir, the temp grok home, and the per-user system temp dir; home and /tmp fail. Denying the system temp dir stops grok from starting",
     stdin: "/dev/null, so grok never waits on input",
-    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
     keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: grok inspect with the temp homes listed 0 user skills, plugins, MCP servers, and hooks (the real home gives 141 skills and the user CLAUDE.md). Without the trust entry no project rules load at all; with it, a probe run named only the project Agents.md and Claude.md and quoted the Acceleration line verbatim. touch in the real home and /tmp failed with Operation not permitted, touch ./ worked",
+    home_reads: "the real HOME is on the sandbox profile deny list, which grok enforces in the kernel for reads as well as writes, read_file included. Nothing under HOME is re-opened: the login is a copy in the temp GROK_HOME",
+    home_reads_probe: "2026-10-23: told to read a canary file in the real HOME, read_file returned Permission denied and cat returned Operation not permitted; the canary contents never appeared in the transcript",
   } : e.ENGINE === "agy" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "HOME is a new temp dir holding only the agy login token: no user GEMINI.md, settings.json, skills, MCP servers, knowledge, or past conversations load; only the fresh project AGENTS.md does",
@@ -191,20 +218,25 @@ const meta = {
     writes: "--sandbox: shell writes fail everywhere except /tmp, including the project; file edits through the edit tool land in the project. Stricter than claude and codex, whose shells can write inside the project",
     prompt_prefix: "one line asking it to apply edits without asking first, since agy otherwise stops to ask and exits without editing",
     stdin: "/dev/null, so agy never waits on input",
-    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
     keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: probe run in a temp HOME named only the project rule file and the two built-in skills; with --sandbox, touch in the real home and touch ./ both failed and an edit-tool change inside the project landed. Without --sandbox, touch in the real home succeeded, which is why the sandbox is on",
+    permissions: "toolPermission proceed-in-sandbox in the temp settings.json replaces --dangerously-skip-permissions: sandboxed commands run unasked, a command asking to bypass the sandbox is refused because nobody can approve it headless",
+    home_reads: "the terminal sandbox denies the real HOME, a read_file deny rule on HOME covers the file tool, and allowNonWorkspaceAccess is false. Nothing under HOME is re-opened: the login is a copy in the temp HOME",
+    home_reads_probe: "2026-10-23: read_file on a canary in the real HOME hit the deny rule, cat on it and on a /Users/Shared symlink to it failed with Operation not permitted, and the retry with the sandbox bypassed was refused; the contents never appeared. With the old --dangerously-skip-permissions the bypassed retry printed the canary. echo, ls, and a write_file in the project still worked",
   } : e.ENGINE === "codex" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "CODEX_HOME is a new temp dir holding only auth.json, plus --ignore-user-config and --ignore-rules: no user config.toml, AGENTS.md, instructions, memories, MCP servers, or exec rules load; only the fresh project AGENTS.md does",
     skills: "HOME is a temp dir so ~/.agents/skills does not load; only the four skills codex ships with remain",
     memory: "--ephemeral and a new CODEX_HOME, so no past sessions or memories exist",
     auth: "OPENAI_API_KEY unset; the copied ChatGPT login is used, and saved back only if it refreshed mid run",
-    writes: "--sandbox workspace-write with approval_policy never; shell writes outside the project fail",
+    writes: "a permission profile matching workspace-write, with approval_policy never: shell writes land in the project and the temp dirs, everything else fails, network off",
     stdin: "/dev/null, so codex never waits on input",
-    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
     keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: probe run named only the project AGENTS.md and the four built-in codex skills; touch in the real home failed with Operation not permitted, touch ./ worked. Without the temp HOME it also listed ~/.agents/skills, which is why HOME is replaced",
+    home_reads: "default_permissions names a profile passed with -c: root readable, project and temp dirs writable, the real HOME denied. It replaces --sandbox workspace-write, which let shell commands read anything. Nothing under HOME is re-opened: the login is a copy in the temp CODEX_HOME",
+    home_reads_probe: "2026-10-23: told the canary path, codex declined to try because its policy names the HOME deny. Told to cat a /Users/Shared symlink to a canary in the real HOME and to run a node script reading it, both failed with Operation not permitted and the contents never appeared. Under the old workspace-write, cat read the same canary",
   } : {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "--setting-sources project,local: user CLAUDE.md, user settings, user hooks, user skills, and plugins do not load; only the fresh project files do",
@@ -212,9 +244,11 @@ const meta = {
     memory: "--no-session-persistence; the temp path is new, so its auto-memory folder starts empty",
     auth: "ANTHROPIC_API_KEY unset, so the run uses the subscription login",
     writes: "sandbox on with unsandboxed commands refused; shell writes outside the project fail, and file edits outside it are not auto-approved",
-    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
     keychain: "claude runs under the real HOME and reads its own subscription login from the login keychain, as it always does; isolation is by the flags above, not by a temp HOME. No keychain is linked into any temp dir",
     probe: "2026-10-23: probe run named only the project CLAUDE.md as loaded and no user-level rules; touch $HOME and Write to $HOME both failed, touch ./ worked",
+    home_reads: "sandbox.filesystem.denyRead on the real HOME for shell commands, plus a Read deny rule on it for the Read, Grep, and Glob tools. Nothing under HOME is re-opened, since claude reads its login from the keychain outside the sandbox. git and npm get empty config files in the temp dir so the unreadable ~/.gitconfig does not stop them",
+    home_reads_probe: "2026-10-23: told to read a canary file in the real HOME, the Read tool was refused by the permission settings and cat failed with Operation not permitted; the contents never appeared. atris --version, git status, and a write in ./ still worked",
   },
   prompt: e.PROMPT, timeout_seconds: Number(e.CAP), timed_out: Number(e.SECS) >= Number(e.CAP),
   started_at: e.STARTED, ended_at: e.ENDED, duration_seconds: Number(e.SECS), exit_code: Number(e.CODE),
