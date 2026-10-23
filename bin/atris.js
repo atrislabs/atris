@@ -2015,31 +2015,31 @@ if (command === 'guide') {
   process.exit(typeof code === 'number' ? code : 0);
 } else if (command === 'task') {
   // SQLite-backed task plane. ~/.atris/tasks.db, gitignored, per-workspace.
-  Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/task').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'team') {
-  Promise.resolve(require('../commands/team').teamCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/team').teamCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'campaign') {
-  Promise.resolve(require('../commands/campaign').campaignCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/campaign').campaignCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'who') {
-  Promise.resolve(require('../commands/who').whoCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/who').whoCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wish') {
-  Promise.resolve(require('../commands/wish').wishCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/wish').wishCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drill') {
-  Promise.resolve(require('../commands/drill').drillCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/drill').drillCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'bench') {
-  Promise.resolve(require('../commands/bench').benchCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/bench').benchCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(2); });
 } else if (command === 'router') {
@@ -2054,7 +2054,7 @@ if (command === 'guide') {
     if (process.stdout.writableLength === 0) process.exit(code);
     else process.stdout.write('', () => process.exit(code));
   };
-  Promise.resolve(require('../commands/decide').decideCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/decide').decideCommand(process.argv.slice(3)))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (
@@ -2070,7 +2070,7 @@ if (command === 'guide') {
     check: humanCommands.checkCommand,
     proof: humanCommands.proofCommand,
   };
-  Promise.resolve(handlers[command](process.argv.slice(3)))
+  Promise.resolve().then(() => handlers[command](process.argv.slice(3)))
     .then((code) => exitWhenFlushed(Number.isInteger(code) ? code : (process.exitCode || 0)))
     .catch((err) => { console.error(`\nAtris could not finish that request: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'mission') {
@@ -2082,11 +2082,11 @@ if (command === 'guide') {
     if (process.stdout.writableLength === 0) process.exit(code);
     else process.stdout.write('', () => process.exit(code));
   };
-  Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'recover') {
-  Promise.resolve(require('../commands/recover').recoverCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/recover').recoverCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agents') {
@@ -2095,20 +2095,20 @@ if (command === 'guide') {
   process.exit(code || 0);
 } else if (command === 'pulse') {
   // Pulse: durable overnight self-improvement heartbeat (OS cron) for atris-cli.
-  Promise.resolve(require('../commands/pulse').pulseCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/pulse').pulseCommand(process.argv.slice(3)))
     .then((res) => process.exit(res && res.ok === false ? 1 : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'probe') {
   // Chat-lane probe (TRR-22): one real /atris2/turn over the full tool relay.
-  Promise.resolve(require('../commands/probe').probeCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/probe').probeCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
-  Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'autoland') {
-  Promise.resolve(require('../commands/autoland').autolandCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/autoland').autolandCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'land') {
@@ -2123,61 +2123,61 @@ if (command === 'guide') {
       process.exit(2);
     });
 } else if (command === 'caretaker') {
-  Promise.resolve(require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/caretaker').caretakerCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'close') {
-  Promise.resolve(require('../commands/close').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/close').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'goal' || command === 'wtf') {
-  Promise.resolve(require('../commands/goal').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/goal').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'founder') {
-  Promise.resolve(require('../commands/founder').founderCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/founder').founderCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'drive') {
   // Drive: one self-driving tick, mission doctor -> auto-fix safe findings -> count disengagements.
-  Promise.resolve(require('../commands/drive').driveCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/drive').driveCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'rsi') {
   // RSI: read the Dream-RSI attempt ledger (trees, attempts, policy, dreams).
-  Promise.resolve(require('../commands/rsi').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/rsi').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'orb') {
-  Promise.resolve(orbCmd(process.argv.slice(3)))
+  Promise.resolve().then(() => orbCmd(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\nError: ${err.message || err}`); process.exit(1); });
 } else if (command === 'radar' || command === 'ctop') {
   const radarArgs = command === 'ctop' ? ['--agents', ...process.argv.slice(3)] : process.argv.slice(3);
-  Promise.resolve(require('../commands/radar').radarCommand(radarArgs))
+  Promise.resolve().then(() => require('../commands/radar').radarCommand(radarArgs))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'stream') {
-  Promise.resolve(require('../commands/stream').streamCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/stream').streamCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'truth') {
   // Truth: one table rolling up mission state, tasks, feature proof receipts, and loop heartbeats.
-  Promise.resolve(require('../commands/truth').truthCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/truth').truthCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'codex-goal') {
-  Promise.resolve(require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization, credit-metered citation drafting against the customer workspace.
-  Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/aeo').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'design') {
   // Design: extract a site's design system, check brand adherence, search brands.
-  Promise.resolve(require('../commands/design').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/design').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'mcp') {
@@ -2193,12 +2193,12 @@ if (command === 'guide') {
   }
 } else if (command === 'improve') {
   // Improve: one paid RL tick via POST /api/improve (deducts credits), local autopilot fallback.
-  Promise.resolve(require('../commands/improve').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/improve').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'study') {
   // Study: on-demand learning feed ingest + local server + browser open.
-  Promise.resolve(require('../commands/study').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/study').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'rainmaker') {
@@ -2212,16 +2212,16 @@ if (command === 'guide') {
   {
     const gate = requireAccountBound(process.argv.slice(3));
     if (!gate.ok) process.exit(refuseAccountGlobal());
-    Promise.resolve(require('../commands/avail').availCommand(gate.args))
+    Promise.resolve().then(() => require('../commands/avail').availCommand(gate.args))
       .then((code) => process.exit(typeof code === 'number' ? code : 0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'scoreboard') {
-  Promise.resolve(require('../commands/scoreboard').scoreboardCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/scoreboard').scoreboardCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'meet') {
-  Promise.resolve(require('../commands/meet').meetCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/meet').meetCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
@@ -2334,14 +2334,14 @@ if (command === 'guide') {
     process.exit(result.ok ? 0 : 1);
   }
   if (isBusinessSync) {
-    Promise.resolve(require('../commands/business-sync').businessSync(process.argv.slice(3)))
+    Promise.resolve().then(() => require('../commands/business-sync').businessSync(process.argv.slice(3)))
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else if (process.argv.includes('--all')) {
     const dryRun = process.argv.includes('--dry-run');
     const yes = process.argv.includes('--yes') || process.argv.includes('-y');
     const force = process.argv.includes('--force') || yes;
-    Promise.resolve(syncAllCmd({ dryRun, force, yes }))
+    Promise.resolve().then(() => syncAllCmd({ dryRun, force, yes }))
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
@@ -2468,47 +2468,47 @@ if (command === 'guide') {
   }
   require('../commands/auth').accountsCmd(args);
 } else if (command === 'balance') {
-  Promise.resolve(require('../commands/balance').balanceCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'usage') {
-  Promise.resolve(require('../commands/usage').usageCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/usage').usageCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'agent-client') {
   // Owner side of agent self-login: create, list, revoke, rotate agent clients.
-  Promise.resolve(require('../commands/agent-client').agentClientCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/agent-client').agentClientCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(require('../utils/agent-client').scrub(err && err.message, [])); process.exit(1); });
 } else if (command === 'api-key') {
-  Promise.resolve(require('../commands/api-key').apiKeyCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/api-key').apiKeyCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'topup') {
-  Promise.resolve(require('../commands/topup').topupCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/topup').topupCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'buy') {
   // Buy: quote, then hand the person the approval step. Never charges.
-  Promise.resolve(require('../commands/buy').buyCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/buy').buyCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'hire') {
   // One-call hire: member + inbox + allowance + overnight loop (POST /business/{id}/hire).
-  Promise.resolve(require('../commands/hire').hireCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/hire').hireCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'hires') {
-  Promise.resolve(require('../commands/hire').hiresCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/hire').hiresCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'mail') {
   // Agent inboxes (@atrismail.com), not Gmail. Send asks first unless --yes.
-  Promise.resolve(require('../commands/mail').mailCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/mail').mailCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'transactions') {
-  Promise.resolve(require('../commands/transactions').transactionsCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/transactions').transactionsCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === '_resolve') {
@@ -2766,7 +2766,7 @@ if (command === 'guide') {
         process.exit(1);
       });
   } else {
-    Promise.resolve(require('../commands/autopilot-front').autopilotFront(args))
+    Promise.resolve().then(() => require('../commands/autopilot-front').autopilotFront(args))
       .then((code) => process.exit(code || 0))
       .catch((error) => {
         console.error(`✗ Autopilot failed: ${error.message || error}`);
@@ -2781,14 +2781,14 @@ if (command === 'guide') {
       process.exit(1);
     });
 } else if (command === 'next') {
-  Promise.resolve(require('../commands/next').nextCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/next').nextCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'dream') {
-  Promise.resolve(require('../commands/dream').dreamCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/dream').dreamCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((error) => {
       console.log('No dreams tonight: could not finish dream');
@@ -2892,17 +2892,17 @@ if (command === 'guide') {
   const json = process.argv.includes('--json');
   require('../commands/clean').cleanAtris({ dryRun, json });
 } else if (command === 'harvest') {
-  Promise.resolve(require('../commands/harvest').harvestCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/harvest').harvestCommand(process.argv.slice(3)))
     .catch((err) => {
       console.error(err.message || err);
       process.exit(1);
     });
 } else if (command === 'doctor') {
-  Promise.resolve(require('../commands/doctor').doctorCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/doctor').doctorCommand(process.argv.slice(3)))
     .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exitCode = 1; });
 } else if (command === 'doc-health') {
-  Promise.resolve(require('../commands/doc-health').docHealthCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/doc-health').docHealthCommand(process.argv.slice(3)))
     .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
     .catch((err) => { console.error(err.message || err); process.exitCode = 1; });
 } else if (command === 'verify') {
@@ -2987,7 +2987,7 @@ if (command === 'guide') {
     .then((status) => process.exit(status === 1 ? 1 : 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'ci') {
-  Promise.resolve(require('../commands/ci').ciCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/ci').ciCommand(process.argv.slice(3)))
     .then((status) => process.exit(status || 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ').toLowerCase()); process.exit(1); });
 } else if (command === 'github') {
@@ -3094,7 +3094,7 @@ if (command === 'guide') {
   // path so `atris apps --json` stays machine-readable for agents.
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  Promise.resolve(require('../commands/apps').appsCommand(subcommand, ...args))
+  Promise.resolve().then(() => require('../commands/apps').appsCommand(subcommand, ...args))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'learn') {
@@ -3106,7 +3106,7 @@ if (command === 'guide') {
   const args = process.argv.slice(4);
   require('../commands/lesson')(subcommand, ...args);
 } else if (command === 'taste') {
-  Promise.resolve(require('../commands/taste').tasteCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/taste').tasteCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`taste could not continue: ${err.message || err}.`); process.exit(1); });
 } else if (command === 'teach') {
@@ -3122,7 +3122,7 @@ if (command === 'guide') {
 } else if (command === 'member') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  Promise.resolve(require('../commands/member').memberCommand(subcommand, ...args))
+  Promise.resolve().then(() => require('../commands/member').memberCommand(subcommand, ...args))
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'app') {
@@ -3255,7 +3255,7 @@ if (command === 'guide') {
     showLoopHelp();
     process.exit(0);
   }
-  Promise.resolve(require('../commands/loop-front').loopFront(args))
+  Promise.resolve().then(() => require('../commands/loop-front').loopFront(args))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
@@ -3274,7 +3274,7 @@ if (command === 'guide') {
 } else if (command === 'compile') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  Promise.resolve(require('../commands/compile').compileCommand(subcommand, ...args))
+  Promise.resolve().then(() => require('../commands/compile').compileCommand(subcommand, ...args))
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'engine' || command === 'engines') {
@@ -3284,12 +3284,12 @@ if (command === 'guide') {
   // return value may be a promise or a plain number; Promise.resolve handles
   // both (mirrors the `compile` command dispatch just above).
   const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
-  Promise.resolve(require('../commands/engine').engineCommand(engineArgs))
+  Promise.resolve().then(() => require('../commands/engine').engineCommand(engineArgs))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'link') {
   // Link: ask the roster's engine what two things could become together.
-  Promise.resolve(require('../commands/link').linkCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/link').linkCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'playbook') {
@@ -3303,64 +3303,64 @@ if (command === 'guide') {
   catch (err) { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); }
 } else if (command === 'slop') {
   // Slop: deterministic frontend-slop detector (no LLM). Exit 1 = slop found, for CI + the autopilot gate.
-  Promise.resolve(require('../commands/slop').slopCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/slop').slopCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'voice') {
-  Promise.resolve(require('../commands/voice').voiceCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/voice').voiceCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'write') {
   // Write: guided writing sessions, human types every word, atris structures + reviews (plan-do-review for prose).
-  Promise.resolve(require('../commands/write').writeCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/write').writeCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'strings') {
   // Strings: content design system from live code (no LLM). Extracts UI strings, flags variants,
   // enforces preferred terms at the gate. Exit 1 = variants/banned terms found, for CI + the gate.
-  Promise.resolve(require('../commands/strings').stringsCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/strings').stringsCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'security-review' || command === 'secure') {
   // Security review: deterministic secrets/PII/code-risk scan (no LLM). Exit 1 = HIGH finding,
   // for the autopilot/mission/CI gate + a SOC 2 evidence artifact via --json.
-  Promise.resolve(require('../commands/security-review').securityReviewCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/security-review').securityReviewCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'signup') {
   // Signup: one-call seedless agent signup → writes the active profile (install→signup→play seam).
-  Promise.resolve(require('../commands/signup').signupCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/signup').signupCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'moves') {
   // Moves: your 3 next moves, approve one into the loop, kill, or skip.
-  Promise.resolve(require('../commands/moves').movesCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/moves').movesCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'unknowns') {
   // Unknowns: blindspot pass from local territory context into the SQLite ledger.
-  Promise.resolve(require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feed') {
   // Feed: read and post the business group feed, receipts and state changes only.
   // Sets exitCode instead of process.exit() so large --json output flushes fully.
-  Promise.resolve(require('../commands/feed').feedCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/feed').feedCommand(process.argv.slice(3)))
     .then((code) => { process.exitCode = typeof code === 'number' ? code : 0; })
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exitCode = 1; });
 } else if (command === 'clarity') {
   // Clarity: interview yourself once; agents read how you work so you stop repeating it.
-  Promise.resolve(require('../commands/clarity').clarityCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/clarity').clarityCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'interview') {
   // Interview: the interlinked 1-on-1, live interview that extracts judgment into a member file.
-  Promise.resolve(require('../commands/interview').interviewCommand(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/interview').interviewCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'deck') {
   // Deck: premium Google Slides from a plain content spec, via the Atris deck engine (anti-slop design system).
-  Promise.resolve(require('../commands/deck').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/deck').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'site') {
@@ -3372,32 +3372,32 @@ if (command === 'guide') {
       && !raw.includes('--dry-run');
     const gate = deployWrite ? requireAccountBound(raw) : { ok: true, args: raw };
     if (!gate.ok) process.exit(refuseAccountGlobal());
-    Promise.resolve(require('../commands/site').run(gate.args))
+    Promise.resolve().then(() => require('../commands/site').run(gate.args))
       .then((code) => process.exit(typeof code === 'number' ? code : 0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'theme') {
   // Theme: brand themes (.atris/theme.json) for the whole design system (deck/html/site).
-  Promise.resolve(require('../commands/theme').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/theme').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'card') {
   // Card: one line of text into an on-brand image (uses your theme + the design system).
-  Promise.resolve(require('../commands/card').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/card').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brief') {
   // Brief: one-glance operator surface for landings, waits, and next moves.
-  Promise.resolve(require('../commands/brief').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/brief').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pack') {
-  Promise.resolve(require('../commands/pack').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/pack').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'reel') {
   // Reel: one line of text into a short on-brand video (an animated card; frames via Chrome + ffmpeg).
-  Promise.resolve(require('../commands/reel').run(process.argv.slice(3)))
+  Promise.resolve().then(() => require('../commands/reel').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'tree') {
