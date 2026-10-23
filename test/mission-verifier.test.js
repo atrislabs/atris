@@ -106,6 +106,37 @@ test('a verifier that outruns its window reports timed_out, elapsed, and window,
   }
 });
 
+test('a campaign mission check gets the held-out path, and its lines never reach the receipt', () => {
+  const dir = makeTempDir();
+  const prevDb = process.env.ATRIS_CAMPAIGN_DB;
+  const prevHoldout = process.env.ATRIS_CAMPAIGN_HOLDOUT;
+  try {
+    process.env.ATRIS_CAMPAIGN_DB = path.join(dir, 'state', 'atris.db');
+    delete process.env.ATRIS_CAMPAIGN_HOLDOUT;
+    const holdoutDir = path.join(dir, 'state', 'campaigns', 'cmp-held', 'holdout');
+    fs.mkdirSync(holdoutDir, { recursive: true });
+    const holdout = path.join(holdoutDir, 'secret.test.js');
+    fs.writeFileSync(holdout, 'assert.equal(median([9, 1, 5]), 5);\n');
+    const check = 'test -f "$ATRIS_CAMPAIGN_HOLDOUT" && echo "path=$ATRIS_CAMPAIGN_HOLDOUT" && cat "$ATRIS_CAMPAIGN_HOLDOUT"';
+
+    const held = runVerifier(check, dir, { campaignId: 'cmp-held' });
+    assert.equal(held.passed, true);
+    assert.match(held.stdout, /path=.*secret\.test\.js/);
+    assert.doesNotMatch(held.stdout, /median\(\[9, 1, 5\]\)/);
+    assert.match(held.stdout, /\[held out\]/);
+    assert.equal(process.env.ATRIS_CAMPAIGN_HOLDOUT, undefined);
+
+    // No campaign, or a campaign without a held-out file: nothing is passed.
+    assert.equal(runVerifier(check, dir).passed, false);
+    assert.equal(runVerifier(check, dir, { campaignId: 'cmp-none' }).passed, false);
+  } finally {
+    if (prevDb === undefined) delete process.env.ATRIS_CAMPAIGN_DB;
+    else process.env.ATRIS_CAMPAIGN_DB = prevDb;
+    if (prevHoldout !== undefined) process.env.ATRIS_CAMPAIGN_HOLDOUT = prevHoldout;
+    cleanupTempDir(dir);
+  }
+});
+
 test('unverified and failed tick recap text carries a visible warning marker', () => {
   assert.match(missionVerifierCheckedText(null, {}), /^UNVERIFIED:/);
   assert.match(missionVerifierCheckedText({ passed: false, command: 'false' }, {}), /^VERIFY FAILED:/);

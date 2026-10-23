@@ -6787,18 +6787,39 @@ function resolveVerifierCommand(command) {
   return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
 }
 
-function runVerifier(command, root = process.cwd()) {
+// A campaign mission's check is the campaign judge, which reads its held-out
+// file from outside every checkout. Hand it the path the way the campaign
+// runner does, and scrub the file's lines from what the receipt keeps.
+function campaignHoldoutFor(campaignId) {
+  if (!campaignId) return null;
+  try {
+    const { campaignDbPath } = require('../lib/campaign-store');
+    const { findHoldout } = require('../lib/campaign-holdout');
+    return findHoldout(path.dirname(campaignDbPath()), campaignId);
+  } catch {
+    return null;
+  }
+}
+
+function runVerifier(command, root = process.cwd(), { campaignId = null } = {}) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
+  const holdout = campaignHoldoutFor(campaignId);
+  const env = { ...envWithNodeDir(process.env) };
+  if (holdout) env.ATRIS_CAMPAIGN_HOLDOUT = holdout;
+  const keep = (text) => {
+    const tail = String(text || '').slice(-4000);
+    return holdout ? require('../lib/campaign-holdout').scrub(tail, holdout) : tail;
+  };
   const startedAt = process.hrtime.bigint();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
     timeout: timeoutMs,
-    env: envWithNodeDir(process.env),
+    env,
   });
   // A verifier that blows its window is not a failing check: the code may be
   // fine and the suite merely slow (or starved by a concurrent flight). Report
@@ -6818,8 +6839,8 @@ function runVerifier(command, root = process.cwd()) {
     timed_out: timedOut,
     elapsed_ms: elapsedMs,
     timeout_ms: timeoutMs,
-    stdout: String(result.stdout || '').slice(-4000),
-    stderr: String(result.stderr || '').slice(-4000),
+    stdout: keep(result.stdout),
+    stderr: keep(result.stderr),
   };
 }
 
@@ -11182,7 +11203,7 @@ async function verifyMissionRunTickPhase(context) {
   let verifierResult = null;
   if (result.status === 'ran' && verifyEach) {
     if (currentTick.frozen.verifier) {
-      verifierResult = runVerifier(currentTick.frozen.verifier);
+      verifierResult = runVerifier(currentTick.frozen.verifier, undefined, { campaignId: currentTick.mission && currentTick.mission.campaign_id });
     }
     const shouldRunReferee = !currentTick.tickSkipWorker
       && (!verifierResult || verifierResult.passed)
@@ -11511,7 +11532,7 @@ function tickMission(args) {
       const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
       if (protectedLaneGuard.allowed && verify && verifierCommand) {
-        verifierResult = runVerifier(verifierCommand);
+        verifierResult = runVerifier(verifierCommand, undefined, { campaignId: mission.campaign_id });
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
 
