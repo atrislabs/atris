@@ -9889,7 +9889,11 @@ async function memberImprovements(businessId, ...args) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);
   }
-  const days = flags.days && Number.isFinite(flags.days) ? flags.days : 30;
+  if (flags.days !== null && !(Number.isInteger(flags.days) && flags.days >= 1)) {
+    console.error('--days needs a whole number of days, 1 or more (example: --days 7).');
+    process.exit(1);
+  }
+  const days = flags.days || 30;
   const result = await apiRequestJson(`/business/${encodeURIComponent(businessId)}/improvements/daily?days=${days}`, { token: creds.token });
   if (!result.ok) {
     console.error(`Failed to fetch improvements: ${result.error || 'Unknown error'}`);
