@@ -2417,6 +2417,16 @@ test('yes words: a held command keeps its verb and its target, and one that cann
     ['ok to change lib/x.js?', 'ok to change lib/x.js?'],
   ];
   for (const [ask, plain] of said) assert.equal(gmBet.plainAsk(ask), plain, ask);
+  // the guard's own words for a held command: a delete says delete, a force push says so, a tag is named
+  const away = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-held-'));
+  const held = (tool, args) => yesLock.plainWhat(JSON.stringify({ tool, args, cwd: away }));
+  assert.equal(held('gh', ['release', 'delete', 'v1.2.3', '--yes']), 'delete the GitHub release v1.2.3 in this repo');
+  assert.equal(held('gh', ['release', 'edit', 'v1.2.3', '--draft=false']), 'run a command that changes GitHub: "release edit v1.2.3 --draft=false"');
+  assert.equal(held('git', ['push', 'origin', '--delete', 'v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', ':v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', 'v1.2.3']), 'push the tag v1.2.3 to its remote');
+  assert.equal(held('git', ['push', '--force', 'origin', 'pricing-page']), 'force push its pricing page branch to its remote, replacing what is there');
+  assert.equal(held('git', ['push', 'origin', '+HEAD:master']), 'force push to master on its remote, replacing what is there');
   for (const [ask, plain] of said) {
     if (/\bdelete\b/.test(ask)) assert.doesNotMatch(plain, /\b(create|make|publish)\b/, `a delete never reads as a create: ${ask}`);
   }
