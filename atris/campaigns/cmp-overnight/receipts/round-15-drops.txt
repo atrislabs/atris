@@ -13,3 +13,4 @@ DROP test/plugin-cmd--mut-L75-7.test.js: Pins shell syntax; an equivalent if sta
 DROP test/task-receipt--mut-L16-3.test.js: Pins the internal 400-character formatting boundary; the mutation preserves every output character and only inserts a separator.
 DROP test/zen-apply--mut-L112-7.test.js: Duplicates the backup-branch content checks in test/zen-apply.test.js.
 DROP test/zen-cmd--mut-L75-7.test.js: Duplicates the pending workspace cleanup headline assertion in test/zen-apply.test.js.
+DROP test/state-home--mut-L19-7.test.js: relies on the Mac's case-insensitive folders; fails on the Linux test server
