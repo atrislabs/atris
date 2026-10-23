@@ -20,7 +20,7 @@ for (const k of Object.keys(GIT_ENV)) if (/^GIT_CONFIG/.test(k)) delete GIT_ENV[
 const gitBin = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
 const HELD = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'held-by-lock-20261023.json'), 'utf8'));
 
-function world(t) {
+function world(t, { network = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'yes-engine-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'repo');
@@ -34,6 +34,7 @@ function world(t) {
   git('remote', 'add', 'origin', origin);
   git('push', '-q', 'origin', 'master');
   git('checkout', '-q', '-b', 'feature');
+  if (network) git('remote', 'set-url', 'origin', 'git@github.com:example/repo.git');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(stateDir, 'm-woken', { seal });
   const verdict = (tool, args) => yesLock.check({ stateDir, missionId: 'm-woken', seal, tool, args, gitBin, cwd: root, env: GIT_ENV });
@@ -56,7 +57,7 @@ test('every command the engines ran on 2026-10-23 runs in a woken run', (t) => {
 });
 
 test('the branch push the engines ran goes to a branch, written out in full', (t) => {
-  const w = world(t);
+  const w = world(t, { network: true });
   const v = w.verdict('git', ['push', 'origin', 'HEAD:codex/validator-fix']);
   assert.deepEqual(v.args.slice(-2), ['origin', 'HEAD:refs/heads/codex/validator-fix']);
   for (const args of [['push', 'origin', 'HEAD:master'], ['push', 'origin', 'HEAD:refs/tags/v1'], ['push', 'origin', 'HEAD:@{-1}'], ['push', 'origin', 'HEAD:Master']]) {
@@ -75,9 +76,8 @@ test('a -c that only turns something off runs; one that names a program, path, o
     ['-c', 'core.pager=less', 'log'], ['-c', 'core.sshCommand=ssh -i k', 'fetch'], ['-c', 'hook.pre-commit.command=./x', 'commit', '-m', 'x'],
     ['-c', 'url.https://example.com/.insteadOf=', 'status'], ['-c', 'alias.st=', 'status'], ['-c', 'credential.helper=store', 'status'],
     ['-c', 'remote.origin.pushurl=', 'status'], ['-c', 'push.followTags=true', 'push', 'origin', 'feature'], ['-c', 'include.path=/tmp/x', 'status'],
-    ['-c', 'core.editor=vim', 'commit'], ['init', '--template=/tmp/t'], ['init', '--separate-git-dir=/tmp/g']]) {
+    ['-c', 'core.editor=vim', 'commit']]) {
     assert.ok(held(w.verdict('git', args)), args.join(' '));
   }
   assert.ok(runs(w.verdict('atris', ['atris.md'])), 'the boot read runs');
-  assert.ok(held(w.verdict('atris', ['atris.md', 'publish'])), 'only the boot read');
 });

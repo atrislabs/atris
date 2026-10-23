@@ -2802,7 +2802,7 @@ test('a held handed-off command is a yes card on its own when it has no parent',
   const h = jobDesk(root, {});
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to gh pr merge 5']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to merge a pull request on GitHub'], 'plain words, never the raw command');
   const own = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([own.title, own.bet_id, own.command], ['a handed-off job', null, 'gh pr merge 5'], 'no parent: its own card');
   const yes = await h.d.answerYes();
@@ -2822,11 +2822,11 @@ test('a held handed-off command shows on its parent job when there is one', asyn
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: 'm-parent' });
-  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'], cwd: root });
   const h = jobDesk(root, { 'm-parent': { id: 'm-parent', owner: 'builder', status: 'running', human_asks: [] } });
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to npm publish']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to publish a package to npm']);
   const onParent = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([onParent.title, onParent.bet_id], ['Launch the try page', 'b1'], 'the card sits on the parent job');
   await h.d.answerYes();
@@ -2888,6 +2888,10 @@ test('two held commands on one step are two cards; the yes on the first releases
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
   const h = jobDesk(root, {});
@@ -2895,13 +2899,13 @@ test('two held commands on one step are two cards; the yes on the first releases
   const keys = h.d.state.jobs.yes.filter(y => y.mission_id === 'm-child').map(y => y.key);
   assert.equal(new Set(keys).size, 2, 'each card has its own key');
   const card = h.d.next();
-  assert.equal(card.job.what, 'a handed-off job wants to npm publish ./a');
+  assert.equal(card.job.what, 'a handed-off job wants to publish alpha to npm');
   await h.d.answerYes();
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   h.d.pollJobs();
   const next = h.d.next();
-  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to npm publish ./b'], 'the answer did not hide the later request');
+  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to publish beta to npm'], 'the answer did not hide the later request');
 });
 
 test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {
