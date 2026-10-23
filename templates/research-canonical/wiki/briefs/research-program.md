@@ -1,4 +1,4 @@
-# {{name}} — Research Program
+# {{name}}: Research Program
 
 Starter brief for the lab.
 
