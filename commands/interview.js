@@ -27,9 +27,17 @@ function findWorkspaceRoot(start) {
   return null;
 }
 
+// The local calendar day (YYYY-MM-DD), offsetDays back. toISOString() is the
+// UTC day, which is already tomorrow in the evening west of Greenwich.
 function today(offsetDays = 0) {
-  const d = new Date(Date.now() - offsetDays * 86400000);
-  return d.toISOString().slice(0, 10);
+  const d = new Date();
+  d.setDate(d.getDate() - offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function journalPath(ws, offsetDays = 0) {
+  const day = today(offsetDays);
+  return path.join(ws, 'atris', 'logs', day.slice(0, 4), `${day}.md`);
 }
 
 function existing(...candidates) {
@@ -178,8 +186,8 @@ async function interviewCommand(args = [], root = process.cwd(), { mode: forcedM
   if (subjectRaw === 'me' || subjectRaw === '') {
     mode = 'operator';
     contextPaths = existing(
-      path.join(ws, 'atris', 'logs', '2026', `${today()}.md`),
-      path.join(ws, 'atris', 'logs', '2026', `${today(1)}.md`),
+      journalPath(ws),
+      journalPath(ws, 1),
       path.join(ws, 'atris', 'now.md'),
       path.join(ws, 'atris', 'TODO.md')
     );
@@ -200,7 +208,7 @@ async function interviewCommand(args = [], root = process.cwd(), { mode: forcedM
       path.join(memberDir, 'now.md'),
       path.join(memberDir, 'logs'),
       path.join(memberDir, 'proofs'),
-      path.join(ws, 'atris', 'logs', '2026', `${today()}.md`)
+      journalPath(ws)
     );
   } else {
     mode = 'expert';
