@@ -454,6 +454,7 @@ test('gmail send refuses an account that is not connected before the send reques
         'friend@example.com',
         'Status update',
         'hello',
+        '--approved',
         '--account',
         'missing',
         '--approved',
