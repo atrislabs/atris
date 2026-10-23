@@ -1163,7 +1163,10 @@ function lessonSlug(text, maxLen = 40) {
  */
 function writeLesson(cwd, slug, status, explanation) {
   const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  // Local calendar day (YYYY-MM-DD); toISOString is UTC and dates an
+  // evening lesson tomorrow anywhere west of Greenwich.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const lessonLine = `- **[${today}] ${slug}** - ${status} - ${explanation}`;
 
   if (!fs.existsSync(lessonsPath)) {
