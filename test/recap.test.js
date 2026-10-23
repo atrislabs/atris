@@ -658,7 +658,7 @@ test('recap --help names spoken default and verbose report', () => {
 
 // --- recap today: what your ai agent did here, before any setup ---
 
-const { buildAgentToday, renderAgentToday, claudeProjectDir } = require('../lib/agent-today');
+const { buildAgentToday, renderAgentToday, claudeProjectDir, readFirstJsonLine } = require('../lib/agent-today');
 
 function todayFixture() {
   const home = makeTempDir();
@@ -826,4 +826,19 @@ test('recap today stays at five lines by folding saved and unsaved into one git 
     files: [], areas: [], commits: [], unsaved: 0, isGit: true,
   });
   assert.equal(onlyAuto, 'today in shop\nyour agents ran 1 job on their own.\nit read and ran things but changed no files.');
+});
+
+test('recap today reads a whole first line even when it spans several reads', () => {
+  const dir = makeTempDir();
+  try {
+    const file = path.join(dir, 'big.jsonl');
+    const meta = { type: 'session_meta', payload: { cwd: '/x', notes: 'n'.repeat(200 * 1024) } };
+    fs.writeFileSync(file, `${JSON.stringify(meta)}\n${JSON.stringify({ type: 'later' })}\n`);
+    assert.deepEqual(readFirstJsonLine(file), meta);
+    fs.writeFileSync(file, '{"half": ');
+    assert.equal(readFirstJsonLine(file), null, 'a half-written line is not a session');
+    assert.equal(readFirstJsonLine(path.join(dir, 'missing.jsonl')), null);
+  } finally {
+    cleanup(dir);
+  }
 });
