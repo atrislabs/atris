@@ -1515,6 +1515,8 @@ async function gmPhone(args = []) {
         log,
         // read the started bets' missions every 25 seconds, read-only
         pollMs: gmBet.JOB_POLL_MS,
+        // the numbers a question card stands on, when no bet is being made to read them
+        readBundle: () => gmBet.readBundle(workspaceRoot, { ledgerFile: gmBet.ledgerPath(stateDir) }),
         // the roster's reviewer gets up to 16 minutes to read the finished work
         reviewCli: gmBet.makeCliRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot, timeoutMs: 16 * 60 * 1000 }),
       });

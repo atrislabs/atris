@@ -218,6 +218,7 @@ async function startHandler(over = {}) {
     snapshotTarget: () => () => { restored += 1; return true; },
     logPath: path.join(dir, 'gm-phone-actions.jsonl'),
     page: phonePage,
+    ...(over.makeBetDesk ? { makeBetDesk: log => over.makeBetDesk(log, dir) } : {}),
   });
   const server = http.createServer((q, s) => { handler(q, s); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -382,6 +383,41 @@ test('over http: all clear after five decisions, naming what still runs', async 
   }
   const limit = phone.sessionCards(phone.buildCards(view()), { decided: phone.CARD_LIMIT, snoozed: new Set() });
   assert.deepEqual(limit, []);
+});
+
+test('over http: an empty queue tap gets a question at once; the answer is saved through /bet/answer', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let ledgerFile = null;
+  // a writer that never finishes: the tap must not wait on it
+  const calls = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      ledgerFile = path.join(dir, 'gm-bets.jsonl');
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); return new Promise(() => {}); }, runCli: async () => ({ code: 0, stdout: '{}' }) });
+    },
+  });
+  try {
+    assert.equal(calls.length, 1, 'the desk warms as soon as the server makes it');
+    const started = Date.now();
+    const tap = await h.call('POST', '/bet/think', { body: {} });
+    assert.ok(Date.now() - started < 1000);
+    assert.equal(tap.status, 200);
+    assert.equal(tap.json.kind, 'question');
+    assert.equal(tap.json.question.choices.length, 3);
+    // same token, origin, and json checks as every other post
+    assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'customers' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'customers' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope' } })).json.reason, 'bad_choice');
+    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'customers' } });
+    assert.equal(answered.status, 200);
+    assert.equal(answered.json.ack, 'got it. the next ideas aim at first paying customers.');
+    assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).chase.label, 'first paying customers');
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'customers' } })).status, 409, 'nothing on screen to answer now');
+    assert.equal(calls.length, 1, 'still the one generation in the background');
+  } finally {
+    await h.close();
+  }
 });
 
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
