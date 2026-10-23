@@ -473,7 +473,10 @@ function landSummary(cwd = process.cwd(), ttlDays = DEFAULT_TTL_DAYS) {
 }
 
 function salvageDir(root) {
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Local calendar day; toISOString is UTC and files an evening backup
+  // under tomorrow anywhere west of Greenwich.
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const dir = path.join(root, '.atris', 'salvage', stamp);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -1086,5 +1089,6 @@ module.exports = {
   landCommand,
   landSummary,
   reap,
+  salvageDir,
   sharedBoard,
 };
