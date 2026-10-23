@@ -376,13 +376,11 @@ const LAYER = `(function () {
   };
 })()`;
 
-// Opens the team from the card, a member's talk card from a row, types a
-// word to them that arms a second tap, then presses Esc until the card is
-// back and once more. Each step reads the layer, so "Esc steps back one
-// layer" is a list of states.
-async function escapeTrace({ chromePath = findChrome() } = {}) {
+// The real page on a phone-size headless Chrome, served with this desk and
+// at rest on its first card. fn(p, send) drives it; Chrome and the server
+// are closed after, whatever happens.
+async function onPhone(desk, chromePath, fn) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
-  const desk = { ...scriptedDesk(), teamTable: () => ({ ok: true, rows: TEAM_ROWS }), talk: ({ confirm }) => (confirm ? { ok: true, ack: 'builder has it.' } : { ok: false, reason: 'needs_confirm', message: 'tap again to start builder on this' }) };
   const server = await serve(desk);
   let chrome = null;
   try {
@@ -392,8 +390,32 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await send('Page.enable');
     await send('Page.navigate', { url: server.url });
     const p = driver(send);
-    const settled = "document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning')";
-    await p.until(`document.readyState === 'complete' && ${settled} && Boolean(document.querySelector('#bet h1'))`, 'the first card');
+    await p.until(`document.readyState === 'complete' && ${SETTLED} && Boolean(document.querySelector('#bet h1'))`, 'the first card');
+    return await fn(p, send);
+  } finally {
+    if (chrome) chrome.close();
+    await server.close();
+  }
+}
+
+const SETTLED = "document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning')";
+
+// a tap on the button that reads label, wherever it sits on the card
+async function tapLabel(p, send, label) {
+  const r = await p.run(`(function () { var n = Array.prototype.find.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === ${JSON.stringify(label)}; }); if (!n) return null; var b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  if (!r) throw new Error(`no button reads ${label}`);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+}
+
+// Opens the team from the card, a member's talk card from a row, types a
+// word to them that arms a second tap, then presses Esc until the card is
+// back and once more. Each step reads the layer, so "Esc steps back one
+// layer" is a list of states.
+async function escapeTrace({ chromePath = findChrome() } = {}) {
+  const desk = { ...scriptedDesk(), teamTable: () => ({ ok: true, rows: TEAM_ROWS }), talk: ({ confirm }) => (confirm ? { ok: true, ack: 'builder has it.' } : { ok: false, reason: 'needs_confirm', message: 'tap again to start builder on this' }) };
+  return onPhone(desk, chromePath, async (p, send) => {
     const steps = [];
     const look = async (did) => { await wait(120); steps.push({ did, ...(await p.run(LAYER)) }); };
     const esc = async () => {
@@ -415,13 +437,104 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await look('typing to builder');
     for (let i = 1; i <= 4; i++) { await esc(); await look(`esc ${i}`); }
     return { viewport: `${PHONE.width}x${PHONE.height}`, steps };
-  } finally {
-    if (chrome) chrome.close();
-    await server.close();
-  }
+  });
 }
 
-module.exports = { findChrome, trace, escapeTrace, REPLY };
+// ---- an answer goes to the question on screen, or nowhere ---------------------------
+
+// two questions whose answers share ids, as written questions do: a2 is
+// "small teams" on the first and "fewer mistakes" on the second
+const STALE = {
+  q1: { kind: 'question', question: { key: 'q1', ask: 'who uses the phone page most?', line: 'the phone page went live this week.', choices: [{ id: 'a1', label: 'solo founders' }, { id: 'a2', label: 'small teams' }] } },
+  q2: { kind: 'question', question: { key: 'q2', ask: 'what would make a small team pay?', line: 'installs dropped to 1,511 last week.', choices: [{ id: 'a1', label: 'saving them hours' }, { id: 'a2', label: 'fewer mistakes' }] } },
+};
+
+// The owner answers the first question. The desk saves it and moves to the
+// second, but the page never hears back. The owner taps the same answer on
+// the old card, still on screen. The desk refuses an answer that names a
+// card other than its own, as the real one does, and saves the rest.
+async function staleAnswerTrace({ chromePath = findChrome() } = {}) {
+  const card = id => ({ ok: true, status: 'ready', id: `question:${id}`, ...STALE[id], team_working: 0 });
+  let current = card('q1');
+  const posts = [];
+  const saved = [];
+  const desk = {
+    ...scriptedDesk(),
+    warm: () => current,
+    answer: ({ choice, card: named }) => {
+      posts.push({ choice, card: named === undefined ? null : named });
+      if (!current) return { ok: false, reason: 'gone', message: 'there is no question on screen' };
+      if (named !== undefined && named !== current.id) return { ok: false, reason: 'gone', message: 'that card changed, so nothing was saved. tap the orb for the new one' };
+      const picked = current.question.choices.find(c => c.id === choice);
+      saved.push({ question: current.question.ask, answer: picked.label });
+      current = null;
+      return { ok: true, ack: `got it: ${picked.label}.` };
+    },
+    // the next card is made, then the reply to the page is lost
+    next: () => { current = card('q2'); throw new Error('the reply was lost'); },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const shown = () => p.run("document.querySelector('#bet h1').textContent");
+    await tapLabel(p, send, 'small teams');
+    await p.until("document.getElementById('line').textContent === 'that did not go through. tap to try again' && !document.getElementById('bet').classList.contains('holding')", 'the lost next card');
+    const after_lost = await shown();
+    await tapLabel(p, send, 'small teams');
+    // the second tap reaches the desk, and its answer has come back
+    const end = Date.now() + 3000;
+    while (posts.length < 2 && Date.now() < end) await wait(16);
+    await wait(HOLD_WAIT_MS);
+    const hint = await p.run("(function () { var n = document.querySelector('#bet .act .links'); return n ? n.textContent : null; })()");
+    return { title_after_lost: after_lost, title_at_end: await shown(), hint, posts, saved };
+  });
+}
+
+// ---- words that did not send stay in the box ----------------------------------------
+
+// The owner types in "or say something". The first send never leaves the
+// phone (the network is off), the second reaches a desk that could not pass
+// it on, the third goes through. After each failure: is the box still
+// there, with the words and the cursor in it, and what does the line say.
+async function unsentSayTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'please use the short introduction I wrote';
+  const card = id => ({ ok: true, status: 'ready', id, ...CARDS[id], team_working: 0 });
+  let current = card('b1');
+  const calls = [];
+  const desk = {
+    ...scriptedDesk(),
+    warm: () => current,
+    say: ({ text, card: named }) => {
+      calls.push({ text, card: named === undefined ? null : named });
+      if (calls.length === 1) return { ok: false, reason: 'steer_failed', message: 'it did not reach them. try again in a minute.' };
+      return { ok: true, ack: 'got it.' };
+    },
+    next: () => { current = card('b2'); return current; },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const look = () => p.run(`(function () { var field = document.querySelector('#bet .field'); var input = field && field.querySelector('input'); var note = document.querySelector('#bet .unsent'); return { field_open: Boolean(field), words: input ? input.value : null, cursor_in_field: Boolean(input && document.activeElement === input), held: Boolean(field && field.classList.contains('chosen')), line: note ? note.textContent : null, title: document.querySelector('#bet h1').textContent }; })()`);
+    // after a send: the hold, then whatever the page does with the answer
+    const settle = async () => { await wait(HOLD_WAIT_MS); await p.until(`${SETTLED} && !document.getElementById('bet').classList.contains('holding')`, 'the card at rest'); await wait(150); };
+    await p.tap('#bet .sayline .quiet');
+    await wait(250);
+    await p.type(WORDS);
+    await send('Network.enable');
+    await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await p.enter();
+    await settle();
+    const offline = await look();
+    await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await p.enter();
+    await settle();
+    const refused = await look();
+    await p.enter();
+    // a box that is gone sends nothing, so the next card may never come
+    await p.until(`${SETTLED} && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b2.bet.title)}`, 'the next card', 4000).catch(() => {});
+    const sent = await look();
+    return { words: WORDS, shown_card: 'b1', offline, refused, sent, calls };
+  });
+}
+const HOLD_WAIT_MS = 900;
+
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

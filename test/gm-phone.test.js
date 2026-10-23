@@ -462,12 +462,12 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
     // same token, origin, and json checks as every other post
     assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'money' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'money' } })).status, 403);
-    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope' } })).json.reason, 'bad_choice');
-    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'money' } });
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope', card: tap.json.id } })).json.reason, 'bad_choice');
+    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'money', card: tap.json.id } });
     assert.equal(answered.status, 200);
     assert.equal(answered.json.ack, 'got it: making money from it.');
     assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).focus.label, 'making money from it');
-    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'money' } })).status, 409, 'nothing on screen to answer now');
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'money', card: tap.json.id } })).status, 409, 'nothing on screen to answer now');
     assert.equal(calls.length, 1, 'still the one generation in the background');
   } finally {
     await h.close();
@@ -629,11 +629,11 @@ test('over http: say something goes through the same token and json checks', asy
     makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) }),
   });
   try {
-    await h.call('POST', '/bet/think', { body: {} });
+    const shown = await h.call('POST', '/bet/think', { body: {} });
     assert.equal((await h.call('POST', '/bet/say', { token: 'nope', body: { text: 'hi' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/say', { origin: 'http://evil.example', body: { text: 'hi' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/say', { body: { text: 'x'.repeat(281) } })).json.reason, 'too_long');
-    const ok = await h.call('POST', '/bet/say', { body: { text: 'more people using it, in schools' } });
+    const ok = await h.call('POST', '/bet/say', { body: { text: 'more people using it, in schools', card: shown.json.id } });
     assert.deepEqual([ok.status, ok.json.ack], [200, 'got it: more people using it, in schools.']);
   } finally {
     await h.close();
@@ -661,7 +661,7 @@ test('over http: the weekly number goes through /bet/report with the same checks
   try {
     const q = await h.call('POST', '/bet/think', { body: {} });
     assert.equal(q.json.question.ask, 'what number tells you this is going well?');
-    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools' } });
+    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools', card: q.json.id } });
     assert.equal(named.json.ack, 'got it: paying schools.');
     const r = await h.call('POST', '/bet/think', { body: {} });
     assert.equal(r.json.kind, 'report');
@@ -977,4 +977,81 @@ test('browser: Esc cancels the typing, then steps back one layer at a time, and 
   assert.deepEqual(at('esc 3'), card, show);
   // four: on the card again, nothing
   assert.deepEqual(at('esc 4'), card, show);
+});
+
+// ---- an answer goes to the question on screen, or nowhere ---------------------------
+
+test('over http: an answer and a say name the card on screen; a page that missed the next card saves nothing', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  // written questions reuse answer ids: a2 is small teams on one, fewer mistakes on the next
+  const list = [
+    { ask: 'who uses the phone page most?', fact: 'the phone page went live this week.', choices: ['solo founders', 'small teams'] },
+    { ask: 'what would make a small team pay?', fact: 'installs dropped to 1,511 last week.', choices: ['saving them hours', 'fewer mistakes'] },
+  ];
+  let n = 0;
+  let dirSeen = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      dirSeen = dir;
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => Promise.resolve(list[n] ? { ok: true, question: list[n++] } : { ok: false, reason: 'no more' }), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) });
+    },
+  });
+  const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
+  const answers = () => Object.values(gmBet.readFocus(gmBet.focusPath(dirSeen), root)).map(r => `${r.ask} ${r.label}`);
+  try {
+    await settle();
+    const first = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(first.json.question.ask, list[0].ask);
+    const saved = await h.call('POST', '/bet/answer', { body: { choice: 'a2', card: first.json.id } });
+    assert.equal(saved.json.ack, 'got it: small teams.');
+    await settle();
+    // the desk moves to the next question, but the page never hears back
+    const next = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(next.json.question.ask, list[1].ask);
+    // small teams tapped again on the old card: a2 on this question is fewer mistakes
+    const stale = await h.call('POST', '/bet/answer', { body: { choice: 'a2', card: first.json.id } });
+    assert.deepEqual([stale.status, stale.json.reason], [409, 'gone']);
+    // a post that names no card saves nothing either
+    assert.deepEqual([(await h.call('POST', '/bet/answer', { body: { choice: 'a2' } })).json.reason], ['gone']);
+    // words said on the old card are not read as an answer to this one
+    const said = await h.call('POST', '/bet/say', { body: { text: 'fewer mistakes', card: first.json.id } });
+    assert.deepEqual([said.status, said.json.reason], [409, 'gone']);
+    assert.deepEqual(answers(), ['who uses the phone page most? small teams']);
+    // the card on screen still takes its answer
+    const right = await h.call('POST', '/bet/answer', { body: { choice: 'a1', card: next.json.id } });
+    assert.equal(right.json.ack, 'got it: saving them hours.');
+    assert.deepEqual(answers(), ['who uses the phone page most? small teams', 'what would make a small team pay? saving them hours']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('browser: after a lost next card, a tap on the old answer names the old card and saves nothing', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.staleAnswerTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the answer saved, the next card was made, and the page never got it
+  assert.equal(out.title_after_lost, 'who uses the phone page most?', show);
+  // both taps name the card the owner sees
+  assert.deepEqual(out.posts, [{ choice: 'a2', card: 'question:q1' }, { choice: 'a2', card: 'question:q1' }], show);
+  // only the answer to the question on screen is saved; fewer mistakes never is
+  assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
+  // the owner is told, in the line under the answers
+  assert.equal(out.hint, 'that card changed, so nothing was saved. tap the orb for the new one', show);
+});
+
+// ---- words that did not send stay in the box ----------------------------------------
+
+test('browser: say something that does not send keeps the words and the cursor in the box, and Enter tries again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.unsentSayTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  const kept = { field_open: true, words: out.words, cursor_in_field: true, held: false, title: 'Write a getting started page for the phone' };
+  // the network is off: the box stays, the words and the cursor in it, and a line says it did not send
+  assert.deepEqual(out.offline, { ...kept, line: 'that did not send. tap send to try again' }, show);
+  // Enter again reaches the desk, which could not pass it on: the same, with why
+  assert.deepEqual(out.refused, { ...kept, line: 'it did not reach them. try again in a minute.' }, show);
+  // Enter once more goes through: the next card turns in
+  assert.equal(out.sent.title, 'Record a two minute demo video', show);
+  // the desk got the same words twice, both naming the card on screen
+  assert.deepEqual(out.calls, [{ text: out.words, card: 'b1' }, { text: out.words, card: 'b1' }], show);
 });
