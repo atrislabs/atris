@@ -536,6 +536,38 @@ test('phone link: gm help names --new-link', () => {
   assert.match(src, /phone\.phoneToken\(workspaceRoot, \{ stateDir, rotate: hasExactFlag\(args, '--new-link'\) \}\)/);
 });
 
+test('page: every card has a quiet say-something line that opens into one box', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /function sayBox\(\) \{/);
+  assert.match(script, /var open = el\('button', 'quiet', 'or say something'\);/);
+  assert.match(script, /input\.maxLength = 280;/);
+  assert.match(script, /api\('\/bet\/say', \{ text: text \}\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ moveOn\(r\.ack\); return; \}/);
+  // on every kind of card
+  for (const fn of ['drawBetCard', 'drawJobCard', 'drawQuestionCard', 'drawChoiceCard']) {
+    const body = script.slice(script.indexOf(`function ${fn}(`), script.indexOf('\n  }\n', script.indexOf(`function ${fn}(`)));
+    assert.match(body, /box\.appendChild\(sayBox\(\)\);/, fn);
+  }
+});
+
+test('over http: say something goes through the same token and json checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  try {
+    await h.call('POST', '/bet/think', { body: {} });
+    assert.equal((await h.call('POST', '/bet/say', { token: 'nope', body: { text: 'hi' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/say', { origin: 'http://evil.example', body: { text: 'hi' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/say', { body: { text: 'x'.repeat(281) } })).json.reason, 'too_long');
+    const ok = await h.call('POST', '/bet/say', { body: { text: 'more people using it, in schools' } });
+    assert.deepEqual([ok.status, ok.json.ack], [200, 'got it: more people using it, in schools.']);
+  } finally {
+    await h.close();
+  }
+});
+
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
   const gmTarget = require('../lib/gm-target');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-target-'));

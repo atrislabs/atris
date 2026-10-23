@@ -1451,6 +1451,66 @@ test('choice: the deck order holds: a yes, then a finished job, then the choice;
   for (const o of c.choice.options) assert.equal(h.ledger().find(r => r.id === o.id).status, 'passed');
 });
 
+test('say something: on any card free text does the plain thing, capped and logged', async () => {
+  // on an idea: it is passed with the note, and the writer reworks it; the rework is the next idea
+  const h = await filled(workspace());
+  const idea = h.d.next();
+  const said = await h.d.say({ text: 'make it work for teams without a designer' });
+  assert.deepEqual(said, { ok: true, ack: 'got it. reworking that idea with your note.' });
+  const row = h.ledger().find(r => r.id === idea.id);
+  assert.deepEqual([row.status, row.owner_note], ['passed', 'make it work for teams without a designer']);
+  await h.gen.release();
+  const call = h.gen.calls.find(c => c.ownerNote);
+  assert.deepEqual([call.reworkOf, call.ownerNote], [idea.bet.title, 'make it work for teams without a designer']);
+  // the stub names each idea by its call, so the rework's title is known
+  assert.equal(h.d.next().bet.title, TITLES[h.gen.calls.indexOf(call) % TITLES.length], 'the rework comes first');
+  // on a question: it is the answer
+  const qroot = workspace();
+  const q = desk(qroot, { questions: false });
+  q.d.next();
+  assert.deepEqual(await q.d.say({ text: 'paying customers in schools' }), { ok: true, ack: 'got it: paying customers in schools.' });
+  assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(q.ledgerFile)), qroot).focus.label, 'paying customers in schools');
+  // on the plain card: the next idea fits it
+  assert.equal(q.d.next().kind, 'wait');
+  assert.deepEqual(await q.d.say({ text: 'something for schools' }), { ok: true, ack: 'got it. the next idea will fit that.' });
+  // one writer at a time: the note goes to the next one, right after the one running now
+  await q.gen.releaseOne();
+  assert.equal(q.gen.calls[q.gen.calls.length - 1].ownerNote, 'something for schools');
+  // limits
+  assert.equal((await q.d.say({ text: '  ' })).reason, 'empty');
+  assert.equal((await q.d.say({ text: 'x'.repeat(281) })).reason, 'too_long');
+  assert.ok(h.logs.some(l => l.choice === 'say' && l.kind === 'bet' && l.chars === 41));
+  // nothing on screen
+  const none = desk(workspace());
+  assert.equal((await none.d.say({ text: 'hi' })).reason, 'gone');
+});
+
+test('say something: on a yes or a finished job it steers that member', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread');
+  doingRow(file, root, 'b-done', 'm-done', 'Write the getting started page');
+  const h = jobDesk(root, {
+    'm-ask': { id: 'm-ask', owner: 'launcher', status: 'running', updated_at: new Date(NOW).toISOString(), human_asks: ['post the thread on x now?'] },
+    'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] },
+  });
+  await h.d.settle();
+  assert.equal(h.d.next().kind, 'yes');
+  assert.deepEqual(await h.d.say({ text: 'wait for tuesday' }), { ok: true, ack: 'sent to launcher.' });
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', 'wait for tuesday', '--json']);
+  assert.equal(h.d.next().kind, 'done');
+  assert.deepEqual(await h.d.say({ text: 'add a short video too' }), { ok: true, ack: 'sent to builder.' });
+});
+
+test('say something: the writer is told the owner note and may keep the same deliverable', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const p = gmBet.buildPrompt(bundle, { today: TODAY, reworkOf: 'Write a getting started page', ownerNote: 'make it shorter' });
+  assert.match(p, /The owner read the idea "Write a getting started page" and said: "make it shorter"\. Rework it so it fits what they said; it may keep the same deliverable\./);
+  assert.doesNotMatch(p, /different from: Write a getting started page/);
+  const fresh = gmBet.buildPrompt(bundle, { today: TODAY, ownerNote: 'something for schools' });
+  assert.match(fresh, /The owner said: "something for schools"\. The next idea must fit that\./);
+});
+
 test('do it: starts a real mission with every step and the your-yes rule, then runs it', async () => {
   const h = await filled(workspace());
   h.d.next();
