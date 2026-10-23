@@ -2456,7 +2456,8 @@ test('job deck: two jobs from one member are two cards, and each yes answers the
   // the yes on the billing card answers the billing job, and only it
   assert.equal((await h.d.answerYes({ key: 'new:0', job: 'new' })).ok, true);
   assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
-  assert.deepEqual(h.d.jobDeck().cards.map(c => [c.job_id, c.yes && c.yes.key]), [['new', undefined], ['old', 'old:0']]);
+  // answered, the billing job is back with builder, so the job still waiting on the owner comes first
+  assert.deepEqual(h.d.jobDeck().cards.map(c => [c.job_id, c.yes && c.yes.key, c.label]), [['old', 'old:0', 'needs you'], ['new', undefined, 'you answered']]);
 });
 
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
@@ -3276,6 +3277,7 @@ const gmCard = require('../lib/gm-card');
 // pick, then more models with the full list
 const SWAP_CHOICES = {
   member: 'builder',
+  job: 'build',
   line: 'builder runs on tool one m-one.',
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
@@ -3390,10 +3392,10 @@ test('card contract: every kind of card is whole: a way forward, options that an
     assert.deepEqual(gmCard.cardProblems(c.card), [], show);
     // the page gets the contract and nothing the desk keeps to itself
     assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch'].includes(k)), [], show);
-    for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell'].includes(k)), [], show);
+    for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell', 'group'].includes(k)), [], show);
     assert.ok(c.wire.options.length > 0 || c.wire.input, show);
-    // every card served has its own id; more models is the one that keeps its card's
-    if (c.name !== 'swap with more models') assert.ok(!ids.has(c.wire.id), `${c.name} reuses the id ${c.wire.id}`);
+    // every card served has its own id
+    assert.ok(!ids.has(c.wire.id), `${c.name} reuses the id ${c.wire.id}`);
     ids.add(c.wire.id);
   }
   // the yes cards: yes binds the exact request it shows
@@ -3417,9 +3419,9 @@ test('card contract: every kind of card is whole: a way forward, options that an
   const sw = cards.find(c => c.name === 'swap');
   const models = sw.wire.options.filter(o => o.action === 'swap_to' || o.chosen && o.style === 'choice');
   assert.deepEqual(models.map(o => o.label), ['atris fast', 'm-one']);
-  assert.deepEqual(sw.wire.options.slice(-2).map(o => o.label), ['more models', 'back to the team']);
+  assert.deepEqual(sw.wire.options.slice(2).map(o => o.label), ['more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team']);
   const all = cards.find(c => c.name === 'swap with more models');
-  assert.equal(all.wire.id, sw.wire.id, 'more models is the same card');
+  assert.notEqual(all.wire.id, sw.wire.id, 'more models is a new card');
   assert.deepEqual(all.wire.options.filter(o => o.style === 'choice').map(o => o.label), ['atris fast', 'm-one', 'm-two']);
   assert.ok(!all.wire.options.some(o => o.label === 'more models'));
 });
@@ -3499,7 +3501,7 @@ test('card contract: a reply is its own card, back brings the first question aga
   const root = workspace();
   const h = desk(root, { scoreboard: true, questions: false, answered: true, readSaid: async (o) => { said.push(o.text); return o.text === 'the overnight run' ? ASKS_BACK() : { ok: true, kind: 'answer', reply: '' }; } });
   const q = (await h.d.act({ orb: true })).body.card;
-  assert.equal(q.id, 'question:scoreboard');
+  assert.match(q.id, /^question:scoreboard#[0-9a-f]{8}$/);
   const r = (await h.d.act({ card_id: q.id, option_id: 'other', text: 'the overnight run' })).body.card;
   assert.equal(r.kind, 'reply');
   assert.ok(!r.options.some(o => q.options.some(x => x.label === o.label)), 'none of the first question\'s choices');
@@ -3542,11 +3544,12 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   const forLauncher = (await h.d.act({ card_id: back.id, option_id: 'swap:launcher' })).body.card;
   assert.equal(forLauncher.title, 'launcher');
   // builder's card answers late: nothing is swapped
-  const late = await h.d.act({ card_id: forBuilder.id, option_id: 'm1' });
+  const fast = c => c.options.find(o => o.label === 'atris fast').id;
+  const late = await h.d.act({ card_id: forBuilder.id, option_id: fast(forBuilder) });
   assert.deepEqual([late.status, late.body.reason, late.body.card.id], [409, 'gone', forLauncher.id]);
   assert.deepEqual(swaps, []);
   // the card on screen swaps launcher, and the team comes back with one line
-  const done = await h.d.act({ card_id: forLauncher.id, option_id: 'm1' });
+  const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
 });
@@ -3561,4 +3564,46 @@ test('card contract: a swap list with no picks opens short too, the model in use
   const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
   assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
   for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
+});
+
+test('card contract: a card\'s options never change under one id: when the job in the deck changes, the card id changes and a yes on the old id approves nothing', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-a', 'm-a', 'Write the launch thread for the phone page');
+  doingRow(file, root, 'b-b', 'm-b', 'Record the demo video of the front office');
+  const missions = {
+    'm-a': { id: 'm-a', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['post the thread on x now?'] },
+    'm-b': { id: 'm-b', owner: 'builder', status: 'running', created_at: new Date(NOW - 120000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { ...TEAM_DEPS, decisions: [{ number: 1, mission_id: 'm-a', ask_index: 0 }, { number: 2, mission_id: 'm-b', ask_index: 0 }] });
+  h.d.pollJobs();
+  const a = (await h.d.act({ open: 'deck' })).body.card;
+  assert.equal(a.title, 'post the thread on x now?');
+  // job B asks for a yes too and moves ahead of A while the phone shows A
+  missions['m-b'] = { ...missions['m-b'], status: 'blocked', updated_at: new Date(NOW).toISOString(), human_asks: ['publish the video now?'] };
+  h.d.pollJobs();
+  const refreshed = h.d.card().card;
+  assert.equal(refreshed.title, 'publish the video now?');
+  assert.notEqual(refreshed.id, a.id, 'new options, new card id');
+  const old = await h.d.act({ card_id: a.id, option_id: 'yes', confirm: true });
+  assert.deepEqual([old.status, old.body.reason], [409, 'gone']);
+  assert.equal(h.cli.filter(c => c[0] === 'decide' && c[2] === 'yes').length, 0, 'nothing was approved');
+});
+
+test('card contract: more models is a new card with option ids of its own, so a pick from the short list after a lost answer picks nothing', async () => {
+  const root = workspace();
+  const swaps = [];
+  const h = jobDesk(root, {}, { ...TEAM_DEPS, swapFromCard: (r, name, engine, model, scope) => { swaps.push([name, engine, model, scope]); return { line: `${name} now runs on ${engine} ${model}.`, command: 'roster set', changed: true }; } });
+  const team = (await h.d.act({ open: 'team' })).body.card;
+  const short = (await h.d.act({ card_id: team.id, option_id: 'swap:builder' })).body.card;
+  const full = (await h.d.act({ card_id: short.id, option_id: 'more' })).body.card;
+  assert.notEqual(full.id, short.id, 'more models is a new card');
+  // the same model keeps the same option id on both lists, and no id is reused for another model
+  const target = o => `${o.binds.engine}/${o.binds.model}`;
+  const pick = c => c.options.filter(o => o.action === 'swap_to' || (o.binds && o.binds.engine));
+  for (const o of pick(short)) assert.equal(target(full.options.find(x => x.id === o.id)), target(o));
+  // the page lost the answer and still shows the short list: its pick names the old card and does nothing
+  const lost = await h.d.act({ card_id: short.id, option_id: pick(short)[0].id });
+  assert.deepEqual([lost.status, lost.body.reason], [409, 'gone']);
+  assert.deepEqual(swaps, []);
 });

@@ -31,7 +31,7 @@ function showHelp() {
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
   console.log('       atris gm phone [--port 7777] [--send] [--new-link]  decision cards on your phone');
-  console.log('       atris gm walk [--real-copy <workspace>] [--threshold 0.8] [--no-browser]  check every stage of the phone orb');
+  console.log('       atris gm walk [--real-copy <workspace>] [--votes 3] [--no-browser]  check every stage of the phone orb');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');

@@ -235,8 +235,8 @@ async function startHandler(over = {}) {
   await new Promise(resolve => server.listen(0, address, resolve));
   const base = `${address}:${server.address().port}`;
   hosts.push(base);
-  const call = async (method, p, { body, token = TOKEN, header = true, origin = `http://${base}` } = {}) => {
-    const headers = {};
+  const call = async (method, p, { body, token = TOKEN, header = true, origin = `http://${base}`, headers: more = {} } = {}) => {
+    const headers = { ...more };
     if (header && token) headers['x-gm-token'] = token;
     if (origin) headers.origin = origin;
     if (body) headers['content-type'] = 'application/json';
@@ -631,9 +631,12 @@ test('over http: the job deck is a card through the same token check, one card p
     assert.equal((await post({ open: 'deck' }, { token: 'nope' })).status, 403);
     const deck = (await post({ open: 'deck' })).json.card;
     assert.equal(deck.kind, 'deck');
-    assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+    // the deck card is about the job; the rating and the model live on the team table
+    assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
     const row = deck.table.rows[0];
-    assert.deepEqual([deck.count, deck.label, row[2], row[4], row[5]], ['job 1 of 1', 'working', 'builder', '89', 'claude opus 5.5']);
+    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['1 of 1', 'working', 'builder', 'working']);
+    assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
+    assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
     const odd = await post({ card_id: deck.id, option_id: 'yes', confirm: true });
     assert.deepEqual([odd.status, odd.json.reason], [409, 'bad_option']);
@@ -641,6 +644,37 @@ test('over http: the job deck is a card through the same token check, one card p
     const back = (await post({ card_id: deck.id, option_id: 'back' })).json.card;
     assert.equal(back.kind, 'team');
     assert.equal((await post({ card_id: back.id, option_id: 'back' })).json.card, null);
+  } finally {
+    await h.close();
+  }
+});
+
+test('over http: a request from another site is refused on every route, reads too, and starts no work; the page\'s own requests still work', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const writes = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false, generate: (opts) => { writes.push(opts); return new Promise(() => {}); }, generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  try {
+    const q = `?t=${TOKEN}`;
+    for (const route of ['/', '/card', '/state']) {
+      // a page on another site, with the key, fetching the route
+      assert.equal((await h.call('GET', `${route}${q}`, { origin: 'http://evil.example' })).status, 403, `${route} with a foreign origin`);
+      // an image or a link from another site sends no origin, only where it came from
+      assert.equal((await h.call('GET', `${route}${q}`, { origin: null, headers: { 'sec-fetch-site': 'cross-site' } })).status, 403, `${route} from a cross-site fetch`);
+      assert.equal((await h.call('GET', `${route}${q}`, { origin: null, headers: { 'sec-fetch-site': 'same-site' } })).status, 403, `${route} from another port`);
+    }
+    assert.equal((await h.call('POST', '/act', { body: { orb: true }, headers: { 'sec-fetch-site': 'cross-site' } })).status, 403, 'a write from another site');
+    assert.equal(writes.length, 0, 'nothing from another site started any work');
+    // reading the card on screen starts no work either
+    assert.equal((await h.call('GET', `/card${q}`, { origin: null, headers: { 'sec-fetch-site': 'same-origin' } })).status, 200);
+    assert.equal(writes.length, 0, 'a read starts no writer');
+    // the page itself: opened from a scan or a text, then its own same-origin requests
+    assert.equal((await h.call('GET', `/${q}`, { origin: null, headers: { 'sec-fetch-site': 'none' } })).status, 200);
+    assert.equal((await h.call('GET', `/card${q}`, { origin: null })).status, 200, 'a plain client with the key still reads');
+    assert.equal((await h.call('POST', '/act', { body: { orb: true }, headers: { 'sec-fetch-site': 'same-origin' } })).status, 200);
+    assert.equal(writes.length, 1, 'the first act fills the queue');
   } finally {
     await h.close();
   }
@@ -689,8 +723,8 @@ test('page: a yes card is drawn from its options: yes takes a second tap, no and
   const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting on your yes for this.', request: { job: 'm1', key: 'm1:0', hash: null } });
   assert.deepEqual(y.options.map(o => [o.label, o.style]), [['yes', 'primary'], ['no', 'quiet'], ['not now', 'quiet']]);
   assert.equal(y.options[0].confirm, 'tap again to say yes');
-  // quiet options next to each other share one line
-  assert.match(script, /else links = act\.appendChild\(el\('div', 'links'\)\);/);
+  // quiet options next to each other share one line, and a group of them is headed by its words
+  assert.match(script, /links = act\.appendChild\(el\('div', 'links'\)\);\n\s+group = o\.group \|\| null;\n\s+if \(group\) links\.appendChild\(document\.createTextNode\(group \+ ': '\)\);/);
   // the yeses still waiting: one small line, and its tap opens the job deck
   assert.match(html, /<button type="button" class="quiet" id="needs" hidden><\/button>/);
   assert.match(script, /n === 1 \? '1 needs you' : n \+ ' need you'/);
@@ -713,7 +747,7 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   assert.match(script, /var IN_PLACE = \['flip', 'more', 'scope'\];/);
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
   const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 5 minutes', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
-  assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
+  assert.deepEqual([d.count, d.label], ['1 of 2', 'needs you']);
   assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'the whole team', 'next']);
   assert.deepEqual(d.options[0].binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
@@ -773,7 +807,7 @@ test('page: a card\'s box is its input: a quiet line that turns into the field i
   // the field takes the tapped button's own height to the subpixel, so nothing under it moves
   assert.match(script, /field\.style\.height = btn\.getBoundingClientRect\(\)\.height \+ 'px';/);
   // the same words carry the same id on every try, so a retry never sends twice
-  assert.match(script, /if \(body\.text\) body\.send = sendId\(body\.text\);/);
+  assert.match(script, /if \(body\.text\) body\.send = sendId\(\[from\.id, option \? option\.id : 'the box', body\.text\]\.join\(' \| '\)\);/);
   // words that did not go through come back in their box, and one line says why
   assert.match(script, /field\.querySelector\('input'\)\.value = typed;/);
   assert.match(script, /if \(note\) note\.textContent = \(r && r\.http === 409 && r\.message\) \|\| \(r && r\.http === 0 && r\.message\) \|\| 'that did not go through\. try again\.';/);
@@ -1212,12 +1246,13 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
   for (const viewport of [trace.PHONE, trace.LAPTOP]) {
     const out = await trace.engineCardTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
-    // the list as the roster gives it: the Atris model, then the pick, then more models last before the way back
-    assert.deepEqual(out.short.options, ['scope:member', 'scope:job', 'm1', 'm2', 'more', 'back'], at);
-    assert.deepEqual(out.short.buttons.slice(-2), ['more models', 'back to the team'], at);
-    // more models: the same card, now with every model and no more models
-    assert.deepEqual(out.full.options, ['scope:member', 'scope:job', 'm1', 'm2', 'm3', 'back'], at);
-    assert.equal(out.full.card, out.id, at);
+    // the list as the roster gives it: the Atris model, the pick, more models, who it is for, and the way back
+    assert.deepEqual(out.short.buttons, ['atris fastatris', 'm-onenow', 'more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team'], at);
+    // more models: a new card with every model, and each model keeps its own option id
+    assert.notEqual(out.full.card, out.id, at);
+    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 landed'], at);
+    assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
+    assert.ok(!out.full.options.includes('more'), at);
     // one tap, no yes card: the swap goes to the desk with who it is for, and the team comes back with one line
     assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'two', model: 'm-two', scope: 'job' }], at);
     assert.deepEqual([out.after.kind, out.after.said], ['team', 'builder now runs on two m-two.'], at);
@@ -1229,13 +1264,13 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const out = await trace.deckTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
-  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to this job'], show);
-  assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3'], show);
+  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to navigator'], show);
+  assert.deepEqual(out.counts, ['2 of 3', '3 of 3', '1 of 3', '3 of 3'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
-  assert.equal(out.swiped, 'job 1 of 3', 'a sideways swipe flips');
-  assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
-  assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
+  assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
+  assert.equal(out.scrolled, '1 of 3', 'an up and down swipe does not flip');
+  assert.equal(out.typing_arrow, '1 of 3', 'the arrows type while the box has the cursor');
   // one tap arms only this card's yes; a flip draws a fresh card, so nothing is left armed
   assert.equal(out.armed_a[0], 'tap again to say yes', show);
   assert.equal(out.fresh_b[0], 'yes', show);
@@ -1328,7 +1363,7 @@ test('over http: a typed send carries its own id; a repeat of one that went thro
   const say = body => h.call('POST', '/act', { body });
   try {
     const id = await onDone();
-    assert.equal(id, 'done:intro');
+    assert.match(id, /^done:intro#[0-9a-f]{8}$/);
     // it reaches builder; the answer is lost and the phone sends the same words, same id
     const first = await say({ card_id: id, text: 'add the short demo too', send: 'k1a2b3c4' });
     assert.deepEqual([first.status, first.json.ack], [200, 'sent to builder.']);
@@ -1397,6 +1432,11 @@ test('browser: after an explanation, a do it that did not get going comes back w
 });
 
 // ---- the small orb on a card goes back to the big one ------------------------------
+
+test('browser: the same words to two members are two sends, and each member hears them', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.twoMembersTrace({ chromePath: CHROME });
+  assert.deepEqual(out.took, [{ member: 'builder', text: 'pause this' }, { member: 'launcher', text: 'pause this' }], JSON.stringify(out));
+});
 
 test('browser: the small orb on any card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });

@@ -874,6 +874,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
 // the swap list as the roster gives it: the Atris model, the owner's pick, then more models
 const SWAP = {
   member: 'builder',
+  job: 'build',
   line: 'builder runs on tool one m-one.',
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
@@ -900,7 +901,7 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
   const desk = cardDesk(CARDS.b1, async (action, { card, option }) => {
     if (action === 'open:team') { n += 1; return { card: teamCard(rows, n) }; }
     if (action === 'swap') { n += 1; scope = 'member'; all = false; return { card: swapCard() }; }
-    if (action === 'more') { all = true; return { card: swapCard() }; }
+    if (action === 'more') { n += 1; all = true; return { card: swapCard() }; }
     if (action === 'scope') { n += 1; scope = option.binds.scope; return { card: swapCard() }; }
     if (action === 'swap_to') {
       swaps.push({ member: 'builder', ...option.binds });
@@ -930,10 +931,12 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
       const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
       fs.writeFileSync(path.join(shots, `swap-card-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
     }
-    await tapLabel(p, send, 'for every build job');
+    await tapLabel(p, send, 'everyone doing builder\'s kind of work');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet [data-option="scope:job"].chosen'))`, 'who the swap is for', 8000);
     const scoped = await look(p);
-    await p.tap('#bet [data-option="m3"]');
+    await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); b.scrollIntoView({ block: 'center' }); })()");
+    const two = await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); return b.getAttribute('data-option'); })()");
+    await p.tap(`#bet [data-option="${two}"]`);
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .mission'))`, 'the team after the swap', 8000);
     const after = await look(p);
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
@@ -943,7 +946,8 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
 
 // ---- the job deck -------------------------------------------------------------------------------
 
-const DECK_COLUMNS = ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'];
+// the deck card is about the job: the rating and the model live on the team table
+const DECK_COLUMNS = ['done', 'work', 'member', 'role', 'status'];
 const DECK_JOBS = [
   { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
   { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'waiting 20 minutes', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
@@ -963,7 +967,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
   const deckCard = () => {
     n += 1;
     const c = { ...DECK_JOBS[at], said: said[DECK_JOBS[at].job_id] || null };
-    if (c.said) c.yes = null;
+    if (c.said) { c.yes = null; c.label = 'you answered'; }
     const r = c.rows[0];
     return gmCard.deck({ id: `deck~${n}`, at, total: DECK_JOBS.length, card: c, columns: DECK_COLUMNS, job: { member: c.member, role: r.role, ovr: r.ovr, engine: r.engine } });
   };
@@ -1035,7 +1039,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await esc(send);
     await wait(150);
     // back to the first card, then its yes: armed, then sent with what the card binds
-    while ((await count()) !== 'job 1 of 3') { await press('ArrowLeft'); await settle(); }
+    while ((await count()) !== '1 of 3') { await press('ArrowLeft'); await settle(); }
     await tapLabel(p, send, 'yes');
     await tapLabel(p, send, 'tap again to say yes');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .mission'))`, 'the line after the yes', 8000);
@@ -1060,6 +1064,42 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       moving,
       back,
     };
+  });
+}
+
+// ---- the same words to two members are two sends --------------------------------------------------
+
+// The owner tells builder "pause this", goes back to the team, and tells
+// launcher the same words. Each is its own send, so both reach their member.
+async function twoMembersTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'pause this';
+  const rows = [TEAM_ROWS[0], { member: 'launcher', role: 'launcher', ovr: 'new', engine: 'tool two m-two', status: 'working', sentence: 'working: the launch post, about an hour left' }];
+  const took = [];
+  let n = 1;
+  const desk = cardDesk(CARDS.b1, async (action, { card, option, text }) => {
+    n += 1;
+    if (action === 'open:team') return { card: teamCard(rows, n) };
+    if (action === 'member') return { card: memberCard(option.binds.member, n) };
+    if (action === 'talk') { took.push({ member: card.member, text }); return { card: memberCard(card.member, n, `sent to ${card.member}.`) }; }
+    if (action === 'back') return { card: card.kind === 'member' ? teamCard(rows, n) : CARDS.b1 };
+    return { card };
+  });
+  return onPhone(desk, chromePath, async (p) => {
+    const tell = async (member) => {
+      await p.until(titled('the team'), 'the team card', 8000);
+      await p.tap(`#bet [data-option="talk:${member}"]`);
+      await p.until(titled(member), `${member}'s talk card`, 8000);
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      await p.type(WORDS);
+      await p.enter();
+      await p.until(`${titled(member)} && Boolean(document.querySelector('#bet .mission'))`, `${member} heard it`, 8000).catch(() => {});
+      await p.tap('#bet [data-option="back"]');
+    };
+    await p.tap('#working');
+    await tell('builder');
+    await tell('launcher');
+    return { took };
   });
 }
 
@@ -1100,7 +1140,7 @@ async function walkTrace({ chromePath = findChrome(), cards } = {}) {
   });
 }
 
-module.exports = { findChrome, launch, trace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
+module.exports = { findChrome, launch, trace, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
