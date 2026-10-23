@@ -615,6 +615,50 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
   return runs;
 }
 
+// ---- a start that did not get going comes back to do it ----------------------------
+
+// The owner asks what an idea means, then taps do it twice. The first start
+// does not get going; the second does. After the failed one: what the card
+// shows, its buttons, and the line under do it.
+async function startFailTrace({ chromePath = findChrome() } = {}) {
+  const current = { ok: true, status: 'ready', id: 'b1', ...CARDS.b1, team_working: 0 };
+  const starts = [];
+  const desk = {
+    ...scriptedDesk(),
+    warm: () => current,
+    doIt: async () => {
+      starts.push(starts.length + 1);
+      if (starts.length === 1) return { ok: false, reason: 'start_failed', message: 'it did not get going. try again in a minute.' };
+      return { ok: true, ack: 'started.' };
+    },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const look = () => p.run("(function () { var box = document.getElementById('bet'); var note = box.querySelector('.unsent'); return { title: box.querySelector('h1').textContent, starting: /starting now/.test(box.textContent), buttons: Array.prototype.map.call(box.querySelectorAll('button'), function (b) { return b.textContent; }), line: note ? note.textContent : null }; })()");
+    await p.tap('#bet .sayline .quiet');
+    await wait(250);
+    await p.type('what do you mean?');
+    await p.enter();
+    await p.until(`${SETTLED} && document.querySelector('#bet h1').textContent === ${JSON.stringify(REPLY)}`, 'the reply');
+    await wait(150);
+    await tapLabel(p, send, 'do it');
+    await wait(100);
+    await tapLabel(p, send, 'tap again to start');
+    const end = Date.now() + 3000;
+    while (starts.length < 1 && Date.now() < end) await wait(16);
+    await wait(1500);
+    const failed = await look();
+    let error = null;
+    try {
+      await tapLabel(p, send, 'do it');
+      await wait(100);
+      await tapLabel(p, send, 'tap again to start');
+      const again = Date.now() + 3000;
+      while (starts.length < 2 && Date.now() < again) await wait(16);
+    } catch (err) { error = err.message; }
+    return { failed, starts: starts.length, error };
+  });
+}
+
 // ---- a send that went through is never sent twice -----------------------------------
 
 // The owner says something on an idea. It reaches the desk, but the reply
@@ -655,7 +699,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, onPhone, scriptedDesk, CARDS, REPLY };
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, onPhone, scriptedDesk, CARDS, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

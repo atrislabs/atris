@@ -2439,7 +2439,9 @@ test('page: the working line is static and lists who has each job; do it hands o
   assert.doesNotMatch(css, /animation|transition/);
   // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
   assert.match(html, /var AFTER_MS = 1500;/);
-  assert.match(html, /if \(r && r\.ok\) setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
+  // a start that did not get going returns first, so only a real start moves on
+  assert.match(html, /if \(!r \|\| !r\.ok\) \{/);
+  assert.match(html, /loadBet\(\); refresh\(\);\n\s+setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
   // job cards: two big sentences from the server; a yes button or a nice, never a send back
   // job cards: the why shows when there is one; the calm line has none
   assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}if \(j\.why\) box\.appendChild\(el\('p', 'why', j\.why\)\);/);
