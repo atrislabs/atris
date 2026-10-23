@@ -5,34 +5,34 @@ version: 1.2.0
 tags: [planning, vision, reverse-engineer, atris, wiki, todo, flow]
 ---
 
-> **Sister skill: /flow** — flow runs the same engine in reverse. flow chains forward from identity (who you are → today's next move). endgame chains backward from horizon (where you're going → today's next move). They meet at the same point: the next thing the agent should ship. Use both. Run flow at sunrise to set identity, run endgame at every TODO.md boundary to set horizon, and let /autopilot tick between them.
+> **Sister skill: /flow**: flow runs the same engine in reverse. flow chains forward from identity (who you are → today's next move). endgame chains backward from horizon (where you're going → today's next move). They meet at the same point: the next thing the agent should ship. Use both. Run flow at sunrise to set identity, run endgame at every TODO.md boundary to set horizon, and let /autopilot tick between them.
 
 # /endgame
 
-**Purpose:** help the human (or agent) reach their intent and goal **faster** by leveraging what the wiki already knows. Without endgame, they redo thinking. With endgame, they reach the next move in one pass — and write that move into TODO.md so the autopilot loop can pursue it without re-asking.
+**Purpose:** help the human (or agent) reach their intent and goal **faster** by leveraging what the wiki already knows. Without endgame, they redo thinking. With endgame, they reach the next move in one pass, and write that move into TODO.md so the autopilot loop can pursue it without re-asking.
 
 Most planning is forward-greedy: *what's the next ticket?* Endgame is backward: *what does winning look like, and what's the shortest path from here?*
 
-> "You can't connect the dots looking forward; you can only connect them looking backward." — Steve Jobs
+> "You can't connect the dots looking forward; you can only connect them looking backward.": Steve Jobs
 
-## Step 0 — CHECK FOR EXISTING ENDGAME FIRST
+## Step 0: CHECK FOR EXISTING ENDGAME FIRST
 
-Before anything else, read `atris/TODO.md`. If it already has a `## Endgame` section AND uncompleted `[endgame]`-tagged tasks in `## Backlog`, **do not pick a new endgame**. Instead reply: "current endgame `<slug>` still active — N steps remaining. Run `/autopilot` to continue, or `force /endgame` to reset." Then exit.
+Before anything else, read `atris/TODO.md`. If it already has a `## Endgame` section AND uncompleted `[endgame]`-tagged tasks in `## Backlog`, **do not pick a new endgame**. Instead reply: "current endgame `<slug>` still active, N steps remaining. Run `/autopilot` to continue, or `force /endgame` to reset." Then exit.
 
 This rule exists so the loop pursues the current horizon to completion instead of constantly repicking.
 
-## Step 1 — READ THE INBOX, WIKI, LOGS
+## Step 1: READ THE INBOX, WIKI, LOGS
 
 Before picking a new horizon, read what already exists. The wiki + logs are the user's paid-for memory; not using them means they're paying twice.
 
-- `atris/lessons.md` — past surprises and failures the validator wrote down. Read this FIRST. Avoid horizons that hit the same rocks.
-- `atris/wiki/STATUS.md` — current state, last loop findings, suggested next ingests
-- `atris/wiki/index.md` — what pages already exist
-- `atris/wiki/briefs/` — most recent cross-cutting brief pages (often already contain a horizon)
-- `atris/MAP.md` — what code exists today
-- `atris/TODO.md` — what's queued, what's done
-- `atris/logs/YYYY/` — last 7-14 days of journals; scan `## Inbox` sections for unfulfilled ideas (these are user-seeded horizons)
-- `atris/PERSONA.md` — current identity (paired with /flow's forward direction)
+- `atris/lessons.md`: past surprises and failures the validator wrote down. Read this FIRST. Avoid horizons that hit the same rocks.
+- `atris/wiki/STATUS.md`: current state, last loop findings, suggested next ingests
+- `atris/wiki/index.md`: what pages already exist
+- `atris/wiki/briefs/`: most recent cross-cutting brief pages (often already contain a horizon)
+- `atris/MAP.md`: what code exists today
+- `atris/TODO.md`: what's queued, what's done
+- `atris/logs/YYYY/`: last 7-14 days of journals; scan `## Inbox` sections for unfulfilled ideas (these are user-seeded horizons)
+- `atris/PERSONA.md`: current identity (paired with /flow's forward direction)
 - `atris/business/<slug>/BUSINESS.md` if a business workspace
 
 **Inbox items are the primary horizon source.** If recent journal `## Inbox` sections have unfulfilled ideas, pick the oldest one and run the three moves on it. Only fall back to reactive signals (wiki staleness, broken refs) if the inbox is empty.
@@ -41,13 +41,13 @@ If the horizon is genuinely unreadable from those sources, ask **1–3 sharp que
 
 ## The three moves
 
-1. **HORIZON** — One paragraph. What does the world look like when we win? Concrete. Falsifiable. Not a slogan.
-2. **REVERSE PATH** — Chain backward from HORIZON. Last move before winning, the one before, etc. **Include eliminate steps** — what gets deleted on the way to the endgame, not just what gets added. Stop when you hit something doable this week. 5–7 links max.
-3. **NEXT MOVE** — The first link in the chain. One concrete action, one session, no hedging.
+1. **HORIZON**: One paragraph. What does the world look like when we win? Concrete. Falsifiable. Not a slogan.
+2. **REVERSE PATH**: Chain backward from HORIZON. Last move before winning, the one before, etc. **Include eliminate steps**: what gets deleted on the way to the endgame, not just what gets added. Stop when you hit something doable this week. 5–7 links max.
+3. **NEXT MOVE**: The first link in the chain. One concrete action, one session, no hedging.
 
-> **v1.1.0 cut:** prior versions had two more moves — `IDENTITY` ("who are we when we've arrived") and `GAP` ("already true vs not yet"). Identity was philosophical overhead; GAP was just the diff between HORIZON and current state, which the wiki + MAP already give you. Three moves is enough. Less drift surface, faster ticks, fewer phrases for the validator to verify.
+> **v1.1.0 cut:** prior versions had two more moves, `IDENTITY` ("who are we when we've arrived") and `GAP` ("already true vs not yet"). Identity was philosophical overhead; GAP was just the diff between HORIZON and current state, which the wiki + MAP already give you. Three moves is enough. Less drift surface, faster ticks, fewer phrases for the validator to verify.
 
-## Step 2 — WRITE TO TODO.md
+## Step 2: WRITE TO TODO.md
 
 After running the three moves, write the result to `atris/TODO.md`:
 
@@ -64,9 +64,9 @@ After running the three moves, write the result to `atris/TODO.md`:
 
 **Horizon voice rule (non-negotiable).** The horizon renders verbatim on every boot to whoever opens the workspace: engineer, operator, or a first-day outsider. Write it so a new teammate in any domain gets it on first read: one sentence, plain words, no em dashes, no ids/flags/insider jargon (no "dispatch", "lane", "fast-tier", "receipt path"), and it names the observable proof ("proven the day X happens"). If a term only means something to the people who built the system, translate it or cut it.
 
-2. **Add each REVERSE PATH step as a tagged task — through the task db when one exists.**
+2. **Add each REVERSE PATH step as a tagged task: through the task db when one exists.**
 
-**Durable-db workspaces (any repo with `.atris/state/tasks.projection.json` / the `atris task` verb):** markdown task lines written into TODO.md DO NOT SURVIVE — the next `atris task render` regenerates the file from the db and silently wipes them (learned 2026-07-12, lesson `endgame-tasks-must-be-durable-db-rows`; the `## Endgame` header block survives, the tasks vanish). Create each step as a real row instead:
+**Durable-db workspaces (any repo with `.atris/state/tasks.projection.json` / the `atris task` verb):** markdown task lines written into TODO.md DO NOT SURVIVE: the next `atris task render` regenerates the file from the db and silently wipes them (learned 2026-07-12, lesson `endgame-tasks-must-be-durable-db-rows`; the `## Endgame` header block survives, the tasks vanish). Create each step as a real row instead:
 
 ```bash
 atris task add "<step description>" --tag endgame
@@ -107,7 +107,7 @@ Use `T1`, `T2`, `T3` … as IDs (or `W1`/`E1`/etc per endgame domain). Single up
 4. **Append the full endgame to today's journal `## Notes`** so the reasoning is preserved:
 
 ```markdown
-### Endgame picked — HH:MM PDT
+### Endgame picked: HH:MM PDT
 
 slug: <slug>
 source: <where>
@@ -129,14 +129,14 @@ NEXT MOVE
   Why this first: <one line>
 ```
 
-This is the archive — once the endgame closes, future `/endgame` runs can read this to learn what worked.
+This is the archive, once the endgame closes, future `/endgame` runs can read this to learn what worked.
 
-## Step 3 — ARCHIVE PRIOR ENDGAME (if any)
+## Step 3: ARCHIVE PRIOR ENDGAME (if any)
 
 If there was a `## Endgame` section in TODO.md before this run AND all its `[endgame]` tasks are done, append a closing entry to today's journal `## Notes`:
 
 ```markdown
-### Endgame closed — HH:MM PDT
+### Endgame closed: HH:MM PDT
 
 slug: <prior-slug>
 shipped: N/N steps
@@ -148,7 +148,7 @@ Then remove the old `## Endgame` section from TODO.md before writing the new one
 
 ## Output shape (when called interactively)
 
-When a human runs `/endgame` directly (not from a cron tick), show the three moves on screen first, ask one yes/no for confirmation, then write to TODO.md only after the human says go. When called from autopilot at a boundary, skip the confirmation — write straight to TODO.md and journal it.
+When a human runs `/endgame` directly (not from a cron tick), show the three moves on screen first, ask one yes/no for confirmation, then write to TODO.md only after the human says go. When called from autopilot at a boundary, skip the confirmation: write straight to TODO.md and journal it.
 
 ```
 HORIZON
@@ -163,7 +163,7 @@ REVERSE PATH
 
 NEXT MOVE
   [one concrete action, doable in one session]
-  Verify: [deterministic check — test, grep, file, exit code]
+  Verify: [deterministic check, test, grep, file, exit code]
   Why this first: [one line]
 ```
 
@@ -173,7 +173,7 @@ NEXT MOVE
 - **Read inbox + wiki first.** The whole point is leveraging what exists.
 - **HORIZON before REVERSE PATH.** Vision before steps.
 - **REVERSE PATH includes eliminate.** Half of strategy is removal. Forward-greedy planning never asks this. Endgame must.
-- **The chain must terminate this week.** If it can't, the horizon is too far — pick a closer one and say so.
+- **The chain must terminate this week.** If it can't, the horizon is too far: pick a closer one and say so.
 - **5–7 links max in the chain.** More than that = horizon is too vague.
 - **Every task must have a Verify line.** Deterministic check (test, grep, file, exit code). Allows the validator to score the endgame autonomously.
 - **Cite wiki pages** with `[[atris/wiki/...]]` refs.
@@ -181,11 +181,11 @@ NEXT MOVE
 - **One chain, not three.** Pick the shortest defensible one.
 - **No "we could also"** anywhere in NEXT MOVE. There is one move.
 - **Reject mysticism.** Vision is necessary but not sufficient. The chain must be falsifiable and doable.
-- **Tag format is `[endgame]` only** — no colons, no slugs in the tag. Slug lives in the section header.
+- **Tag format is `[endgame]` only**, no colons, no slugs in the tag. Slug lives in the section header.
 
-## Phase 2 — agent runs this on itself
+## Phase 2: agent runs this on itself
 
-This skill is designed to be runnable by the agent on its own state, not just by humans. When `atris autopilot` finishes the last `[endgame]` task in the current horizon, the next tick's boundary check invokes `/endgame` against the new state, picks the next horizon from inbox/wiki, writes it to TODO.md, and queues the next move — without a human pulling the trigger.
+This skill is designed to be runnable by the agent on its own state, not just by humans. When `atris autopilot` finishes the last `[endgame]` task in the current horizon, the next tick's boundary check invokes `/endgame` against the new state, picks the next horizon from inbox/wiki, writes it to TODO.md, and queues the next move, without a human pulling the trigger.
 
 ## When to use vs other skills
 
@@ -208,5 +208,5 @@ This skill is designed to be runnable by the agent on its own state, not just by
 - Chain longer than 7 links. Shorten the horizon.
 - Three "next moves." There is one.
 - Quoting goals from a deck. Read the wiki, look at reality.
-- Tagging tasks with `[endgame:slug]` — parser only accepts `[\w+]`, will fail silently.
-- Padding with IDENTITY or GAP sections — those were cut in v1.1.0 as autopilot overhead.
+- Tagging tasks with `[endgame:slug]`, parser only accepts `[\w+]`, will fail silently.
+- Padding with IDENTITY or GAP sections, those were cut in v1.1.0 as autopilot overhead.
