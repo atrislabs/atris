@@ -67,5 +67,17 @@ The prep brief omitted whether the race would reproduce on this machine and the 
 
 Residual limits: existing already-tampered main ledgers remain fail-closed; this change prevents new overlap corruption and does not silently repair historical corruption. Other-host live locks time out rather than being stolen. The full repository suite was not run; the requested XP suite was run bare.
 
-next_push: have an independent reviewer inspect the two repaired blockers before any merge.
+## Saved-review check blocked after push
+
+The direct bare suite above passed with exit 0. The later `atris task ready` invocation re-ran that suite through the installed mission guard and failed with exit 1: 45 passed, 5 failed. Each failure was the guard refusing the tests' temporary `git init -b main`, exit 77, rather than an XP assertion. Exact guard message:
+
+```text
+held: a handed-off job wants to git init -b main. git init is not on the list a handed-off job may run. a yes card is now on the owner's phone. wait for the ping that says yes, then run it again; one yes covers one run.
+```
+
+No guard was disabled or bypassed after this refusal. The task remains awaiting its guarded proof run, and is not accepted. Full output: `/tmp/agentxp-ready-check-20261023.txt`. Generated failure receipts: `atris/runs/2026-10-23-task-vas-10-2026-10-23T10-26-44-282Z.json` and `atris/runs/2026-10-23-task-vas-10-2026-10-23T10-27-51-369Z.json`.
+
+The parent mission already holds its run lock, so the nested mission summary command returned lock busy; the parent harness should record this receipt.
+
+next_push: after the owner approves temporary Git initialization, rerun the guarded XP proof and request independent review before merging.
 layer: capabilities
