@@ -2178,6 +2178,39 @@ test('team table: one honest row per member with recent work; working only with 
   for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
 });
 
+test('job deck: one card per running job, needs you first, with a divided row of done, work, member, role, ovr, engine, status', () => {
+  const root = workspace();
+  addMember(root, 'builder', 'Builder');
+  addMember(root, 'navigator', 'Navigator');
+  addMember(root, 'scout', 'Scout');
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Launch a try page for any public repo');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', runner: 'claude', objective: 'x', created_at: NAGO(40), last_tick_at: NAGO(2), human_asks: [] },
+    m5: { id: 'm5', owner: 'navigator', status: 'blocked', runner: 'codex', objective: 'Plan the pricing page.', created_at: NAGO(150), updated_at: NAGO(120), human_asks: ['ship the pricing page now?'] },
+    m6: { id: 'm6', owner: 'scout', status: 'complete', objective: 'Old scouting.', created_at: NAGO(200), updated_at: NAGO(60), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, {
+    ratings: () => new Map([['builder', 84]]),
+    engineFor: m => ({ claude: 'claude opus 5.5', codex: 'codex gpt 5.6' })[m.runner] || '',
+  });
+  const deck = h.d.jobDeck();
+  assert.equal(deck.cards.length, 2, 'finished jobs are not on the deck');
+  assert.deepEqual(deck.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+  assert.deepEqual(deck.cards.map(c => [c.mission_id, c.label, c.member]), [['m5', 'needs you', 'navigator'], ['m1', 'working', 'builder']]);
+  assert.deepEqual(deck.cards[0].rows, [{ done: '', work: 'Plan the pricing page', member: 'navigator', role: 'Navigator', ovr: '··', engine: 'codex gpt 5.6', status: 'needs you' }]);
+  assert.deepEqual(deck.cards[1].rows, [{ done: '', work: 'Launch a try page for any public repo', member: 'builder', role: 'Builder', ovr: '84', engine: 'claude opus 5.5', status: 'working' }]);
+  for (const c of deck.cards) assert.doesNotMatch(JSON.stringify(c.rows), gmBet.OWNER_BANNED);
+});
+
+test('job deck: the engine names the exact model, like claude opus 5.5', () => {
+  assert.equal(gmBet.engineWords('claude', 'claude-opus-5-5'), 'claude opus 5.5');
+  assert.equal(gmBet.engineWords('codex', 'gpt-5.6'), 'codex gpt-5.6');
+  assert.equal(gmBet.engineWords('fable', 'claude-fable-5-1'), 'claude fable 5.1');
+  assert.equal(gmBet.engineWords('', ''), '');
+});
+
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
   const root = workspace();
   const h = jobDesk(root, {});
@@ -2209,6 +2242,8 @@ function jobDesk(root, missions, over = {}) {
     warmOnCreate: false,
     choices: Boolean(over.choices),
     driverAlive: over.driverAlive || (() => false),
+    readRatings: over.ratings || (() => new Map()),
+    engineFor: over.engineFor || (() => ''),
     readSaid: over.readSaid || READ_PLAIN,
     runCli: over.runCli || (async (args) => {
       cli.push(args);

@@ -546,6 +546,52 @@ test('over http: the team table and a steer go through the same token and json c
   }
 });
 
+test('over http: the job deck is read through the same token check, one card per running job', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', runner: 'claude', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, readRatings: () => new Map([['builder', 77]]), engineFor: () => 'claude opus 5.5' }),
+  });
+  try {
+    assert.equal((await h.call('GET', '/bet/jobs', { token: 'nope' })).status, 403);
+    const deck = await h.call('GET', `/bet/jobs?t=${TOKEN}`);
+    assert.equal(deck.status, 200);
+    assert.deepEqual(deck.json.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+    assert.deepEqual(deck.json.cards.map(c => [c.member, c.label, c.rows[0].ovr, c.rows[0].engine]), [['builder', 'working', '77', 'claude opus 5.5']]);
+  } finally {
+    await h.close();
+  }
+});
+
+test('phone page: the footer opens a deck of job cards, one at a time, flipped by arrows or a swipe, with a talk box per job', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  // read from the server, drawn one card at a time with its place in the deck
+  assert.match(script, /api\('\/bet\/jobs'\)/);
+  assert.match(script, /'job ' \+ \(deckAt \+ 1\) \+ ' of ' \+ deckCards\.length/);
+  // the arrows and a sideways swipe flip it; Esc goes back to talking
+  assert.match(script, /e\.key === 'ArrowLeft'/);
+  assert.match(script, /e\.key === 'ArrowRight'/);
+  assert.match(script, /addEventListener\('touchstart'/);
+  assert.match(script, /addEventListener\('touchend'/);
+  // a divided table with the seven columns, header first
+  assert.match(script, /el\('table', 'jobs'\)/);
+  // one talk box per job: it goes to that job's member through the same route that keeps the turns
+  assert.match(script, /convo\(function \(body\) \{ body\.member = c\.member; return api\('\/bet\/steer', body\); \}/);
+  assert.match(script, /'talk to this job'/);
+  // the team page opens the deck, and Esc from the deck closes to the card
+  assert.match(script, /jobs\.addEventListener\('click', openDeck\);/);
+  assert.match(script, /teamBack = closeDeck;/);
+  // no pulsing anywhere
+  assert.doesNotMatch(html, /infinite/);
+  const deckCss = html.split('/* the job deck')[1].split('*/').slice(1).join('*/').split('/*')[0];
+  assert.doesNotMatch(deckCss, /animation/);
+  assert.match(deckCss, /\.jobs \{[^}]*border-collapse[^}]*\}/);
+});
+
 test('phone link: the token is kept per workspace, private to this user, and reused until --new-link', { skip: process.platform === 'win32' }, () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-links-'));
   const file = path.join(stateDir, 'gm-phone-links.json');
