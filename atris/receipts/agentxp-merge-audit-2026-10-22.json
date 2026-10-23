@@ -1,0 +1,70 @@
+{
+  "scope": "Read-only diagnosis. Directory naming selects candidates only. Current metadata is not acceptance-time evidence and cannot authorize XP.",
+  "week_start": "2026-10-16T00:00:00.000Z",
+  "all_workspace_merge_completions": 4,
+  "cli_merge_completions": 4,
+  "cli_without_positive_review": 4,
+  "cli_without_positive_review_with_current_independent_actor": 0,
+  "candidates": [
+    {
+      "event_id": "01M5HN4EEAWEGQ48D46YWEGQ48",
+      "task_id": "01M4Z516ME2JJVS12PS12JJVS1",
+      "title": "next step toward: Every repeat problem in this workspace becomes a detector-backed fix before the third occurrence, so the pain score t...",
+      "completed_at": "2026-10-22T11:14:55.563Z",
+      "action": "merged_earlier",
+      "current_status": "archived",
+      "positive_review_event": null,
+      "current_independent_review_actors": [],
+      "current_certified_verified_by": null,
+      "current_independent_review_by": null,
+      "current_machine_verified": false,
+      "current_agent_certified": false,
+      "current_proof_present": true
+    },
+    {
+      "event_id": "01M5HN4EXKRGWK3KBRY1RGWK3K",
+      "task_id": "01M4Z4YVHB23QB88FTJ023QB88",
+      "title": "next step toward: Members work for hours without a person stepping in. Each night, read what made a person step in (the morning notes,...",
+      "completed_at": "2026-10-22T11:14:56.051Z",
+      "action": "merged_earlier",
+      "current_status": "archived",
+      "positive_review_event": null,
+      "current_independent_review_actors": [],
+      "current_certified_verified_by": null,
+      "current_independent_review_by": null,
+      "current_machine_verified": false,
+      "current_agent_certified": false,
+      "current_proof_present": true
+    },
+    {
+      "event_id": "01M5HN4FJ1BDNJKZGH8HBDNJKZ",
+      "task_id": "01M4YP603GA7HH59V0ZGA7HH59",
+      "title": "A member's job closes itself when its own change merges, so nobody has to approve finished work",
+      "completed_at": "2026-10-22T11:14:56.705Z",
+      "action": "merged_earlier",
+      "current_status": "archived",
+      "positive_review_event": null,
+      "current_independent_review_actors": [],
+      "current_certified_verified_by": null,
+      "current_independent_review_by": null,
+      "current_machine_verified": false,
+      "current_agent_certified": false,
+      "current_proof_present": true
+    },
+    {
+      "event_id": "01M5KEBJMH0JXN2N24G80JXN2N",
+      "task_id": "01M4Z2Y7DZKT5A56BHCSKT5A56",
+      "title": "next step toward: Every dispatched idea or build spec lands as a small, verified diff in an isolated checkout that passes both its runn...",
+      "completed_at": "2026-10-23T03:54:58.065Z",
+      "action": "merged",
+      "current_status": "archived",
+      "positive_review_event": null,
+      "current_independent_review_actors": [],
+      "current_certified_verified_by": null,
+      "current_independent_review_by": null,
+      "current_machine_verified": false,
+      "current_agent_certified": false,
+      "current_proof_present": true
+    }
+  ]
+}
