@@ -1,0 +1,22 @@
+You are in the atris-cli repo: Node, zero dependencies, tests use node:test.
+
+The existing tests miss a bug. In {{target}} at line {{line}}, this line:
+    {{before}}
+can be changed to:
+    {{after}}
+and every existing test that loads the file ({{tests}}) still passes.
+
+Write ONE new test file at {{file}} that passes on the real code and fails when that line is changed.
+
+Rules:
+- Create only {{file}}. Do not change the code under test.
+- Load the module with require('../{{module}}') and test it through what it exports. Find the exported function that runs this line and build an input that reaches it.
+- Assert only the one value this line decides, with strictEqual or a check that a key word is present. Never compare a whole object, full output text, full messages, or exact sizes and positions.
+- Never read the source file's text. Its path may appear in {{file}} only inside the require, not in comments, test names, or other calls.
+- No network, no AI engines, no long-running commands, no timing deadlines, no dependence on today's date. Do not replace the global Date; pass fixed dates as input.
+- Write only inside fs.mkdtempSync(path.join(os.tmpdir(), ...)). The check runs your file with an empty environment, no git config, in two time zones a day apart. If the code reads HOME, set HOME to your temp folder.
+- Before writing, open the existing tests whose names start with this file's name. If one already uses the same kind of input and would fail under this change, yours is a repeat: test a case only this line decides, or write nothing and stop.
+- To confirm, you may change the line yourself, run node --test {{file}} and see it fail, then put the line back exactly with: git checkout -- {{target}}
+- Finish with the line restored and node --test {{file}} passing.
+- If the change makes no observable difference through the exports, or only differs at an input no real caller gives (an exact millisecond, a shared object identity), write nothing and stop.
+- Do not commit.
