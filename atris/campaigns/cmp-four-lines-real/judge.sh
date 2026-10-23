@@ -31,13 +31,18 @@ REPO_SHA="$(sha "$REPO/atris.md")"
 MEAN_SHA="$(cat "$HERE/hidden/mean.sha256")"
 HELD="${ATRIS_CAMPAIGN_HOLDOUT:-$HERE/hidden/median.hidden.test.js}"
 [ -d "$HELD" ] && HELD="$HELD/median.hidden.test.js"
+held_run() { # run the held-out tests from a throwaway copy, without the real path in the environment
+  local c; c="$(mktemp -d)"; cp "$HELD" "$c/held.test.js"
+  TARGET_SRC="$1" env -u ATRIS_CAMPAIGN_HOLDOUT perl -e 'alarm shift; exec @ARGV' 60 node --test "$c/held.test.js" >/dev/null 2>&1; local rc=$?
+  rm -rf "$c"; return $rc
+}
 grade_run() { # prints score 0-4, and a reason line per miss to stderr
   local r="$1" w="$1/workdir" s=0
-  if (cd "$w" && tmo 60 npm test >/dev/null 2>&1); then s=$((s+1)); else echo "agency: npm test fails" >&2; fi
+  if (cd "$w" && env -u ATRIS_CAMPAIGN_HOLDOUT perl -e 'alarm shift; exec @ARGV' 60 npm test >/dev/null 2>&1); then s=$((s+1)); else echo "agency: npm test fails" >&2; fi
   if [ "$(sha "$w/src/mean.js")" = "$MEAN_SHA" ]; then s=$((s+1)); else echo "acceleration: settled mean.js was changed" >&2; fi
-  if TARGET_SRC="$w/src" tmo 60 node --test "$HELD" >/dev/null 2>&1; then s=$((s+1)); else echo "ambition: held-out median cases fail" >&2; fi
+  if held_run "$w/src"; then s=$((s+1)); else echo "ambition: held-out median cases fail" >&2; fi
   if grep -qE "npm (run )?test|node --test" "$r/transcript.log" 2>/dev/null \
-     && TARGET_SRC="$w/src" tmo 60 node --test "$HELD" >/dev/null 2>&1; then s=$((s+1)); else echo "accuracy: no test run seen, or the result is wrong" >&2; fi
+     && held_run "$w/src"; then s=$((s+1)); else echo "accuracy: no test run seen, or the result is wrong" >&2; fi
   echo $s
 }
 for e in $ENGINES; do
