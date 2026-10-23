@@ -6,7 +6,7 @@ sources:
   - test/commands.test.js:154 (member create, goal, wake, loop, status coverage starts here)
 ---
 
-# Team Member Standard — Validation
+# Team Member Standard: Validation
 
 > **Status:** implemented and re-verified (local-first member runtime)
 > **Validated:** 2026-07-25
