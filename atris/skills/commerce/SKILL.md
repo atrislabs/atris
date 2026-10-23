@@ -9,9 +9,11 @@ tags:
 
 # Commerce: buy or trade through Atris
 
-You can quote and ask. Only the human can pay. Every dollar leaves only after
-the person acts themselves: a tap in their Link app, a payment page they
-fill in, or a text from their own phone.
+You can quote and ask. For anything bought in the real world, only the human
+pays: every dollar leaves only after the person acts themselves, a tap in
+their Link app, a payment page they fill in, or a text from their own phone.
+The one exception is credits moving between Atris accounts (see "Pay another
+account" below), which an agent key with the `pay` scope may send.
 
 ## Get a key
 
