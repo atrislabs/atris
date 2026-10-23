@@ -104,7 +104,7 @@ unset secret_val
 echo "Saved locally."
 ```
 
-Register the key in the web UI (manifest only — no value sent):
+Register the key in the web UI (manifest only, no value sent):
 ```bash
 curl -s -X POST "https://api.atris.ai/api/apps/SLUG/secrets/KEY_NAME/register-local" \
   -H "Authorization: Bearer $TOKEN"
@@ -222,9 +222,9 @@ curl -s -X POST "https://api.atris.ai/api/scheduled-tasks" \
 ```
 
 Common schedules:
-- `"0 8 * * *"` — daily at 8am UTC
-- `"0 */6 * * *"` — every 6 hours
-- `"0 9 * * 1"` — weekly Monday 9am UTC
+- `"0 8 * * *"`: daily at 8am UTC
+- `"0 */6 * * *"`: every 6 hours
+- `"0 9 * * 1"`: weekly Monday 9am UTC
 
 **Skip this step** for on-demand apps (manual trigger only) or chat apps.
 
@@ -270,20 +270,20 @@ Tell the user:
 All endpoints use the app's `share_token` as `{slug}`.
 
 ```
-POST   /api/apps/{slug}/trigger          — run the app now
-POST   /api/apps/{slug}/ingest           — push data in
-POST   /api/apps/{slug}/ingest/batch     — push multiple items
-GET    /api/apps/{slug}/data             — read stored data
-GET    /api/apps/{slug}/data/{collection} — read specific collection
-GET    /api/apps/{slug}/status           — health, last run, next run
-GET    /api/apps/{slug}/runs             — execution history
-GET    /api/apps/{slug}/runs/{run_id}    — single run details
-PUT    /api/apps/{slug}/secrets/{key}    — store an API key (owner only)
-GET    /api/apps/{slug}/secrets          — list key names (owner only)
-DELETE /api/apps/{slug}/secrets/{key}    — remove a key (owner only)
-POST   /api/apps/{slug}/members          — add agent operator
-GET    /api/apps/{slug}/members          — list members
-DELETE /api/apps/{slug}/members/{agent_id} — remove member
+POST   /api/apps/{slug}/trigger          : run the app now
+POST   /api/apps/{slug}/ingest           : push data in
+POST   /api/apps/{slug}/ingest/batch     : push multiple items
+GET    /api/apps/{slug}/data             : read stored data
+GET    /api/apps/{slug}/data/{collection} : read specific collection
+GET    /api/apps/{slug}/status           : health, last run, next run
+GET    /api/apps/{slug}/runs             : execution history
+GET    /api/apps/{slug}/runs/{run_id}    : single run details
+PUT    /api/apps/{slug}/secrets/{key}    : store an API key (owner only)
+GET    /api/apps/{slug}/secrets          : list key names (owner only)
+DELETE /api/apps/{slug}/secrets/{key}    : remove a key (owner only)
+POST   /api/apps/{slug}/members          : add agent operator
+GET    /api/apps/{slug}/members          : list members
+DELETE /api/apps/{slug}/members/{agent_id} : remove member
 ```
 
 ## Examples
