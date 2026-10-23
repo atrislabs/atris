@@ -1,4 +1,4 @@
-# Hajos cycle-decomposition round 5 — final results (2026-07-23)
+# Hajos cycle-decomposition round 5: final results (2026-07-23)
 
 Conjecture tested (Hajos): every Eulerian graph on n vertices decomposes into
 at most floor((n-1)/2) edge-disjoint cycles.
@@ -8,7 +8,7 @@ decomposed by sweep.py (validated heuristic; every claimed decomposition
 re-checked by verify.check_decomposition; invalid claims discarded).
 
 ## Class 1: all 8-regular graphs on 14 vertices (complements of 5-regular n=14)
-- class size: 3,459,386 — matches OEIS A165626(7) = 3459386 and geng full
+- class size: 3,459,386, matches OEIS A165626(7) = 3459386 and geng full
   count (`geng -d5D5 14`: 3459386 in 366.72 s). Shard sum equals full count.
 - bound: floor(13/2) = 6 cycles.
 - result: ALL 3,459,386 graphs decompose within bound.
@@ -19,7 +19,7 @@ re-checked by verify.check_decomposition; invalid claims discarded).
   from a disjoint geng slice (r5b_crosscheck_reg8n14.txt). alarms = 0.
 
 ## Class 2: all 10-regular graphs on 15 vertices (complements of 4-regular n=15)
-- class size: 805,579 — matches OEIS A033301(15) = 805579 and geng full count
+- class size: 805,579, matches OEIS A033301(15) = 805579 and geng full count
   (`geng -d4D4 15`: 805579 in 99.94 s). Shard sum equals full count.
 - bound: floor(14/2) = 7 cycles.
 - result: ALL 805,579 graphs decompose within bound.
