@@ -78,6 +78,8 @@ test('side copies left for their owners get one line each and a clock', () => {
     '  and 2 more',
     'zen saves each one to zen-backup/ once nobody has touched it for 1 day',
   ]);
+  assert.deepEqual(sideCopyLines(['/x/a'], 3, 12 * 3600000).slice(-1), ['that is due in 12 hours']);
+  assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3, 49 * 3600000).slice(-1), ['the first one is due in 2 days']);
 });
 
 test('team-state matching covers folders and exact files', () => {
