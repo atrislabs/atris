@@ -3863,10 +3863,6 @@ function chooseNextMissionAnalysis(mission, root = process.cwd()) {
   return { target: null, near_misses: [] };
 }
 
-function chooseNextMissionTarget(mission, root = process.cwd()) {
-  return chooseNextMissionAnalysis(mission, root).target;
-}
-
 function normalizeMissionOwner(value) {
   return String(value || '').trim().toLowerCase();
 }
