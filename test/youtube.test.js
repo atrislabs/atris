@@ -691,6 +691,22 @@ test('fileBriefFromNotes writes a wiki brief and a claimable journal line', () =
   assert.equal(journal, '- [claimable] watched: Some Video Title -> atris/wiki/briefs/youtube-abc123xyz.md\n');
 });
 
+test('fileBriefFromNotes files the journal line under the local day, not the UTC day', () => {
+  const cwd = tempDir('atris-yt-brief-tz-');
+  const workDir = tempDir('atris-yt-notes-tz-');
+  fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
+  fs.writeFileSync(path.join(workDir, 'yt_abc123xyz.md'), '# Evening Video\n\nBody.\n');
+  const script = [
+    `const { fileBriefFromNotes } = require(${JSON.stringify(path.resolve(__dirname, '..', 'commands', 'youtube'))});`,
+    `fileBriefFromNotes({ cwd: ${JSON.stringify(cwd)}, url: 'https://www.youtube.com/watch?v=abc123xyz', workDir: ${JSON.stringify(workDir)}, now: new Date('2026-08-15T05:00:00.000Z') });`,
+  ].join('\n');
+  // 05:00 UTC on the 15th is still the evening of the 14th at UTC-12.
+  const res = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', env: { ...process.env, TZ: 'Etc/GMT+12' } });
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(fs.existsSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-14.md')), 'journal line belongs to the local day');
+  assert.ok(!fs.existsSync(path.join(cwd, 'atris', 'logs', '2026', '2026-08-15.md')));
+});
+
 test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', () => {
   const workDir = tempDir('atris-yt-notes-be-');
   fs.writeFileSync(path.join(workDir, 'yt_shortid99.md'), '# Short Form\n\nClip notes.\n');
