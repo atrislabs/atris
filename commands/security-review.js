@@ -227,7 +227,10 @@ function securityReviewCommand(argv = []) {
 // The landing: short, true, decision-ready. What you read after the overnight
 // loop, the opposite of a finding dump.
 function renderLanding(landing, threshold) {
-  const date = new Date().toISOString().slice(0, 10);
+  // Local calendar day; toISOString is UTC and dates an evening run
+  // tomorrow anywhere west of Greenwich.
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const L = ['', `  ✈ security landing, ${date}`, ''];
   if (landing.cleared) {
     L.push(`  CLEARED TO SHIP    no unresolved findings at the ${threshold.toUpperCase()} line`);
