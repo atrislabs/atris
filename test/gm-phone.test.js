@@ -405,6 +405,8 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
     assert.equal(tap.status, 200);
     assert.equal(tap.json.kind, 'question');
     assert.equal(tap.json.question.choices.length, 3);
+    // two parts: the question, and what is going on with why the answer matters
+    assert.deepEqual(Object.keys(tap.json.question), ['ask', 'line', 'choices']);
     // same token, origin, and json checks as every other post
     assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'customers' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'customers' } })).status, 403);
@@ -468,6 +470,25 @@ test('page: one accent, no em dashes, text goes in as text', () => {
   // tap targets stay at least 44px
   assert.match(html, /\.pill \{\n {2}min-width: 12rem; height: 44px;/);
   assert.match(html, /\.choice \{ width: 100%; min-height: 52px;/);
+});
+
+test('page: only the orb, its cards, and the working count; big type and no plumbing words', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // the old decision sheet is gone from the phone: no only-you link, no review asks, no target strip
+  for (const gone of ['open-only', 'id="sheet"', 'only you', "'/state'", "'/action'", 'toast', 'oldest', 'target']) assert.equal(html.includes(gone), false, gone);
+  // the footer is the working count and its list, nothing else
+  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="working" hidden aria-expanded="false"><\/button><div class="jobs" id="jobs" hidden><\/div><\/div>/);
+  // no small text anywhere on the page
+  const sizes = [...html.matchAll(/font-size: (\d+)px/g)].map(m => Number(m[1]));
+  assert.ok(sizes.length > 3);
+  assert.ok(sizes.every(n => n >= 17), `font sizes ${sizes.join(', ')}`);
+  // the words an owner never needs to read: none anywhere in the page, and
+  // no sentence the page writes says check or test
+  assert.doesNotMatch(html, /receipt|review|proof|running_for/i);
+  const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
+  assert.ok(copy.length > 10);
+  for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
 });
 
 test('page: a tap on a card fades it, glides home to the sphere, and the fast bloom stays contained', () => {
