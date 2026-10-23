@@ -1,0 +1,1 @@
+{"id":"test-commands-github","kind":"test","target":"commands/github.js","files":["test/github-command.test.js"]}

@@ -1,0 +1,1 @@
+{"id":"test-commands-context-sync","kind":"test","target":"commands/context-sync.js","files":["test/context-sync-command.test.js"]}
