@@ -251,3 +251,74 @@ test('local XP recovers a real stranded accept once, with independent review and
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+
+test('new main-ledger reviews require a second actor even after completion', (t) => {
+  const taskDb = require('../lib/task-db');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-independent-'));
+  const main = path.join(base, 'main');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const dbPath = path.join(base, 'tasks.db');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd: main, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    const before = run('xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const db = taskDb.open(dbPath);
+    // Reproduce the real write path: done-row bookkeeping permits builder
+    // reviews, so the collector must still require independent evidence.
+    const variants = [
+      { built_by: acceptedReview.actor },
+      { ...acceptedReview.metadata, machine_verified: false },
+      { ...acceptedReview.metadata, certified_verified_by: 'unrecorded-reviewer' },
+      { ...acceptedReview.metadata, independent_review_by: acceptedReview.actor },
+      { ...acceptedReview.metadata, agent_review_actors: [acceptedReview.actor] },
+      { ...acceptedReview.metadata, agent_certified: false },
+      { built_by: ' OPERATOR ' },
+    ];
+    for (const metadata of variants) {
+      const task = taskDb.addTask(db, {
+        title: acceptedReview.title, workspaceRoot: main, status: 'done',
+        claimedBy: acceptedReview.claimed_by, metadata,
+      });
+      const review = taskDb.reviewTask(db, {
+        id: task.id, actor: acceptedReview.actor, reward: acceptedReview.reward,
+        proof: acceptedReview.proof, careerXpEligible: true,
+      });
+      assert.equal(review.reviewed, true);
+      assert.equal(review.episode.career_xp.eligible, true, 'upstream flag alone cannot prove independence');
+    }
+    const denied = run('xp', '--local');
+    assert.match(denied, /AgentXP 0 \| Today 0/, 'builder-only completed reviews earn no XP');
+    const task = taskDb.addTask(db, {
+      title: acceptedReview.title, workspaceRoot: main, status: 'done',
+      claimedBy: acceptedReview.claimed_by, metadata: acceptedReview.metadata,
+    });
+    const accepted = taskDb.reviewTask(db, {
+      id: task.id, actor: acceptedReview.actor, reward: acceptedReview.reward,
+      proof: acceptedReview.proof, careerXpEligible: true,
+    });
+    assert.equal(accepted.reviewed, true);
+    taskDb.close();
+    const after = run('xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    assert.equal(JSON.parse(run('xp', 'status', '--local', '--json')).agent_xp, 1);
+    assert.match(run('xp', '--local'), /AgentXP 1 \| Today 1/);
+    const receipts = fs.readFileSync(path.join(main, '.atris', 'state', 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].source_episode_id, accepted.episode.episode_id);
+    t.diagnostic(`unverified completed reviews: ${denied.split('\n')[1]}`);
+    t.diagnostic(`independently verified accepted review: ${after.split('\n')[1]}`);
+  } finally {
+    taskDb.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

@@ -923,7 +923,7 @@ function receiptFromTaskEpisode(episode, treeHash) {
   );
   const proof = String(episode?.proof || '').trim();
   const reward = asNumber(episode?.career_xp?.reward ?? episode?.reward?.value, 0);
-  if (!episodeId || (!rejected && (!eligible || !proof || reward <= 0))) return null;
+  if (!episodeId || (!rejected && (!eligible || !proof || reward <= 0 || !hasIndependentXpReview(episode)))) return null;
 
   return {
     schema: 'atris.career_xp_receipt.v1',
@@ -1049,26 +1049,30 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   };
 }
 
-// Historical linked ledgers predate the shared writer. Recover only records
-// with positive acceptance proof and an identifiable independent reviewer.
+// The eligible flag records acceptance intent, not reviewer independence.
+// Apply the same actor evidence to new episodes and historical recovery.
+function hasIndependentXpReview(episode) {
+  const builder = taskBuilder(episode?.state);
+  if (!builder) return false;
+  const reviewer = normalizeActor(episode.action?.actor);
+  if (reviewer && reviewer !== builder) return true;
+  const metadata = episode.state.metadata || {};
+  const verifier = normalizeActor(metadata.certified_verified_by);
+  const reviewActors = Array.isArray(metadata.agent_review_actors) ? metadata.agent_review_actors.map(normalizeActor) : [];
+  return metadata.agent_certified === true && metadata.machine_verified === true
+    && Boolean(verifier) && verifier !== builder
+    && verifier === normalizeActor(metadata.independent_review_by)
+    && reviewActors.includes(verifier);
+}
+
+// Historical linked ledgers predate the shared writer. Require explicit
+// eligibility here; receipt conversion also enforces independent review.
 function recoverLinkedTaskEpisodes(workspace) {
   return careerXpLinkedRoots(workspace).flatMap(root => readJsonl(path.join(root, TASK_EPISODES_FILE), { allowPartialTail: true }))
-    .filter(episode => {
-      if (episode?.state?.status !== 'done' || episode?.career_xp?.eligible !== true
-        || !String(episode.proof || '').trim()
-        || asNumber(episode.career_xp.reward ?? episode.reward?.value) <= 0) return false;
-      const builder = taskBuilder(episode.state);
-      if (!builder) return false;
-      const reviewer = normalizeActor(episode.action?.actor);
-      if (reviewer && reviewer !== builder) return true;
-      const metadata = episode.state.metadata || {};
-      const verifier = normalizeActor(metadata.certified_verified_by);
-      const reviewActors = Array.isArray(metadata.agent_review_actors) ? metadata.agent_review_actors.map(normalizeActor) : [];
-      return metadata.agent_certified === true && metadata.machine_verified === true
-        && Boolean(verifier) && verifier !== builder
-        && verifier === normalizeActor(metadata.independent_review_by)
-        && reviewActors.includes(verifier);
-    });
+    .filter(episode => episode?.state?.status === 'done' && episode?.career_xp?.eligible === true
+      && String(episode.proof || '').trim()
+      && asNumber(episode.career_xp.reward ?? episode.reward?.value) > 0
+      && hasIndependentXpReview(episode));
 }
 
 function collectLocalXpProjectionState(args = [], { write = true, resolveSharedRoot = true } = {}) {
