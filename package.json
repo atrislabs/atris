@@ -2,6 +2,7 @@
   "name": "atris",
   "version": "3.73.0",
   "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof.",
+  "mcpName": "io.github.atrislabs/atris",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris",
