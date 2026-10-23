@@ -1,6 +1,6 @@
 'use strict';
 
-const { abandonedDaysFromEnv, checkZen, sideCopyLines } = require('../lib/zen');
+const { abandonedDaysFromEnv, checkZen, nextSaveIn, sideCopyLines } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
 const { workspaceZen } = require('../lib/zen-workspace');
 const { fleetFile, fleetRepos, fleetZen, printFleet } = require('../lib/zen-fleet');
@@ -97,7 +97,9 @@ function printCheck(result, workspace) {
     console.log('  run atris zen to make it zen');
   }
   if (result.worktrees_with_work.length) {
-    for (const text of sideCopyLines(result.worktrees_with_work, abandonedDaysFromEnv())) console.log(`  ${text}`);
+    const days = abandonedDaysFromEnv();
+    const wait = nextSaveIn(result.worktrees_with_work, days);
+    for (const text of sideCopyLines(result.worktrees_with_work, days, wait)) console.log(`  ${text}`);
   }
   const held = result.worktrees_locked?.length || 0;
   if (held) {
