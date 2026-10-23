@@ -105,6 +105,8 @@ test('git: a branch push to origin runs, rewritten so it cannot carry tags or fo
     ['push', 'origin', 'feature:master'],
     ['push', 'origin', 'refs/heads/master'],
     ['push', 'origin', 'master/sub'],
+    ['push', 'origin', 'MASTER'],
+    ['push', 'origin', 'HEAD:refs/heads/Master'],
     ['push', 'origin', 'HEAD'],
     ['push', 'origin'],
     ['push'],
@@ -171,12 +173,15 @@ test('npm, yarn, pnpm: install, ci, test, run, ls and view run; publish, version
 test('atris: the run\'s own machinery and reads run; outward and unknown verbs are held', (t) => {
   const w = world(t);
   for (const args of [['task', 'list'], ['task', 'note', 'T1', 'did it'], ['member', 'status'], ['member', 'handoff', 'a', 'b', 'next step'],
-    ['mission', 'status', 'm-woken'], ['mission', 'tick', 'm-woken'], ['slop', 'detect', 'x.md'], ['verify'], ['status'], ['log', 'did it']]) {
+    ['mission', 'status', 'm-woken'], ['mission', 'tick', 'm-woken'], ['slop', 'detect', 'x.md'], ['verify'], ['status'], ['log', 'did it'],
+    ['task', 'ready', 'T1'], ['task', 'done', 'T1'], ['task', '--help']]) {
     assert.ok(runs(w.verdict('atris', args)), args.join(' '));
   }
   for (const args of [['business', 'deploy', 'acme'], ['site', 'publish'], ['pay', 'vendor', '5'], ['feed', 'post', 'x'], ['deploy'], ['release'],
     ['frobnicate'], ['fix', 'the', 'bug'], ['member', 'run', 'builder', 'x'], ['member', 'wake', 'builder'], ['mission', 'start', 'x'],
-    ['mission', 'tick', 'some-other-mission'], ['approve', '1'], ['land'], ['autoland'], ['--as', 'task', 'business', 'deploy']]) {
+    ['mission', 'tick', 'some-other-mission'], ['mission', 'tick'], ['mission', 'run', 'm-woken'], ['approve', '1'], ['land'], ['autoland'],
+    ['--as', 'task', 'business', 'deploy'], ['task', 'accept', 'T1'], ['task', 'auto-accept-certified'], ['task', 'sweep'], ['task', 'review-lane-run'],
+    ['task', 'step', 'T1'], ['task', 'do'], ['task'], ['log', 'sync'], ['wish', 'x'], ['engine', 'dispatch', 'x']]) {
     assert.ok(held(w.verdict('atris', args)), args.join(' '));
   }
 });
