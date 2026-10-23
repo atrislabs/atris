@@ -14,3 +14,13 @@ DROP test/orb-cmd--mut-L20-7.test.js: Pins an exact three-line output suffix, in
 DROP test/report-cmd--mut-L195-2.test.js: Enforces inclusion at one exact millisecond of a rolling weekly cutoff, with no demonstrated practical reliance.
 DROP test/soul-cmd--mut-L131-7.test.js: Duplicates persona preview coverage in test/soul-cmd--mut-L131-6.test.js.
 DROP test/stream-cmd--mut-L151-7.test.js: Runs real git config reads without isolating HOME or global git configuration.
+DROP test/analytics-cmd--mut-L55-6.test.js: catches the break by accident; the change crashes on a journal with no inbox and the test only notices the missing lines, never the inbox counting the line controls; it also swaps out the global clock
+DROP test/app-cmd--mut-L145-0.test.js: snapshots the entire app template file, so any wording edit breaks it; the iOS-only endpoint lines would be enough
+DROP test/brainstorm-cmd--mut-L73-7.test.js: snapshots the full help text when one check that help printed would do
+DROP test/business-sync-cmd--mut-L124-1.test.js: duplicates test/commands-2.test.js:2210, which already expects unchanged snapshots to return false and fails on this same change
+DROP test/probe-cmd--mut-L218-0.test.js: catches the break by accident; the changed line sets the calendar option, but the test never checks that option and only fails because help gets skipped
+DROP test/run-front-cmd--mut-L124-7.test.js: snapshots incidental output text full of "?" placeholders on top of the cadence check
+DROP test/scout-cmd--mut-L120-7.test.js: catches the break by accident: with no --dir value the mutant crashes in path.resolve(undefined), and the test never checks that a given --dir path is used; it also snapshots the full help text
+DROP test/security-review-cmd--mut-L256-4.test.js: pins a full output suffix, including the unrelated posture line, to catch a cosmetic "and 0 more" line
+DROP test/serve-cmd--mut-L109-4.test.js: harmless boundary; nobody relies on a find string of exactly 1 MiB being accepted rather than rejected
+DROP test/study-cmd--mut-L126-7.test.js: exact snapshot of the whole tutor guidance block when only "the language topic is detected" matters

@@ -12,3 +12,15 @@ DROP test/decide-cmd--mut-L25-8.test.js: Duplicates running-mission ask listing 
 DROP test/dream-cmd--mut-L236-6.test.js: Duplicates successful default-runner launch coverage in test/engine-resource.test.js.
 DROP test/drill-cmd--mut-L206-6.test.js: Calls runDrill, which runs git config to set the sandbox repository's user name and email.
 DROP test/human-missions-cmd--mut-L344-5.test.js: Enforces a cosmetic distinction between equivalent durations, 60s and 1m 0s.
+DROP test/analytics-cmd--mut-L64-6.test.js: the mutant crashes on null[1], so the break is caught by accident; it also uses a full-screen output snapshot and mocks the global clock
+DROP test/balance-cmd--mut-L49-6.test.js: enforces that a thrown string's text is thrown away, which nobody relies on; a real Error case would test what the line controls
+DROP test/codex-goal-cmd--mut-L46-7.test.js: pins the exact internal count of sqlite calls (4), which a reasonable refactor would change
+DROP test/doctor-cmd--mut-L62-5.test.js: harmless boundary (a launcher of exactly 2048 bytes), and it mocks fs.statSync on an internal path
+DROP test/engine-watch-cmd--mut-L144-7.test.js: depends on the internal order of statSync calls to inject output, and only tests the test-only deps.fs injection point; it also polls on a timer
+DROP test/init-cmd--mut-L311-0.test.js: it checks the whole help text word for word, so any wording change breaks it, when all it needs to check is that `-h` prints usage instead of setting up a workspace.
+DROP test/install-cmd--mut-L30-0.test.js: it locks in the exact list of seven starter files, so adding or removing one breaks it even though the line under test only chooses between listing the files and saying "already installed".
+DROP test/loop-front-cmd--mut-L101-6.test.js: it compares the entire loop home screen character for character, when the only thing that matters is that no "ranked next moves" heading shows when there are no moves.
+DROP test/push-cmd--mut-L192-9.test.js: test/commands-2.test.js line 2434 already checks that a successful batch is not retried file by file.
+DROP test/release-cmd--mut-L203-6.test.js: it checks all seven preflight lines, most about unrelated checks, so adding or rewording any check breaks it, when the line under test only decides "local master is missing".
+DROP test/skill-cmd--mut-L302-6.test.js: it locks in the check count "12/12" and the column spacing, so adding one new check breaks it even though the line under test only decides PASS or FAIL.
+DROP test/sync-cmd--mut-L342-7.test.js: duplicates the existing test/sync-cmd--mut-L197-0.test.js, which already makes the same dry-run call and checks the same "Updating Sample (sample) from business environment templates..." line, so it already catches the slug falling back to 'business'.
