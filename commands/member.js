@@ -10795,6 +10795,18 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     process.exitCode = 3;
     return payload;
   }
+  // --detach answers before the background run starts, so the cheap checks
+  // run here first: a member that cannot run is refused with the plain reason
+  if (detach && !dryRun) {
+    const refusal = memberRefusalFor(targetMember, paths.memberFile)
+      || (resolveMemberEngineSeat(owner, root).engine_id ? '' : `no engine is set for ${owner}`);
+    if (refusal) {
+      const payload = { ok: false, action: 'member_run_not_started', member: owner, reason: refusal };
+      printJsonOrText(payload, [`${owner} did not start: ${refusal}`], asJson);
+      process.exitCode = 1;
+      return payload;
+    }
+  }
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
   const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)

@@ -72,3 +72,16 @@ test('steer --detach: starts the member in the background and returns at once wi
   assert.ok(fs.existsSync(file), 'the background run started');
   assert.match(fs.readFileSync(file, 'utf8'), /write the readme first/);
 });
+
+test('steer --detach: a member that cannot run is refused before anything starts, with the plain reason', (t) => {
+  const { root, run } = workspace(t);
+  fs.mkdirSync(path.join(root, 'atris/team/keshav'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris/team/keshav/MEMBER.md'), '---\nname: keshav\ntype: human\nrole: Founder\n---\n# Keshav\n');
+  const out = run(['member', 'steer', 'keshav', '--detach', '--json', '--', 'the owner says: write the readme']);
+  assert.equal(out.status, 1, out.stderr || out.stdout);
+  const payload = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')));
+  assert.deepEqual([payload.ok, payload.action, payload.member], [false, 'member_run_not_started', 'keshav']);
+  assert.match(payload.reason, /keshav is a person, not an AI teammate/);
+  assert.equal(payload.pid, undefined, 'nothing was spawned');
+  assert.equal(fs.existsSync(path.join(root, 'ran.jsonl')), false);
+});

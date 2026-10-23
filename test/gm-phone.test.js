@@ -602,6 +602,10 @@ test('page: every card has a quiet say-something line that opens into one box', 
   // starting a member that is not running takes a second tap, or keeps it as a note
   assert.match(script, /if \(r\.reason === 'needs_confirm'\) \{/);
   assert.match(script, /el\('button', 'quiet', 'keep it as a note instead'\)/);
+  // editing the words clears the armed second tap, and the second tap sends what is in the box now
+  assert.match(script, /input\.addEventListener\('input', function \(\) \{ if \(pending\) disarm\(\); \}\);/);
+  assert.match(script, /if \(pending\) \{ disarm\(\); go\(\{ confirm: true \}\); return; \}/);
+  assert.match(script, /keep\.addEventListener\('click', function \(\) \{ disarm\(\); go\(\{ note: true \}\); \}\);/);
   // on every kind of card
   for (const fn of ['drawBetCard', 'drawJobCard', 'drawQuestionCard', 'drawChoiceCard']) {
     const body = script.slice(script.indexOf(`function ${fn}(`), script.indexOf('\n  }\n', script.indexOf(`function ${fn}(`)));

@@ -1811,6 +1811,9 @@ test('steer from the phone: it can only reach a live run; one that is not runnin
   // a start that did not happen says so
   const failed = jobDesk(workspace(), {}, { detach: { code: 1, stdout: JSON.stringify({ ok: false, action: 'member_run_not_started' }) } });
   assert.deepEqual(await failed.d.steer({ member: 'launcher', text: 'go', confirm: true }), { ok: false, reason: 'not_started', message: 'launcher did not start. try again in a minute.' });
+  // a start refused before it began says why, in plain words
+  const refused = jobDesk(workspace(), {}, { detach: { code: 1, stdout: JSON.stringify({ ok: false, action: 'member_run_not_started', reason: 'launcher is a person, not an AI teammate; Atris can prepare work for them but cannot act as them' }) } });
+  assert.deepEqual(await refused.d.steer({ member: 'launcher', text: 'go', confirm: true }), { ok: false, reason: 'not_started', message: 'launcher did not start: launcher is a person, not an AI teammate; Atris can prepare work for them but cannot act as them.' });
   // or it is kept as a note for their next run
   const noted = await h.d.steer({ member: 'researcher', text: 'look at pricing pages first', note: true });
   assert.deepEqual(noted, { ok: true, ack: "saved for researcher's next run." });
