@@ -686,6 +686,8 @@ function seedClaude({ home, project, ts, yesterday }) {
     ] } },
     { type: 'user', timestamp: ts, message: { content: [{ type: 'tool_result', content: 'ok' }] } },
     { type: 'user', timestamp: ts, message: { content: 'now add tests' } },
+    { type: 'user', timestamp: ts, isMeta: true, message: { content: 'Stop hook feedback:\n[keep going]' } },
+    { type: 'user', timestamp: ts, isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { content: 'This session is being continued from a previous conversation.' } },
   ]);
 }
 
@@ -697,6 +699,7 @@ function seedCodex({ home, project, now, ts }, cwd = project) {
   writeJsonl(path.join(home, '.codex', 'sessions', y, m, d, `rollout-${path.basename(cwd)}.jsonl`), [
     { type: 'session_meta', timestamp: ts, payload: { cwd } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }] } },
+    { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `# AGENTS.md instructions for ${cwd}\n\n<INSTRUCTIONS>be nice</INSTRUCTIONS>` }] } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'fix the readme typo' }] } },
     { type: 'response_item', timestamp: ts, payload: { type: 'custom_tool_call', name: 'exec', input: `text(await tools.apply_patch(${JSON.stringify(patch)}))` } },
   ]);
@@ -709,7 +712,7 @@ test('recap today reads a claude code session for this folder only', () => {
     const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
     assert.equal(t.sessions.claude, 1);
     assert.equal(t.sessions.codex, 0);
-    assert.equal(t.prompts, 2, 'counts today\'s typed asks, skips old asks, wrappers, and tool results');
+    assert.equal(t.prompts, 2, 'counts today\'s typed asks, skips old asks, wrappers, hook notes, chat summaries, and tool results');
     assert.deepEqual(t.files, ['src/app.js', 'src/login.js']);
     const out = renderAgentToday(t);
     assert.match(out, /2 things, across 1 session in claude code/);
@@ -729,7 +732,7 @@ test('recap today reads codex patches and ignores codex sessions in other folder
     seedCodex(fx, other);
     const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
     assert.equal(t.sessions.codex, 1);
-    assert.equal(t.prompts, 1);
+    assert.equal(t.prompts, 1, 'the project notes codex injects are not an ask');
     assert.deepEqual(t.files, ['README.md']);
     assert.match(renderAgentToday(t), /1 thing, across 1 session in codex\.\nit changed 1 file in the top folder\./);
   } finally {
