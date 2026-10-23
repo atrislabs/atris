@@ -411,7 +411,7 @@ Common block types for creating content:
 
 ## Important Notes
 
-- **Notion tokens don't expire** — once connected, it stays connected
+- **Notion tokens don't expire.** Once connected, it stays connected
 - **Page IDs**: Notion uses UUIDs like `12345678-abcd-1234-abcd-123456789abc`. You can get them from URLs or search results
 - **Database pages**: When adding rows to a database, the "page" properties must match the database schema
 - **Content = Blocks**: A page's visible content is a list of blocks. Use the blocks endpoint to read/write content
