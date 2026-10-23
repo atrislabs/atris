@@ -151,3 +151,16 @@ test('serveSite answers a null byte in the URL with 400 and keeps serving', asyn
     server.close();
   }
 });
+
+test('collectMd skips symlinked files and folders, so a site only holds files from its own folder', (t) => {
+  const { collectMd } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-collect-link-'));
+  fs.mkdirSync(path.join(base, 'docs'));
+  fs.mkdirSync(path.join(base, 'elsewhere'));
+  fs.writeFileSync(path.join(base, 'docs', 'real.md'), '# Real');
+  fs.writeFileSync(path.join(base, 'elsewhere', 'other.md'), '# Other');
+  fs.symlinkSync(path.join(base, 'elsewhere', 'other.md'), path.join(base, 'docs', 'linked.md'));
+  fs.symlinkSync(path.join(base, 'elsewhere'), path.join(base, 'docs', 'linked-dir'));
+  const names = collectMd(path.join(base, 'docs')).map((f) => path.basename(f));
+  assert.deepEqual(names, ['real.md']);
+});
