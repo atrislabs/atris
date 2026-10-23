@@ -2486,6 +2486,8 @@ function jobDesk(root, missions, over = {}) {
     readMissions: () => new Map(Object.entries(missions)),
     readReceipt: m => (m.receipt_path ? RECEIPT : null),
     readHandoffs: () => over.handoffs || [],
+    ...(over.engineChoices ? { engineChoices: over.engineChoices } : {}),
+    ...(over.swapFromCard ? { swapFromCard: over.swapFromCard } : {}),
     loadSeason: over.loadSeason || (() => ({ outcomes: [], error: null })),
     ...(over.resolveEngine ? { resolveEngine: over.resolveEngine } : {}),
     reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
@@ -3272,4 +3274,251 @@ test('owner words: the prompts that write choices and replies talk to the owner 
   await gmBet.generateScoreboardChoices({ workspaceRoot: root, bundle: { facts: [], sources: {} }, deps: { runModel, readContext: () => '' }, ledgerFile: path.join(root, 'bets.jsonl') });
   assert.equal(prompts.length, 2);
   for (const p of prompts) assert.match(p, /talk to him as "you"/, p.slice(0, 200));
+});
+
+// ---- the card contract: one card at a time, every kind, every invariant ---------------
+
+const gmCard = require('../lib/gm-card');
+
+// a swap list as lib/roster-swap.js gives it: the Atris model, the owner's
+// pick, then more models with the full list
+const SWAP_CHOICES = {
+  member: 'builder',
+  line: 'builder runs on tool one m-one.',
+  scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
+  options: [
+    { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { more: true, label: 'more models', options: [
+      { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
+      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: null },
+    ] },
+  ],
+};
+const TEAM_DEPS = { loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }), engineChoices: () => SWAP_CHOICES };
+const ASKS_BACK = async () => ({ ok: true, kind: 'question', reply: 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?', suggestions: ['it is still hard to tell', 'it is helping', 'show me last night\'s changes'] });
+const EXPLAINS = async () => ({ ok: true, kind: 'question', reply: 'it is the one number you check each week to see if this is going well.' });
+
+// what the desk serves now, as it keeps it (with what it checks) and as the page gets it
+async function served(d) {
+  const out = d.card();
+  return { card: d.state.served, wire: out.card, out };
+}
+async function acted(d, body) {
+  const out = await d.act(body);
+  return { card: d.state.served, wire: out.body.card, out };
+}
+
+// Every kind of card, each reached the way the owner reaches it.
+async function everyCard() {
+  const cards = [];
+  const keep = (name, got) => { cards.push({ name, ...got }); return got; };
+  // an idea, a choice, a started idea
+  const ideas = await filled(workspace());
+  ideas.d.next();
+  keep('idea', await served(ideas.d));
+  await ideas.d.doIt();
+  keep('started', await served(ideas.d));
+  const picks = await filled(workspace(), { choices: true });
+  picks.d.next();
+  keep('choice', await served(picks.d));
+  // a question with its own answers, then the scoreboard question with something else
+  const asked = desk(workspace());
+  asked.d.next();
+  keep('question', await served(asked.d));
+  const board = desk(workspace(), { scoreboard: true, questions: false, answered: true, readSaid: ASKS_BACK });
+  board.d.next();
+  const scoreQ = keep('question with something else', await served(board.d));
+  // a reply that asks its own question, then a reply that only explains
+  keep('reply that asks', await acted(board.d, { card_id: scoreQ.card.id, option_id: 'other', text: 'the overnight run' }));
+  const board2 = desk(workspace(), { scoreboard: true, questions: false, answered: true, readSaid: EXPLAINS });
+  board2.d.next();
+  const q2 = await served(board2.d);
+  keep('reply that explains', await acted(board2.d, { card_id: q2.card.id, option_id: 'other', text: 'what do you mean?' }));
+  // the weekly number
+  const weekly = desk(workspace(), { scoreboard: true, questions: false, answered: true });
+  weekly.d.next();
+  weekly.d.answer({ choice: 'other', text: 'paying schools' });
+  weekly.d.next();
+  keep('report', await served(weekly.d));
+  // the calm line
+  const calm = desk(workspace(), { answered: true });
+  calm.d.next();
+  keep('wait', await served(calm.d));
+  // a yes on a plain ask, and a yes on a held command
+  const root = workspace();
+  const jobs = jobDesk(root, threeAsks(root), TEAM_DEPS);
+  jobs.d.next();
+  const ask = keep('yes', await served(jobs.d));
+  keep('reply that needs a second tap', await acted(jobs.d, { card_id: ask.card.id, text: 'hold off until monday' }));
+  const lockRoot = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(lockRoot, 'm-child', { seal });
+  fs.mkdirSync(path.join(lockRoot, 'a'), { recursive: true });
+  fs.writeFileSync(path.join(lockRoot, 'a', 'package.json'), JSON.stringify({ name: 'alpha' }));
+  yesLock.check({ stateDir: lockRoot, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: lockRoot });
+  const held = jobDesk(lockRoot, {});
+  held.d.pollJobs();
+  held.d.next();
+  keep('yes on a held command', await served(held.d));
+  // a finished job
+  const doneRoot = workspace();
+  doingRow(path.join(doneRoot, 'gm-bets.jsonl'), doneRoot, 'b-ok', 'm-ok', 'Write the getting started page');
+  const fin = jobDesk(doneRoot, { 'm-ok': { id: 'm-ok', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } });
+  await fin.d.settle();
+  fin.d.next();
+  keep('done', await served(fin.d));
+  // the team, a member, a swap card and its full list, the job deck
+  const teamRoot = workspace();
+  const crew = jobDesk(teamRoot, threeAsks(teamRoot), TEAM_DEPS);
+  crew.d.next();
+  const under = await served(crew.d);
+  const t = keep('team', await acted(crew.d, { card_id: under.card.id, open: 'team' }));
+  const m = keep('member', await acted(crew.d, { card_id: t.card.id, option_id: 'talk:builder' }));
+  const back = await acted(crew.d, { card_id: m.card.id, option_id: 'back' });
+  const sw = keep('swap', await acted(crew.d, { card_id: back.card.id, option_id: 'swap:builder' }));
+  keep('swap with more models', await acted(crew.d, { card_id: sw.card.id, option_id: 'more' }));
+  const d1 = keep('deck with a yes', await acted(crew.d, { card_id: crew.d.state.served.id, open: 'deck' }));
+  assert.equal(d1.card.kind, 'deck');
+  const runRoot = workspace();
+  const running = jobDesk(runRoot, { 'm1': { id: 'm1', owner: 'builder', status: 'running', created_at: new Date(NOW - 60000).toISOString(), last_tick_at: new Date(NOW - 30000).toISOString(), objective: 'Write the try page.', human_asks: [] } }, { ...TEAM_DEPS, driverAlive: () => true });
+  keep('deck with no yes', await acted(running.d, { card_id: null, open: 'deck' }));
+  return cards;
+}
+
+test('card contract: every kind of card is whole: a way forward, options that answer its words, plain words, and a yes with yes, no, and not now bound to its request', async () => {
+  const cards = await everyCard();
+  const kinds = new Set(cards.map(c => c.card.kind));
+  for (const k of gmCard.KINDS) assert.ok(kinds.has(k), `no fixture reaches a ${k} card`);
+  const ids = new Set();
+  for (const c of cards) {
+    const show = `${c.name}: ${JSON.stringify(c.wire)}`;
+    assert.deepEqual(gmCard.cardProblems(c.card), [], show);
+    // the page gets the contract and nothing the desk keeps to itself
+    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch'].includes(k)), [], show);
+    for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell'].includes(k)), [], show);
+    assert.ok(c.wire.options.length > 0 || c.wire.input, show);
+    // every card served has its own id; more models is the one that keeps its card's
+    if (c.name !== 'swap with more models') assert.ok(!ids.has(c.wire.id), `${c.name} reuses the id ${c.wire.id}`);
+    ids.add(c.wire.id);
+  }
+  // the yes cards: yes binds the exact request it shows
+  const lock = cards.find(c => c.name === 'yes on a held command');
+  const yes = lock.wire.options.find(o => o.id === 'yes');
+  assert.equal(yes.binds.job, 'm-child');
+  assert.match(yes.binds.hash, /^[0-9a-f]{16}$/);
+  assert.equal(yes.confirm, 'tap again to say yes');
+  assert.deepEqual(lock.wire.options.map(o => o.label), ['yes', 'no', 'not now']);
+  // the reply that asks its own question shows only its answers, the box, and a way back
+  const asks = cards.find(c => c.name === 'reply that asks');
+  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the first question']);
+  assert.ok(asks.wire.input);
+  assert.equal(asks.wire.title, 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?');
+  assert.notEqual(asks.wire.id, cards.find(c => c.name === 'question with something else').wire.id, 'a reply is a new card');
+  // the reply that only explains keeps the question's own choices, once
+  const explains = cards.find(c => c.name === 'reply that explains');
+  const first = cards.find(c => c.name === 'question with something else').wire.options.map(o => o.label);
+  assert.deepEqual(explains.wire.options.map(o => o.label), first);
+  // the swap card: the list as it comes, picks first, more models last, and more is the same card with the full list
+  const sw = cards.find(c => c.name === 'swap');
+  const models = sw.wire.options.filter(o => o.action === 'swap_to' || o.chosen && o.style === 'choice');
+  assert.deepEqual(models.map(o => o.label), ['atris fast', 'm-one']);
+  assert.deepEqual(sw.wire.options.slice(-2).map(o => o.label), ['more models', 'back to the team']);
+  const all = cards.find(c => c.name === 'swap with more models');
+  assert.equal(all.wire.id, sw.wire.id, 'more models is the same card');
+  assert.deepEqual(all.wire.options.filter(o => o.style === 'choice').map(o => o.label), ['atris fast', 'm-one', 'm-two']);
+  assert.ok(!all.wire.options.some(o => o.label === 'more models'));
+});
+
+test('card contract: the checks catch a card with no way out, options for other words, a command in the words, and a yes that binds nothing', () => {
+  const base = gmCard.question({ id: 'q1', title: 'which number?', choices: [{ id: 'a1', label: 'installs' }] });
+  assert.deepEqual(gmCard.cardProblems(base), []);
+  assert.match(gmCard.cardProblems({ ...base, options: [], input: null }).join('\n'), /no way forward/);
+  const mixed = gmCard.reply({ id: 'q1~r1', base, text: 'does it help?', suggestions: ['yes'] });
+  assert.deepEqual(gmCard.cardProblems(mixed), []);
+  assert.match(gmCard.cardProblems({ ...mixed, options: [...mixed.options, ...base.options] }).join('\n'), /answers other words/);
+  assert.match(gmCard.cardProblems({ ...base, title: 'run npm publish --tag next' }).join('\n'), /command, flag, or path/);
+  const y = gmCard.yes({ id: 'y1', title: 'ok to publish?', body: 'builder is waiting.', request: { job: 'm1', key: 'm1:0', hash: null } });
+  assert.deepEqual(gmCard.cardProblems(y), []);
+  assert.match(gmCard.cardProblems({ ...y, options: y.options.map(o => (o.id === 'yes' ? { ...o, binds: { job: 'm2', key: 'm1:0' } } : o)) }).join('\n'), /does not bind/);
+  assert.match(gmCard.cardProblems({ ...y, options: y.options.filter(o => o.id !== 'no') }).join('\n'), /has no no/);
+  // a card that slips through is made safe before it is served
+  const fixed = gmCard.enforce({ ...base, title: 'edit lib/gm-bet.js', options: [], input: null });
+  assert.deepEqual(gmCard.cardProblems(fixed), []);
+  assert.deepEqual(gmCard.sequenceProblems([{ kind: 'yes' }, { kind: 'idea' }, { kind: 'yes' }]), []);
+  assert.equal(gmCard.sequenceProblems([{ kind: 'yes' }, { kind: 'yes' }]).length, 1);
+});
+
+test('card contract: at most one yes in a row over a run of taps, and the rest wait behind the need-you count', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const run = [];
+  let card = null;
+  for (let i = 0; i < 8; i += 1) {
+    const out = await h.d.act({ card_id: card ? card.id : null, orb: true });
+    card = out.body.card;
+    run.push({ kind: card.kind, needs: out.body.needs_you });
+  }
+  assert.deepEqual(gmCard.sequenceProblems(run), [], JSON.stringify(run));
+  assert.equal(run[0].kind, 'yes');
+  assert.equal(run[0].needs, 2);
+  assert.equal(run[1].kind, 'idea');
+});
+
+test('card contract: an action names the card on screen and an option on it, or nothing is done', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const first = (await h.d.act({ orb: true })).body.card;
+  assert.equal(first.title, 'a handed-off job wants to publish alpha to npm');
+  // an old card id, an option not on the card, and a yes without its second tap all do nothing
+  const old = await h.d.act({ card_id: 'question:focus', option_id: 'yes', confirm: true });
+  assert.deepEqual([old.status, old.body.reason, old.body.card.id], [409, 'gone', first.id]);
+  const odd = await h.d.act({ card_id: first.id, option_id: 'do', confirm: true });
+  assert.deepEqual([odd.status, odd.body.reason], [409, 'bad_option']);
+  const once = await h.d.act({ card_id: first.id, option_id: 'yes' });
+  assert.deepEqual([once.status, once.body.reason], [409, 'needs_confirm']);
+  assert.equal(yesLock.askedYesLocks(root, 'm-child').length, 2, 'nothing approved yet');
+  // the page sends no key: the yes is the one the card showed, by its hash, and only it
+  const said = await h.d.act({ card_id: first.id, option_id: 'yes', confirm: true, key: 'anything', job: 'else' });
+  assert.equal(said.status, 200);
+  assert.equal(said.body.ack, 'the handed-off job: got your yes');
+  assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
+  // the old card is gone now: acting on it again does nothing
+  assert.equal((await h.d.act({ card_id: first.id, option_id: 'no' })).body.reason, 'gone');
+});
+
+test('card contract: a reply is its own card, back brings the first question again, and a tapped answer on the reply is said', async () => {
+  const said = [];
+  const root = workspace();
+  const h = desk(root, { scoreboard: true, questions: false, answered: true, readSaid: async (o) => { said.push(o.text); return o.text === 'the overnight run' ? ASKS_BACK() : { ok: true, kind: 'answer', reply: '' }; } });
+  const q = (await h.d.act({ orb: true })).body.card;
+  assert.equal(q.id, 'question:scoreboard');
+  const r = (await h.d.act({ card_id: q.id, option_id: 'other', text: 'the overnight run' })).body.card;
+  assert.equal(r.kind, 'reply');
+  assert.ok(!r.options.some(o => q.options.some(x => x.label === o.label)), 'none of the first question\'s choices');
+  assert.deepEqual(r.thread, [{ who: 'owner', text: 'the overnight run' }]);
+  const again = (await h.d.act({ card_id: r.id, option_id: 'back' })).body.card;
+  assert.deepEqual([again.id, again.options.map(o => o.label)], [q.id, q.options.map(o => o.label)]);
+  // the reply's own answer is said on the first question, and saved as its answer
+  const r2 = (await h.d.act({ card_id: again.id, option_id: 'other', text: 'the overnight run' }));
+  assert.equal(r2.body.card.kind, 'reply');
+  const tapped = await h.d.act({ card_id: r2.body.card.id, option_id: 'r2' });
+  assert.equal(tapped.status, 200);
+  assert.equal(said[said.length - 1], 'it is helping');
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root).name, 'it is helping');
 });
