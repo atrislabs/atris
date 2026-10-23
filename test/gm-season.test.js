@@ -1414,3 +1414,29 @@ test('roster profiles read role from MEMBER.md and the exact engine model, ·· 
   assert.deepEqual(profiles.ghost, { role: null, engine: null });
   assert.deepEqual(profiles['../escape'], { role: null, engine: null });
 });
+
+test('roster profiles show the engine the runner would pick, so an ended lead shows its backup', () => {
+  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  const { memberRosterEngine } = require('../lib/member-engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-roster-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-home-'));
+  const previous = process.env.ATRIS_MACHINE_ROSTER_PATH;
+  process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: ships features\n---\n# Builder\n');
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '## build\n- claude, until 2026-10-01\n- codex\n');
+    readEngineRegistry(root);
+    for (const name of ['claude', 'codex']) setEngineHealth(name, 'ready', root);
+    const runner = memberRosterEngine('builder', root);
+    assert.equal(runner.engine.id, 'codex');
+    const profiles = season.rosterProfiles(root, ['builder']);
+    assert.equal(profiles.builder.role, 'ships features');
+    assert.match(profiles.builder.engine, /^codex\b/);
+  } finally {
+    if (previous === undefined) delete process.env.ATRIS_MACHINE_ROSTER_PATH;
+    else process.env.ATRIS_MACHINE_ROSTER_PATH = previous;
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
