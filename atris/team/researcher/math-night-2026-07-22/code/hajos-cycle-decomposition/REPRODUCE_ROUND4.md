@@ -1,4 +1,4 @@
-# Round 4 sweeps — Hajos cycle-decomposition conjecture
+# Round 4 sweeps: Hajos cycle-decomposition conjecture
 
 Conjecture: every simple connected Eulerian graph on n vertices decomposes
 into at most t = floor((n-1)/2) edge-disjoint cycles.
