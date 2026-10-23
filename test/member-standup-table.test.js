@@ -34,11 +34,15 @@ test('standup keeps the old boxes when the terminal is too narrow or output is p
   }
 });
 
-test('ratings are the board rating per member, null for rookies', () => {
+test('ratings are the board rating per member, null for rookies, missing for no plays', () => {
   const now = Date.now();
   const outcomes = [
     ...['landed', 'landed', 'landed', 'dropped'].map((kind, i) => ({ member: 'builder', kind, at: now - i * 1000 })),
     { member: 'scout', kind: 'landed', at: now },
   ];
-  assert.deepEqual(season.memberRatings(outcomes, ['builder', 'scout', 'ghost']), { builder: season.ovr(outcomes.slice(0, 4)), scout: null, ghost: null });
+  const rated = season.memberRatings(outcomes);
+  assert.ok(rated instanceof Map);
+  assert.equal(rated.get('builder').ovr, season.ovr(outcomes.slice(0, 4)));
+  assert.equal(rated.get('scout').ovr, null);
+  assert.equal(rated.has('ghost'), false);
 });

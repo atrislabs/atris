@@ -2253,6 +2253,36 @@ test('team table: every member with a few words of role, the board rating, the e
   for (const r of rows) assert.doesNotMatch(r.sentence, /[A-Z]/, 'the status sentence is lowercase');
 });
 
+// The orb's team table, the CLI board's table and the standup all rate
+// through one memberRatings. Two copies once collided in gm-season and the
+// later one, which returned a plain object, crashed the orb's team page.
+test('team table: the orb, the CLI board and the standup read the same ratings from gm-season', async () => {
+  const gmSeason = require('../lib/gm-season');
+  const { renderBoardLines } = require('../commands/gm');
+  const { memberStandupLines } = require('../commands/member');
+  assert.ok(gmSeason.memberRatings([]) instanceof Map, 'the orb reads ratings with .get');
+  const root = workspace();
+  addMember(root, 'validator', 'Reviewer');
+  readyEngines(root, 'claude', 'codex');
+  const season = { ...seasonOf({ builder: { landed: 4, dropped: 1 }, validator: { landed: 3, sent_back: 1 }, launcher: { landed: 2 } }), now: NOW };
+  const orb = Object.fromEntries(jobDesk(root, {}, { loadSeason: () => season }).d.teamTable().rows.map(r => [r.member, r.ovr]));
+  const board = gmSeason.seasonBoard(season);
+  const cli = Object.fromEntries(board.roster.map(r => [r.name, r.ovr]));
+  assert.deepEqual(cli, { builder: 91, validator: 89, launcher: null });
+  for (const [name, ovr] of Object.entries(cli)) assert.equal(orb[name], ovr == null ? 'new' : String(ovr), name);
+  // the drawn CLI table shows those same numbers
+  const text = renderBoardLines(board, { bordered: true, width: 160, profiles: {} }).join('\n');
+  assert.match(text, /│ builder +│ ·· +│ 91 +│/);
+  assert.match(text, /│ validator +│ ·· +│ 89 +│/);
+  // and the standup turns the same map into its ovr column
+  const rated = gmSeason.memberRatings(season.outcomes);
+  const ratings = Object.fromEntries(['builder', 'validator'].map(n => [n, rated.get(n).ovr]));
+  const standup = ['builder', 'validator'].map(member => ({ member, status: 'idle', latest_update: '-', next_push: '-' }));
+  const standupText = memberStandupLines(standup, { bordered: true, width: 120, ratings }).join('\n');
+  assert.match(standupText, /│ builder +│ ·· +│ 91 +│/);
+  assert.match(standupText, /│ validator +│ ·· +│ 89 +│/);
+});
+
 test('team table: no rating shows two dots, never a made-up number, and an unpinned model shows two dots too', async () => {
   const root = workspace();
   readyEngines(root, 'claude', 'codex');

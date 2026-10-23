@@ -11673,7 +11673,8 @@ function standupTableData(standup, root = process.cwd()) {
   let ratings = {};
   try {
     const played = season.loadSeason(require('../lib/task-db').workspaceRoot(path.resolve(root)));
-    ratings = season.memberRatings(played.outcomes || [], names);
+    const rated = season.memberRatings(played.outcomes || []);
+    ratings = Object.fromEntries(names.map((name) => [name, rated.has(name) ? rated.get(name).ovr : null]));
   } catch {}
   return { bordered: true, profiles: season.rosterProfiles(root, names), ratings };
 }
