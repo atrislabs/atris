@@ -1,4 +1,4 @@
-# {{name}} — Instructions
+# {{name}}: Instructions
 
 Standard processes and workflows.
 
