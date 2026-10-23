@@ -444,6 +444,63 @@ test('a note moved with git mv picks up upstream edits to its old path', () => {
   }
 });
 
+test('a live database inside a new folder stays put, and only the code around it is saved', () => {
+  const { base, checkout } = createRepo();
+  try {
+    write(checkout, 'data/app.db', 'live rows\n');
+    write(checkout, 'data/notes.txt', 'stray\n');
+    write(checkout, 'cache/only.db', 'live too\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /saved 1 stray edit to zen-backup\//);
+    assert.equal(fs.readFileSync(path.join(checkout, 'data/app.db'), 'utf8'), 'live rows\n');
+    assert.equal(fs.readFileSync(path.join(checkout, 'cache/only.db'), 'utf8'), 'live too\n');
+    assert.ok(!fs.existsSync(path.join(checkout, 'data/notes.txt')));
+    assert.equal(checkZen({ cwd: checkout, fetch: false }).zen, true);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen --all zens every listed repo and skips one with unsaved live data', () => {
+  const one = createRepo();
+  const two = createRepo();
+  try {
+    commit(one.seed, 'app.js', 'two\n', 'newer app');
+    git(one.seed, 'push', '-q');
+    write(two.checkout, 'data/app.db', 'live rows\n');
+    const list = path.join(one.base, 'zen.json');
+    fs.writeFileSync(list, JSON.stringify({ repos: [one.checkout, two.checkout] }));
+
+    const cli = run(process.execPath, [cliPath, 'zen', '--all'], one.base, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '0',
+      ATRIS_ZEN_FLEET_FILE: list,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /checkout\s+caught up 1 commit from origin\/master/);
+    assert.match(cli.stdout, /checkout\s+skipped, unsaved live data or secrets: data\/app\.db/);
+    assert.match(cli.stdout, /1 of 2 repos zen, 1 skipped for you to look at\./);
+    assert.equal(git(one.checkout, 'rev-parse', 'HEAD'), git(one.checkout, 'rev-parse', 'origin/master'));
+    assert.equal(fs.readFileSync(path.join(two.checkout, 'data/app.db'), 'utf8'), 'live rows\n');
+  } finally {
+    fs.rmSync(one.base, { recursive: true, force: true });
+    fs.rmSync(two.base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen --all with no repos says how to list them', () => {
+  const cli = run(process.execPath, [cliPath, 'zen', '--all'], os.tmpdir(), {
+    ...process.env,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ATRIS_ZEN_FLEET_FILE: path.join(os.tmpdir(), 'atris-zen-no-such-list.json'),
+  });
+  assert.equal(cli.status, 2, cli.stdout + cli.stderr);
+  assert.match(cli.stdout, /no repos listed/);
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
