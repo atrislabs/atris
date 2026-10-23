@@ -43,13 +43,6 @@ esac
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
 W="$ROOT/project"; SHIM="$ROOT/bin"; mkdir -p "$W" "$SHIM"
 
-# Engines that run under a temp HOME still need the real login keychain, or
-# macOS pops a "keychain cannot be found" dialog on every run. Link only the
-# keychain folder in; no instruction or config files come with it.
-for h in "$ROOT/home" "$ROOT/agy-home"; do
-  mkdir -p "$h/Library"; ln -s "$HOME/Library/Keychains" "$h/Library/Keychains"
-done
-
 # The project's own hooks call `atris`; make that this repo's code, not the
 # copy installed on this machine.
 printf '#!/bin/sh\nexec node "%s/bin/atris.js" "$@"\n' "$REPO" > "$SHIM/atris"
@@ -187,7 +180,7 @@ const meta = {
     writes: "--always-approve inside a custom sandbox profile: grok workspace with /tmp denied. Writes land in the workdir, the temp grok home, and the per-user system temp dir; home and /tmp fail. Denying the system temp dir stops grok from starting",
     stdin: "/dev/null, so grok never waits on input",
     atris_binary: "project hooks resolve atris to this repo via a PATH shim",
-    keychain: "the temp HOME links only ~/Library/Keychains, so the real login keychain resolves and macOS shows no keychain dialog",
+    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: grok inspect with the temp homes listed 0 user skills, plugins, MCP servers, and hooks (the real home gives 141 skills and the user CLAUDE.md). Without the trust entry no project rules load at all; with it, a probe run named only the project Agents.md and Claude.md and quoted the Acceleration line verbatim. touch in the real home and /tmp failed with Operation not permitted, touch ./ worked",
   } : e.ENGINE === "agy" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
@@ -199,7 +192,7 @@ const meta = {
     prompt_prefix: "one line asking it to apply edits without asking first, since agy otherwise stops to ask and exits without editing",
     stdin: "/dev/null, so agy never waits on input",
     atris_binary: "project hooks resolve atris to this repo via a PATH shim",
-    keychain: "the temp HOME links only ~/Library/Keychains, so the real login keychain resolves and macOS shows no keychain dialog",
+    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: probe run in a temp HOME named only the project rule file and the two built-in skills; with --sandbox, touch in the real home and touch ./ both failed and an edit-tool change inside the project landed. Without --sandbox, touch in the real home succeeded, which is why the sandbox is on",
   } : e.ENGINE === "codex" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
@@ -210,7 +203,7 @@ const meta = {
     writes: "--sandbox workspace-write with approval_policy never; shell writes outside the project fail",
     stdin: "/dev/null, so codex never waits on input",
     atris_binary: "project hooks resolve atris to this repo via a PATH shim",
-    keychain: "the temp HOME links only ~/Library/Keychains, so the real login keychain resolves and macOS shows no keychain dialog",
+    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
     probe: "2026-10-23: probe run named only the project AGENTS.md and the four built-in codex skills; touch in the real home failed with Operation not permitted, touch ./ worked. Without the temp HOME it also listed ~/.agents/skills, which is why HOME is replaced",
   } : {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
@@ -220,6 +213,7 @@ const meta = {
     auth: "ANTHROPIC_API_KEY unset, so the run uses the subscription login",
     writes: "sandbox on with unsandboxed commands refused; shell writes outside the project fail, and file edits outside it are not auto-approved",
     atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    keychain: "claude runs under the real HOME and reads its own subscription login from the login keychain, as it always does; isolation is by the flags above, not by a temp HOME. No keychain is linked into any temp dir",
     probe: "2026-10-23: probe run named only the project CLAUDE.md as loaded and no user-level rules; touch $HOME and Write to $HOME both failed, touch ./ worked",
   },
   prompt: e.PROMPT, timeout_seconds: Number(e.CAP), timed_out: Number(e.SECS) >= Number(e.CAP),
