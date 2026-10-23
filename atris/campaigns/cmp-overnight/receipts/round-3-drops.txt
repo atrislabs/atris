@@ -1,0 +1,4 @@
+DROP test/card--mut-L50-7.test.js: Duplicates the custom brand footer coverage in test/card-command.test.js.
+DROP test/radar-cmd--mut-L164-7.test.js: Pins an internal filesystem probe count; the break only repeats root checks within an existing eight-iteration limit.
+DROP test/card--mut-L50-7.test.js: Duplicates the custom brand footer coverage in test/card-command.test.js.
+DROP test/radar-cmd--mut-L164-7.test.js: Pins an internal filesystem probe count; the break only repeats root checks within an existing eight-iteration limit.
