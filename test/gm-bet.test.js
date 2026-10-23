@@ -2720,6 +2720,7 @@ test('a held handed-off command shows on its parent job when there is one', asyn
 // work and its check live, and the desk still sees it there.
 test('do it starts the mission in its own worktree', async () => {
   const root = workspace();
+  require('child_process').execFileSync('git', ['init', '-q', '-b', 'master'], { cwd: root });
   const h = jobDesk(root, { 'm-new': { id: 'm-new', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
   h.d.warm();
   for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
@@ -2727,6 +2728,20 @@ test('do it starts the mission in its own worktree', async () => {
   await h.d.doIt();
   const start = h.cli.find(a => a[1] === 'start');
   assert.ok(start.includes('--worktree'), start.join(' '));
+});
+
+// Codex review round 9 on #1483: a folder with no git has no master to
+// protect and no worktree to make, so the job runs in place as before.
+test('do it outside a git checkout starts the mission in place', async () => {
+  const root = workspace();
+  const h = jobDesk(root, { 'm-new': { id: 'm-new', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  h.d.next();
+  await h.d.doIt();
+  const start = h.cli.find(a => a[1] === 'start');
+  assert.ok(start, 'the mission started');
+  assert.equal(start.includes('--worktree'), false, start.join(' '));
 });
 
 test('the desk reads missions that live in a worktree', () => {
