@@ -143,7 +143,7 @@ function printApply(result, out) {
   }
   line(dim(`  ${teamLine(result.team_files)}`));
   if (result.saved.length) {
-    line(dim('  everything is kept: git for-each-ref refs/archive refs/heads/zen-backup'));
+    line(dim('  nothing was thrown away. see what zen saved:   git for-each-ref refs/archive refs/heads/zen-backup'));
   }
   line('');
 }
