@@ -778,7 +778,7 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--proof',
   '--base',
   '--yes-lock',
-  '--yes-lock-from',
+  '--yes-lock-parent',
 ];
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [
@@ -1003,7 +1003,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
   pushFlagValue(startArgs, args, '--yes-lock');
-  pushFlagValue(startArgs, args, '--yes-lock-from');
+  pushFlagValue(startArgs, args, '--yes-lock-parent');
   // Member runs choose and drive work immediately, so an absent check must not
   // leave autonomous callers with a mission that never ran. A check inferred
   // from the mission text counts as named.
@@ -1366,7 +1366,7 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   const missionWordIndices = missionText && !hasMissionOverride ? new Set(memberRunMissionWordIndices(args)) : new Set();
   const executionArgs = args.filter((_, index) => !missionWordIndices.has(index));
   const runArgs = stripKnownFlags(executionArgs,
-    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base', '--yes-lock', '--yes-lock-from'],
+    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base', '--yes-lock', '--yes-lock-parent'],
     ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto', '--ignite', '--wait', '--sync']);
   if (ignite && !hasFlag(runArgs, '--complete-on-pass')) runArgs.push('--complete-on-pass');
   if (memberRunWantsReferee(runArgs, ignite)) runArgs.push('--referee');
@@ -11330,7 +11330,7 @@ const HANDOFF_WAKE_SCRUB_ENV = [
 // Start the receiver of a handoff on the handed-off step: the same bounded
 // work step `atris member wake <name>` runs (member run, 15 minutes), but
 // detached, so the member handing off is not held while the next one works.
-function startHandoffReceiver(root, to, step, yesLock = null) {
+function startHandoffReceiver(root, to, step, parentMissionId = null) {
   const env = { ...process.env, ATRIS_CALLER_RUNTIME: 'terminal' };
   for (const name of HANDOFF_WAKE_SCRUB_ENV) delete env[name];
   // The handing-off mission's git guard (a temp folder of wrappers first on
@@ -11338,11 +11338,11 @@ function startHandoffReceiver(root, to, step, yesLock = null) {
   env.PATH = String(env.PATH || '').split(path.delimiter)
     .filter((dir) => !path.basename(dir).startsWith(require('../lib/mission-protected-lane').GUARD_DIR_PREFIX))
     .join(path.delimiter);
-  // The lock does not leave with the guard: the woken run is bound to the
-  // handing-off mission's yes-lock and sets up the same guard each tick.
-  const lockArgs = yesLock
-    ? ['--yes-lock', JSON.stringify(yesLock.seal), ...(yesLock.missionId ? ['--yes-lock-from', yesLock.missionId] : [])]
-    : [];
+  // Every woken run is under the fixed handoff seal, whatever handed off:
+  // outward commands and merging to master wait for the owner's yes. The
+  // parent only says where its yes cards show.
+  const lockArgs = ['--yes-lock', JSON.stringify(require('../lib/yes-lock').handoffSeal()),
+    ...(parentMissionId ? ['--yes-lock-parent', parentMissionId] : [])];
   const res = require('child_process').spawnSync(process.execPath, [
     path.join(__dirname, '..', 'bin', 'atris.js'),
     'member', 'run', to, step, '--minutes', '15', '--no-verify', ...lockArgs, '--detach', '--json',
@@ -11375,124 +11375,38 @@ function wakeOnHandoff(handoff, root, args) {
     };
   }
   const { wakeHandoffReceiver, withWakeReservation } = require('../lib/handoff-wake');
-  const resolved = handoffYesLock(handoff, root);
-  // locked: bound to the parent's lock; deny_all: its own lock on everything
-  const yesLock = resolved.kind === 'locked'
-    ? resolved.lock
-    : resolved.kind === 'merged'
-      ? { missionId: null, seal: resolved.seal }
-      : resolved.kind === 'deny_all' ? { missionId: null, seal: require('../lib/yes-lock').orphanSeal() } : null;
+  const parent = handoffParentMission(handoff, root);
   const outcome = wakeHandoffReceiver(handoff, {
     listMembers: () => memberUpTeam(root),
     awake: (name) => {
       try { return require('../lib/member-switches').isMemberAwake(name, root); } catch { return true; }
     },
     engine: (name) => require('../lib/member-engine').memberRosterEngine(name, root),
-    start: (name, step) => startHandoffReceiver(root, name, step, yesLock),
+    start: (name, step) => startHandoffReceiver(root, name, step, parent),
     reserve: (fn) => withWakeReservation(path.join(root, '.atris', 'state'), fn),
   });
-  if (outcome.status !== 'started') return outcome;
-  if (resolved.kind === 'locked') return { ...outcome, yes_lock: 'parent', yes_lock_from: yesLock.missionId };
-  if (resolved.kind === 'merged') return { ...outcome, yes_lock: 'merged', yes_lock_parents: resolved.parents };
-  if (resolved.kind === 'deny_all') {
-    return { ...outcome, yes_lock: 'deny_all', yes_lock_why: resolved.why, text: `${outcome.text}; it is locked from publishing, merging, posting and sending because ${resolved.why}` };
-  }
-  return { ...outcome, yes_lock: 'none', yes_lock_parents: resolved.parents };
+  return outcome.status === 'started' ? { ...outcome, yes_lock: 'handoff', yes_lock_parent: parent } : outcome;
 }
 
-// A mission is finished when nothing it holds can be asked for again.
-const FINISHED_MISSION_STATUSES = new Set(['complete', 'completed', 'stopped', 'archived', 'superseded', 'closed', 'cancelled', 'canceled', 'abandoned', 'done']);
-
-// The yes-lock a handoff passes on: the strictest combination of every lock
-// that could apply. Every member started by a handoff runs locked unless all
-// of its possible parents are proven unlocked (their mission records are
-// readable and were started without --yes-lock). Every source is looked at,
-// always:
-//   - the mission guard this command runs under (a handoff from inside a
-//     mission tick) names its mission and whether it is locked;
-//   - the jobs the step names: a mission id, or a [bet-...] tag found through
-//     its lock record (any status);
-//   - with no guard, the jobs of the member handing off that are not finished
-//     (running, ready, paused, and the rest).
-// Any source that cannot be resolved (a guard record or lock record that
-// cannot be read, a name not on file, no job found at all) means the
-// deny-all seal. One lock: bind to it, so the owner's yes on the parent
-// opens it. More than one: their union on the woken run's own record.
-// Returns { kind: 'locked', lock } | { kind: 'merged', seal } |
-// { kind: 'unlocked', parents } | { kind: 'deny_all', why }.
-function handoffYesLock(handoff, root) {
-  const yesLock = require('../lib/yes-lock');
-  const stateDir = path.join(require('../lib/state-home').atrisHome(), 'state');
-  const missions = Array.from(memberRunMissionMap(root).values()).filter((m) => m && m.id);
-  const byId = new Map(missions.map((m) => [m.id, m]));
-  const sealOf = (mission) => (Array.isArray(mission?.yes_locks?.steps) ? mission.yes_locks.steps : []);
-  const locks = new Map();
-  const unlocked = new Set();
-  const unknown = [];
-  const addLock = (id, seal) => { if (id && !locks.has(id)) locks.set(id, seal); };
-  const addMission = (mission) => {
-    if (sealOf(mission).length) addLock(mission.yes_lock_from || mission.id, sealOf(mission));
-    else unlocked.add(mission.id);
-  };
-
-  const guard = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
-  if (guard && guard.unknown) unknown.push('the job this handoff came from has a guard whose record could not be read');
-  else if (guard && guard.unlocked) unlocked.add(guard.missionId);
-  else if (guard) addLock(guard.missionId, guard.seal);
-
-  const summary = String(handoff.summary || '');
-  const namedIds = Array.from(new Set(summary.match(/mission-\d{4}-\d{2}-\d{2}-[A-Za-z0-9-]+/g) || []));
-  const betIds = Array.from(new Set(Array.from(summary.matchAll(/\[(bet-[A-Za-z0-9._-]+)\]/g)).map((m) => m[1])));
-  for (const id of namedIds) {
-    const mission = byId.get(id);
-    if (mission) addMission(mission);
-    else unknown.push(`the step names ${id}, which is not on file`);
+// The job a handoff came from, only to show the woken run's yes cards on it:
+// the mission whose guard this command runs under (a handoff from inside a
+// mission tick), else the job a [bet-...] tag in the step names. null when
+// neither is found; what the woken run holds never depends on it.
+function handoffParentMission(handoff, root) {
+  const fromGuard = require('../lib/mission-protected-lane').guardMissionOnPath(process.env.PATH);
+  if (fromGuard) return fromGuard;
+  const bets = Array.from(String(handoff.summary || '').matchAll(/\[(bet-[A-Za-z0-9._-]+)\]/g)).map((m) => m[1]);
+  if (!bets.length) return null;
+  const dir = path.join(require('../lib/state-home').atrisHome(), 'state', 'yes-locks');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch {}
+  for (const name of files) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      if (data && data.mission_id && bets.includes(data.bet_id)) return String(data.mission_id);
+    } catch {}
   }
-  if (betIds.length) {
-    let files = [];
-    try { files = fs.readdirSync(path.join(stateDir, 'yes-locks')).filter((f) => f.endsWith('.json')); } catch {}
-    const seen = new Set();
-    let unreadable = false;
-    for (const name of files) {
-      let data = null;
-      try { data = JSON.parse(fs.readFileSync(path.join(stateDir, 'yes-locks', name), 'utf8')); } catch { unreadable = true; continue; }
-      if (!data || !betIds.includes(data.bet_id) || !data.mission_id) continue;
-      seen.add(data.bet_id);
-      const rows = Array.isArray(data.locks) ? data.locks : [];
-      const mission = byId.get(data.mission_id);
-      if (mission) addMission(mission);
-      if (rows.length && !(mission && sealOf(mission).length)) {
-        addLock(data.mission_id, rows.map((l) => ({ step: l.step, text: l.text, categories: l.categories })));
-      } else if (!rows.length && !mission) {
-        unknown.push(`the job for ${data.bet_id} is not on file`);
-      }
-    }
-    for (const bet of betIds) {
-      if (!seen.has(bet)) unknown.push(unreadable ? `the lock record for ${bet} could not be read` : `nothing on file belongs to ${bet}`);
-    }
-  }
-  if (!guard) {
-    let open = 0;
-    for (const mission of memberOwnedMissions(handoff.from, byId)) {
-      if (FINISHED_MISSION_STATUSES.has(String(mission.status || '').toLowerCase())) continue;
-      open += 1;
-      addMission(mission);
-    }
-    if (!open && !namedIds.length && !betIds.length) unknown.push(`${handoff.from} has no open job on file`);
-  }
-
-  if (unknown.length) return { kind: 'deny_all', why: unknown[0] };
-  if (!locks.size) return { kind: 'unlocked', parents: Array.from(unlocked) };
-  if (locks.size === 1) {
-    const [[missionId, seal]] = Array.from(locks.entries());
-    return { kind: 'locked', lock: { missionId, seal } };
-  }
-  const union = yesLock.unionSeals(Array.from(locks.values()));
-  if (yesLock.ORPHAN_SEAL_TEXT === (union[0] && union[0].text)) return { kind: 'deny_all', why: 'one of the jobs it belongs to is locked to everything' };
-  // Bound to the woken run's own record, so it is always the merged step
-  // (even when the seals match), which the phone shows as a yes card.
-  const categories = [...new Set(union.flatMap((step) => step.categories || []))].sort();
-  return { kind: 'merged', seal: [{ step: 1, text: yesLock.MERGED_SEAL_TEXT, categories }], parents: Array.from(locks.keys()) };
+  return null;
 }
 
 function memberHandoff(from, to, ...args) {
@@ -11527,7 +11441,8 @@ function memberHandoff(from, to, ...args) {
     return null;
   }
   const parentRoot = resolveMemberWorkspaceRoot(root);
-  const wake = { ...wakeOnHandoff(recorded, parentRoot, args), at: new Date().toISOString() };
+  // the stored summary is cut at 180 characters; the wake gets the whole step
+  const wake = { ...wakeOnHandoff({ ...recorded, summary }, parentRoot, args), at: new Date().toISOString() };
   const handoff = updateMemberHandoff(recorded.id, { wake }, parentRoot) || { ...recorded, wake };
   const lines = [
     `Handoff recorded: ${handoff.from} -> ${handoff.to}`,

@@ -3262,7 +3262,7 @@ function missionFromArgs(args) {
     '--task',
     '--ask',
     '--yes-lock',
-    '--yes-lock-from',
+    '--yes-lock-parent',
     '--campaign',
     '--reserve',
     '--mission-id',
@@ -3307,7 +3307,7 @@ function missionFromArgs(args) {
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
   const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
-  const yesLockFrom = yesLocks.length ? String(readFlag(args, '--yes-lock-from', '') || '').trim() : '';
+  const yesLockParent = yesLocks.length ? String(readFlag(args, '--yes-lock-parent', '') || '').trim() : '';
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -3346,7 +3346,9 @@ function missionFromArgs(args) {
     human_asks: humanAsks,
     // the sealed owner steps: the guard holds what each locks until the owner says yes
     ...(yesLocks.length ? { yes_locks: { steps: yesLocks, sealed_at: stampIso() } } : {}),
-    ...(yesLockFrom ? { yes_lock_from: yesLockFrom } : {}),
+    // a run woken by a handoff: the job it came from, only to show its yes
+    // cards there (lib/yes-lock.js handoffYesCards)
+    ...(yesLockParent ? { yes_lock_parent: yesLockParent } : {}),
     ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
@@ -3368,17 +3370,6 @@ function missionFromArgs(args) {
 // --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
 // steps a job may not do before the owner says yes. Bad input stops the start.
 const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
-// The lock a mission's guard enforces: its own, or, for a member woken by a
-// handoff, the handing-off mission's (yes_lock_from). Binding to that id
-// means the owner's yes on the parent job opens the step for both, and a
-// held command shows up as a yes card on the parent job.
-function missionYesLockGuard(mission) {
-  return {
-    missionId: (mission && mission.yes_lock_from) || (mission && mission.id),
-    yesLockSeal: (mission && mission.yes_locks && mission.yes_locks.steps) || [],
-  };
-}
-
 function readYesLockSeal(raw, asJson) {
   if (!raw) return [];
   let list;
@@ -4572,13 +4563,12 @@ function normalizedObjective(text) {
 }
 
 // True when `existing` runs under the lock `wanted` carries: the start
-// carries none, or the same seal bound to the same parent.
+// carries none, or the same seal.
 function lockCovered(existing, wanted) {
   const want = (wanted && wanted.yes_locks && wanted.yes_locks.steps) || [];
   if (!want.length) return true;
   const have = (existing && existing.yes_locks && existing.yes_locks.steps) || [];
-  return JSON.stringify(have) === JSON.stringify(want)
-    && ((existing && existing.yes_lock_from) || null) === ((wanted && wanted.yes_lock_from) || null);
+  return JSON.stringify(have) === JSON.stringify(want);
 }
 
 function findActiveTwinMission(objective, owner, root = process.cwd()) {
@@ -4634,20 +4624,10 @@ function startMission(args, options = {}) {
     }
     exitMissingMission(idLikeObjective, 1, asJson);
   }
-  // A start that carries a yes-lock never reuses a twin under a weaker lock
-  // (or none): the reused job would run without it. It gets a fresh job
-  // under the union of both locks instead. (Codex review rounds 3 and 4.)
+  // A start that carries a yes-lock never reuses a twin under a different
+  // lock (or none): the reused job would run without it. It gets a fresh
+  // job under the lock instead. (Codex review rounds 3 and 4 on #1483.)
   const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
-  if (twinCandidate && !lockCovered(twinCandidate, mission)) {
-    const twinSeal = (twinCandidate.yes_locks && twinCandidate.yes_locks.steps) || [];
-    if (twinSeal.length) {
-      const union = require('../lib/yes-lock').unionSeals([twinSeal, mission.yes_locks.steps]);
-      if (JSON.stringify(union) !== JSON.stringify(mission.yes_locks.steps)) {
-        mission.yes_locks = { ...mission.yes_locks, steps: union };
-        delete mission.yes_lock_from;
-      }
-    }
-  }
   if (twinCandidate && lockCovered(twinCandidate, mission)) {
     const twin = twinCandidate;
     const requestedDestination = mission.drive?.destination || '';
@@ -4822,6 +4802,13 @@ function startMission(args, options = {}) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
+  if (saved.yes_lock_parent && saved.yes_locks && saved.yes_locks.steps) {
+    // the lock record names the job it came from, before any command is held
+    try {
+      require('../lib/yes-lock').writeYesLocks(path.join(require('../lib/state-home').atrisHome(), 'state'), saved.id,
+        { seal: saved.yes_locks.steps, parentMissionId: saved.yes_lock_parent });
+    } catch {}
+  }
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
   const payload = {
@@ -9563,7 +9550,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9748,7 +9735,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -10576,7 +10563,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,

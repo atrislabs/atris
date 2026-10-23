@@ -1667,23 +1667,46 @@ test('merged changes: one per first-parent commit, merges named by their pull re
   });
 });
 
-// Codex review round 2 on #1483: a handed-off run whose job could not be
-// found runs locked to everything; what it was held from is a plain yes card.
-test('yes card for a held handed-off job that nothing could be traced to', async () => {
+// Codex review round 5 on #1483: a run woken by a handoff always runs under
+// the fixed handoff seal. A held command is a yes card: on the parent job
+// when the handoff found one, else on its own. A yes lets that one command
+// run once.
+test('a held handed-off command is a yes card on its own when it has no parent', async () => {
   const root = workspace();
   const yesLock = require('../lib/yes-lock');
-  const seal = yesLock.orphanSeal();
-  const held = yesLock.check({ stateDir: root, missionId: 'm-orphan', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: null });
+  const held = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
   assert.equal(held.hold, true);
-  assert.match(held.message, /^held: a handed-off job wants to gh pr merge 5; nothing it belongs to could be found\./);
+  assert.match(held.message, /^held: a handed-off job wants to gh pr merge 5\./);
   const h = jobDesk(root, {});
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.ask, card.job.command], ['yes', 'a handed-off job wants to gh pr merge 5; nothing it belongs to could be found', 'gh pr merge 5']);
+  assert.deepEqual([card.kind, card.job.title, card.job.ask, card.job.command], ['yes', 'a handed-off job', 'a handed-off job wants to gh pr merge 5', 'gh pr merge 5']);
   const yes = await h.d.answerYes();
   assert.equal(yes.ok, true);
-  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-orphan']);
-  assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-orphan', seal, tool: 'gh', args: ['pr', 'merge', '5'] }).consume, [1], 'the yes lets that one command run once');
+  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-child']);
+  // the yes lets that one command run, once
+  const once = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
+  assert.equal(once.consume.length, 1);
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] }).hold, true, 'not a different command');
+  yesLock.consume(root, 'm-child', seal, once.consume, { ok: true, claims: once.claims });
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] }).hold, true, 'not twice');
+});
+
+test('a held handed-off command shows on its parent job when there is one', async () => {
+  const root = workspace();
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm-parent', 'Launch the try page');
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: 'm-parent' });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] });
+  const h = jobDesk(root, { 'm-parent': { id: 'm-parent', owner: 'builder', status: 'running', human_asks: [] } });
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.title, card.job.ask], ['yes', 'Launch the try page', 'a handed-off job wants to npm publish']);
+  await h.d.answerYes();
+  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-child'], 'the yes goes to the run that was held');
 });
 
 // Codex review round 4 on #1483: mission #266 ("do it" on the phone) ran in
