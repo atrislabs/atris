@@ -685,10 +685,6 @@ function taskBinding(source, scope = null) {
   return { task_source: source, task_scope: scope };
 }
 
-function taskBindingForProjection(task) {
-  return task ? taskBinding('repo_task_projection', 'repo') : taskBinding(null, null);
-}
-
 function taskSourceLabel(sources = []) {
   if (sources.includes('member_loop_lock')) return 'member loop lock';
   if (sources.includes('mission_lock')) return 'mission lock';
