@@ -4,6 +4,7 @@
 //   atris idea "<sentence>" [--repo <path>] [--verify "<cmd>"]   save one idea
 //   atris idea [--repo <path>] [--json]                          list ideas
 //   atris idea retry <n> [--repo <path>]                         put one back in line
+//   atris idea tick [--repo <path>] [--max-minutes <n>]          build the oldest waiting idea
 
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -17,13 +18,14 @@ const {
   updateIdea,
 } = require('../lib/idea-inbox');
 
-const VALUE_FLAGS = new Set(['--repo', '--verify']);
+const VALUE_FLAGS = new Set(['--repo', '--verify', '--max-minutes']);
 
 function ideaUsage() {
   return [
     'Usage: atris idea "<sentence>" [--repo <path>] [--verify "<cmd>"]',
     '       atris idea [--repo <path>] [--json]',
-    '       atris idea retry <n> [--repo <path>]',
+    '       atris idea retry <n> [--repo <path>] [--verify "<cmd>"]',
+    '       atris idea tick [--repo <path>] [--max-minutes <n>]',
   ].join('\n');
 }
 
@@ -114,7 +116,7 @@ function saveIdea(sentence, { repo, verify, json, log }) {
   return 0;
 }
 
-function retryIdea(ref, { repo, json, log }) {
+function retryIdea(ref, { repo, verify = '', json, log }) {
   const idea = findIdea(readIdeas(repo), ref);
   if (!idea) {
     log(`no idea ${ref || '(missing number)'} here. see the list: atris idea`);
@@ -129,7 +131,7 @@ function retryIdea(ref, { repo, json, log }) {
     log(`idea ${idea.n} still ${refusal.replace(/, needs owner$/, '')}. it needs you, not a retry.`);
     return 2;
   }
-  const next = updateIdea(repo, idea.id, { status: 'waiting', reason: '', attempts: 0 });
+  const next = updateIdea(repo, idea.id, { status: 'waiting', reason: '', attempts: 0, ...(verify ? { verify } : {}) });
   if (json) log(JSON.stringify({ schema: 'atris.idea.v1', ok: true, repo, idea: ideaJson(next) }, null, 2));
   else log(`idea ${next.n} is back in line.`);
   return 0;
@@ -146,7 +148,19 @@ function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = co
   const json = flags.json === true;
   const verb = words[0];
 
-  if (verb === 'retry' && words.length <= 2) return retryIdea(words[1], { repo, json, log });
+  if (verb === 'retry' && words.length <= 2) return retryIdea(words[1], { repo, verify: flags.verify || '', json, log });
+  if (verb === 'tick' && words.length === 1) {
+    const minutes = Number(flags['max-minutes']);
+    const { runIdeaTick, DEFAULT_BUILD_SECONDS } = require('../lib/idea-tick');
+    return runIdeaTick({
+      root: repo,
+      log: json ? () => {} : log,
+      maxSeconds: Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes * 60) : DEFAULT_BUILD_SECONDS,
+    }).then((outcome) => {
+      if (json) log(JSON.stringify({ schema: 'atris.idea_tick.v1', repo, ...outcome }, null, 2));
+      return 0;
+    });
+  }
   if (verb === 'list' && words.length === 1) words.length = 0;
 
   const sentence = words.join(' ').trim();
