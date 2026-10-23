@@ -1,0 +1,35 @@
+DROP test/functional-owner--mut-L199-1.test.js: it compares the whole result object, including the full wording of the remap message and an unrelated proposed member. The line under test only decides whether a remap reason is present, so a plain rewording of that message would break this test.
+DROP test/mission-room--mut-L657-7.test.js: it copies all five timeline items word for word. Any edit to that copy breaks the test, when all it needs to check is that the landing carries the room's timeline items.
+DROP test/mission-room--mut-L678-7.test.js: the break does no harm in practice, because the approval packet always holds approve, revise and stop. The test only fails because it checks that the chat gate shares the same array object and then mutates it, and no code relies on that.
+DROP test/receipt-block--mut-L81-7.test.js: it repeats the existing test/receipt-block--mut-L77-4.test.js, which already checks that a tick count of 2 shows "2 ticks" and fails under this break.
+DROP test/receipt-block--mut-L83-0.test.js: it is the same check as the existing L77-4 test, a tick count of 2 showing "2 ticks".
+DROP test/scorecard--mut-L50-7.test.js: it compares the full scorecard output and swaps out the global Date to hold the clock still, only to pin the hours and end date. The time-label parsing it targets is already covered by the L57-0 and L58-6 tests.
+DROP test/scorecard--mut-L93-5.test.js: it compares the full scorecard output under a mocked clock. Counting logs from the start day is already caught by the L147-1, L57-0 and L58-6 tests, whose logs all sit on the picked day.
+DROP test/slides-deck--mut-L462-11.test.js: it locks in the exact width of 180 points. Any margin tweak would break it, when the real point is that the value box stays inside its panel.
+DROP test/slides-deck--mut-L506-11.test.js: it locks in the exact width of 592 points. The real point is that the quote box fits on the slide with even margins.
+DROP test/state-detection--mut-L211-1.test.js: it repeats the L210 test. Both set up the same certified task waiting for review, and each one catches both breaks.
+DROP test/task-receipt--mut-L43-7.test.js: it repeats the L39 test, since both breaks turn the file name into the generic "task". It also rebuilds the whole receipt path, which ties it to the file name format.
+DROP test/taste-lessons--mut-L43-6.test.js: it repeats the L42 test, which already checks that a lesson with a bad verdict is left out. Each of the two tests catches both breaks.
+DROP test/team-lineup--mut-L49-7.test.js: it repeats the L49-6 test. Both check that the error message comes back without the error type in front, and each catches both breaks.
+DROP test/todo--mut-L64-0.test.js: the L64-7 test already covers it. That test checks done and failed tasks, and it catches this break too.
+DROP test/usage--mut-L71-2.test.js: the break only matters for an entry stamped at the exact millisecond of the cutoff. Nobody relies on that in practice.
+DROP test/voice-card--mut-L216-7.test.js: it compares the whole written settings file, including the exact hook command string, when all it needs to check is that the supplied permissions survive; rewording the hook command would break it for no reason.
+DROP test/who-cmd--mut-L95-7.test.js: it compares the full rendered `who` text and the exact lsof arguments, which any wording change would break; it also tests the same thing as who-cmd--mut-L97-6 (a process whose lsof working directory is inside the workspace shows up), and that test also fails under this break.
+DROP test/x-post-check--mut-L250-11.test.js: it tests the same thing as x-post-check--mut-L243-7 (reordered words match by overlap), and that test also fails under this break (a 3-word answer never reaches index 4), while this one asserts less.
+DROP test/zen-apply--mut-L463-7.test.js: the empty-patch case only happens with a stub external diff tool that prints nothing, and the break only adds an extra message in that setup, so it is harmless in practice.
+DROP test/zen-apply--mut-L48-7.test.js: it never sets HOME, so the code under test runs git with the real home git config and reads the real ~/Library/LaunchAgents.
+DROP test/improve-vitals-html--mut-L53-7.test.js: Duplicates dissolved-loop rendering coverage in test/improve-vitals-html--mut-L161-0.test.js.
+DROP test/scorecard--mut-L57-0.test.js: Uses the real clock to include its fixed journal date, so the result depends on when it runs.
+DROP test/search-cmd--mut-L83-7.test.js: Pins internal term ordering; matching uses terms.some(), so this order does not affect search results.
+DROP test/site--mut-L67-7.test.js: Duplicates test/site-command.test.js coverage that verifies files appear in the requested output directory.
+DROP test/slides-deck--mut-L608-10.test.js: Pins an incidental bullet coordinate; moving the dot two points does not break meaningful behavior.
+DROP test/todo--mut-L35-7.test.js: Duplicates metadata-stage preservation coverage in test/todo--mut-L21-0.test.js.
+DROP test/try-repo--mut-L401-5.test.js: Enforces an inconsequential one-millisecond rate-limit boundary.
+DROP test/improve-vitals-html--mut-L53-7.test.js: Duplicates dissolved-loop rendering coverage in test/improve-vitals-html--mut-L161-0.test.js.
+DROP test/scorecard--mut-L57-0.test.js: Uses the real clock to include its fixed journal date, so the result depends on when it runs.
+DROP test/search-cmd--mut-L83-7.test.js: Pins internal term ordering; matching uses terms.some(), so this order does not affect search results.
+DROP test/site--mut-L67-7.test.js: Duplicates test/site-command.test.js coverage that verifies files appear in the requested output directory.
+DROP test/slides-deck--mut-L608-10.test.js: Pins an incidental bullet coordinate; moving the dot two points does not break meaningful behavior.
+DROP test/todo--mut-L35-7.test.js: Duplicates metadata-stage preservation coverage in test/todo--mut-L21-0.test.js.
+DROP test/try-repo--mut-L401-5.test.js: Enforces an inconsequential one-millisecond rate-limit boundary.
+DROP test/voice-cmd--mut-L77-7.test.js: flaky on the test server (judge command runs without PATH); removed after it merged
