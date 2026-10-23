@@ -3,3 +3,4 @@
 {"round":3,"at":"2026-10-23T14:12:32.270Z","versions":[{"version":1,"tried":100,"passed":29,"dropped":2,"kept":27,"keep_rate":0.27,"secs_per_job":36}]}
 {"round":4,"at":"2026-10-23T14:44:26.066Z","versions":[{"version":1,"tried":106,"passed":44,"dropped":8,"kept":36,"keep_rate":0.34,"secs_per_job":46}]}
 {"round":6,"at":"2026-10-23T15:33:14.110Z","versions":[{"version":1,"tried":48,"passed":38,"dropped":7,"kept":31,"keep_rate":0.646,"secs_per_job":69},{"version":2,"tried":48,"passed":38,"dropped":1,"kept":37,"keep_rate":0.771,"secs_per_job":93}]}
+{"round":7,"at":"2026-10-23T15:59:08.163Z","versions":[{"version":2,"tried":50,"passed":42,"dropped":5,"kept":37,"keep_rate":0.74,"secs_per_job":95},{"version":3,"tried":50,"passed":46,"dropped":2,"kept":44,"keep_rate":0.88,"secs_per_job":89}]}
