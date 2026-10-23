@@ -65,19 +65,19 @@ test('the branch push the engines ran goes to a branch, written out in full', (t
   }
 });
 
-test('a -c that only turns something off runs; one that names a program, path, or route is held', (t) => {
-  const w = world(t);
-  for (const args of [['-c', 'core.hooksPath=/dev/null', 'status'], ['-c', 'core.fsmonitor=', 'status'], ['-c', 'core.fsmonitor=false', 'status'],
-    ['-c', 'hook.pre-commit.enabled=false', 'commit', '-m', 'x'], ['-c', 'format.pretty=medium', 'log'], ['-c', 'color.ui=never', 'log'],
-    ['init', '-q', '-b', 'master'], ['update-index', '--refresh'], ['write-tree']]) {
-    assert.ok(runs(w.verdict('git', args)), args.join(' '));
+test('a -c that only turns something off runs; one that names a program, path, or route is held on a network push', (t) => {
+  const w = world(t, { network: true });
+  const push = ['push', 'origin', 'feature'];
+  for (const c of ['core.hooksPath=/dev/null', 'core.fsmonitor=', 'core.fsmonitor=false', 'hook.pre-commit.enabled=false', 'format.pretty=medium', 'color.ui=never']) {
+    assert.ok(runs(w.verdict('git', ['-c', c, ...push])), c);
   }
-  for (const args of [['-c', 'core.hooksPath=/tmp/hooks', 'commit', '-m', 'x'], ['-c', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false', 'status'],
-    ['-c', 'core.pager=less', 'log'], ['-c', 'core.sshCommand=ssh -i k', 'fetch'], ['-c', 'hook.pre-commit.command=./x', 'commit', '-m', 'x'],
-    ['-c', 'url.https://example.com/.insteadOf=', 'status'], ['-c', 'alias.st=', 'status'], ['-c', 'credential.helper=store', 'status'],
-    ['-c', 'remote.origin.pushurl=', 'status'], ['-c', 'push.followTags=true', 'push', 'origin', 'feature'], ['-c', 'include.path=/tmp/x', 'status'],
-    ['-c', 'core.editor=vim', 'commit']]) {
-    assert.ok(held(w.verdict('git', args)), args.join(' '));
+  for (const args of [['init', '-q', '-b', 'master'], ['update-index', '--refresh'], ['write-tree'], ['-c', 'core.pager=less', 'log'], ['-c', 'core.hooksPath=/tmp/hooks', 'commit', '-m', 'x']]) {
+    assert.ok(runs(w.verdict('git', args)), `local work: ${args.join(' ')}`);
+  }
+  for (const c of ['core.hooksPath=/tmp/hooks', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false', 'core.pager=less', 'core.sshCommand=ssh -i k',
+    'hook.pre-push.command=./x', 'url.https://example.com/.insteadOf=', 'alias.st=', 'credential.helper=store', 'remote.origin.pushurl=', 'push.followTags=true',
+    'include.path=/tmp/x', 'core.editor=vim']) {
+    assert.ok(held(w.verdict('git', ['-c', c, ...push])), c);
   }
   assert.ok(runs(w.verdict('atris', ['atris.md'])), 'the boot read runs');
 });
