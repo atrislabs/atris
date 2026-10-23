@@ -1,0 +1,44 @@
+You are in the atris-cli repo: Node, zero dependencies, tests use node:test.
+
+The existing tests miss a bug. In {{target}} at line {{line}}, this line:
+    {{before}}
+can be changed to:
+    {{after}}
+and every existing test that loads the file ({{tests}}) still passes.
+
+Write ONE new test file at {{file}} that passes on the real code and fails when that line is changed.
+
+Rules:
+- Create only {{file}}. Do not change the code under test.
+- Load the module with require('../{{module}}') and test it through what it exports. Find the exported function that runs this line and build an input that reaches it.
+- Never read the source file's text. Its path may appear only inside require('../{{module}}'). Any other mention fails the check: a comment, a test name, a describe label, require.resolve, a spawn or exec argument. Do not paste the line or nearby code into comments. Before finishing, search {{file}} for the file's name: it must appear once, in the require.
+- No network, not even a local server. No AI engines, no long-running commands, no timing deadlines, no dependence on today's date or a file's real modified time. Do not replace the global Date or freeze the clock.
+- The clock rule covers your sample data too. Never build dates, journal names, or saved records from new Date() or Date.now(); a run that crosses midnight breaks them. Use fixed dates the code accepts as input. If the line is reached only by the code reading today's real date, a real timer, polling, or a sleep, pick another input or stop.
+- Write only inside fs.mkdtempSync(path.join(os.tmpdir(), ...)). The check runs your file with an empty environment, no git config, in two time zones a day apart. Never run git config. If the code reads HOME, set HOME to your temp folder; never delete it.
+- Work fast. Unless the break is harmless (see the end), write a first {{file}} within your first few steps and run the check below on it, then fix it. Running out of time with no file is a miss.
+- You must confirm before finishing: change the line yourself, run node --test {{file}} and see it fail, then put the line back exactly with: git checkout -- {{target}}
+  If it still passes with the line broken, your test is not done. Work out what the broken line returns for your input and assert the thing that differs. Often the result you check also comes from another field or path: leave those empty so only this line can produce it. Inside an error handler the error is always set, so use a different kind of error than the one it expects.
+- Finish with the line restored and node --test {{file}} passing.
+- Do not commit.
+
+Reaching the line. Most lines are reachable. Leaving no file counts as a miss, so try before giving up. Most misses are && or || swaps left with no file, and those are almost always reachable. If the line sits in a function that is not exported, search the code for that function's name to find the exported caller, and pick the smallest one. You do not need to understand the whole command, only the path to this line. Writing nothing is right only for a harmless break; the cases below are not harmless:
+- A > or < that gains or loses "=": use the exact boundary input, such as an empty list, zero items, a first item that is already over the limit, or a status of exactly 200.
+- A length checked against 0 where the break makes the check always true (> 0 becomes >= 0): pass an empty list and assert that the branch's effect does not happen. If that effect is only a "0 something" count in a summary or one blank line in text, it is harmless (see the end).
+- A found position compared with 0 or -1 (from indexOf, search, or similar): put the searched text at the very start, so it is found at position 0, and check the result that start position should give.
+- && changed to || or the reverse: use the input where exactly one side is true. For "a && b ? x : y", try a present but b false, or a missing.
+- A guard like "if (!x || bad(x)) return ..." with || changed to &&: the guard exists because callers send bad values, so those are real inputs. Pass the bad value it checks (a string where an object is expected, a non-integer or negative number, a path that does not exist, a record with only one of two ids) and assert the early result.
+- "value || fallback" changed to "value && fallback": pass a real value and check that value comes through, not the fallback. Assert a field only the real value has. For "x && x.field" changed to "x || x.field", pass a real x and assert the field's value, not x. Pick a real value that differs from the fallback, such as a status that is not 0.
+- An index like i + 1 changed to i - 1: pass a flag followed by its value and check the value lands.
+- === changed to !==, or true changed to false: use the input that takes the other branch and check what that branch produces.
+- Commands: call the exported function, capture console output, set HOME and the working folder to your temp folder, and swap process.exit for a function that throws, restoring all of it after.
+- Code behind a login or an API call: write fake saved state into your temp HOME, and replace the exported request function of the module that makes the call, then restore it. Never open a socket.
+
+What the reviewer drops:
+- Whole snapshots. Never deepStrictEqual a whole object, parsed JSON, or full output. Never match full help text, messages, titles, or reasons word for word. Assert only the piece this line decides: one field with strictEqual, or whether one line or key word is present. No exact spacing, padding, or color codes.
+- Extra assertions. One or two is usually enough. Every assertion must be about what this line decides.
+- Breaks caught by accident. If the changed line crashes, also assert on the value or text the line controls, not just the crash or missing output.
+- Fakes no real caller makes: getters that change between reads, values planted on prototypes, mocks that depend on the order or count of internal file or process calls.
+- States the program never makes. Build saved files the way the program writes them. A saved empty string it always drops, a tool that succeeds but prints nothing, an error with no message, or data picked to equal the word "undefined" are not real inputs.
+- Outside programs. If your input makes the real code start an AI tool or a shell command, or look at what is running on this machine, pick another input or stop. Emptying PATH so the launch fails does not count, and neither does a fake program placed on PATH or a race between key presses and a real process. Never replace child_process functions. A file name with odd characters like * is not a real input either.
+- Harmless breaks. If the difference shows up only at an input no real caller gives (an exact millisecond, an exact byte size, a status code no server sends, one slot past the end of a list), or nothing a user would notice changes (a result field nothing reads, a search or loop limit one step higher with no visible effect, one information line that appears or disappears, an extra "0 something" count in a summary, one extra blank line), write nothing and stop. A cutoff at any number other than zero (a time, a text length, a fraction of a length, a status range edge like 300) is harmless. So is a > that gains "=" where the only difference is which of two exactly tied values wins, or an age or wait of exactly zero. So are pause lengths or typing speed, and the wording of a shell script the code writes out. These stay harmless even when they are easy to reach. Empty lists, missing fields, first items, text found at the start, and status 200 are real inputs.
+- Repeats. Read the tests that load this file before writing. The list above is made before recent tests land, so also open the test files whose names start with this file's name, and search the test folder for the exported function you call. If one already runs the same command or input and checks the same result, yours is a repeat even if worded differently. A different input that checks the same headline, line, or field is still a repeat. Find a case only this line decides, assert a result no existing test checks, and name that case in the test title (such as "empty list shows no cleanup line"). If you cannot, stop.

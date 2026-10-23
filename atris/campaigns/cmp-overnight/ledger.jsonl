@@ -1407,3 +1407,203 @@
 {"id":"mut-lib-verifier-quality-L18-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":8,"round":14,"secs":55,"ok":true,"commit":"a7ac37c9e89b8799d33712d8b310860cc2b83187"}
 {"id":"mut-lib-team-lineup-L17-0","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":14,"secs":132,"ok":true,"commit":"6139d0cdfac143a65049801cbb56975e9e188823"}
 {"id":"mut-lib-scorecard-L127-5","lane":"devin1","engine":"devin","model":"swe-2-high","version":10,"round":14,"secs":274,"ok":true,"commit":"44d5c7f7604a180129247fdd60d713bb01f0a3e4"}
+{"id":"mut-commands-ask-L95-1","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":53,"ok":true,"commit":"48ca35fe5a84acee0254a0f9f774d16c802485cb"}
+{"id":"mut-commands-caretaker-L78-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":64,"ok":false,"reason":"still passes when the line is broken","exit":0}
+{"id":"mut-commands-experiments-L573-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":63,"ok":true,"commit":"cc872359df0f957dd017f5ab4c2bee3d85a321a8"}
+{"id":"mut-commands-experiments-L670-0","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":61,"ok":true,"commit":"f625b5977ff301654c892c42b9c5b641e53ab3f6"}
+{"id":"mut-commands-ask-L80-0","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":87,"ok":true,"commit":"6d2db7f9279509cebbfe16b2fea3caf064bf92a2"}
+{"id":"mut-commands-context-sync-L95-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":84,"ok":true,"commit":"afd0eb1768aeb319566c5fc19d445ae91bf3468a"}
+{"id":"mut-commands-launchpad-L537-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":24,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-drive-L23-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":84,"ok":true,"commit":"73b74ba1ccc13f11f959131eda902d41e6add989"}
+{"id":"mut-commands-launchpad-L520-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":47,"ok":true,"commit":"971bb7db1d74b9d2e74bf0708f4d289752d363f5"}
+{"id":"mut-commands-log-sync-L302-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":17,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-context-sync-L85-0","lane":"devin1","engine":"devin","model":"swe-2-high","version":11,"round":15,"secs":126,"ok":true,"commit":"edd511e6715746dcf320a91457cbb4287988f102"}
+{"id":"mut-commands-live-L81-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":50,"ok":true,"commit":"02c1599a3993267192442e2e8b44876db7cf40e5"}
+{"id":"mut-commands-live-L70-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":70,"ok":true,"commit":"c24469f87c89397f74e88be84297c092dc2aee18"}
+{"id":"mut-commands-gm-L527-6","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":131,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-search-L337-3","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":10,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-play-L90-6","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":55,"ok":true,"commit":"3984f07aa1bcdf09d0f244f22798c5da32991715"}
+{"id":"mut-commands-next-L91-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":66,"ok":true,"commit":"a518585a383f5e1420b1363c059730ec1e9c070b"}
+{"id":"mut-commands-plugin-L49-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":64,"ok":true,"commit":"85933b02e6bec8a9a2478fb64d8469fefa54a566"}
+{"id":"mut-commands-skill-eval-L86-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":25,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-pull-L87-1","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":53,"ok":true,"commit":"c74471002ed898af8663a927d3d0c69af8c7d73f"}
+{"id":"mut-commands-caretaker-L81-9","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":189,"ok":true,"commit":"dd964f330289e69bbcc2881fa20b84165c31a430"}
+{"id":"mut-commands-next-L43-0","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":104,"ok":true,"commit":"af79611cc771cf7b06a7476d0e6f7bc466b5e1af"}
+{"id":"mut-commands-plugin-L75-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":8,"round":15,"secs":83,"ok":true,"commit":"866c0b988d1979d9d128d01c0039461a83fe7675"}
+{"id":"mut-commands-push-L727-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":73,"ok":true,"commit":"5c5b17562afacb1c1893f1fc0664b54ccafbbef4"}
+{"id":"mut-commands-terminal-L66-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":62,"ok":true,"commit":"505168d18deed42a583ad7eb82c3c660dc988d40"}
+{"id":"mut-commands-study-L543-2","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":69,"ok":true,"commit":"ae81373a7fcbbf1610c52b448f2586095cf8bb51"}
+{"id":"mut-commands-log-sync-L80-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":145,"ok":true,"commit":"dcfb481acace1a0cfc41755f4b2e35a6f2a6bba4"}
+{"id":"mut-commands-usage-L71-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":60,"ok":true,"commit":"cb99ff6e2aaf33fbbcb33dcef26dcba670375b0e"}
+{"id":"mut-commands-workspace-clean-L7-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":51,"ok":true,"commit":"ceab1e0f4b0e572790522586824d8ae71f77a9d3"}
+{"id":"mut-lib-idle-review-sweep-L84-4","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":20,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-gm-L610-1","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":243,"ok":true,"commit":"f5f5e1dfc2c9700ae71015fe08caf430310bb98d"}
+{"id":"mut-lib-deck-layout-L98-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":41,"ok":true,"commit":"673af56a341bfb135e0960b6c00e1950fe1f173d"}
+{"id":"mut-commands-wiki-L470-11","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":78,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-learnings-L192-2","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":33,"ok":true,"commit":"bf63e7c9722798e993932c2368af0aa95b5b3e75"}
+{"id":"mut-lib-manifest-L213-6","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":39,"ok":true,"commit":"3f1b43297b4a8a1a83c241b72a927ad517f601fe"}
+{"id":"mut-lib-member-scaffold-L22-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":35,"ok":true,"commit":"639841a575ac0b902d55f738a2bb082f491b87f2"}
+{"id":"mut-lib-memory-view-L61-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":48,"ok":true,"commit":"59134332a9cbcbdf4d044e7f9073c633f56cecf3"}
+{"id":"mut-lib-member-export-L82-7","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":83,"ok":true,"commit":"0fff0ce9922566fc5c6ff597578bb40b18215166"}
+{"id":"mut-lib-improve-vitals-html-L52-0","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":112,"ok":true,"commit":"f2e7fd3bb33a8e063e53db73f66f0098864c7c00"}
+{"id":"mut-lib-mission-room-L239-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":49,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-mission-artifact-L94-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":54,"ok":true,"commit":"38721044124757fa6a0dc12c4bc2647be5cab320"}
+{"id":"mut-lib-member-tidy-L84-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":88,"ok":true,"commit":"e5ef5c39dc3038f6b8521e7bd2aee8fffd230cd7"}
+{"id":"mut-commands-who-L81-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":180,"ok":true,"commit":"fd6f668ca035e2e85d6beff0d39c95154fe2b906"}
+{"id":"mut-lib-functional-owner-L184-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":148,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-mission-runtime-loop-L234-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":45,"ok":true,"commit":"3e51bbf37ba51b14359006f795d8ac2466567600"}
+{"id":"mut-lib-opening-lines-L81-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":44,"ok":true,"commit":"e1b099aa8d7aabcd8564df02f5a6fd1ab919b8a7"}
+{"id":"mut-commands-zen-L75-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":8,"round":15,"secs":185,"ok":true,"commit":"660e9e6520dbcff55141083055c84fd28e655546"}
+{"id":"mut-lib-pulse-L405-4","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":24,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-one-lap-validator-L8-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":57,"ok":true,"commit":"5b089df6915076fdad97ab9d27f7358fec964946"}
+{"id":"mut-lib-permission-grants-L218-0","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":48,"ok":true,"commit":"e754c2aef536532c6f8d72176a206e932a38b7e2"}
+{"id":"mut-commands-truth-L96-4","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":247,"ok":true,"commit":"4876e5dfddc57936ccc904b6fd3f3decd2fd9f46"}
+{"id":"mut-lib-policy-lessons-L285-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":45,"ok":true,"commit":"d1863260e3e3373347d2bc1dabdddc42ba086422"}
+{"id":"mut-lib-orb-scorecard-L76-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":62,"ok":true,"commit":"37157b7d46ec765c0247c3b5ba2eca6e592c0b06"}
+{"id":"mut-lib-orb-context-L179-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":74,"ok":true,"commit":"47b2e64f1224808841bec60e25481feedf147279"}
+{"id":"mut-lib-loop-doctor-L84-8","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":190,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-qr-L83-5","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":42,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-roster-markdown-L215-0","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":46,"ok":true,"commit":"fd6f46da2b74bee882cc66a00c98c06548067d62"}
+{"id":"mut-lib-official-cli-integration-L126-7","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":107,"ok":true,"commit":"c3cbffb0f83c89b375781fb4f5a9ed49922a7f54"}
+{"id":"mut-lib-sandbox-pids-L92-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":29,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-runtime-bootstrap-L38-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":32,"ok":true,"commit":"e00d09c93eb30c5ba455435578c180abceb8ab58"}
+{"id":"mut-lib-roster-stale-L91-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":42,"ok":false,"reason":"still passes when the line is broken","exit":0}
+{"id":"mut-lib-runs-prune-L146-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":44,"ok":true,"commit":"3b5b6ae48e43f927e09b2b8780fb4b0ed56738b8"}
+{"id":"mut-lib-secret-gateway-L220-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":37,"ok":true,"commit":"4e36eb4ab8ad1b3318c302a4ec69fe2eedf509f4"}
+{"id":"mut-lib-roster-models-L82-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":69,"ok":true,"commit":"4f75a918524115f2143332c2bf3b856221ff9321"}
+{"id":"mut-lib-skill-eval-gate-L20-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":27,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-scorecard-L131-10","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":53,"ok":true,"commit":"887db99d99df5bd47ab50ddf0882857b23bf9fbb"}
+{"id":"mut-lib-site-publish-L339-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":42,"ok":true,"commit":"0ef7b7535d1d7a38d9d5d6c006d5eced67414456"}
+{"id":"mut-lib-task-list-keeper-L43-5","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":13,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-short-name-L90-7","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":46,"ok":true,"commit":"738506537f75c86c031b565d589cb9cae034feeb"}
+{"id":"mut-lib-self-drive-L173-6","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":54,"ok":true,"commit":"95fb97822928af7c95572ee5476a8ead9ccbd334"}
+{"id":"mut-lib-roster-swap-L285-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":89,"ok":true,"commit":"65e1f276cfdf15378ad13bb2fd3ef4d0c8e38665"}
+{"id":"mut-lib-site-L59-11","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":52,"ok":true,"commit":"44d13ffebecc4cbc3854d70dd2519e4ae94c78b5"}
+{"id":"mut-lib-slides-deck-L173-10","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":42,"ok":true,"commit":"cb6d8d5eeee36ffae3f6598ec920c56c3a82eed2"}
+{"id":"mut-lib-state-detection-L13-9","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":40,"ok":true,"commit":"5b2d8e6fba663ed7f9d7c107ea691c40d87455dc"}
+{"id":"mut-lib-task-explanation-L114-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":55,"ok":true,"commit":"c311ed025f998d47e8f02e5437649c0019465eb7"}
+{"id":"mut-lib-taste-lessons-L113-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":40,"ok":true,"commit":"37582ca6733b0db3a171e1afacc161b3ad82d26f"}
+{"id":"mut-lib-task-proof-L108-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":46,"ok":true,"commit":"caac77fda78a3fe05eb3f5c4668cd9f5e97e9a53"}
+{"id":"mut-lib-team-presence-L368-11","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":40,"ok":true,"commit":"72bd17df393ce6833b090d437d3edb7ab2aae5a7"}
+{"id":"mut-lib-team-lineup-L17-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":47,"ok":true,"commit":"76f38804a6d1bd286966076205dd45b596bb451d"}
+{"id":"mut-lib-text-table-L31-4","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":50,"ok":true,"commit":"d62b183ef427bf21ddccb047c932fc3b80f91130"}
+{"id":"mut-lib-state-home-L19-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":86,"ok":true,"commit":"fd56189f52435d6a095e1c7649e52d3be4caf3b7"}
+{"id":"mut-lib-tree-hash-L30-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":47,"ok":false,"reason":"still passes when the line is broken","exit":0}
+{"id":"mut-lib-task-prune-L136-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":89,"ok":true,"commit":"ae6f4762ee359c1680ca0dc3335601953ba0604b"}
+{"id":"mut-lib-try-repo-L153-6","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":47,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-trust-tiers-L171-0","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":47,"ok":true,"commit":"8f15ef176867b833128cd788d795fd40dc03c15a"}
+{"id":"mut-lib-task-receipt-L16-3","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":92,"ok":true,"commit":"c12fd1efd00251a3fbfd27a411111fe02f399e01"}
+{"id":"mut-lib-todo-L21-0","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":80,"ok":true,"commit":"16d398d957e47c11d8f2133253c80b362397ce97"}
+{"id":"mut-lib-receipt-block-L44-6","lane":"devin1","engine":"devin","model":"swe-2-high","version":8,"round":15,"secs":201,"ok":true,"commit":"06dfcf14f14532596ae8236c25bb2d13d378ffc4"}
+{"id":"mut-lib-usage-L35-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":52,"ok":true,"commit":"560f45cbd6aa7b996464e90d0e1964390707bae3"}
+{"id":"mut-lib-wish-stats-L20-2","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":13,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-x-post-check-L113-4","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":10,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-verifier-quality-L28-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":57,"ok":true,"commit":"ae2aa9d7925254798dc406724db029f39dda1b4d"}
+{"id":"mut-lib-wish-design-L51-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":28,"ok":true,"commit":"10c91d22b3b9e6c97f3053470b6442fcaf43f968"}
+{"id":"mut-lib-verify-worktree-rewrite-L22-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":63,"ok":true,"commit":"0d33b49b5f5b89d563ad1e0e5f19dd2f7e23bbeb"}
+{"id":"mut-lib-voice-card-L162-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":8,"round":15,"secs":73,"ok":true,"commit":"5a0fb868eaa22b9747d4f385090d5298aef6c127"}
+{"id":"mut-lib-workspace-safety-L72-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":42,"ok":true,"commit":"6c134b4153e82819a86b5d5c20f8ed310b8f97d8"}
+{"id":"mut-lib-workforce-presence-L250-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":15,"secs":47,"ok":true,"commit":"bee234ec692a4f716351bdccba0ea0095a3a0541"}
+{"id":"mut-lib-zen-fleet-L39-6","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":8,"round":15,"secs":64,"ok":true,"commit":"fb4b518e5df18371d53e4854f151ea81705a700b"}
+{"id":"mut-lib-workspace-scaffold-L104-6","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":15,"secs":88,"ok":true,"commit":"1275d920c513c4ab0e442ddc89af4031aedbb2d2"}
+{"id":"mut-lib-zen-apply-L112-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":11,"round":15,"secs":485,"ok":true,"commit":"c2656d0c9346d827793a7955c7ec0a1e25c8a253"}
+{"id":"mut-commands-caretaker-L87-8","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":26,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-pull-L871-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":13,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-gm-L863-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":47,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-search-L354-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":38,"ok":true,"commit":"f54b6581d3410cc534e490ffbaaa2a1c9f8da6f6"}
+{"id":"mut-commands-search-L71-6","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":41,"ok":true,"commit":"03e380d4249797d8fc9f51e3a81f9a6551d8341f"}
+{"id":"mut-commands-context-sync-L96-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":76,"ok":true,"commit":"eee0326cfeb529f09287aa28f5a99c6c93cca943"}
+{"id":"mut-commands-push-L886-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":62,"ok":true,"commit":"42dc367841b21d675f5e63c91760d1250d5c355a"}
+{"id":"mut-commands-log-sync-L93-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":71,"ok":true,"commit":"88eab93e86b49b8c5db4a95669b334f0529a283c"}
+{"id":"mut-commands-study-L68-5","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":36,"ok":true,"commit":"a3fd600c7b4827e39e6be01bdee2956cf9001a64"}
+{"id":"mut-commands-study-L76-2","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":33,"ok":true,"commit":"7b89bb0a664a61d4cf6b4b526ce637ab7a8a9def"}
+{"id":"mut-commands-terminal-L96-10","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":38,"ok":true,"commit":"cec7534c23d57e297e81518e91896133f15097ed"}
+{"id":"mut-commands-push-L815-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":104,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-launchpad-L73-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":113,"ok":true,"commit":"d575aacb744d9fb9554eb0e5cfeeef18e9227856"}
+{"id":"mut-commands-who-L83-0","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":42,"ok":true,"commit":"30fb1432edd03ce5d4984195c2ac0976fa696580"}
+{"id":"mut-commands-usage-L72-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":51,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-wiki-L478-2","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":44,"ok":true,"commit":"bc04e54b98aeb5f64ddbfaba964e01ae25150777"}
+{"id":"mut-commands-who-L82-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":55,"ok":true,"commit":"7961a1f1b50a88502593e7f2d3f0d28477766633"}
+{"id":"mut-lib-functional-owner-L189-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":23,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-pull-L977-9","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":12,"round":16,"secs":151,"ok":true,"commit":"59c8b82e893a41eb5eea599a5103d4373a630e4b"}
+{"id":"mut-commands-workspace-clean-L71-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":55,"ok":true,"commit":"35b0519c819b145115aafb586ebaf17f2d56bc53"}
+{"id":"mut-commands-workspace-clean-L72-0","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":46,"ok":true,"commit":"2f7690955b421bd33407f3bf7aca4d5a5c9d5f88"}
+{"id":"mut-commands-zen-L95-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":51,"ok":true,"commit":"e460214cf826cc8f11312da37fa35c8b0c896896"}
+{"id":"mut-lib-improve-vitals-html-L53-0","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":28,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-commands-wiki-L518-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":87,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-functional-owner-L197-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":50,"ok":true,"commit":"25fe2b3ed2b6e667eff2fe8589b6535096c76386"}
+{"id":"mut-lib-improve-vitals-html-L52-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":53,"ok":true,"commit":"b8951f5c93ca2fd1b1860334afd4ff26758267c4"}
+{"id":"mut-lib-learnings-L83-5","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":39,"ok":true,"commit":"15a43e9a36db86f0ab6ac416ce841d4e3b60691e"}
+{"id":"mut-commands-launchpad-L88-0","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":205,"ok":true,"commit":"1da2642bc0cbeb5ba3f31d096256d20620955ee9"}
+{"id":"mut-lib-member-scaffold-L23-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":35,"ok":true,"commit":"59d137274b741118f5f264bf287ac8933d5f495c"}
+{"id":"mut-lib-memory-view-L88-0","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":39,"ok":true,"commit":"1d05ded706178adc1e7040ba39ab5a573a8deb63"}
+{"id":"mut-commands-zen-L76-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":113,"ok":true,"commit":"ffc792ec1becb8b5010752c21cd81ec4160ce576"}
+{"id":"mut-lib-memory-view-L87-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":49,"ok":true,"commit":"917721f9725592ad37072c00bd545a576cd400d1"}
+{"id":"mut-lib-manifest-L219-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":83,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-mission-room-L271-1","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":66,"ok":true,"commit":"d6c8594847799335936cb24fad0725036b962d1a"}
+{"id":"mut-lib-mission-runtime-loop-L325-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":39,"ok":true,"commit":"faae586bdb34dbd6c7b7bf487af4fddd63caba7b"}
+{"id":"mut-lib-mission-room-L448-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":53,"ok":true,"commit":"ac5f0a958c6529a1a498e339d5296f08c6a407e9"}
+{"id":"mut-lib-mission-runtime-loop-L264-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":50,"ok":true,"commit":"cbe15f855804b7f641be1456d99d70eabb2f73e8"}
+{"id":"mut-commands-next-L99-0","lane":"devin1","engine":"devin","model":"swe-2-high","version":11,"round":16,"secs":256,"ok":true,"commit":"1bf084d1d8e5c48aaf6fb7b8d0adb7cfcb27a61e"}
+{"id":"mut-lib-one-lap-validator-L8-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":29,"ok":true,"commit":"10b2a5fb2708586a4fd73fc781c61b425ce681c8"}
+{"id":"mut-lib-manifest-L226-6","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":92,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-learnings-L66-1","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":12,"round":16,"secs":107,"ok":true,"commit":"333138fca8e18c87a1ace43b70b27590cff56c1b"}
+{"id":"mut-lib-official-cli-integration-L23-0","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":48,"ok":true,"commit":"0f22c9f085d1030273f52a23de77d3349b63fcec"}
+{"id":"mut-lib-roster-markdown-L98-4","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":18,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-orb-context-L266-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":44,"ok":true,"commit":"92ac5348b2ded31243da3d8f1ab6acb8fcbc7b0c"}
+{"id":"mut-lib-permission-grants-L245-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":44,"ok":true,"commit":"575d136e2b52f3d748b19dc9eb80f5a5eb786d60"}
+{"id":"mut-lib-receipt-block-L53-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":37,"ok":true,"commit":"2b6c663457de1375d8a814b876a09c1abf25b82f"}
+{"id":"mut-lib-pulse-L467-2","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":39,"ok":true,"commit":"cb57c27d120a25a92ff770d352515b06662a11e4"}
+{"id":"mut-lib-pulse-L421-0","lane":"devin1","engine":"devin","model":"swe-2-high","version":11,"round":16,"secs":46,"ok":true,"commit":"85418201f0fce3bac24c5268680b3d538988df9e"}
+{"id":"mut-lib-policy-lessons-L86-4","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":68,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-permission-grants-L42-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":73,"ok":true,"commit":"1d4fb03cd192184669eb13667ee7be1ee9b4cacd"}
+{"id":"mut-lib-scorecard-L134-10","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":26,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-runtime-bootstrap-L39-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":35,"ok":true,"commit":"2adcacf9ae8d772534c4a696f885ff1b3f273c60"}
+{"id":"mut-lib-roster-swap-L293-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":53,"ok":true,"commit":"467c7cb371bec82365b0b4bfe9ab047880bc6a9f"}
+{"id":"mut-lib-runs-prune-L198-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":48,"ok":true,"commit":"b10c64f88bf37683913f766f8f9964373e65d8ee"}
+{"id":"mut-lib-receipt-block-L77-4","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":80,"ok":true,"commit":"ae9612301bb50e66300150afd91afd6d6e7eae61"}
+{"id":"mut-lib-site-L59-4","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":8,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-roster-swap-L307-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":57,"ok":true,"commit":"15b8fe2c01764bc5ef48eb06afe06905acb11ad3"}
+{"id":"mut-lib-skill-eval-gate-L26-7","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":16,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-secret-gateway-L57-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":42,"ok":true,"commit":"829378b3c6176c3083dc7c0a0e735980f61a2a1e"}
+{"id":"mut-lib-official-cli-integration-L23-6","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":146,"ok":true,"commit":"a3a22b16ca1a2c55aaf004d4b7c8d2424935613a"}
+{"id":"mut-lib-secret-gateway-L286-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":51,"ok":true,"commit":"638a1492a047ce86151cc17694b8dcda82c4630a"}
+{"id":"mut-lib-self-drive-L193-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":50,"ok":true,"commit":"8ddad578769db6bb78f307dfc5a95ed732307446"}
+{"id":"mut-lib-site-L59-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":44,"ok":true,"commit":"40251170fba1ad80db75689d7fca8ed9f9e5aa43"}
+{"id":"mut-lib-orb-context-L226-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":154,"ok":true,"commit":"0517a6057156e75264fac924000d9c56cd49dc43"}
+{"id":"mut-lib-self-drive-L267-6","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":59,"ok":true,"commit":"acc20ed44d058cf3c4303874f90a74263be0a780"}
+{"id":"mut-lib-slides-deck-L375-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":41,"ok":true,"commit":"e8ea7435a93b3ca492055aa0d6fd40eb32444a0b"}
+{"id":"mut-lib-slides-deck-L328-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":49,"ok":true,"commit":"3aee906a6cbdae1e5ae72f68f5b37b3430bcb2ab"}
+{"id":"mut-lib-task-list-keeper-L47-5","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":9,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-task-list-keeper-L51-5","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":12,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-state-home-L27-9","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":40,"ok":true,"commit":"b72afdabcb014d9b9a29cc5ea0d45422789190e1"}
+{"id":"mut-lib-task-explanation-L37-0","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":37,"ok":true,"commit":"4ae9c6b30aae51f7071bbca572ddf7cbd777d39c"}
+{"id":"mut-lib-state-detection-L158-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":12,"round":16,"secs":63,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-state-home-L27-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":69,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-task-explanation-L115-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":53,"ok":true,"commit":"9ecad733314f7d8d60b6b4d69df95e4c2fd3858b"}
+{"id":"mut-lib-task-proof-L111-6","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":31,"ok":true,"commit":"f88b406ed89103431e0a90d5440f6d4b744f5ca9"}
+{"id":"mut-lib-task-prune-L147-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":39,"ok":true,"commit":"b34807b02b7eac5b65d8af308b496db69feca9d6"}
+{"id":"mut-lib-state-detection-L164-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":95,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-site-publish-L357-5","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":129,"ok":true,"commit":"34132e8e32c4ccb56247de8709236c19da2f5d54"}
+{"id":"mut-lib-skill-eval-gate-L29-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":132,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-taste-lessons-L118-2","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":37,"ok":true,"commit":"7937da53de4bdcbe1d941cc608b2324a878fc478"}
+{"id":"mut-lib-task-receipt-L27-0","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":51,"ok":true,"commit":"de420c5087446f37051f6e12e764b65dce77955f"}
+{"id":"mut-lib-task-prune-L173-0","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":53,"ok":true,"commit":"0af2be5e17fae1e2251823f135df95eb7d5c8284"}
+{"id":"mut-lib-text-table-L45-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":30,"ok":true,"commit":"d2d2862c649b09abb5265f5547b1446b387cb4b6"}
+{"id":"mut-lib-taste-lessons-L39-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":51,"ok":true,"commit":"5541513b16c68d13c81eac63d08b2d94b8321ac8"}
+{"id":"mut-lib-scorecard-L134-4","lane":"devin1","engine":"devin","model":"swe-2-high","version":11,"round":16,"secs":199,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-voice-card-L18-5","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":14,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-team-lineup-L24-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":64,"ok":true,"commit":"276ac0d078be9dcdb08d349d51171f863d01bc4d"}
+{"id":"mut-lib-verify-worktree-rewrite-L52-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":34,"ok":true,"commit":"e10256e40f4809123fc4648395ae321b78180b3a"}
+{"id":"mut-lib-try-repo-L176-6","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":39,"ok":true,"commit":"fe75c7033a46ac10c997308b1ce1fd92695e25ad"}
+{"id":"mut-lib-usage-L66-3","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":45,"ok":true,"commit":"aa952f87fd223556abcad667b5211d92715f6f8e"}
+{"id":"mut-lib-task-receipt-L27-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":12,"round":16,"secs":94,"ok":true,"commit":"98fdd3da81fb4fdce57ccbc7094e6071ea15a575"}
+{"id":"mut-lib-zen-fleet-L53-4","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":12,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-wish-stats-L25-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":42,"ok":true,"commit":"943480f53e83142376021b6871cd12fa378ac8ca"}
+{"id":"mut-lib-workspace-scaffold-L108-9","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":35,"ok":true,"commit":"13b61f188bb89dd04c09b1fa4601952fe95010cf"}
+{"id":"mut-lib-todo-L21-6","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":84,"ok":true,"commit":"7aa0dbbabe65971adbbc2d1f6f76ad1116ef7b67"}
+{"id":"mut-lib-workforce-presence-L302-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":12,"round":16,"secs":97,"ok":true,"commit":"64437e51b1831718c3d98ab35fedc85252409fad"}
+{"id":"mut-lib-zen-apply-L159-7","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":11,"round":16,"secs":84,"ok":true,"commit":"92b5481efd7d6e8acb1dfc51ca0199bec3bf5243"}
+{"id":"mut-lib-verifier-quality-L29-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":137,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-x-post-check-L212-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":12,"round":16,"secs":130,"ok":false,"reason":"file not written","exit":0}
+{"id":"mut-lib-trust-tiers-L186-6","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":11,"round":16,"secs":189,"ok":true,"commit":"c3cd0726f6227c4f3163308ae70131720ae7d6d4"}
