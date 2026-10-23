@@ -85,9 +85,9 @@ test('codex 2: git branch -f @{-1} is held, and so is any target that is not a p
 
 // ---- 3: git takes no config or exec path from the command line or environment -------
 
-test('codex 3: git -c, --config-env, --exec-path and GIT_CONFIG env are held in a woken run', (t) => {
+test('codex 3: a git -c that names a program, --config-env, --exec-path and GIT_CONFIG env are held in a woken run', (t) => {
   const w = world(t);
-  for (const args of [['-c', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false', 'status'], ['-c', 'color.ui=never', 'log'],
+  for (const args of [['-c', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false', 'status'], ['-c', 'core.pager=less', 'log'],
     ['--config-env=core.pager=P', 'log'], ['--exec-path=/tmp', 'status'], ['--exec-path', 'status']]) {
     assert.ok(held(w.verdict('git', args)), args.join(' '));
   }
