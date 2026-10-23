@@ -497,6 +497,45 @@ test('over http: the team table and a steer go through the same token and json c
   }
 });
 
+test('phone link: the token is kept per workspace, private to this user, and reused until --new-link', { skip: process.platform === 'win32' }, () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-links-'));
+  const file = path.join(stateDir, 'gm-phone-links.json');
+  const first = phone.phoneToken('/ws/shop', { stateDir });
+  assert.match(first.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(first.reused, false);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'only this user can read it');
+  // a restart: the same link
+  assert.deepEqual(phone.phoneToken('/ws/shop', { stateDir }), { token: first.token, reused: true });
+  // another workspace gets its own
+  const other = phone.phoneToken('/ws/lab', { stateDir });
+  assert.notEqual(other.token, first.token);
+  assert.equal(phone.phoneToken('/ws/lab', { stateDir }).token, other.token);
+  // --new-link: a new token, saved, and the old one is gone
+  const rotated = phone.phoneToken('/ws/shop', { stateDir, rotate: true });
+  assert.notEqual(rotated.token, first.token);
+  assert.equal(rotated.reused, false);
+  assert.equal(phone.phoneToken('/ws/shop', { stateDir }).token, rotated.token);
+  assert.equal(phone.phoneToken('/ws/lab', { stateDir }).token, other.token, 'rotating one leaves the others');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  // a file loosened by hand is tightened again; a broken file just makes a new link
+  fs.chmodSync(file, 0o644);
+  phone.phoneToken('/ws/shop', { stateDir });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  fs.writeFileSync(file, 'not json');
+  const fresh = phone.phoneToken('/ws/shop', { stateDir });
+  assert.match(fresh.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(fresh.reused, false);
+  // a saved token that is not a real one is never reused
+  fs.writeFileSync(file, JSON.stringify({ '/ws/shop': { token: 'short' } }));
+  assert.notEqual(phone.phoneToken('/ws/shop', { stateDir }).token, 'short');
+});
+
+test('phone link: gm help names --new-link', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'commands', 'gm.js'), 'utf8');
+  assert.match(src, /--new-link\s+gm phone: make a new link; the old one stops working\./);
+  assert.match(src, /phone\.phoneToken\(workspaceRoot, \{ stateDir, rotate: hasExactFlag\(args, '--new-link'\) \}\)/);
+});
+
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
   const gmTarget = require('../lib/gm-target');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-target-'));

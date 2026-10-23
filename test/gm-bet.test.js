@@ -836,6 +836,26 @@ setInterval(() => {}, 1000);
   assert.equal(alive, false, 'the grandchild in the same group is gone');
 });
 
+test('model: stopping the phone server ends every writer still running, so none is left behind', { skip: process.platform === 'win32' }, async () => {
+  const { EventEmitter } = require('node:events');
+  const kills = [];
+  const fake = (pid) => () => { const c = new EventEmitter(); c.pid = pid; c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => {}; return c; };
+  const children = [];
+  const spawnFn = (...a) => { const c = fake(4200 + children.length)(...a); children.push(c); return c; };
+  const kill = (pid, sig) => { kills.push([pid, sig]); };
+  const a = gmBet.runModel('one', { spawnFn, kill, timeoutMs: 60000 });
+  const b = gmBet.runModel('two', { spawnFn, kill, timeoutMs: 60000 });
+  assert.equal(gmBet.stopWriters(), 2);
+  assert.deepEqual(kills, [[-4200, 'SIGTERM'], [-4201, 'SIGTERM']]);
+  for (const c of children) c.emit('close', 143);
+  assert.match((await a).reason, /exited with code 143/);
+  await b;
+  // finished writers are forgotten
+  assert.equal(gmBet.stopWriters(), 0);
+  // the gm phone stop handler calls it
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'commands', 'gm.js'), 'utf8'), /require\('\.\.\/lib\/gm-bet'\)\.stopWriters\(\);/);
+});
+
 test('model: a non-zero exit with no answer fails with the reason', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-fail-'));
   const bin = stubScript(dir, 'broken', 'process.stderr.write("not logged in\\n"); process.exit(3);');

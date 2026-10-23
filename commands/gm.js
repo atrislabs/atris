@@ -30,7 +30,7 @@ function showHelp() {
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
-  console.log('       atris gm phone [--port 7777] [--send]  decision cards on your phone');
+  console.log('       atris gm phone [--port 7777] [--send] [--new-link]  decision cards on your phone');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -139,6 +139,7 @@ function showHelp() {
   console.log('  --interval <sec>  Watch polling interval. Defaults to 10.');
   console.log('  --port <n>        gm phone port. Defaults to 7777.');
   console.log('  --send            gm phone: text the link to your saved number.');
+  console.log('  --new-link        gm phone: make a new link; the old one stops working.');
   console.log('  --no-seed         Do not create a starter player mission.');
   console.log('  --json            Print machine-readable mode state.');
   console.log('  --help, -h        Show this help.');
@@ -1476,7 +1477,6 @@ function gmTargetCommand(args = []) {
 // Commands started from the phone keep running on their own after that.
 async function gmPhone(args = []) {
   const http = require('http');
-  const crypto = require('crypto');
   const phone = require('../lib/gm-phone');
   const { phonePage } = require('../lib/gm-phone-page');
   const gmTarget = require('../lib/gm-target');
@@ -1493,8 +1493,9 @@ async function gmPhone(args = []) {
   const addresses = [...new Set([lan, '127.0.0.1'].filter(Boolean))];
   // filled in once a port is open; the handler reads it on every request
   const hosts = [];
-  const token = crypto.randomBytes(32).toString('base64url');
   const stateDir = path.join(atrisHome(), 'state');
+  // the same link across restarts, until --new-link
+  const { token, reused } = phone.phoneToken(workspaceRoot, { stateDir, rotate: hasExactFlag(args, '--new-link') });
   const handler = phone.createPhoneHandler({
     workspaceRoot,
     token,
@@ -1575,7 +1576,8 @@ async function gmPhone(args = []) {
   }
   console.log(`  ${link}`);
   console.log('');
-  console.log('anyone with this link can act for you until you stop it. ctrl-c stops it.');
+  console.log(reused ? 'this is the same link as last time.' : 'this is a new link; any older one stops working.');
+  console.log('anyone with this link can act for you while this runs. ctrl-c stops it. a new link: atris gm phone --new-link');
 
   if (hasExactFlag(args, '--send')) {
     const autoland = require('../lib/autoland');
@@ -1596,6 +1598,8 @@ async function gmPhone(args = []) {
         server.close();
         if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
       }
+      // the idea and question writers stop with the page; missions started from the phone keep going
+      require('../lib/gm-bet').stopWriters();
       const running = handler.actions.filter(a => a.status === 'running').length;
       console.log('');
       console.log(running ? `phone page stopped. ${running} started from the phone still running on their own.` : 'phone page stopped.');
