@@ -93,3 +93,12 @@ describe('avail parseSetArgs number flags', () => {
     );
   });
 });
+
+describe('avail parseSetArgs unknown flag', () => {
+  it('names the flag and the help command', () => {
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--zone', 'PT']),
+      /does not take "--zone"\. Run: atris avail --help/
+    );
+  });
+});

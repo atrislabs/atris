@@ -156,7 +156,7 @@ function parseSetArgs(argv) {
     else if (a === '--slot-minutes') opts.slotMinutes = requireWholeNumber(a, argv[++i], 5, 480);
     else if (a === '--window-days') opts.windowDays = requireWholeNumber(a, argv[++i], 1, 365);
     else if (a === '--help' || a === '-h') return { help: true };
-    else throw new Error(`unknown arg: ${a}`);
+    else throw new Error(`atris avail set does not take "${a}". Run: atris avail --help`);
   }
   if (opts.wake == null || opts.sleep == null) {
     throw new Error('--wake and --sleep are required (e.g. --wake 2:30pm --sleep 9pm)');
@@ -325,7 +325,7 @@ async function slotsAvail(argv) {
       printHelp();
       return 0;
     } else {
-      console.error(`unknown arg: ${a}`);
+      console.error(`atris avail slots does not take "${a}". Run: atris avail --help`);
       return 1;
     }
   }
@@ -419,7 +419,7 @@ async function availCommand(argv = []) {
   const sub = argv[0].toLowerCase();
   if (sub === 'set' || sub === 'update') return setAvail(argv.slice(1));
   if (sub === 'slots') return slotsAvail(argv.slice(1));
-  console.error(`Unknown subcommand: ${sub}`);
+  console.error(`atris avail does not know "${sub}". Use show, set, or slots.`);
   printHelp();
   return 1;
 }
