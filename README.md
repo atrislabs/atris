@@ -343,6 +343,8 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
 | `atris receipt` | Save evidence from an agent run |
+| `atris pay` | Pay another Atris account in credits (100 credits = $1); `history`, `show`, `accept`, `cancel` |
+| `atris trust` | See an account's trust and the friends you share; `vouch` or `unvouch` for someone |
 | `atris experiments` | Run small experiments and compare results |
 | `atris computer card` | Show or write the local owner/computer card |
 | `atris release` | Draft or publish a version bump, tag, GitHub release, and launch post |
