@@ -52,3 +52,18 @@ test('replaceInboxSection renders inbox-zero when empty', () => {
   assert.match(out, /\(Empty - inbox zero achieved\)/);
   assert.equal(parseInboxItems(out).length, 0);
 });
+
+test('getLogPath reads a YYYY-MM-DD date as that local day, even west of Greenwich', () => {
+  const { spawnSync } = require('node:child_process');
+  const path = require('node:path');
+  const script = `const { getLogPath } = require(${JSON.stringify(path.resolve(__dirname, '..', 'lib', 'file-ops'))});`
+    + "const r = getLogPath('2026-01-01'); process.stdout.write(r.dateFormatted + ' ' + path.basename(r.yearDir));";
+  for (const tz of ['America/Los_Angeles', 'UTC', 'Asia/Tokyo']) {
+    const res = spawnSync(process.execPath, ['-e', `const path = require('path'); ${script}`], {
+      encoding: 'utf8',
+      env: { ...process.env, TZ: tz },
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(res.stdout, '2026-01-01 2026', `wrong journal day in ${tz}`);
+  }
+});
