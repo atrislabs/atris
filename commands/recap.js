@@ -13,7 +13,7 @@ const {
   taskCommand,
 } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
-const { buildAgentToday, renderAgentToday, hasActivity } = require('../lib/agent-today');
+const { buildAgentToday, renderAgentToday, hasActivity, ranAgent } = require('../lib/agent-today');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 7;
@@ -388,8 +388,7 @@ function recapAtris(args = []) {
     // A brand new folder already names its last commit in the first
     // minute, so commits alone keep that; an ai session here wins.
     const fresh = data.empty && isFreshWorkspace(root) && !inProjectSubdir;
-    const ranAgent = today.sessions.claude + today.sessions.codex > 0;
-    if (hasActivity(today) && (ranAgent || !fresh)) {
+    if (hasActivity(today) && (ranAgent(today) || !fresh)) {
       console.log(args.includes('--json') ? JSON.stringify(today, null, 2) : renderAgentToday(today));
       return;
     }

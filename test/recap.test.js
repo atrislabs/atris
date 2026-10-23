@@ -691,13 +691,13 @@ function seedClaude({ home, project, ts, yesterday }) {
   ]);
 }
 
-function seedCodex({ home, project, now, ts }, cwd = project) {
+function seedCodex({ home, project, now, ts }, cwd = project, meta = {}, name = path.basename(cwd)) {
   const y = String(now.getFullYear());
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
   const patch = `*** Begin Patch\n*** Update File: ${path.join(project, 'README.md')}\n@@\n-old\n+new\n*** End Patch`;
-  writeJsonl(path.join(home, '.codex', 'sessions', y, m, d, `rollout-${path.basename(cwd)}.jsonl`), [
-    { type: 'session_meta', timestamp: ts, payload: { cwd } },
+  writeJsonl(path.join(home, '.codex', 'sessions', y, m, d, `rollout-${name}.jsonl`), [
+    { type: 'session_meta', timestamp: ts, payload: { cwd, ...meta } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }] } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `# AGENTS.md instructions for ${cwd}\n\n<INSTRUCTIONS>be nice</INSTRUCTIONS>` }] } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'fix the readme typo' }] } },
@@ -781,4 +781,49 @@ test('bare recap with no atris folder shows today, with commits and unsaved file
     cleanup(fx.home);
     cleanup(fx.project);
   }
+});
+
+test('recap today keeps what you typed apart from jobs agents ran on their own', () => {
+  const fx = todayFixture();
+  try {
+    seedClaude(fx);
+    writeJsonl(path.join(claudeProjectDir(fx.home, fx.project), 'tick.jsonl'), [
+      { type: 'user', timestamp: fx.ts, entrypoint: 'sdk-cli', promptSource: 'sdk', message: { content: 'run one mission tick' } },
+      { type: 'assistant', timestamp: fx.ts, message: { content: [
+        { type: 'tool_use', name: 'Edit', input: { file_path: path.join(fx.project, 'lib', 'tick.js') } },
+      ] } },
+    ]);
+    seedCodex(fx, fx.project, { originator: 'Codex Desktop', source: 'vscode' }, 'chat');
+    seedCodex(fx, fx.project, { originator: 'codex_exec', source: 'exec' }, 'exec');
+    seedCodex(fx, fx.project, { originator: 'codex_exec', source: { subagent: 'review' } }, 'helper');
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    assert.deepEqual(t.sessions, { claude: 1, codex: 1 }, 'only chats a person typed in');
+    assert.equal(t.prompts, 3, 'program prompts are not your asks');
+    assert.equal(t.autoRuns, 2, 'one claude program run and one codex exec; the helper is part of another session');
+    assert.ok(t.files.includes('lib/tick.js'), 'files from program runs still count');
+    const out = renderAgentToday(t);
+    assert.match(out, /you asked your ai agent for 3 things, across 1 session in claude code and 1 session in codex\.\nyour agents also ran 2 jobs on their own\./);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('recap today stays at five lines by folding saved and unsaved into one git line', () => {
+  const out = renderAgentToday({
+    folder: 'shop', sessions: { claude: 2, codex: 0 }, prompts: 4, autoRuns: 3,
+    files: ['src/a.js', 'src/b.js'], areas: ['src'], commits: ['add cart'], unsaved: 2, isGit: true,
+  });
+  assert.equal(out, [
+    'today in shop',
+    'you asked your ai agent for 4 things, across 2 sessions in claude code.',
+    'your agents also ran 3 jobs on their own.',
+    'it changed 2 files, mostly in src.',
+    '1 change saved to git, 2 files not saved yet.',
+  ].join('\n'));
+  const onlyAuto = renderAgentToday({
+    folder: 'shop', sessions: { claude: 0, codex: 0 }, prompts: 0, autoRuns: 1,
+    files: [], areas: [], commits: [], unsaved: 0, isGit: true,
+  });
+  assert.equal(onlyAuto, 'today in shop\nyour agents ran 1 job on their own.\nit read and ran things but changed no files.');
 });
