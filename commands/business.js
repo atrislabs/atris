@@ -1214,8 +1214,14 @@ async function startBusinessWorkspace(...args) {
   return state;
 }
 
+// Local calendar day; toISOString is UTC and dates evening work tomorrow
+// anywhere west of Greenwich.
+function localDay(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function defaultSharePath(cwd, role) {
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localDay();
   const roleSlug = slugifyName(role || 'collaborator');
   return path.join(cwd, 'atris', 'reports', `${stamp}-share-${roleSlug}.md`);
 }
@@ -1494,7 +1500,7 @@ async function onboardBusiness(...flags) {
   const intakeRel = path.relative(cwd, intakePath).replace(/\\/g, '/');
   const linksRel = path.relative(cwd, linksPath).replace(/\\/g, '/');
   const sourcesRel = path.relative(cwd, sourcesPath).replace(/\\/g, '/');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
 
   const briefSlug = `${bizMeta.slug}-starter-brief`;
   const briefPath = path.join(cwd, 'atris', 'wiki', 'briefs', `${briefSlug}.md`);
@@ -2803,7 +2809,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
         description ? `\n> ${description}\n` : '',
         '\n## The Business\n\n[What problem does this solve?]\n',
         '## Revenue Model\n\n[How does this make money?]\n',
-        `---\n*Created: ${new Date().toISOString().split('T')[0]}*\n`,
+        `---\n*Created: ${localDay()}*\n`,
       ].join(''));
       console.log(`  Local scaffold: ${bizDir}/`);
     }
