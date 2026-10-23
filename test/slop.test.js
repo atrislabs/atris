@@ -215,6 +215,23 @@ test('slop dead: a bin using require(path.join(...)) plus a test import is not t
   assert.ok(r.testOnly.map(rel).includes('lib/lonely.js'), 'true test-only file still flagged');
 });
 
+test('slop dead: a file started directly with node is an entrypoint, not test-only', () => {
+  const root = fixtureRepo();
+  const w = (rel, content) => {
+    const p = path.join(root, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+  };
+  w('lib/server.js', "const h = require('./server-helper'); function start() { h(); }\nif (require.main === module) start();\nmodule.exports = { start };");
+  w('lib/server-helper.js', 'module.exports = () => 1;');
+  w('test/server.test.js', "require('../lib/server');");
+  const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
+  const rel = (f) => path.relative(root, f);
+  assert.ok(!r.testOnly.map(rel).includes('lib/server.js'), 'a self-starting file is live');
+  assert.ok(!r.testOnly.map(rel).includes('lib/server-helper.js'), 'and so is what it requires');
+  assert.ok(r.testOnly.map(rel).includes('lib/lonely.js'), 'a true test-only file is still flagged');
+});
+
 test('slop dead: clean repo reports zero dead', () => {
   const root = fixtureRepo();
   fs.rmSync(path.join(root, 'cmds/orphan.js'));

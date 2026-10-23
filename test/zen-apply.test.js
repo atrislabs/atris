@@ -564,6 +564,49 @@ test('atris zen never rolls back a live database file', () => {
   }
 });
 
+test('atris zen never rolls back rows a running app added to a jsonl ledger, and still catches up', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(checkout, 'workspaces/outbound/ledger.jsonl', '{"id": 1}\n', 'ledger');
+    git(checkout, 'push', '-q');
+    git(seed, 'pull', '-q');
+    commit(seed, 'app.js', 'two\n', 'newer app');
+    git(seed, 'push', '-q');
+    write(checkout, 'workspaces/outbound/ledger.jsonl', '{"id": 1}\n{"id": 2, "written": "by the running app"}\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /stray edit/);
+    assert.match(cli.stdout, /caught up 1 commit/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'workspaces/outbound/ledger.jsonl'), 'utf8'), '{"id": 1}\n{"id": 2, "written": "by the running app"}\n');
+    assert.deepEqual(branches(checkout, 'zen-backup/*'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen --all still zens a repo whose only unsaved change is a growing jsonl log', () => {
+  const one = createRepo();
+  try {
+    commit(one.checkout, 'atris/runs.jsonl', '{"run": 1}\n', 'runs');
+    git(one.checkout, 'push', '-q');
+    write(one.checkout, 'atris/runs.jsonl', '{"run": 1}\n{"run": 2}\n');
+    const list = path.join(one.base, 'zen.json');
+    fs.writeFileSync(list, JSON.stringify({ repos: [one.checkout] }));
+
+    const cli = run(process.execPath, [cliPath, 'zen', '--all'], one.base, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '0',
+      ATRIS_ZEN_FLEET_FILE: list,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /skipped/);
+  } finally {
+    fs.rmSync(one.base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen moves back to main even when team notes are edited on both branches', () => {
   const { base, checkout } = createRepo();
   try {
@@ -830,6 +873,29 @@ test('a wiki over budget in several places is one line to prune, not one per pla
     fs.rmSync(path.join(wiki, 'index.md'));
     const [only] = workspaceZen({ root, dryRun: true }).yours.filter((y) => y.cmd === 'atris wiki consolidate');
     assert.equal(only.text, 'wiki briefs/ has 35 pages, its budget is 30');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a note older than its code is named in plain words, not called a wiki page behind its source', () => {
+  const { workspaceZen } = require('../lib/zen-workspace');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-stale-'));
+  try {
+    fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'lib', 'x.js'), 'module.exports = 1;\n');
+    const note = (name) => {
+      fs.mkdirSync(path.join(root, 'atris', 'features', name), { recursive: true });
+      fs.writeFileSync(path.join(root, 'atris', 'features', name, 'build.md'),
+        '---\nlast_compiled: 2020-01-01\nsources:\n  - lib/x.js:1-2 (the export)\n---\n# build\n');
+    };
+    const staleLine = () => workspaceZen({ root, dryRun: true }).yours.find((y) => y.cmd === 'atris clean --dry-run' && /older than/.test(y.text));
+
+    note('one');
+    assert.equal(staleLine()?.text, 'atris/features/one/build.md is older than the code it describes');
+
+    note('two');
+    assert.equal(staleLine()?.text, '2 notes are older than the code they describe');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
