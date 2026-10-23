@@ -766,6 +766,26 @@ test('recap today keeps apart two folders whose names differ only by a dash or u
   }
 });
 
+test('recap today counts a codex session started days ago and picked back up today', () => {
+  const fx = todayFixture();
+  try {
+    const dayDir = path.join(fx.home, '.codex', 'sessions', '2026', '01', '05');
+    const meta = { type: 'session_meta', timestamp: fx.yesterday, payload: { cwd: fx.project } };
+    const ask = (text, timestamp) => ({ type: 'response_item', timestamp, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
+    writeJsonl(path.join(dayDir, 'rollout-resumed.jsonl'), [meta, ask('start the parser', fx.yesterday), ask('finish the parser', fx.ts)]);
+    const idle = path.join(dayDir, 'rollout-idle.jsonl');
+    writeJsonl(idle, [meta, ask('an old ask', fx.yesterday)]);
+    const old = new Date(fx.now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(idle, old, old);
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
+    assert.equal(t.sessions.codex, 1, 'the resumed log counts, the untouched old one does not');
+    assert.equal(t.prompts, 1, 'only the ask made today');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
 test('recap today reads codex patches and ignores codex sessions in other folders', () => {
   const fx = todayFixture();
   const other = makeTempDir();
