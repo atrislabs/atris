@@ -143,7 +143,8 @@ const helpRequested = updateCommand === 'help'
 const jsonRequested = process.argv.slice(2).includes('--json');
 const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp'].includes(updateCommand)))) {
+// recap promises local only: no registry call and no background install.
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {

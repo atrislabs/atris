@@ -931,3 +931,40 @@ test('recap today finds sessions started through a shortcut to this folder', () 
     cleanup(links);
   }
 });
+
+test('recap never asks the package registry for updates', () => {
+  const fx = todayFixture();
+  try {
+    // Record every attempt to open a web request, even where the network
+    // is blocked, so a sandbox cannot hide a call.
+    const trap = path.join(fx.home, 'trap.js');
+    const log = path.join(fx.home, 'requests.log');
+    fs.writeFileSync(trap, `
+const fs = require('fs');
+for (const mod of [require('https'), require('http')]) {
+  for (const k of ['request', 'get']) {
+    const orig = mod[k];
+    mod[k] = function (...args) {
+      const o = args[0] || {};
+      fs.appendFileSync(${JSON.stringify(log)}, String(o.hostname || o.host || o.href || o) + '\\n');
+      return orig.apply(this, args);
+    };
+  }
+}
+`);
+    const env = { ...process.env, HOME: fx.home, CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' };
+    for (const k of ['ATRIS_TASKS_DB', 'ATRIS_SKIP_UPDATE_CHECK', 'NO_UPDATE_NOTIFIER']) delete env[k];
+    const run = (args) => {
+      fs.rmSync(log, { force: true });
+      const r = spawnSync(process.execPath, ['--require', trap, cliPath, ...args], { cwd: fx.project, encoding: 'utf8', env, timeout: 20000 });
+      return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim() : '';
+    };
+    assert.match(run(['status']), /registry\.npmjs\.org/, 'the trap sees the update check other commands make');
+    for (const args of [['recap'], ['recap', 'today']]) {
+      assert.equal(run(args), '', `${args.join(' ')} made a web request`);
+    }
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
