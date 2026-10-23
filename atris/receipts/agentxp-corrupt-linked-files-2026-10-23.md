@@ -30,6 +30,12 @@ AssertionError [ERR_ASSERTION]: Failed to collect local XP: Expected property na
 ℹ fail 2
 ```
 
+## Review state and delivery
+
+Committed runtime repair: `d53810ef4`, pushed to the requested branch. No merge performed. Task VAS-11 is ready for human review, version 4; no acceptance requested or performed.
+
+The task board required its own fresh verification. Its wildcard command was rejected by the empty-directory falsification check, so the same full suite was supplied with all five filenames explicitly. That full command passed, exit 0, creating local artifact `atris/runs/2026-10-23-task-vas-11-2026-10-23T15-55-14-807Z.json`; the attempt then rejected the landing sentence for lacking an explicit benefit. After correcting that sentence, the task board reran the two corruption regressions with `node --test --test-name-pattern='corrupt linked' test/xp-workspace-root.test.js`, exit 0, and recorded ready-for-approval state with local artifact `atris/runs/2026-10-23-task-vas-11-2026-10-23T15-55-44-095Z.json`.
+
 ## Passing verification
 
 Command: `node --test test/xp-workspace-root.test.js`
