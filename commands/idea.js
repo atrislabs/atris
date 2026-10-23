@@ -163,8 +163,4 @@ function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = co
 
 module.exports = {
   ideaAtris,
-  ideaJson,
-  parseArgs,
-  renderIdeaList,
-  resolveRepo,
 };
