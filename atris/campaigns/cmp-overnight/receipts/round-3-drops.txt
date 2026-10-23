@@ -1,0 +1,13 @@
+DROP test/card--mut-L50-7.test.js: Duplicates the custom brand footer coverage in test/card-command.test.js.
+DROP test/radar-cmd--mut-L164-7.test.js: Pins an internal filesystem probe count; the break only repeats root checks within an existing eight-iteration limit.
+DROP test/card--mut-L50-7.test.js: Duplicates the custom brand footer coverage in test/card-command.test.js.
+DROP test/radar-cmd--mut-L164-7.test.js: Pins an internal filesystem probe count; the break only repeats root checks within an existing eight-iteration limit.
+DROP test/brainstorm-cmd--mut-L32-7.test.js: it compares all three output lines, including help wording, and replaces the global Date to do it; only the relative journal path matters.
+DROP test/campaign-new--mut-L192-7.test.js: it uses a getter that changes the terminal check after the first read, so it depends on how many times the code reads it, and it compares a long exact output string.
+DROP test/caretaker-cmd--mut-L100-2.test.js: it checks which of two checks wins when their timestamps are identical, and real reruns always have later timestamps, so nobody relies on this.
+DROP test/engine-watch-cmd--mut-L126-3.test.js: it fakes file rotation by hooking the exact order of the code's internal file calls, so a harmless reorder breaks it.
+DROP test/fleet-cmd--mut-L136-2.test.js: harmless break; a hub never answers register with exactly 300, so the test only covers a status code nobody relies on
+DROP test/goal-cmd--mut-L163-4.test.js: snapshots the whole printed output, so any wording change breaks it; checking that no distance row appears would be enough
+DROP test/harvest-cmd--mut-L20-2.test.js: harmless break; scanning 201 logs instead of 200 changes nothing anyone relies on, and the test depends on the order the folder lists its files
+DROP test/skill-cmd--mut-L108-9.test.js: fakes a folder appearing between two internal file checks; without that fake the broken line just crashes, so the test pins a race nobody relies on
+DROP test/zen-cmd--mut-L122-6.test.js: snapshots all 11 output lines when one check that "matches origin" is absent would do

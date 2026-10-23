@@ -14,6 +14,8 @@
 //                                               read the numbers from a plain run)
 //   node scripts/gm-phone-trace.js --team       the team table at phone and
 //                                               laptop size (--shots DIR saves both)
+//   node scripts/gm-phone-trace.js --engine     the engine card from the team
+//                                               table, a swap, and the table after
 //   require('./scripts/gm-phone-trace')         { findChrome, trace } for tests
 
 const fs = require('node:fs');
@@ -840,13 +842,322 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
   }, viewport);
 }
 
-module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
+// The engine card a tap on builder's engine cell opens: every model by
+// tool, the current one on top and not tappable, a record where there is one.
+const ENGINE_CARD = {
+  ok: true,
+  member: 'builder',
+  job: 'build',
+  job_key: 'executor',
+  line: 'builder runs on claude opus 5.5.',
+  scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
+  groups: [
+    { engine: 'claude', tool: 'claude code', models: [
+      { engine: 'claude', model: 'opus 5.5', label: 'opus 5.5', current: true, record: null },
+      { engine: 'claude', model: 'haiku 5.5', label: 'haiku 5.5', current: false, record: '3 of 4 landed' },
+      { engine: 'claude', model: 'sonnet 5', label: 'sonnet 5', current: false, record: null },
+    ] },
+    { engine: 'codex', tool: 'codex', models: [
+      { engine: 'codex', model: 'gpt-6.1-sol', label: 'gpt-6.1-sol', current: false, record: '10 of 20 landed' },
+      { engine: 'codex', model: 'gpt-6-astra', label: 'gpt-6-astra', current: false, record: null },
+    ] },
+    { engine: 'agy', tool: 'agy', models: [{ engine: 'agy', model: 'gemini-3.8-flash', label: 'gemini-3.8-flash', current: false, record: null }] },
+  ],
+};
+
+// what the engine card looks like: the line, the scope buttons, the tools in
+// order, each tool's first model, whether the current one takes taps, the
+// smallest words, and anything that moves
+const ENGINE_LOOK = `(function () {
+  var team = document.getElementById('team');
+  var groups = team.querySelectorAll('section.models');
+  var sizes = Array.prototype.map.call(team.querySelectorAll('h1, p, h2, button, span'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  return {
+    title: team.querySelector('h1').textContent,
+    line: team.querySelector('p.why').textContent,
+    scopes: Array.prototype.map.call(team.querySelectorAll('.scopes button'), function (b) { return [b.textContent, b.classList.contains('chosen')]; }),
+    tools: Array.prototype.map.call(groups, function (g) { return g.querySelector('h2').textContent; }),
+    first: Array.prototype.map.call(groups, function (g) { return g.querySelector('button.choice').textContent; }),
+    current_takes_taps: !groups[0].querySelector('button.choice').disabled,
+    buttons: team.querySelectorAll('section.models button.choice').length,
+    shortest_button_px: Math.min.apply(null, Array.prototype.map.call(team.querySelectorAll('section.models button.choice, .scopes button'), function (b) { return Math.round(b.getBoundingClientRect().height); })),
+    smallest_font_px: Math.min.apply(null, sizes),
+    page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+    moving: Array.prototype.filter.call(team.querySelectorAll('*'), function (n) { var c = getComputedStyle(n); return c.animationName !== 'none'; }).map(function (n) { return n.tagName; }),
+  };
+})()`;
+
+// Opens the team table, taps builder's engine cell, reads the card, presses
+// Esc (back to the table), opens it again, picks "for every build job", taps
+// the first codex model, and reads the table that comes back: the row's new
+// engine and the one line over it. With shots, saves the card.
+async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, shots = null } = {}) {
+  const rows = TABLE_ROWS.map(r => ({ ...r }));
+  const swaps = [];
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows }),
+    engineCard: () => ENGINE_CARD,
+    swapEngine: (body) => {
+      swaps.push(body);
+      const row = rows.find(r => r.member === body.member);
+      row.engine = `${body.engine} ${body.model}`;
+      return { ok: true, ack: `build now runs on ${body.engine} ${body.model}. claude opus 5.5 is the backup.`, rows };
+    },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await wait(120);
+    };
+    const cell = '#team tbody tr:nth-child(2) td.eng button';
+    const table = () => p.run("(function () { var team = document.getElementById('team'); var row = team.querySelector('tbody tr:nth-child(2)'); return { open: !team.hidden, title: team.querySelector('h1').textContent, table: Boolean(team.querySelector('table')), engine: row ? row.querySelector('td.eng').textContent : null, said: team.querySelector('p.done') ? team.querySelector('p.done').textContent : null }; })()");
+    // at phone width the engine column sits past the edge; scroll it in like a thumb would
+    const tapCell = async () => {
+      await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+      await wait(60);
+      await p.tap(cell);
+    };
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapCell();
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'the engine card');
+    await wait(80);
+    const look = await p.run(ENGINE_LOOK);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+      fs.writeFileSync(path.join(shots, `engine-card-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    await esc();
+    const back = await table();
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table again');
+    await tapCell();
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'the engine card again');
+    await p.tap('#team .scopes button:nth-child(2)');
+    await p.tap('#team section.models:nth-of-type(2) button.choice');
+    await p.until("Boolean(document.querySelector('#team p.done'))", 'the team table after the swap');
+    const after = await table();
+    if (shots) {
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, `engine-swapped-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    return { viewport: `${viewport.width}x${viewport.height}`, look, back, swaps, after };
+  }, viewport);
+}
+
+// The race codex found: open builder's engine card, press Esc before its
+// answer comes back, open validator's card, then let builder's late answer
+// land. Reads what validator's card shows after, then taps its first model
+// and returns which member each swap the server got was for.
+async function engineRaceTrace({ chromePath = findChrome(), viewport = PHONE, lateMs = 900 } = {}) {
+  const rows = TABLE_ROWS.map(r => ({ ...r }));
+  const swaps = [];
+  let builderAnswered = false;
+  const cardFor = (member) => ({
+    ...ENGINE_CARD,
+    member,
+    line: `${member} runs on claude opus 5.5.`,
+    scopes: [{ id: 'member', label: `just ${member}` }, { id: 'job', label: 'for every build job' }],
+    groups: member === 'builder' ? ENGINE_CARD.groups : [ENGINE_CARD.groups[1]],
+  });
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows }),
+    engineCard: ({ member }) => (member === 'builder'
+      ? new Promise(resolve => setTimeout(() => { builderAnswered = true; resolve(cardFor('builder')); }, lateMs))
+      : cardFor(member)),
+    swapEngine: (body) => { swaps.push(body); return { ok: true, ack: `${body.member} now runs on ${body.engine} ${body.model}.`, rows }; },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    };
+    const tapCell = async (n) => {
+      const cell = `#team tbody tr:nth-child(${n}) td.eng button`;
+      await p.until(`Boolean(document.querySelector(${JSON.stringify(cell)}))`, `row ${n}`);
+      await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+      await p.tap(cell);
+    };
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapCell(2); // builder: its answer is late
+    await p.until("document.querySelector('#team h1').textContent === 'builder'", 'builder card');
+    await esc();
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the table again');
+    await tapCell(5); // validator
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'validator card');
+    const end = Date.now() + lateMs + 3000;
+    while (!builderAnswered && Date.now() < end) await wait(30);
+    await wait(250);
+    const card = await p.run("(function () { var team = document.getElementById('team'); return { title: team.querySelector('h1').textContent, line: team.querySelector('p.why').textContent, groups: team.querySelectorAll('section.models').length, scopes: Array.prototype.map.call(team.querySelectorAll('.scopes button'), function (b) { return b.textContent; }), backs: team.querySelectorAll('button.quiet').length }; })()");
+    await p.tap('#team section.models button.choice');
+    await p.until("Boolean(document.querySelector('#team p.done'))", 'the table after the swap');
+    return { viewport: `${viewport.width}x${viewport.height}`, builderAnswered, card, swaps };
+  }, viewport);
+}
+
+// ---- the job deck: one running job at a time ------------------------------------
+
+const DECK = {
+  columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'],
+  cards: [
+    { job_id: 'm-ask', mission_id: 'm-ask', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', yes: { key: 'm-ask:0', what: 'ok to publish the new version?', why: 'navigator is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Plan the pricing page', member: 'navigator', role: 'plans the work', ovr: '··', engine: 'codex gpt-6.1-sol', status: 'needs you' }] },
+    { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 4 minutes', yes: { key: 'm1:0', what: 'ok to put the billing service live?', why: 'builder is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Put the billing service live', member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'needs you' }] },
+    { job_id: 'm2', mission_id: 'm2', member: 'launcher', label: 'waiting to start', time: 'waiting 3 minutes', rows: [{ done: 'not yet', work: 'Write the launch thread', member: 'launcher', role: 'writes posts, pages, and launch copy', ovr: 'new', engine: 'codex gpt-6.1-sol', status: 'waiting to start' }] },
+  ],
+};
+const DECK_ROWS = [{ member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'working', sentence: 'working: write the try page, at it for 10 minutes', on: 'Write the try page', time: 'at it for 10 minutes' }];
+const DECK_REPLY = 'two of five steps are done.';
+
+const DECK_LOOK = `(function () {
+  var c = document.querySelector('#team .deckcard');
+  if (!c) return null;
+  var b = c.getBoundingClientRect();
+  var h1 = c.querySelector('h1');
+  return {
+    count: c.querySelector('.count').textContent,
+    label: c.querySelector('.label').textContent,
+    title: h1 ? h1.textContent : null,
+    yes: Boolean(c.querySelector('.act .pill')),
+    heads: Array.prototype.map.call(c.querySelectorAll('thead th'), function (n) { return n.textContent; }),
+    cells: Array.prototype.map.call(c.querySelectorAll('tbody td'), function (n) { return n.textContent; }),
+    x: b.left, y: b.top,
+  };
+})()`;
+
+// Opens the deck from the team page and flips it with the arrows, a
+// sideways swipe, and an up and down one; types to a job and flips away
+// and back; says yes on the card that needs it; then presses Esc.
+async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
+  const yesSent = [];
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows: DECK_ROWS }),
+    jobDeck: () => JSON.parse(JSON.stringify(DECK)),
+    answerYes: async ({ key, job } = {}) => { yesSent.push({ key, job }); return { ok: true, ack: 'navigator: got your yes' }; },
+    talk: ({ text }) => ({ ok: true, stay: true, kind: 'question', reply: DECK_REPLY, suggestions: [], thread: [{ who: 'owner', text }, { who: 'orb', text: DECK_REPLY }] }),
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const press = async (key, vk) => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: vk });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: vk });
+    };
+    const ARROW = { ArrowLeft: 37, ArrowRight: 39 };
+    const settle = async () => { await wait(80); await p.until("!document.querySelector('#team .bet.ghost') && !document.querySelector('#team .deckcard.turning')", 'the card at rest'); };
+    const count = () => p.run("document.querySelector('#team .deckcard .count').textContent");
+    const tapButton = async (label) => {
+      const r = await p.run(`(function () { var n = Array.prototype.find.call(document.querySelectorAll('#team button'), function (b) { return b.textContent === ${JSON.stringify(label)}; }); if (!n) return null; var b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+      if (!r) throw new Error(`no button reads ${label}`);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    };
+    const swipe = async (x0, y0, x1, y1) => {
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+      for (let i = 1; i <= 6; i++) await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 6, y: y0 + ((y1 - y0) * i) / 6 }] });
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    // a flip is the crossfade in place when a still copy of the old card shows over the new one
+    await p.run("(function () { window.__ghost = false; new MutationObserver(function () { if (document.querySelector('#team .bet.ghost')) window.__ghost = true; }).observe(document.getElementById('team'), { childList: true, subtree: true }); })()");
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapButton('the jobs, one at a time');
+    await p.until("Boolean(document.querySelector('#team .deckcard'))", 'the deck');
+    const first = await p.run(DECK_LOOK);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, 'deck-needs-you.png'), Buffer.from(shot.data, 'base64'));
+    }
+    // one tap on A arms only A: after a flip, one tap on B releases nothing,
+    // and back on A its yes starts over
+    const yesLabel = () => p.run("(function () { var b = document.querySelector('#team .deckcard .act .pill'); return b ? b.textContent : null; })()");
+    await tapButton('yes');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await settle();
+    await tapButton('yes');
+    await wait(300);
+    const crossCard = { sent: yesSent.slice(), b_label: await yesLabel() };
+    await press('ArrowLeft', ARROW.ArrowLeft);
+    await settle();
+    crossCard.a_label_after_flip = await yesLabel();
+    const counts = [];
+    let moved = 0;
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
+      await press(key, ARROW[key]);
+      await settle();
+      const l = await p.run(DECK_LOOK);
+      counts.push(l.count);
+      moved = Math.max(moved, Math.abs(l.x - first.x), Math.abs(l.y - first.y));
+    }
+    const at = await p.run("(function () { var b = document.querySelector('#team .deckcard .count').getBoundingClientRect(); return { x: b.left + 150, y: b.top + b.height / 2 }; })()");
+    await swipe(at.x + 100, at.y, at.x - 100, at.y);
+    await settle();
+    const swiped = await count();
+    await swipe(at.x + 40, at.y, at.x - 30, at.y + 200);
+    await wait(500);
+    await settle();
+    const scrolled = await count();
+    await p.run("document.getElementById('team').scrollTop = 0");
+    // typing: the arrows move the cursor, not the deck
+    await p.tap('#team .deckcard .jobtalk input');
+    await p.type('how far along is it?');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await wait(500);
+    const typingArrow = await count();
+    await p.enter();
+    await p.until(`(function () { var r = document.querySelector('#team .deckcard .jobtalk .reply'); return Boolean(r && r.textContent === ${JSON.stringify(DECK_REPLY)}); })()`, 'the reply');
+    const reply = await p.run("document.querySelector('#team .deckcard .jobtalk .reply').textContent");
+    await p.run('document.activeElement.blur()');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await settle();
+    await press('ArrowLeft', ARROW.ArrowLeft);
+    await settle();
+    const afterFlip = await p.run("(function () { var r = document.querySelector('#team .deckcard .jobtalk .reply'); return r ? r.textContent : null; })()");
+    // the yes: armed, then sent with the card's key
+    await tapButton('yes');
+    await tapButton('tap again to say yes');
+    await p.until("Boolean(document.querySelector('#team .deckcard > .mission'))", 'the line after the yes');
+    const yesLine = await p.run("document.querySelector('#team .deckcard > .mission').textContent");
+    const moving = await p.run("Array.prototype.filter.call(document.querySelectorAll('#team *'), function (n) { return getComputedStyle(n).animationName !== 'none'; }).map(function (n) { return n.tagName + '.' + n.className; })");
+    await press('Escape', 27);
+    await wait(150);
+    const esc = await p.run("({ team_open: !document.getElementById('team').hidden, card: Boolean(document.querySelector('#bet h1')) })");
+    return {
+      first: { count: first.count, label: first.label, title: first.title, yes: first.yes, heads: first.heads, cells: first.cells },
+      counts,
+      moved_px: Math.round(moved * 10) / 10,
+      ghost_seen: await p.run('window.__ghost'),
+      swiped,
+      scrolled,
+      typing_arrow: typingArrow,
+      kept_turn: { reply, after_flip: afterFlip },
+      yes_sent: yesSent,
+      cross_card: crossCard,
+      yes_line: yesLine,
+      moving,
+      esc,
+    };
+  });
+}
+
+module.exports = { findChrome, launch, trace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, engineRaceTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
   const shots = at > 0 ? path.resolve(process.argv[at + 1] || 'gm-phone-shots') : null;
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
-  if (process.argv.includes('--team')) {
+  if (process.argv.includes('--engine')) {
+    (async () => {
+      const out = [];
+      for (const viewport of [PHONE, LAPTOP]) out.push(await engineCardTrace({ viewport, shots }));
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    })().catch(fail);
+  } else if (process.argv.includes('--team')) {
     (async () => {
       const out = [];
       for (const viewport of [PHONE, LAPTOP]) out.push(await teamTableTrace({ viewport, shots }));

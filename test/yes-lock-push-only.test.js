@@ -89,17 +89,20 @@ test('a push to a network remote runs only as a branch push that is not master',
   assert.ok(held(w.verdict('git', ['push', 'origin', 'feature'])), 'origin set up as a mirror pushes everything');
 });
 
-test('local git passes in a woken run, but -c and environment that could run a push past the wrapper are held', (t) => {
+test('local git passes in a woken run; -c and environment that could run a push past the wrapper are held when git reaches a network remote', (t) => {
   const w = world(t, { network: true });
   for (const args of [['checkout', 'master'], ['branch', '-f', 'master', 'HEAD'], ['tag', 'v2'], ['symbolic-ref', 'refs/heads/master', 'refs/heads/feature'], ['reset', '--hard', 'master'],
     ['merge', 'master'], ['config', 'user.email', 'test@example.com'], ['remote', 'add', 'other', 'git@github.com:o/r.git'], ['init', '--template=/tmp/t'], ['--exec-path'],
     ['-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'x'], ['fetch', 'origin', 'feature:master']]) {
     assert.ok(runs(w.verdict('git', args)), args.join(' '));
   }
-  for (const args of [['-c', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false', 'status'], ['-c', 'core.pager=less', 'log'], ['--exec-path=/tmp', 'status'], ['--config-env=core.pager=P', 'log']]) {
-    assert.ok(held(w.verdict('git', args)), args.join(' '));
+  for (const pre of [['-c', 'core.fsmonitor=git push origin HEAD:refs/heads/master; false'], ['-c', 'core.pager=less'], ['--exec-path=/tmp'], ['--config-env=core.pager=P']]) {
+    assert.ok(held(w.verdict('git', [...pre, 'push', 'origin', 'feature'])), `${pre.join(' ')} push`);
+    assert.ok(held(w.verdict('git', [...pre, 'fetch', 'origin'])), `${pre.join(' ')} fetch`);
+    assert.ok(runs(w.verdict('git', [...pre, 'status'])), `local work passes: ${pre.join(' ')}`);
   }
-  assert.ok(held(w.verdict('git', ['status'], { ...GIT_ENV, GIT_CONFIG_PARAMETERS: "'core.fsmonitor'='x'" })));
+  assert.ok(held(w.verdict('git', ['push', 'origin', 'feature'], { ...GIT_ENV, GIT_CONFIG_PARAMETERS: "'core.fsmonitor'='x'" })));
+  assert.ok(runs(w.verdict('git', ['status'], { ...GIT_ENV, GIT_CONFIG_PARAMETERS: "'core.fsmonitor'='x'" })));
 });
 
 test('atris holds only the outward and spend verbs in a woken run', (t) => {
@@ -126,7 +129,7 @@ test('a yes card says who wants what to go where, never the raw command', (t) =>
   fs.writeFileSync(path.join(w.root, 'package.json'), JSON.stringify({ name: 'atris', version: '1.0.0' }));
   const hold = (tool, args) => yesLock.check({ stateDir, missionId: 'm-builder', seal, tool, args, gitBin, cwd: w.root, env: GIT_ENV });
   const commands = [
-    ['git', ['-c', 'core.askPass=', '-c', 'protocol.ext.allow=never', '-c', 'core.pager=less', 'log']],
+    ['git', ['-c', 'core.askPass=', '-c', 'protocol.ext.allow=never', '-c', 'core.sshCommand=ssh -i k', 'fetch', 'origin']],
     ['git', ['push', '--prune', 'origin', 'builder-job-deck-20261023-102420']],
     ['git', ['push', 'origin', 'HEAD:master']],
     ['git', ['push', '--tags', 'origin']],

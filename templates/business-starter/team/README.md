@@ -1,4 +1,4 @@
-# Team — {{name}}
+# Team: {{name}}
 
 This folder lives inside `atris/` because the team is part of the context graph.
 Anything durable and structured belongs under `atris/`.

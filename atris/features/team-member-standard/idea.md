@@ -8,15 +8,15 @@
 
 ## Problem Statement
 
-AI tooling has fragmented standards: CLAUDE.md for project instructions, AGENTS.md for agent definitions, RULES.md for Cursor, SKILL.md for individual capabilities, .mcp.json for tool servers. Nobody has a standard for a complete AI team member — the bundle of skills, tools, persona, context, and permissions that turns a generic AI into a specific worker. Teams cobble this together with prompts and hope it holds.
+AI tooling has fragmented standards: CLAUDE.md for project instructions, AGENTS.md for agent definitions, RULES.md for Cursor, SKILL.md for individual capabilities, .mcp.json for tool servers. Nobody has a standard for a complete AI team member, the bundle of skills, tools, persona, context, and permissions that turns a generic AI into a specific worker. Teams cobble this together with prompts and hope it holds.
 
 ---
 
 ## Solution Design
 
-MEMBER.md — an open-source standard for defining a complete AI team member. One directory per member, containing everything that member needs to do their job: who they are (persona), what they can do (skills), what tools they have (.mcp.json), what they know (context), and what they're allowed to do (permissions).
+MEMBER.md: an open-source standard for defining a complete AI team member. One directory per member, containing everything that member needs to do their job: who they are (persona), what they can do (skills), what tools they have (.mcp.json), what they know (context), and what they're allowed to do (permissions).
 
-Atris defines the spec, open sources it, and builds the best tooling around it. The standard is tool-agnostic — works with Claude, Codex, Cursor, any agent framework. Atris is the reference implementation.
+Atris defines the spec, open sources it, and builds the best tooling around it. The standard is tool-agnostic: works with Claude, Codex, Cursor, any agent framework. Atris is the reference implementation.
 
 ---
 
@@ -40,7 +40,7 @@ Atris defines the spec, open sources it, and builds the best tooling around it. 
          NEW STANDARD (unified)
 
   ┌─────────────────────────────────────────────┐
-  │  MEMBER.md — the team member definition     │
+  │  MEMBER.md: the team member definition     │
   │                                             │
   │  ┌─────────────────────────────────────┐    │
   │  │  Persona + Role + Permissions       │    │
@@ -121,8 +121,8 @@ Atris defines the spec, open sources it, and builds the best tooling around it. 
 - [ ] `atris member list` shows all team members with their skill counts and status
 - [ ] `atris member link <name>` symlinks the member's skills to Claude/Codex/Cursor system directories
 - [ ] Members can reference shared skills (from atris/skills/) and have their own custom skills
-- [ ] A member directory is portable — zip it, hand it to someone, it works
-- [ ] The spec is tool-agnostic — nothing in MEMBER.md is Claude-specific or Codex-specific
+- [ ] A member directory is portable: zip it, hand it to someone, it works
+- [ ] The spec is tool-agnostic: nothing in MEMBER.md is Claude-specific or Codex-specific
 - [ ] Open source spec published with reference examples
 
 ---
@@ -150,13 +150,13 @@ role: Sales Development Rep        # human-readable title
 description: Outbound prospecting and lead qualification
 version: 1.0.0
 
-# Skills this member has — can reference shared or local
+# Skills this member has: can reference shared or local
 skills:
   - email-outreach                 # local: ./skills/email-outreach/
   - calendar                      # shared: atris/skills/calendar/
   - slack                         # shared: atris/skills/slack/
 
-# Permissions — what the member can and can't do
+# Permissions: what the member can and can't do
 permissions:
   can-send: false                  # can't send emails without approval
   can-draft: true                  # can draft emails
@@ -164,7 +164,7 @@ permissions:
   can-delete: false                # can't delete anything
   approval-required: [send, delete, publish]
 
-# MCP tools — references .mcp.json in member directory
+# MCP tools: references .mcp.json in member directory
 mcps:
   - hubspot
   - linkedin
@@ -174,8 +174,8 @@ mcps:
 ### Shared vs Local Skills
 
 Members can use two types of skills:
-- **Shared skills** — from `atris/skills/` (universal, like email, calendar)
-- **Local skills** — in the member's own `skills/` directory (custom to this role)
+- **Shared skills**: from `atris/skills/` (universal, like email, calendar)
+- **Local skills**: in the member's own `skills/` directory (custom to this role)
 
 When linking, shared skills are symlinked from the project. Local skills are symlinked from the member directory. No duplication.
 

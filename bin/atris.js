@@ -528,6 +528,7 @@ function showHelpShort() {
   console.log('');
   console.log('  atris "what do you want here?"   empty folder');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris idea "..."                 drop an idea; atris builds it later');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris done                       land what your agent built');
@@ -563,6 +564,7 @@ function showHelpAll() {
   console.log('you say what you want. already won. one next step.');
   console.log('');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris idea "..."                 drop an idea; atris builds it later');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris done                       land what your agent built');
@@ -600,7 +602,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  99         - local focus and meditation sessions');
+  console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
@@ -609,7 +611,7 @@ function showHelpAll() {
   console.log('  who        - Show local engines and team members working, waiting, done, or stale');
   console.log('  stream     - Watch the whole team work live in one terminal');
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
-  console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone');
+  console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -2290,8 +2292,8 @@ if (command === 'guide') {
     process.exit(1);
   }
 } else if (command === '99') {
-  const code = require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3));
-  exitAfterStdoutDrain(code);
+  Promise.resolve(require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code));
 } else if (command === 'now') {
   const args = process.argv.slice(3);
   const nowCode = require('../commands/now').nowAtris(args);
@@ -2302,6 +2304,13 @@ if (command === 'guide') {
 } else if (command === 'later') {
   const laterCode = require('../commands/later').laterAtris(process.argv.slice(3));
   process.exit(Number.isInteger(laterCode) ? laterCode : 0);
+} else if (command === 'idea') {
+  Promise.resolve(require('../commands/idea').ideaAtris(process.argv.slice(3))).then((ideaCode) => {
+    process.exit(Number.isInteger(ideaCode) ? ideaCode : 0);
+  }, (error) => {
+    console.error(`atris idea: ${error && error.message || error}`);
+    process.exit(1);
+  });
 } else if (command === 'done') {
   const doneCode = require('../commands/done').doneAtris(process.argv.slice(3));
   process.exit(Number.isInteger(doneCode) ? doneCode : 0);

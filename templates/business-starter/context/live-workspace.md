@@ -1,4 +1,4 @@
-# {{name}} — Live Workspace
+# {{name}}: Live Workspace
 
 ## Business
 

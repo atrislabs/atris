@@ -1,0 +1,727 @@
+{"id":"fn-commands-agents--mission-label","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"87f22e7c2d6b7ebf4004b506b23d2affa97b7b0b","secs":69}
+{"id":"fn-commands-api-key--show-api-key-help","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7cb389396727b55d1c9f3398845eed826604279b","secs":63}
+{"id":"fn-commands-api-key--list-keys","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"db9f6972646cac59fec9c579d9397330bfc4dbe0","secs":79}
+{"id":"fn-commands-agents--agents-command","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0d1022e0d6fb1ba4875f0bc27e262a47b315e51b","secs":94}
+{"id":"fn-commands-analytics--analytics-atris","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4ca7ad134acae436476d51544ee61b253c82481b","secs":97}
+{"id":"fn-commands-ci--show-ci-help","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"465eb757e5254ba45e98cbc6421a141eb13bb91c","secs":48}
+{"id":"fn-commands-balance--show-balance-help","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c5e5642b6dea2e2d7da47a6aff54f2eb8637a593","secs":80}
+{"id":"fn-commands-brain--read-text","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"ce18749a2f9d8c2f32fbd9d5213a19f9a7b3d9f8","secs":85}
+{"id":"fn-commands-clean--clean-atris","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"36583fe7429e497861fd9422b91578fc2e3e8179","secs":63}
+{"id":"fn-commands-clean--find-stale-pages","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"cad186334da002d9c51ae405dc45cd454cdf0f1a","secs":55}
+{"id":"fn-commands-clean--find-stale-tasks","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f6e867cfdaf75513e1db03d657d4e82c958a0ebd","secs":65}
+{"id":"fn-commands-apps--apps-command","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"82c2f137b2fef5b29fd3f5e63bc9e0f2194e31aa","secs":160}
+{"id":"fn-commands-close--scan-state","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ca5b86205e85dec1096671764bf6c60490ee10a4","secs":63}
+{"id":"fn-commands-brain--record-task-episode-scorecards","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"8598b337c79d1e7d6b2469c93db5bce74543ec22","secs":136}
+{"id":"fn-commands-close--upsert-source-flag","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3cbc174bb235c1cd6035e1a9991ba8d90c22d127","secs":52}
+{"id":"fn-commands-console--console-command","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"50e97bf9a8b854e868d9dee0307abadef1934d1e","secs":40}
+{"id":"fn-commands-drill--coauthor","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":15}
+{"id":"fn-commands-business--business-command","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"67f07304b2675ad8715d764471f02f45594c5bfc","secs":152}
+{"id":"fn-commands-autopilot--upsert-lesson-meta","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"b332a694f2c09250f40e65965256810f05154b9e","secs":173}
+{"id":"fn-commands-console--launch-claude","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"880b34dc14031cf8f44b084443a1c4d9a6923bd7","secs":70}
+{"id":"fn-commands-doc-health--doc-health-command","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"09625708b5963e50a80a0c764442f3a1a2fcccb4","secs":62}
+{"id":"fn-commands-drill--drill-command","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bac9e38b2e1823f70205ede707a4ba559f43c9d7","secs":39}
+{"id":"fn-commands-engine--engine-login-seat-error","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bc9aaca0800105079159e70fab4508b7931d102b","secs":30}
+{"id":"fn-commands-console--build-system-prompt","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"2bfbb6f028ac93b6794387ddb1dbd78962e1354a","secs":97}
+{"id":"fn-commands-avail--avail-command","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"97fabe385746f06ebd01072928856a25d176ee8a","secs":198}
+{"id":"fn-commands-done--done-atris","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"02a79c51d7b74d963d36b717f7ae73ca5ba68d2f","secs":62}
+{"id":"fn-commands-auth--shell-init","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"8406714378c29a5e247bca506c20971449cce379","secs":210}
+{"id":"fn-commands-dream--dreams-path","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"de3478e8cac102fd6f0ec1441e2c297fae303e9b","secs":58}
+{"id":"fn-commands-auth--activate-global","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"60a29f16afa54d487b0e47f0b3cc7a36b2856d73","secs":228}
+{"id":"fn-commands-auth--resolve-profile","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"b2b827c32e7bbe099a5f09ca61a36f589ef3b828","secs":225}
+{"id":"fn-commands-brain--brain-command","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"274fec9fb25b5f96ada0a1d06bdae55bb1f588af","secs":210}
+{"id":"fn-commands-auth--switch-session","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"32fe568ba33a3ce3cd95bad1434f991e4a21e611","secs":232}
+{"id":"fn-commands-auth--use-account","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"2992715dd707485de29676ac6190e26dacbe3c17","secs":247}
+{"id":"fn-commands-feedback--feedback-command","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"70af44c056a77f2fc0a7c21771b79b1f182a60ea","secs":62}
+{"id":"fn-commands-game--game-command","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2fd6882d7db034b355640b01fac73158f1c036f7","secs":55}
+{"id":"fn-commands-auth--logout-atris","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"87f80b5c912e99b54b53a13bb8b016a120c0fbf6","secs":274}
+{"id":"fn-commands-auth--whoami-atris","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"4da3fa7b92335fe1393d368d666827865b9ef498","secs":255}
+{"id":"fn-commands-fleet-report--fleet-report","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"320955c3e65cb1c11127b0452e68dae597f87074","secs":62}
+{"id":"fn-commands-campaign--render-show","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"e15b0a939717475e683548ee527c4f061620df04","secs":222}
+{"id":"fn-commands-auth--accounts-cmd","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"b559eeec7efff0ad3eaf54f2f4ae46750f94f81b","secs":279}
+{"id":"fn-commands-gm--gm-command","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fd3ab0468a05e380604268f3f72ebc2d517126c5","secs":58}
+{"id":"fn-commands-hire--render-hires","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0b7ded5c6f947dcbfbb1af487a1930de0d0eee3a","secs":57}
+{"id":"fn-commands-auth--switch-account","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d1a38383ba6ca91b5423e2eb17094331be4f8d2c","secs":291}
+{"id":"fn-commands-doctor--doctor-command","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"5252adf3331ce218745723d4c5505b3da3081f62","secs":163}
+{"id":"fn-commands-log--log-atris","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b8ee0c15fe093126d81d3e29840ad52f31737d53","secs":50}
+{"id":"fn-commands-mail--render-messages","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2e6d3aef0b4bc9e06bc91d2d592fb97bf2146ff1","secs":53}
+{"id":"fn-commands-loop--loop-atris","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bd48ad5fddb8d60f2996b0c0a09dc5d99f6e32dc","secs":56}
+{"id":"fn-commands-feed--feed-command","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"7c59053927a8095360be9a6120a4b942178298ab","secs":150}
+{"id":"fn-commands-mission--auto-queue-member-next-push","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b1bfe0c92ba35c76d49a1e0d87f5599931fe82d6","secs":58}
+{"id":"fn-commands-integrations--integrations-status","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"e63256da993c7786c406bb42fa4f23aaeb6e6851","secs":121}
+{"id":"fn-commands-mission--answer-mission-human-ask","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"e887af2f2bce970c323915b7047b1a65064ed95e","secs":77}
+{"id":"fn-commands-feed--fetch-posts","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"7e885d6d5719475a027eaa2dadcc2f3cacdeac3c","secs":182}
+{"id":"fn-commands-hire--render-hire","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"dfce7e2a83d6328f9ccbdb4ddf6b02e1f3e159d4","secs":154}
+{"id":"fn-commands-auth--profile-email","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"6ef4a11c3b484a3e17904bc1a6ec63f4823ab882","secs":381}
+{"id":"fn-commands-integrations--twitter-command","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"6b2c63a631c0afd1425f9b320d480d71eb0d3ca8","secs":144}
+{"id":"fn-commands-mission--mission-runner-needs-live-session","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"12c4e726ad531a8d3851dfa7bad07812b748dea9","secs":30}
+{"id":"fn-commands-mission--mission-budget-continuation-text","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5128f5ab59fcd32bf0f2a874c84fd987866df53c","secs":44}
+{"id":"fn-commands-mission--find-active-twin-mission","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0a0818405cc78ec23df8bc0d974ab6802a817b8a","secs":60}
+{"id":"fn-commands-mission--expire-stale-missions","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"caabf64f1fdd7c61b20e4f7bf97477c7637ae1c0","secs":75}
+{"id":"fn-commands-mail--render-inboxes","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"992172d44a2e7c0d31834a9f77d05a3626dd2d7f","secs":121}
+{"id":"fn-commands-integrations--imessage-command","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"d6419deb95f7b270584e46cfa574bdb3f9547a16","secs":171}
+{"id":"fn-commands-mission--freeze-mission-verifier","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"55f67819c52324aa835aad1d1cb3f73748f0c4f3","secs":70}
+{"id":"fn-commands-mission--is-yes-lock-word","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"eac813b8577556159ff7186a2f7fcf07b5d661df","secs":71}
+{"id":"fn-commands-integrations--slack-command","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"b1c801f288314725ccd6079a875e140e7cbb4225","secs":175}
+{"id":"fn-commands-mission--twin-active-statuses","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":16}
+{"id":"fn-commands-cloud--cloud-atris","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"e2beb7cfc77fc197d6c625369386666c7ec0697c","secs":300}
+{"id":"fn-commands-member--find-all-members","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3e89f1e2869100050e4dc51ebfc9123b67ccc94a","secs":136}
+{"id":"fn-commands-lifecycle--sleep-atris","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"f55a27d33c1f080845a7b1021430fc642630ba1b","secs":172}
+{"id":"fn-commands-mission--resolve-member-workspace-root","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"13fb7b93967c0f6b8b7f190da5ce23e19339acaf","secs":34}
+{"id":"fn-commands-moves--render-moves","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"88c88343fa844fcfb41197176d47ecc0b9d0e3b5","secs":27}
+{"id":"fn-commands-mission--close-member-handoffs-for-receiver","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d55a8d06c34f46245ddb1223a78b4ebad9999e51","secs":129}
+{"id":"fn-commands-mission--mission-driver-health","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"eb14440908c942e02b5ee38fd00cdcb88ad6425c","secs":79}
+{"id":"fn-commands-moves--current-moves","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5eb3e7b5f10ef896cf0cd1555f52a98d546ce70a","secs":48}
+{"id":"fn-commands-pay--report-error","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7605dd280cebf44462cb29d71e863b4a9d8afb58","secs":32}
+{"id":"fn-commands-orb--tail-lines","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"6ff7fe8baff81f55ed32407bd35fa4def78e477d","secs":48}
+{"id":"fn-commands-playbook--playbook-file","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fdb89542e723f2e21e72af0148f6945c46f81445","secs":31}
+{"id":"fn-commands-moves--moves-command","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a27540fd07bb81fe2759d5f3bbe87428bacedd55","secs":63}
+{"id":"fn-commands-lifecycle--wake-atris","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"96a8792f49dfc2fcbe71c4dfcc2ed5dd6d6ff1d1","secs":197}
+{"id":"fn-commands-pack--craft-pack","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"159b0d2e1980917170440a61000cf6f2697ef652","secs":53}
+{"id":"fn-commands-mission--acquire-mission-lock","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"99a9703c87f3b3f5669ba873e70f2f1210c52402","secs":187}
+{"id":"fn-commands-integrations--calendar-command","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"97db1f2298b01d56b44269dbf28ed57ddf4cc252","secs":246}
+{"id":"fn-commands-now--truncate-line","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"067ea2c8dc0cf98324cd8072b87793e3d439cac2","secs":71}
+{"id":"fn-commands-one-lap--run-one-lap","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"291de94335b1fc080e8773aff31ad24d73684402","secs":69}
+{"id":"fn-commands-harvest--harvest-command","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"3155885cbe4ca258db0b468e528b33d320919581","secs":265}
+{"id":"fn-commands-probe--probe-command","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b640d5913650aebdc6231637a094183ed9b7560c","secs":53}
+{"id":"fn-commands-mission--codex-goal-next-command","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"77df27ff39c1e19cd742625bb4bc5fa4a67b8602","secs":169}
+{"id":"fn-commands-play--play-command","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"47db03db856930227d8526c2cfd5dba02ae6d4e7","secs":64}
+{"id":"fn-commands-mission--ping-mission","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"64df7c00aadb96d93832d9b9cfa9ba12f1cbbf6d","secs":117}
+{"id":"fn-commands-mission--pick-live-local-mission","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"77998cfc8f1bb549329ac89a0446a7fbe411f8de","secs":124}
+{"id":"fn-commands-push--push-atris","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"80dcc2005ccd32d79d2dff160487ff371f537246","secs":59}
+{"id":"fn-commands-probe--run-atris2-turn","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3444fc712c6d1acb0168f7ee23c5452a9618f603","secs":74}
+{"id":"fn-commands-reel--find-ffmpeg","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"083d19067993a43984315d2c88af1a1a1e00927f","secs":44}
+{"id":"fn-commands-revisions--plain-subject","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"04a854300379754d6195219a351fcce8e52968ff","secs":38}
+{"id":"fn-commands-recover--recover-command","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ca8444a05eec720bce70e347f6d6bbe179b2399e","secs":54}
+{"id":"fn-commands-release--release-preflight","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f512bba1b53dada92a932db300160004936c19b5","secs":56}
+{"id":"fn-commands-mission--release-mission-lock","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"5862becb7446d8f81f894bb6a8c862a074f17073","secs":143}
+{"id":"fn-commands-scoreboard--scoreboard-command","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"73efe9d3eb650d74c97d3f027a6bf46757f66c7e","secs":53}
+{"id":"fn-commands-orb--run-orb","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"64f506d7cdfd35b035c158860338c15e40a7f605","secs":127}
+{"id":"fn-commands-scoreboard--to-json","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c75e0d8b6f8ebfa8fdd6b5549dda6043af1dc14d","secs":54}
+{"id":"fn-commands-mission--reap-paused-missions","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"0a989e96b2c0d158a9fcb6f6e5eaf0eb7cb8b1b3","secs":169}
+{"id":"fn-commands-revisions--format-revision-metric","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"76806ae8fabe35b4ed6b4065381caa70cecdaa8f","secs":87}
+{"id":"fn-commands-loop-front--create-next-loop-task","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"0b5b2a5a4a02e8376f6d32e1e80ca361b9c59cae","secs":286}
+{"id":"fn-commands-social--inbox-command","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b73aa70d560d96bd11192549b1e688517821d398","secs":53}
+{"id":"fn-commands-radar--radar-command","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"1cc81f8d5bc258253388c645b4fd5df34fc8865b","secs":116}
+{"id":"fn-commands-social--unfollow-command","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"aa70abc9ec10529a35182cfd943b2e102c0e44aa","secs":47}
+{"id":"fn-commands-skill--skill-command","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fcf7a8cf142a7e7f4652d9f297e8d2bf9bb13069","secs":65}
+{"id":"fn-commands-skill--find-all-skills","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"2076bea2f7e01e15b747fc630b1e5ae744a68655","secs":72}
+{"id":"fn-commands-strings--text-exts","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":13}
+{"id":"fn-commands-social--msg-command","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b629198a96520c3c86151c360d1d6ba54f3ebf6f","secs":61}
+{"id":"fn-commands-spaceship--spaceship-target-root","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ad8809c03dcef726fcc5daf25a7344899edb1234","secs":49}
+{"id":"fn-commands-release--release-atris","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"ced0b0a7a8d163050b220ca338a56039979ced78","secs":118}
+{"id":"fn-commands-site-deploy--batch-size","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9969cd5c79d7ea5bd400bfc00d63d15894a4b5a9","secs":89}
+{"id":"fn-commands-publish--publish-atris","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"4fdaeeeb09ea1a12fa58f119467a4a9cf4588a36","secs":159}
+{"id":"fn-commands-strings--save-registry","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"49c796e87ef5d3b48489ab45938bfd8ee22e0852","secs":42}
+{"id":"fn-commands-study--wrap-text","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"0212b0aee2923f909086a2cfdd6a7f27a5255fcb","secs":35}
+{"id":"fn-commands-social--invite-command","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"2c7289f47b975b0fcd44e8dc5b8f462caf65815a","secs":94}
+{"id":"fn-commands-strings--code-exts","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"18d5079c3a335527ab8e5f6492ceb3a17f3607bc","secs":57}
+{"id":"fn-commands-recap--recap-atris","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"29536bca6204eb659095344dd64221c7c20796b8","secs":156}
+{"id":"fn-commands-social--follow-command","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"c6834efda746c870306fec14f0efd421ae0e873f","secs":109}
+{"id":"fn-commands-sync--ensure-workspace-state-files","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5486ed622c9fcdf9a8727426f7c3842c02e07e9d","secs":48}
+{"id":"fn-commands-sync--ensure-business-root-agent-adapters","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f6438de06a61a4ec8410ca96145bcc7b1cb398d9","secs":49}
+{"id":"fn-commands-signup--adopt-signup-client","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"db313e3a4ea1a299465779980bfe377e488daa71","secs":140}
+{"id":"fn-commands-sync--sync-business-canonical","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9cb859a02be84af1ca0360082e54fa7ef7da711e","secs":53}
+{"id":"fn-commands-sync--sync-atris","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"d5a78d46b51542a524c612ad8b69defb67e63b92","secs":61}
+{"id":"fn-commands-task--auto-render-todo-from-db","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c414d408c9f0d6b02205aa0315be5ba78e9e6863","secs":58}
+{"id":"fn-commands-strings--strings-command","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"1ce77192723de7b3367eb93b080daace404736d3","secs":80}
+{"id":"fn-commands-release--run-full-test-suite","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"07065508ed33abc84cfccfff9fb28921c116e02a","secs":179}
+{"id":"fn-commands-serve--stream-session","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"8038929e45b114f6359c9337c76e17467248fa15","secs":160}
+{"id":"fn-commands-pack-craft--craft-pack","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c06b4a4788b4feeb294df5a49bdb7cd5fde765be","secs":244}
+{"id":"fn-commands-wish--capture-wish-to-journal","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":31}
+{"id":"fn-commands-task--kept-count","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"122a62f585b75d2a47bbc4ce06e5a146cc955467","secs":69}
+{"id":"fn-commands-serve--serve-atris","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"10d95f4c860a7030b4840fe476e480d40ca2486a","secs":185}
+{"id":"fn-commands-trust--trust-lines","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"49a581a158306bcc2c36c5f029d13eef5ef793dc","secs":57}
+{"id":"fn-commands-verify--verify-atris","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3b2dfeb3964e9181115019e1fb4e1bd04c353364","secs":53}
+{"id":"fn-commands-visualize--visualize-atris","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"e497bb64059d8806e158820a763fbab154c7088e","secs":58}
+{"id":"fn-commands-wish--improve-wishes","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f90287f8c7c5286341c33849e4b5657dd39bac80","secs":53}
+{"id":"fn-commands-team--member-roster-command","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"574abeb3859db6fa4250755806c8e15d3a137b90","secs":94}
+{"id":"fn-commands-soul--snapshot-soul","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a03aa175afd0b93d9daa6f47104f798e583ff4e0","secs":172}
+{"id":"fn-commands-task--cmd-certify-verified","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"91ef9e61466203a1e50a3d8cd8c3b8c3c3bae3cc","secs":121}
+{"id":"fn-commands-voice--voice-command","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d7811e2830803ed7b950ba11f910f0de40f833d8","secs":76}
+{"id":"fn-commands-task--delegate-task","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"c606a2cc0605accd9d1805caa6dc59e3896b60ac","secs":121}
+{"id":"fn-commands-wish--print-board","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"80bb79392f6476b78421e9a9bedd511642ccc1f5","secs":66}
+{"id":"fn-commands-wish--say-wish","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9ab7bdc765bcb91af660bc2645c6e8af3e2d0341","secs":58}
+{"id":"fn-commands-wish--read-wish-events","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"67629821f37f3d14121c80ac12fe8d07997926db","secs":74}
+{"id":"fn-commands-task--refresh-kept-task-list","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"858d945d5c880968e46ac263c8d2cf91224111ac","secs":132}
+{"id":"fn-commands-unknowns--unknowns-command","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"b5b7014e49679beff88c18af560061ce02daed4f","secs":116}
+{"id":"fn-commands-status--status-atris","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"1303af19eaadeed164d9e2ac545a61c1b12d7fa1","secs":203}
+{"id":"fn-commands-workflow--plan-atris","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"640c404ee1889452f9f501bd5e63ede19f949d58","secs":59}
+{"id":"fn-commands-wish--print-review-nudges","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"c4bf5e04895ed8eb5c7fbeac25e6eaf59a642bef","secs":97}
+{"id":"fn-commands-terminal--ensure-awake","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"619a5107c04d636c1d7f3c1b704be7ad94705872","secs":142}
+{"id":"fn-commands-worktree--worktree-has-active-process","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"19cf53beeea073227506dde4a68023f273c95314","secs":42}
+{"id":"fn-commands-terminal--terminal-atris","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"06ab8e874b9c71bd3f6a0342d8aac312e6253941","secs":150}
+{"id":"fn-commands-workflow--review-atris","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4844fda28d04235c41f24087a8e0ca56daa2a031","secs":75}
+{"id":"fn-commands-worktree--list-active-process-paths","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f62cb762a6f2e8160549b1f997a018232de168e5","secs":70}
+{"id":"fn-commands-workflow--execute-agent-sdkfast","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"93747c035c7b6cb319561c702929bac7f66b89df","secs":94}
+{"id":"fn-lib-agent-today--has-activity","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"ed34779ae47f737ba21e8c9c023b3f81dd669b1b","secs":26}
+{"id":"fn-commands-youtube--print-learner-check-gate","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bcdacca673bcd45598d5444b27beaf2a4c5b1221","secs":45}
+{"id":"fn-lib-accept-verify-gate--non-falsifying-issue","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"0862971b578e3b51548e251fb62a4f88ee93dd4f","secs":45}
+{"id":"fn-commands-workflow--do-atris","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"e37cd75267ad63a443f1d57f607d0681db9cdfc6","secs":111}
+{"id":"fn-lib-agent-today--start-of-today","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"85788420a39602a369db09f75a862ddf9b818f01","secs":30}
+{"id":"fn-lib-auto-accept-certified--agent-certification-review-passes","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":22}
+{"id":"fn-commands-sync--sync-atris-all","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"fewer than two tests","exit":0,"secs":220}
+{"id":"fn-lib-agent-today--folder-aliases","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9c927650ff5ea53e068067633d117356dfb12d67","secs":45}
+{"id":"fn-commands-worktree--worktree-command","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d3a86e4b9c18c4330df80df24a419ce8dc9fd0dc","secs":82}
+{"id":"fn-commands-worktree--record-worktree-removal","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d033bc2d94bdd454f6320bf78a1990139a2406f3","secs":87}
+{"id":"fn-lib-apply-gate--apply-slug","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"e50d753e42c5a18f3b9397f40067c5889e395cf8","secs":29}
+{"id":"fn-commands-xp--collect-local-xp-projection","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a32f80296207f7ed08df9934258aae9d6c53782a","secs":86}
+{"id":"fn-lib-apply-gate--apply-sidecar-rel","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"1f0e773c1d428e85bad98e45c97e36b08abba376","secs":43}
+{"id":"fn-lib-autoland--default-alarm-hours","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":14}
+{"id":"fn-lib-account-bound--refuse-account-global","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"f2ddd6e950c53b932b4e13a8f6f8f89296ea75d3","secs":66}
+{"id":"fn-commands-wish--print-rewards","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"bbba09d4e43e838832607b1c4c2f5255a25c5197","secs":161}
+{"id":"fn-commands-write--write-command","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"7acd850a32fcce1bf26c9f72721e8aa216247a49","secs":100}
+{"id":"fn-lib-auto-accept-certified--denied-tag-of","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9f1d6aa1e135b0e151ad798f842288ef6edcbdea","secs":35}
+{"id":"fn-commands-youtube--process-youtube","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"ee1dd071d16fe374a9b7769d16fd8aaab9feb74b","secs":88}
+{"id":"fn-commands-youtube--watch-command","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"39091fdf281410bfc7f74f79b039a90d5f00daff","secs":87}
+{"id":"fn-lib-autoland--heartbeat-liveness","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0d9500fa9c8b733834882a8f1cabb09d390e1fb1","secs":33}
+{"id":"fn-lib-auto-accept-certified--verify-runnability","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7c8a9834706ce3be0ffc6fdd866c65a423c5b00e","secs":52}
+{"id":"fn-lib-autoland--has-agent-jargon","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5d659eca0939d630c5cf6b810b347f6babecec80","secs":36}
+{"id":"fn-lib-autoland--default-digest-hour","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"3bfc515d5d0e76190bf05a00f1492315d4a1ed23","secs":51}
+{"id":"fn-lib-auto-accept-certified--is-agent-certified","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"181a4fed901c72e339d1666a80e82459a5bb00c0","secs":61}
+{"id":"fn-lib-auto-accept-certified--protected-lane-of","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"819ccb7af63530b3a557b9ad564c6f598d21ad3a","secs":66}
+{"id":"fn-lib-autoland--dejargon","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3aa23119cd8b4a0b320dfe239978d32f45522047","secs":59}
+{"id":"fn-commands-stream--stream-command","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"7c5e4fb398bb4fa0068442741c770a1e9cfb40cd","secs":322}
+{"id":"fn-lib-autoland--digest-line","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"44a05f50c95cbcacf0e7524f5d5887a94c09fd8b","secs":61}
+{"id":"fn-lib-auto-accept-certified--declared-candidate-path-values","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"646f105cc7d558cb0d3181385d166d90eef1e711","secs":85}
+{"id":"fn-lib-brief-ledger--render-brief-review","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"4d09174014b4e7a7d13df484c72090ad22634f35","secs":36}
+{"id":"fn-lib-brief-ledger--mirror-brief-record","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2f2626fcbadb4753513556349677cfd58b80e44c","secs":48}
+{"id":"fn-lib-agent-today--ran-agent","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"d8a7fc2d5728efec3d152b143fe81064c066e7ad","secs":118}
+{"id":"fn-lib-autoland--stale-heartbeat-landing","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"191bcfa7ad6b465be1e680b972a44abf3b2d4ee3","secs":53}
+{"id":"fn-lib-business-target--login-token","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"cbe3b45defb31fbb6c90e39916226e9e05c0a640","secs":30}
+{"id":"fn-lib-auto-accept-certified--candidate-policy-gate","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"db5cee350f8a4489d8dd9c5d559f3294116fbb8d","secs":107}
+{"id":"fn-lib-autoland--install-cron","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"e3d41b8f7d48d2c683f7dd4e97ecb4dadb73900b","secs":71}
+{"id":"fn-lib-brief-ledger--worktree-base-ref","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5b911dfc759a0826189aad2c2b7c826851ee0951","secs":44}
+{"id":"fn-lib-business-target--business-or-say","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7c8c430a4de7b6a7d7f9267b98d23822cb78e9d4","secs":49}
+{"id":"fn-lib-auto-accept-certified--run-verify-command-cached","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"fa13f78acc44ef5e8c5c7c9734777a83df6fb9c5","secs":108}
+{"id":"fn-lib-business-target--no-business","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b9c711349b90f47614467f520009fb0c960290af","secs":48}
+{"id":"fn-lib-brief-ledger--stamp-latest-open-brief-for-worktree","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d6479e66ad0291fd2f7117c8f8c45bb2b2234da2","secs":78}
+{"id":"fn-lib-autoland--heartbeat-is-live","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"f13e39c58d1b4ac4a054eb599c0d4d97bce0b31e","secs":95}
+{"id":"fn-lib-autoland--heartbeat-status-text","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"7e3e4b859983fa882983535d26ab70d1cee26fbe","secs":101}
+{"id":"fn-lib-campaign-lanes--lane-question","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"4247f7fef64dd6f14cc29021a9749205193c8687","secs":53}
+{"id":"fn-lib-autoland--certified-work-lands-phrase","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c7d70b1926283a468414ea745f412f98851345cb","secs":122}
+{"id":"fn-lib-campaign-loop--reading-key","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"b9c40a11d3e2480d0023456222d7f574dd1473f0","secs":48}
+{"id":"fn-lib-business-target--relative-time","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"fee59058452fb8bd63c8d43b95f6a275b7f54870","secs":64}
+{"id":"fn-lib-campaign-loop--ask-owner","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c550a87ba57f10218f5553126c0985d0ab99926b","secs":54}
+{"id":"fn-lib-campaign-protect--read-protect","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"dd2b75e26e19e49a32d4d26cc22d4a5cfb01c99a","secs":36}
+{"id":"fn-lib-campaign-lanes--open-lane-asks","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"da30ac5a71a089c1209674ad4a6cf72397345832","secs":70}
+{"id":"fn-lib-campaign-protect--changed-protected","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9d199a7e4a51a6bfd793b24666e56a3f1ba0acac","secs":60}
+{"id":"fn-lib-campaign-protect--protect-file","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"09f7b19a3f98eed8fc7deb5135c2aac7cc4e1290","secs":48}
+{"id":"fn-lib-campaign-protect--save-protect","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7764f55af919c88fc220f2dd64ad19dbd95ecda0","secs":48}
+{"id":"fn-lib-campaign-protect--plan-protect","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3bd203d7c158b5285357663d44597cdd87a24ee0","secs":58}
+{"id":"fn-lib-campaign-sync--campaign-token-env","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":18}
+{"id":"fn-lib-campaign-protect--head-commit","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"7f3e8816557e5539876281f9ab7e1e6d0a7c40ba","secs":77}
+{"id":"fn-lib-campaign-reading--confirmed-reading","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"964df40e9f2d0a1b7181e04dd4f028e14cf08a8f","secs":53}
+{"id":"fn-lib-campaign-schema--is-human-actor","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3e2e2d0dda7772b56aaa99eaef7591394b24c346","secs":36}
+{"id":"fn-lib-campaign-protect--checkout-top","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"488e96f0b79f198d7fcd267517672bc09cffaebb","secs":88}
+{"id":"fn-lib-campaign-schedule--mark-fired","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"dc1c384412c59c8d7ce9cc34c0247054f27043fa","secs":67}
+{"id":"fn-lib-campaign-schedule--is-due","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"78b1e30ae3526e079e089cfaf23e2882393d8426","secs":85}
+{"id":"fn-lib-campaign-loop--activity-line","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"07eb9e026f6625053675e3bbe0e5edf94f178c7a","secs":133}
+{"id":"fn-lib-clarity--is-empty-profile","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9cc4a415a211915a3c7854c1b2bc1481fe8c7503","secs":32}
+{"id":"fn-lib-campaign-sync--cloud-run-status","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"83383a1da458f8122e49c007bc1382dab365f13a","secs":56}
+{"id":"fn-lib-campaign-sync--take-campaign-token","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ac0189b4c9811ed32541960481ae28227a7d2add","secs":51}
+{"id":"fn-lib-checkout-sync--tracked-tree-is-clean","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"eeb1d508068dfba20c53cd1ba2dce5f95af7b125","secs":43}
+{"id":"fn-commands-worktree--status-counts","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"813afefe238c6e3cba7672659296d7be7d367747","secs":304}
+{"id":"fn-lib-campaign-sync--send-person-action","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a3b2bb6285c95719527d3873e448c20438af9ab9","secs":63}
+{"id":"fn-commands-wish--with-wish-answer-audit-context","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"6f50d846f2ca25a48bfe9e4ca835b6b0b1e0a115","secs":347}
+{"id":"fn-lib-clarity--questions","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"file not written","exit":0,"secs":42}
+{"id":"fn-lib-campaign-rsi--format-next-campaigns","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"33f196a3331338630e00907107a077071b36386d","secs":130}
+{"id":"fn-lib-campaign-schedule--remove-schedule","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"fa9f246bf729ae1018c0506aefaf419a44cf041f","secs":119}
+{"id":"fn-lib-campaign-schedule--when-text","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"ae4959cc57b3119dbfac2102809fe981cb287d93","secs":116}
+{"id":"fn-lib-clarity--profile-paths","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"2d51267240f2fcc7ef0de75e1ee7aa2eb76fbf72","secs":71}
+{"id":"fn-lib-clarity--read-profile","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"52937e17a43d7601247752f18599e6490f5cb278","secs":40}
+{"id":"fn-lib-campaign-rsi--format-overnight-rsi","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"ba2cb28c8898e964a8f238b0a79acafb547f6c7b","secs":134}
+{"id":"fn-lib-campaign-schema--timestamp","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"721e3294c922405cfe1d14871b40bd5f0ac670bc","secs":112}
+{"id":"fn-lib-cloud-mission--fetch-cloud-mission-checks","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b7d56300409fe3b88c4aadce679449f04ce97763","secs":46}
+{"id":"fn-lib-campaign-schedule--default-steps","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f748250b094c3f5ff0a135015370489d6b62e91c","secs":140}
+{"id":"fn-lib-cloud-mission--fetch-current-cloud-mission","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"44f25ae6d8ff4952568bce9428e738efa647ae66","secs":44}
+{"id":"fn-lib-campaign-schema--actions","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"507c6054399719d099c44af1334eb1d15dd24b78","secs":132}
+{"id":"fn-lib-cloud-mission--fetch-cloud-mission-status","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"25784fdf1b50fb6a8706b183b65130100fe08a89","secs":49}
+{"id":"fn-lib-cloud-mission--update-cloud-mission","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2249ab9236c63f8baed93094f0d5441d82c8d6e3","secs":47}
+{"id":"fn-lib-campaign-sync--cloud-features","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7ef12a49330c716c004d7c1a6108bf1a3111c43c","secs":119}
+{"id":"fn-lib-daily-log--note-title","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"04a78388e53475614ede2ea4f0e1110373394a49","secs":26}
+{"id":"fn-lib-daily-log--compact-log-text","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"64e856a2b35459026c640d13c181ec403db18494","secs":38}
+{"id":"fn-lib-campaign-store--campaign-folder","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"5344dbd3210d27737776e52e3153f3b32708646b","secs":134}
+{"id":"fn-lib-daily-log--member-slug","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"08e116b5638c5b89e578904cf4384f4b1911ebf1","secs":31}
+{"id":"fn-commands-wish--run-again-wish","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"1c028fcf2680de50a72a51fbf0f230e3dbe6a75f","secs":417}
+{"id":"fn-lib-deck-schema--has-content","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"297f73310ea4f94a8d3e01ebde39a0e81bba6601","secs":30}
+{"id":"fn-lib-daily-log--master-note","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"52f61483321f131f12146d47355fa88c68bf203d","secs":45}
+{"id":"fn-lib-campaign-new--draft-and-start","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"e39ab7af3728feba8df93698316ec151b838ca72","secs":212}
+{"id":"fn-lib-deck-from-md--parse-front-matter","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"29d0b33e848a4dbcf35303310be3526082d396a3","secs":40}
+{"id":"fn-lib-cloud-mission--valid-cloud-lanes","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"df5e51dd0bfad20c85e74ebd2db7a7eb06bf2b90","secs":72}
+{"id":"fn-lib-daily-log--append-master-daily-entry","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"d7ef2cfec7d130c07b338a05cfa56a993a157ca7","secs":68}
+{"id":"fn-lib-developer-api--token-from","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"c96ecf1c8ed90f15a486e57fd530af0614336b62","secs":19}
+{"id":"fn-lib-developer-api--is-not-found","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bc838522f5f279b145613f627941485c8934b32a","secs":28}
+{"id":"fn-lib-design-api--billing-of","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7fe0dcb24e306f9c9bac7abb32865a0a7def0be8","secs":39}
+{"id":"fn-lib-developer-api--one-line","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"6c1102eea54fe2fee57e4a4600d4c59cdc39b6f9","secs":32}
+{"id":"fn-lib-campaign-trace--export-trace","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5a71c79f947427db1e0fdca67e6a3e0844f3ad7c","secs":138}
+{"id":"fn-lib-design-api--credit-line","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"be3f71299692264ec87b8afc96f6fe840f28f63a","secs":47}
+{"id":"fn-lib-design-api--poll-design-job","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"77eb7ddd66c15bd419b00b07a8713cc5d5d5cae6","secs":46}
+{"id":"fn-lib-developer-api--print-result","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"66684b3447e13a037dec351b34fe1b8839daf043","secs":42}
+{"id":"fn-lib-engine-registry--no-session-message","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":17}
+{"id":"fn-lib-design-api--resolve-design-key","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"19547a2276de283616351515fd9c6fc0f308a28c","secs":55}
+{"id":"fn-lib-deck-review--default-out-root","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"203104f0c91d62cbad259946c25d24fd33b63600","secs":70}
+{"id":"fn-lib-deck-from-md--split-body","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"2058a5066a1896f423ff1b293e7ddd09542ec7c8","secs":73}
+{"id":"fn-lib-engine-registry--cooling-view","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d139048550848029b1205f9dee7691579b43daa7","secs":47}
+{"id":"fn-lib-engine-processes--live-run-engine-text","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"5dc1ab34f6c3fffc35a1bf52d7f6339136945426","secs":50}
+{"id":"fn-lib-context-gatherer--start-first-talk","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"39e3b979bf4e0394a6bea561169c9521ae07a1bb","secs":103}
+{"id":"fn-lib-engine-registry--clear-session-roster","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"ee43f841fd3af3cfe422af52ddfe11415788723b","secs":55}
+{"id":"fn-lib-engine-registry--engine-health-statuses","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d723c3727e6444cd9a9f97de4c8ae9110eef78b2","secs":45}
+{"id":"fn-lib-engine-registry--job-takes-any-engine","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"04c7d57b7aa4d306a583fd44280d91c49a040f38","secs":40}
+{"id":"fn-lib-engine-registry--is-claude-family-model","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"50772a4eb6cd05dab2cbe6fd6fef2b24c9670198","secs":44}
+{"id":"fn-lib-cloud-mission--enqueue-cloud-mission","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"3f7cec7f7d3ab06e0065d1c03e06ce1faac41157","secs":138}
+{"id":"fn-lib-engine-registry--roster-decided","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"08eab9358b78e8ba73e52c2326dd57353e99afc7","secs":38}
+{"id":"fn-lib-engine-registry--engine-duties","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"c5c57fd10ca8f8f3733dbc84f3b35fb7e12de7a7","secs":69}
+{"id":"fn-lib-engine-registry--roster-job-label","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"16bbdd166cb411ce4fd2d08802cc1d0c5a646f8c","secs":39}
+{"id":"fn-lib-campaign-schedule--save-schedule","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a326ae26e458ef39f9f9805fe5b163f59cd32d83","secs":235}
+{"id":"fn-lib-engine-registry--small-build-job","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":19}
+{"id":"fn-lib-engine-registry--engine-ready-at","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"e61366c4c88ac2f488cefb5f6f28d9bbb48ca3aa","secs":71}
+{"id":"fn-lib-engine-registry--engine-roles","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"1797346017c64f8742ada4b7c06820e946945bab","secs":68}
+{"id":"fn-lib-engine-registry--custom-roster-job-keys","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"3045282bd77c29370b4d4af7acd2a2e11f29499c","secs":85}
+{"id":"fn-lib-engine-registry--infer-job-kind","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"000ec071f74c97d93f5b1c56d90c17c4e6f1dbdc","secs":72}
+{"id":"fn-lib-engine-resource--leak-min-age-sec","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":15}
+{"id":"fn-lib-engine-registry--roster-layers","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"7f8ede76c6a8fe498dabf2941901c02e9a42c77a","secs":45}
+{"id":"fn-lib-engine-registry--roster-job-name-error","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"c4dbbe6daf1abe6380841dc89b0dd29dbe8fb9f8","secs":49}
+{"id":"fn-lib-engine-registry--roster-session-key","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0dfe51dba6f7973123f3892bcf899ef2e882c55e","secs":45}
+{"id":"fn-lib-engine-registry--roster-choice-for-pick","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9ca46714d3401b66aac1b7f2886ab700f2979539","secs":70}
+{"id":"fn-lib-engine-registry--engine-jobs","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"1ad9396f094734e3d4776b02a8d51cf86f786ac4","secs":96}
+{"id":"fn-lib-engine-registry--roster-model-label","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"84c5d108eda4b6c7941e1278f2118774ec639d73","secs":58}
+{"id":"fn-lib-engine-registry--roster-tool-label","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5ff56a1cf1f9fdf3a782d18cb315a16fd9b24798","secs":50}
+{"id":"fn-lib-engine-registry--roster-sources","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"5896aebcaee218878dd0cc811d820b99a97ed6e0","secs":51}
+{"id":"fn-lib-engine-resource--error-reason","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"9627928953d8c6772027d458d57b9d8f33248572","secs":34}
+{"id":"fn-lib-engine-registry--roster-max-text","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"a5c9261e739f330cef5c8897bdc85f11a039d5a9","secs":71}
+{"id":"fn-lib-engine-registry--resolve-registered-engine","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"11b2f5fcb373e942584c45bead42acc9fa372a82","secs":89}
+{"id":"fn-lib-engine-resource--agent-start-line-text","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"d3872eb07c220209a91d50ffc2cd922d78502399","secs":52}
+{"id":"fn-lib-feedback-triage--render-feedback-triage-brief","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b2e8c6459b74c1153219d6767e4b600e71561915","secs":42}
+{"id":"fn-lib-engine-registry--resolve-notes-job","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b5aec478a12c30dc90161f9e2da3787cf7505620","secs":113}
+{"id":"fn-lib-falsifier-probe--probe-timeout-ms","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"d87d4f68321b5b07a135e68a256877fae76bf4fb","secs":56}
+{"id":"fn-lib-file-ops--add-inbox-idea","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"6a263be01be4b8421a76908695aebbe42d2c0a92","secs":55}
+{"id":"fn-lib-first-minute--is-certified-review","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"08db73ddf2b22b203a8293099b6187fb2668deb8","secs":38}
+{"id":"fn-lib-first-minute--is-fresh-workspace","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"993fcb162f5dd1592f45b3202fb9c38ed840ad29","secs":34}
+{"id":"fn-lib-first-minute--is-bare-atris-flag","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3b9ac0e5e4553fb9ba440b45901ef22580c2f1ef","secs":43}
+{"id":"fn-lib-first-minute--first-talk-json","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"71f860d656d51d864cfc1f0a571421461a0f82a3","secs":47}
+{"id":"fn-lib-engine-registry--roster-worker-walk","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b17c31ace142c563cba2345e45ead95d867496c0","secs":80}
+{"id":"fn-lib-first-minute--first-talk-build-command","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"8a89bf981f4fdea67257fdca9504989ad7ce1754","secs":55}
+{"id":"fn-lib-first-minute--list-user-visible-work","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"40666a682f05fa85fcd44fd28cdf8718ee600a40","secs":49}
+{"id":"fn-lib-first-minute--human-starter-task","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"cf869ee8a9fde7176469615d88ae261c7ab8a999","secs":59}
+{"id":"fn-lib-engine-registry--roster-pin-fields","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"17fd90ab5e9e01f860afbd039425917d34aead7b","secs":113}
+{"id":"fn-lib-first-minute--order-built","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b34d12d2f2781aa62a206653d9e127c34cc6b0b6","secs":52}
+{"id":"fn-lib-first-minute--spoken-later-note","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"40c210de12e4472d8bd7ec745426f857ba53fc75","secs":38}
+{"id":"fn-lib-engine-resource--close-lost-runs","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"725aa19a263e167ba5adde026c304c78594ae66e","secs":96}
+{"id":"fn-lib-first-minute--task-started-at","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"fa14fc696ec4fb502e8184b2ec65dcbdd6c5aac6","secs":46}
+{"id":"fn-lib-first-minute--render-whats-next-ask","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"77d53274ad806c30c546adf4d35c8457a076ab71","secs":76}
+{"id":"fn-lib-file-ops--create-log-file","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"e698b964287ab9b420bf1b4164fe34a5e2aa4117","secs":105}
+{"id":"fn-lib-functional-owner--normalize-owner-slug","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5f3153d3502cbff9527f166fff14ea7ff102aaea","secs":42}
+{"id":"fn-lib-first-minute--shipped-human-starter","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"9174e77ce8b5f3908966feff6da1f2ede1e11b6c","secs":76}
+{"id":"fn-lib-functional-owner--list-workspace-member-slugs","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"60e73b380536c74145543474d991eff0dde82562","secs":51}
+{"id":"fn-lib-first-minute--load-local-tasks","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9cee726625107f328951b53beb6e8f922e3dbb5d","secs":89}
+{"id":"fn-lib-gm-bet--make-cli-runner","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"12526a8bd4a37fe5af61911b6f437ae74ca14dbb","secs":49}
+{"id":"fn-lib-gm-season--replay-rows","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d0274abd441fdcf17b8511ec53a9f81087ce78ec","secs":40}
+{"id":"fn-lib-gm-bet--mission-objective","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3af7351f156d5682f6dd933500a3076d7bc38009","secs":58}
+{"id":"fn-lib-host--default-config","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":16}
+{"id":"fn-lib-functional-owner--functional-member-topics","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"76b5381a3da82e890de1f58920eed178907eb69e","secs":69}
+{"id":"fn-lib-gm-bet--job-poll-ms","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f27af57fe92d5f96da2d789fe09adecd6535cc4c","secs":67}
+{"id":"fn-lib-first-minute--write-later-note","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"7fce331be66c334b51fc93063d23574ee3c17081","secs":78}
+{"id":"fn-lib-gm-phone--make-step-runner","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"8c4a87e78928177b824b2085a0dec3aa18ba26a0","secs":57}
+{"id":"fn-lib-land-green--default-verify","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":13}
+{"id":"fn-lib-gm-season--member-ratings","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"7de8aea3887ebdc7668719a7f88499f8f667c4f4","secs":59}
+{"id":"fn-lib-gm-target--load-claim-history","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0cb87f67374c3819022c2fea35e45ca0a3c34f71","secs":52}
+{"id":"fn-lib-manifest--skip-dirs","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":78}
+{"id":"fn-lib-inspect-fields--strip-inspect-args","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"d1999a715c644a5f1d033dc3cce31df5029c1c43","secs":107}
+{"id":"fn-lib-gm-bet--model-timeout-ms","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"4aa7cd986fede9f30ef0979ae85c15e6da6df1f6","secs":155}
+{"id":"fn-lib-inspect-fields--inspect-text-lines","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"54d27f96a352f2e44e447223126611ae3522752c","secs":111}
+{"id":"fn-lib-gm-target--week-key","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"12b735c26a53e300b91a66f1affdda4f2b0d22b1","secs":133}
+{"id":"fn-lib-engine-registry--engine-registry-view","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"16fed8cb36664aeef86c2c3ecc6d177a12a87f8b","secs":310}
+{"id":"fn-lib-first-minute--speak-first-minute","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"73101ccd6c3ad00bf53bb1011a68c1f7031e4602","secs":198}
+{"id":"fn-lib-first-minute--speak-keep-working-minute","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"44afcc614c2e2f86eb89750b4b051a4bfdeedd5d","secs":201}
+{"id":"fn-lib-known-commands--suggest-commands","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"dbef6f6a8caa6806a56d422309c53d19329428bb","secs":108}
+{"id":"fn-lib-manifest--is-ignored-sync-path","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9b720353cf8c958488786b72d0575b128fd8b92b","secs":110}
+{"id":"fn-lib-file-ops--ensure-log-directory","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"1b7954ff191ab6f8dbb78c51c729573b243d859d","secs":256}
+{"id":"fn-lib-headless-chrome--remove-profile-dir","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"77f0c7387b225cd2de8602fe6e42f1b09c7133ea","secs":146}
+{"id":"fn-lib-manifest--load-manifest","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"8b4e6560461baa86bf3e132e3e79aadd49d50ab7","secs":127}
+{"id":"fn-lib-map-refs--existing-map-docs","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"310c4e87ec9eb884d37beedf04eb06205b639323","secs":44}
+{"id":"fn-lib-loop-doctor--mission-lock-records","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c67ffe16cf879529681bf870f4c50539bf7ac7fe","secs":146}
+{"id":"fn-lib-map-refs--check-map-refs","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"017f9e749c4c2a2e1b507926554fe2eb18fe4811","secs":63}
+{"id":"fn-lib-html-render--blocks","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"415912e22c024ec86ff105a13837ab69de70712f","secs":175}
+{"id":"fn-lib-member-map-inbox--inbox-dir","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"file not written","exit":0,"secs":38}
+{"id":"fn-lib-map-refs--fix-map-refs","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f6b9bd8510cfcd5cb5639c6f760e0746b4ab9e99","secs":69}
+{"id":"fn-lib-landing-proof--prove-check-before-publish","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"d5746e4da2c48910d1e99ab6d5a0f1e77a626e70","secs":187}
+{"id":"fn-lib-member-board--member-stop-command","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3b1735577298405a50f7a1a7fca8e9fb0767e0b3","secs":73}
+{"id":"fn-lib-member-board--parse-started","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"07086ff4755e0c02e43f9f627c634558782df198","secs":60}
+{"id":"fn-lib-member-export--agent-name","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"959b6938a7e7182480648c8ef976e6076b17afe9","secs":69}
+{"id":"fn-lib-handoff-wake--with-file-lock","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"35297491685f70f86883aed1562d16e68e71993a","secs":226}
+{"id":"fn-lib-member-progress--run-tag","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"file not written","exit":0,"secs":34}
+{"id":"fn-lib-member-park--is-parked-frontmatter","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fc12c6a03082846f68e1633348c547b97da0a815","secs":61}
+{"id":"fn-lib-member-autoland--code-status","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"b9af415a8bf0387aad2bc765359d93aa6af05921","secs":118}
+{"id":"fn-lib-member-map-fold--fold-every-ms","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"30092a70ac277f69e4597d93718e20e4aac75659","secs":94}
+{"id":"fn-lib-first-minute--speak-nothing-running","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"100d4f85af847f03c8fcf17e9105f995fba50cc1","secs":326}
+{"id":"fn-lib-member-progress--new-run-token","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"354e5868dab24ed0e29c860c5e1183e6b17600b0","secs":61}
+{"id":"fn-lib-member-park--is-parked-text","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"be0294c2c628789f2cb3262b3042147f2460342e","secs":85}
+{"id":"fn-lib-member-up--default-max","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"file not written","exit":0,"secs":43}
+{"id":"fn-lib-member-type--member-refusal-reason","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1e2fe0cceb4e82a7101fa95409ab856bacfba7cb","secs":45}
+{"id":"fn-lib-map-refs--fix-map-docs","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"b217fa3ba6cccc70ee934401e27f31af7ebedb43","secs":147}
+{"id":"fn-lib-inspect-fields--read-fields-flag","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"94ca2c4e707dc710cfe7c03c5be4eb7337171e37","secs":271}
+{"id":"fn-lib-member-task-pick--task-check","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f05557588647c4f9cecef20cb93ae278d90ea159","secs":59}
+{"id":"fn-lib-model-names--grok-model-spelling","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":17}
+{"id":"fn-lib-memory-view--read-task-counts","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7330a3e38e0ebfe9ccc8f52c2cb86478109b6c30","secs":49}
+{"id":"fn-lib-member-task-pick--held-for-person","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"7b812dd10f483834f448550f6544c6ef86024fa3","secs":69}
+{"id":"fn-lib-headless-chrome--make-profile-dir","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"46bc257fdbf9e4506721d50060f7755760ff76cb","secs":294}
+{"id":"fn-lib-member-alive--resolve-atris-bin","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"89b388df328b0cdd03edce1fcf374eef6880ec5c","secs":170}
+{"id":"fn-lib-member-report--member-report-command","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7d04115c61bbf3dc05386bb89de8e332a0ac3669","secs":89}
+{"id":"fn-lib-gm-phone--load-phone-view","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"b9704045cb1c52143c22abafaea1c9904f652b9f","secs":338}
+{"id":"fn-lib-mission-task-gate--linked-task-refs","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3e91a77fbc38ce9aa16903d44f2764b0a1b7e8f1","secs":44}
+{"id":"fn-lib-mission-protected-lane--unreadable-mission-guard","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"1c7e981c31d36a9953f4d1ef1197c5bdb350be17","secs":55}
+{"id":"fn-lib-memory-view--gather-memory","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"d9df83b2265bf2acf9e3f9f2ff054dcb019ed700","secs":77}
+{"id":"fn-lib-member-progress--run-marker","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"d25d12579978a3c3ab6bab282dce0a5c69b25e41","secs":127}
+{"id":"fn-lib-manifest--filter-sync-files","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"a4546fad5310dfa1df7cabc1fd75a3009907b551","secs":303}
+{"id":"fn-lib-loop-doctor--latest-mission-records","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"0bd5460e9ae6edfb67d5f6358949ba8346f2960d","secs":309}
+{"id":"fn-lib-journal--show-log-diff","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"8d024885300851cd93fe46d99eba72f77bae02ea","secs":322}
+{"id":"fn-lib-next-moves--latest-suggested-target","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"3d43f4bf9e037df112b4a80c6ef9b7ff75697317","secs":53}
+{"id":"fn-lib-next-moves--read-handled-task-titles","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"39cbce7805dc674eb7a94bffa2e481751ccee1b9","secs":44}
+{"id":"fn-lib-next-moves--roadmap-items-by-state","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"a3c79912417ef167d71886b312411a4f19f39f36","secs":45}
+{"id":"fn-lib-next-moves--mark-dream-card-consumed","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"55a2bc0ed8931c4e5099e2f7b7adff5d70c42e56","secs":59}
+{"id":"fn-lib-model-names--claude-long-context","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"b0c0a4cfd47b3f4d343128c090eb02f6c56f357d","secs":79}
+{"id":"fn-lib-map-refs--map-notes-path","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"22f923e42f44c9c0ea741208a73bffb4950997d9","secs":226}
+{"id":"fn-lib-pack-capabilities--apply-pack-capability-grants","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"381d73659f27cf5d25474b9ab47528240a2a233e","secs":45}
+{"id":"fn-lib-model-names--claude-model-spelling","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"07fa6297caef96a5a505a3f27605b0de620e374e","secs":82}
+{"id":"fn-lib-next-moves--park-next-card","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a8f5f9ca8982e3d1e44589451e594f5fe77cab8b","secs":67}
+{"id":"fn-lib-orb-context--collect-orb-context","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1e1b3067dd4be113ff128f8898902a22dc696349","secs":58}
+{"id":"fn-lib-pack-capabilities--assert-pack-capability-policy","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"1e0a066f64574d29075b349a341249d678816394","secs":48}
+{"id":"fn-lib-mission-protected-lane--guard-mission-on-path","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"718ee93d815621c0ccdd17811bbc25dfecc240fc","secs":119}
+{"id":"fn-lib-reel--stagger","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":16}
+{"id":"fn-lib-next-moves--is-generic-inbox-placeholder","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"0a2a0d22dc5455e339c28903492b1720213edea7","secs":97}
+{"id":"fn-lib-pack-capabilities--build-claude-capability-args","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"c180d4d0ce6b2862614ba0cb3cd7e9f5d2f3475b","secs":52}
+{"id":"fn-lib-pack-capabilities--canonical-capability-names","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"06f9dee0e3be657564f934c8e7c9510ab8bab97d","secs":46}
+{"id":"fn-lib-pack-capabilities--assert-pack-execution-tree","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"6b2bda911e6dda8035e199a41ae5fd4f0cd33df9","secs":61}
+{"id":"fn-lib-next-moves--today-inbox-items","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"4fec18cac28fc0be69618de3fc31dbe07a68b56a","secs":87}
+{"id":"fn-lib-pulse--append-scorecard","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"037fb510d43c9e25531caffc6ab752e4daf9e494","secs":40}
+{"id":"fn-lib-pack-capabilities--confirm-pack-recovery-claim","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1e06d4075a03417804162c9359c18d3efad913b6","secs":55}
+{"id":"fn-lib-permission-grants--command-is-grantable","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9a2c742c1e2a20e15f1a24b6c830ff0518021ecd","secs":51}
+{"id":"fn-lib-noninteractive--reject-unsupported-json","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a6638295e17b08f3a1b09806c8ccd53a65b9963e","secs":97}
+{"id":"fn-lib-pack-capabilities--receipt-directory","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"79a39650e84667f03f26f277a5bf0b4c0367a3e6","secs":60}
+{"id":"fn-lib-revision-metric--is-revision-signal-file","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"368c221af3e7c5bedc060bb5e6d97fc0b8641adb","secs":39}
+{"id":"fn-lib-roster-runs--default-days","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":15}
+{"id":"fn-lib-receipt-evidence--receipt-path-pattern","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"9854891cbc1cb319193d0c63e1081a5383a991c9","secs":59}
+{"id":"fn-lib-roster-runs--outcomes","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":18}
+{"id":"fn-lib-revision-metric--append-daily-summary","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0509337e65a8279dd2d0a003ae2b8308622e116d","secs":50}
+{"id":"fn-lib-orb-scorecard--default-days","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"acc1fceac398477694e7df37d5099166358c869a","secs":107}
+{"id":"fn-lib-pack-capabilities--claim-pack-recovery-parent","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"324fb61ce2276f487300529802a228869c79c11a","secs":87}
+{"id":"fn-lib-member-board--member-row","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f963992097d9fbc7fb12eee3f9f4757a631264e3","secs":287}
+{"id":"fn-lib-roster-prep--prep-record-fields","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"40b4b3426025800f41c1848cf1726c2fea312af6","secs":44}
+{"id":"fn-lib-policy-lessons--policy-lessons-for-files","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"3ce610093e39e81a8c7268f85b820de00b3ef67e","secs":76}
+{"id":"fn-lib-roster-models--available-models","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2d8782d9c9418ca041f26286ce96ac14dcfa350d","secs":53}
+{"id":"fn-lib-roster-models--engine-model-text","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"17b75c639bc70055b1d49a85a3dd0e730d6b0725","secs":52}
+{"id":"fn-lib-mission-root--redirect-to-workspace-root","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"9f81608b855b5e70f7d9b5d95e9aad10e5b5a26d","secs":170}
+{"id":"fn-lib-roster-prep--with-prep-brief","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"bb080abe0d8ce0e0131295a33e6bee7aa2afb3d2","secs":48}
+{"id":"fn-lib-review-integrity--review-event-actors","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"0939735f7cd37e5ed2aedc3141d130c3a97fe6e3","secs":80}
+{"id":"fn-lib-qr--gf-mul","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c4acf88f23b31db61692094e44d25b7ad47e4595","secs":93}
+{"id":"fn-lib-rsi-record--improve-lane","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":19}
+{"id":"fn-lib-member-up--with-maintenance-lock","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"e82da24b3d524933f5aa47b22e1d8cab7b76b588","secs":219}
+{"id":"fn-lib-roster-markdown--old-roster-note","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"2184cb98c6432a14d14ddd6370dd308f5d99ded1","secs":81}
+{"id":"fn-lib-roster-runs--job-name","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"bbdd633621e26fc32f37e4e15f42a63f5520c874","secs":56}
+{"id":"fn-lib-roster-runs--summarize-runs","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7e3688df01465a6e80af812945ad7fe7d9f8bb70","secs":44}
+{"id":"fn-lib-roster-runs--worker-runs","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fecefdc457698027257738b0a49d04091ef32df7","secs":46}
+{"id":"fn-lib-roster-runs--run-view","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"8ff37a45a86915d7b16d5fc7374a443419e7dfa9","secs":55}
+{"id":"fn-lib-roster-models--model-label","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"aaa4a9028013e1d3262585f07b9bb3169f4942c0","secs":85}
+{"id":"fn-lib-rsi-record--current-policy-id","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"a742a128ea4ed73cebd0d155ca84d74111687026","secs":45}
+{"id":"fn-lib-secret-gateway--proxy-env-keys","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":14}
+{"id":"fn-lib-revision-metric--revision-window-hours","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"34683e9f80b91464f687b769eab51c08d1db93e5","secs":97}
+{"id":"fn-lib-roster-suggest--suggestion-count","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5b095a32aafe283595a97a2b387da3afc0be8976","secs":55}
+{"id":"fn-lib-roster-suggest--attach-suggestions","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"d43a7f834b05473e3c36c7d58cae8119f047c72a","secs":63}
+{"id":"fn-lib-rsi-record--engine-from-model","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"52df589682f27677c06a643db048abf58ffec534","secs":54}
+{"id":"fn-lib-runner-command--engine-effort-levels","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"010736b1531ba881ba85b91cefd83c4a101c772d","secs":45}
+{"id":"fn-lib-scratch-root--refuse-unbound-scratch","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"5d1c01d1e73d6ccf899fae4ae05d21997382e007","secs":29}
+{"id":"fn-lib-roster-runs--append-roster-attempts","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"746daae2713ff653773cadfc6b62bfb92cf74324","secs":100}
+{"id":"fn-lib-rsi-record--dreams-path","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d2362d48da6a5a43b21e9cba0eab6cad591f8d01","secs":63}
+{"id":"fn-lib-roster-stale--pin-max-age-days","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"6133beea415a626e53d975bb29daaaaf912b298c","secs":74}
+{"id":"fn-lib-roster-runs--recent-runs","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"13105cdcacad62af4c0423980bf8bbeade7adea6","secs":92}
+{"id":"fn-lib-runner-command--resolve-pinned-runner-model","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b97b16d9df0fd0e1c96cd8507d24453db0c13bed","secs":43}
+{"id":"fn-lib-security-scan--finding-fingerprint","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1428244d2b1eb6db0524d1cfd647eb4f4570fd59","secs":34}
+{"id":"fn-lib-runtime-bootstrap--write-runtime-receipt","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5f70000ff513f41abe82fd560d6e43c407504f1e","secs":53}
+{"id":"fn-lib-secret-gateway--build-gateway-supervisor-script","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d5ae08bfccdc2cecf662bd15719f6800c5b8b13e","secs":49}
+{"id":"fn-lib-security-scan--default-baseline","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"0fdf46830bda79efb42df84126a5cf0fbe796657","secs":41}
+{"id":"fn-lib-runner-command--effort-words","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"f4243d3f5765481f9f7d67c2be486bea7dc699c0","secs":71}
+{"id":"fn-lib-runner-command--engine-takes-model","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"81c6f5e478cdfd73d9118053f9731522aba97e07","secs":67}
+{"id":"fn-lib-security-scan--normalize-snippet","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"06a324fed44d8d08375aa1218a29b8120aa8d34e","secs":37}
+{"id":"fn-lib-security-scan--default-ledger","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"512b50965a0be30e96207de2110774217aac7eae","secs":50}
+{"id":"fn-lib-security-scan--apply-baseline","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"20f61e385d02ec544253d1ed1acbf84eff673561","secs":60}
+{"id":"fn-lib-security-scan--load-baseline","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"97c0044e515c37a67dd48fb4a1935fe9b957ba4b","secs":44}
+{"id":"fn-lib-runner-command--codex-json-events-command","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"9bff12d933c8a6384da78fe6f44eebdd35af11c0","secs":89}
+{"id":"fn-lib-rsi-record--git-snapshot","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"2549554338df59a39993451a6d94f247cd0f5550","secs":96}
+{"id":"fn-lib-security-scan--code-rules","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1aac23a584ceda7a4db248e377275b6b3e808840","secs":61}
+{"id":"fn-lib-security-scan--shannon-entropy","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"6c39136ede0ba28d8df1e83eb78f796b56ea4a59","secs":30}
+{"id":"fn-lib-security-scan--score-findings","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"ef270875fad46899e843d41b7c0ab8a610a0561f","secs":38}
+{"id":"fn-lib-rsi-record--git-delta","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b49946cabb57ebfd989a6a5471edf3f5abc364c5","secs":109}
+{"id":"fn-lib-security-scan--should-fail","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c9ca44dfead851c6175c62d984fcf7b06462f0c1","secs":29}
+{"id":"fn-lib-runner-command--hidden-profile-names","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"d8c707a94dd39338701709d43f1dc5dce5d4bfb1","secs":101}
+{"id":"fn-lib-spawn-env--guard-dir-prefix","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":23}
+{"id":"fn-lib-short-name--display-number","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"2873cc776b27601f983b4fad3be1f4e40b1c90c0","secs":41}
+{"id":"fn-lib-security-scan--summarize-findings","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1d1a8611236936e97d180d1de028d68d0644681d","secs":45}
+{"id":"fn-lib-security-scan--resolve-targets","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"ef4e2ccfc3f10c8261781faa54f73272b3b5d3c3","secs":70}
+{"id":"fn-lib-security-scan--severities","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"81b03f784d135a5aa32cb397b315403159bacb8a","secs":68}
+{"id":"fn-lib-self-drive--human-blocking-reasons","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"260e950ee0ef68eff188b89a7633e9d150685db1","secs":47}
+{"id":"fn-lib-security-scan--secret-quality","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"0af0e5558bf00a7dbfc2788d707e4324320ee445","secs":75}
+{"id":"fn-lib-security-scan--severity-rank","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"f69dab6525396c5f6d9d61fe50d0b2957b538f3f","secs":68}
+{"id":"fn-lib-security-scan--pii-rules","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"00d4c2cd1b88822dad141a8506577a37f71799ef","secs":82}
+{"id":"fn-lib-short-name--meaningful-words","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"322829a664ee4cb70392e6dc9952739dea63e10c","secs":51}
+{"id":"fn-lib-security-scan--write-baseline","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"738d814cd459b613de2fdbabcb15532fd2d46946","secs":54}
+{"id":"fn-lib-short-name--record-matches-ref","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"12a016c9adc32589a8455ca121b33f69ef806a23","secs":41}
+{"id":"fn-lib-state-home--test-state-fenced","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"8fabda68197433156562bae31b86aae110a3dda2","secs":44}
+{"id":"fn-lib-spawn-env--script-shell-source","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"6d06d22787db1ad6e4242d922b00c0953c4c277a","secs":48}
+{"id":"fn-lib-spawn-env--shell-guard-line","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"cfe60ac373e1e68e8a3127c9903b335447305525","secs":50}
+{"id":"fn-lib-security-scan--git-tracked-files","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"8e2c7af784d880a2d61d66506d7bbed536c2768a","secs":114}
+{"id":"fn-lib-spawn-env--package-script-env","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"099c23bf68a7b7bb37be021c26d5d48ada5cbb42","secs":57}
+{"id":"fn-lib-task-db--normalize-task-ref","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"35fde7431542af25a5ef9926c6ceae24d249ddd8","secs":38}
+{"id":"fn-lib-state-home--atris-home","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"737b41912986e1cb940bc8b1f1caa79520f00816","secs":59}
+{"id":"fn-lib-task-db--find-unfinished-task-by-title","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3d3d78537579a7f66304cbd7034f6693a06cf233","secs":50}
+{"id":"fn-lib-task-db--chat-task","lane":"devin5","engine":"devin","model":"swe-2-high","ok":true,"commit":"cd6efb8514770f7302a6764e412d9365a150761b","secs":63}
+{"id":"fn-lib-task-list-keeper--keep-workspace-task-list","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":24}
+{"id":"fn-lib-team-lineup--lineup-unreadable","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":20}
+{"id":"fn-lib-task-db--task-display-ref-map","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":45}
+{"id":"fn-lib-team-lineup--team-footer","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":16}
+{"id":"fn-lib-team-presence--active-task-states","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":14}
+{"id":"fn-lib-team-presence--active-window-start-day","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":10}
+{"id":"fn-lib-security-scan--secret-rules","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"269991f64678c1a988937dd9fb8930b7dd7ccc10","secs":121}
+{"id":"fn-lib-task-explanation--explicit-done-looks-like","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1a31d057f50b6e8b4ad8cf504f1e0eab895d2a61","secs":44}
+{"id":"fn-lib-team-presence--idle-after-days","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":14}
+{"id":"fn-lib-team-presence--default-freshness-window-ms","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":15}
+{"id":"fn-lib-task-decision--is-decision-hold-tag","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"4ebf2497eaf94d428a212b63f9663f3ff025f673","secs":54}
+{"id":"fn-lib-theme--font-personalities","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":11}
+{"id":"fn-lib-task-decision--decision-marker-for","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"4f6de7ba31c29f5f75e4f3b1121690fe3cf590ab","secs":54}
+{"id":"fn-lib-skill-eval-gate--changed-skill-files","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"tests fail (TZ=Pacific/Kiritimati)","exit":1,"secs":101}
+{"id":"fn-lib-text-table--clip-text","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":19}
+{"id":"fn-lib-task-explanation--task-approval-controls","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"14b4de05f0602c3c55b29dac9026c8d89454b009","secs":40}
+{"id":"fn-lib-text-table--fallback-width","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":20}
+{"id":"fn-lib-team-lineup--member-lineup","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"6125ddcdd63ef58fe92f940c7fb55349205cb926","secs":40}
+{"id":"fn-lib-theme--mood-names","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":10}
+{"id":"fn-lib-theme--norm-hex","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":11}
+{"id":"fn-lib-task-decision--task-tag-tokens","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"cec746907344cf60295a03d77a6ce074983b2107","secs":62}
+{"id":"fn-lib-theme--rel-luminance","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-task-db--reap-mission-blocker-tasks","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"271b52a1c252c650a2d05fe2c33d739c0b163c14","secs":79}
+{"id":"fn-lib-todo-fallback--get-team-activity","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-theme--resolve-mode","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":13}
+{"id":"fn-lib-task-explanation--explanation-lines","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"f8a849eb6bc55610d971b3ff284711bac39b43f0","secs":67}
+{"id":"fn-lib-team-presence--active-mission-states","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"ed0ab99bd009822e99cc3a17b52c1d4b963b1077","secs":41}
+{"id":"fn-lib-tool-result-encode--tool-result-encoding-enabled","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-verifier-quality--quote-verifier-command","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-trust-tiers--task-trust-subject","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-task-explanation--explanation-fields-from-input","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"4c86107b0f5e9e264f4429a027e7a284dfc8b15d","secs":74}
+{"id":"fn-lib-verify-worktree-rewrite--step-referenced-paths","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-task-db--clear-plan-tasks","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"608f00d67613d52207f9f428b9c06f15f35122d3","secs":104}
+{"id":"fn-lib-voice-card--render-voice-card-block","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wiki--build-consolidate-prompt","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-voice-gate--landing-why-clause","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--build-ingest-prompt","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-text-table--terminal-width","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"291020c4c16d712fc514aef295cabd5a4919147d","secs":34}
+{"id":"fn-lib-theme--is-hex","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"732559dd57fd7ce151bb65f3f29d8182ec04e9bf","secs":31}
+{"id":"fn-lib-wiki--build-query-prompt","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--find-local-wiki-dir","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wiki--find-stale-wiki-pages","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--find-suggested-sources","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--private-wiki-root","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-todo-sections--rendered-section-re","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"d96021b8c95c4b9c995c5439974c5b91a7281cac","secs":28}
+{"id":"fn-lib-task-db--normalize-title","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"74bdb2c8a94c115be4202164337fe57a7925de41","secs":104}
+{"id":"fn-lib-task-db--set-task-result","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"4a58c8970408a475c521a24cabffc3384b3d7b78","secs":97}
+{"id":"fn-lib-wiki--record-wiki-consolidation","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--stage-wiki-ingest","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wiki--write-wiki-status","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--wiki-metabolism-nudge","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-theme--hex-to-rgb","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"571d66b6759283cf9729fb65ea7588e41b83bd89","secs":50}
+{"id":"fn-lib-wiki--wiki-root","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-tool-result-encode--encode-tool-result","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1f02c2c3ca0986c5494bf451b8350c0ac2bc0102","secs":33}
+{"id":"fn-lib-wish-audit--verify-outcome-text","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wish-audit--waiting-input-statuses","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-audit--wish-body-text","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-audit--wish-mission-runner","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-task-proof--local-success-proof-example","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"ce5bd336a28301224583f482ca282d8a9bd80be9","secs":85}
+{"id":"fn-lib-wish-audit--with-wish-answer-audit-context","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-theme--resolve-fonts","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"2339ec6f10453614c786c3e869954970fc0b1717","secs":51}
+{"id":"fn-lib-wish-delegate--capture-wish-to-journal","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-delegate--grant-wish","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-delegate--print-board","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-wish-delegate--print-list","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":5}
+{"id":"fn-lib-voice-gate--is-retired-filler-reason","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"64c99e193a819294dd0317f1b403a6ecd3b56958","secs":38}
+{"id":"fn-lib-wish-delegate--print-rewards","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-todo-fallback--get-team-member-journal","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"256ea38968d07c5775bf38c745e39c2099ae148d","secs":50}
+{"id":"fn-lib-wish-delegate--run-again-wish","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-delegate--say-wish","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-store--event-answers","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-wish-store--append-json-line","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-store--latest-wish-event-map","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-task-db--relabel-archived-tasks","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"55bdc77e519c8c0ffa3fd77393de899621c16022","secs":130}
+{"id":"fn-lib-wish-store--read-json-lines","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-wish-store--stamp-iso","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-store--read-wish-events","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wish-store--today-name","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-workforce-presence--is-finished-receipt","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":6}
+{"id":"fn-lib-verify-worktree-rewrite--missing-on-main","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"fabc067b129f3dc3ffab1e5f588f4ec174a51d08","secs":55}
+{"id":"fn-lib-verifier-quality--is-real-test-runner-proof","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"07e17b76f1d0cb81a4ce5d4a053c8f9cace30c66","secs":59}
+{"id":"fn-lib-workspace-safety--assert-safe-workspace-root","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-wiki--read-wiki-pages","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"dcbfd52ef17e0d58d043cf97aca25c79113b665c","secs":46}
+{"id":"fn-lib-wish-audit--quote-text","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"542d167cc19deddfa6f37eeebdd1ad517a749561","secs":37}
+{"id":"fn-lib-yes-lock--held-exit","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":7}
+{"id":"fn-lib-x-post-check--normalize-text","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-yes-lock--handoff-yes-cards","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-zen--abandoned-days-from-env","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-wiki--ensure-context-scaffold","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"afc0457c02458b39231f463cd3fe3c48a921a2e3","secs":53}
+{"id":"fn-lib-wiki--read-wiki-status","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"db79f3d20b4bf4950d98a8fcc5281a3b55c564ce","secs":46}
+{"id":"fn-lib-voice-card--upsert-agent-voice-card","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9aedaf5db5f380814435d771940001ff3d91240e","secs":63}
+{"id":"fn-lib-zen--dirty-files","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-zen--last-touched","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-zen--idle-with-only-notes","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":8}
+{"id":"fn-lib-zen--live-logs","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"fn-lib-zen--read-team-state","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"file not written","exit":1,"secs":9}
+{"id":"slop-_internal-skills-tune-SKILL-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop--claude-skills-endgame-SKILL-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":5}
+{"id":"slop--claude-commands-atris-autopilot-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop--claude-skills-swarlo-SKILL-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-benchmarks-agents-v1-INVESTOR_ONE_PAGER-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"fn-lib-wiki--build-lint-prompt","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"961803e004b4b3b45cce0693831f7603311883c6","secs":72}
+{"id":"slop-atris-designs-permission-grants-cli-831-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"fn-lib-wish-audit--wish-sweep-limit","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f2bdf30ce8d7ba520534ddb9d2ca331cf49b1e60","secs":52}
+{"id":"fn-lib-wish-store--next-wish-number","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"85bc9cd56e03f8f0d35959ec84d1656e44d9442e","secs":37}
+{"id":"fn-lib-theme--project-theme-file","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"6d6e02bfc68c886c2f3f6562fb8d5c5e1d01b05f","secs":96}
+{"id":"slop-atris-dogfood-worktree-a-friction-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop-atris-dogfood-worktree-b-friction-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"slop-atris-experiments-kernel-prompt-discipline-program-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"slop-atris-experiments-kernel-prompt-discipline-findings-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":9}
+{"id":"slop-_internal-skills-README-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"4caf54050e0323d0be1385c1460ae1242e793a53","secs":23}
+{"id":"fn-lib-workforce-presence--receipt-engine","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"b1c8586605fe5e9dc87fd2d917586eb29b0b7ea1","secs":38}
+{"id":"slop-atris-experiments-kernel-prompt-discipline-proposals-spine_kernel-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":10}
+{"id":"slop-atris-features-audit-gaps-idea-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"slop-atris-features-audit-gaps-validate-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"slop-atris-features-customer-skill-zones-one-pager-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop-atris-features-customer-skill-zones-idea-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop-atris-features-team-member-standard-build-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-team-member-standard-idea-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":5}
+{"id":"slop-atris-features-team-member-standard-validate-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-wiki-build-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":5}
+{"id":"slop-atris-features-wiki-loop-build-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-wiki-validate-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":5}
+{"id":"slop-atris-features-wiki-loop-validate-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-wire-the-loop-build-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-wire-the-loop-idea-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":6}
+{"id":"slop-atris-features-wire-the-loop-validate-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop-atris-experiments-weight-optimize-README-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"296f6f639625878e841a9378c2f4591b5f73456c","secs":25}
+{"id":"slop-distribution-RUNBOOK-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"slop-atris-reports-2026-04-27-owner-computer-model-eval-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":7}
+{"id":"fn-lib-wish-store--improve-wishes","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5b23d704456ab38e6f09903d9300696e911f3e28","secs":67}
+{"id":"slop-atris-features-audit-gaps-build-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":29}
+{"id":"slop-atris-experiments-kernel-prompt-discipline-proposals-gut_spine-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"f1a3eba0b3c80854b63016ba1a270f294a5b374f","secs":31}
+{"id":"fn-lib-wish-audit--validate-engine-override","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3ef6a0e1e9dbb14380721b83713c7929903dbca3","secs":88}
+{"id":"slop-templates-business-starter-atris-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"fn-lib-wish-audit--shares-meaningful-words","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"800164a811ac47144d6d78304383f311a201b069","secs":89}
+{"id":"slop-FOR_AGENTS-md","lane":"devin5","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":9}
+{"id":"slop-templates-business-starter-CLAUDE-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"writing problems remain","exit":1,"secs":8}
+{"id":"fn-lib-zen--git-out","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"957fb759060aabd2ef2ca3995d73122848a3d5cb","secs":54}
+{"id":"fn-lib-zen--untracked-files","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"30bebefbb4a617f1c8276a64a57af3eb97d6ed73","secs":48}
+{"id":"slop-atris-experiments-policy-optimize-README-md","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"a4aa65c0bd19b2fe437b7a6dc78993e25e9390e9","secs":39}
+{"id":"slop-atris-features-self-improving-loop-idea-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":32}
+{"id":"fn-lib-zen--head-moved-since","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3995233c644c9f86cce64800959043bde8dc763b","secs":58}
+{"id":"fn-lib-task-db--list-tasks-cached","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"b16a0b8b6415412308f88139bf39485b91b7dc00","secs":216}
+{"id":"fn-lib-wish-delegate--answer-wish","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b98c45c24e396c7b04bab4942b6e653187cf5205","secs":94}
+{"id":"slop-templates-business-starter-context-live-workspace-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":20}
+{"id":"fn-lib-zen--scheduled-copies","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"17345660f426ed2b496b3a10e2e0ab55b6eedfb4","secs":62}
+{"id":"fn-lib-wish-delegate--review-wish","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f6575e976f9917c45e4ce8a8eee2e5e1c558a383","secs":94}
+{"id":"slop-templates-business-starter-reports-README-md","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-templates-business-starter-MAP-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":26}
+{"id":"slop-templates-business-starter-team-comms-SOUL-md","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"fn-lib-zen--default-branch","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"6dfd63ebcde2effa993658fbca5caef5bc122378","secs":85}
+{"id":"slop-templates-business-starter-instructions-md","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":29}
+{"id":"slop-templates-business-starter-team-ops-SOUL-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-templates-business-starter-team-research-SOUL-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":22}
+{"id":"slop-templates-business-starter-team-START_HERE-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":19}
+{"id":"slop-templates-business-starter-memory-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":34}
+{"id":"slop-templates-business-starter-wiki-index-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":20}
+{"id":"slop-templates-business-starter-TODO-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":24}
+{"id":"slop-templates-business-starter-persona-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":36}
+{"id":"fn-lib-wish-delegate--print-review-nudges","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"3588b8e61e9455683235968cdc67f9846eac00e9","secs":117}
+{"id":"slop-templates-business-starter-team-README-md","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":42}
+{"id":"fn-lib-team-presence--active-window-start-day","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4680ea5a763375f91a53d7c818bf37b65e23be5f","secs":33}
+{"id":"fn-lib-theme--font-personalities","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"a4cfb72090216ff4ae5ef1d412866e7454830f54","secs":38}
+{"id":"fn-lib-verifier-quality--quote-verifier-command","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f7c2f4f615837ce17621ad784948b12a03ad4a1c","secs":31}
+{"id":"fn-lib-voice-card--render-voice-card-block","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"946694ae04ed13ec16f7d2c1c0c521e5fc95c1f7","secs":29}
+{"id":"fn-lib-theme--norm-hex","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"5a1add0d757aeb520f47a40ecf5fe4a2acf96ba1","secs":41}
+{"id":"fn-lib-tool-result-encode--tool-result-encoding-enabled","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"864177e25150e24a6b726ce0ac3e239262d95a46","secs":37}
+{"id":"fn-lib-zen--dirty-entries","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"daa658228f351800d91b75352aef9c966b9c5c76","secs":124}
+{"id":"fn-lib-verify-worktree-rewrite--step-referenced-paths","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"eee3db4ec8e4dee45343535f3c037fdf22350460","secs":37}
+{"id":"fn-lib-theme--mood-names","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f13d49309e9e1acd536b6abbb08d8d1b31723986","secs":51}
+{"id":"fn-lib-trust-tiers--task-trust-subject","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"469c97ad067213574e8ef2543c8462acf53773fe","secs":44}
+{"id":"fn-lib-todo-fallback--get-team-activity","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4fc13d8fea5e2555e6e9afeb45778f3df020f453","secs":47}
+{"id":"fn-lib-wiki--build-consolidate-prompt","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b157ec9fa215b9d194dbdd0481d7cc0310b3079f","secs":42}
+{"id":"fn-lib-theme--rel-luminance","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"dad7c02cfd7cd5f6974d929ebc1e03af5d61056f","secs":56}
+{"id":"slop-atris-features-self-improving-loop-validate-md","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"commit blocked","exit":0,"secs":109}
+{"id":"fn-lib-wiki--build-query-prompt","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"ce9f230aaac6036898e0dea60bfd1b27138d1888","secs":47}
+{"id":"fn-lib-wish-audit--wish-mission-runner","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"file not written","exit":0,"secs":14}
+{"id":"fn-lib-wiki--private-wiki-root","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"26c24e3c133b364ac601aa594d4aa558c35b5644","secs":31}
+{"id":"fn-lib-wiki--find-suggested-sources","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"6115debb920c05d06d78e5f6081931490b59fb1b","secs":37}
+{"id":"fn-lib-wiki--find-local-wiki-dir","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"a9ae712765a0002396c31020bc27518cf3bf3555","secs":53}
+{"id":"fn-lib-wiki--wiki-root","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9a2d171d3a770f02c541f58a2f52e4ee6266e5ac","secs":34}
+{"id":"fn-lib-wish-audit--wish-body-text","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"ded4bcf0d7a2e9934b83218ef80ca4e8aeb89e06","secs":34}
+{"id":"fn-lib-wiki--record-wiki-consolidation","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9fed6471cd48fcfe614072a8ddf1f5420cae639b","secs":49}
+{"id":"fn-lib-wish-audit--verify-outcome-text","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1e1aceff174cf4ccecc55c7015b9bd0f18c9fcd8","secs":40}
+{"id":"fn-lib-wish-audit--with-wish-answer-audit-context","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"62111fa69b036e5fd36a7d24ec80e934c9a5ae2e","secs":36}
+{"id":"fn-lib-wish-audit--waiting-input-statuses","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"1801c71797f5fdc7ed03dbfd8104ecbeabf7779d","secs":46}
+{"id":"fn-lib-wiki--stage-wiki-ingest","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"96b3cc55ea237e647fdff5ee444215fa5af34507","secs":59}
+{"id":"fn-lib-wiki--build-ingest-prompt","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"048028f54a2a0dd78edcb19d4b54d89c63e9ae4e","secs":85}
+{"id":"fn-lib-voice-gate--landing-why-clause","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a22616f82005bc39383d1d0294bf69dbaf91a28e","secs":98}
+{"id":"fn-lib-wiki--find-stale-wiki-pages","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"50485f65bcb9327b948d635117484acc47adad04","secs":82}
+{"id":"fn-lib-wish-store--append-json-line","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"968a19368d08a6bc59847b008de1a312260678d9","secs":32}
+{"id":"fn-lib-wiki--write-wiki-status","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"37812ecfc7aca895f43345af0d2a367e88cdb6a9","secs":72}
+{"id":"fn-lib-wish-store--event-answers","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"2d8d0c7a1641d00beba582f3b494f6673a868ead","secs":33}
+{"id":"fn-lib-wish-delegate--print-list","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"8c1c39deb6aa74b349565fdccbaafdbef217d151","secs":52}
+{"id":"fn-lib-wish-store--read-json-lines","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1441dc464e95a625e51bcc0b127ae853910104a2","secs":29}
+{"id":"fn-lib-wish-store--read-wish-events","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"11351a212e761d038d99820b9d4c4b9758554bb8","secs":31}
+{"id":"fn-lib-wiki--wiki-metabolism-nudge","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"8af02455fe9460cf9f4f805f179bb6ca9ea83f72","secs":86}
+{"id":"fn-lib-wish-store--today-name","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"962465f10eab75b6fdca52f4fccb893e3fb954ca","secs":29}
+{"id":"fn-lib-wish-store--latest-wish-event-map","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b1adddfe0617fd47a4f9fa3809fb1e6516deea57","secs":43}
+{"id":"fn-lib-wish-store--stamp-iso","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"1daa22f3f5ea9ef15515643c9510388a3372cb5e","secs":42}
+{"id":"fn-lib-wish-delegate--print-rewards","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"16e4c6e0fceb907ef7d1b153d646554914024a6a","secs":73}
+{"id":"fn-lib-zen--abandoned-days-from-env","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"30d2a8f384d6d23b45c45f1c568775da87b3c22d","secs":33}
+{"id":"fn-lib-x-post-check--normalize-text","lane":"sonnet4","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"13c7dd6b2d47316c67b8988a81bd51b7beed00c9","secs":45}
+{"id":"fn-lib-wish-delegate--run-again-wish","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"651dd7dd5fb0f84c4a3fe6c7d359139f6e80a0e1","secs":88}
+{"id":"fn-lib-wish-delegate--say-wish","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"cc17271cfc53f81a36ec8b1b6041c07c20e4e449","secs":85}
+{"id":"fn-lib-workforce-presence--is-finished-receipt","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"9016cc1713b465a26a2db7bad59ac933b167595a","secs":58}
+{"id":"slop-_internal-skills-tune-SKILL-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"48328803116ceb19ecf1a40720c8448c096ea83a","secs":31}
+{"id":"slop--claude-commands-atris-autopilot-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":27}
+{"id":"fn-lib-yes-lock--handoff-yes-cards","lane":"haiku4","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"d1704967f608865ae2084bdf08fc5ef45f5e3bea","secs":56}
+{"id":"fn-lib-zen--last-touched","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f65cee9b5419d2461ec823356cf1e0d995f09b48","secs":45}
+{"id":"fn-lib-zen--read-team-state","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"5b08836bb5eb50ca95259397021c5ed9f2be10a3","secs":41}
+{"id":"fn-lib-wish-delegate--print-board","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"623159142c6856ba5056bb7f3035e129ca2faf14","secs":117}
+{"id":"slop--claude-skills-endgame-SKILL-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":43}
+{"id":"slop-atris-experiments-kernel-prompt-discipline-findings-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7840173ce6b96a46ca6c39cda49d29ebb72ae9db","secs":20}
+{"id":"slop-atris-designs-permission-grants-cli-831-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"afb1021eb489030d355ec89498ccdc072366238e","secs":25}
+{"id":"slop-atris-dogfood-worktree-a-friction-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"8569184d1569299e626935312769154649eaeef4","secs":28}
+{"id":"slop--claude-skills-swarlo-SKILL-md","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":32}
+{"id":"slop-atris-features-team-member-standard-idea-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"02220e8781fb87b6cf71209abb7735d7fc8a4af4","secs":18}
+{"id":"slop-atris-features-team-member-standard-validate-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ceafacacb93157e1ed633bbd84a4bc2c8f378805","secs":17}
+{"id":"slop-atris-features-team-member-standard-build-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"35377ade932cb0f08714afc71af4fed3931d1f45","secs":20}
+{"id":"slop-atris-features-wiki-build-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"803d0a30534e777ae3e2a72c4894ea1c5d128d58","secs":20}
+{"id":"slop-atris-features-wiki-validate-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"c0e0ceb3134763d7ebf6ee5a2978eea94b90f941","secs":26}
+{"id":"slop-atris-features-wire-the-loop-build-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"6012683c2a1640777e33526fdf26593d7e1cf1ff","secs":32}
+{"id":"slop-distribution-RUNBOOK-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"8b839be5e61f3a15b5ec41865a3da01f1d2991e8","secs":23}
+{"id":"slop-atris-reports-2026-04-27-owner-computer-model-eval-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3447168606f21f2860158a0abec99ce75b4e6a3a","secs":28}
+{"id":"slop-templates-business-starter-atris-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"61b21dae4e65ba2e82998555bb73a609faaa8bd7","secs":26}
+{"id":"slop-FOR_AGENTS-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"54b3b5e13ce330c58f38f91ee3377d024666337e","secs":33}
+{"id":"slop-templates-business-starter-context-live-workspace-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"fbfe023e3833a6eb05345912a5740b86afcba5dd","secs":18}
+{"id":"slop-templates-business-starter-context-README-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9a5e8c6d311aa306f10ab3f6a94e61ae7c5cf122","secs":23}
+{"id":"slop-templates-business-starter-goals-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a71084c9d7fa1a3b38b25fe165ab48de295b4c1e","secs":21}
+{"id":"slop-templates-business-starter-CLAUDE-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"9e9939c947022147b80e0eb0ac66725ea97e990a","secs":38}
+{"id":"slop-templates-business-starter-instructions-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"2dc7673b4e2caa1c66d1c7b34a7a7f3a8ef6ae3d","secs":22}
+{"id":"slop-templates-business-starter-MAP-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"98c3adfa73f6a328cc65d9ed2bd7c8707ad0f435","secs":22}
+{"id":"slop-atris-features-wire-the-loop-idea-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"c6606541ffd889763d32abd47df7fdd0172df5be","secs":68}
+{"id":"slop-templates-business-starter-memory-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"2239d43235cc319e3e8a68ba36e061211ada6fba","secs":24}
+{"id":"slop-atris-features-wire-the-loop-validate-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9103e219bfadfe9919b9e4f1e32e17bfca168cfa","secs":78}
+{"id":"slop-templates-business-starter-persona-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"e05853d2939e2eb0d7d8558aa9d59aa45dfa5c6c","secs":24}
+{"id":"slop-atris-features-wiki-loop-build-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"71f2ab7ca80f125731db1228239aeff6a96c50a9","secs":88}
+{"id":"slop-templates-business-starter-policies-LESSONS-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b74e25c2737560c0862293e7d812f6e3690a1b0b","secs":23}
+{"id":"slop-templates-business-starter-reports-README-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"537e07e59e9cde20611c8002231bd76bd8657ef9","secs":24}
+{"id":"slop-atris-features-wiki-loop-validate-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7a9b99c29e473379b36ceb29d7ed1cb4af18208c","secs":92}
+{"id":"slop-templates-business-starter-team-_template-SOUL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"134f1cbbe709ea787232a6a11eb010bb6c7cbe3e","secs":27}
+{"id":"slop-templates-business-starter-team-comms-SOUL-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"944354239d38e6ff0b7733feeb552a8dd6d9fc9d","secs":28}
+{"id":"slop-templates-business-starter-skills-README-md","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4c23fe04aaaa4809b905b9477a7aa3458f9a04cf","secs":33}
+{"id":"slop-templates-business-starter-team-ops-SOUL-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"bff2feb431d75a9bca36d008f88bca21370ccf67","secs":24}
+{"id":"slop-templates-business-starter-team-research-SOUL-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"daf4cdaed51db31ec2cc86b4f525a835c54f4cce","secs":21}
+{"id":"slop-templates-business-starter-TODO-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"312c96184a413dbec6b056beeadf59ab4e644325","secs":21}
+{"id":"slop-templates-business-starter-team-README-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"6727ac7904f5a9c3c1bcf2dac9d81d6b1561e830","secs":27}
+{"id":"slop-templates-business-starter-wiki-index-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"e39b137b095de861aa0c08ce62fc310ef01dae52","secs":22}
+{"id":"slop-templates-business-starter-team-START_HERE-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"facde9fd2a058e18347d9cbdefeba04fbbd4a545","secs":34}

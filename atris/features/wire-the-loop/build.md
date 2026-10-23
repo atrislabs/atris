@@ -1,6 +1,6 @@
-# Wire the Loop — Build Plan
+# Wire the Loop: Build Plan
 
-> **For Executor Agent** — Follow these steps exactly.
+> **For Executor Agent**: Follow these steps exactly.
 
 ---
 
@@ -13,13 +13,13 @@ Connect lessons.md and validate.md to every CLI command and doc that should refe
 ## Files Touched
 
 **Modified:**
-- `commands/init.js` — Create lessons.md during init
-- `commands/workflow.js` — Wire lessons.md into plan + review
-- `commands/status.js` — Show lessons count
-- `bin/atris.js` — Mention lessons.md in atrisDevEntry
-- `GETTING_STARTED.md` — Add validate.md to feature workflow
-- `README.md` — Add validate.md to feature workflow
-- `atris/atris.md` — Add features/ system to spec
+- `commands/init.js`: Create lessons.md during init
+- `commands/workflow.js`: Wire lessons.md into plan + review
+- `commands/status.js`: Show lessons count
+- `bin/atris.js`: Mention lessons.md in atrisDevEntry
+- `GETTING_STARTED.md`: Add validate.md to feature workflow
+- `README.md`: Add validate.md to feature workflow
+- `atris/atris.md`: Add features/ system to spec
 
 ---
 
@@ -101,7 +101,7 @@ Connect lessons.md and validate.md to every CLI command and doc that should refe
 
 **What to do:**
 - In the WORKFLOW section (after plan→do→review), add a brief note that substantial work uses atris/features/ with idea.md, build.md, validate.md
-- Keep it to 2-3 lines — the INDEX already has lessons.md
+- Keep it to 2-3 lines: the INDEX already has lessons.md
 
 ---
 
@@ -109,16 +109,16 @@ Connect lessons.md and validate.md to every CLI command and doc that should refe
 
 ### Manual Testing
 
-1. `rm -rf /tmp/test-atris && mkdir /tmp/test-atris && cd /tmp/test-atris && atris init` — verify lessons.md created
-2. `atris plan` — verify lessons.md appears in context
-3. `atris review` — verify lessons.md path mentioned
-4. `atris status` — verify lessons count shown
-5. Check GETTING_STARTED.md, README.md — verify validate.md mentioned
+1. `rm -rf /tmp/test-atris && mkdir /tmp/test-atris && cd /tmp/test-atris && atris init`: verify lessons.md created
+2. `atris plan`: verify lessons.md appears in context
+3. `atris review`: verify lessons.md path mentioned
+4. `atris status`: verify lessons count shown
+5. Check GETTING_STARTED.md, README.md: verify validate.md mentioned
 
 ---
 
 ## Notes for Executor
 
 - Don't refactor anything. Just add the missing references.
-- Each step is independent — if one fails, the others still work.
+- Each step is independent: if one fails, the others still work.
 - Match existing code style in each file. No new patterns.

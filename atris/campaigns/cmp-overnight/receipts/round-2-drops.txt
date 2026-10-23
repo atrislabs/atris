@@ -1,0 +1,18 @@
+DROP test/avail-cmd--mut-L177-3.test.js: Pins the entire preview output, including incidental wording, spacing, and emoji.
+DROP test/cloud-cmd--mut-L143-4.test.js: Pins the full summary text; including “0 deleted” is harmless.
+DROP test/codex-goal-cmd--mut-L106-7.test.js: Deletes HOME, causing the thread database lookup to inspect the real home folder.
+DROP test/console-cmd--mut-L229-0.test.js: Requires exact ANSI color sequences, so a reasonable styling change breaks it.
+DROP test/dispatch-scout--mut-L207-10.test.js: Duplicates the surrounding-prose JSON coverage in test/dispatch-scout--mut-L204-0.test.js.
+DROP test/avail-cmd--mut-L177-3.test.js: Pins the entire preview output, including incidental wording, spacing, and emoji.
+DROP test/cloud-cmd--mut-L143-4.test.js: Pins the full summary text; including “0 deleted” is harmless.
+DROP test/codex-goal-cmd--mut-L106-7.test.js: Deletes HOME, causing the thread database lookup to inspect the real home folder.
+DROP test/console-cmd--mut-L229-0.test.js: Requires exact ANSI color sequences, so a reasonable styling change breaks it.
+DROP test/dispatch-scout--mut-L207-10.test.js: Duplicates the surrounding-prose JSON coverage in test/dispatch-scout--mut-L204-0.test.js.
+DROP test/agent-client-cmd--mut-L118-7.test.js: it only works because a getter returns different data on each read, so it depends on how many times the code reads the response; the API returns parsed JSON, so a function payload never happens.
+DROP test/app-cmd--mut-L116-0.test.js: it compares the whole generated APP.md word for word, so any wording change to the template breaks it.
+DROP test/ci-cmd--mut-L22-7.test.js: it compares the full help text line by line, when it only needs to check that no arguments shows help.
+DROP test/decide-cmd--mut-L16-7.test.js: it compares the entire JSON output, so adding any new field breaks it; only the updated-at field matters.
+DROP test/functional-owner--mut-L109-7.test.js: it adds an empty search term to a shared exported table, which the real table never contains, so the break does no harm in practice.
+DROP test/improve-vitals-html--mut-L155-4.test.js: it compares an exact block of HTML down to the whitespace, when it only needs to check there is no "and 0 more" line.
+DROP test/loop-doctor--mut-L150-0.test.js: it compares the whole finding, including priority, owner, cadence and mission text that have nothing to do with this break; only the trimmed error value matters.
+DROP test/orb-cmd--mut-L127-1.test.js: it wipes the whole environment and checks a "claude is missing from PATH" warning and a move count of four, neither of which has anything to do with reading --pick.

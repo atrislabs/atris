@@ -1,4 +1,4 @@
-# CLI-831 permission grants — design brief (codex, 2026-07-05)
+# CLI-831 permission grants: design brief (codex, 2026-07-05)
 
 Read-only brief complete. No edits, no commits. `atris task show CLI-831` was attempted first but failed with `attempt to write a readonly database`, so I used `.atris/state/tasks.projection.json`; CLI-831 is open and unclaimed.
 

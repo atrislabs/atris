@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { argsWantHelp } = require('../lib/noninteractive');
-const { getAtrisDir } = require('../utils/auth');
+const { getAtrisDir, loadCredentials } = require('../utils/auth');
+const { stateHome } = require('../lib/state-home');
+const { validateSync, checkpointKey, syncLines } = require('../lib/ninety-nine-sync');
 const {
   validLength,
   parseSessionLog,
@@ -12,8 +14,13 @@ const {
   runningSession,
   startRecord,
   endRecord,
+  automaticEndRecord,
+  pauseRecord,
+  resumeRecord,
   sessionStatus,
   sessionsToday,
+  healthToday,
+  healthSummary,
 } = require('../lib/ninety-nine');
 
 function usage() {
@@ -21,9 +28,113 @@ function usage() {
     'usage: atris 99 focus <25|50|90>',
     '       atris 99 meditate <10|20|30>',
     '       atris 99 stop [note words]',
+    '       atris 99 pause',
+    '       atris 99 resume',
     '       atris 99 status [--json]',
     '       atris 99 today [--json]',
+    '       atris 99 sync [--dry-run]',
+    '',
+    'sync is off without a sync block in ~/.atris/99/config.json (ATRIS_99_CONFIG overrides it).',
+    'personal: {"sync":{"target":"personal","app_slug":"project-99"}}',
+    'workspace: {"sync":{"target":"workspace","business":"your-business","workspace":"optional-id"}}',
+    'both targets merge in both directions; workspace reads atris/99/sessions.*.jsonl and legacy sessions.jsonl.',
+    'workspace writes only sessions.<device>.jsonl; its stable device id lives in the local sync state.',
+    'personal uses your user login and defaults to app_slug project-99; its records api must be deployed first.',
+    'dry-run reads cloud records and shows missing lines without saving logs or the sync cursor.',
   ].join('\n');
+}
+
+function readJson(file, fallback) {
+  const text = readLog(file);
+  if (!text) return fallback;
+  try { return JSON.parse(text); } catch { throw new Error('check the 99 config or sync-state json'); }
+}
+
+function saveSyncState(file, state) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+async function syncNinetyNine(args, { log, logPath, configPath, statePath, request, credentials = loadCredentials }) {
+  if (args.length > 1 || (args.length === 1 && args[0] !== '--dry-run')) {
+    log('usage: atris 99 sync [--dry-run]');
+    return 2;
+  }
+  let lock;
+  let lockPath;
+  let stateLock;
+  let stateLockPath;
+  try {
+    const dir = path.join(stateHome(), '.atris', '99');
+    const config = readJson(configPath || process.env.ATRIS_99_CONFIG || path.join(dir, 'config.json'), {});
+    if (!config?.sync) {
+      log('sync is off (local only)');
+      return 0;
+    }
+    validateSync(config.sync);
+    const creds = await credentials();
+    if (!creds?.token) throw new Error('sync needs your signed-in user login; run atris login');
+    const dryRun = args.includes('--dry-run');
+    const file = logPath || process.env.ATRIS_99_LOG || path.join(dir, 'sessions.jsonl');
+    const stateFile = statePath || path.join(dir, 'sync-state.json');
+    if (!dryRun) {
+      for (const folder of new Set([path.dirname(file), path.dirname(stateFile)])) {
+        fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+      }
+      // Serialize cursor updates, even if callers use different local logs.
+      stateLockPath = `${stateFile}.lock`;
+      stateLock = fs.openSync(stateLockPath, 'wx', 0o600);
+      lockPath = `${file}.lock`;
+      lock = fs.openSync(lockPath, 'wx', 0o600);
+    }
+    let text = readLog(file);
+    const records = parseSessionLog(text);
+    const state = readJson(stateFile, { v: 1, targets: {} });
+    if (state?.v !== 1 || !state.targets || typeof state.targets !== 'object' || Array.isArray(state.targets)) {
+      throw new Error('check the 99 sync-state json');
+    }
+    const key = checkpointKey(config.sync, creds);
+    const checkpoint = state.targets[key] || {};
+    if ((checkpoint.known !== undefined && (!Array.isArray(checkpoint.known) || !checkpoint.known.every((item) => typeof item === 'string')))
+      || (checkpoint.since != null && !Number.isFinite(Date.parse(checkpoint.since)))) {
+      throw new Error('check the 99 sync-state json');
+    }
+    if (config.sync.target === 'workspace' && state.device_id === undefined) {
+      state.device_id = randomUUID();
+      // Save the identity before uploading, even if the reply or later log save fails.
+      // The state lock keeps simultaneous local runs on the same device file.
+      if (!dryRun) saveSyncState(stateFile, state);
+    }
+    const result = await syncLines({ records, sync: config.sync, checkpoint, deviceId: state.device_id, credentials: creds, dryRun, request });
+    if (dryRun) {
+      log(`would send ${result.send.length} lines and pull ${result.pull.length} lines (${config.sync.target})`);
+      for (const record of result.send) log(`send: ${JSON.stringify(record)}`);
+      for (const record of result.pull) log(`pull: ${JSON.stringify(record)}`);
+    } else {
+      for (const record of result.pull) text = appendRecord(file, text, record);
+      state.targets[key] = result.checkpoint;
+      saveSyncState(stateFile, state);
+      log(`sent ${result.send.length} lines and pulled ${result.pull.length} lines (${config.sync.target})`);
+    }
+    return 0;
+  } catch (error) {
+    const message = error.code === 'EEXIST' ? 'session sync is busy; try again'
+      : error.code ? 'check the sync file paths and permissions' : error.message;
+    log(`could not sync: ${String(message).replace(/\s+/g, ' ')}`);
+    return 1;
+  } finally {
+    for (const [handle, file] of [[lock, lockPath], [stateLock, stateLockPath]]) {
+      if (handle !== undefined) {
+        fs.closeSync(handle);
+        fs.unlinkSync(file);
+      }
+    }
+  }
 }
 
 function readLog(logPath) {
@@ -45,6 +156,10 @@ function ninetyNineAtris(args = process.argv.slice(3), {
   log = console.log,
   now = () => new Date(),
   logPath,
+  configPath,
+  statePath,
+  request,
+  credentials,
 } = {}) {
   const [action, ...rest] = args;
   // Words after stop belong to its note, including the word "help".
@@ -52,6 +167,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     log(usage());
     return 0;
   }
+  if (action === 'sync') return syncNinetyNine(rest, { log, logPath, configPath, statePath, request, credentials });
   const json = rest.includes('--json');
   if (action === 'focus' || action === 'meditate') {
     if (rest.length !== 1 || !validLength(action, Number(rest[0])) || String(Number(rest[0])) !== rest[0]) {
@@ -61,6 +177,11 @@ function ninetyNineAtris(args = process.argv.slice(3), {
   } else if (action === 'status' || action === 'today') {
     if (rest.length > 1 || (rest.length === 1 && !json)) {
       log(`usage: atris 99 ${action} [--json]`);
+      return 2;
+    }
+  } else if (action === 'pause' || action === 'resume') {
+    if (rest.length) {
+      log(`usage: atris 99 ${action}`);
       return 2;
     }
   } else if (action !== 'stop') {
@@ -86,15 +207,14 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     const records = parseSessionLog(text);
     let sessions = foldSessions(records);
     const time = now();
-    const active = runningSession(sessions, time);
+    let active = runningSession(sessions, time);
     const stopTarget = action === 'stop'
-      ? active || sessions.findLast((session) => session.status === 'running')
+      ? active || sessions.findLast((session) => automaticEndRecord(session, time)?.status === 'done')
       : null;
 
     for (const session of sessions) {
-      if (session.status === 'running' && session !== stopTarget
-        && time.getTime() >= Date.parse(session.planned_end_at)) {
-        const end = endRecord(session, time);
+      const end = automaticEndRecord(session, time);
+      if (end && session !== stopTarget) {
         text = appendRecord(file, text, end);
         records.push(end);
       }
@@ -112,6 +232,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     }
 
     sessions = foldSessions(records);
+    active = runningSession(sessions, time);
     if (action === 'focus' || action === 'meditate') {
       if (active) {
         log('a session is already running; use atris 99 stop first');
@@ -119,22 +240,36 @@ function ninetyNineAtris(args = process.argv.slice(3), {
       }
       appendRecord(file, text, startRecord(action, Number(rest[0]), time, randomUUID()));
       log(`${action} started for ${rest[0]} minutes`);
+    } else if (action === 'pause' || action === 'resume') {
+      let record;
+      try {
+        record = action === 'pause' ? pauseRecord(active, time) : resumeRecord(active, time);
+      } catch (error) {
+        log(error.message);
+        return 1;
+      }
+      appendRecord(file, text, record);
+      log(`${active.kind} ${action === 'pause' ? 'paused' : 'resumed'}`);
     } else if (action === 'status') {
       const result = sessionStatus(active, time);
       if (json) log(JSON.stringify(result));
       else if (!active) log('nothing running');
       else {
         const seconds = result.running.remaining_seconds;
-        log(`${active.kind}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`);
+        log(`${active.kind}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left${active.status === 'paused' ? ' (paused)' : ''}`);
       }
     } else {
       const result = sessionsToday(sessions, time);
+      const health = healthToday(records, time);
+      if (health) result.health_day = health;
       if (json) log(JSON.stringify(result));
       else {
         for (const session of result.sessions) {
           log(`${session.kind} ${session.planned_min} minutes: ${session.status}`);
         }
         log(`${result.finished_minutes} finished minutes today`);
+        log(`Today: ${result.counts.focus} focus, ${result.counts.meditate} meditate, ${result.finished_minutes} min`);
+        if (health) log(healthSummary(health));
       }
     }
     return 0;

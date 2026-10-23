@@ -518,7 +518,7 @@ test('--available lists installed tools and their models from local files only',
   assert.equal(view.exit, 0, view.err);
   assert.match(view.out, /^on this machine$/m);
   assert.match(view.out, /^codex\s+gpt-6-astra, gpt-6-sol, gpt-6-luna\s+\(from .*models_cache\.json\)$/m);
-  assert.match(view.out, /^claude code\s+opus 5\.5, opus 5, sonnet 5, haiku 5\.5, fable 5\.1\s+\(known names\)$/m);
+  assert.match(view.out, /^claude code\s+fable 5\.1, opus 5\.5, sonnet 5\.5, haiku 5\.5\s+\(known names\)$/m);
   assert.match(view.out, /^grok\s+grok 4\.7 fast, grok 4\.7\s+\(known names\)$/m);
   const json = JSON.parse(command(root, ['roster', '--available', '--json']).out).tools;
   assert.deepEqual(json.find((row) => row.engine === 'codex').models, ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna']);
