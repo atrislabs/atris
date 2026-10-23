@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 const { treeHashFor } = require('../lib/tree-hash');
 const { careerXpRoot, careerXpLinkedRoots } = require('../lib/career-xp-root');
+const { withCareerXpLock } = require('../lib/career-xp-lock');
 const { normalizeActor, taskBuilder } = require('../lib/review-integrity');
 
 const DEFAULT_GRAPH_DAYS = 365;
@@ -1075,9 +1076,20 @@ function recoverLinkedTaskEpisodes(workspace) {
       && hasIndependentXpReview(episode));
 }
 
+function recoverLinkedReceipts(workspace) {
+  return careerXpLinkedRoots(workspace).flatMap(root => {
+    const chain = normalizeReceiptChain(readJsonl(path.join(root, CAREER_XP_RECEIPTS_FILE)), { allowLegacyUpgrade: false });
+    return chain.integrity.status === 'verified' ? chain.receipts : [];
+  });
+}
+
 function collectLocalXpProjectionState(args = [], { write = true, resolveSharedRoot = true } = {}) {
   const selected = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
   const workspace = resolveSharedRoot ? careerXpRoot(selected) : selected;
+  return withCareerXpLock(workspace, () => collectLockedXpProjectionState(workspace, { write, resolveSharedRoot }));
+}
+
+function collectLockedXpProjectionState(workspace, { write, resolveSharedRoot }) {
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const projectionPath = path.join(workspace, CAREER_XP_PROJECTION_FILE);
@@ -1109,9 +1121,8 @@ function collectLocalXpProjectionState(args = [], { write = true, resolveSharedR
   const treeHash = write && episodes.length ? treeHashFor(workspace) : null;
   const seen = new Set(existingChain.receipts.map(receipt => receipt.receipt_id).filter(Boolean));
   let previousHash = existingChain.integrity.head_hash || null;
-  const newReceipts = episodes
-    .map((episode) => receiptFromTaskEpisode(episode, treeHash))
-    .filter(Boolean)
+  const recoveredReceipts = resolveSharedRoot ? recoverLinkedReceipts(workspace) : [];
+  const newReceipts = [...recoveredReceipts, ...episodes.map(episode => receiptFromTaskEpisode(episode, treeHash)).filter(Boolean)]
     .filter((receipt) => {
       if (seen.has(receipt.receipt_id)) return false;
       seen.add(receipt.receipt_id);
