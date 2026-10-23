@@ -19,7 +19,7 @@ This file says how Keshav thinks.
 
 ## Memory Contract
 
-One lesson format. Boot reads it in one place, writes it in one place — no ambiguity.
+One lesson format. Boot reads it in one place, writes it in one place. No ambiguity.
 
 - **Lessons** live in `atris/lessons.md` (one prose line per lesson) joined by slug to the typed sidecar `atris/lessons.json` (scope / applies_to / detector / status). That pair is the single lesson store; the validator harvests here and self-heal reads detectors here.
 - Retired stores folded in: `atris/learnings.jsonl` (memory jsonl) and `atris/INTUITION.md` (unused init template) were consolidated into `lessons.md` (CLI-860). Do not reintroduce a parallel lesson file.
