@@ -2291,6 +2291,174 @@ test('team table: a card with no frontmatter still gives its role, from a role l
   assert.equal(roles.blank, '\u00b7\u00b7');
 });
 
+test('job deck: one card per running job, needs you first, with a divided row of done, work, member, role, ovr, engine, status', () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  addMember(root, 'scout', 'Scout');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Launch a try page for any public repo');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(40), last_tick_at: NAGO(2), human_asks: [] },
+    m5: { id: 'm5', owner: 'navigator', status: 'blocked', objective: 'Plan the pricing page.', created_at: NAGO(150), updated_at: NAGO(120), human_asks: ['ship the pricing page now?'] },
+    m6: { id: 'm6', owner: 'scout', status: 'complete', objective: 'Old scouting.', created_at: NAGO(200), updated_at: NAGO(60), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { loadSeason: () => seasonOf({ builder: { landed: 4, dropped: 1 } }) });
+  const deck = h.d.jobDeck();
+  assert.equal(deck.cards.length, 2, 'finished jobs are not on the deck');
+  assert.deepEqual(deck.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+  assert.deepEqual(deck.cards.map(c => [c.mission_id, c.label, c.member]), [['m5', 'needs you', 'navigator'], ['m1', 'working', 'builder']]);
+  // role, ovr, and engine are the team table's own cells
+  const table = new Map(h.d.teamTable().rows.map(r => [r.member, r]));
+  for (const c of deck.cards) {
+    const t = table.get(c.member);
+    assert.deepEqual([c.rows[0].role, c.rows[0].ovr, c.rows[0].engine], [t.role, t.ovr, t.engine]);
+  }
+  assert.deepEqual(deck.cards[0].rows[0].ovr, '\u00b7\u00b7', 'no rating is two dots');
+  assert.deepEqual(deck.cards[1].rows[0].ovr, '91');
+  assert.deepEqual(deck.cards[1].rows[0].engine, 'claude opus 5.5');
+  assert.deepEqual(deck.cards[1].rows[0].work, 'Launch a try page for any public repo');
+  for (const c of deck.cards) assert.doesNotMatch(JSON.stringify(c.rows), gmBet.OWNER_BANNED);
+});
+
+// a command, a flag, a path, or a file name: never in a cell the owner reads
+const CODE_TELL = /`|(^|\s)--?[a-z]|\/|\.(js|md|json)\b|\bnpm (publish|test)\b/i;
+
+test('job deck: a card that needs you carries its yes in plain words, and a yes from the deck answers that job alone', async () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    // the work and the ask both name a command, a flag, and a path
+    'm-ask': { id: 'm-ask', owner: 'navigator', status: 'blocked', objective: 'Fix lib/gm-bet.js so the `npm test` run passes.', created_at: NAGO(30), updated_at: NAGO(20), human_asks: ['ok to run `npm publish --tag next` from lib/release.js?'] },
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(40), last_tick_at: NAGO(1), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { driverAlive: () => true });
+  const [needs, working] = h.d.jobDeck().cards;
+  assert.deepEqual([needs.member, needs.label, working.member, working.label], ['navigator', 'needs you', 'builder', 'working']);
+  // the yes card's own two lines, and the key the page sends back with the yes
+  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting on your yes for this.' });
+  assert.equal(working.yes, undefined, 'only a card that needs you has a yes');
+  // plain words in every cell: the path and the command are gone, the meaning stays
+  assert.equal(needs.rows[0].work, 'Fix a file so the run passes');
+  assert.deepEqual([needs.rows[0].done, working.rows[0].done], ['not yet', 'not yet']);
+  for (const c of h.d.jobDeck().cards) assert.doesNotMatch(JSON.stringify([c.rows, c.yes || null]), CODE_TELL);
+  // the main screen shows something else: a yes from the deck leaves it alone
+  const before = h.d.view().status;
+  // a yes names its job and its key, both
+  assert.equal((await h.d.answerYes({ key: 'm-ask:0' })).reason, 'gone');
+  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'navigator: got your yes' });
+  assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
+  assert.equal(h.d.view().status, before);
+  // said once: the card stops asking, and the same yes again, or a made-up one, goes nowhere
+  assert.equal(h.d.jobDeck().cards[0].yes, undefined);
+  const calls = h.cli.length;
+  assert.equal((await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' })).reason, 'gone');
+  assert.equal((await h.d.answerYes({ key: 'nobody:0', job: 'nobody' })).reason, 'gone');
+  assert.equal(h.cli.length, calls, 'nothing runs for a yes that is not asked');
+});
+
+test('job deck: the yes on a card is the desk yes card for that job, in plain words, and a yes on the deck clears it on the main screen', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  const h = jobDesk(root, { 'm-ask': { id: 'm-ask', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['run `git push --tags` now?'] } });
+  const shown = h.d.next();
+  assert.equal(shown.kind, 'yes');
+  // the main yes card reads in plain words too
+  assert.equal(shown.job.what, 'ok to push every tag to the default remote?');
+  const card = h.d.jobDeck().cards[0];
+  assert.deepEqual(card.yes, { key: 'm-ask:0', ...shown.job });
+  assert.equal((await h.d.answerYes({ key: card.yes.key, job: card.job_id })).ok, true);
+  assert.equal(h.d.view().status, 'cleared', 'the same yes on the main screen is answered too');
+});
+
+// Codex review on #1563: a yes card keeps the verb and the target. A held
+// release delete once read "wants to make a release", so a yes to what
+// looked like a new release would have deleted one.
+test('yes words: a held command keeps its verb and its target, and one that cannot be said exactly shows where it goes and what it names', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: null });
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['release', 'delete', 'v1.2.3', '--yes'] }).hold, true);
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to delete the GitHub release v1.2.3 in this repo']);
+  const said = [
+    ['a handed-off job wants to gh release delete v1.2.3 --yes', 'a handed-off job wants to delete the GitHub release v1.2.3 in this repo'],
+    ['a handed-off job wants to gh release delete v1.2.3 --cleanup-tag -R atrislabs/atris', 'a handed-off job wants to delete the GitHub release v1.2.3 and its tag in atrislabs/atris'],
+    ['a handed-off job wants to gh release create v1.2.3 --draft', 'a handed-off job wants to create the GitHub release v1.2.3 as a draft in this repo'],
+    ['a handed-off job wants to gh pr merge 5', 'a handed-off job wants to merge pull request 5 in this repo'],
+    ['a handed-off job wants to gh pr merge 5 --squash --delete-branch -R atrislabs/atris', 'a handed-off job wants to squash and merge pull request 5 and delete its branch in atrislabs/atris'],
+    ['a handed-off job wants to gh pr close 7', 'a handed-off job wants to close pull request 7 in this repo'],
+    ['a handed-off job wants to git push origin main', 'a handed-off job wants to push main to origin'],
+    ['a handed-off job wants to git push origin feature:master', 'a handed-off job wants to push feature to master on origin'],
+    ['a handed-off job wants to git push --force origin main', 'a handed-off job wants to force push main to origin, replacing what is there'],
+    ['a handed-off job wants to git push origin --delete v1.2.3', 'a handed-off job wants to delete v1.2.3 on origin'],
+    ['a handed-off job wants to git push origin :v1.2.3', 'a handed-off job wants to delete v1.2.3 on origin'],
+    ['a handed-off job wants to npm publish', 'a handed-off job wants to publish this package to npm'],
+    ['a handed-off job wants to npm publish ./a', 'a handed-off job wants to publish the package in "./a" to npm'],
+    ['a handed-off job wants to npm publish --tag next --access public', 'a handed-off job wants to publish this package to npm under the next tag, public'],
+    // nothing that cannot be said exactly gets a friendlier verb
+    ['a handed-off job wants to gh release edit v1.2.3 --draft=false', 'a handed-off job wants to run a command that changes GitHub: "release edit v1.2.3 --draft=false"'],
+    ['a handed-off job wants to gh pr merge 5 --admin', 'a handed-off job wants to run a command that changes GitHub: "pr merge 5 --admin"'],
+    ['a handed-off job wants to npm unpublish atris@3.0.0', 'a handed-off job wants to run a command that changes npm: "unpublish atris@3.0.0"'],
+    ['a handed-off job wants to git push --mirror backup', 'a handed-off job wants to run a command that changes the git remote: "push --mirror backup"'],
+    ['a handed-off job wants to gh release create v2 --notes big release', 'a handed-off job wants to run a command that changes GitHub: "release create v2 --notes big release"'],
+    // a command in a written ask, between backticks
+    ['ok to run `npm publish --tag next` from lib/release.js?', 'ok to publish this package to npm under the next tag?'],
+    ['run `git push --tags` now?', 'ok to push every tag to the default remote?'],
+    // plain asks, and asks with no command to read, stay as written
+    ['ship the pricing page now?', 'ship the pricing page now?'],
+    ['ok to change lib/x.js?', 'ok to change lib/x.js?'],
+  ];
+  for (const [ask, plain] of said) assert.equal(gmBet.plainAsk(ask), plain, ask);
+  // the guard's own words for a held command: a delete says delete, a force push says so, a tag is named
+  const away = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-held-'));
+  const held = (tool, args) => yesLock.plainWhat(JSON.stringify({ tool, args, cwd: away }));
+  assert.equal(held('gh', ['release', 'delete', 'v1.2.3', '--yes']), 'delete the GitHub release v1.2.3 in this repo');
+  assert.equal(held('gh', ['release', 'edit', 'v1.2.3', '--draft=false']), 'run a command that changes GitHub: "release edit v1.2.3 --draft=false"');
+  assert.equal(held('git', ['push', 'origin', '--delete', 'v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', ':v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', 'v1.2.3']), 'push the tag v1.2.3 to its remote');
+  assert.equal(held('git', ['push', '--force', 'origin', 'pricing-page']), 'force push its pricing page branch to its remote, replacing what is there');
+  assert.equal(held('git', ['push', 'origin', '+HEAD:master']), 'force push to master on its remote, replacing what is there');
+  for (const [ask, plain] of said) {
+    if (/\bdelete\b/.test(ask)) assert.doesNotMatch(plain, /\b(create|make|publish)\b/, `a delete never reads as a create: ${ask}`);
+  }
+});
+
+// Codex review on #1563: two jobs from one member are two cards, and the
+// yes on each is bound to the job its own table shows, never to the member.
+test('job deck: two jobs from one member are two cards, and each yes answers the job its card shows', async () => {
+  const root = workspace();
+  const ago = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    old: { id: 'old', owner: 'builder', status: 'blocked', objective: 'Put the public site live', created_at: ago(20), updated_at: ago(10), human_asks: ['put it live now?'] },
+    new: { id: 'new', owner: 'builder', status: 'blocked', objective: 'Put the billing service live', created_at: ago(5), updated_at: ago(1), human_asks: ['put it live now?'] },
+  };
+  const h = jobDesk(root, missions, { decisions: [{ number: 1, mission_id: 'old', ask_index: 0 }, { number: 2, mission_id: 'new', ask_index: 0 }] });
+  // the newer yes was passed over on the main screen
+  h.d.state.seenYes.add('new:0');
+  const cards = h.d.jobDeck().cards;
+  assert.deepEqual(cards.map(c => [c.job_id, c.rows[0].work, c.yes && c.yes.key]), [
+    ['new', 'Put the billing service live', 'new:0'],
+    ['old', 'Put the public site live', 'old:0'],
+  ]);
+  // a yes names its job too: sent with the other job's id, it goes nowhere
+  const calls = h.cli.length;
+  assert.equal((await h.d.answerYes({ key: 'old:0', job: 'new' })).reason, 'gone');
+  assert.equal(h.cli.length, calls, 'nothing runs');
+  // the yes on the billing card answers the billing job, and only it
+  assert.equal((await h.d.answerYes({ key: 'new:0', job: 'new' })).ok, true);
+  assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
+  assert.deepEqual(h.d.jobDeck().cards.map(c => [c.job_id, c.yes && c.yes.key]), [['new', undefined], ['old', 'old:0']]);
+});
+
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
   const root = workspace();
   const h = jobDesk(root, {});
@@ -2338,7 +2506,7 @@ function jobDesk(root, missions, over = {}) {
         if (review.code) return { code: review.code, stdout: '', stderr: 'codex is out of credits' };
         return { code: 0, stdout: JSON.stringify({ schema: 'atris.engine_ask.v1', answers: [{ engine: 'codex', ok: true, stdout: JSON.stringify(review) }] }) };
       }
-      if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
+      if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: over.decisions || [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
       if (args[0] === 'decide') return { code: 0, stdout: '{"ok":true}' };
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ mission: { id: 'm-new', owner: 'builder' } }) };
       return { code: 0, stdout: JSON.stringify({ action: 'mission_run_detached', mission_id: 'm-new' }) };
@@ -2802,7 +2970,7 @@ test('a held handed-off command is a yes card on its own when it has no parent',
   const h = jobDesk(root, {});
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to merge a pull request on GitHub'], 'plain words, never the raw command');
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to merge pull request 5 in this repo'], 'plain words that keep the verb and the target');
   const own = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([own.title, own.bet_id, own.command], ['a handed-off job', null, 'gh pr merge 5'], 'no parent: its own card');
   const yes = await h.d.answerYes();
