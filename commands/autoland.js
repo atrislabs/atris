@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { localDay } = require('../lib/local-day');
 
 const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
@@ -1298,7 +1299,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   }
 
   // 4. daily digest at the configured hour
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
   if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
     receipt.digest_due = true;
