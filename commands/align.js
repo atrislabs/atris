@@ -43,15 +43,6 @@ function sleep(ms) {
 }
 
 /**
- * Compute SHA-256 hash of content string.
- * @param {string} content - Content to hash
- * @returns {string} Hex-encoded hash
- */
-function hashContent(content) {
-  return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-/**
  * Compute SHA-256 hash of a file.
  * @param {string} absPath - Absolute path to file
  * @returns {string|null} Hex-encoded hash, or null if file unreadable
