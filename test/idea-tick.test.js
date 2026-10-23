@@ -297,3 +297,24 @@ test('a repo with no origin lands on its own branch, and retry can name the fast
   assert.equal(after.status, 'waiting');
   assert.equal(fastCheck(repo, after), 'npm run lint');
 });
+
+test('with no engine login the tick names the fix and leaves the idea waiting', async () => {
+  const repo = tempRepo();
+  const idea = addIdea(repo, 'make the inbox search faster');
+  const { calls, deps } = harness();
+  const logs = [];
+
+  const outcome = await runIdeaTick({
+    root: repo,
+    ...deps,
+    log: (line) => logs.push(line),
+    loginGap: () => 'no Claude login for sealed builds',
+  });
+
+  assert.equal(outcome.status, 'needs_login');
+  assert.equal(calls.laps.length, 0);
+  assert.match(logs.join('\n'), /run: atris idea login/);
+  const row = readIdeas(repo).find((item) => item.id === idea.id);
+  assert.equal(row.status, 'waiting');
+  assert.equal(Number(row.attempts || 0), 0);
+});
