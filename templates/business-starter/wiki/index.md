@@ -1,4 +1,4 @@
-# {{name}} — Wiki Index
+# {{name}}: Wiki Index
 
 Compiled knowledge base. Sources live in `atris/context/` (immutable).
 

@@ -1,4 +1,4 @@
-# {{name}} — Goals
+# {{name}}: Goals
 
 Strategic direction. Weeks-to-months scale (TODO.md is days, this is weeks).
 

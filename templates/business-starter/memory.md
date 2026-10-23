@@ -1,4 +1,4 @@
-# {{name}} — Memory
+# {{name}}: Memory
 
 Persistent learned context. Read before significant work.
 
@@ -6,19 +6,19 @@ Persistent learned context. Read before significant work.
 
 Things that look obvious but break unexpectedly.
 
-*(none yet — add when you discover surprising failures)*
+*(none yet: add when you discover surprising failures)*
 
 ## Preferences
 
 Patterns this business prefers.
 
-*(none yet — document as you observe them)*
+*(none yet: document as you observe them)*
 
 ## Dead Ends
 
 Approaches tried and abandoned, and why.
 
-*(none yet — log failed approaches)*
+*(none yet: log failed approaches)*
 
 ## Domain Quirks
 

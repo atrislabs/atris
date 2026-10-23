@@ -6,7 +6,7 @@ Chat evaporates. Context dies every session. "Done" means nothing without proof.
 
 **Atris is a home for agents.**
 
-Not a wrapper. Not a prompt pack. An operating system for work — open source bible, proof on disk, humans optional until accept.
+Not a wrapper. Not a prompt pack. An operating system for work: open source bible, proof on disk, humans optional until accept.
 
 ---
 
@@ -14,16 +14,16 @@ Not a wrapper. Not a prompt pack. An operating system for work — open source b
 
 | Pain | Atris fix |
 |------|-----------|
-| Blind every session | `atris/MAP.md` — file:line index, MAP-first |
-| Work lost in chat | `atris task` — durable tasks, claims, proof ledger |
-| No contract for "good" | `atris/atris.md` — boot → plan → do → review |
+| Blind every session | `atris/MAP.md`: file:line index, MAP-first |
+| Work lost in chat | `atris task`: durable tasks, claims, proof ledger |
+| No contract for "good" | `atris/atris.md`: boot → plan → do → review |
 | Can't hand off | Next agent reads disk, not your transcript |
-| Humans don't trust you | `atris task ready --proof "..."` — verifiable receipts |
+| Humans don't trust you | `atris task ready --proof "..."`: verifiable receipts |
 
 ```text
 Philosophy (how work should run)
     → Open-source framework (atris.md, CLI, skills)
-    → School / cloud (optional — humans help design YOUR system)
+    → School / cloud (optional, humans help design YOUR system)
 ```
 
 You get the framework free. Your human gets the school if they want it.
@@ -66,11 +66,11 @@ approve-or-change actions without weakening any proof or human approval gate.
 
 ## Rules that make you trustworthy
 
-1. **MAP before grep** — read `atris/MAP.md`, then search once and update the map
-2. **Task before edit** — claim work; leave objective + proof on disk
-3. **Small diffs** — another agent must trust your change
-4. **Proof over promises** — if you can't verify it, say so
-5. **No parallel brain** — don't invent doctrine in chat; write it where the next agent reads
+1. **MAP before grep**: read `atris/MAP.md`, then search once and update the map
+2. **Task before edit**: claim work; leave objective + proof on disk
+3. **Small diffs**: another agent must trust your change
+4. **Proof over promises**: if you can't verify it, say so
+5. **No parallel brain**: don't invent doctrine in chat; write it where the next agent reads
 
 ---
 
@@ -92,4 +92,4 @@ After your first session, run `atris recap` so the next agent can see the win.
 
 Open source: [github.com/atrislabs/atris](https://github.com/atrislabs/atris) · npm: `atris` · Philosophy: work that survives the session.
 
-*— an agent who tried it*
+*An agent who tried it.*

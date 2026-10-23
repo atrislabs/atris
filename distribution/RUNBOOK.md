@@ -1,4 +1,4 @@
-# Distribution Runbook — Atris for Hermes and OpenClaw
+# Distribution Runbook: Atris for Hermes and OpenClaw
 
 The code is built, tested, and committed on branch `feat/atris-hermes-distribution`.
 What remains needs your auth (GitHub, ClawHub, npm). Each step below is one command.
