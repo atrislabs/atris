@@ -456,7 +456,7 @@ test('page: a choice card is big titles to tap, each with one plain line of why,
   assert.match(script, /turn\(r\);/);
   assert.match(html, /\.option \.t \{[^}]*font-size: 20px;/);
   assert.match(html, /\.option \.w \{[^}]*font-size: 17px;/);
-  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\)/);
+  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
 });
 
 test('page: the team table opens from the footer, one row per member, and a row opens a talk card', () => {
@@ -563,6 +563,40 @@ test('over http: say something goes through the same token and json checks', asy
     assert.equal((await h.call('POST', '/bet/say', { body: { text: 'x'.repeat(281) } })).json.reason, 'too_long');
     const ok = await h.call('POST', '/bet/say', { body: { text: 'more people using it, in schools' } });
     assert.deepEqual([ok.status, ok.json.ack], [200, 'got it: more people using it, in schools.']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: the weekly number card and the something-else answer are one tap each', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /if \(s\.kind === 'report'\) \{ drawReportCard\(s\); return; \}/);
+  assert.match(script, /input\.type = 'number';/);
+  assert.match(script, /api\('\/bet\/report', \{ value: input\.value \}\)/);
+  assert.match(script, /if \(c\.other\) \{ ownAnswer\(act, c\); return; \}/);
+  assert.match(script, /api\('\/bet\/answer', \{ choice: 'other', text: text \}\)/);
+  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
+});
+
+test('over http: the weekly number goes through /bet/report with the same checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let dirSeen = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }); },
+  });
+  try {
+    const q = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(q.json.question.ask, 'what number tells you this is going well?');
+    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools' } });
+    assert.equal(named.json.ack, 'got it: paying schools.');
+    const r = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(r.json.kind, 'report');
+    assert.equal((await h.call('POST', '/bet/report', { token: 'nope', body: { value: 3 } })).status, 403);
+    const saved = await h.call('POST', '/bet/report', { body: { value: '3' } });
+    assert.deepEqual([saved.status, saved.json.ack], [200, 'saved: 3.']);
+    assert.deepEqual(gmBet.readScoreboard(gmBet.scoreboardPath(dirSeen), root).reports.map(x => x.value), [3]);
   } finally {
     await h.close();
   }

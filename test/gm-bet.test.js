@@ -934,6 +934,8 @@ function desk(root, over = {}) {
     generateQuestion: qgen.generateQuestion,
     // most tests read one idea per tap; the choice card has its own tests
     choices: Boolean(over.choices),
+    scoreboard: Boolean(over.scoreboard),
+    suggestScoreboard: over.suggest || (() => new Promise(() => {})),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ ok: true, action: 'mission_started', mission: { id: 'mission-2026-10-21-write-a-getting-abc', owner: 'launcher', status: 'planning' } }, null, 2), stderr: '' };
@@ -1511,6 +1513,115 @@ test('say something: the writer is told the owner note and may keep the same del
   assert.match(fresh, /The owner said: "something for schools"\. The next idea must fit that\./);
 });
 
+const SUGGEST = async () => ({ ok: true, choices: [{ name: 'installs each week', up: true }, { name: 'people who ran it twice', up: true }] });
+
+test('scoreboard: with none saved, the first card asks what number says it is going well, from the project, plus something else', async () => {
+  const root = workspace();
+  const h = desk(root, { scoreboard: true, suggest: SUGGEST, warm: true });
+  await tick();
+  const q = h.d.next();
+  assert.deepEqual([q.kind, q.question.ask, q.question.line], ['question', 'what number tells you this is going well?', null]);
+  assert.deepEqual(q.question.choices, [{ id: 's1', label: 'installs each week' }, { id: 's2', label: 'people who ran it twice' }, { id: 'other', label: 'something else', other: true }]);
+  assert.equal(h.d.answer({ choice: 's2' }).ack, 'got it: people who ran it twice.');
+  const file = gmBet.scoreboardPath(path.dirname(h.ledgerFile));
+  assert.deepEqual(gmBet.readScoreboard(file, root), { name: 'people who ran it twice', up: true, source: 'reported', at: new Date(NOW).toISOString(), reports: [] });
+  // a number nobody can read on its own: the plain weekly card, before any idea
+  const r = h.d.next();
+  assert.deepEqual([r.kind, r.report], ['report', { what: 'people who ran it twice: what is it this week?', why: 'one number a week shows if this is going well.' }]);
+  assert.equal(h.d.report({ value: 'lots' }).reason, 'bad_number');
+  assert.equal(h.d.report({ value: '12' }).ack, 'saved: 12.');
+  assert.deepEqual(gmBet.readScoreboard(file, root).reports.map(x => x.value), [12]);
+  assert.notEqual(h.d.next().kind, 'report', 'once a week');
+  const later = desk(root, { scoreboard: true, ledgerFile: h.ledgerFile, start: NOW + 8 * 24 * 60 * 60 * 1000 });
+  const back = later.d.next();
+  assert.deepEqual([back.kind, back.report.why], ['report', 'last time it was 12, on oct 21.']);
+  // installs on a workspace with npm numbers are read on their own: no weekly card
+  const npmRoot = workspace();
+  const npm = desk(npmRoot, { scoreboard: true, suggest: SUGGEST, warm: true });
+  await tick();
+  npm.d.next();
+  npm.d.answer({ choice: 's1' });
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(npm.ledgerFile)), npmRoot).source, 'installs');
+  assert.notEqual(npm.d.next().kind, 'report');
+  // something else: its own words, and which way is good read from them
+  const ownRoot = workspace();
+  const own = desk(ownRoot, { scoreboard: true });
+  own.d.next();
+  assert.equal(own.d.answer({ choice: 'other', text: 'fewer support emails' }).ack, 'got it: fewer support emails.');
+  const ownBoard = gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(own.ledgerFile)), ownRoot);
+  assert.deepEqual([ownBoard.name, ownBoard.up, ownBoard.source], ['fewer support emails', false, 'reported']);
+  // before the model suggests, plain ones that fit any project
+  const plain = desk(workspace(), { scoreboard: true });
+  assert.deepEqual(plain.d.next().question.choices.map(c => c.label), ['installs each week', 'people who used it this week', 'money that came in this month', 'something else']);
+});
+
+function writeBoard(dir, root, pick, values) {
+  const file = gmBet.scoreboardPath(dir);
+  fs.appendFileSync(file, `${JSON.stringify({ workspace: root, kind: 'pick', ...pick, at: '2026-09-01T00:00:00.000Z' })}\n`);
+  values.forEach((value, i) => fs.appendFileSync(file, `${JSON.stringify({ workspace: root, kind: 'report', value, at: new Date(Date.UTC(2026, 8, 7 + i * 7)).toISOString() })}\n`));
+}
+
+test('scoreboard: the last report is the baseline; with 3 or more, the goal must beat the best of the last 8; the writer is told', async () => {
+  const root = workspace();
+  const ledgerFile = path.join(root, 'bets.jsonl');
+  writeBoard(root, root, { name: 'experiments that worked', up: true, source: 'reported' }, [3, 5]);
+  let { bundle } = { bundle: await gmBet.readBundle(root, { deps: fixtureDeps, ledgerFile, today: TODAY }) };
+  const prompt = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.match(prompt, /metric is one of: "scoreboard" \(experiments that worked, the owner's own number; baseline 5; with fewer than 3 reports any honest goal above the baseline 5 passes\)/);
+  assert.doesNotMatch(prompt, /metric is one of: [^\n]*"installs"/, 'the owner\'s number replaces installs as the target');
+  const v = target => gmBet.validateBet(goodBet({ target }), { bundle, today: TODAY });
+  assert.equal(v({ metric: 'scoreboard', baseline: 5, goal: 6 }).ok, true, v({ metric: 'scoreboard', baseline: 5, goal: 6 }).reasons.join(' | '));
+  assert.match(v({ metric: 'scoreboard', baseline: 5, goal: 5 }).reasons.join(' | '), /target goal 5 must be above the baseline 5/);
+  assert.match(v({ metric: 'scoreboard', baseline: 3, goal: 6 }).reasons.join(' | '), /does not match the real number: the last reported value is 5/);
+  fs.appendFileSync(gmBet.scoreboardPath(root), `${JSON.stringify({ workspace: root, kind: 'report', value: 4, at: '2026-10-01T00:00:00.000Z' })}\n`);
+  bundle = await gmBet.readBundle(root, { deps: fixtureDeps, ledgerFile, today: TODAY });
+  assert.match(v({ metric: 'scoreboard', baseline: 4, goal: 5 }).reasons.join(' | '), /target goal 5 does not beat the best of the last 3 reports, 5; the goal must be above 5/);
+  assert.equal(v({ metric: 'scoreboard', baseline: 4, goal: 6 }).ok, true);
+  // lower is better: the best is the lowest
+  const down = workspace();
+  writeBoard(down, down, { name: 'support emails', up: false, source: 'reported' }, [10, 8, 9]);
+  const db = await gmBet.readBundle(down, { deps: fixtureDeps, ledgerFile: path.join(down, 'bets.jsonl'), today: TODAY });
+  const dv = target => gmBet.validateBet(goodBet({ target }), { bundle: db, today: TODAY });
+  assert.match(dv({ metric: 'scoreboard', baseline: 9, goal: 8 }).reasons.join(' | '), /does not beat the best of the last 3 reports, 8; the goal must be below 8/);
+  assert.equal(dv({ metric: 'scoreboard', baseline: 9, goal: 7 }).ok, true);
+  // an installs scoreboard on an npm workspace keeps installs, as before
+  const npm = workspace();
+  writeBoard(npm, npm, { name: 'installs each week', up: true, source: 'installs' }, []);
+  const nb = await gmBet.readBundle(npm, { deps: fixtureDeps, ledgerFile: path.join(npm, 'bets.jsonl'), today: TODAY });
+  assert.equal(gmBet.validateBet(goodBet(), { bundle: nb, today: TODAY }).ok, true);
+  assert.match(gmBet.buildPrompt(nb, { today: TODAY }), /metric is one of: "installs"/);
+});
+
+test('scoreboard: a bet on it is scored from the first report on or after its check date; with none it waits, and the desk asks', async () => {
+  const root = workspace();
+  const ledgerFile = path.join(root, 'gm-bets.jsonl');
+  const report = (value, at) => fs.appendFileSync(gmBet.scoreboardPath(root), `${JSON.stringify({ workspace: root, kind: 'report', value, at })}\n`);
+  writeBoard(root, root, { name: 'experiments that worked', up: true, source: 'reported' }, [3, 5, 4]);
+  ledgerRow(ledgerFile, root, 'sb', { status: 'doing', bet: { ...goodBet({ title: 'Run the five pending experiments' }), target: { metric: 'scoreboard', baseline: 4, goal: 6, name: 'experiments that worked', up: true }, check_date: '2026-10-20' } });
+  // a report this week, but none since the check date: scoring waits, and the desk asks for the number
+  report(5, '2026-10-18T09:00:00.000Z');
+  assert.deepEqual(await gmBet.scoreBets(root, { ledgerFile, today: '2026-10-22' }), []);
+  const h = desk(root, { scoreboard: true, ledgerFile });
+  assert.equal(h.d.next().kind, 'report', 'a bet is waiting on the number');
+  // the number comes in: it is scored from it
+  report(7, '2026-10-20T09:00:00.000Z');
+  const scored = await gmBet.scoreBets(root, { ledgerFile, today: '2026-10-22' });
+  assert.deepEqual(scored.map(r => [r.status, r.actual, r.window]), [['won', 7, 'reported on or after 2026-10-20']]);
+});
+
+test('money: ideas never propose trades or moving money; the code, the writer, and the skeptic all say so', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const v = over => gmBet.validateBet(goodBet(over), { bundle, today: TODAY }).reasons.join(' | ');
+  assert.match(v({ title: 'Buy 200 shares of the index fund before friday' }), /it proposes a trade or moving money; ideas never do that/);
+  assert.match(v({ steps: [goodBet().steps[0], { text: 'wire the cash to the new brokerage account', who: 'you', public: false }] }), /it proposes a trade or moving money/);
+  assert.doesNotMatch(v({}), /trade/);
+  assert.doesNotMatch(v({ title: 'Write a getting started page for buyers of the team plan' }), /trade/);
+  assert.match(gmBet.buildPrompt(bundle, { today: TODAY }), /- never propose a trade, buying or selling stocks, shares, crypto, or any security, or moving money between accounts\./);
+  const seen = [];
+  await gmBet.generateBet({ workspaceRoot: workspace(), today: TODAY, ledgerFile: path.join(os.tmpdir(), `b-${Date.now()}.jsonl`), attemptsFile: path.join(os.tmpdir(), `a-${Date.now()}.jsonl`), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic: async (p) => { seen.push(p); return { ok: true, text: PASS }; } } });
+  assert.match(seen[0], /a trade, buying or selling stocks, shares, crypto, or any security, or moving money between accounts: fail it/);
+});
+
 test('do it: starts a real mission with every step and the your-yes rule, then runs it', async () => {
   const h = await filled(workspace());
   h.d.next();
@@ -2071,7 +2182,7 @@ test('page: the working line is static and lists who has each job; do it hands o
   assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}box\.appendChild\(el\('p', 'why', j\.why\)\);/);
   assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
   assert.doesNotMatch(html, /sendback|send back/);
-  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\) && \(s\.status === 'ready'/);
+  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\) && \(s\.status === 'ready'/);
 });
 
 // ---- over http: the routes and the deck ----------------------------------------------------
