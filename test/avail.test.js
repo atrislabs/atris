@@ -6,6 +6,7 @@ const {
   parseTimeToDecimal,
   parseDaysArg,
   parseSlotsDays,
+  parseSetArgs,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
@@ -74,5 +75,21 @@ describe('avail parseSlotsDays', () => {
     assert.equal(parseSlotsDays('0'), null);
     assert.equal(parseSlotsDays('-3'), null);
     assert.equal(parseSlotsDays(undefined), null);
+  });
+});
+
+describe('avail parseSetArgs number flags', () => {
+  it('keeps good numbers and refuses ones it would have dropped silently', () => {
+    const ok = parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--slot-minutes', '30', '--window-days', '14']);
+    assert.equal(ok.slotMinutes, 30);
+    assert.equal(ok.windowDays, 14);
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--slot-minutes', '30min']),
+      /--slot-minutes needs a whole number/
+    );
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--window-days']),
+      /got: nothing/
+    );
   });
 });

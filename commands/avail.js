@@ -117,6 +117,21 @@ function resolveTimezone({ tz, where }) {
   return 'America/Los_Angeles';
 }
 
+function parseWholeNumber(raw, min, max) {
+  if (raw === undefined || !/^\d+$/.test(String(raw).trim())) return null;
+  const n = parseInt(raw, 10);
+  if (n < min || n > max) return null;
+  return n;
+}
+
+function requireWholeNumber(flag, raw, min, max) {
+  const n = parseWholeNumber(raw, min, max);
+  if (n === null) {
+    throw new Error(`${flag} needs a whole number from ${min} to ${max}, got: ${raw === undefined ? 'nothing' : raw}`);
+  }
+  return n;
+}
+
 function parseSetArgs(argv) {
   const opts = {
     wake: null,
@@ -138,8 +153,8 @@ function parseSetArgs(argv) {
     else if (a === '--tz') opts.tz = argv[++i];
     else if (a === '--where') opts.where = argv[++i];
     else if (a === '--days') opts.days = argv[++i];
-    else if (a === '--slot-minutes') opts.slotMinutes = parseInt(argv[++i], 10);
-    else if (a === '--window-days') opts.windowDays = parseInt(argv[++i], 10);
+    else if (a === '--slot-minutes') opts.slotMinutes = requireWholeNumber(a, argv[++i], 5, 480);
+    else if (a === '--window-days') opts.windowDays = requireWholeNumber(a, argv[++i], 1, 365);
     else if (a === '--help' || a === '-h') return { help: true };
     else throw new Error(`unknown arg: ${a}`);
   }
@@ -288,10 +303,7 @@ async function setAvail(argv) {
 }
 
 function parseSlotsDays(raw) {
-  if (raw === undefined || !/^\d+$/.test(String(raw).trim())) return null;
-  const days = parseInt(raw, 10);
-  if (days < 1 || days > 365) return null;
-  return days;
+  return parseWholeNumber(raw, 1, 365);
 }
 
 async function slotsAvail(argv) {
@@ -418,6 +430,7 @@ module.exports = {
   parseTimeToDecimal,
   parseDaysArg,
   parseSlotsDays,
+  parseSetArgs,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
