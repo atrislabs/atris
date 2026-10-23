@@ -772,8 +772,10 @@ function dateStamp(now) {
     return now.slice(0, 10);
   }
   const value = now instanceof Date ? now : new Date(now || Date.now());
-  if (Number.isNaN(value.getTime())) return new Date().toISOString().slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  // Local calendar day, the same journal file every other writer uses;
+  // toISOString is UTC and files tonight's notes under tomorrow west of Greenwich.
+  const day = Number.isNaN(value.getTime()) ? new Date() : value;
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
 }
 
 function firstHeading(notes) {
