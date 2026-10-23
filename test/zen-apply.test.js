@@ -420,6 +420,30 @@ test('a branch with nothing new is not called kept and then cleared', () => {
   }
 });
 
+test('a note moved with git mv picks up upstream edits to its old path', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 9', 'line 9 from the team'), 'team edit');
+    git(seed, 'push', '-q');
+    fs.mkdirSync(path.join(checkout, 'atris/archive'));
+    git(checkout, 'mv', 'atris/TODO.md', 'atris/archive/TODO.md');
+    write(checkout, 'atris/archive/TODO.md', NOTES.replace('line 2', 'line 2 mine'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /could not catch up/);
+    assert.match(cli.stdout, /atris\/TODO\.md changed upstream after you moved it to atris\/archive\/TODO\.md; the new edits went with it/);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.ok(!fs.existsSync(path.join(checkout, 'atris/TODO.md')));
+    assert.equal(
+      fs.readFileSync(path.join(checkout, 'atris/archive/TODO.md'), 'utf8'),
+      NOTES.replace('line 2', 'line 2 mine').replace('line 9', 'line 9 from the team'),
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
