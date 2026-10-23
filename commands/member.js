@@ -10725,34 +10725,44 @@ async function memberSteerOrDispatch(...rawArgs) {
 
 async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []) {
   if (hasFlag(rawArgs, '--help') || hasFlag(rawArgs, '-h')) {
-    console.log('Usage: atris member steer [member] "<direction>" [--dry-run] [--json]');
+    console.log('Usage: atris member steer [member] [--no-ignite] [--detach] [--dry-run] [--json] [--] "<direction>"');
     console.log('       atris member "<direction>" [--dry-run] [--json]');
     console.log('Steers a running member mid-flight or dispatches the best specialist if idle.');
+    console.log('  --no-ignite  only reach a live run; with nothing running, start nothing and exit 3');
+    console.log('  --detach     when it starts the member, run it in the background and return its pid');
+    console.log('  --           everything after it is the direction, never an option');
     return;
   }
   const root = process.cwd();
-  const asJson = hasFlag(rawArgs, '--json');
-  const dryRun = hasFlag(rawArgs, '--dry-run');
+  // everything after -- is the direction: words a person typed are never options
+  const cut = rawArgs.indexOf('--');
+  const optionArgs = cut >= 0 ? rawArgs.slice(0, cut) : rawArgs;
+  const directionArgs = cut >= 0 ? rawArgs.slice(cut + 1) : [];
+  const asJson = hasFlag(optionArgs, '--json');
+  const dryRun = hasFlag(optionArgs, '--dry-run');
+  const noIgnite = hasFlag(optionArgs, '--no-ignite');
+  const detach = hasFlag(optionArgs, '--detach');
   // Set by `member up`: run only a claimed task with a runnable check, never
   // the member's own goal text.
-  const needsCheck = pullTask && hasFlag(rawArgs, '--needs-check');
+  const needsCheck = pullTask && hasFlag(optionArgs, '--needs-check');
   const valueFlags = new Set(['--engine', '--model', '--verify', '--referee-engine', '--minutes', '--hours', '--max-ticks', '--from']);
   const positionals = [];
   const flagArgs = [];
-  for (let i = 0; i < rawArgs.length; i++) {
-    const token = String(rawArgs[i] || '');
+  for (let i = 0; i < optionArgs.length; i++) {
+    const token = String(optionArgs[i] || '');
     if (!token) continue;
     if (token.startsWith('-')) {
-      if (token === '--needs-check') continue;
+      if (token === '--needs-check' || token === '--no-ignite' || token === '--detach') continue;
       flagArgs.push(token);
-      if (valueFlags.has(token) && i + 1 < rawArgs.length) {
-        flagArgs.push(rawArgs[i + 1]);
+      if (valueFlags.has(token) && i + 1 < optionArgs.length) {
+        flagArgs.push(optionArgs[i + 1]);
         i++;
       }
       continue;
     }
     positionals.push(token);
   }
+  for (const token of directionArgs) if (String(token || '')) positionals.push(String(token));
 
   let targetMember = null;
   let prompt = '';
@@ -10777,6 +10787,26 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const goalPlane = memberGoalPlaneStatus(owner, paths);
   const missionMap = memberRunMissionMap(root);
   const missionSummary = memberMissionSummary(owner, missionMap, root);
+  // --no-ignite only reaches a live run: with nothing running it starts
+  // nothing and touches nothing, and says so
+  if (noIgnite && !missionSummary.live) {
+    const payload = { ok: false, action: 'member_not_running', member: owner };
+    printJsonOrText(payload, [`${owner} is not running, so nothing was sent or started.`], asJson);
+    process.exitCode = 3;
+    return payload;
+  }
+  // --detach answers before the background run starts, so the cheap checks
+  // run here first: a member that cannot run is refused with the plain reason
+  if (detach && !dryRun) {
+    const refusal = memberRefusalFor(targetMember, paths.memberFile)
+      || (resolveMemberEngineSeat(owner, root).engine_id ? '' : `no engine is set for ${owner}`);
+    if (refusal) {
+      const payload = { ok: false, action: 'member_run_not_started', member: owner, reason: refusal };
+      printJsonOrText(payload, [`${owner} did not start: ${refusal}`], asJson);
+      process.exitCode = 1;
+      return payload;
+    }
+  }
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
   const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)
@@ -10853,6 +10883,26 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
       `Consequence: ${owner} will read this steer on the next loop and adjust course.`,
     ];
     printJsonOrText(payload, lines, asJson);
+    return payload;
+  }
+
+  // --detach: the same steer runs in the background, so a caller with a
+  // short timeout gets started or not-started at once
+  if (detach && !dryRun) {
+    const { spawn } = require('child_process');
+    const childArgs = [...optionArgs.filter(a => a !== '--detach' && a !== '--json'), ...(cut >= 0 ? ['--', ...directionArgs] : [])];
+    let child;
+    try {
+      child = spawn(process.execPath, [process.argv[1], 'member', 'steer', ...childArgs], { cwd: root, detached: true, stdio: 'ignore', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+      child.unref();
+    } catch (error) {
+      const payload = { ok: false, action: 'member_run_not_started', member: owner, error: String(error.message || error) };
+      printJsonOrText(payload, [`${owner} did not start: ${payload.error}`], asJson);
+      process.exitCode = 1;
+      return payload;
+    }
+    const payload = { ok: true, action: 'member_run_detached', member: owner, pid: child.pid };
+    printJsonOrText(payload, [`${owner} started in the background (pid ${child.pid}).`], asJson);
     return payload;
   }
 
