@@ -73,6 +73,7 @@ testResolution('resolveClaudeRunnerModel honors explicit model first', { ATRIS_C
 
 testResolution('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', { ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
   assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
+  assert.equal(resolveClaudeRunnerModel({ model: null }), 'sonnet');
   assert.equal(resolveClaudeRunnerModel(null), 'sonnet');
 });
 
@@ -82,6 +83,8 @@ testResolution('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy 
 
 testResolution('resolveClaudeRunnerModel defaults to pinned Opus 5.5', {}, () => {
   assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({ model: null }), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'claude-opus-5-5');
   assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
 });
 

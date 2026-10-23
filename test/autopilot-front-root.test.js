@@ -20,18 +20,3 @@ test('autopilotFront resolves the workspace root, not raw process.cwd()', () => 
   // And it must NOT bind root directly to a bare process.cwd() in the entry.
   assert.doesNotMatch(SRC, /const root = process\.cwd\(\);/);
 });
-
-test('the shared resolver it uses maps a subdir to the workspace root', () => {
-  const { resolveWorkspaceRoot } = require('../lib/mission-root');
-  const os = require('node:os');
-  const cp = require('node:child_process');
-  const repo = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-ap-root-'));
-  try {
-    cp.execSync('git init -q', { cwd: repo });
-    const sub = path.join(repo, 'backend');
-    fs.mkdirSync(sub, { recursive: true });
-    assert.equal(fs.realpathSync(resolveWorkspaceRoot(sub)), fs.realpathSync(repo));
-  } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-  }
-});

@@ -3,9 +3,11 @@
 const { abandonedDaysFromEnv, checkZen, sideCopyLines } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
 const { workspaceZen } = require('../lib/zen-workspace');
+const { fleetFile, fleetRepos, fleetZen, printFleet } = require('../lib/zen-fleet');
 
 function showZenHelp() {
   console.log('usage: atris zen [--check] [--no-fetch] [--json]');
+  console.log('       atris zen --all [repo ...]');
   console.log('');
   console.log('Brings this repo to zen: code matches origin, nothing left lying around.');
   console.log('Old stashes are archived, idle side copies put away, finished branches');
@@ -21,6 +23,9 @@ function showZenHelp() {
   console.log('  --check      Only look. Report what is out of place and change nothing.');
   console.log('  --no-fetch   Use the last fetched origin instead of fetching.');
   console.log('  --json       Print machine-readable results.');
+  console.log('  --all        Zen every repo you list, one line each. Repos come from the');
+  console.log('               command line or ~/.atris/zen.json: {"repos": ["~/code/app"]}.');
+  console.log('               A repo with unsaved live data or secrets is skipped for you.');
   console.log('');
   console.log('Add more team-state paths in .atris/zen.json: {"team_state": ["logs/"]}');
 }
@@ -150,6 +155,18 @@ function zenCommand(args = [], cwd = process.cwd()) {
   }
   const fetch = !args.includes('--no-fetch');
   const json = args.includes('--json');
+
+  if (args.includes('--all')) {
+    const repos = fleetRepos(args.filter((a) => !a.startsWith('--')));
+    if (!repos.length) {
+      console.log(`zen: no repos listed. Name them (atris zen --all ~/code/app ~/code/site) or list them in ${fleetFile()}.`);
+      return 2;
+    }
+    const results = fleetZen({ repos, fetch });
+    if (json) console.log(JSON.stringify(results, null, 2));
+    else printFleet(results);
+    return results.every((r) => r.state === 'zen' || r.state === 'skipped') ? 0 : 1;
+  }
 
   if (args.includes('--check')) {
     const result = checkZen({ cwd, fetch });

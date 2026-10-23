@@ -1350,25 +1350,6 @@ test('atris pack help lists run', () => {
   assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
 });
 
-test('atris pack help lists run', () => {
-  const dir = makeTempDir();
-  let result;
-  try {
-    result = spawnSync(process.execPath, [cliPath, 'pack', 'help'], {
-      cwd: dir,
-      encoding: 'utf8',
-      timeout: 20000,
-      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
-    });
-  } finally {
-    cleanupTempDir(dir);
-  }
-  assert.equal(result.status, 0);
-  assert.match(result.stdout, /atris pack run <slug\|dir>/);
-  assert.match(result.stdout, /atris pack runs/);
-  assert.match(result.stdout, /legacy packs need an explicit --grant before --trust/);
-});
-
 // ── pack recovery (CLI-1334) ─────────────────────────────────────────────
 // The model is simulated at the computerLocal seam. The filesystem and the
 // real pre/used/failed hooks do the recording, so these prove enforcement,

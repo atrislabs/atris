@@ -758,6 +758,8 @@ function showHelpAll() {
   console.log('  topup      - Buy credits and print a Stripe checkout URL');
   console.log('  buy        - Quote a purchase or stock order; the person approves before anything is charged');
   console.log('  transactions - List what you bought, paid in fees, traded, or sent');
+  console.log('  pay        - Pay another Atris account in credits; history, accept, cancel');
+  console.log('  trust      - See an account\'s trust; vouch or unvouch for someone');
   console.log('  hire       - Hire an agent in one step: name, job, inbox, allowance, nightly work loop');
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
@@ -3497,6 +3499,14 @@ if (command === 'guide') {
 } else if (command === 'invite') {
   require('../commands/social').inviteCommand()
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'pay') {
+  require('../commands/pay').payCommand()
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'trust') {
+  require('../commands/trust').trustCommand()
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
   console.log(`Unknown command: ${command}`);
