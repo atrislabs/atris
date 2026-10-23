@@ -545,7 +545,7 @@ function helpCatalog() {
     { name: 'done', summary: 'land what your coding agent built: check, accept, sign', json: true, interactive_risk: 'low' },
     { name: 'task', summary: 'local task plane: new, claim, ready, accept', json: true, interactive_risk: 'low' },
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
-    { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
+    { name: 'recap', summary: 'what your ai agent and team did today', json: true, interactive_risk: 'low' },
     { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
     { name: 'campaign', summary: 'long goal + judge + budget + seats, made of missions', json: true, interactive_risk: 'low' },
     { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: true, interactive_risk: 'low' },
@@ -568,7 +568,7 @@ function showHelpAll() {
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
   console.log('  atris mission                    the one goal');
-  console.log('  atris recap                      what got done');
+  console.log('  atris recap                      what your ai agent did today');
   console.log('  atris review                     check the work');
   console.log('  atris stop                       stop the live goal');
   console.log('');
@@ -616,7 +616,7 @@ function showHelpAll() {
   console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  brief      - Show the one-glance operator brief');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
-  console.log('  recap      - What your AI team did, in spoken lines (--verbose for the old report)');
+  console.log('  recap      - What your AI agent and team did today, in plain lines (--verbose for the old report)');
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');

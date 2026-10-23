@@ -655,3 +655,127 @@ test('recap --help names spoken default and verbose report', () => {
     cleanup(dir);
   }
 });
+
+// --- recap today: what your ai agent did here, before any setup ---
+
+const { buildAgentToday, renderAgentToday, claudeProjectDir } = require('../lib/agent-today');
+
+function todayFixture() {
+  const home = makeTempDir();
+  const project = fs.realpathSync(makeTempDir());
+  const now = new Date();
+  const ts = now.toISOString();
+  const yesterday = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
+  return { home, project, now, ts, yesterday };
+}
+
+function writeJsonl(file, rows) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+function seedClaude({ home, project, ts, yesterday }) {
+  writeJsonl(path.join(claudeProjectDir(home, project), 's1.jsonl'), [
+    { type: 'user', timestamp: yesterday, message: { content: 'old ask from two days ago' } },
+    { type: 'user', timestamp: ts, message: { content: 'add a login page' } },
+    { type: 'user', timestamp: ts, message: { content: '<command-name>/clear</command-name>' } },
+    { type: 'assistant', timestamp: ts, message: { content: [
+      { type: 'tool_use', name: 'Write', input: { file_path: path.join(project, 'src', 'login.js') } },
+      { type: 'tool_use', name: 'Edit', input: { file_path: path.join(project, 'src', 'app.js') } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
+    ] } },
+    { type: 'user', timestamp: ts, message: { content: [{ type: 'tool_result', content: 'ok' }] } },
+    { type: 'user', timestamp: ts, message: { content: 'now add tests' } },
+  ]);
+}
+
+function seedCodex({ home, project, now, ts }, cwd = project) {
+  const y = String(now.getFullYear());
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const patch = `*** Begin Patch\n*** Update File: ${path.join(project, 'README.md')}\n@@\n-old\n+new\n*** End Patch`;
+  writeJsonl(path.join(home, '.codex', 'sessions', y, m, d, `rollout-${path.basename(cwd)}.jsonl`), [
+    { type: 'session_meta', timestamp: ts, payload: { cwd } },
+    { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }] } },
+    { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'fix the readme typo' }] } },
+    { type: 'response_item', timestamp: ts, payload: { type: 'custom_tool_call', name: 'exec', input: `text(await tools.apply_patch(${JSON.stringify(patch)}))` } },
+  ]);
+}
+
+test('recap today reads a claude code session for this folder only', () => {
+  const fx = todayFixture();
+  try {
+    seedClaude(fx);
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    assert.equal(t.sessions.claude, 1);
+    assert.equal(t.sessions.codex, 0);
+    assert.equal(t.prompts, 2, 'counts today\'s typed asks, skips old asks, wrappers, and tool results');
+    assert.deepEqual(t.files, ['src/app.js', 'src/login.js']);
+    const out = renderAgentToday(t);
+    assert.match(out, /2 things, across 1 session in claude code/);
+    assert.match(out, /changed 2 files, mostly in src/);
+    assert.ok(out.split('\n').length <= 5, out);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('recap today reads codex patches and ignores codex sessions in other folders', () => {
+  const fx = todayFixture();
+  const other = makeTempDir();
+  try {
+    seedCodex(fx);
+    seedCodex(fx, other);
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    assert.equal(t.sessions.codex, 1);
+    assert.equal(t.prompts, 1);
+    assert.deepEqual(t.files, ['README.md']);
+    assert.match(renderAgentToday(t), /1 thing, across 1 session in codex\.\nit changed 1 file in the top folder\./);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+    cleanup(other);
+  }
+});
+
+test('recap today in an empty folder says nothing happened yet, in plain words', () => {
+  const fx = todayFixture();
+  try {
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    assert.equal(t.isGit, false);
+    assert.equal(
+      renderAgentToday(t),
+      `today in ${path.basename(fx.project)}\nno ai sessions or saved changes here yet today.\nrun this again after your agent does some work.`,
+    );
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('bare recap with no atris folder shows today, with commits and unsaved files', () => {
+  const fx = todayFixture();
+  try {
+    seedClaude(fx);
+    const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+    spawnSync('git', ['init', '-q'], { cwd: fx.project });
+    fs.writeFileSync(path.join(fx.project, 'a.txt'), 'a');
+    spawnSync('git', ['add', '.'], { cwd: fx.project });
+    spawnSync('git', ['commit', '-qm', 'add the login page'], { cwd: fx.project, env: gitEnv });
+    fs.writeFileSync(path.join(fx.project, 'b.txt'), 'b');
+    const r = spawnSync(process.execPath, [cliPath, 'recap'], {
+      cwd: fx.project,
+      encoding: 'utf8',
+      env: { ...process.env, HOME: fx.home, ATRIS_TASKS_DB: path.join(fx.home, 'tasks.db') },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^today in /);
+    assert.match(r.stdout, /1 change saved to git\. latest: "add the login page"/);
+    assert.match(r.stdout, /1 file changed but not saved to git yet\./);
+    assert.ok(!fs.existsSync(path.join(fx.project, 'atris')), 'recap must not set anything up');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});

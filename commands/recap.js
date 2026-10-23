@@ -13,6 +13,7 @@ const {
   taskCommand,
 } = require('../lib/first-minute');
 const { isRealTestRunnerProof, quoteVerifierCommand } = require('../lib/verifier-quality');
+const { buildAgentToday, renderAgentToday, hasActivity } = require('../lib/agent-today');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 7;
@@ -335,11 +336,14 @@ function printRecapHelp() {
 atris recap - what got done, in spoken lines
 
   atris recap              a few spoken lines: waiting for your ok, still being checked
+  atris recap today        what your ai coding agent did in this folder today
   atris recap --verbose    the old report
   atris recap --days 30    widen the window
   atris recap --share      paste-ready summary for Slack, email, or a customer
   atris recap --json       structured output for agents and dashboards
 
+in a folder with no atris setup, recap shows today by default.
+today reads claude code and codex logs on this computer plus git. it sends nothing.
 certified work names atris task accept. uncertified stays still being checked.
 use --verbose or --share for the old report.
 `);
@@ -351,6 +355,11 @@ function recapAtris(args = []) {
     return;
   }
   const cwd = process.cwd();
+  if (args[0] === 'today') {
+    const today = buildAgentToday({ cwd });
+    console.log(args.includes('--json') ? JSON.stringify(today, null, 2) : renderAgentToday(today));
+    return;
+  }
   const taskDb = loadTaskDb();
   let root = cwd;
   try {
@@ -370,6 +379,21 @@ function recapAtris(args = []) {
   const daysIdx = args.indexOf('--days');
   const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
   const data = buildRecapData(root, { days });
+  // Before any setup, or when the board has nothing to say, the useful
+  // first minute is what your ai agent already did in this folder today.
+  const boardQuiet = data.empty
+    || ['shipped', 'waiting', 'checking', 'inProgress'].every((k) => !(data[k] || []).length);
+  if (boardQuiet && !args.includes('--verbose') && !args.includes('--full') && !args.includes('--share')) {
+    const today = buildAgentToday({ cwd });
+    // A brand new folder already names its last commit in the first
+    // minute, so commits alone keep that; an ai session here wins.
+    const fresh = data.empty && isFreshWorkspace(root) && !inProjectSubdir;
+    const ranAgent = today.sessions.claude + today.sessions.codex > 0;
+    if (hasActivity(today) && (ranAgent || !fresh)) {
+      console.log(args.includes('--json') ? JSON.stringify(today, null, 2) : renderAgentToday(today));
+      return;
+    }
+  }
   if (
     data.empty
     && isFreshWorkspace(root)
