@@ -1,0 +1,37 @@
+You are in the atris-cli repo: Node, zero dependencies, tests use node:test.
+
+The existing tests miss a bug. In {{target}} at line {{line}}, this line:
+    {{before}}
+can be changed to:
+    {{after}}
+and every existing test that loads the file ({{tests}}) still passes.
+
+Write ONE new test file at {{file}} that passes on the real code and fails when that line is changed.
+
+Rules:
+- Create only {{file}}. Do not change the code under test.
+- Load the module with require('../{{module}}') and test it through what it exports. Find the exported function that runs this line and build an input that reaches it.
+- Never read the source file's text. Its path may appear only inside require('../{{module}}'). Any other mention fails the check: a comment, a test name, a describe label, require.resolve, a spawn or exec argument. Do not paste the line or nearby code into comments. Before finishing, search {{file}} for the file's name: it must appear once, in the require.
+- No network, not even a local server. No AI engines, no long-running commands, no timing deadlines, no dependence on today's date or a file's real modified time. Do not replace the global Date.
+- Write only inside fs.mkdtempSync(path.join(os.tmpdir(), ...)). The check runs your file with an empty environment, no git config, in two time zones a day apart. Never run git config. If the code reads HOME, set HOME to your temp folder; never delete it.
+- You must confirm before finishing: change the line yourself, run node --test {{file}} and see it fail, then put the line back exactly with: git checkout -- {{target}}
+  If it still passes with the line broken, your test is not done. Work out what the broken line returns for your input and assert the thing that differs.
+- Finish with the line restored and node --test {{file}} passing.
+- Do not commit.
+
+Reaching the line. Most lines are reachable. Leaving no file counts as a miss, so try before giving up:
+- A > or < that gains or loses "=": use the exact boundary input, such as an empty list, zero items, a first item that is already over the limit, or a status of exactly 200.
+- && changed to || or the reverse: use the input where exactly one side is true. For "a && b ? x : y", try a present but b false, or a missing.
+- "value || fallback" changed to "value && fallback": pass a real value and check that value comes through, not the fallback. Assert a field only the real value has.
+- An index like i + 1 changed to i - 1: pass a flag followed by its value and check the value lands.
+- === changed to !==, or true changed to false: use the input that takes the other branch and check what that branch produces.
+- Commands: call the exported function, capture console output, set HOME and the working folder to your temp folder, and swap process.exit for a function that throws, restoring all of it after.
+- Code behind a login or an API call: write fake saved state into your temp HOME, and replace the exported request function of the module that makes the call, then restore it. Never open a socket.
+
+What the reviewer drops:
+- Whole snapshots. Never deepStrictEqual a whole object, parsed JSON, or full output. Never match full help text, messages, titles, or reasons word for word. Assert only the piece this line decides: one field with strictEqual, or whether one line or key word is present. No exact spacing, padding, or color codes.
+- Extra assertions. One or two is usually enough. Every assertion must be about what this line decides.
+- Breaks caught by accident. If the changed line crashes, also assert on the value or text the line controls, not just the crash or missing output.
+- Fakes no real caller makes: getters that change between reads, values planted on prototypes, mocks that depend on the order or count of internal file or process calls.
+- Harmless breaks. If the difference shows up only at an input no real caller gives (an exact millisecond, an exact byte size, a status code no server sends, one slot past the end of a list), or nothing a user would notice changes (a result field nothing reads, a search or loop limit one step higher with no visible effect), write nothing and stop. Empty lists, missing fields, first items, and status 200 are real inputs.
+- Repeats. Read the tests that load this file. Test the case only this line decides, not one they already check.
