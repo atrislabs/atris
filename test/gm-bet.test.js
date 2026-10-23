@@ -1364,7 +1364,12 @@ test('do it: starts a real mission with every step and the your-yes rule, then r
   // the bet's own check, not the formatting check
   assert.equal(flag('--verify'), 'test -s docs/gm-phone.md');
   assert.ok(start.includes('--json'));
-  assert.deepEqual(h.cli[1], ['mission', 'run', 'mission-2026-10-21-write-a-getting-abc', '--detach', '--json']);
+  // the idea says about 4 hours: it gets 5 (a quarter more), at 12 rounds an hour, on start and on run
+  assert.equal(start.includes('--budget'), false, 'never the one-hour tier');
+  assert.deepEqual([flag('--max-wall'), flag('--max-ticks')], ['18000', '60']);
+  // the hours are a ceiling: a job that finishes early stops
+  assert.ok(start.includes('--stop-when-done'));
+  assert.deepEqual(h.cli[1], ['mission', 'run', 'mission-2026-10-21-write-a-getting-abc', '--max-wall', '18000', '--max-ticks', '60', '--stop-when-done', '--detach', '--json']);
   assert.equal(h.d.view().mission.line, 'launcher has it and is starting now.');
   const last = h.ledger().find(r => r.mission_id);
   assert.equal(last.status, 'doing');
@@ -1378,6 +1383,17 @@ test('do it: starts a real mission with every step and the your-yes rule, then r
   assert.equal(cards[0].text, 'your yes: publish the page and post the recording on x');
   assert.deepEqual(cards[0].choices[0].steps[0].slice(0, 3), ['mission', 'ping', 'mission-2026-10-21-write-a-getting-abc']);
   assert.ok(cards[0].choices[0].steps[0].includes('gm-phone'));
+});
+
+test('job time: the hours the idea says, plus a quarter, from 1 to 24 hours; 3 hours when it says none', () => {
+  const t = cost => gmBet.jobTime({ cost });
+  assert.deepEqual(t('about 6 hours of agent time, $0'), { seconds: 27000, ticks: 90 });
+  assert.deepEqual(t('2-3 hours of agent time'), { seconds: 13500, ticks: 45 });
+  assert.deepEqual(t('about 90 minutes of agent time, $0'), { seconds: 6750, ticks: 23 });
+  assert.deepEqual(t('about 20 minutes, $0'), { seconds: 3600, ticks: 12 }, 'never under an hour');
+  assert.deepEqual(t('about 40 hours of agent time'), { seconds: 86400, ticks: 288 }, 'never over a day');
+  assert.deepEqual(t('$0, a short job'), { seconds: 10800, ticks: 36 }, 'no hours: the deep tier');
+  assert.deepEqual(gmBet.jobTime({}), { seconds: 10800, ticks: 36 });
 });
 
 test('do it: a mission that will not start leaves the bet ready, says so plainly, and logs why', async () => {
@@ -1535,6 +1551,53 @@ test('jobs: an open mission that has not moved in over 2 hours is not working; i
   assert.deepEqual([closed.mission_result, closed.closed_reason], ['closed', 'stopped moving 3 hours ago, nothing finished, after one try again']);
   assert.deepEqual(h.d.view().working.map(w => w.title), ['Record the demo video of the front office']);
   assert.ok(h.logs.find(l => l.choice === 'close' && l.bet_id === 'b-stale'));
+});
+
+test('jobs: a job that runs out of time keeps going in up to two fresh rounds while it makes progress, then closes quietly', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-long', 'm-long', 'Write the getting started page');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  // round one hit its wall mid tick 3 hours ago, with a receipt to show for it
+  const missions = { 'm-long': { id: 'm-long', owner: 'builder', status: 'running', created_at: NAGO(5 * 60), last_tick_at: NAGO(3 * 60), last_tick_reason: 'wall-exceeded-during-tick', receipt_path: 'r1', human_asks: [] } };
+  const h = jobDesk(root, missions);
+  await h.d.settle();
+  const starts = () => h.cli.filter(a => a[1] === 'start');
+  assert.equal(starts().length, 1);
+  assert.match(starts()[0][2], /the last run ran out of time before its check passed; pick up where it left off\. try again\./);
+  assert.deepEqual([h.ledger()[0].auto_sent_back, h.ledger()[0].mission_id], [1, 'm-new']);
+  // round two used every round it had, made progress, and paused: it goes on at once, no two-hour wait
+  missions['m-new'] = { id: 'm-new', owner: 'builder', status: 'paused', pause_reason: 'max-ticks-reached', created_at: NAGO(60), updated_at: NAGO(1), receipt_path: 'r2', human_asks: [] };
+  h.d.pollJobs();
+  await h.d.settle();
+  assert.equal(starts().length, 2);
+  assert.equal(h.ledger()[0].auto_sent_back, 2);
+  // a third time: closed quietly, with why
+  h.d.pollJobs();
+  await h.d.settle();
+  assert.equal(starts().length, 2);
+  assert.deepEqual([h.ledger()[0].mission_result, h.ledger()[0].closed_reason], ['closed', 'ran out of time before its check passed; pick up where it left off, after two more rounds']);
+  assert.deepEqual(h.d.view().working, []);
+});
+
+test('working: the footer says plainly how long each job has left', () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Write the getting started page');
+  doingRow(file, root, 'b2', 'm2', 'Record the demo video');
+  doingRow(file, root, 'b3', 'm3', 'Draft the launch thread');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const h = jobDesk(root, {
+    m1: { id: 'm1', owner: 'builder', status: 'running', created_at: NAGO(40), last_tick_at: NAGO(5), max_wall_seconds: 5 * 3600, human_asks: [] },
+    m2: { id: 'm2', owner: 'launcher', status: 'running', created_at: NAGO(40), last_tick_at: NAGO(5), budget_contract: { requested_seconds: 3600 }, human_asks: [] },
+    m3: { id: 'm3', owner: 'researcher', status: 'running', created_at: NAGO(40), last_tick_at: NAGO(5), human_asks: [] },
+  });
+  assert.deepEqual(h.d.view().working, [
+    { title: 'Write the getting started page', owner: 'builder', left: 'about 4 hours left' },
+    { title: 'Record the demo video', owner: 'launcher', left: 'about 20 minutes left' },
+    { title: 'Draft the launch thread', owner: 'researcher' },
+  ]);
+  for (const w of h.d.view().working) assert.doesNotMatch(JSON.stringify(w), /budget|tick/);
 });
 
 function jobDesk(root, missions, over = {}) {
@@ -1772,7 +1835,7 @@ test('page: the working line is static and lists who has each job; do it hands o
   const html = phonePage('NONCE');
   assert.match(html, /<button type="button" class="quiet" id="working" hidden aria-expanded="false"><\/button><div class="jobs" id="jobs" hidden><\/div>/);
   assert.match(html, /btn\.textContent = jobs\.length \+ ' working';/);
-  assert.match(html, /row\.appendChild\(el\('span', 'meta', j\.owner \+ ' has it'\)\);/);
+  assert.match(html, /row\.appendChild\(el\('span', 'meta', j\.owner \+ ' has it' \+ \(j\.left \? ', ' \+ j\.left : ''\)\)\);/);
   // no pulse or loop on the new pieces
   const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.jobs .meta'));
   assert.ok(css.length > 40);
