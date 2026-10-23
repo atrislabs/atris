@@ -3,6 +3,7 @@ const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { openingLinesForRoot, upsertAgentsOpeningLines } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const {
   upsertAgentVoiceCard,
@@ -647,6 +648,13 @@ function syncAtris(options = {}) {
     updated++;
   }
 
+  const openingLines = openingLinesForRoot(process.cwd());
+  const agentsOpeningResult = upsertAgentsOpeningLines(agentsMdFile, openingLines, { dryRun });
+  if (agentsOpeningResult.action !== 'unchanged') {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} AGENTS.md operating rules`);
+    updated++;
+  }
+
   // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
@@ -727,7 +735,7 @@ Key behaviors:
 
   if (fs.existsSync(rootClaudeMd)) {
     const source = fs.readFileSync(rootClaudeMd, 'utf8');
-    const result = upsertAtrisClaudeBootBlock(source);
+    const result = upsertAtrisClaudeBootBlock(source, { openingLines });
     if (result.action === 'repaired') {
       applyClaudeUpdate(result.content, 'repair atris block in CLAUDE.md (missing end marker)', 'repaired atris block in CLAUDE.md (missing end marker)');
     } else if (result.action === 'updated') {
@@ -737,7 +745,7 @@ Key behaviors:
     }
   } else {
     // Create new CLAUDE.md with just Atris block
-    const content = upsertAtrisClaudeBootBlock().content;
+    const content = upsertAtrisClaudeBootBlock('', { openingLines }).content;
     applyClaudeUpdate(content, 'create CLAUDE.md with atris block', 'created CLAUDE.md with atris block');
   }
 
