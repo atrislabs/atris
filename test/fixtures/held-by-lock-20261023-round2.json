@@ -1,0 +1,6254 @@
+[
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-C",
+   "<repo>",
+   "ls-files",
+   "--error-unmatch",
+   "--",
+   ":(icase).claude/settings.local.json"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-C",
+   "<repo>",
+   "ls-files",
+   "--error-unmatch",
+   "--",
+   ":(icase).claude/settings.local.json"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "remote"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "user.name"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--no-optional-locks",
+   "status",
+   "--short",
+   "--ignore-submodules=dirty"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "ls-remote",
+   "--symref",
+   "origin",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "--short",
+   "refs/remotes/origin/HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f190333bec66ec8dd37cd0982f37c8aef64a3ef9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "2fd70f57e7b620ace30e791b53a0239bacde2dc6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "baf82ab2d5202b6261792594064bab59743fe395"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9ca6297cee6827decdd78f95089a5497f425dad2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aaa6229df19f61453ae09252a92203f5c3daf0bf"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "83b15c89e254beced1f5c63f3c797f564f308bb6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "2070955ce4d90883117a7daa2b4e4268292038d2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "efe8e9a0fd8267385bdbb3f8bf1adb5bff8dbb04"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "edf1a40d2610f562389c5dce011a11a46d14c74e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "714b61f70e64006d56945de3950ff36d6acfd3b1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "12c668c4298c253e9630298a08893ee2cb972f81"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "eb6b4de65c225a7d747da89c9798c190379430da"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "67922a240339ca4b40b9633b43edfe98a1b0b891"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d45743391742b292d1960030846d0cd30e3e423c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8da5e3f76f309fabb7ba4803935f1d6a182e920a"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "98977e873629e4c27937b9aa613efaf234489980"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c38563adf4f45979ee2c33c2e95572100779e7bd"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "b03a162e2ea4e8402052c1ecc7a9311c57f3aa27"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aa3e54dcb1a6497164ec4d4e72dab3e73da75bfb"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "543f5e17572d2960b2e914dd4e7a46ffce637483"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "94cd92a25f71ecb7111636d2b145dd1905252b3b"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "82f20bf12e2672f1c987f0bb0b97712cbc6e154c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "16b145cb7d649e4c33abfc1471aab336d983d6a4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5b7ad53afda6664e5acd58120b6502d6212167e0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "03d89dab3d135041fb25c77ecb81a98b6e6fb163"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "6423ffcf5ba09275dbdf78b6043a9f540e5ae6b6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1ef0d4b1ac4ce894fc1963f97972b99d5dfd87f9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "cbfc51ac8a0629f5821bdc22112796b97f0f399f"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1a55db2dbfc3ab970dbd267bc7bfa18473356fd3"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ef0eac44f434cb923cb1b404dbe5ec84424401da"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "46511eff069334d47fba9d23b4747d390677f2e2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "13359a7e85c50c0f9684ccf071838021ec738236"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c78c53905896a02ca75963f7d924a5887ddd86c4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "6021d974ef47d920d1a1131d6d79a99b675148b1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "bca8b9fc34a76e26851b84c9353f2d82e6f22d43"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "65a0e0f47eac6c0b601f33f23c2e4a8a50cb2ece"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f6d2a0e75b5ce482bc5156822b69576c2559e1f0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8f1be6a6df5e1736e4e48b0c26bd31294db76c6c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a36205d013f328788745b4b3dfd46e6637a7fd06"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5ac6b8ff1eafe8bbe4619c7d17d67d23e8dd4da9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "fdf149e5613733b23db7863ad832e285fb65443c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d749e2cf3953f5cf5c9002076c7f0cb0b8d97ae3"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "b34c0450d374d4a33e07e50daa8f71c13f8946a6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aca5c9ad2b1f1c10811b8f00eb0138eb3946db04"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "939f343f1b7c125579a4826b25a91d7c976a3c49"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d9fe9c9da75f80b4f81f9e640446d3e4d6ec60f7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "768e70d941a941ef32bf76f1c9abb374644c73c4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a8b5367367a35fee7dfb4e6deae7915764e313a4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "179c4cddf72685829b478d9f1a237b742d285a22"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1b00665eceae05e1169cb4a351e9cf70b1ff9313"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "567faa9df27e0a7367c211a0ff4ae1892980f194"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "564018b7f7c503e114c14d7df302c202c9c14b50"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c910ac0be0c7d04384a185c1f89949840f1da22e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1a2655110a46002e579b10461dcdc70598e5be01"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "e67d1bef132cbd011473716b8b3456a376b16fe4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7d0d1a9cc32b91b9b57904198c025c460ecde288"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c6b4bf7bc8fe4455a19bc4a32f7e65d6dace71e0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "355e6ca3df70abc049730c2a35869a66eb889b76"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "3e82a630aacf4bb98113ee498761020573d22ce7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8694c0fee3b6e2f0dce074330a0f04b2c8dfdbe1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "3917436483a8f50769b2a11b57622e51c10c77ca"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "db2f87c17f29da8eeab1bbf76b432e3ff05c11a7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "152599cbaedf19be75b709fde410cbaaf617cfcc"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "191238237324bf7f462a252ba0a04e2056c43269"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "74fe463e2a6ea057c6b4b42b06dfd9a1d0f5b2e7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a3d491e9937a7bc4fe7868a1f70698a22e7ea4ff"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7b48889b8a389b14f93b6ad886c1a47c9dd7ce6c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "823a0adf9fb7462a444bc81a782a53655ed30957"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "708aaec68a95c65a42357a7e0042f06a49cb59ae"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9306224856bd163c71b106637ff5ab9f080e145d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "001e0ff4d2205478b5b3d604bb3effa792f492fe"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "09cc3d016704005d1d19434abe23ad1ce5f62b84"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7b50be4fc66e7eb8dc682272bed77dccf9538386"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f55341b648b6d5dbd29ceb940016c76b97f30217"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a5fcf23fe9cb501d5b1143a22bc97340bad3fcfa"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5b6c3a06d0331c35fcc989d6b9d77f68cd93e6b4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.quotePath=false",
+   "diff-tree",
+   "--stdin",
+   "--always",
+   "--raw",
+   "--no-renames",
+   "-z",
+   "-r",
+   "--root"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "ls-files",
+   "-z",
+   "--stage"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "update-index",
+   "--untracked-cache"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "write-tree"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "branch.scout-sweep.atris-owner",
+   "scout"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "tag",
+   "v1.4.0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-C",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-held-job-91yQtf/checkout",
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "--exec-path"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "clone",
+   "-q",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-3jM985/origin.git",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-3jM985/work"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "base"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "clone",
+   "-q",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-TaFieo/origin.git",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-TaFieo/work"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.email=t@t",
+   "-c",
+   "user.name=t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "init"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "--short",
+   "refs/remotes/origin/HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "branch.codex/growth-improve-onboarding-proof-20261023-110216.atris-base",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "worktree",
+   "remove",
+   "<repo>"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.email=t@t",
+   "-c",
+   "user.name=t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "base"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "branch.scout-sweep.atris-owner",
+   "scout"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "tag",
+   "v1.4.0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-C",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-held-job-fg0ayM/checkout",
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "base"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "t@t"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "clone",
+   "-q",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-zrYETU/origin.git",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-zrYETU/work"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "clone",
+   "-q",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-obJ9ax/origin.git",
+   "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/map-fold-obJ9ax/work"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.email=t@t",
+   "-c",
+   "user.name=t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "init"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=test",
+   "-c",
+   "user.email=test@example.com",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "baseline"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "--short",
+   "refs/remotes/origin/HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.name",
+   "test"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "branch.codex/growth-improve-onboarding-proof-20261023-110445.atris-base",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "worktree",
+   "remove",
+   "<repo>"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.name=t",
+   "-c",
+   "user.email=t@t",
+   "init",
+   "-q",
+   "-b",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@atris.dev"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.email=t@t",
+   "-c",
+   "user.name=t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "base"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "config",
+   "user.email",
+   "test@example.com"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "rev-parse",
+   "--abbrev-ref",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "remote",
+   "get-url",
+   "origin"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--no-optional-locks",
+   "log",
+   "--oneline",
+   "-n",
+   "5"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "308dfc4240d33bdbbb7a941639afa6d8584b905d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9f849fc9fc298663bb105d1d08c0c74530abb6ce"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8c3bd72144a0190b380fd6b76e7fce160b52bb28"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "4ab6771fa2b2355e5a30b3e9b4d829efa31018cd"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "0caa42c069ec5181543b490a1e1c70c1a8a41823"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "78adcac5fc27cddbd6f558730902411c3becb190"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a85326e41f9f49ff9d1435c838f5d088e7c2be33"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7e1461a8f50374ae39ca6bbd5beaa4b3ee0c631c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ebf2c145eda7c7521af30742b71581b2cf7d9e7e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "308dfc4240d33bdbbb7a941639afa6d8584b905d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9520cf07da8dd06296374d6d9df4b1e7cfde79ff"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "860e1a8255202a2ce3bf4b6434a8c4f46580c7c0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1d0b3cae01f92b6ae01bc845357d8e0eabf61e7d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ea6c5854d550df7a2860c16becd13feb6a67ff36"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "remote",
+   "get-url",
+   "origin"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-C",
+   "<repo>",
+   "ls-files",
+   "--error-unmatch",
+   "--",
+   ":(icase).claude/settings.local.json"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "remote"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "user.name"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--no-optional-locks",
+   "status",
+   "--short",
+   "--ignore-submodules=dirty"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "ls-remote",
+   "--symref",
+   "origin",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "--short",
+   "refs/remotes/origin/HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f190333bec66ec8dd37cd0982f37c8aef64a3ef9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "308dfc4240d33bdbbb7a941639afa6d8584b905d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "baf82ab2d5202b6261792594064bab59743fe395"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9ca6297cee6827decdd78f95089a5497f425dad2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aaa6229df19f61453ae09252a92203f5c3daf0bf"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "83b15c89e254beced1f5c63f3c797f564f308bb6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "2070955ce4d90883117a7daa2b4e4268292038d2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "efe8e9a0fd8267385bdbb3f8bf1adb5bff8dbb04"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "edf1a40d2610f562389c5dce011a11a46d14c74e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "714b61f70e64006d56945de3950ff36d6acfd3b1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "12c668c4298c253e9630298a08893ee2cb972f81"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "eb6b4de65c225a7d747da89c9798c190379430da"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "67922a240339ca4b40b9633b43edfe98a1b0b891"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d45743391742b292d1960030846d0cd30e3e423c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8da5e3f76f309fabb7ba4803935f1d6a182e920a"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "98977e873629e4c27937b9aa613efaf234489980"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c38563adf4f45979ee2c33c2e95572100779e7bd"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "b03a162e2ea4e8402052c1ecc7a9311c57f3aa27"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aa3e54dcb1a6497164ec4d4e72dab3e73da75bfb"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "543f5e17572d2960b2e914dd4e7a46ffce637483"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "94cd92a25f71ecb7111636d2b145dd1905252b3b"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "82f20bf12e2672f1c987f0bb0b97712cbc6e154c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "16b145cb7d649e4c33abfc1471aab336d983d6a4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5b7ad53afda6664e5acd58120b6502d6212167e0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "03d89dab3d135041fb25c77ecb81a98b6e6fb163"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "6423ffcf5ba09275dbdf78b6043a9f540e5ae6b6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1ef0d4b1ac4ce894fc1963f97972b99d5dfd87f9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "cbfc51ac8a0629f5821bdc22112796b97f0f399f"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1a55db2dbfc3ab970dbd267bc7bfa18473356fd3"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ef0eac44f434cb923cb1b404dbe5ec84424401da"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "46511eff069334d47fba9d23b4747d390677f2e2"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "13359a7e85c50c0f9684ccf071838021ec738236"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c78c53905896a02ca75963f7d924a5887ddd86c4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "6021d974ef47d920d1a1131d6d79a99b675148b1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "bca8b9fc34a76e26851b84c9353f2d82e6f22d43"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "65a0e0f47eac6c0b601f33f23c2e4a8a50cb2ece"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f6d2a0e75b5ce482bc5156822b69576c2559e1f0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8f1be6a6df5e1736e4e48b0c26bd31294db76c6c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a36205d013f328788745b4b3dfd46e6637a7fd06"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5ac6b8ff1eafe8bbe4619c7d17d67d23e8dd4da9"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "fdf149e5613733b23db7863ad832e285fb65443c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d749e2cf3953f5cf5c9002076c7f0cb0b8d97ae3"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "b34c0450d374d4a33e07e50daa8f71c13f8946a6"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "aca5c9ad2b1f1c10811b8f00eb0138eb3946db04"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "939f343f1b7c125579a4826b25a91d7c976a3c49"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "d9fe9c9da75f80b4f81f9e640446d3e4d6ec60f7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "768e70d941a941ef32bf76f1c9abb374644c73c4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9520cf07da8dd06296374d6d9df4b1e7cfde79ff"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "179c4cddf72685829b478d9f1a237b742d285a22"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1b00665eceae05e1169cb4a351e9cf70b1ff9313"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "567faa9df27e0a7367c211a0ff4ae1892980f194"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "9f849fc9fc298663bb105d1d08c0c74530abb6ce"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c910ac0be0c7d04384a185c1f89949840f1da22e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1a2655110a46002e579b10461dcdc70598e5be01"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "e67d1bef132cbd011473716b8b3456a376b16fe4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7d0d1a9cc32b91b9b57904198c025c460ecde288"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "c6b4bf7bc8fe4455a19bc4a32f7e65d6dace71e0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "860e1a8255202a2ce3bf4b6434a8c4f46580c7c0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "3e82a630aacf4bb98113ee498761020573d22ce7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "8694c0fee3b6e2f0dce074330a0f04b2c8dfdbe1"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "3917436483a8f50769b2a11b57622e51c10c77ca"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "db2f87c17f29da8eeab1bbf76b432e3ff05c11a7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "4ab6771fa2b2355e5a30b3e9b4d829efa31018cd"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "191238237324bf7f462a252ba0a04e2056c43269"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "74fe463e2a6ea057c6b4b42b06dfd9a1d0f5b2e7"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a3d491e9937a7bc4fe7868a1f70698a22e7ea4ff"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "0caa42c069ec5181543b490a1e1c70c1a8a41823"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "78adcac5fc27cddbd6f558730902411c3becb190"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "708aaec68a95c65a42357a7e0042f06a49cb59ae"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "a85326e41f9f49ff9d1435c838f5d088e7c2be33"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "001e0ff4d2205478b5b3d604bb3effa792f492fe"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "09cc3d016704005d1d19434abe23ad1ce5f62b84"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7b50be4fc66e7eb8dc682272bed77dccf9538386"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "f55341b648b6d5dbd29ceb940016c76b97f30217"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "7e1461a8f50374ae39ca6bbd5beaa4b3ee0c631c"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "5b6c3a06d0331c35fcc989d6b9d77f68cd93e6b4"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ebf2c145eda7c7521af30742b71581b2cf7d9e7e"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "308dfc4240d33bdbbb7a941639afa6d8584b905d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.quotePath=false",
+   "diff-tree",
+   "--stdin",
+   "--always",
+   "--raw",
+   "--no-renames",
+   "-z",
+   "-r",
+   "--root"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "ls-files",
+   "-z",
+   "--stage"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "update-index",
+   "--untracked-cache"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--literal-pathspecs",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "core.quotePath=false",
+   "-c",
+   "core.safecrlf=false",
+   "write-tree"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "merge",
+   "--no-edit",
+   "origin/master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "tag",
+   "v1.4.0"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "checkout",
+   "-q",
+   "master"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "user.email=t@t",
+   "-c",
+   "user.name=t",
+   "commit",
+   "-q",
+   "--allow-empty",
+   "-m",
+   "base"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "--no-optional-locks",
+   "log",
+   "--oneline",
+   "-n",
+   "5"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "1d0b3cae01f92b6ae01bc845357d8e0eabf61e7d"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "cherry",
+   "6986a93e2e0f7f789781597a72db7baa76fb91cf",
+   "ea6c5854d550df7a2860c16becd13feb6a67ff36"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.fsmonitor=",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "config",
+   "--get",
+   "--path",
+   "core.excludesFile"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "-c",
+   "core.askPass=",
+   "-c",
+   "protocol.ext.allow=never",
+   "-c",
+   "submodule.recurse=false",
+   "-c",
+   "log.showSignature=false",
+   "-c",
+   "format.pretty=medium",
+   "-c",
+   "gc.auto=0",
+   "-c",
+   "maintenance.auto=false",
+   "-c",
+   "hook.applypatch-msg.enabled=false",
+   "-c",
+   "hook.pre-applypatch.enabled=false",
+   "-c",
+   "hook.post-applypatch.enabled=false",
+   "-c",
+   "hook.pre-commit.enabled=false",
+   "-c",
+   "hook.pre-merge-commit.enabled=false",
+   "-c",
+   "hook.prepare-commit-msg.enabled=false",
+   "-c",
+   "hook.commit-msg.enabled=false",
+   "-c",
+   "hook.post-commit.enabled=false",
+   "-c",
+   "hook.pre-rebase.enabled=false",
+   "-c",
+   "hook.post-checkout.enabled=false",
+   "-c",
+   "hook.post-merge.enabled=false",
+   "-c",
+   "hook.pre-push.enabled=false",
+   "-c",
+   "hook.pre-receive.enabled=false",
+   "-c",
+   "hook.update.enabled=false",
+   "-c",
+   "hook.proc-receive.enabled=false",
+   "-c",
+   "hook.post-receive.enabled=false",
+   "-c",
+   "hook.post-update.enabled=false",
+   "-c",
+   "hook.reference-transaction.enabled=false",
+   "-c",
+   "hook.push-to-checkout.enabled=false",
+   "-c",
+   "hook.pre-auto-gc.enabled=false",
+   "-c",
+   "hook.post-rewrite.enabled=false",
+   "-c",
+   "hook.sendemail-validate.enabled=false",
+   "-c",
+   "hook.fsmonitor-watchman.enabled=false",
+   "-c",
+   "hook.p4-changelist.enabled=false",
+   "-c",
+   "hook.p4-prepare-changelist.enabled=false",
+   "-c",
+   "hook.p4-post-changelist.enabled=false",
+   "-c",
+   "hook.p4-pre-submit.enabled=false",
+   "-c",
+   "hook.post-index-change.enabled=false",
+   "-c",
+   "core.hooksPath=/dev/null",
+   "-c",
+   "core.fsmonitor=",
+   "rev-parse",
+   "--abbrev-ref",
+   "HEAD"
+  ]
+ },
+ {
+  "tool": "git",
+  "args": [
+   "symbolic-ref",
+   "--quiet",
+   "HEAD"
+  ]
+ }
+]

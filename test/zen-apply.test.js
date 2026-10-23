@@ -422,6 +422,31 @@ test('a branch with nothing new is not called kept and then cleared', () => {
   }
 });
 
+test('a branch made in the last 30 minutes is not cleared or counted as merged', () => {
+  const { base, checkout } = createRepo();
+  try {
+    // A running job makes its branch a moment before it checks it out, so the
+    // branch has no commits yet and git calls it merged.
+    git(checkout, 'branch', 'job-about-to-start');
+    git(checkout, 'branch', 'old-finished');
+    const log = path.join(checkout, '.git', 'logs', 'refs', 'heads', 'old-finished');
+    const epoch = Math.floor((Date.now() - 2 * 3600 * 1000) / 1000);
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
+
+    const check = checkZen({ cwd: checkout, fetch: false, freshMinutes: 30 });
+    const merged = check.problems.find((p) => p.kind === 'merged_branches');
+    assert.deepEqual(merged && merged.branches, ['old-finished']);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /cleared 1 finished branch/);
+    assert.deepEqual(branches(checkout, 'job-about-to-start'), ['job-about-to-start']);
+    assert.deepEqual(branches(checkout, 'old-finished'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a note moved with git mv picks up upstream edits to its old path', () => {
   const { base, seed, checkout } = createRepo();
   try {
