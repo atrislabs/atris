@@ -2742,23 +2742,22 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
   const html = phonePage('NONCE');
-  assert.match(html, /<button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button>/);
+  assert.match(html, /<button type="button" class="quiet" id="working">the team<\/button>/);
   assert.match(html, /btn\.textContent = n \? n \+ ' working' : 'the team';/);
   // no pulse or loop on the new pieces
-  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.team .row'));
+  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.bet tr.row'));
   assert.ok(css.length > 40);
   assert.doesNotMatch(css, /animation|transition/);
-  // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
+  // after do it, who has it shows under the sphere for 1.5 s, then the orb plays into the next card
   assert.match(html, /var AFTER_MS = 1500;/);
-  // a start that did not get going returns first, so only a real start moves on
-  assert.match(html, /if \(!r \|\| !r\.ok\) \{/);
-  assert.match(html, /loadBet\(\); refresh\(\);\n\s+setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
-  // job cards: two big sentences from the server; a yes button or a nice, never a send back
-  // job cards: the why shows when there is one; the calm line has none
-  assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}if \(j\.why\) box\.appendChild\(el\('p', 'why', j\.why\)\);/);
-  assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
+  // a start that did not get going comes back on its card with do it and one line why
+  assert.match(html, /if \(!r\.ok\) \{ spiralTo\(then, function \(\) \{ unsent\(then, r,/);
+  // a finished job: two big sentences from the Mac and a nice, never a send back
+  const gmCard = require('../lib/gm-card');
+  const done = gmCard.done({ id: 'done:b1', title: 'Write the getting started page', body: 'this is done.' });
+  assert.deepEqual(done.options.map(o => [o.label, o.style]), [['nice', 'primary']]);
   assert.doesNotMatch(html, /sendback|send back/);
-  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\) && \(s\.status === 'ready'/);
+  assert.match(html, /if \(card\.body\) b\.appendChild\(el\('p', 'why', card\.body\)\);/);
 });
 
 // ---- over http: the routes and the deck ----------------------------------------------------
@@ -2807,26 +2806,25 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
     return { status: res.status, json: await res.json().catch(() => null) };
   };
   try {
-    const opened = await call('GET', '/bet');
+    const opened = await call('GET', '/card');
     assert.equal(opened.json.status, 'idle');
     assert.equal(gen.calls.length, 1, 'opening the page starts the prefetch');
     for (let i = 0; i < 3; i += 1) await gen.releaseOne();
-    const tapped = await call('POST', '/bet/think', {});
+    const tapped = await call('POST', '/act', { orb: true });
     assert.equal(tapped.status, 200);
     assert.equal(tapped.json.status, 'ready');
-    assert.equal(tapped.json.bet.steps.length, 3);
-    const once = await call('POST', '/bet/do', {});
+    const idea = tapped.json.card;
+    assert.equal(idea.kind, 'idea');
+    const once = await call('POST', '/act', { card_id: idea.id, option_id: 'do' });
     assert.equal(once.status, 409);
     assert.equal(once.json.reason, 'needs_confirm');
-    // a yes and a send back also start or unblock agents, so they need a second tap too
-    assert.equal((await call('POST', '/bet/yes', {})).json.reason, 'needs_confirm');
-    assert.equal((await call('POST', '/bet/sendback', { confirm: true })).status, 404, 'the team sends work back on its own');
-    assert.equal((await call('POST', '/bet/nice', {})).json.reason, 'gone', 'nice with no finished job on screen does nothing');
-    const twice = await call('POST', '/bet/do', { confirm: true });
+    // the idea card has no yes, no send back (the team sends work back on its own), and no nice
+    for (const option of ['yes', 'sendback', 'nice']) assert.equal((await call('POST', '/act', { card_id: idea.id, option_id: option, confirm: true })).json.reason, 'bad_option', option);
+    const twice = await call('POST', '/act', { card_id: idea.id, option_id: 'do', confirm: true });
     assert.equal(twice.status, 200);
-    assert.equal(twice.json.mission.line, 'launcher has it and is starting now.');
+    assert.equal(twice.json.ack, 'launcher has it and is starting now.');
+    assert.notEqual(twice.json.card.id, idea.id, 'the next card comes with it');
     const state = await call('GET', '/state');
-    assert.equal(state.json.bet.status, 'started');
     assert.equal(state.json.card.id, 'yes-0-2');
     assert.match(state.json.card.choices[0].commands[0], /^atris mission ping mission-x /);
     const tapOnce = await call('POST', '/action', { card: 'yes-0-2', choice: 'yes' });
@@ -2840,7 +2838,8 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
     const rows = gmBet.readLedger(path.join(dir, 'bets.jsonl'), root);
     assert.ok(rows.find(r => r.yes && r.yes[2]));
     const log = fs.readFileSync(path.join(dir, 'gm-phone-actions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
-    assert.deepEqual(log.map(l => `${l.card}:${l.choice}`), ['bet:generate', 'bet:generate', 'bet:generate', 'bet:think', 'bet:show', 'bet:do', 'bet:lock', 'bet:do', 'yes-0-2:yes']);
+    // the act, then do it as before, then the next card served with the answer
+    assert.deepEqual(log.map(l => `${l.card}:${l.choice}`), ['bet:generate', 'bet:generate', 'bet:generate', 'bet:think', 'bet:show', 'bet:act', 'bet:do', 'bet:lock', 'bet:do', 'bet:think', 'bet:show', 'yes-0-2:yes']);
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
@@ -2850,6 +2849,7 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
 
 test('page: one dark theme, the orb is the button, the lava stops once the card is up', () => {
   const html = phonePage('NONCE');
+  const gmCard = require('../lib/gm-card');
   // the orb in the middle is the button, with a keyboard path and a label
   assert.match(html, /<canvas id="orb" tabindex="0" role="button" aria-label="the atris orb\. tap to think of one new idea for the business"><\/canvas>/);
   assert.match(html, /e\.key === 'Enter' \|\| e\.key === ' '/);
@@ -2861,38 +2861,30 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   for (const v of ['--bg: #141110', '--text: #eae3d9', '--text-2: #a39b92', '--text-3: #9a9187', '--line: #3d332d', '--amber: rgb(255, 140, 66)']) assert.ok(html.includes(v), v);
   assert.match(html, /--serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;/);
   assert.doesNotMatch(html, /#fff\b|#ffffff|#f6f5f2|background: white/i);
-  // no decision sheet on the phone, and the team row is gone
-  assert.doesNotMatch(html, /things only you can do|id="sheet"/);
-  // the old row of team circles is gone; the team is the table behind the footer link
-  assert.equal((html.match(/id="team"/g) || []).length, 1);
-  assert.match(html, /<section class="team" id="team" hidden role="dialog"/);
-  assert.match(html, /tap again to start/);
-  assert.match(html, /sharper idea/);
-  assert.match(html, /not now/);
+  // no decision sheet on the phone, and no overlay of its own: the team is a card
+  assert.doesNotMatch(html, /things only you can do|id="sheet"|id="team"/);
+  // the idea card's words come from the Mac
+  const idea = gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400. more people try it by nov 1.' });
+  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharper idea', null], ['not now', null]]);
   // no process text ever reaches the page: no skeptic, no rejects, no word counts, no thinking screen
   assert.doesNotMatch(html, /tokens|second look|words written|turned down|skeptic|sayEvent|progressOf|'thinking'|'failed'/);
   // one script scope: a function declared twice silently replaces the first
   const names = [...html.matchAll(/function ([A-Za-z]\w*)\(/g)].map(m => m[1]);
   assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
   assert.match(html, /navigator\.vibrate\(10\)/);
-  // two speeds by truth: a queued bet plays the landing curves at two fifths of
-  // their length, a bet being made plays them at full length
+  // two speeds by truth: from the big orb a queued card plays the landing curves at
+  // two fifths of their length; an act on a card is the short motion
   assert.match(html, /var FAST = 0\.4;/);
   assert.match(html, /var GROW_MS = 1050, MAX_SCALE = 3\.2;/);
   assert.match(html, /\(GROW_MS \* pace\)/);
   assert.match(html, /\(SETTLE_MS \* pace\)/);
-  assert.match(html, /reveal\(s, true\);/);
-  assert.match(html, /wait: function \(\) \{\n {8}pace = 1;/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
-  assert.match(html, /\/bet\/think/);
-  assert.match(html, /\/bet\/do/);
+  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null \}\)/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
-  // no eyebrow labels and no small lines: the bet card is the title, then why
-  // it matters in the same big body type
+  // no eyebrow labels and no small lines: the card is the title, then why it matters in the same big body type
   assert.doesNotMatch(html, /'why now'|el\('span', 'k'|\['expect', |\['cost', |'needs your yes'|class="terms"|\.terms |'when'|'steps'/);
-  assert.match(html, /box\.appendChild\(el\('p', 'why', \[b\.why_now, b\.expect\]\.map\(sentence\)\.join\(' '\)\)\);/);
   assert.match(html, /\.why \{ margin: 14px 0 0; color: var\(--text\); font-size: 20px; line-height: 1\.4; \}/);
 });
 
@@ -3521,4 +3513,40 @@ test('card contract: a reply is its own card, back brings the first question aga
   assert.equal(tapped.status, 200);
   assert.equal(said[said.length - 1], 'it is helping');
   assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root).name, 'it is helping');
+});
+
+const walk = require('../scripts/gm-phone-trace');
+const WALK_CHROME = walk.findChrome();
+
+test('browser: every kind of card, one after another, as the desk served it: the page draws exactly that card\'s options and its box, and nothing from the card before', { skip: !WALK_CHROME && 'no chrome on this machine', timeout: 240000 }, async () => {
+  const ids = new Set();
+  const cards = (await everyCard()).map(c => c.card).filter(c => !ids.has(c.id) && ids.add(c.id));
+  const seen = await walk.walkTrace({ chromePath: WALK_CHROME, cards });
+  const show = JSON.stringify(seen, null, 1);
+  assert.equal(seen.length, cards.length, show);
+  for (const s of seen) {
+    assert.deepEqual(s.shown.options, s.want.options, `${s.kind}: ${show}`);
+    assert.equal(s.shown.box, s.want.box, `${s.kind}: ${show}`);
+    assert.equal(s.shown.title, s.want.title, `${s.kind}: ${show}`);
+  }
+  for (const k of gmCard.KINDS) assert.ok(seen.some(s => s.kind === k), `the walk never showed a ${k} card`);
+});
+
+test('card contract: a swap from a swap card no longer on screen does nothing, and the one on screen swaps the member it shows', async () => {
+  const root = workspace();
+  const swaps = [];
+  const h = jobDesk(root, {}, { ...TEAM_DEPS, swapFromCard: (r, name, engine, model, scope) => { swaps.push([name, engine, model, scope]); return { line: `${name} now runs on ${engine} ${model}.`, command: 'roster set', changed: true }; } });
+  const team = (await h.d.act({ open: 'team' })).body.card;
+  const forBuilder = (await h.d.act({ card_id: team.id, option_id: 'swap:builder' })).body.card;
+  const back = (await h.d.act({ card_id: forBuilder.id, option_id: 'back' })).body.card;
+  const forLauncher = (await h.d.act({ card_id: back.id, option_id: 'swap:launcher' })).body.card;
+  assert.equal(forLauncher.title, 'launcher');
+  // builder's card answers late: nothing is swapped
+  const late = await h.d.act({ card_id: forBuilder.id, option_id: 'm1' });
+  assert.deepEqual([late.status, late.body.reason, late.body.card.id], [409, 'gone', forLauncher.id]);
+  assert.deepEqual(swaps, []);
+  // the card on screen swaps launcher, and the team comes back with one line
+  const done = await h.d.act({ card_id: forLauncher.id, option_id: 'm1' });
+  assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
+  assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
 });
