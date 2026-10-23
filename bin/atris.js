@@ -1757,7 +1757,9 @@ function showWelcomeVisualization() {
     // Count journal entries today
     const today = new Date();
     const year = today.getFullYear();
-    const dateStr = today.toISOString().split('T')[0];
+    // Local calendar day, like the journal writer; toISOString is UTC and
+    // reads tomorrow's empty file every evening west of Greenwich.
+    const dateStr = `${year}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const journalPath = path.join(atrisDir, 'logs', String(year), `${dateStr}.md`);
     if (fs.existsSync(journalPath)) {
       const journalContent = fs.readFileSync(journalPath, 'utf8');
