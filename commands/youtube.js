@@ -2530,9 +2530,12 @@ function searchApplyNow(now) {
     const value = now();
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value;
     const ms = Number(value);
-    if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString().slice(0, 10);
+    if (Number.isFinite(ms) && ms > 0) return dateStamp(ms);
     return undefined;
   }
+  // The apply stub is dated by the local day, like the notes it follows;
+  // left to itself the apply gate would stamp the UTC day.
+  if (now === undefined || now === null || now instanceof Date || typeof now === 'number') return dateStamp(now);
   return now;
 }
 
@@ -3964,6 +3967,7 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_QUERY,
+  searchApplyNow,
   DEFAULT_TIMEOUT_MS,
   parseYoutubeArgs,
   buildYoutubePayload,
