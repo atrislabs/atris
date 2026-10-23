@@ -4,7 +4,7 @@ const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
-const { openingLinesForRoot, renderOpeningLinesBlock } = require('../lib/opening-lines');
+const { openingLinesForRoot, renderAgentsOpeningBlock, upsertAgentsOpeningLines } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const { snapshotBeforeInit, commitInitFiles } = require('../lib/init-commit');
 const { INTENTS } = require('../lib/intents');
@@ -650,7 +650,7 @@ tools: []
   if (withAdapters) {
   const intentTable = renderIntentTable();
   const openingLines = openingLinesForRoot(process.cwd());
-  const agentsOpeningBlock = renderOpeningLinesBlock(openingLines, 'AGENTS.md');
+  const agentsOpeningBlock = renderAgentsOpeningBlock(openingLines);
   const agentInstructions = `# AGENTS.md: Universal Agent Instructions
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
@@ -874,6 +874,10 @@ member -> mission start --verify -> status --status active -> one bounded step -
   const agentsVoiceResult = upsertAgentVoiceCard(agentsMdFile, voiceCard);
   if (agentsVoiceResult.action !== 'unchanged') {
     markReady('adapters', 'AGENTS.md voice card', '✓ Pinned the Atris voice card in AGENTS.md');
+  }
+  const agentsOpeningResult = upsertAgentsOpeningLines(agentsMdFile, openingLines);
+  if (agentsOpeningResult.action !== 'unchanged') {
+    markReady('adapters', 'AGENTS.md operating rules', '✓ Added the atris.md operating rules to AGENTS.md');
   }
 
   // .devin/config.local.json for Devin for Terminal
