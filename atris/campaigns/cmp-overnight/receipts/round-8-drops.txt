@@ -13,3 +13,4 @@ DROP test/strings-cmd--mut-L242-5.test.js: the off-by-one only shows up when "un
 DROP test/xp-cmd--mut-L1442-3.test.js: the break only changes whether a task updated at the exact millisecond of a user-supplied `--until` counts, which is harmless in practice and pins boundary behavior nobody relies on
 DROP test/agent-spawn-cmd--mut-L53-7.test.js: Pins the incidental ID format, including timestamp width and random suffix length; a reasonable switch to opaque IDs would fail despite preserving the requested role.
 DROP test/agent-spawn-cmd--mut-L53-7.test.js: Pins the incidental ID format, including timestamp width and random suffix length; a reasonable switch to opaque IDs would fail despite preserving the requested role.
+DROP test/who-cmd--mut-L117-7.test.js: depends on AI tools running on this machine; failed on the test server

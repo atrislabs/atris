@@ -20,7 +20,8 @@ last="$(git rev-parse HEAD)"
 
 START_ROUND="${START_ROUND:-1}"
 for round in $(seq "$START_ROUND" $(( START_ROUND + ROUNDS - 1 ))); do
-  v=$(newest); old=$(( v > 1 ? v - 1 : 1 ))
+  v=$(newest)
+  old=$(ls "$H"/prompts/mut-v*.txt | sed 's/.*-v\([0-9]*\)\.txt/\1/' | sort -n | tail -2 | head -1)
   n=$(node -e '
     const fs = require("fs"), H = process.argv[1], [round, v, old, size] = process.argv.slice(2).map(Number);
     const taken = new Set([...fs.readdirSync(H + "/claimed"), ...fs.readdirSync(H + "/queue")]);
@@ -131,8 +132,26 @@ $(cat "$part")"
   # score the two instruction versions side by side
   node "$H/score.js" "$H" "$round" | tee -a "$H/overnight.log"
 
+  # keep the winner: a newer version that keeps less than the one it faced is set aside
+  lost_note=""
+  verdict=$(node -e '
+    const rows = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n");
+    const r = JSON.parse(rows[rows.length - 1]); const vs = r.versions;
+    if (vs.length < 2) { console.log("none"); process.exit(0); }
+    const hi = Math.max(...vs.map((x) => x.version)); const n = vs.find((x) => x.version === hi); const o = vs.find((x) => x.version !== hi);
+    console.log(n.keep_rate < o.keep_rate ? `lost ${hi} ${o.version} ${Math.round(n.keep_rate*100)} ${Math.round(o.keep_rate*100)}` : "won");' "$H/rounds.jsonl")
+  case "$verdict" in
+    lost*)
+      set -- $verdict
+      mkdir -p "$H/prompts/rejected"
+      git mv -f "$H/prompts/mut-v$2.txt" "$H/prompts/rejected/mut-v$2.txt" && commit "Set aside instructions v$2: kept $4% against v$3's $5%"
+      lost_note="The last change lost. Version $2 kept $4% of jobs against version $3's $5% in the same round, and was slower. Its text is in prompts/rejected/mut-v$2.txt. Do not repeat what it added; prefer small, specific changes over longer instructions."
+      log "round $round: v$2 lost to v$3, set aside"
+      v=$(newest) ;;
+  esac
+
   # coach writes the next instructions from this round's evidence
-  next=$((v + 1))
+  next=$(( $(ls "$H"/prompts/mut-v*.txt "$H"/prompts/rejected/mut-v*.txt 2>/dev/null | sed 's/.*-v\([0-9]*\)\.txt/\1/' | sort -n | tail -1) + 1 ))
   node "$H/score.js" "$H" "$round" --evidence > "$H/round-$round-evidence.txt"
   env -u ANTHROPIC_API_KEY -u CLAUDECODE perl -e 'alarm 900; exec @ARGV' claude -p "$(cat "$H/coach-prompt.txt")
 
@@ -141,6 +160,7 @@ $(cat "$H/prompts/mut-v$v.txt")
 
 This round's evidence:
 $(cat "$H/round-$round-evidence.txt")
+$lost_note
 
 Write the improved instructions to atris/campaigns/cmp-overnight/prompts/mut-v$next.txt and change no other file." \
     --model claude-opus-5-5 --permission-mode acceptEdits --allowedTools "Read,Write" --no-session-persistence < /dev/null > "$H/round-$round-coach.log" 2>&1
