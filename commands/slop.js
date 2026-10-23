@@ -418,9 +418,15 @@ function findDeadCode(root = process.cwd(), opts = {}) {
   const candidates = scanDirs.flatMap((d) => listJsFiles(d));
   if (!candidates.length) return { root, candidates: 0, dead: [], testOnly: [] };
 
-  // 1) reachability BFS from entrypoints over static edges
+  // 1) reachability BFS from entrypoints over static edges. A file that runs
+  //    itself when started directly (`node lib/x.js`, guarded by
+  //    `require.main === module`) is an entrypoint too, even if only a test
+  //    imports it.
   const reached = new Set();
-  const queue = [...deadEntrypoints(root)];
+  const runsItself = (f) => {
+    try { return /\brequire\.main\s*===\s*module\b/.test(fs.readFileSync(f, 'utf8')); } catch { return false; }
+  };
+  const queue = [...deadEntrypoints(root), ...candidates.filter(runsItself)];
   while (queue.length) {
     const f = queue.pop();
     if (reached.has(f)) continue;
