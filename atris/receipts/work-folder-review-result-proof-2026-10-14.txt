@@ -1,0 +1,46 @@
+Review cleanup plan now uses the shared result reader; the real-process probe exited 0 and direct frozen checks exited 0 with 57 passed, 0 failed. Repeating the frozen checks inside task ready exited 1 with 47 passed, 10 failed; the cause remains unproven.
+
+Files edited:
+- atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md
+- atris/receipts/work-folder-review-result-probe.js
+- atris/MAP.md
+- atris/refs/MAP-NOTES.md
+- atris/team/architect/logs/2026-10-14.md
+- atris/receipts/work-folder-review-result-proof-2026-10-14.txt (this receipt)
+The rendered atris/TODO.md had prior changes and is excluded from this commit.
+
+$ node atris/receipts/work-folder-review-result-probe.js
+interrupted: git removal stopped by SIGTERM
+failed launch: git could not run: spawnSync <temporary folder>/missing-git ENOENT
+timeout after partial output: git removal timed out
+missing metadata (synthetic): git removal ended without an exit status
+exit: 0
+The temporary path above is abbreviated. The first three cases use real children; the last explicitly supplies empty process metadata.
+
+Rerun required checks:
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 22312.02075
+exit: 0
+
+Progress: one stale duplicate-fallback plan replaced by the existing whole-result reader; three real process outcomes and one synthetic contract case asserted. No production behavior changed. The fleet refusal defect remains open pending protected-surface review, with retention and caller-output regressions still required.
+State inspected: atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a; atris mission goal --json; atris task list; git status --short; git log.
+Additional check invocation:
+$ atris task ready ACW-15 --verify "node --test test/worktree-removal-guard.test.js test/member-tidy.test.js" --proof "Real-process probe exit 0; details in atris/receipts/work-folder-review-result-proof-2026-10-14.txt" --result "The review cleanup plan now reuses the shared reader, so interrupted and timed-out removals keep consistent explanations."
+# tests 57
+# pass 47
+# fail 10
+exit: 1
+Artifact: atris/runs/2026-10-15-task-acw-15-2026-10-15T03-38-41-374Z.json
+The failure record only preserves the output head and tail, so it does not establish the failing assertions. No test or runner changes were made. This discrepancy is unresolved and must not be described as a clean wrapped check.
+
+Notebook: created and claimed ACW-15; submitted the changed-surface probe through task ready separately. No task accepted and no mission settings changed.
+Brain activation and compile both exited 2 in plan-only mode, listing generated files; no broad rewrite applied.
+next_push: capture full output of the frozen checks under the task runner and explain why ten cleanup cases fail there while the direct invocation passes.
+layer: capabilities

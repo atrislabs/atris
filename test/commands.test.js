@@ -20382,6 +20382,18 @@ test('wiki loop alias runs the same upkeep analysis', () => {
   }
 });
 
+test('wiki loop --cloud points to the local upkeep command that still runs it', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['wiki', 'loop', '--cloud'], { cwd: dir });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /Run local `atris loop wiki` first\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('getVerifyCommand finds task-specific verify commands before and after task moves', () => {
   const dir = makeTempDir();
   try {

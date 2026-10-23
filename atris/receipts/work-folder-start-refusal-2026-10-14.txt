@@ -1,0 +1,31 @@
+Scope: a worktree start that fails after its folder exists takes the folder back. When git refuses that removal, the start used to throw git's removal text and hide why the start failed. It now keeps the folder, leads with the start error, and adds the shared refusal line.
+
+Old code, new case (production file restored afterward):
+✖ a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed
+  actual: 'refusing: fatal: cannot remove a locked working tree, lock reason: editor still open'
+
+$ atris worktree start --agent tester --task proof --path <fixture>/start-wt --base HEAD   (real CLI, git wrapper fails the metadata write and pins the folder at removal)
+flights: 0 active agent worktrees for repo
+refusing: error: metadata write failed; kept <fixture>/start-wt: pinned by git worktree lock, under a minute old: editor still open
+exit: 2
+$ git worktree list
+<fixture>/repo      e1b7309 [master]
+<fixture>/start-wt  e1b7309 [codex/tester-proof-20261015-023658] locked
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 56
+ℹ pass 56
+ℹ fail 0
+exit: 0
+
+$ node --test test/worktree-start-retry.test.js test/worktree-start-base.test.js test/worktree-start-duplicate-guard.test.js test/mission-worktree-start.test.js
+ℹ tests 19
+ℹ pass 19
+ℹ fail 0
+exit: 0
+
+Files changed: commands/worktree.js; test/worktree-removal-guard.test.js; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: removal sites reading git's refusal through the shared report up from six to seven; only review copies remain, pending protected review. Frozen checks 56 passed, zero failed.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: behaviors

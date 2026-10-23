@@ -1,24 +1,34 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-14
 sources:
-  - commands/member.js:212-230 (memberPaths and MISSION.md wiring)
-  - commands/member.js:972-1016 (member run bridge to Mission Runtime)
-  - commands/member.js:3942-3996 (member list)
-  - commands/member.js:3997-4126 (member create scaffold)
-  - commands/member.js:4520-4859 (goal, goal-from-mission, goal-from-score)
-  - commands/member.js:7845-7874 (wake decision and receipts)
-  - commands/member.js:7924-8348 (member loop, including memberLoopAll)
-  - commands/member.js:8349-8704 (tick, review, block, status)
-  - commands/member.js:8933-9072 (member command dispatch and help)
-  - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
-  - bin/atris.js:2625 (member command route)
+  - commands/member.js:215-263 (memberPaths and MISSION.md wiring)
+  - commands/member.js:1253-1432 (member run bridge to Mission Runtime)
+  - commands/member.js:4402-4471 (member list)
+  - commands/member.js:4479-4611 (member create scaffold)
+  - commands/member.js:5089-5476 (goal, goal-from-mission, goal-from-score)
+  - commands/member.js:8236-8427 (wake decision; receipt written by writeWakeReceipt at commands/member.js:3057)
+  - commands/member.js:8555-8670 (wake command and its bounded work step)
+  - commands/member.js:8720-9235 (member loop, including memberLoopAll)
+  - commands/member.js:9237-9608 (tick, review, block, status)
+  - commands/member.js:11385-11622 (member command dispatch and help; usage at commands/member.js:11534)
+  - lib/member-verbs.js:47-79 (run and wake verbs that reach memberRun and memberWake)
+  - commands/mission.js:1981-2021 (renderMemberNowMarkdown, member now.md rendering)
+  - bin/atris.js:3090 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---
 
-# Team Member Standard — Build Spec
+# Team Member Standard: Build Spec
 
 > **Status:** implemented and re-verified (local-first member runtime)
+
+## Rechecked 2026-10-14
+
+- Every source ref above was read against current code and moved to its current lines. The wake decision now lives in its own runner, separate from the wake command, so it has its own ref. Wake and run are dispatched through a small shared verbs file that still calls the same handlers.
+- Every handler in the subcommand table below still exists and is reached from the member dispatch.
+- `node --test --test-name-pattern 'member' test/commands.test.js`: exit 0, 65 passed. `node --test test/member-context.test.js`: exit 0, 6 passed.
+- `node -c` on the member, mission, verbs, and top-level CLI files: all parse.
+- `atris member --help` exits 0 and still names every subcommand in the table. `atris member list` exits 0 and prints the team table.
 
 ## Shared process inheritance, September 16, 2026
 
@@ -80,7 +90,7 @@ team receipts. A local install is not an npm publication or backend deployment.
 |------|------|
 | `commands/member.js` | Member CRUD, cloud sync, mission-derived goals, wake/tick/review loop, status, block, archive |
 | `commands/mission.js` | Renders member `now.md` and workspace `atris/status/now.md` from active missions |
-| `bin/atris.js:2625` | Routes `atris member <subcommand>` to `memberCommand` |
+| `bin/atris.js:3090` | Routes `atris member <subcommand>` to `memberCommand` |
 | `atris/skills/create-member/SKILL.md` | Skill for creating members via conversation |
 | `atris/team/_template/MEMBER.md` | Canonical frontmatter template |
 | `atris/team/*/MEMBER.md` | Local member identity contracts |

@@ -1,0 +1,110 @@
+Branch cleanup now has real-command proof for a last-moment pin; required checks passed with exit 0, 46 passed and 0 failed.
+
+Changed: test/member-tidy.test.js extends the existing late-pin fixture to the actual land reap CLI, including its forced removal attempt. No production behavior changed.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt. The pre-existing rendered atris/TODO.md changes remain unstaged.
+Plan: idle copy -> preflight passes -> real Git pins copy at removal -> real Git refuses -> shared report -> folder and branch survive.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Metric: one additional real CLI race covered, 46 passing checks, zero failures. The check confirms the removal boundary was reached, the original multiline pin is unchanged, the file and branch and registration survive, and no removal is logged.
+Commands: atris brain activate --root . --verify (exit 2, write plan only); atris; git status --short --branch; atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a; atris mission goal --json (no candidate); atris task list; atris task new/claim/note ACW-7; required check above.
+Carry-forward: the named remote contains two later log-only commits outside this history, so the ancestry check exits 1; no code is missing from those two commits. This increment leaves that history intact.
+Learned: the land path uses a forced Git removal, which still refuses the real pin and retains its branch.
+next_push: prove the autopilot regression cleanup retains a pin acquired only at removal.
+
+Actual check output, including real CLI invocations in disposable repositories:
+command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-XyvCpo/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-euMEOp/arena/.agent-worktrees/repo/landed-late-pin pinned by git worktree lock, under a minute old: agent started writing please wait
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-6BZGZG/arena/.agent-worktrees/repo/landed-late-pin (pinned by git worktree lock, under a minute old: agent started writing please wait)"
+  ],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YCXeEP/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YZ2rFm/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1125.964958ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (585.559542ms)
+✔ tidy keeps every copy when the running-program scan fails (475.088ms)
+✔ tidy keeps every copy when origin cannot be fetched (430.664208ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (462.773334ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2751.862625ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (501.363292ms)
+✔ tidy reports a pin acquired after preflight and leaves the copy registered (1234.805375ms)
+✔ cleanup reports a pin acquired after preflight and leaves the copy registered (1302.013875ms)
+✔ reap reports a pin acquired after preflight and leaves the copy registered (1775.6135ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1190.685041ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1162.317666ms)
+✔ reap keeps a folder a run is working in, even with --force (137.769667ms)
+✔ reap sees a real live process in the folder without being told (584.690916ms)
+✔ reap names who removed a folder and why (169.774792ms)
+✔ reap summary counts folders removed today and by whom (97.694084ms)
+✔ worktree cleanup names who removed a folder and why (135.558125ms)
+✔ reap keeps a folder while git holds its lock, even with --force (136.977875ms)
+✔ reap says which git work is paused in a folder it keeps (144.126334ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (103.240666ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (114.089958ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (109.349875ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (156.385292ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (87.965292ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (94.259459ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (87.846333ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (422.895541ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (217.08875ms)
+✔ fleet review cleanup names who removed a sandbox and why (91.981375ms)
+✔ autopilot regression check keeps its folder while git holds its lock (133.460042ms)
+✔ autopilot regression check keeps its folder while a run is inside it (116.444709ms)
+✔ autopilot regression check sees a real leftover process without being told (391.138875ms)
+✔ autopilot regression check names who removed its folder and why (132.805625ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (139.56125ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (134.257083ms)
+✔ every work folder removal goes through the git check and the removal log (64.822041ms)
+✔ saved scanner examples reject missed removals in the required checks (62.694042ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (64.23275ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (58.92025ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (101.310667ms)
+✔ green landing names who removed its scratch folder and why (104.143042ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (108.234709ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (148.729125ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (95.749375ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (58.557459ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (533.015ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13104.2735
+
+Readiness: required checks reran with the supported Node path, exit 0; task moved to Review. Automatic certification cannot rerun that path-prefixed command, so independent review remains required. No acceptance or merge performed.
+Bookkeeping: brain compile returned a write plan only; git diff --check passed.
+layer: behaviors

@@ -1,0 +1,29 @@
+Reviewed caller-runtime retention through the real proof runner, exit 0; frozen cleanup checks exit 0, 57 passed, zero failed.
+
+Changed: the advisory plan now follows the receipt writer's existing post-login Node directory restoration. Production is unchanged. This avoids repairing working cleanup code in response to a runtime startup failure.
+
+Files edited: atris/receipts/work-folder-proof-runtime-probe.js; atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; atris/receipts/work-folder-proof-runtime-review-2026-10-14.txt.
+Preserved: pre-existing atris/TODO.md changes, excluded from the commit.
+
+Real surface command: node atris/receipts/work-folder-proof-runtime-probe.js
+Exit: 0. Output:
+parent runtime: v25.6.1
+current login selection: v20.18.0, exit 0
+caller directory after login: v25.6.1, exit 0
+shell variable and glob: {"version":"v25.6.1","args":["two words","lib/task-proof.js"]}, exit 0
+failed child: expected failure, exit 7
+
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0. Output excerpt:
+ℹ tests 57
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+Full local output: /tmp/architect-tick-50-tests.txt.
+
+Other commands: mission status and goal; git status/diff/log/remotes; Atris boot; task list/new/claim/note/ready; targeted source reads; git diff --check (exit 0); atris slop detect atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md (exit 0, clean); brain activation and compile previews (no writes); scoped commit and push.
+
+Metric: four real shell executions, three candidate assertions covering runtime, shell semantics, and failure status; no production changes. The baseline is observed rather than hardcoded, so this probe also runs where the login runtime already matches. Controlled competing-runtime and unusual caller-path regressions remain prerequisites for implementation.
+next_push: align the shared proof runner with the receipt writer's post-login Node directory restoration and add a controlled real-shell regression.
+layer: capabilities

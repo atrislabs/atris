@@ -1,0 +1,31 @@
+Scope: a folder removal killed at its time limit was reported as "git could not run" plus Node's raw error code, which is wrong because git did run. The shared refusal reader now names a timeout first, even after partial output, while a pin or hold still wins. Tidy, the one removal path with a time limit, now hands its error to the shared reader.
+
+Old code, new case:
+✖ a removal stopped at its time limit reads as a timeout, even after partial output
+  actual: 'git could not run: spawnSync <node> ETIMEDOUT'
+
+$ atris member tidy --dir <fixture>/arena/.agent-worktrees/repo   (real CLI, git wrapper hangs on removal past tidy's 60 second limit)
+kept  landed-slow  landed, but git refused: git removal timed out
+tidy: removed 0, kept 1, of 1 copy in <fixture>/arena/.agent-worktrees/repo
+exit: 0   (1:01.72 total)
+$ git worktree list
+<fixture>/arena/repo                               7e6efff [master]
+<fixture>/arena/.agent-worktrees/repo/landed-slow  7e6efff [landed-slow]
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57
+ℹ pass 57
+ℹ fail 0
+exit: 0
+
+$ node --test test/land-green.test.js test/land.test.js test/worktree-cleanup-keeps-busy.test.js test/worktree-cleanup-keeps-script-folder.test.js test/worktree-cleanup-retention.test.js test/worktree-start-retry.test.js
+ℹ tests 53
+ℹ pass 53
+ℹ fail 0
+exit: 0
+
+Files changed: commands/worktree.js; lib/member-tidy.js; test/member-tidy.test.js; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: refusal causes the shared reader names plainly up from three (launch error, signal, missing status) to four (adds timeout); frozen checks 57 passed, zero failed.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: behaviors

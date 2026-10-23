@@ -1,0 +1,34 @@
+Scope: backstop ladder, rung 2. Wiki upkeep's validation page, last checked in July, listed the top-level loop help as wrong. It is already fixed in code; the page was stale. Rechecked the feature and updated the page. No production change.
+
+$ node --test --test-name-pattern 'wiki|loop' test/commands.test.js
+ℹ tests 33  ℹ pass 33  ℹ fail 0
+exit: 0
+
+$ atris help --all | grep "  loop "
+  loop       - Recurring loops front door (wiki upkeep lives under: loop wiki)
+exit: 0
+
+$ atris loop --help
+Usage: atris loop [add|start|status|report|stop|wiki] [options]
+exit: 0
+
+$ atris loop wiki --dry-run --json
+keys: wikiDir,pageCount,stalePages,orphanPages,nextSources,health,nextMove,details
+0 pages, 0 stale, 0 orphans, 3 sources | wiki is stable, 3 high-value sources ready for ingest
+exit: 0
+
+$ atris wiki loop --dry-run
+Pages: 0 | Stale: 0 | Orphans: 0 | Next: 3
+exit: 0
+
+Finding: 0 pages is correct here. atris/wiki/ is ignored by git, so a worktree has only the four scaffold files; the 26-page snapshot belongs to the main checkout.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57  ℹ pass 57  ℹ fail 0
+exit: 0
+
+Files changed: atris/features/wiki-loop/validate.md (help item closed, dated recheck, title dash replaced); atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test --test-name-pattern 'wiki|loop' test/commands.test.js
+Progress: open items on the wiki upkeep page from 2 to 1 (the remaining one is wiki content debt in the main checkout).
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: environment

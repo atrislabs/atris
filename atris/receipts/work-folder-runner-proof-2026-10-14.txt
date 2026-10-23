@@ -1,0 +1,690 @@
+Cleanup check failures traced to runtime selection
+
+Actual notebook runner: bash ["-lc","node --test test/worktree-removal-guard.test.js test/member-tidy.test.js"]
+Exit: 1
+
+TAP version 13
+# command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+# exit: 1
+# command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+# exit: 1
+# command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+# exit: 1
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+# [{"hash":"b9124e0ff1cf7bc096680285cd4196848672a09b","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-Wq4njd/arena/repo/.regression-worktree-b9124e0f"}]
+# exit: 0
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+# [{"hash":"eac711cc525f42c9d5b165788ea8f7983f7c872b","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-8oGhdw/arena/repo/.regression-worktree-eac711cc"}]
+# exit: 0
+# saved failure: - **[2026-10-15] regression-late-pin-proof** - fail - Retroactive regression: verify command for tick eac711c (late-pin-proof) now fails. -5 retroactive penalty applied.
+# command: node bin/atris.js member tidy --dir <fixture copies> (stopped-removal git wrapper)
+# exit: 1
+# command: node bin/atris.js worktree cleanup --base HEAD --apply (stopped-removal git wrapper)
+# exit: 1
+# command: node bin/atris.js land --reap --base HEAD --no-remote --json (stopped-removal git wrapper)
+# exit: 1
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+# [{"hash":"3e2fd2b3d3f12e18f2bf986fd3fecec0430ad1d3","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-8GDcsZ/arena/repo/.regression-worktree-3e2fd2b3"}]
+# exit: 0
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+# [{"hash":"f0667b75500ce7767572e6228a1fa14bdf8f0085","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-mMFkWN/arena/repo/.regression-worktree-f0667b75"}]
+# exit: 0
+# saved failure: - **[2026-10-15] regression-late-pin-proof** - fail - Retroactive regression: verify command for tick f0667b7 (late-pin-proof) now fails. -5 retroactive penalty applied.
+# command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+# exit: 1
+# Subtest: tidy removes landed clean copies and leaves everything else to git and the rules
+ok 1 - tidy removes landed clean copies and leaves everything else to git and the rules
+  ---
+  duration_ms: 1420.958875
+  ...
+# Subtest: tidy asks origin for its current default branch instead of the stale local note
+ok 2 - tidy asks origin for its current default branch instead of the stale local note
+  ---
+  duration_ms: 731.859792
+  ...
+# Subtest: tidy keeps every copy when the running-program scan fails
+ok 3 - tidy keeps every copy when the running-program scan fails
+  ---
+  duration_ms: 441.60875
+  ...
+# Subtest: tidy keeps every copy when origin cannot be fetched
+ok 4 - tidy keeps every copy when origin cannot be fetched
+  ---
+  duration_ms: 513.887208
+  ...
+# Subtest: tidy names the git lock file and its age when it keeps a landed copy
+ok 5 - tidy names the git lock file and its age when it keeps a landed copy
+  ---
+  duration_ms: 605.186041
+  ...
+# Subtest: all five cleanup paths report paused git work in the same words and keep it
+ok 6 - all five cleanup paths report paused git work in the same words and keep it
+  ---
+  duration_ms: 3767.389375
+  ...
+# Subtest: tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+ok 7 - tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+  ---
+  duration_ms: 727.011708
+  ...
+# Subtest: tidy reports a pin acquired after preflight and leaves the copy registered
+not ok 8 - tidy reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 279.781834
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: cleanup reports a pin acquired after preflight and leaves the copy registered
+not ok 9 - cleanup reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 266.355833
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap reports a pin acquired after preflight and leaves the copy registered
+not ok 10 - reap reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 273.680333
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: autopilot reports a pin acquired after preflight and leaves the copy registered
+ok 11 - autopilot reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 609.555375
+  ...
+# Subtest: autopilot-failed reports a pin acquired after preflight and leaves the copy registered
+ok 12 - autopilot-failed reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 616.035709
+  ...
+# Subtest: tidy reports a removal stopped by a signal and leaves the copy registered
+not ok 13 - tidy reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 275.865125
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: cleanup reports a removal stopped by a signal and leaves the copy registered
+not ok 14 - cleanup reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 275.95125
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap reports a removal stopped by a signal and leaves the copy registered
+not ok 15 - reap reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 295.735083
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:311:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:373:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: autopilot reports a removal stopped by a signal and leaves the copy registered
+ok 16 - autopilot reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 594.352125
+  ...
+# Subtest: autopilot-failed reports a removal stopped by a signal and leaves the copy registered
+ok 17 - autopilot-failed reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 584.930917
+  ...
+# Subtest: a removal stopped at its time limit reads as a timeout, even after partial output
+ok 18 - a removal stopped at its time limit reads as a timeout, even after partial output
+  ---
+  duration_ms: 607.656625
+  ...
+# Subtest: tidy, reap and the regression check flatten a pin reason: "agent still writing"
+not ok 19 - tidy, reap and the regression check flatten a pin reason: "agent still writing"
+  ---
+  duration_ms: 910.712417
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:427:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:451:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy, reap and the regression check flatten a pin reason: "agent still\\n  writing\\tplease wait"
+not ok 20 - tidy, reap and the regression check flatten a pin reason: "agent still\\n  writing\\tplease wait"
+  ---
+  duration_ms: 1039.325666
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:427:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/member-tidy.test.js:451:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap keeps a folder a run is working in, even with --force
+ok 21 - reap keeps a folder a run is working in, even with --force
+  ---
+  duration_ms: 239.330541
+  ...
+# Subtest: reap sees a real live process in the folder without being told
+ok 22 - reap sees a real live process in the folder without being told
+  ---
+  duration_ms: 526.512959
+  ...
+# Subtest: reap names who removed a folder and why
+ok 23 - reap names who removed a folder and why
+  ---
+  duration_ms: 296.627542
+  ...
+# Subtest: reap summary counts folders removed today and by whom
+ok 24 - reap summary counts folders removed today and by whom
+  ---
+  duration_ms: 142.950875
+  ...
+# Subtest: worktree cleanup names who removed a folder and why
+ok 25 - worktree cleanup names who removed a folder and why
+  ---
+  duration_ms: 226.60125
+  ...
+# Subtest: reap keeps a folder while git holds its lock, even with --force
+ok 26 - reap keeps a folder while git holds its lock, even with --force
+  ---
+  duration_ms: 247.452625
+  ...
+# Subtest: reap says which git work is paused in a folder it keeps
+ok 27 - reap says which git work is paused in a folder it keeps
+  ---
+  duration_ms: 247.673583
+  ...
+# Subtest: worktree cleanup names the lock holding a folder and how old it is
+ok 28 - worktree cleanup names the lock holding a folder and how old it is
+  ---
+  duration_ms: 160.481709
+  ...
+# Subtest: worktree cleanup names a lock and a paused rebase left in the same folder
+ok 29 - worktree cleanup names a lock and a paused rebase left in the same folder
+  ---
+  duration_ms: 165.563666
+  ...
+# Subtest: worktree cleanup keeps a clean folder paused mid-rebase
+ok 30 - worktree cleanup keeps a clean folder paused mid-rebase
+  ---
+  duration_ms: 152.287041
+  ...
+# Subtest: reap, worktree cleanup and fleet review name a held lock in the same words
+ok 31 - reap, worktree cleanup and fleet review name a held lock in the same words
+  ---
+  duration_ms: 268.139833
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its lock
+ok 32 - fleet review cleanup keeps a sandbox while git holds its lock
+  ---
+  duration_ms: 133.314542
+  ...
+# Subtest: fleet review cleanup says which git work is paused in a copy it keeps
+ok 33 - fleet review cleanup says which git work is paused in a copy it keeps
+  ---
+  duration_ms: 141.9925
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its quarantine store
+ok 34 - fleet review cleanup keeps a sandbox while git holds its quarantine store
+  ---
+  duration_ms: 144.858167
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git updates a branch in either store
+ok 35 - fleet review cleanup keeps a sandbox while git updates a branch in either store
+  ---
+  duration_ms: 660.293417
+  ...
+# Subtest: fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores
+ok 36 - fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores
+  ---
+  duration_ms: 354.672292
+  ...
+# Subtest: fleet review cleanup names who removed a sandbox and why
+ok 37 - fleet review cleanup names who removed a sandbox and why
+  ---
+  duration_ms: 155.823084
+  ...
+# Subtest: autopilot regression check keeps its folder while git holds its lock
+ok 38 - autopilot regression check keeps its folder while git holds its lock
+  ---
+  duration_ms: 197.288792
+  ...
+# Subtest: autopilot regression check keeps its folder while a run is inside it
+ok 39 - autopilot regression check keeps its folder while a run is inside it
+  ---
+  duration_ms: 165.486042
+  ...
+# Subtest: autopilot regression check sees a real leftover process without being told
+ok 40 - autopilot regression check sees a real leftover process without being told
+  ---
+  duration_ms: 506.159958
+  ...
+# Subtest: autopilot regression check names who removed its folder and why
+ok 41 - autopilot regression check names who removed its folder and why
+  ---
+  duration_ms: 191.173542
+  ...
+# Subtest: autopilot regression check keeps an existing clean folder when creation fails
+ok 42 - autopilot regression check keeps an existing clean folder when creation fails
+  ---
+  duration_ms: 205.701958
+  ...
+# Subtest: autopilot regression check keeps an existing dirty folder when creation fails
+ok 43 - autopilot regression check keeps an existing dirty folder when creation fails
+  ---
+  duration_ms: 217.765709
+  ...
+# Subtest: every work folder removal goes through the git check and the removal log
+ok 44 - every work folder removal goes through the git check and the removal log
+  ---
+  duration_ms: 72.417708
+  ...
+# Subtest: saved scanner examples reject missed removals in the required checks
+ok 45 - saved scanner examples reject missed removals in the required checks
+  ---
+  duration_ms: 38.489
+  ...
+# Subtest: a git check that comes late, names another folder, or is ignored does not count as protection
+ok 46 - a git check that comes late, names another folder, or is ignored does not count as protection
+  ---
+  duration_ms: 35.055875
+  ...
+# Subtest: grouped sandbox cleanup exposes every recursive target to the scan
+ok 47 - grouped sandbox cleanup exposes every recursive target to the scan
+  ---
+  duration_ms: 32.150416
+  ...
+# Subtest: green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned
+ok 48 - green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned
+  ---
+  duration_ms: 168.280416
+  ...
+# Subtest: green landing names who removed its scratch folder and why
+ok 49 - green landing names who removed its scratch folder and why
+  ---
+  duration_ms: 168.148166
+  ...
+# Subtest: green landing keeps its scratch folder after a pin taken at removal
+ok 50 - green landing keeps its scratch folder after a pin taken at removal
+  ---
+  duration_ms: 498.185875
+  ...
+# Subtest: green landing keeps its scratch folder after a removal stopped by a signal
+ok 51 - green landing keeps its scratch folder after a removal stopped by a signal
+  ---
+  duration_ms: 520.3905
+  ...
+# Subtest: a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed
+not ok 52 - a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed
+  ---
+  duration_ms: 161.527958
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/worktree-removal-guard.test.js:840:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /metadata write failed; kept .*start-wt: pinned by git worktree lock, under a minute old: editor still open/. Input:
+    
+    'atris needs Node 22.13 or newer. this is Node 20.18.0.\n' +
+      'upgrade from https://nodejs.org, then run atris again.\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/worktree-removal-guard.test.js:865:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup names the reason and age of a pinned folder it skips
+ok 53 - worktree cleanup names the reason and age of a pinned folder it skips
+  ---
+  duration_ms: 194.254167
+  ...
+# Subtest: reap skips a dirty pinned folder before saving its patches, even with --force
+ok 54 - reap skips a dirty pinned folder before saving its patches, even with --force
+  ---
+  duration_ms: 291.834375
+  ...
+# Subtest: fleet review cleanup keeps every store of a pinned copy and names the pin
+ok 55 - fleet review cleanup keeps every store of a pinned copy and names the pin
+  ---
+  duration_ms: 206.823167
+  ...
+# Subtest: a plain delete after a git removal of the same folder must check its pin first
+ok 56 - a plain delete after a git removal of the same folder must check its pin first
+  ---
+  duration_ms: 33.115875
+  ...
+# Subtest: multiline pin reasons stay on one line in refusal and real cleanup reports
+not ok 57 - multiline pin reasons stay on one line in refusal and real cleanup reports
+  ---
+  duration_ms: 187.882709
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/worktree-removal-guard.test.js:940:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/test/worktree-removal-guard.test.js:954:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+1..57
+# tests 57
+# suites 0
+# pass 47
+# fail 10
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14907.215167
+
+Diagnosis: the actual buildVerifiedProof runner launches bash -lc (lib/task-proof.js:157). The login shell selects /usr/local/bin/node v20.18.0; the caller selects /opt/homebrew/bin/node v25.6.1. All ten failed cases contain the CLI startup refusal that requires Node 22.13 or newer (bin/atris.js:12). Thus these failures do not exercise the intended cleanup CLI behavior. The 47 passing cases do not establish runtime compatibility.
+
+Plan verdict: proceed with a runner-path review, not a cleanup rewrite based on these ten failures. Single risk: treating startup refusal as cleanup regression hides whether the CLI behavior was exercised. Required safeguard: preserve a supported caller runtime through the proof runner and prove the real child CLI uses it. No runner or cleanup implementation changed in this increment.
+
+Runtime reproduction command (exit 1):
+bash -lc 'node --version; command -v node; node --test test/worktree-removal-guard.test.js test/member-tidy.test.js'
+Output excerpt: v20.18.0; /usr/local/bin/node; 47 passed; 10 failed. The actual shared runner above reproduces the same ten failures.
+
+Frozen command (exit 0, caller Node v25.6.1):
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+
+command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-9yU6WB/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-JdWX1c/arena/.agent-worktrees/repo/landed-late-pin pinned by git worktree lock, under a minute old: agent started writing please wait
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-zfZq9X/arena/.agent-worktrees/repo/landed-late-pin (pinned by git worktree lock, under a minute old: agent started writing please wait)"
+  ],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"a174dda26b65f94ed43540053b3e06d985072711","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-Iacwgl/arena/repo/.regression-worktree-a174dda2"}]
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"ed90a1770e63ddae11eadcf456f66f1d0616de0b","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-1Frb6w/arena/repo/.regression-worktree-ed90a177"}]
+exit: 0
+saved failure: - **[2026-10-15] regression-late-pin-proof** - fail - Retroactive regression: verify command for tick ed90a17 (late-pin-proof) now fails. -5 retroactive penalty applied.
+command: node bin/atris.js member tidy --dir <fixture copies> (stopped-removal git wrapper)
+kept  landed-late-pin  landed, but git refused: git removal stopped by SIGTERM
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-xN9tCf/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (stopped-removal git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-xKrGsm/arena/.agent-worktrees/repo/landed-late-pin git removal stopped by SIGTERM
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (stopped-removal git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-ks6wto/arena/.agent-worktrees/repo/landed-late-pin (git removal stopped by SIGTERM)"
+  ],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+[{"hash":"a3fc2cd3fbdb3cead8bdb17168163e15b5acd236","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-4uFEce/arena/repo/.regression-worktree-a3fc2cd3"}]
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+[{"hash":"a3fc2cd3fbdb3cead8bdb17168163e15b5acd236","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-12jw25/arena/repo/.regression-worktree-a3fc2cd3"}]
+exit: 0
+saved failure: - **[2026-10-15] regression-late-pin-proof** - fail - Retroactive regression: verify command for tick a3fc2cd (late-pin-proof) now fails. -5 retroactive penalty applied.
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-bB73Qp/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-afrMPZ/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1220.526292ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (668.043625ms)
+✔ tidy keeps every copy when the running-program scan fails (488.709042ms)
+✔ tidy keeps every copy when origin cannot be fetched (460.141583ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (494.663917ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2942.512917ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (531.037041ms)
+✔ tidy reports a pin acquired after preflight and leaves the copy registered (1192.838916ms)
+✔ cleanup reports a pin acquired after preflight and leaves the copy registered (1429.674667ms)
+✔ reap reports a pin acquired after preflight and leaves the copy registered (1668.290417ms)
+✔ autopilot reports a pin acquired after preflight and leaves the copy registered (863.39075ms)
+✔ autopilot-failed reports a pin acquired after preflight and leaves the copy registered (628.490375ms)
+✔ tidy reports a removal stopped by a signal and leaves the copy registered (1185.595709ms)
+✔ cleanup reports a removal stopped by a signal and leaves the copy registered (1315.000625ms)
+✔ reap reports a removal stopped by a signal and leaves the copy registered (1671.848541ms)
+✔ autopilot reports a removal stopped by a signal and leaves the copy registered (594.334792ms)
+✔ autopilot-failed reports a removal stopped by a signal and leaves the copy registered (623.781791ms)
+✔ a removal stopped at its time limit reads as a timeout, even after partial output (608.211375ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1307.585584ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1357.719083ms)
+✔ reap keeps a folder a run is working in, even with --force (137.063125ms)
+✔ reap sees a real live process in the folder without being told (456.967625ms)
+✔ reap names who removed a folder and why (166.406833ms)
+✔ reap summary counts folders removed today and by whom (92.418542ms)
+✔ worktree cleanup names who removed a folder and why (138.498375ms)
+✔ reap keeps a folder while git holds its lock, even with --force (143.935167ms)
+✔ reap says which git work is paused in a folder it keeps (151.832292ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (100.689542ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (105.052833ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (102.778833ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (157.665083ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (85.170541ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (92.260583ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (90.429708ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (408.132916ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (216.37325ms)
+✔ fleet review cleanup names who removed a sandbox and why (92.7455ms)
+✔ autopilot regression check keeps its folder while git holds its lock (130.523042ms)
+✔ autopilot regression check keeps its folder while a run is inside it (116.846417ms)
+✔ autopilot regression check sees a real leftover process without being told (425.189083ms)
+✔ autopilot regression check names who removed its folder and why (128.252208ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (133.595291ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (125.792459ms)
+✔ every work folder removal goes through the git check and the removal log (64.571917ms)
+✔ saved scanner examples reject missed removals in the required checks (63.476583ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (61.057125ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (59.154958ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (96.6455ms)
+✔ green landing names who removed its scratch folder and why (99.575459ms)
+✔ green landing keeps its scratch folder after a pin taken at removal (439.88675ms)
+✔ green landing keeps its scratch folder after a removal stopped by a signal (454.896959ms)
+✔ a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed (2196.839708ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (102.683209ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (140.056541ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (98.51525ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (62.895708ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (510.505042ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21357.099541
+
+Metric: all ten wrapped failures explained; all 57 direct checks passed.
+next_push: review how the proof runner can retain the caller runtime while preserving existing command semantics.
+layer: environment

@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { landStaleGreenBranches, failingLines, flagWhat, summaryLine } = require('../lib/land-green');
+const { landStaleGreenBranches, failingLines, flagWhat, summaryLine, isGreenScratch } = require('../lib/land-green');
 
 const THREE_DAYS_AGO = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 
@@ -338,5 +338,125 @@ test('with a remote, a merge that only moved the local branch is not landed', ()
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test('a scratch folder kept because git is still busy in it is named in the verdict and the summary', () => {
+  const root = makeRepo();
+  let scratch = '';
+  try {
+    branchWith(root, 'member/busy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      verifyCommand: 'node check.js && touch "$(git rev-parse --git-dir)/index.lock"',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    const verdict = result.verdicts.find((v) => v.branch === 'member/busy');
+    const kept = /^(.+): git holds (.+index\.lock), under a minute old$/.exec(verdict.scratch_kept || '');
+    assert.ok(kept, JSON.stringify(verdict));
+    scratch = kept[1];
+    assert.ok(fs.existsSync(scratch));
+    assert.ok(fs.existsSync(kept[2]));
+    assert.match(summaryLine(result), new RegExp(`member/busy scratch folder kept, ${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: git holds `));
+  } finally {
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('reap labels a kept green landing scratch folder as a landing copy, not a member copy', () => {
+  const root = makeRepo();
+  let scratch = '';
+  try {
+    branchWith(root, 'member/busy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      verifyCommand: 'node check.js && touch "$(git rev-parse --git-dir)/index.lock"',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    scratch = result.verdicts[0].scratch_kept.split(': ')[0];
+    assert.ok(isGreenScratch(scratch), scratch);
+    assert.equal(isGreenScratch(root), false);
+    const reaped = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'land', '--reap', '--force'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    assert.equal(reaped.status, 0, reaped.stderr);
+    assert.ok(reaped.stdout.includes(`kept, needs a human (green landing scratch copy): ${fs.realpathSync(scratch)} (git_lock: git holds `), reaped.stdout);
+    assert.ok(fs.existsSync(scratch));
+  } finally {
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('reap removes a leftover scratch copy without force once git is idle in it, but keeps one holding a commit on no branch', () => {
+  const root = makeRepo();
+  const scratches = [];
+  try {
+    branchWith(root, 'member/red', (dir) => fs.writeFileSync(path.join(dir, 'ok.txt'), 'broken\n'));
+    branchWith(root, 'member/odd', (dir) => fs.writeFileSync(path.join(dir, 'odd.txt'), 'x\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      limit: 2,
+      verifyCommand: 'touch "$(git rev-parse --git-dir)/index.lock"; node check.js',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    const byBranch = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    for (const name of ['member/red', 'member/odd']) {
+      const scratch = byBranch[name].scratch_kept.split(': ')[0];
+      scratches.push(scratch);
+      fs.rmSync(path.join(git(scratch, ['rev-parse', '--git-dir']), 'index.lock'));
+    }
+    // A commit made in the copy itself rides no branch, so that copy stays.
+    fs.writeFileSync(path.join(scratches[1], 'only-here.txt'), 'x\n');
+    commitAll(scratches[1], 'made in the scratch copy');
+    const old = new Date(Date.now() - 3 * 3600 * 1000);
+    for (const scratch of scratches) fs.utimesSync(scratch, old, old);
+    const reaped = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'land', '--reap'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    assert.equal(reaped.status, 0, reaped.stderr);
+    assert.equal(fs.existsSync(scratches[0]), false, reaped.stdout);
+    assert.ok(fs.existsSync(scratches[1]), reaped.stdout);
+    assert.ok(reaped.stdout.includes(`(green landing scratch copy): ${fs.realpathSync(scratches[1])} (unlanded commits: `), reaped.stdout);
+    const log = fs.readFileSync(path.join(root, '.atris', 'state', 'worktree_removals.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const entry = log.find((e) => e.by === 'atris land --reap');
+    assert.equal(entry.reason, 'green_landing_scratch_left');
+    assert.equal(git(root, ['rev-parse', '--verify', 'member/red']).length > 0, true);
+  } finally {
+    for (const scratch of scratches) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an unattended autoland sweep clears an idle scratch copy too, but leaves one holding a commit on no branch', () => {
+  const root = makeRepo();
+  const scratches = [];
+  try {
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    branchWith(root, 'member/odd', (dir) => fs.writeFileSync(path.join(dir, 'odd.txt'), 'x\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      limit: 2,
+      verifyCommand: 'touch "$(git rev-parse --git-dir)/index.lock"; node check.js',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    const byBranch = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    for (const name of ['member/green', 'member/odd']) {
+      const scratch = byBranch[name].scratch_kept.split(': ')[0];
+      scratches.push(scratch);
+      fs.rmSync(path.join(git(scratch, ['rev-parse', '--git-dir']), 'index.lock'));
+    }
+    fs.writeFileSync(path.join(scratches[1], 'only-here.txt'), 'x\n');
+    commitAll(scratches[1], 'made in the scratch copy');
+    const old = new Date(Date.now() - 3 * 3600 * 1000);
+    for (const scratch of scratches) fs.utimesSync(scratch, old, old);
+    const { sweepLanding } = require('../commands/autoland');
+    const sweep = sweepLanding(root, { refresh: false });
+    assert.equal(fs.existsSync(scratches[0]), false, JSON.stringify(sweep.reaped));
+    assert.ok(fs.existsSync(scratches[1]), JSON.stringify(sweep.reaped));
+    assert.ok(sweep.human.some((line) => line.startsWith(`${fs.realpathSync(scratches[1])} (unlanded commits: `)), JSON.stringify(sweep.human));
+    const log = fs.readFileSync(path.join(root, '.atris', 'state', 'worktree_removals.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const entry = log.find((e) => e.by === 'atris autoland');
+    assert.equal(entry.reason, 'green_landing_scratch_left');
+  } finally {
+    for (const scratch of scratches) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

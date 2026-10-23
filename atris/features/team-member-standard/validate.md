@@ -1,15 +1,15 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-14
 sources:
-  - commands/member.js:8933-9072 (member command dispatch and help)
-  - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
-  - test/commands.test.js:154 (member create, goal, wake, loop, status coverage starts here)
+  - commands/member.js:11385-11622 (member command dispatch and help)
+  - commands/mission.js:1981-2021 (renderMemberNowMarkdown, member now.md rendering)
+  - test/commands.test.js:187 (member create, goal, wake, loop, status coverage starts here)
 ---
 
-# Team Member Standard — Validation
+# Team Member Standard: Validation
 
 > **Status:** implemented and re-verified (local-first member runtime)
-> **Validated:** 2026-07-25
+> **Validated:** 2026-07-25, rechecked 2026-10-14
 
 ## Checks
 
@@ -30,6 +30,14 @@ sources:
 - [x] `archive` and `purge-archived` are exposed for retired members
 - [ ] Open source spec published
 - [ ] Cross-tool compatibility verified by external agents reading MEMBER.md
+
+## Rechecked 2026-10-14
+
+- `node --test --test-name-pattern 'member' test/commands.test.js`: exit 0, 65 passed.
+- `node -c` on `commands/member.js`, `commands/mission.js`, `bin/atris.js`: all parse.
+- `atris member --help` exits 0 and still lists goal-from-mission, goal-from-score, alive, history, archive, purge-archived, supervisor, and generalist.
+- `atris member list` exits 0 and prints the team table.
+- `atris clean --dry-run --json` exits 0. It reported this page stale because member code changed after July; the source refs above now point at the current lines. The build page still carries July refs and needs its own recompile.
 
 ## Verification
 

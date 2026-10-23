@@ -83,3 +83,157 @@ Readiness reran the exact required command through the completion runner,
 exit 0. Receipt: atris/runs/2026-10-14-task-afw-21-2026-10-14T16-33-43-304Z.json.
 Initial proof-only attempts were rejected because readiness requires its own
 execution; the final execution passed and moved the task into review.
+
+## Shared proof runner follow-up, October 14
+
+Verdict: proceed-with-changes. The receipt writer now restores the caller's
+Node directory after login startup in lib/task-receipt.js:59. Its earlier
+leading-word proposal above is historical, not the current implementation.
+The shared proof runner at lib/task-proof.js:157 still runs the command
+without that restoration.
+
+The single risk remains changing shell command meaning. Use the receipt
+writer's existing post-login PATH prefix rather than replacing the shell or
+rewriting the caller's command. Keep the original command in proof text.
+Do not change the strict certification parser or its allowlist.
+
+Flow: login profile -> caller Node directory first -> unchanged shell command.
+
+The real shared-runner probe compares baseline selection with that prefix:
+Node 20.18.0 becomes caller Node 25.6.1, a quoted variable stays one argument,
+a filename glob expands, and a child exit of 7 remains a failed proof.
+Command: node atris/receipts/work-folder-proof-runtime-probe.js, exit 0.
+This is advisory evidence, not an implementation or a portable regression.
+
+Before building, require a real-runner regression with a controlled competing
+Node on the login path, caller paths containing spaces and an apostrophe,
+non-Node commands, and the original command preserved in returned proof.
+Caller runtime wins by default; an explicit command PATH override remains
+possible. Login functions or aliases and commands that reset PATH need
+separate evidence before claiming universal retention.
+
+next_push: align the shared proof runner with the receipt writer's post-login Node directory restoration and add a controlled real-shell regression.
+
+## Controlled runtime evidence, October 14
+
+Verdict: proceed-with-changes. Six actual login-shell children in
+work-folder-proof-runtime-controlled.js prove competing executable selection,
+caller restoration from a copied Node in a path with spaces and an apostrophe,
+quoted variables and globs, ordinary shell commands, child exit 7, and an
+explicit PATH override. Returned commands and proof retain the original text.
+
+Flow: real login shell -> controlled competing PATH -> candidate prefix -> command.
+
+The injected runner changes startup text and invokes actual bash. It does not
+fabricate process results or change production. This proves the candidate
+under a controlled post-login PATH, not every login profile. The first probe
+failed before running any candidate because copied Homebrew Node needs its
+shared libraries. A temporary link supplies them. Only generated fixtures
+are removed.
+
+The single risk remains shell compatibility. Before delivery, implementation
+must retain this coverage as an automated regression against the production
+runner without an injected candidate prefix. Preserve explicit PATH overrides.
+
+next_push: implement the reviewed caller-directory restoration in the shared proof runner with this controlled regression covering the production path.
+
+## Colon path boundary, October 14
+
+Verdict: proceed-with-changes. The candidate PATH prefix does not retain the
+caller runtime when its directory contains a colon. Shell quoting preserves
+the assignment text, but executable lookup still splits PATH at that colon.
+The controlled probe now runs nine real login-shell children, including a
+competing executable selected with exit 0 under the candidate prefix. A
+quoted absolute caller binary selects the intended runtime in the same case.
+
+Flow: quoted directory -> PATH colon split -> competing executable succeeds.
+
+The single risk is a successful proof produced by the wrong runtime. Before
+implementation, choose and document a narrow fallback or explicit unsupported
+path result for colon-containing caller directories; do not claim universal
+runtime retention from shell quoting alone. The absolute-path control proves
+a boundary, not a general shell-command rewriting solution. Production is
+unchanged, including the existing receipt writer's same limitation.
+
+Command: node atris/receipts/work-folder-proof-runtime-controlled.js, exit 0.
+Evidence: work-folder-colon-proof-2026-10-14.txt.
+
+next_push: design a narrow colon-directory fallback before implementing shared proof runtime restoration.
+
+## Colon-directory fallback decision, October 14
+
+Verdict: proceed-with-changes. Choose explicit unsupported-path refusal rather
+than shell-command rewriting. The single risk is recording successful proof
+from the competing runtime, which the nine-child diagnostic reproduces.
+
+Proposed flow: validate command -> inspect caller runtime directory -> refuse
+if it contains a colon -> otherwise restore PATH after login -> run unchanged
+command. Apply the same decision to both proof runners. This is a proposal;
+production behavior has not changed.
+
+On refusal, return ok:false, reason:caller_runtime_path_unsupported, the
+original cmd, and the detail "could not run the check because the node folder
+contains a colon". The receipt writer must also return passed:false. Do not
+launch a shell, invent an exit status, write a passing receipt, or move the
+task into review. Keep the empty-command checks ahead of this guard. Confirm
+both callers surface the detail instead of reporting a successful check.
+
+Cost: this unusual installation cannot run even non-Node proof commands
+through these runners. Explicit PATH overrides also receive the refusal.
+The operator can rerun Atris from a Node installation whose directory has no
+colon. This keeps the shell language intact without pretending that arbitrary
+commands can be safely rewritten. The absolute-path diagnostic is evidence of
+runtime selection only, not a proposed replacement for shell parsing.
+
+Before implementation, require both real runner entry points under the copied
+colon-path Node: neither may create a command sentinel or passing receipt.
+Also assert the returned failure fields and actual caller-facing failure.
+Retain the existing ordinary-path runtime, quoting, glob, exit-code, and
+explicit-override checks against production code rather than an injected fix.
+
+next_push: add paired real-runner refusal regressions for colon-containing Node directories before implementing the shared runtime repair.
+
+
+## Paired baseline, October 14
+
+Both real runner entry points now reproduce the missing refusal under a copied
+colon-directory Node. The diagnostic controls post-login PATH only; it inserts
+no candidate repair. Each runner runs a sentinel command and selects the
+competing executable with exit 0. The receipt writer writes a passing receipt;
+the shared runner returns passing proof. Original command text is preserved.
+
+This is baseline evidence, not an automated refusal regression or a repair.
+The next implementation must reverse these observations: no sentinel, no
+passing receipt, explicit failure fields, and a visible caller explanation.
+The diagnostic currently expects the defect and must be updated or replaced
+when refusal is implemented. Generated fixtures and receipts are removed.
+
+Command: node atris/receipts/work-folder-paired-runtime-probe.js, exit 0.
+next_push: implement the reviewed colon-directory refusal in both proof runners with real-entry regressions proving no command side effects or passing receipts.
+
+## Caller refusal reporting review, October 14
+
+Verdict: proceed-with-changes. The single risk is hiding the actionable
+refusal behind a generic failure or claiming a receipt was written when none
+exists. The current callers do both with the proposed early-return shape.
+
+Flow: synthetic proposed refusal -> actual task CLI -> operator output.
+
+The real CLI diagnostic exercises ready, receipt text, and receipt JSON
+against an isolated real task database. Only writeTaskReceipt's return is
+synthetic, explicitly representing the reviewed pre-launch refusal. It does
+not prove a production guard or colon-path runtime behavior.
+
+All three calls exit 1 and omit the detail. Ready prints generic failure;
+receipt text prints "exit undefined" and "receipt written: undefined";
+receipt JSON omits reason and detail. No command sentinel or receipt appears.
+
+Before implementing the runner refusal, include commands/task.js:10091 and
+commands/task.js:10308 in the plan. Surface detail in ready and receipt text,
+preserve reason and detail in JSON, and mention exits or receipt paths only
+when present. Keep ordinary executed failures and their saved receipt output.
+A regression must assert explicit refusal wording, exit 1, absent command
+side effects and receipts, and a task that has not moved into review.
+
+Command: node atris/receipts/work-folder-refusal-caller-probe.js, exit 0.
+next_push: implement paired pre-launch runner refusal and caller explanation with real colon-directory entry checks and ordinary failure controls.

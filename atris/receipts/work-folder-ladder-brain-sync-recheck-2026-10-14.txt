@@ -1,0 +1,33 @@
+Scope: backstop ladder, rung 2. The mission's unprotected removal sites are done and the fast suite is green, so this tick rechecked one feature last proven in June: company brain sync. Local, no-login checks only; cloud pull and push not rerun.
+
+$ node --test test/company-brain-sync.test.js
+ℹ tests 9  ℹ pass 9  ℹ fail 0
+exit: 0
+
+$ node --test --test-name-pattern 'push|business workspace|business sync|manifest records workspace root' test/commands.test.js
+ℹ tests 40  ℹ pass 40  ℹ fail 0
+exit: 0
+
+$ node -c bin/atris.js commands/business-sync.js lib/company-brain-sync.js commands/pull.js commands/push.js   (each)
+all parse
+
+$ atris sync --status   (fresh scratch folder, empty home)
+Business workspace sync status
+  business: not detected
+  workspace: 1 file (atris/ present)
+  conflicts: none
+exit: 0
+
+$ atris sync --review
+No sync conflicts need review.
+exit: 0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57  ℹ pass 57  ℹ fail 0
+exit: 0
+
+Files changed: atris/features/company-brain-sync/validate.md (dated recheck section); atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/company-brain-sync.test.js
+Progress: features with a recheck dated this month up by one; no production change.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: environment

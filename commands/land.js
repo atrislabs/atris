@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, worktreeGitActivity, describeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, gitHold, describeGitHold, describeRemovalResult, describePin, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -532,9 +532,20 @@ function reapReason(w, board, ttlDays, force) {
   const state = (board.branches.find((b) => b.name === w.branch) || {}).state;
   if (state === 'landed') return 'branch_landed';
   if (state === 'due') return 'branch_past_ttl';
+  if (w.scratchCovered) return 'green_landing_scratch_left';
   if (w.state === 'detached') return 'detached_head';
   if (typeof w.ageDays === 'number' && w.ageDays > ttlDays) return 'worktree_past_ttl';
   return force ? 'forced' : 'unlanded_commits';
+}
+
+// A green landing scratch copy only ever holds a merge of the branch being
+// checked, so its own commits ride that branch. True when every commit it
+// holds, merges aside, is on a branch; any doubt keeps the copy.
+function greenScratchCovered(worktreePath) {
+  const { isGreenScratch } = require('../lib/land-green');
+  if (!isGreenScratch(worktreePath)) return false;
+  const off = runGit(['rev-list', '--no-merges', '--count', 'HEAD', '--not', '--branches'], { cwd: worktreePath, check: false });
+  return off.status === 0 && off.stdout.trim() === '0';
 }
 
 // Reap: salvage then delete everything landed (residue) or past TTL.
@@ -543,15 +554,19 @@ function reapReason(w, board, ttlDays, force) {
 // a loss of work, and when a backup cannot be written, the work stays.
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
 // bundle cannot cover their commits, unattended reaps (autoland) pass false
-// and leave them for a human reap.
+// and leave them for a human reap. A green landing scratch copy whose commits
+// all ride a branch is the one detached folder they still clear.
 function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now(), activeCwds: activeCwdsOverride, by = 'atris land --reap' } = {}) {
   const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessPaths());
   let activeCwds;
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
+  for (const w of board.worktrees) {
+    if (!w.branch && greenScratchCovered(w.path)) w.scratchCovered = true;
+  }
   const candidateWorktrees = board.worktrees.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays) || w.unlandedCommits > 0
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || w.scratchCovered || (typeof w.ageDays === 'number' && w.ageDays > ttlDays) || w.unlandedCommits > 0
   );
   const protectedWorktrees = [];
   const worktreeTargets = [];
@@ -575,9 +590,16 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     // Git mid-operation in the folder (lock held, rebase or merge paused)
     // also outranks --force: removal would strand the operation half done.
-    const gitActivity = worktreeGitActivity(w.path);
-    if (gitActivity) {
-      protectedWorktrees.push({ ...w, reason: describeGitActivity(w.path, gitActivity, now) });
+    const hold = gitHold({ worktree: w.path, now });
+    if (hold) {
+      protectedWorktrees.push({ ...w, reason: `${hold.reason}: ${describeGitHold(hold)}` });
+      continue;
+    }
+    // Git refuses a pinned folder even under --force, so skip it before its
+    // patches are saved again on every pass, and name the pin's reason and age.
+    const pinned = describePin(w.path, now);
+    if (pinned) {
+      protectedWorktrees.push({ ...w, reason: pinned });
       continue;
     }
     if (worktreeWithinReapGrace(w.path, now)) {
@@ -591,7 +613,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // A due/landed branch worktree still reaps normally, its commits ride the
     // branch bundle, so removal is loss-free.
     const bundleCovered = w.branch && targetNames.has(w.branch);
-    if (w.unlandedCommits > 0 && !force && !bundleCovered) {
+    if (w.unlandedCommits > 0 && !force && !bundleCovered && !w.scratchCovered) {
       const oldest = typeof w.ageDays === 'number' ? `, oldest ${w.ageDays}d` : '';
       protectedWorktrees.push({ ...w, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
       continue;
@@ -666,7 +688,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   }
 
   const survivingWorktreeTargets = worktreeTargets.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || w.scratchCovered
   );
   const activeAtRemoval = survivingWorktreeTargets.length ? readActiveCwds() : [];
   for (const w of survivingWorktreeTargets) {
@@ -676,9 +698,9 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
-    const gitActivityAtRemoval = worktreeGitActivity(w.path);
-    if (gitActivityAtRemoval) {
-      receipt.keptWorktrees.push(`${w.path} (${describeGitActivity(w.path, gitActivityAtRemoval)})`);
+    const holdAtRemoval = gitHold({ worktree: w.path });
+    if (holdAtRemoval) {
+      receipt.keptWorktrees.push(`${w.path} (${holdAtRemoval.reason}: ${describeGitHold(holdAtRemoval)})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
@@ -709,8 +731,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
       // unlock (or a dead lock can be challenged) instead of looping.
-      const reason = String(removed.stderr || removed.stdout || 'remove failed').trim().slice(0, 160);
-      receipt.keptWorktrees.push(`${w.path} (${reason})`);
+      receipt.keptWorktrees.push(`${w.path} (${describeRemovalResult(w.path, removed)})`);
       if (w.branch) targetNames.delete(w.branch);
     }
   }
@@ -937,7 +958,13 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
       // The receipt keeps the raw codes; the human line speaks in sentences.
       if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
       else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
-      else console.log(`  ✋ kept, needs a human: ${k}`);
+      else {
+        // A green landing scratch copy holds no work of its own; say so, so
+        // the operator knows it is not a member's copy.
+        const { isGreenScratch } = require('../lib/land-green');
+        const from = isGreenScratch(String(k).split(' (')[0]) ? ' (green landing scratch copy)' : '';
+        console.log(`  ✋ kept, needs a human${from}: ${k}`);
+      }
     }
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);

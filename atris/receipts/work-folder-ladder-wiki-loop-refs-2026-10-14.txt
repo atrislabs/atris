@@ -1,0 +1,26 @@
+Scope: backstop ladder, rung 2, finishing last tick's wiki upkeep recheck. The page still pointed at July lines, so the clean preview kept listing it stale. While reading its sources, found the same stale guidance the help item had: the cloud refusal told people to run bare `atris loop`, which no longer runs wiki upkeep.
+
+Old code, new case:
+✖ wiki loop --cloud points to the local upkeep command that still runs it
+
+$ atris wiki loop --cloud   (scratch folder)
+Cloud loop is not implemented yet. Run local `atris loop wiki` first.
+exit: 1
+
+$ node --test --test-name-pattern 'wiki|loop' test/commands.test.js
+ℹ tests 34  ℹ pass 34  ℹ fail 0
+exit: 0
+
+$ atris clean --dry-run --json
+before: stale pages 3 (member standard build, wiki validate, wiki-loop validate)
+after:  exit 0, stale pages 2 (member standard build, wiki validate)
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57  ℹ pass 57  ℹ fail 0
+exit: 0
+
+Files changed: commands/wiki.js (one message); test/commands.test.js (one test); atris/features/wiki-loop/validate.md (eight source refs, compile date, cloud note); atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test --test-name-pattern 'wiki loop --cloud' test/commands.test.js
+Progress: stale feature pages from 3 to 2; wrong command names in wiki upkeep guidance from 1 to 0.
+next_push: recompile the wiki validation page's source refs and rerun its checks, leaving the member standard build page as the last stale one.
+layer: behaviors

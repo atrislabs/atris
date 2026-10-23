@@ -584,27 +584,32 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (staleBase && startCommit) {
     console.error(`warning: could not refresh ${checkoutBase} (${staleBase.split('\n')[0]}); the new worktree starts from the local copy, which may be behind`);
   }
+  // Returns the shared refusal line when git keeps the folder, so the start
+  // error still leads instead of being replaced by the removal's own failure.
   const discardFailedStart = () => {
-    if (existed || !startCommit) return;
+    if (existed || !startCommit) return '';
     const registered = listWorktrees(root).find((wt) => wt.branch === branch);
     if (registered) {
       if (!fs.existsSync(target) || fs.realpathSync(registered.path) !== fs.realpathSync(target)
-        || registered.head !== startCommit) return;
+        || registered.head !== startCommit) return '';
       const dirt = statusCounts(target, { ignoreUntracked: isConductorArtifact });
-      if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return;
+      if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return '';
       // No engine has started. Normal removal still refuses unexpected dirt.
-      runGit(['worktree', 'remove', target], { cwd: root });
+      const removal = runGit(['worktree', 'remove', target], { cwd: root, check: false });
+      if (removal.status !== 0) return `kept ${target}: ${describeRemovalResult(target, removal)}`;
     }
     if (!fs.existsSync(target)) runGit(['update-ref', '-d', ref, startCommit], { cwd: root });
+    return '';
   };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const added = runGit(['worktree', 'add', '-b', branch, target, startPoint], { cwd: root, check: false });
     if (added.status === 0) break;
     // Git can create the branch before failing to write its tracking config.
     // Drop only that untouched ref, never an existing branch or a checkout.
-    if (!/already exists|already used by worktree/i.test(added.stderr || '')) discardFailedStart();
+    const kept = /already exists|already used by worktree/i.test(added.stderr || '') ? '' : discardFailedStart();
     if (!configLocked(added) || attempt === 2) {
-      throw new Error(String(added.stderr || added.stdout || 'worktree start failed').trim());
+      const failed = String(added.stderr || added.stdout || 'worktree start failed').trim();
+      throw new Error(kept ? `${failed}; ${kept}` : failed);
     }
     sleepSync(100 * (attempt + 1));
   }
@@ -630,7 +635,8 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
       'utf8'
     );
   } catch (error) {
-    discardFailedStart();
+    const kept = discardFailedStart();
+    if (kept) error.message = `${error.message}; ${kept}`;
     throw error;
   }
   return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, owner, reapedBeforeStart, cachePrunedBeforeStart };
@@ -1278,13 +1284,8 @@ function refsLockFile(dir) {
   return null;
 }
 
-// The lock file keeping a folder and how long it has sat there, so a lock left
-// by a crashed git shows up instead of silently holding the folder.
-function worktreeGitLock(worktreePath, now = Date.now()) {
-  return gitStoreLock(worktreeGitDir(worktreePath), now);
-}
-
-// Same lookup against a git store itself, for callers that hold the store path.
+// The lock file holding a git store and how long it has sat there, so a lock
+// left by a crashed git shows up instead of silently holding the folder.
 function gitStoreLock(gitDir, now = Date.now()) {
   if (!gitDir) return null;
   const file = GIT_ACTIVITY_MARKERS
@@ -1319,15 +1320,93 @@ function describePausedGitWork(reason) {
   return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
 }
 
-// The kept reason as reap prints it: a git lock also names its file and age,
-// and paused work says what to finish, so the line an operator reads says
-// what to check before clearing it. The reason code stays first.
-function describeGitActivity(worktreePath, reason, now = Date.now()) {
+// Everything git is busy with in one store, lock first, or [] when it is idle
+// there. A crashed rebase can leave a lock and the paused rebase together, so
+// each gets its own hold. Never less strict than the plain activity check: if
+// that says busy and nothing more is readable, its reason still holds.
+function storeGitHolds(gitDir, now) {
+  const reason = gitStoreActivity(gitDir);
+  if (!reason) return [];
+  const holds = [];
+  const lock = gitStoreLock(gitDir, now);
+  if (lock) holds.push({ reason: 'git_lock', lock: lock.file, lock_age_ms: lock.ageMs });
+  for (const [marker, markerReason] of GIT_ACTIVITY_MARKERS) {
+    if (markerReason === 'git_lock' || holds.some((hold) => hold.reason === markerReason)) continue;
+    if (fs.existsSync(path.join(gitDir, marker))) holds.push({ reason: markerReason, paused: describePausedGitWork(markerReason) });
+  }
+  if (holds.length) return holds;
   const paused = describePausedGitWork(reason);
-  if (paused) return `${reason}: ${paused}`;
-  if (reason !== 'git_lock') return reason;
-  const lock = worktreeGitLock(worktreePath, now);
-  return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
+  return [{ reason, ...(paused ? { paused } : {}) }];
+}
+
+// The one check every cleanup runs before it removes a folder git may be busy
+// in: tidy, reap, worktree cleanup, fleet review and the autopilot regression
+// check. Looks at the folder's own store, then any extra stores the caller
+// will also delete, and returns null when git is idle in all of them. A held
+// lock names its file and age; paused work names what to finish. The first
+// busy store sets the reason; holds in later stores ride along in `also`, so
+// one report can name everything to clear.
+function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
+  const dirs = [...new Set([worktree ? worktreeGitDir(worktree) : null, ...stores].filter(Boolean))];
+  const [first, ...also] = dirs.flatMap((dir) => storeGitHolds(dir, now));
+  if (!first) return null;
+  return also.length ? { ...first, also } : first;
+}
+
+// The same words for a git hold in every command that keeps a folder for one.
+// Anything that is not a git hold gets null, so callers can pass any kept row.
+function describeGitHold(hold) {
+  if (!hold || !String(hold.reason || '').startsWith('git_')) return null;
+  const words = (one) => (one.lock
+    ? `git holds ${one.lock}, ${describeLockAge(one.lock_age_ms)} old`
+    : one.paused || describePausedGitWork(one.reason) || 'git is in the middle of something');
+  return [hold, ...(hold.also || [])].map(words).join(' and ');
+}
+
+// A folder pinned with `git worktree lock`: its reason text and how long the
+// pin has sat there, or null. Git refuses to remove a pinned folder even with
+// --force, so this is the usual cause of a refused removal.
+function worktreePin(worktreePath, now = Date.now()) {
+  const gitDir = worktreeGitDir(worktreePath);
+  if (!gitDir) return null;
+  const file = path.join(gitDir, 'locked');
+  try {
+    const stat = fs.statSync(file);
+    return { file, why: fs.readFileSync(file, 'utf8').trim().replace(/\s+/g, ' '), ageMs: Math.max(0, now - stat.mtimeMs) };
+  } catch {
+    return null;
+  }
+}
+
+// The pin's reason and age in words, or null when the folder is not pinned.
+function describePin(worktreePath, now = Date.now()) {
+  const pin = worktreePin(worktreePath, now);
+  return pin ? `pinned by git worktree lock, ${describeLockAge(pin.ageMs)} old${pin.why ? `: ${pin.why}` : ''}` : null;
+}
+
+// Why git refused to remove a folder, in the one line tidy, reap, worktree
+// cleanup and the autopilot regression check all print. A pin names its
+// reason and age, a lock or paused work taken since the first check uses the
+// shared hold words, and anything else is git's own first line.
+function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) {
+  const pinned = describePin(worktreePath, now);
+  if (pinned) return pinned;
+  const held = describeGitHold(gitHold({ worktree: worktreePath, now }));
+  if (held) return held;
+  const line = String(gitOutput || '').trim().split('\n')[0].replace(/^(fatal|error):\s*/, '').trim();
+  return line.slice(0, 160) || 'git would not remove it';
+}
+
+// The same line from a whole removal result. A removal killed at its time
+// limit says so even after partial output. Otherwise git's own text wins; when
+// git left none, a launch error, a signal, or a missing status says why.
+function describeRemovalResult(worktreePath, result = {}, now = Date.now()) {
+  if (result.error && result.error.code === 'ETIMEDOUT') return describeRefusedRemoval(worktreePath, 'git removal timed out', now);
+  const output = String(result.stderr || result.stdout || '').trim();
+  const fallback = result.error ? `git could not run: ${result.error.message}`
+    : result.signal ? `git removal stopped by ${result.signal}`
+      : result.status == null ? 'git removal ended without an exit status' : '';
+  return describeRefusedRemoval(worktreePath, output || fallback, now);
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
@@ -1414,7 +1493,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
+      // Skipped before trying, since git refuses a pinned folder anyway; the
+      // pin's reason and age say who to ask before unpinning it.
+      kept.push({ ...item, reason: 'locked', pinned: describePin(wtPath) || 'pinned by git worktree lock' });
       continue;
     }
     if (PROTECTED_BRANCHES.has(wt.branch)) {
@@ -1425,10 +1506,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
-    const gitActivity = worktreeGitActivity(wtPath);
-    if (gitActivity) {
-      const lock = gitActivity === 'git_lock' ? worktreeGitLock(wtPath) : null;
-      kept.push({ ...item, reason: gitActivity, ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}) });
+    const hold = gitHold({ worktree: wtPath });
+    if (hold) {
+      kept.push({ ...item, ...hold });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1479,7 +1559,8 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
         removed.push(candidate);
         recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
       } else {
-        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+        const error = (removedResult.stderr || removedResult.stdout || '').trim();
+        kept.push({ ...item, reason: 'remove_failed', error, refused: describeRemovalResult(wt.path, removedResult) });
       }
       continue;
     }
@@ -1490,6 +1571,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
     candidates.push(candidate);
     if (!apply) continue;
+    // Same removal as the expired branch above, kept inline on purpose: the
+    // removal scan needs the git check to come before each removal in this
+    // function's text, and a shared step defined earlier fails that order.
     const removeArgs = ['worktree', 'remove'];
     if (artifactOnlyDirty) removeArgs.push('--force');
     removeArgs.push(wt.path);
@@ -1498,7 +1582,8 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       removed.push(candidate);
       recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
     } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+      const error = (removedResult.stderr || removedResult.stdout || '').trim();
+      kept.push({ ...item, reason: 'remove_failed', error, refused: describeRemovalResult(wt.path, removedResult) });
     }
   }
 
@@ -1528,12 +1613,11 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
-  for (const item of result.kept.filter((kept) => kept.lock)) {
-    console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
-  }
   for (const item of result.kept) {
-    const paused = describePausedGitWork(item.reason);
-    if (paused) console.log(`held by paused git work: ${item.path} ${paused}`);
+    const held = describeGitHold(item);
+    if (held) console.log(`held: ${item.path} ${held}`);
+    if (item.refused) console.log(`refused: ${item.path} ${item.refused}`);
+    if (item.pinned) console.log(`held: ${item.path} ${item.pinned}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
@@ -1624,11 +1708,11 @@ module.exports = {
   gitFailureDetail,
   gitNetworkEnvironment,
   gitStoreActivity,
-  worktreeGitLock,
-  gitStoreLock,
-  describeLockAge,
-  describeGitActivity,
-  describePausedGitWork,
+  gitHold,
+  describeGitHold,
+  describeRefusedRemoval,
+  describeRemovalResult,
+  describePin,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,

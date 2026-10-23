@@ -1,0 +1,44 @@
+Caller directory colon boundary
+
+Changed: extended the existing controlled runtime probe and repair review.
+Why: a successful command can silently run under the wrong runtime.
+
+Command: node atris/receipts/work-folder-proof-runtime-controlled.js
+Exit: 0
+Output excerpt:
+controlled competing executable: competing-node, exit 0
+colon splits the candidate PATH entry: competing-node, exit 0
+quoted absolute caller bypasses PATH splitting: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-proof-runtime-eJMJSz/caller node's:bin/node, exit 0
+colon boundary reproduced with three actual login-shell children; production unchanged
+
+Metric: nine real shell cases, three newly added; one runtime retention
+limitation reproduced. The quoted absolute control is not a production fix.
+
+Files: atris/receipts/work-folder-proof-runtime-controlled.js;
+atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md;
+atris/receipts/work-folder-colon-proof-2026-10-14.txt; atris/MAP.md;
+atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md.
+Commands: mission status and goal, task list/new/claim/note, activation preview,
+git status/log/remotes/branch, targeted reads, controlled probe, required
+tests, task ready, compile preview, scoped git commit and push.
+Activation preview exited 2 and wrote nothing; required local brain files
+were absent. Existing task rendering and member-log edits were preserved.
+
+Required check: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Actual output summary:
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21398.39575
+
+Readiness saved executed evidence at atris/runs/2026-10-15-task-acw-19-2026-10-15T03-50-07-598Z.json and moved the task to review. Earlier readiness attempts rejected an extra named command and unclear landing wording; both were corrected. Automatic certification requires a separate reviewer for this diagnostic command.
+
+Compile preview exited 2 and wrote nothing. git diff --check exited 0.
+
+next_push: design a narrow colon-directory fallback before implementing shared proof runtime restoration.
+layer: capabilities

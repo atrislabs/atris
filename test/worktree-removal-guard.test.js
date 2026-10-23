@@ -11,7 +11,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { reap, removalsTodayLine } = require('../commands/land');
-const { cleanupWorktrees } = require('../commands/worktree');
+const { cleanupWorktrees, describeGitHold } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
 const { dropScratch } = require('../lib/land-green');
@@ -143,7 +143,7 @@ test('reap keeps a folder while git holds its lock, even with --force', () => {
     fs.utimesSync(lock, stale, stale);
     const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
     assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
-    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${lock}, 3 h old)`), JSON.stringify(receipt));
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: git holds ${lock}, 3 h old)`), JSON.stringify(receipt));
     assert.ok(!receipt.deletedBranches.includes('engine-run'));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -182,6 +182,29 @@ test('worktree cleanup names the lock holding a folder and how old it is', () =>
   }
 });
 
+// A crashed rebase can leave its lock and its paused rebase in one store; the
+// report names both so clearing the lock alone does not surprise anyone.
+test('worktree cleanup names a lock and a paused rebase left in the same folder', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    fs.mkdirSync(path.join(worktreeGitDir(wt), 'rebase-merge'));
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const held = result.kept.find((item) => item.path === wt);
+    assert.equal(held.reason, 'git_lock', JSON.stringify(result.kept));
+    assert.deepEqual(held.also, [{ reason: 'git_rebase_in_progress', paused: 'a rebase is paused' }]);
+    assert.equal(describeGitHold(held), `git holds ${lock}, 3 h old and a rebase is paused`);
+    assert.deepEqual(result.removed, []);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   const { base, repo, wt } = landedWorktree();
   try {
@@ -195,13 +218,55 @@ test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   }
 });
 
-// Shaped like the fleet review sandbox. Its own git dir points at a throwaway
-// path so disposal never deletes the fixture repo's .git.
-function reviewSandbox() {
+// One stale lock reads the same in every cleanup that keeps a folder for it,
+// so an operator can search one phrase across reap, cleanup and fleet logs.
+test('reap, worktree cleanup and fleet review name a held lock in the same words', () => {
   const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    const words = `git holds ${lock}, 3 h old`;
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${words})`), JSON.stringify(receipt.keptWorktrees));
+    const cleaned = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.equal(describeGitHold(cleaned.kept.find((item) => item.path === wt)), words);
+    const quarantine = path.join(base, 'quarantine.git');
+    fs.mkdirSync(quarantine);
+    const disposed = disposeReviewSandbox({ trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine });
+    assert.equal(describeGitHold(disposed), words);
+    assert.equal(describeGitHold({ reason: 'git_rebase_in_progress' }), 'a rebase is paused');
+    assert.equal(describeGitHold({ reason: 'dirty' }), null);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Shaped like the fleet review sandbox. Its own git dir points at a throwaway
+// path so disposal never deletes the fixture repo's .git. With a store, the
+// copy is checked out from its own clone at that path, as fleet review makes
+// it, so git's removal there can succeed or refuse for real.
+function reviewSandbox({ store = false } = {}) {
+  const { base, repo, wt: repoCopy } = landedWorktree();
   const quarantine = path.join(base, 'quarantine.git');
   fs.mkdirSync(quarantine);
-  return { base, repo, wt, boundary: { trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine } };
+  const gitDir = path.join(base, 'sandbox.git');
+  let wt = repoCopy;
+  if (store) {
+    git(base, ['clone', '-q', '--bare', repo, gitDir]);
+    wt = path.join(base, 'review-wt');
+    git(base, ['--git-dir', gitDir, 'worktree', 'add', '-q', wt, 'engine-run']);
+  }
+  return { base, repo, wt, boundary: { trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir, quarantine } };
+}
+
+// The store a review copy is registered in, read from git itself.
+function registeredIn(gitDir, wt) {
+  return git(gitDir, ['--git-dir', gitDir, 'worktree', 'list', '--porcelain'])
+    .split('\n').includes(`worktree ${wt}`);
 }
 
 test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
@@ -273,9 +338,43 @@ test('fleet review cleanup keeps a sandbox while git updates a branch in either 
   }
 });
 
+// Paused work in one store and a lock in another: every store stays, and the
+// report names both holds, work folder first, so one pass can clear them.
+test('fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores', () => {
+  for (const pausedFirst of [true, false]) {
+    const { base, repo, wt, boundary } = reviewSandbox();
+    try {
+      git(base, ['init', '-q', '--bare', boundary.gitDir]);
+      git(base, ['init', '-q', '--bare', boundary.quarantine]);
+      const lock = pausedFirst ? path.join(boundary.quarantine, 'HEAD.lock') : path.join(worktreeGitDir(wt), 'index.lock');
+      const paused = pausedFirst ? path.join(worktreeGitDir(wt), 'rebase-merge') : path.join(boundary.quarantine, 'rebase-merge');
+      fs.writeFileSync(lock, '');
+      fs.mkdirSync(paused);
+      const result = disposeReviewSandbox(boundary);
+      const label = pausedFirst ? 'paused in the work folder' : 'lock in the work folder';
+      const rebase = { reason: 'git_rebase_in_progress', paused: 'a rebase is paused' };
+      const held = { reason: 'git_lock', lock, lock_age_ms: result.lock_age_ms ?? result.also?.[0]?.lock_age_ms };
+      assert.equal(typeof held.lock_age_ms, 'number', label);
+      assert.deepEqual(result, pausedFirst
+        ? { removed: false, ...rebase, also: [held] }
+        : { removed: false, ...held, also: [rebase] }, label);
+      const lockWords = `git holds ${lock}, under a minute old`;
+      assert.equal(describeGitHold(result),
+        pausedFirst ? `a rebase is paused and ${lockWords}` : `${lockWords} and a rebase is paused`, label);
+      assert.ok([wt, boundary.gitDir, boundary.quarantine, lock, paused].every((file) => fs.existsSync(file)), label);
+      assert.deepEqual(removalLines(repo), [], label);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }
+});
+
 test('fleet review cleanup names who removed a sandbox and why', () => {
-  const { base, repo, wt, boundary } = reviewSandbox();
+  const { base, repo, wt, boundary } = reviewSandbox({ store: true });
   try {
+    // The copy belongs to the review store, so git's own removal succeeds
+    // here and this control does not rest on a refusal being ignored.
+    assert.ok(registeredIn(boundary.gitDir, wt), 'review copy is registered in its own store');
     const result = disposeReviewSandbox(boundary);
     assert.deepEqual(result, { removed: true });
     assert.equal(fs.existsSync(wt), false);
@@ -302,6 +401,8 @@ test('autopilot regression check keeps its folder while git holds its lock', () 
   try {
     const [row] = regressionCheck(repo, { activeCwds: [] });
     assert.equal(row.kept, 'git_lock', JSON.stringify(row));
+    assert.equal(row.held, `git holds ${path.join(worktreeGitDir(folder), 'index.lock')}, under a minute old`);
+    assert.equal(row.path, folder);
     assert.ok(fs.existsSync(folder));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -428,29 +529,94 @@ function callText(lines, index) {
   return lines.slice(index, index + 12).join('\n');
 }
 
+// A line with its quoted text, regex text, and trailing comment emptied, so
+// a brace inside '{' or /\{\{/ never opens or closes a helper.
+function codeOnly(line) {
+  if (COMMENT_LINE.test(line)) return '';
+  return line
+    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""')
+    .replace(/(^|[(,=:[!&|?{};]|\breturn)(\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[])+\/[a-z]*/g, '$1$20')
+    .replace(/\/\/.*$/, '');
+}
+
+// The line that closes the brace a helper opens, or, for an arrow with no
+// braces, the line that ends its expression with a comma or semicolon once
+// every bracket it opened is closed.
+function helperEnd(lines, index) {
+  let depth = 0;
+  let opened = false;
+  for (let end = index; end < lines.length; end++) {
+    const code = codeOnly(lines[end]);
+    for (const ch of code) {
+      if (ch === '{') opened = true;
+      if ('{[('.includes(ch)) depth++; else if ('}])'.includes(ch)) depth--;
+    }
+    if (depth <= 0 && (opened || /[;,]\s*$/.test(code))) return end;
+  }
+  return lines.length - 1;
+}
+
+// Keywords whose line can look like a method or helper start.
+const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
+// A helper can be a plain function at any depth, a named arrow (const wipe =
+// (dir) => or wipe: dir =>), or a class or object method (wipe(dir) {).
+const HELPER_START = [
+  /^\s*(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?(?:function\s*)?\(([^()]*)\)\s*(?:=>|\{)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
+  /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
+];
+
+// Every function start both scans read, with its parameters and the line that
+// ends it. A top start owns the deletes inside it in the main scan: a plain
+// function, a named arrow or function expression at the left margin, or a
+// method of a top-level class. An arrow nested inside a function stays part
+// of that function there, so the guard above it still counts and its key does
+// not move. The passed-in check reads every start, nested ones too.
+function functionStarts(lines) {
+  let inClass = false;
+  return lines.flatMap((line, index) => {
+    if (/^(?:export\s+)?class\s/.test(line)) inClass = true;
+    else if (/^}/.test(line)) inClass = false;
+    const top = line.match(/^(?:async\s+)?function\s+([\w$]+)/)
+      || line.match(/^(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)/)
+      || (inClass && line.match(/^ {2}(?:static\s+)?(?:async\s+)?([\w$]+)\s*\([^()]*\)\s*\{/));
+    const helper = HELPER_START.map((pattern) => line.match(pattern)).find(Boolean);
+    const match = top || helper;
+    if (!match || NOT_A_HELPER.has(match[1])) return [];
+    const params = (helper ? helper[2] : '').split(',')
+      .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
+      .filter((part) => /^[\w$]+$/.test(part));
+    return [{ name: match[1], params, index, end: helperEnd(lines, index), top: Boolean(top) }];
+  });
+}
+
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
-  const starts = lines.flatMap((line, index) => {
-    const match = line.match(/^(?:async\s+)?function\s+(\w+)/);
-    return match ? [{ name: match[1], index }] : [];
-  });
+  const starts = functionStarts(lines).filter((start) => start.top);
   const sites = [];
   lines.forEach((line, index) => {
     if (COMMENT_LINE.test(line)) return;
     const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
     const named = WORKTREE_REMOVAL.test(call);
     if (!named && !RECURSIVE_DELETE.test(call)) return;
-    const owner = starts.filter((start) => start.index <= index).pop();
+    // A function's lines run to its closing brace. A delete outside every
+    // function is read from the end of the last function above it, so that
+    // function's git check never counts for it.
+    const owner = starts.filter((start) => start.index <= index && index <= start.end).pop();
     const next = starts.find((start) => start.index > index);
+    const from = owner ? owner.index : starts.filter((start) => start.end < index)
+      .reduce((at, start) => Math.max(at, start.end + 1), 0);
+    const to = owner ? owner.end + 1 : next ? next.index : lines.length;
     // Comments are dropped so a note naming the check never counts as the check.
     const code = (from, to) => lines.slice(from, to)
       .filter((text) => !COMMENT_LINE.test(text))
       .map((text) => text.replace(/\s\/\/.*$/, ''))
       .join('\n');
-    const body = code(owner ? owner.index : 0, next ? next.index : lines.length);
+    const body = code(from, to);
     if (!named && !HANDLES_WORKTREES.test(body)) return;
     // The function's code above the delete, where its git check has to sit.
-    const before = code(owner ? owner.index : 0, index);
+    const before = code(from, index);
     sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, call, body, before });
   });
   return sites;
@@ -463,7 +629,7 @@ function worktreeRemovalSites(file) {
 const GROUPED_REMOVALS = {
   'lib/fleet.js:disposeReviewSandbox': {
     deletes: ['boundary.worktreePath', 'boundary.worktreePath', 'boundary.gitDir', 'boundary.quarantine', 'boundary.sandboxRoot'],
-    checks: ['worktreeGitActivity(boundary.worktreePath)', 'gitStoreActivity(boundary.gitDir)', 'gitStoreActivity(boundary.quarantine)'],
+    checks: ['gitHold({ worktree: boundary.worktreePath, stores: [boundary.gitDir, boundary.quarantine] })'],
     logs: 'boundary.worktreePath',
     why: 'review sandbox: work folder, its git store, the quarantine store, and their parent go together',
   },
@@ -515,9 +681,11 @@ function sameFolder(body) {
   };
 }
 
+// The folder a git check reads: the shared gitHold({ worktree: <folder> }) or
+// the plain worktreeGitActivity(<folder>) check.
 function checkedCalls(body) {
-  return [...body.matchAll(/worktreeGitActivity\(\s*([^()]*?)\s*\)/g)]
-    .map((match) => ({ arg: match[1].replace(/\s+/g, ''), index: match.index }));
+  return [...body.matchAll(/gitHold\(\s*\{\s*worktree:\s*([^,{}()]+?)\s*[,}]|worktreeGitActivity\(\s*([^()]*?)\s*\)/g)]
+    .map((match) => ({ arg: (match[1] || match[2]).replace(/\s+/g, ''), index: match.index }));
 }
 
 // Just past the bracket that closes the one at start, or -1 when the text ends
@@ -566,6 +734,22 @@ function loggedPaths(body) {
   return [...body.matchAll(/recordWorktreeRemoval\([^{]*\{[^}]*?\bpath:\s*([\w$.]+)/g)].map((match) => match[1]);
 }
 
+// Git refuses to remove a pinned folder, but a plain delete of the same
+// folder after git's removal goes through anyway. A function that does both
+// has to check the pin before the delete and let that answer stop it.
+const GIT_REMOVAL = /['"]worktree['"]\s*,\s*['"]remove['"]|git worktree remove/;
+function pinGap(site, target) {
+  if (!target || GIT_REMOVAL.test(site.call)) return '';
+  const folder = sameFolder(site.body);
+  const afterGit = site.before.split('\n')
+    .some((line) => GIT_REMOVAL.test(line) && folder(removedTarget(line, site.body)) === folder(target));
+  if (!afterGit) return '';
+  const pins = [...site.before.matchAll(/describePin\(\s*([^,()]+?)\s*[,)]/g)]
+    .filter((match) => folder(match[1].replace(/\s+/g, '')) === folder(target));
+  if (!pins.length) return `plain delete of ${target} after a git removal never checks its pin`;
+  return pins.some((match) => answerStops(site.before, match.index)) ? '' : `pin check on ${target} never stops the delete`;
+}
+
 // Why a delete is not covered, in words a builder can act on, or '' when it
 // is: the scan cannot tell which folder is deleted, no git check names it, the
 // check only runs after the delete, its answer never stops the delete, the
@@ -579,6 +763,8 @@ function removalGap(site) {
       if (!written) return `group check ${check} is missing above this delete`;
       if (!answerStops(site.before, written.index)) return `group check ${check} never stops this delete`;
     }
+    const pinned = pinGap(site, removedTarget(site.call, site.body));
+    if (pinned) return pinned;
     return loggedPaths(site.body).includes(group.logs) ? '' : `group removal log does not name ${group.logs}`;
   }
   const target = removedTarget(site.call, site.body);
@@ -592,6 +778,8 @@ function removalGap(site) {
       : `no git check names ${target}`;
   }
   if (!above.some((check) => answerStops(site.before, check.index))) return `git check answer on ${target} never stops the delete`;
+  const pinned = pinGap(site, target);
+  if (pinned) return pinned;
   return loggedPaths(site.body).some((logged) => folder(logged) === folder(target)) ? '' : `removal log does not name ${target}`;
 }
 
@@ -627,6 +815,134 @@ test('every work folder removal goes through the git check and the removal log',
     .filter((site) => site.key === key)
     .every((site) => !removalGap(site)));
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
+  // A top-level arrow and a class method own their deletes; an arrow nested
+  // in a function, an if inside a class, and an indented call after the
+  // class closes do not.
+  const owners = functionStarts([
+    'function guarded(wt) {',
+    '  const done = (x) => x;',
+    '}',
+    'const sweep = async (wt) => {',
+    'class Shelf {',
+    '  static empty(wt) {',
+    '  if (wt) {',
+    '}',
+    '  later(wt) {',
+  ]).filter((start) => start.top).map((start) => start.name);
+  assert.deepEqual(owners, ['guarded', 'sweep', 'empty']);
+});
+
+// A helper that deletes whatever folder its caller hands it can be given a
+// work folder without ever naming one, so the scan above would never see it.
+// Each such delete is either one the scan above already checks or one listed
+// here after review. Stale entries fail.
+const PASSED_IN_DELETES = {
+  'commands/skill.js:removeLink': 'skill remove: every caller passes an installed skill folder under .claude, .codex, or .cursor',
+};
+
+function passedInDeletes(file, text) {
+  const lines = text.split('\n');
+  const starts = functionStarts(lines);
+  return lines.flatMap((line, index) => {
+    if (COMMENT_LINE.test(line)) return [];
+    const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
+    if (!RECURSIVE_DELETE.test(call)) return [];
+    // Every helper whose lines hold the delete, innermost first, so a small
+    // arrow defined earlier in a helper never takes the delete from it.
+    const around = starts.filter((start) => start.index <= index && index <= start.end).reverse();
+    for (const owner of around) {
+      const body = lines.slice(owner.index, owner.end + 1).join('\n');
+      const target = sameFolder(body)(removedTarget(call, body));
+      if (owner.params.includes(target)) return [{ key: `${file}:${owner.name}`, line: index + 1, target }];
+    }
+    return [];
+  });
+}
+
+test('a helper that deletes a folder its caller passed in is checked or reviewed', () => {
+  const files = [...sourceFiles('lib'), ...sourceFiles('commands')];
+  // Matched by file and line: the scan above names only plain functions, so an
+  // arrow or method helper carries a different owner name there.
+  const scanned = new Set(files.flatMap(worktreeRemovalSites).map((site) => `${site.key.split(':')[0]}:${site.line}`));
+  const found = files.flatMap((file) => passedInDeletes(file, fs.readFileSync(path.join(__dirname, '..', file), 'utf8')));
+  assert.ok(found.length >= 1, 'expected the green landing scratch cleanup to be found');
+  const unreviewed = found
+    .filter((site) => !scanned.has(`${site.key.split(':')[0]}:${site.line}`) && !PASSED_IN_DELETES[site.key])
+    .map((site) => `${site.key} (line ${site.line}): deletes ${site.target}, which its caller chooses`);
+  assert.deepEqual(unreviewed, [], 'guard this delete like a work folder removal, or review it and list it');
+  const stale = Object.keys(PASSED_IN_DELETES).filter((key) => !found.some((site) => site.key === key));
+  assert.deepEqual(stale, [], 'listed helper no longer deletes a folder its caller passed in');
+
+  // Planted helpers in a file that never mentions worktrees are still found:
+  // a plain function read through a path.resolve rename and a delete split
+  // across lines, two named arrows, a class method whose delete sits in a
+  // callback, and helpers holding small inner arrows. An inner arrow keeps
+  // only its own lines, so the helper around it still owns a delete of its
+  // folder, and an inner arrow that deletes its own argument owns that one.
+  // Braces in regex or quoted text neither end a helper early nor stretch it
+  // over the next one. A plain function declared inside a helper owns a
+  // delete of its own argument, and a delete of the outer helper's folder
+  // inside it still belongs to the outer helper.
+  const planted = [
+    'function wipe(folder, opts = {}) {',
+    '  const where = path.resolve(folder);',
+    '  fs.rmSync(',
+    '    where,',
+    '    { recursive: true, force: true },',
+    '  );',
+    '}',
+    'function tidy() { fs.rmSync(cacheDir, { recursive: true }); }',
+    'const clear = async (dir) => {',
+    '  await fs.promises.rm(dir, { recursive: true });',
+    '};',
+    'const drop = dir => fs.rmSync(dir, { recursive: true });',
+    'class Shelf {',
+    '  empty(where) {',
+    '    setTimeout(function () { fs.rmSync(where, { recursive: true, force: true }); });',
+    '  }',
+    '  log(dir) { console.log(dir); }',
+    '}',
+    'function sweep(dir) {',
+    '  const note = () => console.log("sweeping");',
+    '  fs.rmSync(dir, { recursive: true });',
+    '}',
+    'function shelve(folder) {',
+    '  const where = path.resolve(folder);',
+    '  const later = () => {',
+    '    fs.rmSync(where, { recursive: true });',
+    '  };',
+    '  const each = (item) => fs.rmSync(item, { recursive: true });',
+    '}',
+    'function after() { fs.rmSync(dir, { recursive: true }); }',
+    'function scrub(dir) {',
+    '  if (/\\{\\{[^}]*\\}\\}/.test(dir)) return;',
+    '  fs.rmSync(dir, { recursive: true });',
+    '}',
+    'function opener(dir) {',
+    "  if (dir === '{') return;",
+    '}',
+    'function later() { fs.rmSync(dir, { recursive: true }); }',
+    'function prune(list, root) {',
+    '  function drop(item) {',
+    '    fs.rmSync(item, { recursive: true });',
+    '  }',
+    '  function clean() { fs.rmSync(root, { recursive: true }); }',
+    '  list.forEach(drop);',
+    '}',
+  ].join('\n');
+  assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
+  assert.deepEqual(passedInDeletes('lib/planted.js', planted), [
+    { key: 'lib/planted.js:wipe', line: 3, target: 'folder' },
+    { key: 'lib/planted.js:clear', line: 10, target: 'dir' },
+    { key: 'lib/planted.js:drop', line: 12, target: 'dir' },
+    { key: 'lib/planted.js:empty', line: 15, target: 'where' },
+    { key: 'lib/planted.js:sweep', line: 21, target: 'dir' },
+    { key: 'lib/planted.js:shelve', line: 26, target: 'folder' },
+    { key: 'lib/planted.js:each', line: 28, target: 'item' },
+    { key: 'lib/planted.js:scrub', line: 33, target: 'dir' },
+    { key: 'lib/planted.js:drop', line: 41, target: 'item' },
+    { key: 'lib/planted.js:prune', line: 43, target: 'root' },
+  ]);
 });
 
 test('saved scanner examples reject missed removals in the required checks', () => {
@@ -659,12 +975,18 @@ test('grouped sandbox cleanup exposes every recursive target to the scan', () =>
   assert.match(result.stdout, /group: 4 recursive targets; 0 missing from scan; source only, no folders removed/);
 });
 
-test('green landing keeps its scratch folder while a test is still running in it', () => {
+test('green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned', () => {
   const { base, repo, wt } = landedWorktree();
   try {
     assert.deepEqual(dropScratch(repo, wt, { activeCwds: [path.join(wt, 'node_modules')] }), { removed: false, reason: 'active_process' });
-    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
-    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'git_lock' });
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const { lock_age_ms: age, ...held } = dropScratch(repo, wt, { activeCwds: [] });
+    assert.deepEqual(held, { removed: false, reason: 'git_lock', lock });
+    assert.ok(age < 60000, String(age));
+    fs.rmSync(path.join(worktreeGitDir(wt), 'index.lock'));
+    git(repo, ['worktree', 'lock', '--reason', 'operator checking the verify', wt]);
+    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'pinned', pinned: 'pinned by git worktree lock, under a minute old: operator checking the verify' });
     assert.ok(fs.existsSync(wt));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -682,6 +1004,285 @@ test('green landing names who removed its scratch folder and why', () => {
     assert.equal(line.path, wt);
     assert.equal(line.by, 'atris land --auto');
     assert.equal(line.reason, 'green_landing_scratch_done');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// A wrapper on PATH only times the race: the real git takes the pin, or the
+// removal is stopped by a signal, after dropScratch has done its own checks.
+for (const [label, onRemove, words] of [
+  ['a pin taken at removal', 'pin', 'pinned by git worktree lock, under a minute old: verify still writing'],
+  ['a removal stopped by a signal', 'signal', 'git removal stopped by SIGTERM'],
+]) {
+  test(`green landing keeps its scratch folder after ${label}`, () => {
+    const { base, repo, wt } = landedWorktree();
+    try {
+      const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+      const bin = path.join(base, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit)};
+if (args[0] === 'worktree' && args[1] === 'remove') {
+  if (${JSON.stringify(onRemove)} === 'signal') process.kill(process.pid, 'SIGTERM');
+  spawnSync(git, ['worktree', 'lock', '--reason', 'verify still writing', ${JSON.stringify(wt)}]);
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+      const run = spawnSync(process.execPath, ['-e',
+        `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../lib/land-green.js'))}).dropScratch(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { activeCwds: [] })))`,
+      ], { encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+      assert.equal(run.status, 0, run.stderr);
+      assert.deepEqual(JSON.parse(run.stdout), { removed: false, reason: 'removal_refused', detail: words });
+      assert.ok(fs.existsSync(path.join(wt, 'README.md')));
+      assert.ok(git(repo, ['worktree', 'list']).includes(wt));
+      assert.deepEqual(removalLines(repo), []);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
+// A start that fails after its folder exists takes the folder back. When git
+// refuses that removal, the start error still leads and names the kept folder.
+test('a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const target = path.join(base, 'start-wt');
+    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+    const bin = path.join(base, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit)};
+if (args[0] === 'config' && String(args[1]).endsWith('.atris-base')) {
+  process.stderr.write('error: metadata write failed\\n');
+  process.exit(1);
+}
+if (args[0] === 'worktree' && args[1] === 'remove') {
+  spawnSync(git, ['worktree', 'lock', '--reason', 'editor still open', ${JSON.stringify(target)}]);
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'start',
+      '--agent', 'tester', '--task', 'failed start', '--path', target, '--base', 'HEAD',
+    ], { cwd: repo, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /metadata write failed; kept .*start-wt: pinned by git worktree lock, under a minute old: editor still open/);
+    assert.ok(fs.existsSync(path.join(target, 'README.md')));
+    assert.ok(git(repo, ['worktree', 'list']).includes(target));
+    assert.deepEqual(removalLines(repo).filter((line) => line.path === target), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('worktree cleanup names the reason and age of a pinned folder it skips', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'agent still writing', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    const cleaned = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const kept = cleaned.kept.find((item) => item.path === wt);
+    assert.equal(kept.reason, 'locked', JSON.stringify(cleaned.kept));
+    assert.equal(kept.pinned, 'pinned by git worktree lock, 3 h old: agent still writing');
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('reap skips a dirty pinned folder before saving its patches, even with --force', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(wt, 'README.md'), '# edited\n');
+    git(repo, ['worktree', 'lock', '--reason', 'agent still writing', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    fs.utimesSync(wt, stale, stale);
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (pinned by git worktree lock, 3 h old: agent still writing)`), JSON.stringify(receipt.keptWorktrees));
+    assert.deepEqual(receipt.patches, []);
+    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# edited\n');
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('fleet review cleanup keeps every store of a pinned copy and names the pin', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'reviewer still reading', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    fs.mkdirSync(boundary.sandboxRoot);
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'pinned', pinned: 'pinned by git worktree lock, 3 h old: reviewer still reading' });
+    assert.ok([wt, boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The line fleet review prints when cleanup keeps a copy sits deep inside the
+// fleet run, so it is read from the source as written and filled with a real
+// cleanup result. A rewrite of that line fails here instead of going untested.
+function keptReviewLine(disposed, sandboxRoot) {
+  const source = fs.readFileSync(path.join(__dirname, '../lib/fleet.js'), 'utf8');
+  const found = source.match(/log\(`(\s*kept review sandbox for [^`]*)`\);/);
+  assert.ok(found, 'fleet review no longer prints a kept line in this form; point this check at its new home');
+  const line = new Function('entry', 'disposed', 'describeGitHold', `return \`${found[1]}\`;`);
+  return line({ taskId: 'T-1', remoteBoundary: { sandboxRoot } }, disposed, describeGitHold).trim();
+}
+
+test('fleet review names the git lock or pin when cleanup keeps a copy', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const held = disposeReviewSandbox(boundary);
+    assert.equal(held.reason, 'git_lock');
+    assert.equal(keptReviewLine(held, boundary.sandboxRoot),
+      `kept review sandbox for T-1 (git_lock: git holds ${lock}, under a minute old): ${boundary.sandboxRoot}`);
+    fs.rmSync(lock);
+    git(repo, ['worktree', 'lock', '--reason', 'reviewer still reading', wt]);
+    const pinned = disposeReviewSandbox(boundary);
+    assert.equal(keptReviewLine(pinned, boundary.sandboxRoot),
+      `kept review sandbox for T-1 (pinned: pinned by git worktree lock, under a minute old: reviewer still reading): ${boundary.sandboxRoot}`);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The refusal result the pending cleanup tests expect carries git's reason in
+// its detail. The kept line must print it, not "undefined". Pending on the
+// same protected review as those tests.
+test('fleet review names git\'s refusal when cleanup keeps a copy', { todo: 'fleet review still prints only a hold or a pin' }, () => {
+  const refused = { removed: false, reason: 'removal_refused', detail: 'git removal stopped by SIGTERM' };
+  assert.equal(keptReviewLine(refused, '/tmp/review'),
+    'kept review sandbox for T-1 (removal_refused: git removal stopped by SIGTERM): /tmp/review');
+});
+
+// Runs fleet review cleanup in a child whose git runs onRemove (wrapper code
+// with fs, spawnSync, args and the real git in scope) once removal starts,
+// then hands the call to the real git. Returns the child's run and the
+// removal args git was given.
+function disposeWithGitAtRemoval(base, repo, boundary, onRemove) {
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
+  assert.equal(realGit.status, 0, realGit.stderr);
+  const bin = path.join(base, 'bin');
+  fs.mkdirSync(bin);
+  const attempt = path.join(base, 'remove-attempt.json');
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit.stdout.trim())};
+if (args.includes('remove')) {
+  fs.writeFileSync(${JSON.stringify(attempt)}, JSON.stringify(args));
+  ${onRemove}
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+  fs.mkdirSync(boundary.sandboxRoot);
+  const run = spawnSync(process.execPath, ['-e',
+    `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../lib/fleet.js'))}).disposeReviewSandbox(${JSON.stringify(boundary)})))`,
+  ], { cwd: repo, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(run.status, 0, run.stderr);
+  return { run, removal: JSON.parse(fs.readFileSync(attempt, 'utf8')) };
+}
+
+// A pin taken after the first check makes git refuse its removal. The plain
+// deletes that follow must not finish what git would not, so the copy stays
+// and the report uses the line tidy, reap, cleanup and autopilot print.
+// Pending: the fail-closed fleet change waits on protected review
+// (atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md). Drop the
+// todo when it lands; today this reproduces the deleted copy.
+test('fleet review cleanup keeps a copy pinned after its first check and names the refusal', { todo: 'fleet disposal still ignores the git result' }, () => {
+  const { base, repo, wt, boundary } = reviewSandbox({ store: true });
+  try {
+    const { run, removal } = disposeWithGitAtRemoval(base, repo, boundary, `const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(wt)}, encoding: 'utf8' });
+  if (pin.status !== 0) { process.stderr.write(pin.stderr); process.exit(1); }`);
+    assert.ok(removal.includes(wt));
+    const words = 'pinned by git worktree lock, under a minute old: reviewer opened it';
+    assert.deepEqual(JSON.parse(run.stdout), { removed: false, reason: 'removal_refused', detail: words });
+    assert.ok([wt, path.join(wt, 'README.md'), boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)));
+    assert.equal(fs.readFileSync(path.join(worktreeGitDir(wt), 'locked'), 'utf8').trim(), 'reviewer opened it');
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Git can refuse with no pin at all, or be stopped before it answers. Both
+// keep every store and name why, so the fix reads git's result, not just
+// its pins. Pending on the same protected review as the late-pin case.
+test('fleet review cleanup keeps a copy git refused without a pin or never finished removing', { todo: 'fleet disposal still ignores the git result' }, () => {
+  const cases = [
+    // The copy's link to its store goes missing just as removal starts.
+    { label: 'refused without a pin', onRemove: (wt) => `fs.renameSync(${JSON.stringify(path.join(wt, '.git'))}, ${JSON.stringify(path.join(wt, '.git-moved'))});`, detail: /validation failed/ },
+    { label: 'stopped by a signal', onRemove: () => "process.kill(process.pid, 'SIGTERM');", detail: /^git removal stopped by SIGTERM$/ },
+  ];
+  for (const { label, onRemove, detail } of cases) {
+    const { base, repo, wt, boundary } = reviewSandbox({ store: true });
+    try {
+      const { run, removal } = disposeWithGitAtRemoval(base, repo, boundary, onRemove(wt));
+      assert.ok(removal.includes(wt), label);
+      const result = JSON.parse(run.stdout);
+      assert.deepEqual({ ...result, detail: undefined }, { removed: false, reason: 'removal_refused', detail: undefined }, label);
+      assert.match(result.detail, detail, label);
+      assert.ok([wt, path.join(wt, 'README.md'), boundary.gitDir, boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)), label);
+      assert.deepEqual(removalLines(repo), [], label);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }
+});
+
+test('a plain delete after a git removal of the same folder must check its pin first', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '../atris/receipts/work-folder-scan-pin-probe.js'),
+    '--require-protection',
+  ], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /review gaps: 0; synthetic source only, never executed/);
+});
+
+// Git accepts line breaks in pin reasons. Every cleanup still owes the
+// operator one readable report line, while the stored reason stays intact.
+test('multiline pin reasons stay on one line in refusal and real cleanup reports', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const reason = 'reviewer still reading\n  leave this copy\tfor tomorrow';
+    git(repo, ['worktree', 'lock', '--reason', reason, wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    const words = 'pinned by git worktree lock, 3 h old: reviewer still reading leave this copy for tomorrow';
+    const refused = spawnSync('git', ['worktree', 'remove', wt], { cwd: repo, encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    const { describeRefusedRemoval } = require('../commands/worktree');
+    assert.equal(describeRefusedRemoval(wt, refused.stderr), words);
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', '--base', 'HEAD', '--apply'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stdout.split('\n').filter((line) => line.includes('reviewer') || line.includes('tomorrow')), [`held: ${wt} ${words}`]);
+    assert.equal(fs.readFileSync(pin, 'utf8').trim(), reason);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -1,0 +1,72 @@
+Multiline pin reports are now proven through tidy and autopilot without changing stored pins.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md.
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Progress: 43 passed, 0 failed; two pin shapes; real tidy CLI retained each copy; regression commands passed and retained each copy; original pin text preserved; no removal records.
+
+Actual command output:
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-x6Y5qP/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-XgUnRb/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1258.251458ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (615.651834ms)
+✔ tidy keeps every copy when the running-program scan fails (549.386541ms)
+✔ tidy keeps every copy when origin cannot be fetched (428.299791ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (474.148417ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2802.748ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (535.623834ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1245.321917ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1261.601916ms)
+✔ reap keeps a folder a run is working in, even with --force (143.579666ms)
+✔ reap sees a real live process in the folder without being told (676.099625ms)
+✔ reap names who removed a folder and why (199.11125ms)
+✔ reap summary counts folders removed today and by whom (98.984333ms)
+✔ worktree cleanup names who removed a folder and why (143.917541ms)
+✔ reap keeps a folder while git holds its lock, even with --force (146.525625ms)
+✔ reap says which git work is paused in a folder it keeps (154.533958ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (109.130792ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (117.354583ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (104.924167ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (170.987542ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (93.376ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (97.274833ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (94.339166ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (426.002291ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (228.207167ms)
+✔ fleet review cleanup names who removed a sandbox and why (95.019708ms)
+✔ autopilot regression check keeps its folder while git holds its lock (133.0585ms)
+✔ autopilot regression check keeps its folder while a run is inside it (119.198792ms)
+✔ autopilot regression check sees a real leftover process without being told (393.4985ms)
+✔ autopilot regression check names who removed its folder and why (129.336916ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (133.092041ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (140.81325ms)
+✔ every work folder removal goes through the git check and the removal log (105.5265ms)
+✔ saved scanner examples reject missed removals in the required checks (66.128959ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (62.195209ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (58.308583ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (104.537458ms)
+✔ green landing names who removed its scratch folder and why (107.2735ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (111.743875ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (198.827625ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (99.124583ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (58.924709ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (492.383458ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9283.13875
+
+Setup note: brain activate and compile returned plan-only exit 2; generated policy files were not rewritten.
+next_push: prove a pin acquired between the hold check and Git removal uses the same report and retains the folder.
+Readiness: the supported-runtime check passed and the task is in Review. Automatic certification cannot rerun the runtime prefix, so independent review is still required. No task acceptance or merge was performed.
+layer: behaviors
