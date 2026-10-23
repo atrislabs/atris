@@ -655,7 +655,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, REPLY };
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, onPhone, scriptedDesk, CARDS, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

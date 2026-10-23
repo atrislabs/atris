@@ -1007,17 +1007,17 @@ test('queue: opening the page fills it to 3, one generation at a time, never mor
   assert.deepEqual(h.ledger().map(r => r.status), ['queued', 'queued', 'queued']);
 });
 
-test('queue: a tap shows the next bet at once; below 2 it refills back to 3', async () => {
+test('queue: a tap shows the next bet at once, and the next one is written at once, back to 3', async () => {
   const h = await filled(workspace());
   const first = h.d.next();
   assert.equal(first.status, 'ready');
   assert.equal(first.bet.title, TITLES[0]);
   assert.equal(first.queue, 2);
-  assert.equal(h.gen.calls.length, 3, 'two left is enough, nothing starts');
+  assert.equal(h.gen.calls.length, 4, 'showing one starts the next');
   const second = h.d.next();
   assert.equal(second.bet.title, TITLES[1]);
   assert.equal(second.queue, 1);
-  assert.equal(h.gen.calls.length, 4, 'below 2 a refill starts');
+  assert.equal(h.gen.calls.length, 4, 'still one at a time');
   await h.gen.releaseOne();
   assert.equal(h.gen.calls.length, 5, 'and keeps going to 3');
   await h.gen.releaseOne();
@@ -1043,7 +1043,7 @@ test('queue: each new bet is asked to differ from every one shown or waiting', a
 });
 
 // what an owner sees when nothing is ready and every question is answered
-const WAIT = { what: 'the next idea is being written.', why: 'tap the orb again in a minute to see it.' };
+const WAIT = { what: 'writing your next idea.' };
 
 test('queue: with every question answered and nothing ready, a tap shows a plain card at once, never a wait', async () => {
   const h = desk(workspace(), { answered: true });
@@ -1051,9 +1051,8 @@ test('queue: with every question answered and nothing ready, a tap shows a plain
   assert.deepEqual([tap.status, tap.kind, tap.job, tap.events], ['ready', 'wait', WAIT, []]);
   assert.equal(h.gen.calls.length, 1, 'the idea really is being written');
   await h.gen.releaseOne();
-  assert.equal(h.d.view().kind, 'wait', 'nothing pops on its own');
-  const next = h.d.next();
-  assert.deepEqual([next.kind, next.bet.title], ['bet', TITLES[0]]);
+  const v = h.d.view();
+  assert.deepEqual([v.kind, v.bet.title], ['bet', TITLES[0]], 'the idea takes the calm line\'s place on its own');
 });
 
 test('queue: a tap while a background bet is being made shows a card now, and starts no second call', async () => {
@@ -1063,7 +1062,8 @@ test('queue: a tap while a background bet is being made shows a card now, and st
   assert.deepEqual([tap.status, tap.kind], ['ready', 'wait']);
   assert.equal(h.gen.calls.length, 1);
   await h.gen.releaseOne();
-  assert.equal(h.d.next().bet.title, TITLES[0]);
+  assert.equal(h.d.view().bet.title, TITLES[0]);
+  assert.equal(h.gen.calls.length, 2, 'and the next one is being written');
 });
 
 test('queue: bets older than 6 hours are dropped, and a restart picks up the fresh ones', async () => {
@@ -1151,7 +1151,7 @@ test('questions: with none written yet, one generic question shows at once; once
   assert.deepEqual([q.status, q.kind], ['ready', 'question']);
   assert.deepEqual(q.question, { ask: 'what matters most for this project this month?', line: 'installs rose to 1,400 last week, up from 1,300.', choices: FALLBACK_CHOICES });
   assert.equal(h.d.answer({ choice: 'money' }).ack, 'got it: making money from it.');
-  assert.deepEqual([h.d.next().kind, h.d.view().job], ['wait', { what: 'the next idea is being written.', why: 'tap the orb again in a minute to see it.' }]);
+  assert.deepEqual([h.d.next().kind, h.d.view().job], ['wait', { what: 'writing your next idea.' }]);
   // no npm numbers in this workspace: the question stands alone, with no made-up fact
   const plain = desk(workspace(), { questions: false, bundle: null });
   assert.equal(plain.d.next().question.line, null);
@@ -1253,7 +1253,7 @@ test('owner words: no fixed page string, card template, or question uses our int
   said.push(v.question.ask, v.question.line, h.d.answer({ choice: 'using' }).ack);
   // the plain card, the yes and done templates, and every ack
   const w = h.d.next();
-  said.push(w.job.what, w.job.why);
+  said.push(w.job.what, ...(w.job.why ? [w.job.why] : []));
   const root = workspace();
   const file = path.join(root, 'gm-bets.jsonl');
   doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread');
@@ -2441,7 +2441,8 @@ test('page: the working line is static and lists who has each job; do it hands o
   assert.match(html, /var AFTER_MS = 1500;/);
   assert.match(html, /if \(r && r\.ok\) setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
   // job cards: two big sentences from the server; a yes button or a nice, never a send back
-  assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}box\.appendChild\(el\('p', 'why', j\.why\)\);/);
+  // job cards: the why shows when there is one; the calm line has none
+  assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}if \(j\.why\) box\.appendChild\(el\('p', 'why', j\.why\)\);/);
   assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
   assert.doesNotMatch(html, /sendback|send back/);
   assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\) && \(s\.status === 'ready'/);
@@ -2641,4 +2642,19 @@ test('merged changes: one per first-parent commit, merges named by their pull re
     assert.equal(bundle.sources.landed.fact, 'changes merged this week: 2');
     assert.deepEqual(bundle.sources.landed.subjects, ['add the phone page', 'direct fix on master']);
   });
+});
+
+test('queue: showing an idea starts the next at once; with none ready the card is one calm line, and the idea takes its place when written', async () => {
+  const h = await filled(workspace());
+  const first = h.d.next();
+  assert.equal(first.queue, 2);
+  assert.equal(h.gen.calls.length, 4, 'showing one starts writing the next');
+  assert.equal(h.gen.maxActive, 1, 'still one at a time');
+  // nothing ready and every question answered: one calm line, no tap the orb
+  const dry = desk(workspace(), { answered: true });
+  const tap = dry.d.next();
+  assert.deepEqual([tap.kind, tap.job], ['wait', { what: 'writing your next idea.' }]);
+  await dry.gen.releaseOne();
+  const v = dry.d.view();
+  assert.deepEqual([v.status, v.kind, v.bet && v.bet.title], ['ready', 'bet', TITLES[0]], 'the idea takes the calm line\'s place');
 });
