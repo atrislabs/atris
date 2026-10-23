@@ -1967,6 +1967,15 @@ function showWelcomeVisualization() {
     // Silent: the lineup is a hint, not a gate.
   }
 
+  // The four values settle close calls, so every new chat sees them, not
+  // only an agent that reads atris.md to the end (lib/values.js).
+  try {
+    const values = require('../lib/values').valuesForRoot(cwd);
+    values.forEach((value, index) => console.log(row(index ? '' : 'values', `${value.name.padEnd(14)}${value.gist}`)));
+  } catch {
+    // Advisory only; never blocks boot.
+  }
+
   const hasNoTasks = glance.active === 0
     && glance.review === 0
     && glance.reviewCertified === 0;
