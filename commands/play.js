@@ -6,6 +6,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { getSessionProfile, loadCredentials } = require('../utils/auth');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
+const { localDay } = require('../lib/local-day');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const AGENTXP_GLOBAL_SYNC_RULE = 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.';
@@ -298,7 +299,7 @@ function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = [
       assigned_to: player,
       delegate_via: 'agentxp_play',
       auto_seeded_by: 'atris play',
-      created_for_day: new Date().toISOString().slice(0, 10),
+      created_for_day: localDay(),
     },
   });
   taskDb.noteTask(db, {
@@ -487,4 +488,5 @@ async function playCommand(...args) {
 
 module.exports = {
   playCommand,
+  ensureStarterMission,
 };
