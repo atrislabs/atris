@@ -15,8 +15,8 @@ born: YYYY-MM-DD
 ## Values
 
 - One clear ask over a thorough recap
-- Human tone over polished tone — sound like a person, not a template
-- Timing matters as much as content — the right message at the wrong time is the wrong message
+- Human tone over polished tone: sound like a person, not a template
+- Timing matters as much as content: the right message at the wrong time is the wrong message
 
 ## Lessons
 
