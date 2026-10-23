@@ -11664,6 +11664,49 @@ async function memberStandupWalk(room, args = []) {
   return payload;
 }
 
+// Role, engine and board rating per standup member, read only when the
+// standup can draw its table (a terminal); --json never carries them.
+function standupTableData(standup, root = process.cwd()) {
+  if (!process.stdout.isTTY) return { bordered: false };
+  const season = require('../lib/gm-season');
+  const names = standup.map((s) => s.member);
+  let ratings = {};
+  try {
+    const played = season.loadSeason(require('../lib/task-db').workspaceRoot(path.resolve(root)));
+    ratings = season.memberRatings(played.outcomes || [], names);
+  } catch {}
+  return { bordered: true, profiles: season.rosterProfiles(root, names), ratings };
+}
+
+// The standup: in a wide terminal a divided table of member, role, ovr,
+// engine, status with each member's found and push lines under it; piped or
+// too narrow, the boxes it always had.
+function memberStandupLines(standup, { bordered = false, width = process.stdout.columns, profiles = {}, ratings = {} } = {}) {
+  if (bordered && standup.length) {
+    const { renderBorderedTable } = require('../lib/text-table');
+    const columns = ['member', 'role', 'ovr', 'engine', 'status'].map((header) => ({ header }));
+    const rows = standup.map((s) => {
+      const profile = profiles[s.member] || {};
+      const rating = ratings[s.member];
+      return [s.member, profile.role || '··', rating == null ? '··' : rating, profile.engine || '··', s.status];
+    });
+    const table = renderBorderedTable(columns, rows, { width: Number(width) - 2 });
+    if (table) {
+      return [
+        ...table.split('\n').map((line) => `  ${line}`),
+        ...standup.flatMap((s) => [`  ${s.member}`, `    found: ${s.latest_update}`, `    push:  ${s.next_push}`]),
+      ];
+    }
+  }
+  return standup.flatMap((s, idx) => [
+    `+-----------------------------------------------------------------------+`,
+    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
+    `|    Found:   ${s.latest_update}`,
+    `|    Push:    ${s.next_push}`,
+    `+-----------------------------------------------------------------------+`,
+  ]);
+}
+
 async function memberRoom(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member [day|standup|room] [--walk] [--limit N] [--decisions "y|idea|n"] [--json]');
@@ -11680,13 +11723,7 @@ async function memberRoom(...args) {
     ? `Your team runs on ${teamEngines.length > 1 ? `${teamEngines.slice(0, -1).join(', ')} and ${teamEngines[teamEngines.length - 1]}` : teamEngines[0]}.`
     : 'Your team picks an engine for each job.';
 
-  const standupRows = room.standup.flatMap((s, idx) => [
-    `+-----------------------------------------------------------------------+`,
-    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
-    `|    Found:   ${s.latest_update}`,
-    `|    Push:    ${s.next_push}`,
-    `+-----------------------------------------------------------------------+`,
-  ]);
+  const standupRows = memberStandupLines(room.standup, standupTableData(room.standup));
 
   const handoffRows = room.handoffs.length
     ? room.handoffs.map((h) => `  - ${h.from} -> ${h.to}: ${h.summary} (run: ${h.next_command})`)
@@ -12019,6 +12056,7 @@ async function memberCommand(subcommand, ...args) {
 
 module.exports = {
   logDateForScan,
+  memberStandupLines,
   memberRunDefaultWallSeconds,
   memberRunWantsReferee,
   proposalPromptForGoal,
