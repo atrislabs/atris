@@ -647,8 +647,8 @@ test('page: the weekly number card and the something-else answer are one tap eac
   assert.match(script, /if \(s\.kind === 'report'\) \{ drawReportCard\(s\); return; \}/);
   assert.match(script, /input\.type = 'number';/);
   assert.match(script, /api\('\/bet\/report', \{ value: input\.value \}\)/);
-  // something else becomes the box in its own spot, and the words are the answer
-  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ answer\(field, \{ choice: 'other', text: text \}\); \}\); return; \}/);
+  // something else becomes the box in its own spot, and the words are read first
+  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\); return; \}/);
   assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
 });
 
@@ -657,7 +657,8 @@ test('over http: the weekly number goes through /bet/report with the same checks
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
   let dirSeen = null;
   const h = await startHandler({
-    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }); },
+    // something else is read first; the reader takes paying schools as the answer
+    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) }); },
   });
   try {
     const q = await h.call('POST', '/bet/think', { body: {} });
@@ -1239,4 +1240,47 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
   }
   // sent: the words reached the desk first
   assert.equal(runs[0].said, 1, show);
+});
+
+// ---- the number question and the weekly number card read first ---------------------
+
+test('over http: "what" typed into something else on the number question is read first: explained, nothing saved; a real name is saved', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let reading = { ok: true, kind: 'unclear', reply: 'i am asking which number tells you this project is going well, like weekly installs or paying schools.' };
+  let dirSeen = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => reading, runCli: async () => ({ code: 0, stdout: '{}' }) }); },
+  });
+  const board = () => gmBet.readScoreboard(gmBet.scoreboardPath(dirSeen), root);
+  try {
+    const q = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(q.json.question.ask, 'what number tells you this is going well?');
+    // the owner was confused and typed "what" into something else, exactly as it happened
+    const what = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'what', card: q.json.id } });
+    assert.deepEqual([what.status, what.json.stay, what.json.reply], [200, true, reading.reply]);
+    assert.equal(board(), null, 'nothing was saved as the number');
+    // the same box with a real number in it is saved, as before
+    reading = { ok: true, kind: 'answer', reply: '' };
+    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools', card: q.json.id } });
+    assert.equal(named.json.ack, 'got it: paying schools.');
+    assert.equal(board().name, 'paying schools');
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: something else on the number question goes through say, with no second box; the weekly number card has say something and not now', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // something else is read first, like say something
+  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\); return; \}/);
+  assert.doesNotMatch(script, /answer\(field, \{ choice: 'other'/);
+  // a question with its own something else box has no or say something under it
+  assert.match(script, /if \(!q\.choices\.some\(function \(c\) \{ return c\.other; \}\)\) box\.appendChild\(sayBox\(\)\);/);
+  // the weekly number card: a quiet not now that moves on without saving, and say something
+  const report = script.slice(script.indexOf('function drawReportCard('), script.indexOf('function convo('));
+  assert.match(report, /el\('button', null, 'not now'\)/);
+  assert.match(report, /think\(false, 0\)/);
+  assert.match(report, /box\.appendChild\(sayBox\(\)\);/);
 });

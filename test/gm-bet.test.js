@@ -2805,3 +2805,34 @@ test('queue: showing an idea starts the next at once; with none ready the card i
   assert.deepEqual([v.status, v.kind, v.queue], ['ready', 'wait', 1]);
   assert.equal(dry.d.next().bet.title, TITLES[0]);
 });
+
+test('scoreboard: the weekly number card has a way out: a question is explained and saves nothing, not now passes it for today, and an instruction stops tracking it', async () => {
+  const root = workspace();
+  let reading = { ok: true, kind: 'answer', reply: '' };
+  const h = desk(root, { scoreboard: true, questions: false, answered: true, readSaid: async () => reading });
+  const board = () => gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root);
+  assert.equal(h.d.next().id, 'question:scoreboard');
+  assert.equal(h.d.answer({ choice: 'other', text: 'paying schools' }).ack, 'got it: paying schools.');
+  const weekly = h.d.next();
+  assert.equal(weekly.kind, 'report');
+  // what do you mean: explained on the same card, nothing saved
+  reading = { ok: true, kind: 'question', reply: 'once a week i ask how many paying schools you have, so every idea can aim at that number.' };
+  const asked = await h.d.say({ text: 'what do you mean?', card: weekly.id });
+  assert.deepEqual([asked.stay, asked.reply], [true, reading.reply]);
+  assert.deepEqual(board().reports, []);
+  // not now: moves on, saves nothing, and is not asked again today
+  assert.notEqual(h.d.next().kind, 'report');
+  assert.notEqual(h.d.next().kind, 'report');
+  assert.deepEqual(board().reports, []);
+  // the next day it is asked again
+  h.tick(24 * 60 * 60 * 1000);
+  const tomorrow = h.d.next();
+  assert.equal(tomorrow.kind, 'report');
+  // stop tracking this: the number is cleared, and the next card asks which number, if any
+  reading = { ok: true, kind: 'instruction', reply: '' };
+  const stopped = await h.d.say({ text: 'stop tracking this', card: tomorrow.id });
+  assert.equal(stopped.ok, true);
+  assert.match(stopped.ack, /paying schools/);
+  assert.equal(board(), null);
+  assert.equal(h.d.next().id, 'question:scoreboard');
+});
