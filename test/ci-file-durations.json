@@ -532,7 +532,6 @@
   "test/voice-card.test.js": 1091,
   "test/voice-command.test.js": 449,
   "test/voice-gate.test.js": 19,
-  "test/watch-alias.test.js": 148,
   "test/watch.test.js": 950,
   "test/wiki-metabolism-warning.test.js": 1728,
   "test/wiki-metabolism.test.js": 133,

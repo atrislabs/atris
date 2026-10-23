@@ -45,6 +45,7 @@ test('watch is a known command with proactive agent help', () => {
     assert.ok(knownCommands.includes('watch'));
     const res = runCli(['watch', '--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.doesNotMatch(res.stdout, /Unknown command/);
     assert.match(res.stdout, /atris watch "<sentence>"/);
     assert.match(res.stdout, /atris watch list/);
     assert.match(res.stdout, /atris watch stop/);
