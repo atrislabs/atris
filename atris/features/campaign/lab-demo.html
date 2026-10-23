@@ -50,7 +50,8 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:320/200;image-rendering
 .choice:hover,.choice:focus-visible{border-color:var(--paper-ink);outline:none}
 .choice:hover::before,.choice:focus-visible::before{opacity:1}
 .choice span{display:block;font-size:.78em;color:var(--paper-dim)}
-.next{position:absolute;right:16px;bottom:8px}
+.next{position:absolute;right:16px;bottom:8px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
 .text-form{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .text-form input{flex:1 1 220px;min-width:0;font:inherit;background:#fff;color:var(--paper-ink);border:2px solid var(--paper-ink);border-radius:4px;padding:4px 10px}
 .text-form button{background:var(--paper-ink);color:var(--paper);border:0;border-radius:4px;padding:4px 14px;font-family:var(--pix);font-size:10px}
@@ -66,14 +67,15 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:320/200;image-rendering
 .qrow[aria-pressed="true"]{border-color:var(--gold)}
 .row-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .st{font-family:var(--pix);font-size:7px;letter-spacing:.06em;padding:4px 5px;border-radius:3px;border:1px solid currentColor}
-.st.running{color:var(--orb)} .st.needs{color:var(--paper-ink);background:var(--wet);border-color:var(--wet)}
+.st.running{color:var(--orb)} .st.needs{color:var(--paper-ink);background:var(--wet);border-color:var(--wet);animation:pulse 1.2s ease-in-out infinite}
 .st.resting,.st.paused{color:var(--dim)} .st.queued,.st.building{color:var(--gold)} .st.answered{color:var(--paper-ink);background:var(--kept);border-color:var(--kept)} .st.empty{color:var(--gold)}
+@keyframes pulse{50%{opacity:.55}}
 .src-tag{font-family:var(--pix);font-size:6px;letter-spacing:.06em;color:var(--faint)}
 .src-tag.real{color:var(--kept)}
 .qtext{font-weight:400;font-size:20px;line-height:1.05;overflow-wrap:anywhere}
 .mini{display:flex;gap:3px;align-items:center}
 .mini i{width:16px;height:6px;border-radius:1px;background:#1c2142}
-.mini i.done{background:var(--kept)} .mini i.cur{background:var(--orb)} .mini i.cur.stop{animation:none;background:var(--gold)}
+.mini i.done{background:var(--kept)} .mini i.cur{background:var(--orb);animation:pulse 1s steps(2) infinite} .mini i.cur.stop{animation:none;background:var(--gold)}
 .row-meta{color:var(--dim);font-size:17px;margin-left:6px}
 
 .detail{border-top:1px dashed var(--line);padding-top:12px;display:grid;gap:12px;min-width:0}
@@ -93,7 +95,7 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:320/200;image-rendering
 .gauge i{display:block;height:100%;background:var(--gold)}
 .gauge-row{display:flex;justify-content:space-between;font-size:17px;color:var(--dim)}
 .passes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.passes li{border-left:2px solid var(--line);padding:2px 0 2px 10px;display:grid;gap:2px;font-size:18px;line-height:1.08;color:#c7cbef}
+.passes li{border-left:3px solid var(--line);padding:2px 0 2px 10px;display:grid;gap:2px;font-size:18px;line-height:1.08;color:#c7cbef}
 .passes li.now{border-color:var(--orb)} .passes li.done{border-color:var(--kept)} .passes li.next{border-color:var(--gold);border-left-style:dashed}
 .passes .ph{font-family:var(--pix);font-size:7px;letter-spacing:.06em;color:var(--dim)}
 .passes li.now .ph{color:var(--orb)}
@@ -101,7 +103,7 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:320/200;image-rendering
 .party span{font-family:var(--pix);font-size:6px;letter-spacing:.06em;border:1px solid var(--line);border-radius:3px;padding:5px 6px;color:var(--dim)}
 .party span.lead{color:var(--gold);border-color:var(--gold)}
 .flags{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:0}
-.flags dt{font-family:var(--pix);font-size:7px;letter-spacing:.08em;color:var(--dim);padding-top:5px}
+.flags dt{font-family:var(--pix);font-size:7px;letter-spacing:.08em;color:var(--dim);padding-top:5px;text-transform:uppercase}
 .flags dd{margin:0;font-size:19px;line-height:1.1;overflow-wrap:anywhere;border-radius:3px}
 .flags dd.empty{color:var(--faint)}
 .flags dd.set{animation:flash 1.2s ease-out}
@@ -541,7 +543,7 @@ const DRAFT_FLAGS = [['quest', 'Quest'], ['party', 'Leader'], ['bet', 'Bet'], ['
 function detailForDraft(d) {
   return [
     h('p', { class: 'eyebrow' }, 'NEW QUEST · YOUR ANSWERS BECOME FLAGS'),
-    h('dl', { class: 'flags' }, DRAFT_FLAGS.map(([k, l]) => [h('dt', {}, l), h('dd', { class: d[k] ? (st.flash === k ? 'set' : '') : 'empty' }, d[k] || '.')])),
+    h('dl', { class: 'flags' }, DRAFT_FLAGS.map(([k, l]) => [h('dt', {}, l), h('dd', { class: d[k] ? (st.flash === k ? 'set' : '') : 'empty' }, d[k] || '—')])),
   ];
 }
 function renderLog() {
