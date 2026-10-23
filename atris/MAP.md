@@ -97,7 +97,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine dispatch without origin | `lib/fleet.js`, `test/engine-dispatch-no-origin.test.js` | pin local HEAD when origin is absent, verify and stop ready with a local merge command; origin and sealed review paths retain their gates |
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
-| wish intake | `commands/wish.js` | wish to build slices |
+| wish intake | `commands/wish.js`, `lib/wish-audit.js`, `test/wish-teammates.test.js` | wish to build slices; teammate names use the team roster reader before asking |
 | worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js`, `test/worktree-ship-queued-merge.test.js`, `test/worktree-push-hooks.test.js` | Isolated checkouts and saved changes; queued merges keep their source branch until GitHub confirms completion. Push allows required local hooks five minutes and preserves their failure output. |
 | brain compile command | `commands/brain.js` | brain artifacts compiled here |
 | activate command | `commands/activate.js` | load context |
