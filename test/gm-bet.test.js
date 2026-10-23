@@ -1685,3 +1685,36 @@ test('yes card for a held handed-off job that nothing could be traced to', async
   assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-orphan']);
   assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-orphan', seal, tool: 'gh', args: ['pr', 'merge', '5'] }).consume, [1], 'the yes lets that one command run once');
 });
+
+// Codex review round 4 on #1483: mission #266 ("do it" on the phone) ran in
+// the shared main folder, which sat on an old branch, so its check could not
+// see the merged work. A "do it" mission runs in its own worktree, where the
+// work and its check live, and the desk still sees it there.
+test('do it starts the mission in its own worktree', async () => {
+  const root = workspace();
+  const h = jobDesk(root, { 'm-new': { id: 'm-new', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  h.d.next();
+  await h.d.doIt();
+  const start = h.cli.find(a => a[1] === 'start');
+  assert.ok(start.includes('--worktree'), start.join(' '));
+});
+
+test('the desk reads missions that live in a worktree', () => {
+  const { spawnSync } = require('child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-desk-worktree-'));
+  try {
+    const git = (args, cwd = root) => assert.equal(spawnSync('git', args, { cwd, encoding: 'utf8' }).status, 0, args.join(' '));
+    git(['init', '-q', '-b', 'master']);
+    git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'base']);
+    const wt = path.join(root, '.agent-worktrees', 'builder-try-page');
+    git(['worktree', 'add', '-q', '-b', 'builder-try-page', wt]);
+    fs.mkdirSync(path.join(wt, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(wt, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({ schema: 'atris.mission.v1', id: 'mission-2026-10-22-try-page-aaaa0001', objective: 'launch try page', owner: 'builder', status: 'running', worktree_root: wt, created_at: new Date().toISOString() })}\n`);
+    const missions = gmBet.readDeskMissions(root);
+    assert.equal(missions.get('mission-2026-10-22-try-page-aaaa0001').owner, 'builder');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

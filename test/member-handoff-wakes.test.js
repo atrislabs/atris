@@ -422,11 +422,17 @@ async function assertDenyAll(w, wake) {
     ['a handed-off job wants to gh pr merge 5 --squash; nothing it belongs to could be found']);
 }
 
-test('two open locked jobs and no name: the woken run is locked to everything', async (t) => {
+test('two open locked jobs and no name: the woken run holds the union of both', async (t) => {
   const w = lockedWorld(t);
   w.lockMission('mission-2026-10-22-one-cccc3333', 'builder', 'ready');
   w.lockMission('mission-2026-10-22-two-dddd4444', 'builder', 'paused');
-  await assertDenyAll(w, await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']));
+  const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(wake.yes_lock, 'merged');
+  assert.deepEqual(wake.yes_lock_parents.sort(), ['mission-2026-10-22-one-cccc3333', 'mission-2026-10-22-two-dddd4444']);
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77');
+  assert.deepEqual(require('../lib/yes-lock').orphanYesCards(w.stateDir).map((c) => c.ask),
+    ['a handed-off job wants to gh pr merge 5 --squash; it falls under more than one yes-lock']);
 });
 
 test('a handoff from inside a guard whose lock cannot be read runs locked to everything', async (t) => {
@@ -580,4 +586,61 @@ test('handoff record writes wait for the shared lock', async (t) => {
   assert.equal(rows.length, 2);
   assert.equal(rows[0].wake.status, 'started');
   assert.equal(rows[1].summary, 'second step');
+});
+
+// Codex review round 4 on #1483: a woken run's lock is the strictest
+// combination of every lock that could apply. The caller's own lock must not
+// stop the look at the jobs the step names.
+function guardOnPath(t, w, record) {
+  const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-git-'));
+  t.after(() => fs.rmSync(guardDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(guardDir, 'yes-lock.json'), JSON.stringify(record));
+  return `${guardDir}${path.delimiter}${w.ctx.bin}${path.delimiter}${process.env.PATH}`;
+}
+
+async function handOffWithPath(w, args, PATH) {
+  const res = runCli(w.ctx, ['member', 'handoff', ...args, '--json'], { ATRIS_HANDOFF_WAKE: '1', PATH });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const wake = JSON.parse(res.stdout).handoff.wake;
+  if (wake.pid) { w.ctx.pids.push(wake.pid); await waitGone(wake.pid); }
+  return wake;
+}
+
+test('an unlocked caller that names a locked bet still hands off the bet lock', async (t) => {
+  const w = lockedWorld(t);
+  w.lockMission('mission-2026-10-22-try-page-bbbb7777', 'builder', 'running', 'bet-2026-10-22-6f292584');
+  const PATH = guardOnPath(t, w, { mission_id: 'mission-2026-10-22-caller-cccc0000', locked: false, seal: [] });
+  const wake = await handOffWithPath(w, ['linguist', 'validator', '[bet-2026-10-22-6f292584] CHILDSTEP try it'], PATH);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77', 'the merge is held');
+  assert.equal(wake.yes_lock_from, 'mission-2026-10-22-try-page-bbbb7777');
+});
+
+test('a caller locked on posting that names a bet locked on merging holds both', async (t) => {
+  const w = lockedWorld(t);
+  w.lockMission('mission-2026-10-22-try-page-bbbb8888', 'builder', 'running', 'bet-2026-10-22-6f292584');
+  const PATH = guardOnPath(t, w, { mission_id: 'mission-2026-10-22-caller-dddd0000', locked: true, seal: [{ step: 2, text: 'post the page', categories: ['post'] }] });
+  const wake = await handOffWithPath(w, ['linguist', 'validator', '[bet-2026-10-22-6f292584] CHILDSTEP try it'], PATH);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(wake.yes_lock, 'merged');
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77', 'merging stays held under the union');
+  assert.equal(fs.existsSync(w.ghRan), false);
+  const yesLock = require('../lib/yes-lock');
+  assert.deepEqual(yesLock.askedYesLocks(w.stateDir, wake.mission_id)[0].categories, ['merge', 'post']);
+});
+
+// Codex review round 4 on #1483: a step that is a mission id made mission
+// start recover that mission, unlocked, before any lock was compared.
+test('a locked handoff whose step is an unlocked mission id never resumes it unlocked', async (t) => {
+  const w = lockedWorld(t);
+  w.lockMission('mission-2026-10-22-try-page-eeee1111', 'builder', 'running');
+  const file = path.join(w.ctx.root, '.atris', 'state', 'missions.jsonl');
+  const now = new Date().toISOString();
+  fs.appendFileSync(file, `${JSON.stringify({ schema: 'atris.mission.v1', id: 'mission-2026-10-22-childstep-ffff2222',
+    objective: 'CHILDSTEP try it', owner: 'validator', status: 'ready', runner: 'claude', verifier: '', created_at: now, updated_at: now })}\n`);
+  const wake = await handOffAndWait(w, ['builder', 'validator', 'mission-2026-10-22-childstep-ffff2222']);
+  assert.equal(fs.existsSync(w.ghRan), false, 'nothing ran unlocked');
+  assert.notEqual(wake.mission_id, 'mission-2026-10-22-childstep-ffff2222');
+  assert.equal(wake.status, 'not_started', JSON.stringify(wake));
+  assert.match(wake.text, /validator did not start: .*would run without the yes-lock/);
 });

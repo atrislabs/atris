@@ -11379,7 +11379,9 @@ function wakeOnHandoff(handoff, root, args) {
   // locked: bound to the parent's lock; deny_all: its own lock on everything
   const yesLock = resolved.kind === 'locked'
     ? resolved.lock
-    : resolved.kind === 'deny_all' ? { missionId: null, seal: require('../lib/yes-lock').orphanSeal() } : null;
+    : resolved.kind === 'merged'
+      ? { missionId: null, seal: resolved.seal }
+      : resolved.kind === 'deny_all' ? { missionId: null, seal: require('../lib/yes-lock').orphanSeal() } : null;
   const outcome = wakeHandoffReceiver(handoff, {
     listMembers: () => memberUpTeam(root),
     awake: (name) => {
@@ -11391,6 +11393,7 @@ function wakeOnHandoff(handoff, root, args) {
   });
   if (outcome.status !== 'started') return outcome;
   if (resolved.kind === 'locked') return { ...outcome, yes_lock: 'parent', yes_lock_from: yesLock.missionId };
+  if (resolved.kind === 'merged') return { ...outcome, yes_lock: 'merged', yes_lock_parents: resolved.parents };
   if (resolved.kind === 'deny_all') {
     return { ...outcome, yes_lock: 'deny_all', yes_lock_why: resolved.why, text: `${outcome.text}; it is locked from publishing, merging, posting and sending because ${resolved.why}` };
   }
@@ -11400,49 +11403,50 @@ function wakeOnHandoff(handoff, root, args) {
 // A mission is finished when nothing it holds can be asked for again.
 const FINISHED_MISSION_STATUSES = new Set(['complete', 'completed', 'stopped', 'archived', 'superseded', 'closed', 'cancelled', 'canceled', 'abandoned', 'done']);
 
-// The yes-lock a handoff passes on. Every member started by a handoff runs
-// locked unless its parent is proven unlocked: the parent's mission record is
-// readable and was started without --yes-lock.
-//   1. the mission guard this command runs under (a handoff from inside a
-//      mission tick) names its mission and whether it is locked;
-//   2. else the jobs the step names: a mission id, or a [bet-...] tag found
-//      through its lock record (any status);
-//   3. else the jobs of the member handing off that are not finished
-//      (running, ready, paused, and the rest).
-// One lock: bind to it, so the owner's yes on the parent opens it. No lock
-// and every parent found proven unlocked: no lock. Anything else (nothing
-// found, a record that cannot be read, a name not on file, more than one
-// lock): the deny-all seal, so every held command waits for the owner.
-// Returns { kind: 'locked', lock } | { kind: 'unlocked', parents } |
-// { kind: 'deny_all', why }.
+// The yes-lock a handoff passes on: the strictest combination of every lock
+// that could apply. Every member started by a handoff runs locked unless all
+// of its possible parents are proven unlocked (their mission records are
+// readable and were started without --yes-lock). Every source is looked at,
+// always:
+//   - the mission guard this command runs under (a handoff from inside a
+//     mission tick) names its mission and whether it is locked;
+//   - the jobs the step names: a mission id, or a [bet-...] tag found through
+//     its lock record (any status);
+//   - with no guard, the jobs of the member handing off that are not finished
+//     (running, ready, paused, and the rest).
+// Any source that cannot be resolved (a guard record or lock record that
+// cannot be read, a name not on file, no job found at all) means the
+// deny-all seal. One lock: bind to it, so the owner's yes on the parent
+// opens it. More than one: their union on the woken run's own record.
+// Returns { kind: 'locked', lock } | { kind: 'merged', seal } |
+// { kind: 'unlocked', parents } | { kind: 'deny_all', why }.
 function handoffYesLock(handoff, root) {
-  const denyAll = (why) => ({ kind: 'deny_all', why });
-  const guard = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
-  if (guard && guard.unknown) return denyAll('the job this handoff came from has a guard whose record could not be read');
-  if (guard && guard.unlocked) return { kind: 'unlocked', parents: [guard.missionId] };
-  if (guard) return { kind: 'locked', lock: { missionId: guard.missionId, seal: guard.seal } };
+  const yesLock = require('../lib/yes-lock');
   const stateDir = path.join(require('../lib/state-home').atrisHome(), 'state');
   const missions = Array.from(memberRunMissionMap(root).values()).filter((m) => m && m.id);
   const byId = new Map(missions.map((m) => [m.id, m]));
   const sealOf = (mission) => (Array.isArray(mission?.yes_locks?.steps) ? mission.yes_locks.steps : []);
   const locks = new Map();
   const unlocked = new Set();
-  let unknown = '';
+  const unknown = [];
+  const addLock = (id, seal) => { if (id && !locks.has(id)) locks.set(id, seal); };
   const addMission = (mission) => {
-    if (sealOf(mission).length) {
-      const id = mission.yes_lock_from || mission.id;
-      if (!locks.has(id)) locks.set(id, sealOf(mission));
-    } else {
-      unlocked.add(mission.id);
-    }
+    if (sealOf(mission).length) addLock(mission.yes_lock_from || mission.id, sealOf(mission));
+    else unlocked.add(mission.id);
   };
+
+  const guard = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
+  if (guard && guard.unknown) unknown.push('the job this handoff came from has a guard whose record could not be read');
+  else if (guard && guard.unlocked) unlocked.add(guard.missionId);
+  else if (guard) addLock(guard.missionId, guard.seal);
+
   const summary = String(handoff.summary || '');
   const namedIds = Array.from(new Set(summary.match(/mission-\d{4}-\d{2}-\d{2}-[A-Za-z0-9-]+/g) || []));
   const betIds = Array.from(new Set(Array.from(summary.matchAll(/\[(bet-[A-Za-z0-9._-]+)\]/g)).map((m) => m[1])));
   for (const id of namedIds) {
     const mission = byId.get(id);
     if (mission) addMission(mission);
-    else unknown = unknown || `the step names ${id}, which is not on file`;
+    else unknown.push(`the step names ${id}, which is not on file`);
   }
   if (betIds.length) {
     let files = [];
@@ -11456,33 +11460,39 @@ function handoffYesLock(handoff, root) {
       seen.add(data.bet_id);
       const rows = Array.isArray(data.locks) ? data.locks : [];
       const mission = byId.get(data.mission_id);
-      if (rows.length) {
-        if (mission && sealOf(mission).length) addMission(mission);
-        else if (!locks.has(data.mission_id)) locks.set(data.mission_id, rows.map((l) => ({ step: l.step, text: l.text, categories: l.categories })));
-      } else if (mission) {
-        addMission(mission);
-      } else {
-        unknown = unknown || `the job for ${data.bet_id} is not on file`;
+      if (mission) addMission(mission);
+      if (rows.length && !(mission && sealOf(mission).length)) {
+        addLock(data.mission_id, rows.map((l) => ({ step: l.step, text: l.text, categories: l.categories })));
+      } else if (!rows.length && !mission) {
+        unknown.push(`the job for ${data.bet_id} is not on file`);
       }
     }
     for (const bet of betIds) {
-      if (!seen.has(bet)) unknown = unknown || (unreadable ? `the lock record for ${bet} could not be read` : `nothing on file belongs to ${bet}`);
+      if (!seen.has(bet)) unknown.push(unreadable ? `the lock record for ${bet} could not be read` : `nothing on file belongs to ${bet}`);
     }
   }
-  if (!namedIds.length && !betIds.length) {
+  if (!guard) {
+    let open = 0;
     for (const mission of memberOwnedMissions(handoff.from, byId)) {
       if (FINISHED_MISSION_STATUSES.has(String(mission.status || '').toLowerCase())) continue;
+      open += 1;
       addMission(mission);
     }
-    if (!locks.size && !unlocked.size) unknown = `${handoff.from} has no open job on file`;
+    if (!open && !namedIds.length && !betIds.length) unknown.push(`${handoff.from} has no open job on file`);
   }
-  if (unknown) return denyAll(unknown);
-  if (locks.size > 1) return denyAll(`${handoff.from} has more than one job under a yes-lock open (${Array.from(locks.keys()).join(', ')})`);
+
+  if (unknown.length) return { kind: 'deny_all', why: unknown[0] };
+  if (!locks.size) return { kind: 'unlocked', parents: Array.from(unlocked) };
   if (locks.size === 1) {
     const [[missionId, seal]] = Array.from(locks.entries());
     return { kind: 'locked', lock: { missionId, seal } };
   }
-  return { kind: 'unlocked', parents: Array.from(unlocked) };
+  const union = yesLock.unionSeals(Array.from(locks.values()));
+  if (yesLock.ORPHAN_SEAL_TEXT === (union[0] && union[0].text)) return { kind: 'deny_all', why: 'one of the jobs it belongs to is locked to everything' };
+  // Bound to the woken run's own record, so it is always the merged step
+  // (even when the seals match), which the phone shows as a yes card.
+  const categories = [...new Set(union.flatMap((step) => step.categories || []))].sort();
+  return { kind: 'merged', seal: [{ step: 1, text: yesLock.MERGED_SEAL_TEXT, categories }], parents: Array.from(locks.keys()) };
 }
 
 function memberHandoff(from, to, ...args) {

@@ -4571,6 +4571,16 @@ function normalizedObjective(text) {
   return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// True when `existing` runs under the lock `wanted` carries: the start
+// carries none, or the same seal bound to the same parent.
+function lockCovered(existing, wanted) {
+  const want = (wanted && wanted.yes_locks && wanted.yes_locks.steps) || [];
+  if (!want.length) return true;
+  const have = (existing && existing.yes_locks && existing.yes_locks.steps) || [];
+  return JSON.stringify(have) === JSON.stringify(want)
+    && ((existing && existing.yes_lock_from) || null) === ((wanted && wanted.yes_lock_from) || null);
+}
+
 function findActiveTwinMission(objective, owner, root = process.cwd()) {
   const wantObjective = normalizedObjective(objective);
   const wantOwner = String(owner || '').trim().toLowerCase();
@@ -4606,6 +4616,11 @@ function startMission(args, options = {}) {
   const idLikeObjective = String(mission.objective || '').trim();
   if (/^mission-\d{4}-\d{2}-\d{2}-/.test(idLikeObjective)) {
     const existing = resolveMission(idLikeObjective);
+    if (existing && !lockCovered(existing, mission)) {
+      // A start carrying a yes-lock never resumes a job under a weaker lock:
+      // it would run without it. (Codex review round 4 on #1483.)
+      exitMissionError(`${existing.id} is not under the yes-lock this start carries, so resuming it would run without the yes-lock; start a new job instead`, 2, asJson);
+    }
     if (existing) {
       printJsonOrText(
         { ok: true, action: 'mission_recovered', recovered: true, mission: existing, note: 'objective looked like a mission id; recovered the existing mission instead of creating a new one' },
@@ -4619,13 +4634,21 @@ function startMission(args, options = {}) {
     }
     exitMissingMission(idLikeObjective, 1, asJson);
   }
-  // A start that carries a yes-lock never reuses a twin under a different
-  // lock (or none): the reused job would run unlocked. It gets a fresh job
-  // with the lock instead. (Codex review round 3 on #1483.)
+  // A start that carries a yes-lock never reuses a twin under a weaker lock
+  // (or none): the reused job would run without it. It gets a fresh job
+  // under the union of both locks instead. (Codex review rounds 3 and 4.)
   const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
-  const sameLock = (twin) => JSON.stringify((twin.yes_locks && twin.yes_locks.steps) || []) === JSON.stringify((mission.yes_locks && mission.yes_locks.steps) || [])
-    && (twin.yes_lock_from || null) === (mission.yes_lock_from || null);
-  if (twinCandidate && (sameLock(twinCandidate) || !(mission.yes_locks && mission.yes_locks.steps && mission.yes_locks.steps.length))) {
+  if (twinCandidate && !lockCovered(twinCandidate, mission)) {
+    const twinSeal = (twinCandidate.yes_locks && twinCandidate.yes_locks.steps) || [];
+    if (twinSeal.length) {
+      const union = require('../lib/yes-lock').unionSeals([twinSeal, mission.yes_locks.steps]);
+      if (JSON.stringify(union) !== JSON.stringify(mission.yes_locks.steps)) {
+        mission.yes_locks = { ...mission.yes_locks, steps: union };
+        delete mission.yes_lock_from;
+      }
+    }
+  }
+  if (twinCandidate && lockCovered(twinCandidate, mission)) {
     const twin = twinCandidate;
     const requestedDestination = mission.drive?.destination || '';
     if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
@@ -6799,89 +6822,6 @@ function runVerifier(command, root = process.cwd()) {
     stdout: String(result.stdout || '').slice(-4000),
     stderr: String(result.stderr || '').slice(-4000),
   };
-}
-
-// The landings a mission recorded with `atris mission landed`: an
-// append-only sidecar, so a running driver saving the mission record never
-// drops one. Newest first.
-function missionLandingsPath(missionId, root = process.cwd()) {
-  return path.join(root, '.atris', 'state', 'mission-landings', `${String(missionId).replace(/[^A-Za-z0-9._-]/g, '_')}.jsonl`);
-}
-
-function readMissionLandings(missionId, root = process.cwd()) {
-  if (!missionId) return [];
-  try {
-    return fs.readFileSync(missionLandingsPath(missionId, root), 'utf8').split('\n').filter(Boolean)
-      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
-      .filter((row) => row && (Number.isInteger(row.pr) || /^[0-9a-f]{7,64}$/.test(String(row.sha || ''))))
-      .reverse();
-  } catch {
-    return [];
-  }
-}
-
-// The mission's check, run where the work is. The local result stands
-// unless the mission recorded a landing (a PR number or commit, with
-// `atris mission landed`) and that landing is proven in the freshly fetched
-// main line: the PR is merged and its merge commit is in it, or the commit
-// is. Then the check runs again in a throwaway copy of that fresh main line,
-// and that run decides. Live miss 2026-10-22 (mission #266): the builder
-// merged PR #1479 from its own branch while the main folder sat on an old
-// branch without the test file. An earlier guess ("nothing changed here, so
-// try master") was replaced by this proof after review: it let an unmerged
-// broken commit pass on green master.
-function runMissionVerifier(command, { mission = null, cwd = process.cwd() } = {}) {
-  const here = runVerifier(command, cwd);
-  if (!here || here.passed) return here;
-  if (mission?.worktree_root || mission?.worktree?.path) return here;
-  const landings = readMissionLandings(mission?.id, cwd);
-  if (!landings.length) return here;
-  let merged = null;
-  try {
-    const { runVerifyAtProvenLanding } = require('../lib/job-code-verify');
-    merged = runVerifyAtProvenLanding(command, { root: cwd, landings, runVerify: runVerifier });
-  } catch {
-    merged = null;
-  }
-  if (!merged || typeof merged.passed !== 'boolean') return here;
-  const proof = merged.landing_proof || {};
-  const what = proof.pr ? `PR #${proof.pr}` : `commit ${String(proof.sha || '').slice(0, 10)}`;
-  return {
-    ...merged,
-    ran_in: `a fresh copy of ${merged.code_source}, which holds the mission's landing (${what})`,
-    shared_checkout: {
-      cwd,
-      passed: here.passed,
-      status: here.status,
-      stderr: String(here.stderr || '').slice(-500),
-    },
-  };
-}
-
-// `atris mission landed <id> --pr <n> | --sha <commit>`: the mission says
-// where its work landed. Written to the sidecar, never the mission record,
-// so it works while the mission's own driver holds the record.
-function setMissionLanded(args) {
-  const asJson = wantsJson(args);
-  const usage = 'Usage: atris mission landed <id> --pr <number> | --sha <commit> [--json]';
-  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log(usage);
-    console.log('Records where the mission\'s work landed, so its check can run on the merged main line once that landing is proven merged.');
-    return;
-  }
-  const ref = String(stripKnownFlags(args, ['--pr', '--sha'], ['--json'])[0] || '').trim();
-  const prText = String(readFlag(args, '--pr', '') || '').replace(/^#/, '').trim();
-  const sha = String(readFlag(args, '--sha', '') || '').trim().toLowerCase();
-  const pr = /^\d+$/.test(prText) ? Number(prText) : null;
-  if (!ref || (!pr && !/^[0-9a-f]{7,64}$/.test(sha))) exitMissionError(usage, 1, asJson);
-  const mission = resolveMission(ref);
-  if (!mission) exitMissingMission(ref, 1, asJson);
-  const landing = { mission_id: mission.id, pr, sha: sha || null, at: stampIso(), by: process.env.ATRIS_AGENT_ID || mission.owner || null };
-  const file = missionLandingsPath(mission.id, process.cwd());
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, `${JSON.stringify(landing)}\n`, 'utf8');
-  printJsonOrText({ ok: true, action: 'mission_landed', mission_id: mission.id, landing },
-    [`landing recorded for ${mission.id}: ${pr ? `PR #${pr}` : `commit ${sha.slice(0, 10)}`}`], asJson);
 }
 
 const CHECK_FEEDBACK_LIMIT = 1500;
@@ -9343,7 +9283,6 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
     `- ${memberIdentityLine(mission.owner)} Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
-    `- If this work lands on the main line from another branch or PR, record it right after: \`atris mission landed ${mission.id} --pr <number>\` (or \`--sha <commit>\`), so the check can run on the merged main line.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
@@ -11244,7 +11183,7 @@ async function verifyMissionRunTickPhase(context) {
   let verifierResult = null;
   if (result.status === 'ran' && verifyEach) {
     if (currentTick.frozen.verifier) {
-      verifierResult = runMissionVerifier(currentTick.frozen.verifier, { mission: currentTick.mission, cwd });
+      verifierResult = runVerifier(currentTick.frozen.verifier);
     }
     const shouldRunReferee = !currentTick.tickSkipWorker
       && (!verifierResult || verifierResult.passed)
@@ -11573,7 +11512,7 @@ function tickMission(args) {
       const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
       if (protectedLaneGuard.allowed && verify && verifierCommand) {
-        verifierResult = runMissionVerifier(verifierCommand, { mission, cwd });
+        verifierResult = runVerifier(verifierCommand);
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
 
@@ -12383,7 +12322,6 @@ atris mission - durable goal + loop + owner + proof state
                        [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--json]
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission set-verifier <id> "<cmd>" [--json]
-  atris mission landed <id> --pr <number> | --sha <commit> [--json]
   atris mission route set <id> [--file <route.json>|--file -] [--json]   Validate and save a falsifiable route from a JSON file or stdin
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
@@ -12882,8 +12820,6 @@ function missionCommand(args) {
       return setMissionRunner(rest);
     case 'set-verifier':
       return setMissionVerifier(rest);
-    case 'landed':
-      return setMissionLanded(rest);
     case 'route':
       return routeMission(rest);
     case 'run':
