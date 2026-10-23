@@ -1,0 +1,16 @@
+DROP test/align-cmd--mut-L183-5.test.js: Enforces an exact millisecond timeout boundary; one extra poll at that boundary is harmless in practice.
+DROP test/apps-cmd--mut-L196-7.test.js: Pins the entire output, including column padding and whitespace.
+DROP test/browse-cmd--mut-L70-7.test.js: Pins the entire output, including blank lines, indentation, and help wording.
+DROP test/live-cmd--mut-L126-9.test.js: Duplicates ordinary-file inclusion coverage in test/commands-2.test.js.
+DROP test/orb-cmd--mut-L20-7.test.js: Pins an exact three-line output suffix, including prompt wording unrelated to label preservation.
+DROP test/report-cmd--mut-L195-2.test.js: Enforces inclusion at one exact millisecond of a rolling weekly cutoff, with no demonstrated practical reliance.
+DROP test/soul-cmd--mut-L131-7.test.js: Duplicates persona preview coverage in test/soul-cmd--mut-L131-6.test.js.
+DROP test/stream-cmd--mut-L151-7.test.js: Runs real git config reads without isolating HOME or global git configuration.
+DROP test/align-cmd--mut-L183-5.test.js: Enforces an exact millisecond timeout boundary; one extra poll at that boundary is harmless in practice.
+DROP test/apps-cmd--mut-L196-7.test.js: Pins the entire output, including column padding and whitespace.
+DROP test/browse-cmd--mut-L70-7.test.js: Pins the entire output, including blank lines, indentation, and help wording.
+DROP test/live-cmd--mut-L126-9.test.js: Duplicates ordinary-file inclusion coverage in test/commands-2.test.js.
+DROP test/orb-cmd--mut-L20-7.test.js: Pins an exact three-line output suffix, including prompt wording unrelated to label preservation.
+DROP test/report-cmd--mut-L195-2.test.js: Enforces inclusion at one exact millisecond of a rolling weekly cutoff, with no demonstrated practical reliance.
+DROP test/soul-cmd--mut-L131-7.test.js: Duplicates persona preview coverage in test/soul-cmd--mut-L131-6.test.js.
+DROP test/stream-cmd--mut-L151-7.test.js: Runs real git config reads without isolating HOME or global git configuration.

@@ -298,3 +298,109 @@
 {"id":"mut-commands-radar-L164-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":1,"round":3,"secs":143,"ok":true,"commit":"9d05ed9c48e59854875b48ef44adecb9d7073e5a"}
 {"id":"mut-commands-autopilot-front-L146-9","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":3,"secs":265,"ok":true,"commit":"f02e0b56070b89215736046fb861934de6277895"}
 {"id":"mut-commands-watch-L246-7","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":1,"round":3,"secs":204,"ok":true,"commit":"812006e4b765ca37baec8be7b910acda295778cf"}
+{"id":"mut-commands-activate-L130-4","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":25,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-buy-L153-7","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-autopilot-front-L176-6","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":23,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-ask-L31-0","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":25,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-avail-L311-5","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":25,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-bench-L160-6","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":25,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-brief-L197-7","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":24,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-caretaker-L112-6","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-chat-scan-L11-7","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-clarity-L21-5","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-cloud-L174-7","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-codex-goal-L161-0","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-computer-L1444-7","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-business-sync-L124-1","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":27,"ok":true,"commit":"e396b79002b8cd797ca814059247f7650e3e7b06"}
+{"id":"mut-commands-aeo-L189-1","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":46,"ok":true,"commit":"db27b1e8afa9926079ebb5213d1078bafdc31da3"}
+{"id":"mut-commands-balance-L41-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":34,"ok":true,"commit":"0b1bc7365ae000ef2b708a0ae726a01e001388ad"}
+{"id":"mut-commands-analytics-L55-6","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":40,"ok":true,"commit":"4fd022adf77f52c1abce4e97c2c6d24019ab284b"}
+{"id":"mut-commands-app-L145-0","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":39,"ok":true,"commit":"987cb87e0ac07df1f9f0ff8ebe8b960153860e4a"}
+{"id":"mut-commands-console-L249-0","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":12,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-agents-L90-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":48,"ok":true,"commit":"7aa757726f32a5cd8e4199580f153201a05aae3c"}
+{"id":"mut-commands-context-sync-L109-4","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":13,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-decide-L23-9","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":13,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-doc-health-L64-10","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":13,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-doctor-L45-7","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":13,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-done-L116-0","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":14,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-experiments-L137-6","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":12,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-feedback-L149-2","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-fleet-report-L103-6","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-fork-L56-7","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-fleet-L221-5","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-founder-L159-2","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-game-L119-3","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-gm-L1005-3","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-goal-L182-7","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-brainstorm-L73-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":65,"ok":true,"commit":"7b93c1efb281295472bfd1a1bf5698d53fb1cae8"}
+{"id":"mut-commands-idea-L128-7","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-human-missions-L227-4","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-harvest-L32-3","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-api-key-L30-5","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":78,"ok":true,"commit":"474141444d631279e692322c23ae61e0f0f7d62c"}
+{"id":"mut-commands-improve-L1113-6","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":12,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-init-L211-1","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":12,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-engine-watch-L14-8","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":35,"ok":true,"commit":"f3e2a20d2a25072b7dbf3355bf33a3a8eb88fec9"}
+{"id":"mut-commands-launchpad-L110-7","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-install-L12-0","lane":"haiku3","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-dream-L219-4","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":40,"ok":true,"commit":"ccfdfdf8cea3a9dfc58904cdcd7f0ddc65a95e47"}
+{"id":"mut-commands-lesson-L277-7","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-lifecycle-L106-1","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":12,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-business-L1563-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":80,"ok":true,"commit":"72a797d954ebe53867744981a14d1584b2fa6d7e"}
+{"id":"mut-commands-log-L106-1","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-log-sync-L121-6","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-launchpad-L110-7","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-errors-L110-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":50,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-meet-L64-4","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-drive-L118-6","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":62,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-moves-L92-7","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":8,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-now-L172-8","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":9,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-feed-L102-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":58,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-drill-L184-6","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":67,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-browse-L70-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":1,"round":4,"secs":101,"ok":true,"commit":"d260f51169d25b423fd5a0410df9fef84a82f5e2"}
+{"id":"mut-commands-orb-L20-7","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-agent-client-L152-0","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":4,"secs":120,"ok":true,"commit":"4b43ae7b28a66b095ed512978b1abd3109c2672c"}
+{"id":"mut-commands-interview-L179-7","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":48,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-pay-L55-7","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":22,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-playbook-L244-7","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":23,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-mail-L81-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":42,"ok":true,"commit":"fec82b38f53ba5acdf100caaa69b244b2e6d3175"}
+{"id":"mut-commands-lesson-L277-7","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":41,"ok":true,"commit":"baedd94727deadd5d08a8393e17c8d285e8d8bd8"}
+{"id":"mut-commands-pulse-L107-7","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-radar-L417-1","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-recover-L160-7","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":8,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-release-L188-6","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":7,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-agent-spawn-L125-7","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":4,"secs":152,"ok":true,"commit":"cee22571700666534fe757b61919ea90b9de005e"}
+{"id":"mut-commands-install-L12-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":63,"ok":true,"commit":"241a1fc597d12d447503a4273061307c39241247"}
+{"id":"mut-commands-report-L195-2","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","version":1,"round":4,"secs":11,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-router-L121-7","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","version":1,"round":4,"secs":10,"ok":false,"reason":"file not written","exit":1}
+{"id":"mut-commands-live-L126-9","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":85,"ok":true,"commit":"0d229c332d44176081ae4f8b7c3afae0699e7b5a"}
+{"id":"mut-commands-rainmaker-L22-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":38,"ok":true,"commit":"89026dfdbdd44aced7f001654d442566ec562e6e"}
+{"id":"mut-commands-probe-L218-0","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":59,"ok":true,"commit":"b3ceb6e8a12dfe42e403176b51a99797618a3003"}
+{"id":"mut-commands-plugin-L139-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":61,"ok":true,"commit":"a23d79a9fe36c2bce65703a76c6769fb7da98822"}
+{"id":"mut-commands-one-lap-L320-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":84,"ok":true,"commit":"44e69033a74022aa07d78be614643d77b520ca3a"}
+{"id":"mut-commands-scoreboard-L36-4","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":25,"ok":true,"commit":"914ade5c746073f354edf71b2ac7cbd82afa5626"}
+{"id":"mut-commands-align-L183-5","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":204,"ok":true,"commit":"04f990b94e8549e10ce2d7898e554596b8d44a17"}
+{"id":"mut-commands-router-L121-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":33,"ok":true,"commit":"ef8be0fb752641669f389f1e80eb5612ab09b818"}
+{"id":"mut-commands-recap-L391-6","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":68,"ok":true,"commit":"478a810c04a84d1cee9599ced3df9a28d0ea34b7"}
+{"id":"mut-commands-run-front-L124-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":67,"ok":true,"commit":"8e7de6cf6d02e39172b001c39a50aa88f60fc102"}
+{"id":"mut-commands-security-review-L256-4","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":42,"ok":true,"commit":"1789582999d19a539ac7a4b2313586d82d525b12"}
+{"id":"mut-commands-scout-L120-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":56,"ok":true,"commit":"9d9d3a29b87301e3aaf15427e7bccd9efdf02cd4"}
+{"id":"mut-commands-publish-L39-6","lane":"devin1","engine":"devin","model":"swe-2-high","version":1,"round":4,"secs":128,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-pull-L25-1","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":125,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-report-L195-2","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":79,"ok":true,"commit":"93eb4822a27880e63498ac7a30c44242cd4e85e6"}
+{"id":"mut-commands-skill-L178-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":32,"ok":true,"commit":"9af82480beb9ae8ad63af1051bedab3701b9e12d"}
+{"id":"mut-commands-signup-L112-7","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":59,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-site-L54-7","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":46,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-apps-L196-7","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":4,"secs":264,"ok":true,"commit":"28c6eb6a844d04bc16ed8c923b4a4902bcb9e99b"}
+{"id":"mut-commands-site-deploy-L277-5","lane":"codex6","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":61,"ok":true,"commit":"ef4fc752f391ded7e37532a3ceb1aa070fe99780"}
+{"id":"mut-commands-pack-L3923-0","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":169,"ok":true,"commit":"62d4512ca416124050a351e8d59eb6ff57ea9321"}
+{"id":"mut-commands-serve-L109-4","lane":"codex7","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":73,"ok":true,"commit":"96a7da25135ff2b15e063f5c6d3e4cea86852ebd"}
+{"id":"mut-commands-rsi-L44-0","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":4,"secs":137,"ok":true,"commit":"f6117e7d532e5251f2a6bef4ecd3529b7310040a"}
+{"id":"mut-commands-soul-L131-7","lane":"devin1","engine":"devin","model":"swe-2-high","version":1,"round":4,"secs":50,"ok":true,"commit":"ef5f3d40f41f123b2481e265543cd6471b1da6fd"}
+{"id":"mut-commands-social-L291-7","lane":"codex8","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":62,"ok":false,"reason":"reads the source file","exit":0}
+{"id":"mut-commands-spaceship-L38-6","lane":"codex4","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":75,"ok":true,"commit":"2a01f6b9f00dc1190eb3db4c3d834a2b5e5a7066"}
+{"id":"mut-commands-study-L126-7","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":61,"ok":true,"commit":"9e4f15b0da2c698b9414698ea9acb2b1908d5379"}
+{"id":"mut-commands-theme-L132-0","lane":"codex5","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":59,"ok":true,"commit":"ad9581b2fdd333f132619481670aaad727371c5f"}
+{"id":"mut-commands-sync-L197-0","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","version":1,"round":4,"secs":65,"ok":true,"commit":"72163e46e6d9296372d93a05c11713c8626cdca3"}
+{"id":"mut-commands-setup-L127-6","lane":"agy2","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":141,"ok":true,"commit":"b07e01a4ada30fb5e18d933781b1579ef06e81aa"}
+{"id":"mut-commands-stream-L151-7","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","version":1,"round":4,"secs":128,"ok":true,"commit":"bcb7dfa68fdec3477091c9338e4c4210508dc61b"}
+{"id":"mut-commands-orb-L20-7","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","version":1,"round":4,"secs":275,"ok":true,"commit":"085a36861826736127e82174c1e9817b1c3ed998"}
