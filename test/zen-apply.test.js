@@ -169,7 +169,8 @@ test('atris zen on a zen repo says so and changes nothing', () => {
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /already zen\./);
-    assert.match(cli.stdout, /1 team note kept as it is/);
+    assert.match(cli.stdout, /1 unsaved team note left in place\./);
+    assert.doesNotMatch(cli.stdout, /kept as it is/);
     assert.doesNotMatch(cli.stdout, /everything is kept/);
     assert.equal(git(checkout, 'for-each-ref'), refs);
     assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /a note/);

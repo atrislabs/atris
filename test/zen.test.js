@@ -107,7 +107,8 @@ test('a synced repo with only team notes changed is zen', () => {
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /^zen: yes/m);
     assert.match(cli.stdout, /code matches origin\/master/);
-    assert.match(cli.stdout, /3 team files kept/);
+    assert.match(cli.stdout, /3 unsaved team files left in place/);
+    assert.doesNotMatch(cli.stdout, /kept as they are/);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
