@@ -5857,7 +5857,7 @@ function delegateTask(args, options = {}) {
     assigned_to: owner,
     delegate_via: via,
     swarlo_channel: via === 'swarlo' ? String(tag || 'tasks') : null,
-    created_for_day: new Date().toISOString().slice(0, 10),
+    created_for_day: localDay(),
     owner_resolution: ownerResolution.reason,
   };
   if (ownerResolution.requested_owner) metadata.requested_owner = ownerResolution.requested_owner;
@@ -6023,6 +6023,12 @@ function cmdKeep(args) {
   console.log(`put away ${count} ${noun} that were finished or sitting still.`);
 }
 
+// Local calendar day; toISOString is UTC and calls the evening tomorrow
+// anywhere west of Greenwich.
+function localDay(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function cmdDay(args) {
   const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd());
   if (keptCount(kept)) autoRenderTodoFromDb(process.cwd());
@@ -6042,7 +6048,7 @@ function cmdDay(args) {
     failed: (projection.tasks || []).filter(task => task.status === 'failed').length,
     stale_failed: staleFailed.length,
   };
-  const date = new Date().toISOString().slice(0, 10);
+  const date = localDay();
   if (wantsJson(args)) {
     printJson({
       ok: true,
