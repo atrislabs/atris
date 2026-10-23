@@ -1,4 +1,4 @@
-# {{name}} — Research Lab Map
+# {{name}}: Research Lab Map
 
 > Navigation index. Source of truth for where things live.
 > Update this file when you discover or move things.
