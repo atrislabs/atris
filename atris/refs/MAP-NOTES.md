@@ -21,7 +21,7 @@ Moved from atris/MAP.md on 2026-09-23 so boot reads a short routing table. `atri
 
 ## Quick Reference Index
 
-Project 99: `commands/ninety-nine.js:144` (`ninetyNineAtris`) retains local timer actions and adds health to today; `commands/ninety-nine.js:52` (`syncNinetyNine`) locks the append-only log and atomically saves account-scoped sync cursors. `lib/ninety-nine.js:26` validates session and health records, `lib/ninety-nine.js:53` deduplicates and stably sorts before replay, and `lib/ninety-nine.js:211` selects the latest health day without filling unknown totals. `lib/ninety-nine-sync.js:49` pages personal records and batches missing lines; `lib/ninety-nine-sync.js:82` reads one filtered workspace snapshot and sends its union through the existing file sync route. Both reuse `utils/api.js:140` and the credential loader at `utils/auth.js:473`. Routing: `bin/atris.js:2294` awaits sync; registration: `lib/known-commands.js:3`. Proof: `node --test test/ninety-nine.test.js`, with mocked HTTP transport only.
+Project 99: `commands/ninety-nine.js:155` (`ninetyNineAtris`) retains local timer actions and adds health to today; `commands/ninety-nine.js:63` (`syncNinetyNine`) locks the append-only log and local sync state, saving the install's device id before its first upload and account-scoped cursors after success. `commands/ninety-nine.js:53` (`saveSyncState`) atomically saves private sync state. `lib/ninety-nine.js:26` validates session and health records, `lib/ninety-nine.js:53` deduplicates and stably sorts before replay, and `lib/ninety-nine.js:211` selects the latest health day without filling unknown totals. `lib/ninety-nine-sync.js:49` pages personal records and batches missing lines; `lib/ninety-nine-sync.js:82` (`workspacePlan`) reads all direct `atris/99/sessions.*.jsonl` files plus legacy `sessions.jsonl`, and preserves this device's existing bytes when appending missing lines to `sessions.<device>.jsonl` through the existing file sync route. Both reuse `utils/api.js:140` and the credential loader at `utils/auth.js:473`. Routing: `bin/atris.js:2294` awaits sync; registration: `lib/known-commands.js:3`. Proof: `node --test test/ninety-nine.test.js`, with mocked HTTP transport, simultaneous stale snapshots, legacy reads, and device identity across separate CLI processes.
 
 | Route | Paths | Purpose |
 | --- | --- | --- |
@@ -2497,7 +2497,7 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 
 ### Local HTTP server security
 
-- Phone request parsing and credentials: `lib/gm-phone.js:304`; bounded body reader: `lib/gm-phone.js:331`; handler: `lib/gm-phone.js:367`; listener rejection fallback: `commands/gm.js:1528`. Wifi pairing stays available on the selected network interface plus loopback.
+- Phone request parsing and credentials: `lib/gm-phone.js:304`; bounded body reader: `lib/gm-phone.js:331`; handler: `lib/gm-phone.js:367`; listener rejection fallback: `commands/gm.js:1536`. Wifi pairing stays available on the selected network interface plus loopback.
 - Static preview: `lib/site.js:104`, GET/HEAD only, loopback Host checks and binding, rejects malformed URLs and request bodies.
 - Credential gateway: `lib/secret-gateway.js:240`, unchanged read-only grant, placeholder credential, local Host checks, body rejection and loopback binding.
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
