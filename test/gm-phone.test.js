@@ -1651,3 +1651,12 @@ test('browser: a two-turn chat on the number question: one place to type, the tu
   // the second turn continues the same conversation
   assert.deepEqual(seen, [[], ['what', LONG]], show);
 });
+
+test('trace: chrome gets time to start on a cold, busy runner, still well inside each browser test', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'gm-phone-trace.js'), 'utf8');
+  const wait = Number(/const CHROME_START_MS = (\d+);/.exec(src)[1]);
+  // The first launch in a CI shard took over 15s and failed tests that had 90s.
+  assert.ok(wait >= 45000, `chrome start wait ${wait}ms`);
+  assert.ok(wait <= 60000, `chrome start wait ${wait}ms leaves the test no time`);
+  assert.match(src, /chrome did not start in \$\{CHROME_START_MS \/ 1000\}s/);
+});

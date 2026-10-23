@@ -139,6 +139,9 @@ async function serve(desk) {
 
 // ---- chrome over the devtools protocol --------------------------------------------
 
+// The first chrome in a busy CI shard can take well over 15s to come up cold.
+const CHROME_START_MS = 45000;
+
 async function launch(chromePath) {
   const profile = makeProfileDir('gm-trace-chrome-');
   const args = headlessArgs(profile, ['--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank']);
@@ -151,7 +154,7 @@ async function launch(chromePath) {
   try {
     const port = await new Promise((resolve, reject) => {
       let err = '';
-      const timer = setTimeout(() => reject(new Error(`chrome did not start: ${err.slice(-300)}`)), 15000);
+      const timer = setTimeout(() => reject(new Error(`chrome did not start in ${CHROME_START_MS / 1000}s: ${err.slice(-300)}`)), CHROME_START_MS);
       proc.stderr.on('data', d => {
         err += d;
         const m = err.match(/DevTools listening on ws:\/\/[^:]+:(\d+)\//);
