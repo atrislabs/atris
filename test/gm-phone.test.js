@@ -590,10 +590,19 @@ test('page: every card has a quiet say-something line that opens into one box', 
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   assert.match(script, /function sayBox\(\) \{/);
   assert.match(script, /var open = el\('button', 'quiet', 'or say something'\);/);
+  // on a card the line itself becomes the box, in its own spot
+  assert.match(script, /typeHere\(open, 'say something', 280, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\);/);
+  // the words hold as chosen while they are read; an answer or an instruction brings the next card
+  assert.match(script, /var heldAt = hold\(spot\);\n\s+api\('\/bet\/say', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ think\(false, heldAt\); return; \}/);
+  // a question back takes the title's spot, its suggested replies one tap each where the answers were
+  assert.match(script, /box\.appendChild\(el\('h1', null, r\.stay \? r\.reply : \(r\.message \|\| 'that did not go through'\)\)\);/);
+  assert.match(script, /if \(r\.stay\) \(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{ act\.appendChild\(sayChoice\(sug, \{ text: sug \}\)\); \}\);/);
+  // starting a member that is not running takes a second tap, or keeps it as a note
+  assert.match(script, /act\.appendChild\(sayChoice\('start it', \{ text: said, confirm: true \}\)\);/);
+  assert.match(script, /act\.appendChild\(sayChoice\('keep it as a note instead', \{ text: said, note: true \}\)\);/);
+  // the talk card with one member keeps its own box: an ellipsis while it reads, the reply in place
   assert.match(script, /input\.maxLength = 280;/);
-  // while it reads, the reply spot shows a quiet ellipsis; a question back is answered in place
   assert.match(script, /reply\.textContent = '\u2026';/);
-  assert.match(script, /return convo\(function \(body\) \{ return api\('\/bet\/say', body\); \}, moveOn, 'say something'\);/);
   assert.match(script, /post\(body\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ done\(r\.ack\); return; \}/);
   // the conversation so far stays on the card, and suggested replies are one tap
   assert.match(script, /drawThread\(r\.thread\.slice\(0, -1\)\);/);
@@ -637,8 +646,8 @@ test('page: the weekly number card and the something-else answer are one tap eac
   assert.match(script, /if \(s\.kind === 'report'\) \{ drawReportCard\(s\); return; \}/);
   assert.match(script, /input\.type = 'number';/);
   assert.match(script, /api\('\/bet\/report', \{ value: input\.value \}\)/);
-  assert.match(script, /if \(c\.other\) \{ ownAnswer\(act, c\); return; \}/);
-  assert.match(script, /api\('\/bet\/answer', \{ choice: 'other', text: text \}\)/);
+  // something else becomes the box in its own spot, and the words are the answer
+  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ answer\(field, \{ choice: 'other', text: text \}\); \}\); return; \}/);
   assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
 });
 
@@ -757,8 +766,12 @@ test('page: only the orb, its cards, and the working count; big type and no plum
 test('page: an answer is a conversation that keeps going: the reply holds, then the next card comes on its own', () => {
   const html = phonePage('NONCE');
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
-  // the answer posts, the reply replaces the buttons, and moveOn taps the orb after AFTER_MS
-  assert.match(script, /api\('\/bet\/answer', \{ choice: c\.id \}\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ moveOn\(r\.ack\); return; \}/);
+  // the tapped answer holds as chosen while it saves, and the next card is asked for during the hold
+  assert.match(script, /answer\(b, \{ choice: c\.id \}\);/);
+  assert.match(script, /var heldAt = hold\(spot\);\n\s+api\('\/bet\/answer', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ think\(false, heldAt\); return; \}/);
+  // if it does not go through, why takes the hint's line under the answers, and nothing moves
+  assert.match(script, /if \(hint\) hint\.textContent = r\.message \|\| 'that did not go through';/);
+  // a yes or a nice still shows its thanks, and moveOn taps the orb after AFTER_MS
   assert.match(script, /function moveOn\(ack\) \{[\s\S]*?setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
   assert.match(script, /var AFTER_MS = 1500;/);
   // a question with no fact shows on its own
@@ -794,11 +807,10 @@ test('page: card to card is one calm turn in place: crossfade, a small drift, th
   const html = phonePage('NONCE');
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
-  // short and soft: out, then in, with a small drift
-  assert.equal(num('TURN_OUT_MS'), 220);
-  assert.equal(num('TURN_IN_MS'), 360);
-  assert.equal(num('DRIFT'), 10);
-  assert.ok(num('TURN_OUT_MS') + num('TURN_IN_MS') < 700, 'a turn is well under a second');
+  // short and soft: one crossfade with a small drift, well under half a second
+  assert.equal(num('TURN_IN_MS'), 320);
+  assert.equal(num('DRIFT'), 4);
+  assert.ok(80 + num('TURN_IN_MS') < 500, 'a turn is well under half a second');
   // a tap with a card up turns in place; the orb melt is only for leaving to the sphere
   assert.match(script, /var onCard = document\.body\.classList\.contains\('has-card'\);/);
   assert.match(script, /if \(onCard && isCard\(s\)\) \{ turn\(s\); return; \}/);
@@ -806,19 +818,22 @@ test('page: card to card is one calm turn in place: crossfade, a small drift, th
   // the box holds its height while the old card leaves, then eases to the new one
   assert.match(script, /box\.style\.height = from \+ 'px';/);
   assert.match(script, /box\.style\.height = to \+ 'px';/);
-  // picking from a choice is a turn too
-  assert.match(script, /if \(r\.http === 200 && r\.bet\) \{ bet\.busy = true; turn\(r\); return; \}/);
-  // the transitions: opacity, a small transform, and height; no new loops
-  // height eases in and out, so no single frame moves far
-  assert.match(html, /\.bet\.turning \{ overflow: hidden; transition: opacity 0\.22s ease-in, transform 0\.22s ease-in, height 0\.36s cubic-bezier\(0\.4, 0, 0\.2, 1\); \}/);
-  // the reply after an answer keeps the card's height until the turn eases it
+  // picking from a choice holds as chosen, then is a turn too
+  assert.match(script, /if \(r\.http === 200 && r\.bet\) \{ afterHold\(heldAt\)\.then\(function \(\) \{ turn\(r\); \}\); return; \}/);
+  // the transitions: opacity, a small transform, and height; no new loops.
+  // the new card starts 80ms into the old one's fade, and height eases in
+  // and out, so no single frame moves far
+  assert.match(html, /\.bet\.turning \{ overflow: hidden; transition: opacity 0\.32s ease-out 0\.08s, transform 0\.32s cubic-bezier\(0\.22, 1, 0\.36, 1\) 0\.08s, height 0\.36s cubic-bezier\(0\.4, 0, 0\.2, 1\); \}/);
+  assert.match(html, /\.bet\.ghost\.gone \{ opacity: 0; \}/);
+  // the still copy sits exactly over the card, measured to the subpixel
+  assert.match(script, /ghost\.style\.top = \(r\.top - p\.top\) \+ 'px';/);
+  // the reply after a yes or a nice keeps the card's height until the turn eases it
   assert.match(script, /function moveOn\(ack\) \{\n\s+var box = document\.getElementById\('bet'\);\n\s+box\.style\.minHeight = box\.offsetHeight \+ 'px';/);
   assert.match(script, /var from = box\.offsetHeight;\n\s+box\.style\.height = from \+ 'px';\n\s+box\.style\.minHeight = '';/);
-  assert.match(html, /\.bet\.turn-out \{ opacity: 0; transform: translateY\(-10px\); \}/);
-  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(10px\); transition: none; \}/);
+  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   // reduced motion: the new card simply takes the old one's place
-  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; bet\.last = s; bet\.drawn = s\.id; drawBetCard\(s\); bet\.busy = false; measured\(\); return; \}/);
+  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; draw\(\); bet\.busy = false; measured\(\); return; \}/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+box\.style\.minHeight = '';/);
 });
@@ -849,4 +864,67 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   const total = num('GLIDE_MS') + num('BEAT_MS') + pull + num('FAST_GROW_MS') + num('FAST_SETTLE_MS') + 120;
   // unhurried but never a wait: about two seconds
   assert.ok(total >= 1800 && total <= 2500, `fast re-tap budget ${total}ms`);
+});
+
+// ---- typing on a card is a dialogue box: the eyes stay in one place ------------------
+
+const trace = require('../scripts/gm-phone-trace');
+const CHROME = trace.findChrome();
+
+test('browser: the tapped spot becomes the field, holds as chosen, and the next title lands where the old one was', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.trace({ chromePath: CHROME });
+  assert.equal(out.failed, null, JSON.stringify(out.stretches));
+  const [typed, said, suggestion, idea] = out.stretches;
+  const show = s => JSON.stringify(s);
+  // one: "something else" turns into the field at the same size and spot, the
+  // cursor already in it; the other answers dim and stay put
+  assert.deepEqual(typed.field_vs_button_px, { moved: 0, resized: 0 }, show(typed));
+  assert.equal(typed.cursor_in_field, true);
+  assert.ok(typed.others_dimmed_to < 0.6, show(typed));
+  // "or say something" does the same in its own spot, at the same height
+  assert.deepEqual(said.field_vs_button_px, { center_moved: 0, height_change: 0 }, show(said));
+  assert.equal(said.cursor_in_field, true);
+  for (const s of [typed, said, suggestion, idea]) {
+    // two and four: the typed words or the tapped answer hold in that spot,
+    // styled as chosen, for about 400ms, and nothing else on the card moves
+    assert.equal(s.held_as_chosen, true, show(s));
+    assert.equal(s.held_moved_px, 0, show(s));
+    assert.equal(s.others_moved_px, 0, show(s));
+    assert.ok(s.hold_ms >= 380 && s.hold_ms <= 1500, show(s));
+    // three: the next card crossfades in with its title where the old title was,
+    // under a still copy of the old card fading in the very same spot
+    assert.ok(s.ghost_title_px !== null && s.ghost_title_px <= 1, show(s));
+    assert.ok(s.title_max_px <= 5, show(s));
+    assert.equal(s.title_rest_px, 0, show(s));
+    assert.ok(s.largest_frame_step_px <= 5, show(s));
+  }
+  for (const s of [suggestion, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
+  // a reply instead of a card: it takes the title's spot, its suggested
+  // replies sit where the answers were
+  assert.equal(said.next_title, trace.REPLY);
+  assert.deepEqual(said.suggestions.slice(0, 2), ['sounds good', 'make it shorter']);
+  // the answer to the next card, or the reply, fully in: the hold, then one crossfade
+  for (const s of [typed, said, suggestion, idea]) assert.ok(s.reveal_ms >= 400 && s.reveal_ms < 1500, show(s));
+});
+
+test('page: an answer holds for HOLD_MS, then one crossfade; tap to card stays about two seconds', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  assert.equal(num('HOLD_MS'), 400);
+  // answer to next card: the hold, then the new card fades in after a short overlap
+  const answerToCard = num('HOLD_MS') + num('TURN_IN_MS') + 80;
+  assert.ok(answerToCard <= 900, `answer to card ${answerToCard}ms`);
+  // the old one waited AFTER_MS on a line of thanks first; that wait is only for yes and nice now
+  assert.ok(answerToCard < num('AFTER_MS'));
+  // the next card is asked for while the answer holds, never after it
+  assert.match(script, /Promise\.all\(\[api\('\/bet\/think', \{ sharper: Boolean\(sharper\) \}\), afterHold\(heldAt\)\]\)/);
+  // no second box: the old something-else box and the card say box are gone
+  assert.doesNotMatch(script, /function ownAnswer\(|function sayConvo\(/);
+  // the field takes the tapped button's own height to the subpixel, so nothing under it moves
+  assert.match(script, /field\.style\.height = btn\.getBoundingClientRect\(\)\.height \+ 'px';/);
+  // a crossfade, not out then in: the old card is a still copy fading over the new one
+  assert.match(html, /\.bet\.ghost \{ position: absolute;/);
+  assert.equal(num('DRIFT'), 4);
+  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
 });
