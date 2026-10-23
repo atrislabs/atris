@@ -629,7 +629,9 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
   for (const from of ['idea', 'calm']) {
     let current = from === 'idea' ? idea : calm;
     let asked = 0;
-    const desk = { ...scriptedDesk(), warm: () => current, next: () => { asked += 1; current = next; return current; } };
+    let landed = false;
+    // as the real desk does: the calm line stays the card, with the idea ready behind it
+    const desk = { ...scriptedDesk(), warm: () => (current === calm ? { ...calm, queue: landed ? 1 : 0 } : current), next: () => { asked += 1; current = current === calm && landed ? idea : next; return current; } };
     runs.push(await onPhone(desk, chromePath, async (p) => {
       const look = () => p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), big_orb: getComputedStyle(document.querySelector('.stage')).display !== 'none' && getComputedStyle(document.getElementById('orb')).visibility !== 'hidden', line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()");
       await p.tap('#lava');
@@ -637,7 +639,7 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
       await wait(600);
       const home = { ...(await look()), asked };
       // the idea lands while the owner is on the big orb
-      if (from === 'calm') { current = idea; await wait(3500); }
+      if (from === 'calm') { landed = true; await wait(3500); }
       const stayed = { ...(await look()), asked };
       await p.tap('#orb');
       await p.until("document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1'))", 'a card', 8000).catch(() => {});
