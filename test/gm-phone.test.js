@@ -928,3 +928,53 @@ test('page: an answer holds for HOLD_MS, then one crossfade; tap to card stays a
   assert.equal(num('DRIFT'), 4);
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
 });
+
+// ---- Esc on the team page: one layer back per press -------------------------------
+
+test('page: Esc on the team page goes back the way its own buttons do, and only while it shows', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  // one close path: the close button and Esc both run closeTeam
+  assert.match(script, /function closeTeam\(\) \{ teamBox\.hidden = true; \}/);
+  assert.match(script, /close\.addEventListener\('click', closeTeam\);/);
+  // a talk card's way back is its back button's own
+  assert.match(script, /back\.addEventListener\('click', openTeam\);/);
+  assert.match(script, /teamBack = openTeam;/);
+  // one listener for the whole page, quiet unless the team page shows
+  assert.match(script, /document\.addEventListener\('keydown', function \(e\) \{\n\s*if \(e\.key !== 'Escape' \|\| e\.isComposing \|\| teamBox\.hidden\) return;/);
+});
+
+test('browser: Esc cancels the typing, then steps back one layer at a time, and does nothing on the card', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const { steps } = await trace.escapeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(steps, null, 1);
+  const at = did => {
+    const s = steps.find(x => x.did === did);
+    assert.ok(s, `no step ${did}: ${show}`);
+    const { did: _, ...rest } = s;
+    return rest;
+  };
+  const card = at('the card');
+  assert.equal(card.team_open, false, show);
+  assert.ok(card.card_title, show);
+  // on the plain card Esc does nothing at all
+  assert.deepEqual(at('esc on the card'), card, show);
+  // the team opens over the card; a row opens the talk card; the words arm a second tap
+  assert.equal(at('tapped the team').team_title, 'the team', show);
+  assert.equal(at('tapped the team').rows, 1, show);
+  const typing = at('typing to builder');
+  assert.equal(typing.team_title, 'builder', show);
+  assert.equal(typing.typing, true, show);
+  assert.equal(typing.field_words, 'take the readme first', show);
+  assert.equal(typing.send_says, 'tap again', show);
+  // one: the words are cancelled and the cursor leaves; the talk card stays and the armed tap is gone
+  const one = at('esc 1');
+  assert.deepEqual([one.team_open, one.team_title, one.field_words, one.typing, one.send_says], [true, 'builder', '', false, 'send'], show);
+  // two: the talk card on top closes, back to the team
+  const two = at('esc 2');
+  assert.deepEqual([two.team_open, two.team_title, two.rows, two.field_words], [true, 'the team', 1, null], show);
+  // three: the team closes, the card under it as it was
+  assert.deepEqual(at('esc 3'), card, show);
+  // four: on the card again, nothing
+  assert.deepEqual(at('esc 4'), card, show);
+});

@@ -353,7 +353,75 @@ async function trace({ chromePath = findChrome(), shots = null } = {}) {
   }
 }
 
-module.exports = { findChrome, trace, REPLY };
+// ---- Esc on the team page: one layer back per press --------------------------------
+
+const TEAM_ROWS = [{ member: 'builder', status: 'not running', on: 'the getting started page', time: 'last seen 2h ago' }];
+
+// what is showing: the team page or not, its title, its rows, the talk
+// field's words and whether the cursor is in it, the card under it
+const LAYER = `(function () {
+  var team = document.getElementById('team');
+  var field = team.querySelector('input');
+  var send = team.querySelector('.sayline .pill');
+  var card = document.querySelector('#bet h1');
+  return {
+    team_open: !team.hidden,
+    team_title: !team.hidden && team.querySelector('h1') ? team.querySelector('h1').textContent : null,
+    rows: team.hidden ? 0 : team.querySelectorAll('.row').length,
+    field_words: field ? field.value : null,
+    typing: Boolean(field && document.activeElement === field),
+    send_says: send ? send.textContent : null,
+    card_title: card ? card.textContent : null,
+    card_field_open: Boolean(document.querySelector('#bet .field')),
+  };
+})()`;
+
+// Opens the team from the card, a member's talk card from a row, types a
+// word to them that arms a second tap, then presses Esc until the card is
+// back and once more. Each step reads the layer, so "Esc steps back one
+// layer" is a list of states.
+async function escapeTrace({ chromePath = findChrome() } = {}) {
+  if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
+  const desk = { ...scriptedDesk(), teamTable: () => ({ ok: true, rows: TEAM_ROWS }), talk: ({ confirm }) => (confirm ? { ok: true, ack: 'builder has it.' } : { ok: false, reason: 'needs_confirm', message: 'tap again to start builder on this' }) };
+  const server = await serve(desk);
+  let chrome = null;
+  try {
+    chrome = await launch(chromePath);
+    const { send } = chrome;
+    await send('Emulation.setDeviceMetricsOverride', PHONE);
+    await send('Page.enable');
+    await send('Page.navigate', { url: server.url });
+    const p = driver(send);
+    const settled = "document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning')";
+    await p.until(`document.readyState === 'complete' && ${settled} && Boolean(document.querySelector('#bet h1'))`, 'the first card');
+    const steps = [];
+    const look = async (did) => { await wait(120); steps.push({ did, ...(await p.run(LAYER)) }); };
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    };
+    await look('the card');
+    await esc();
+    await look('esc on the card');
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team .row'))", 'the team rows');
+    await look('tapped the team');
+    await p.tap('#team .row');
+    await p.until("Boolean(document.querySelector('#team input'))", 'the talk card');
+    await p.tap('#team input');
+    await p.type('take the readme first');
+    await p.enter();
+    await p.until("document.querySelector('#team .sayline .pill').textContent === 'tap again'", 'the armed second tap');
+    await look('typing to builder');
+    for (let i = 1; i <= 4; i++) { await esc(); await look(`esc ${i}`); }
+    return { viewport: `${PHONE.width}x${PHONE.height}`, steps };
+  } finally {
+    if (chrome) chrome.close();
+    await server.close();
+  }
+}
+
+module.exports = { findChrome, trace, escapeTrace, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
