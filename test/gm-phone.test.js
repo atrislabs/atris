@@ -1147,3 +1147,18 @@ test('browser: a word to a teammate that did not send keeps the words, send work
   assert.match(String(out.posts[0].send), /^[a-z0-9]{8,32}$/, show);
   for (const post of out.posts) assert.deepEqual([post.text, post.send], [out.words, out.posts[0].send], show);
 });
+
+// ---- a start that did not get going comes back to do it ----------------------------
+
+test('browser: after an explanation, a do it that did not get going brings the card back with do it and one line, and a retry starts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.startFailTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // never stuck on starting now: the idea is back, do it and all, with why
+  assert.equal(out.failed.starting, false, show);
+  assert.equal(out.failed.title, 'Write a getting started page for the phone', show);
+  assert.ok(out.failed.buttons.includes('do it'), show);
+  assert.equal(out.failed.line, 'it did not get going. try again in a minute.', show);
+  // two taps on do it again reach the desk again
+  assert.equal(out.error, null, show);
+  assert.equal(out.starts, 2, show);
+});
