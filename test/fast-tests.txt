@@ -162,3 +162,4 @@ test/link-command.test.js
 test/member-result.test.js
 test/pay.test.js
 test/trust.test.js
+test/idea-inbox.test.js

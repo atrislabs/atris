@@ -528,6 +528,7 @@ function showHelpShort() {
   console.log('');
   console.log('  atris "what do you want here?"   empty folder');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris idea "..."                 drop an idea; atris builds it later');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris done                       land what your agent built');
@@ -563,6 +564,7 @@ function showHelpAll() {
   console.log('you say what you want. already won. one next step.');
   console.log('');
   console.log('  atris later "..."                remember without a room');
+  console.log('  atris idea "..."                 drop an idea; atris builds it later');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
   console.log('  atris done                       land what your agent built');
@@ -2298,6 +2300,9 @@ if (command === 'guide') {
 } else if (command === 'later') {
   const laterCode = require('../commands/later').laterAtris(process.argv.slice(3));
   process.exit(Number.isInteger(laterCode) ? laterCode : 0);
+} else if (command === 'idea') {
+  const ideaCode = require('../commands/idea').ideaAtris(process.argv.slice(3));
+  process.exit(Number.isInteger(ideaCode) ? ideaCode : 0);
 } else if (command === 'done') {
   const doneCode = require('../commands/done').doneAtris(process.argv.slice(3));
   process.exit(Number.isInteger(doneCode) ? doneCode : 0);
