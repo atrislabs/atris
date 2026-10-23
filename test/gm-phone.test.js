@@ -577,6 +577,11 @@ test('over http: the team table and a steer go through the same token and json c
   fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
   fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## build\n- claude code, model: opus 5.5\n');
+  // installed tools come from the workspace's registry file, never this machine's PATH
+  const checked = new Date().toISOString();
+  const engines = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS).map(id => (id === 'claude' ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
   const ran = [];
   const h = await startHandler({
     makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, loadSeason: () => ({ outcomes: seasonPlays('builder', { landed: 4, dropped: 1 }), error: null }), runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true,"action":"member_steered"}' }; } }),

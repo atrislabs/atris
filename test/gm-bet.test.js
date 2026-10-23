@@ -2195,6 +2195,18 @@ function seasonOf(counts) {
   return { outcomes, claims: [], missions: [], asleep: [], error: null };
 }
 
+// Which tools count as installed comes from the workspace's own registry
+// file, as it does for a real run, so no probe of this machine's PATH decides
+// what the table shows: the named tools are ready, every other one is missing
+// and was just checked.
+function readyEngines(root, ...ready) {
+  const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
+  const checked = new Date().toISOString();
+  const engines = ids.map(id => (ready.includes(id) ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+}
+
 const PROJECT_ROSTER = '# roster\n\n## search\n- claude code, model: haiku 5.5\n\n## build\n- claude code, model: opus 5.5\n\n## review\n- codex, model: gpt-6.1-sol\n\n## team\n- launcher: codex, model: gpt-6.1-sol\n';
 
 test('team table: every member with a few words of role, the board rating, the exact model, and one status sentence', async () => {
@@ -2204,12 +2216,17 @@ test('team table: every member with a few words of role, the board rating, the e
   // a parked member keeps its folder but the table leaves it out
   fs.mkdirSync(path.join(root, 'atris', 'team', 'coordinator'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'coordinator', 'MEMBER.md'), '---\nname: coordinator\nstatus: parked\nrole: Coordinator\n---\n');
+  // a person on the team: the runner never runs people, so no model shows
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'designer'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'designer', 'MEMBER.md'), '---\nname: designer\ntype: human\nrole: Designer\ndescription: Draws the screens by hand\n---\n');
   fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
   const NAGO = m => new Date(NOW - m * 60000).toISOString();
   const missions = { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(10), last_tick_at: NAGO(1), human_asks: [] } };
   // builder: 4 landed, 1 dropped is round(60 + 39 * 4 / 5) = 91. validator:
   // 3 landed, 1 sent back is 89. launcher has 2 finished, a rookie. linguist
-  // only took a job. researcher has no plays at all.
+  // only claimed a job and finished none, so it has no rating yet.
+  // researcher has no plays at all.
   const season = seasonOf({
     builder: { landed: 4, dropped: 1 },
     validator: { landed: 3, sent_back: 1 },
@@ -2218,16 +2235,18 @@ test('team table: every member with a few words of role, the board rating, the e
   });
   const h = jobDesk(root, missions, { driverAlive: () => true, loadSeason: () => season });
   const rows = h.d.teamTable().rows;
+  // a role that only repeats the member's name gives its description instead
   assert.deepEqual(rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]), [
-    ['builder', 'builder', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
-    ['launcher', 'launcher', 'new', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
-    ['linguist', 'linguist, operator language and understanding', 'new', 'claude opus 5.5', 'idle: no work in the last day'],
+    ['builder', 'writes and tests the code', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
+    ['designer', 'draws the screens by hand', '··', 'person', 'idle: no work in the last day'],
+    ['launcher', 'writes posts, pages, and launch copy', 'new', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+    ['linguist', 'linguist, operator language and understanding', '··', 'claude opus 5.5', 'idle: no work in the last day'],
     ['researcher', 'deep researcher', '··', 'claude haiku 5.5', 'idle: no work in the last day'],
     ['validator', 'reviewer', '89', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
   ]);
   // the board says the same numbers for the same plays
   const board = require('../lib/gm-season').rosterRows({ outcomes: season.outcomes, now: NOW });
-  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, r.ovr])), { builder: 91, validator: 89, launcher: null, linguist: null });
+  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, [r.ovr, r.finished]])), { builder: [91, 5], validator: [89, 4], launcher: [null, 2], linguist: [null, 0] });
   // the working count and the talk card still read the same status
   assert.equal(h.d.view().team_working, 1);
   assert.deepEqual(rows[0].status, 'working');
@@ -2236,6 +2255,7 @@ test('team table: every member with a few words of role, the board rating, the e
 
 test('team table: no rating shows two dots, never a made-up number, and an unpinned model shows two dots too', async () => {
   const root = workspace();
+  readyEngines(root, 'claude', 'codex');
   // no roster file: the router picks a tool with no model pinned, so no exact model is known
   const h = jobDesk(root, {}, { loadSeason: () => ({ outcomes: [], error: 'could not open the task list' }) });
   const rows = h.d.teamTable().rows;
