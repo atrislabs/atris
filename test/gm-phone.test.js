@@ -603,7 +603,8 @@ test('page: every card has a quiet say-something line that opens into one box', 
   // the talk card with one member keeps its own box: an ellipsis while it reads, the reply in place
   assert.match(script, /input\.maxLength = 280;/);
   assert.match(script, /reply\.textContent = '\u2026';/);
-  assert.match(script, /post\(body\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ done\(r\.ack\); return; \}/);
+  // a failed request reads like a refusal, so the box never hangs on the ellipsis
+  assert.match(script, /post\(body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ done\(r\.ack\); return; \}/);
   // the conversation so far stays on the card, and suggested replies are one tap
   assert.match(script, /drawThread\(r\.thread\.slice\(0, -1\)\);/);
   assert.match(script, /\(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{/);
@@ -1126,4 +1127,23 @@ test('browser: a send whose reply was lost goes again with the same id and reach
   assert.notEqual(fresh.send, first.send, show);
   // the desk took each set of words once
   assert.deepEqual(out.took, [out.words, out.new_words], show);
+});
+
+// ---- a word to a teammate that did not send comes back, ready to send again ----------
+
+test('browser: a word to a teammate that did not send keeps the words, send works again, a line says so, and a retry reaches them once', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.talkFailTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  const back = { words: out.words, send_works: true, line: 'that did not send. tap send to try again', done: null };
+  // the network is off: nothing left the phone
+  assert.deepEqual(out.offline, back, show);
+  // it reached builder, but the reply was lost: the same
+  assert.deepEqual(out.lost, back, show);
+  // Enter once more: the first answer comes back, and builder is not told twice
+  assert.equal(out.sent.done, 'builder has it.', show);
+  assert.deepEqual(out.took, [out.words], show);
+  // every try of the same words carried the same id
+  assert.equal(out.posts.length, 3, show);
+  assert.match(String(out.posts[0].send), /^[a-z0-9]{8,32}$/, show);
+  for (const post of out.posts) assert.deepEqual([post.text, post.send], [out.words, out.posts[0].send], show);
 });

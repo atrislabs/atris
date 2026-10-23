@@ -534,6 +534,44 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
 }
 const HOLD_WAIT_MS = 900;
 
+// ---- a word to a teammate that did not send comes back, ready to send again ----------
+
+// On the team page the owner writes to builder. The first send never
+// leaves the phone (the network is off). The second reaches the desk, but
+// the reply back is lost. The third goes through. After each failure: the
+// words, the send button, and the line under them. Every post the page
+// made and every word the desk passed on are kept.
+async function talkFailTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'take the readme first';
+  const took = [];
+  const desk = { ...scriptedDesk(), teamTable: () => ({ ok: true, rows: TEAM_ROWS }), talk: ({ text }) => { took.push(text); return { ok: true, ack: 'builder has it.' }; } };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const look = () => p.run("(function () { var team = document.getElementById('team'); var input = team.querySelector('input'); var go = team.querySelector('.sayline .pill'); var reply = team.querySelector('.sayline .reply'); var done = team.querySelector('.mission'); return { words: input ? input.value : null, send_works: Boolean(go && !go.disabled), line: reply && !reply.hidden ? reply.textContent : null, done: done ? done.textContent : null }; })()");
+    const net = offline => send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    // the page's own fetch: every word to a teammate is kept, and the reply to the second one never arrives
+    await p.run("(function () { var real = window.fetch; window.__talks = []; window.fetch = function (url, opts) { var go = real(url, opts); if (String(url).indexOf('/bet/steer') < 0) return go; window.__talks.push(JSON.parse(opts.body)); if (window.__talks.length !== 2) return go; return go.then(function () { throw new TypeError('Failed to fetch'); }); }; })()");
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team .row'))", 'the team rows');
+    await p.tap('#team .row');
+    await p.until("Boolean(document.querySelector('#team input'))", 'the talk card');
+    await p.tap('#team input');
+    await p.type(WORDS);
+    await send('Network.enable');
+    await net(true);
+    await p.enter();
+    await wait(600);
+    const offline = await look();
+    await net(false);
+    await p.enter();
+    await wait(600);
+    const lost = await look();
+    await p.enter();
+    await p.until("Boolean(document.querySelector('#team .mission'))", 'builder has it', 3000).catch(() => {});
+    const sent = await look();
+    return { words: WORDS, offline, lost, sent, posts: await p.run('window.__talks'), took };
+  });
+}
+
 // ---- an explanation keeps the card's own answer ------------------------------------
 
 const YES_CARD = { kind: 'yes', job: { what: 'builder wants to send the weekly note to the twelve schools', why: 'it goes out from your account, so it waits for your yes.' } };
@@ -617,7 +655,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, REPLY };
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
