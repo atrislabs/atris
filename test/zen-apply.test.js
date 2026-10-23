@@ -170,11 +170,30 @@ test('atris zen on a zen repo says so and changes nothing', () => {
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /already zen\./);
-    assert.match(cli.stdout, /1 unsaved team note left in place\./);
+    assert.match(cli.stdout, /1 unsaved team note left in place: atris\/ 1\./);
     assert.doesNotMatch(cli.stdout, /kept as it is/);
     assert.doesNotMatch(cli.stdout, /nothing was thrown away/);
     assert.equal(git(checkout, 'for-each-ref'), refs);
     assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /a note/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen names where the unsaved team notes are, biggest first', () => {
+  const { base, checkout } = createRepo();
+  try {
+    write(checkout, 'atris/TODO.md', NOTES + 'a note\n');
+    write(checkout, 'atris/logs/a.md', 'a\n');
+    write(checkout, 'atris/logs/b.md', 'b\n');
+    write(checkout, 'crm.db', 'rows\n');
+    write(checkout, 'events.jsonl', '{}\n');
+    write(checkout, '.codex/notes.md', 'n\n');
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    // Three biggest places by name, the rest as a count, so a big number
+    // reads as "mostly agent notes" instead of an unexplained total.
+    assert.match(cli.stdout, /6 unsaved team notes left in place: atris\/ 3, \.codex\/ 1, crm\.db 1, and 1 more place\./);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
