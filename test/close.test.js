@@ -215,7 +215,8 @@ test('sweep prints operator sentences and escalates once per day per loop', () =
     const afterFirstSweep = readLedger(dir).filter((event) => event.kind === 'escalated');
     assert.equal(afterFirstSweep.length, 2);
 
-    const json = runClose(['sweep', '--json'], dir, '2026-04-04T12:00:00.000Z');
+    // Thirty minutes later is the same calendar day in every time zone.
+    const json = runClose(['sweep', '--json'], dir, '2026-04-04T00:30:00.000Z');
     assert.equal(json.code, 0, json.stderr);
     assert.deepEqual(JSON.parse(json.stdout), {
       open: 2,
