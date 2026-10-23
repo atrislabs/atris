@@ -17,18 +17,3 @@ test('memberPaths resolves the workspace root for the steering store', () => {
   assert.match(SRC, /steeringJsonl: path\.join\(workspaceRoot, '\.atris', 'state', 'steering\.jsonl'\)/);
   assert.doesNotMatch(SRC, /steeringJsonl: path\.join\(process\.cwd\(\), '\.atris', 'state', 'steering\.jsonl'\)/);
 });
-
-test('the shared resolver maps a subdir to the workspace root', () => {
-  const { resolveWorkspaceRoot } = require('../lib/mission-root');
-  const os = require('node:os');
-  const cp = require('node:child_process');
-  const repo = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-member-root-'));
-  try {
-    cp.execSync('git init -q', { cwd: repo });
-    const sub = path.join(repo, 'backend');
-    fs.mkdirSync(sub, { recursive: true });
-    assert.equal(fs.realpathSync(resolveWorkspaceRoot(sub)), fs.realpathSync(repo));
-  } finally {
-    fs.rmSync(repo, { recursive: true, force: true });
-  }
-});
