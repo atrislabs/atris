@@ -472,19 +472,19 @@ async function alignAtris() {
   const printUsage = () => {
     console.log('Usage: atris align [business] [--fix] [--hard] [--from cloud|local] [--dry-run]');
     console.log('');
-    console.log('  atris align                   Diff current workspace against cloud (auto-detect)');
-    console.log('  atris align example-co            Diff example-co workspace');
-    console.log('  atris align example-co --fix      Fix drift (local is canonical by default)');
-    console.log('  atris align example-co --fix --hard  Force-push: nuke cloud cruft, upload local. Skips diff. Fast.');
-    console.log('  atris align example-co --fix --from cloud  Cloud is canonical: pull EC2-only, delete local extras');
-    console.log('  atris align example-co --dry-run  Show what would change, do nothing');
+    console.log('  atris align                   Show what differs between this folder and its cloud copy');
+    console.log('  atris align example-co            Show what differs for the example-co workspace');
+    console.log('  atris align example-co --fix      Make them match, keeping this computer\'s version');
+    console.log('  atris align example-co --fix --hard  Make the cloud an exact copy of this computer: delete cloud-only files, upload the rest. Fast.');
+    console.log('  atris align example-co --fix --from cloud  Keep the cloud version: copy cloud-only files down, delete extra local files');
+    console.log('  atris align example-co --dry-run  Show what would change, change nothing');
   };
 
   // Explicit help must win before we try to auto-detect a business slug,
   // otherwise `--help` gets overwritten by the .atris/business.json fallback
   // and the command attempts a real align instead of printing usage.
-  const firstArg = process.argv[3];
-  if (firstArg === '--help' || firstArg === '-h' || firstArg === 'help') {
+  const alignArgs = process.argv.slice(3);
+  if (alignArgs[0] === 'help' || alignArgs.includes('--help') || alignArgs.includes('-h')) {
     printUsage();
     process.exit(0);
   }
@@ -515,7 +515,7 @@ async function alignAtris() {
   }
 
   if (hard && fromSide !== 'local') {
-    console.error('--hard only supported with --from local (the canonical force-push direction).');
+    console.error('--hard only works with --from local: it overwrites the cloud with this computer\'s files, never the other way.');
     process.exit(1);
   }
 

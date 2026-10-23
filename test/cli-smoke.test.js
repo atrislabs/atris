@@ -734,6 +734,18 @@ test('align --help prints usage even when a business is bound', () => {
   }
 });
 
+test('align <business> --fix --help prints usage instead of fixing anything', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['align', 'test-co', '--fix', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris align/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Aligning test-co/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('bare ax shows usage instead of "Unknown command"', () => {
   const dir = makeTempDir();
   try {
