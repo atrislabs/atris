@@ -4513,13 +4513,15 @@ function memberList(...flags) {
 
   console.log('');
   console.log('Team Members');
-  console.log('─'.repeat(70));
+  console.log('─'.repeat(72));
 
   const nameW = 16;
-  const roleW = 16;
-  const fmtW = 6;
+  const roleW = 18;
+  const fmtW = 8;
   const skillW = 8;
-  const ctxW = 8;
+  const ctxW = 9;
+  // Keep one space between columns, even when a value fills its column.
+  const cell = (value, width) => `${clipCell(value, width - 1)} `;
 
   console.log(
     '  ' +
@@ -4530,18 +4532,18 @@ function memberList(...flags) {
     'Context'.padEnd(ctxW) +
     'Version'
   );
-  console.log('  ' + '─'.repeat(66));
+  console.log('  ' + '─'.repeat(70));
 
   for (const m of members) {
     const skills = m.format === 'directory' ? String(m.skillCount) : '-';
     const context = m.format === 'directory' ? String(m.contextCount) : '-';
     console.log(
       '  ' +
-      clipCell(m.name, nameW) +
-      clipCell(m.role, roleW) +
-      clipCell(m.format === 'directory' ? 'dir' : 'flat', fmtW) +
-      clipCell(skills, skillW) +
-      clipCell(context, ctxW) +
+      cell(m.name, nameW) +
+      cell(m.role, roleW) +
+      cell(m.format === 'directory' ? 'dir' : 'flat', fmtW) +
+      cell(skills, skillW) +
+      cell(context, ctxW) +
       (m.version || '-') +
       (parked.has(m.name) ? '  parked' : '')
     );

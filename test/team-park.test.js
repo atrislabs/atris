@@ -241,6 +241,14 @@ test('member list marks parked members in text and json', () => withRoom((root) 
   assert.match(text.stdout, /\(1 parked; unpark with atris team unpark <name>\)/);
 }));
 
+test('member list keeps a space between columns when a role fills its column', () => withRoom((root) => {
+  const text = spawnSync(process.execPath, [cli, 'member', 'list'], { cwd: root, encoding: 'utf8' });
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /Format +Skills +Context +Version/);
+  assert.match(text.stdout, /System Navigator +dir /);
+  assert.doesNotMatch(text.stdout, /Navigatordir/);
+}, [['navigator', 'System Navigator']]));
+
 test('park and unpark leave the body and mixed line endings byte for byte', () => withRoom((root) => {
   const write = (name, text) => {
     fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
