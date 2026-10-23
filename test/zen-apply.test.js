@@ -835,6 +835,29 @@ test('a wiki over budget in several places is one line to prune, not one per pla
   }
 });
 
+test('a note older than its code is named in plain words, not called a wiki page behind its source', () => {
+  const { workspaceZen } = require('../lib/zen-workspace');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-stale-'));
+  try {
+    fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'lib', 'x.js'), 'module.exports = 1;\n');
+    const note = (name) => {
+      fs.mkdirSync(path.join(root, 'atris', 'features', name), { recursive: true });
+      fs.writeFileSync(path.join(root, 'atris', 'features', name, 'build.md'),
+        '---\nlast_compiled: 2020-01-01\nsources:\n  - lib/x.js:1-2 (the export)\n---\n# build\n');
+    };
+    const staleLine = () => workspaceZen({ root, dryRun: true }).yours.find((y) => y.cmd === 'atris clean --dry-run' && /older than/.test(y.text));
+
+    note('one');
+    assert.equal(staleLine()?.text, 'atris/features/one/build.md is older than the code it describes');
+
+    note('two');
+    assert.equal(staleLine()?.text, '2 notes are older than the code they describe');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('git rewriting a side copy history file does not make the copy look freshly used', () => {
   const { base, checkout } = createRepo();
   try {
