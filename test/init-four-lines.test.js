@@ -54,3 +54,8 @@ test('fresh init copies the four lines into AGENTS.md and CLAUDE.md, sourced and
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('an older atris.md with only checklist bullets yields no opening lines', () => {
+  const legacy = '## operating rules\n\nYou can move fast.\n\nstate:\n- the goal\n- the files in scope\n\n## values\n';
+  assert.equal(extractOpeningLines(legacy), '');
+});
