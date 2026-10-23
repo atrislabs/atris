@@ -174,6 +174,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | shared task cleanup command runner | `test/helpers/task-admin-cli.js`, `test/task-clear-done.test.js`, `test/task-list-keeper.test.js`, `test/task-list-sim.test.js` | Existing real command setup keeps the required options, thirty-second limit and caller environment; cleanup, database guards and behavior checks remain local. |
 | shared task entry test fixtures | `test/helpers/task-next-fixture.js`, `test/helpers/task-help-fixture.js`, `test/task-first-minute.test.js`, `test/task-subcommand-help.test.js` | Existing setup keeps each suite's own deadlines, temporary paths and environment; entry and help behavior checks remain local. |
 | tests | `test/commands-1.test.js` to `test/commands-8.test.js`, shared setup in `test/helpers/commands-fixtures.js` | node --test test/ |
+| test suite speed baseline | `atris/receipts/test-suite-speed-baseline-2026-10-22.md` | Untouched full-suite timing, existing failures and saved local test inventory before parallel splits. |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
