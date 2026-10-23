@@ -674,8 +674,8 @@ function writeJsonl(file, rows) {
   fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 }
 
-function seedClaude({ home, project, ts, yesterday }) {
-  writeJsonl(path.join(claudeProjectDir(home, project), 's1.jsonl'), [
+function seedClaude({ home, project, ts, yesterday }, claudeConfigDir = '') {
+  writeJsonl(path.join(claudeProjectDir(home, project, { CLAUDE_CONFIG_DIR: claudeConfigDir }), 's1.jsonl'), [
     { type: 'user', timestamp: yesterday, message: { content: 'old ask from two days ago' } },
     { type: 'user', timestamp: ts, message: { content: 'add a login page' } },
     { type: 'user', timestamp: ts, message: { content: '<command-name>/clear</command-name>' } },
@@ -691,12 +691,12 @@ function seedClaude({ home, project, ts, yesterday }) {
   ]);
 }
 
-function seedCodex({ home, project, now, ts }, cwd = project, meta = {}, name = path.basename(cwd)) {
+function seedCodex({ home, project, now, ts }, cwd = project, meta = {}, name = path.basename(cwd), codexHome = path.join(home, '.codex')) {
   const y = String(now.getFullYear());
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
   const patch = `*** Begin Patch\n*** Update File: ${path.join(project, 'README.md')}\n@@\n-old\n+new\n*** End Patch`;
-  writeJsonl(path.join(home, '.codex', 'sessions', y, m, d, `rollout-${name}.jsonl`), [
+  writeJsonl(path.join(codexHome, 'sessions', y, m, d, `rollout-${name}.jsonl`), [
     { type: 'session_meta', timestamp: ts, payload: { cwd, ...meta } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }] } },
     { type: 'response_item', timestamp: ts, payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `# AGENTS.md instructions for ${cwd}\n\n<INSTRUCTIONS>be nice</INSTRUCTIONS>` }] } },
@@ -709,7 +709,7 @@ test('recap today reads a claude code session for this folder only', () => {
   const fx = todayFixture();
   try {
     seedClaude(fx);
-    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
     assert.equal(t.sessions.claude, 1);
     assert.equal(t.sessions.codex, 0);
     assert.equal(t.prompts, 2, 'counts today\'s typed asks, skips old asks, wrappers, hook notes, chat summaries, and tool results');
@@ -730,7 +730,7 @@ test('recap today reads codex patches and ignores codex sessions in other folder
   try {
     seedCodex(fx);
     seedCodex(fx, other);
-    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
     assert.equal(t.sessions.codex, 1);
     assert.equal(t.prompts, 1, 'the project notes codex injects are not an ask');
     assert.deepEqual(t.files, ['README.md']);
@@ -745,7 +745,7 @@ test('recap today reads codex patches and ignores codex sessions in other folder
 test('recap today in an empty folder says nothing happened yet, in plain words', () => {
   const fx = todayFixture();
   try {
-    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
     assert.equal(t.isGit, false);
     assert.equal(
       renderAgentToday(t),
@@ -770,7 +770,7 @@ test('bare recap with no atris folder shows today, with commits and unsaved file
     const r = spawnSync(process.execPath, [cliPath, 'recap'], {
       cwd: fx.project,
       encoding: 'utf8',
-      env: { ...process.env, HOME: fx.home, ATRIS_TASKS_DB: path.join(fx.home, 'tasks.db') },
+      env: { ...process.env, HOME: fx.home, ATRIS_TASKS_DB: path.join(fx.home, 'tasks.db'), CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' },
     });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^today in /);
@@ -796,7 +796,7 @@ test('recap today keeps what you typed apart from jobs agents ran on their own',
     seedCodex(fx, fx.project, { originator: 'Codex Desktop', source: 'vscode' }, 'chat');
     seedCodex(fx, fx.project, { originator: 'codex_exec', source: 'exec' }, 'exec');
     seedCodex(fx, fx.project, { originator: 'codex_exec', source: { subagent: 'review' } }, 'helper');
-    const t = buildAgentToday({ cwd: fx.project, home: fx.home, now: fx.now });
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
     assert.deepEqual(t.sessions, { claude: 1, codex: 1 }, 'only chats a person typed in');
     assert.equal(t.prompts, 3, 'program prompts are not your asks');
     assert.equal(t.autoRuns, 2, 'one claude program run and one codex exec; the helper is part of another session');
@@ -849,7 +849,7 @@ test('a first recap before any setup writes nothing to your home or folder', () 
     seedClaude(fx);
     spawnSync('git', ['init', '-q'], { cwd: fx.project });
     const before = fs.readdirSync(fx.project).sort();
-    const env = { ...process.env, HOME: fx.home };
+    const env = { ...process.env, HOME: fx.home, CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' };
     delete env.ATRIS_TASKS_DB;
     for (const args of [['recap'], ['recap', 'today'], ['recap', '--json']]) {
       const r = spawnSync(process.execPath, [cliPath, ...args], { cwd: fx.project, encoding: 'utf8', env });
@@ -861,5 +861,25 @@ test('a first recap before any setup writes nothing to your home or folder', () 
   } finally {
     cleanup(fx.home);
     cleanup(fx.project);
+  }
+});
+
+test('recap today looks where each tool keeps its logs when that folder was moved', () => {
+  const fx = todayFixture();
+  const moved = makeTempDir();
+  try {
+    const claudeDir = path.join(moved, 'claude-config');
+    const codexDir = path.join(moved, 'codex-home');
+    seedClaude({ ...fx, home: '/nowhere' }, claudeDir);
+    seedCodex({ ...fx, home: '/nowhere' }, fx.project, {}, 'moved', codexDir);
+    const env = { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir };
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env, now: fx.now });
+    assert.deepEqual(t.sessions, { claude: 1, codex: 1 });
+    const plain = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
+    assert.deepEqual(plain.sessions, { claude: 0, codex: 0 }, 'nothing in the usual place');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+    cleanup(moved);
   }
 });
