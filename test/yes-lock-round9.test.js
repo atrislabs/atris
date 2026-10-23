@@ -27,7 +27,7 @@ test('codex 1: atris verbs that cost credits are spend; free uses of them are no
     ['ingest', '--cloud', 'x.md'], ['campaign', 'cloud-run', 'c1'], ['agent', 'spawn', 'researcher']]) {
     assert.ok(cats(args).includes('spend'), args.join(' '));
   }
-  for (const args of [['youtube', 'search', 'topic'], ['youtube', 'notes', 'https://youtu.be/x'], ['youtube'], ['improve'], ['improve', 'doctor'],
+  for (const args of [['youtube', 'search', 'topic'], ['youtube', 'notes', 'https://youtu.be/x'], ['improve', 'doctor'],
     ['wiki', 'query', 'q'], ['lint'], ['chat', 'scan'], ['computer', 'status'], ['aeo', 'status'], ['balance'], ['sleep']]) {
     assert.ok(!cats(args).includes('spend'), args.join(' '));
   }
@@ -53,6 +53,16 @@ test('a bet that locks spending holds paid research; a bet that does not lets it
     assert.equal(v('m-woken', seal, ['youtube', 'search', 'topic']), null, 'plain youtube search is free and allowed');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('final round: a paid verb with no sub, or a sub it does not know, is spend', () => {
+  const cats = args => yesLock.analyze('atris', args).cats;
+  for (const args of [['computer'], ['computer', 'frob'], ['aeo'], ['aeo', 'frob'], ['agent'], ['campaign', 'frob'], ['youtube'], ['improve'], ['chat']]) {
+    assert.ok(cats(args).includes('spend'), args.join(' '));
+  }
+  for (const args of [['computer', 'status'], ['aeo', 'status'], ['agent', 'spawns'], ['campaign', 'status'], ['improve', 'doctor'], ['computer', 'help']]) {
+    assert.ok(!cats(args).includes('spend'), args.join(' '));
   }
 });
 
@@ -106,4 +116,15 @@ test('codex 2: a zsh script still runs when zsh is the configured shell', (t) =>
   assert.match(res.stdout, /^zsh-ok$/m, `zsh ran it: ${res.stdout}${res.stderr}`);
   assert.doesNotMatch(res.stdout + res.stderr, /LOCAL-NPM-RAN/);
   assert.match(res.stderr, /held: a handed-off job wants to npm publish/, 'a zsh that rebuilds PATH still reaches the wrapper');
+});
+
+test('final round: a shell set in a --userconfig file is the one scripts run in', (t) => {
+  if (!has('npm')) { t.skip('no npm here'); return; }
+  const w = scriptWorld(t, 'npm');
+  fs.writeFileSync(path.join(w.root, 'custom.npmrc'), `script-shell=${w.shell}\n`);
+  for (const cmd of ['npm --userconfig=custom.npmrc run ok', 'npm --userconfig custom.npmrc run ok']) {
+    const res = w.run(cmd);
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.match(res.stdout, /^configured-shell-ran$/m, `${cmd}: ${res.stdout}`);
+  }
 });
