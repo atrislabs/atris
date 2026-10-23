@@ -160,7 +160,7 @@ function setRegistryJob(id, enabled) {
     delete job.disabled_reason;
   } else {
     job.disabled = true;
-    job.disabled_reason = `stopped via atris loops ${new Date().toISOString().slice(0, 10)}`;
+    job.disabled_reason = `stopped via atris loops ${todayIso()}`;
   }
   saveRegistry(registry);
   return true;
@@ -204,8 +204,11 @@ function controlLoop(id, action) {
   return 0;
 }
 
+// Local calendar day (YYYY-MM-DD). toISOString() is the UTC day, which is
+// already tomorrow in the evening anywhere west of Greenwich.
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function renderTemplate(text) {
