@@ -73,6 +73,12 @@ async function setupAtris() {
       token: creds.token,
     });
 
+    if (!result.ok && result.status === 401) {
+      console.error('\n  Your saved login has expired, so Atris could not list your businesses.');
+      console.error('  Run "atris login", then "atris setup" again.');
+      process.exit(1);
+    }
+
     if (!result.ok) {
       console.error(`\n  Could not fetch businesses: ${result.error || 'Unknown error'}`);
       console.error('  You can add one later with: atris business add <slug>');
