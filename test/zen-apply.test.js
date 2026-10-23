@@ -404,6 +404,22 @@ test('an unpushed edit to a note that moved upstream follows it to the new path'
   }
 });
 
+test('a branch with nothing new is not called kept and then cleared', () => {
+  const { base, checkout } = createRepo();
+  try {
+    git(checkout, 'checkout', '-q', '-b', 'side');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /moved back to master \(side had nothing new\)/);
+    assert.match(cli.stdout, /cleared 1 finished branch/);
+    assert.doesNotMatch(cli.stdout, /side is kept/);
+    assert.deepEqual(branches(checkout, 'side'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen only says it refreshed the map when the map changed', () => {
   const { base, checkout } = createRepo();
   try {
