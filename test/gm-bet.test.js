@@ -2875,3 +2875,13 @@ test('reader: on the number card it is asked for an intent, and passes a known o
   await gmBet.readSaid({ text: 'hi', card: { kind: 'idea', title: 't', detail: '', buttons: [] }, workspaceRoot: workspace(), deps: { runModel: run('{"kind": "unclear", "reply": "what do you mean?"}'), readContext: () => '' } });
   assert.doesNotMatch(prompts[2], /intent/);
 });
+
+test('owner words: the prompts that write choices and replies talk to the owner as you, never by name', async () => {
+  const prompts = [];
+  const runModel = async (p) => { prompts.push(p); return { ok: false, reason: 'stub' }; };
+  const root = workspace();
+  await gmBet.readSaid({ text: 'what', card: { kind: 'question', title: 'which number?', detail: '', buttons: [] }, workspaceRoot: root, deps: { runModel, readContext: () => '' } });
+  await gmBet.generateScoreboardChoices({ workspaceRoot: root, bundle: { facts: [], sources: {} }, deps: { runModel, readContext: () => '' }, ledgerFile: path.join(root, 'bets.jsonl') });
+  assert.equal(prompts.length, 2);
+  for (const p of prompts) assert.match(p, /talk to him as "you"/, p.slice(0, 200));
+});
