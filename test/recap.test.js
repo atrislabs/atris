@@ -743,6 +743,29 @@ test('recap today counts a typed ask saved as a list, like one with a picture', 
   }
 });
 
+test('recap today keeps apart two folders whose names differ only by a dash or underscore', () => {
+  const fx = todayFixture();
+  const parent = fs.realpathSync(makeTempDir());
+  try {
+    const dashed = path.join(parent, 'my-app');
+    const under = path.join(parent, 'my_app');
+    fs.mkdirSync(dashed);
+    fs.mkdirSync(under);
+    const dir = claudeProjectDir(fx.home, dashed, {});
+    assert.equal(dir, claudeProjectDir(fx.home, under, {}), 'both folders share one log folder');
+    writeJsonl(path.join(dir, 'a.jsonl'), [{ type: 'user', timestamp: fx.ts, cwd: dashed, message: { content: 'work in the dashed one' } }]);
+    writeJsonl(path.join(dir, 'b.jsonl'), [{ type: 'user', timestamp: fx.ts, cwd: under, message: { content: 'work in the underscore one' } }]);
+    writeJsonl(path.join(dir, 'c.jsonl'), [{ type: 'user', timestamp: fx.ts, message: { content: 'old log with no folder recorded' } }]);
+    const t = buildAgentToday({ cwd: dashed, home: fx.home, env: {}, now: fx.now });
+    assert.equal(t.sessions.claude, 2, 'its own log plus the one that records no folder, not the sibling');
+    assert.equal(t.prompts, 2);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+    cleanup(parent);
+  }
+});
+
 test('recap today reads codex patches and ignores codex sessions in other folders', () => {
   const fx = todayFixture();
   const other = makeTempDir();
