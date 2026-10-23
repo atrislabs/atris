@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.atrislabs/atris",
+  "title": "Atris",
+  "description": "Run Atris campaigns from any agent, and extract, check, or search brand design systems.",
+  "repository": {
+    "url": "https://github.com/atrislabs/atris",
+    "source": "github"
+  },
+  "websiteUrl": "https://atris.ai",
+  "version": "3.73.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "atris",
+      "version": "3.73.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "ATRIS_API_KEY",
+          "description": "Atris API key for the design tools. Campaign tools work without it.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
