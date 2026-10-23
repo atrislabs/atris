@@ -82,6 +82,26 @@ test('side copies left for their owners get one line each and a clock', () => {
   assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3, 49 * 3600000).slice(-1), ['the first one is due in 2 days']);
 });
 
+test('a side copy in the system temp folder is named from $TMPDIR', () => {
+  const { sideCopyLines } = require('../lib/zen');
+  const fake = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-tmpdir-'));
+  const real = fs.realpathSync(fake);
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = `${fake}/`;
+  try {
+    const lines = sideCopyLines([path.join(fake, 'gates-1', 'main'), path.join(real, 'gates-2', 'main'), '/elsewhere/x'], 3);
+    assert.deepEqual(lines.slice(1, 4), [
+      `  ${path.join('$TMPDIR', 'gates-1', 'main')}`,
+      `  ${path.join('$TMPDIR', 'gates-2', 'main')}`,
+      '  /elsewhere/x',
+    ]);
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    fs.rmSync(fake, { recursive: true, force: true });
+  }
+});
+
 test('team-state matching covers folders and exact files', () => {
   assert.ok(isTeamState('atris/logs/2026/today.md', DEFAULT_TEAM_STATE));
   assert.ok(isTeamState('.claude/agents/x.md', DEFAULT_TEAM_STATE));
