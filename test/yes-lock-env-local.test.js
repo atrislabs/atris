@@ -74,3 +74,43 @@ test('a woken run leaves no yes request for local work under that env', (t) => {
   for (const args of LOCAL) w.verdict('git', args, SUITE_ENV);
   assert.deepEqual(yesLock.askedYesLocks(w.stateDir, 'm'), []);
 });
+
+// A guarded job whose tests make their own guard (the suite under a woken
+// run, or a mission tick inside one) ran each guard's script shell as the
+// other's "configured shell", and the inner one ran itself forever.
+test('a package script under two nested guards finishes and keeps the configured shell', (t) => {
+  const npm = require('node:child_process').spawnSync('sh', ['-c', 'command -v npm'], { encoding: 'utf8' }).stdout.trim();
+  if (!npm) { t.skip('no npm here'); return; }
+  const { prepareMissionGitGuard } = require('../lib/mission-protected-lane');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'yes-nested-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'repo');
+  fs.mkdirSync(path.join(root, 'node_modules', '.bin'), { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'feature', root]);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'p', version: '1.0.0', scripts: { ok: 'echo fine', ship: 'npm publish' } }));
+  fs.writeFileSync(path.join(root, 'node_modules', '.bin', 'npm'), '#!/bin/sh\necho LOCAL-NPM-RAN\n', { mode: 0o755 });
+  const shell = path.join(base, 'configured-shell');
+  fs.writeFileSync(shell, '#!/bin/sh\necho configured-shell-ran\nexec /bin/sh "$@"\n', { mode: 0o755 });
+  const seal = yesLock.handoffSeal();
+  const guard = (id, pathValue) => {
+    const stateDir = path.join(base, `state-${id}`);
+    yesLock.writeYesLocks(stateDir, id, { seal });
+    const g = prepareMissionGitGuard({ root, missionId: id, yesLockSeal: seal, stateDir, pathValue });
+    t.after(() => g.cleanup());
+    return g;
+  };
+  const outer = guard('m-outer', [path.dirname(npm), path.dirname(process.execPath), path.dirname(gitBin), '/usr/bin', '/bin'].join(path.delimiter));
+  const inner = guard('m-inner', outer.env.PATH);
+  const run = cmd => require('node:child_process').spawnSync('sh', ['-c', cmd], { cwd: root, env: { ...BASE_ENV, PATH: inner.env.PATH }, encoding: 'utf8', timeout: 60000 });
+  const ok = run('npm run ok');
+  assert.equal(ok.error, undefined, 'it finished');
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /^fine$/m);
+  fs.writeFileSync(path.join(root, '.npmrc'), `script-shell=${shell}\n`);
+  const configured = run('npm run ok');
+  assert.equal(configured.error, undefined, 'it finished with a configured shell');
+  assert.match(configured.stdout, /^configured-shell-ran$/m, configured.stdout + configured.stderr);
+  const ship = run('npm run ship');
+  assert.doesNotMatch(ship.stdout + ship.stderr, /LOCAL-NPM-RAN/);
+  assert.match(ship.stderr, /held: a handed-off job wants to npm publish/);
+});
