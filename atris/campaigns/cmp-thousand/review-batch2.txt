@@ -1,0 +1,36 @@
+DROP test/autoland--default-digest-hour.test.js: only asserts an exported constant and properties derived from it, without testing digest scheduling.
+DROP test/autoland--certified-work-lands-phrase.test.js: uses the real clock to classify receipt timestamps without fixing Date.now().
+DROP test/autoland--heartbeat-is-live.test.js: liveness assertions depend on the unfrozen wall clock and file timestamps.
+DROP test/business-target--no-business.test.js: duplicates the business selection and error behaviors covered by test/business-target--business-or-say.test.js.
+DROP test/campaign-new--draft-and-start.test.js: duplicates drafting, confirmation, validation, and retry behaviors already covered by test/campaign-new.test.js.
+kept 40 of 45
+DROP test/autoland--default-digest-hour.test.js: only asserts an exported constant and properties derived from it, without testing digest scheduling.
+DROP test/autoland--certified-work-lands-phrase.test.js: uses the real clock to classify receipt timestamps without fixing Date.now().
+DROP test/autoland--heartbeat-is-live.test.js: liveness assertions depend on the unfrozen wall clock and file timestamps.
+DROP test/business-target--no-business.test.js: duplicates the business selection and error behaviors covered by test/business-target--business-or-say.test.js.
+DROP test/campaign-new--draft-and-start.test.js: duplicates drafting, confirmation, validation, and retry behaviors already covered by test/campaign-new.test.js.
+kept 40 of 45
+DROP test/campaign-schema--actions.test.js: Only checks constant contents and built-in array operations; never exercises action handling.
+DROP test/campaign-sync--cloud-features.test.js: Duplicates the exact advertised feature list already checked in test/campaign-sync.test.js.
+DROP test/cloud-mission--valid-cloud-lanes.test.js: Only checks a constant Set and Set.has; never exercises lane validation.
+DROP test/daily-log--append-master-daily-entry.test.js: Assumes consecutive calls use the same daily file; crossing midnight can fail it.
+kept 41 of 45
+DROP test/campaign-schema--actions.test.js: Only checks constant contents and built-in array operations; never exercises action handling.
+DROP test/campaign-sync--cloud-features.test.js: Duplicates the exact advertised feature list already checked in test/campaign-sync.test.js.
+DROP test/cloud-mission--valid-cloud-lanes.test.js: Only checks a constant Set and Set.has; never exercises lane validation.
+DROP test/daily-log--append-master-daily-entry.test.js: Assumes consecutive calls use the same daily file; crossing midnight can fail it.
+kept 41 of 45
+DROP test/serve--stream-session.test.js: Opens real HTTP listeners and makes network requests over loopback.
+DROP test/status--status-atris.test.js: Uses the live date to seed and read journal files, so crossing midnight can break the assertions.
+DROP test/terminal--ensure-awake.test.js: Shortens timers but leaves Date.now real, so the wake-success case can fail if CI pauses past its deadline.
+kept 42 of 45
+DROP test/serve--stream-session.test.js: Opens real HTTP listeners and makes network requests over loopback.
+DROP test/status--status-atris.test.js: Uses the live date to seed and read journal files, so crossing midnight can break the assertions.
+DROP test/terminal--ensure-awake.test.js: Shortens timers but leaves Date.now real, so the wake-success case can fail if CI pauses past its deadline.
+kept 42 of 45
+DROP test/youtube--process-youtube.test.js: Duplicates processing coverage in test/youtube.test.js for transcript payloads, cloud fallback, apply blocking, 401 retries, and refund errors.
+DROP test/youtube--watch-command.test.js: Duplicates watch coverage in test/youtube-watch.test.js for channel management, help, invalid commands, empty feeds, fetch failures, and seen-video skipping.
+kept 0 of 2
+DROP test/youtube--process-youtube.test.js: Duplicates processing coverage in test/youtube.test.js for transcript payloads, cloud fallback, apply blocking, 401 retries, and refund errors.
+DROP test/youtube--watch-command.test.js: Duplicates watch coverage in test/youtube-watch.test.js for channel management, help, invalid commands, empty feeds, fetch failures, and seen-video skipping.
+kept 0 of 2
