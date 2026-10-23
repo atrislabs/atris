@@ -1,4 +1,4 @@
-# Erdos-Gyarfas n=36 girth>=7 exhaustion — final results (2026-07-23)
+# Erdos-Gyarfas n=36 girth>=7 exhaustion, final results (2026-07-23)
 
 Conjecture tested (Erdos-Gyarfas): every graph with minimum degree >= 3
 contains a cycle whose length is a power of 2. A cubic counterexample of
@@ -12,7 +12,7 @@ stats36g7_<res>.log.
 ## Coverage
 - total generated across shards: 11,057,343 + 11,518,401 + 10,931,495 +
   10,884,399 + 10,945,277 + 13,092,438 + 12,711,999 + 13,937,731
-  = 95,079,083 — matches OEIS A014375(18) = 95079083 (connected cubic
+  = 95,079,083, matches OEIS A014375(18) = 95079083 (connected cubic
   graphs on 36 vertices with girth >= 7) exactly.
 - all 8 shards completed ("All done" + CPU time in gen36g7_<res>.log).
 
