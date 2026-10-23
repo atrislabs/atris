@@ -339,3 +339,150 @@ test('a member woken by a handoff runs under the handing-off mission yes-lock', 
   assert.deepEqual(yesLock.askedYesLocks(stateDir, parent.id).map((l) => l.step), [3]);
   assert.equal(wake.yes_lock_from, parent.id, 'the handoff names the lock the woken run is under');
 });
+
+// Codex review of #1483. A held step can still be asked for while its
+// mission is ready, paused, or anything else not finished, and a handoff from
+// a plain terminal must not drop the lock. When it is unclear which lock
+// applies, nobody starts.
+function lockedWorld(t) {
+  const ctx = setup(t, { extraMembers: ['linguist'] });
+  const stateDir = path.join(ctx.home, '.atris', 'state');
+  const ghRan = path.join(ctx.base, 'gh-ran.txt');
+  const ghExit = path.join(ctx.base, 'gh-exit.txt');
+  fs.writeFileSync(path.join(ctx.bin, 'gh'), `#!/bin/sh\necho "$*" >> "${ghRan}"\nexit 0\n`);
+  fs.chmodSync(path.join(ctx.bin, 'gh'), 0o755);
+  fs.writeFileSync(path.join(ctx.bin, 'claude'), [
+    '#!/bin/sh',
+    'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages --model"; exit 0; fi',
+    'if [ "$1" = "--version" ]; then echo "2.0.0 (Claude Code)"; exit 0; fi',
+    `printf '%s\\n---\\n' "$*" >> "${ctx.callLog}"`,
+    `case "$*" in *CHILDSTEP*) gh pr merge 5 --squash; echo $? > "${ghExit}" ;; esac`,
+    'echo \'{"type":"result","is_error":false,"result":"did my step"}\'',
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(ctx.bin, 'claude'), 0o755);
+  const seal = [{ step: 3, text: 'merge the try page', categories: ['merge'] }];
+  const lockMission = (id, owner, status, betId = null) => {
+    const file = path.join(ctx.root, '.atris', 'state', 'missions.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const now = new Date().toISOString();
+    fs.appendFileSync(file, `${JSON.stringify({ schema: 'atris.mission.v1', id, objective: 'launch try page', owner, status,
+      runner: 'claude', yes_locks: { steps: seal, sealed_at: now }, created_at: now, updated_at: now })}\n`);
+    require('../lib/yes-lock').writeYesLocks(stateDir, id, { betId, seal });
+  };
+  return { ctx, stateDir, ghRan, ghExit, lockMission };
+}
+
+async function handOffAndWait(w, args) {
+  const res = runCli(w.ctx, ['member', 'handoff', ...args, '--json'], { ATRIS_HANDOFF_WAKE: '1' });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const wake = JSON.parse(res.stdout).handoff.wake;
+  if (wake.pid) {
+    w.ctx.pids.push(wake.pid);
+    assert.ok(await waitGone(wake.pid), 'the woken run finishes');
+  }
+  return wake;
+}
+
+for (const status of ['ready', 'paused']) {
+  test(`a terminal handoff from a ${status} locked mission keeps the lock`, async (t) => {
+    const w = lockedWorld(t);
+    w.lockMission('mission-2026-10-22-try-page-aaaa1111', 'builder', status);
+    const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
+    assert.equal(wake.status, 'started', JSON.stringify(wake));
+    assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77', 'the merge is held');
+    assert.equal(fs.existsSync(w.ghRan), false);
+    assert.equal(wake.yes_lock_from, 'mission-2026-10-22-try-page-aaaa1111');
+  });
+}
+
+test('a handoff naming a locked bet keeps that lock, whoever hands off', async (t) => {
+  const w = lockedWorld(t);
+  // linguist hands off; the locked job belongs to builder, named by its bet tag
+  w.lockMission('mission-2026-10-22-try-page-bbbb2222', 'builder', 'running', 'bet-2026-10-22-6f292584');
+  const wake = await handOffAndWait(w, ['linguist', 'validator', '[bet-2026-10-22-6f292584] CHILDSTEP try it on 20 repos']);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77');
+  assert.equal(wake.yes_lock_from, 'mission-2026-10-22-try-page-bbbb2222');
+});
+
+test('two open locked jobs and no name: nobody starts, and it says why', async (t) => {
+  const w = lockedWorld(t);
+  w.lockMission('mission-2026-10-22-one-cccc3333', 'builder', 'ready');
+  w.lockMission('mission-2026-10-22-two-dddd4444', 'builder', 'paused');
+  const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
+  assert.equal(wake.status, 'not_started');
+  assert.equal(wake.reason, 'lock_unclear');
+  assert.match(wake.text, /validator did not start: builder has more than one job under a yes-lock open/);
+  assert.equal(fs.existsSync(w.ghExit), false, 'nothing ran');
+});
+
+test('a handoff from inside a locked guard whose lock cannot be read starts nobody', async (t) => {
+  const w = lockedWorld(t);
+  // a locked guard folder on PATH (it wraps gh) with no readable lock record
+  const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-git-'));
+  t.after(() => fs.rmSync(guardDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(guardDir, 'gh'), '#!/bin/sh\nexit 77\n', { mode: 0o755 });
+  const res = runCli(w.ctx, ['member', 'handoff', 'builder', 'validator', 'CHILDSTEP try it', '--json'],
+    { ATRIS_HANDOFF_WAKE: '1', PATH: `${guardDir}${path.delimiter}${w.ctx.bin}${path.delimiter}${process.env.PATH}` });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const wake = JSON.parse(res.stdout).handoff.wake;
+  assert.equal(wake.status, 'not_started');
+  assert.equal(wake.reason, 'lock_unknown');
+  assert.match(wake.text, /validator did not start: this handoff came from inside a job under a yes-lock that could not be read/);
+});
+
+// Codex review of #1483, P1: two handoffs at once both counted 5 working and
+// both started, past the limit of 6.
+test('two handoffs at the same moment never go past the limit', async (t) => {
+  const others = ['m1', 'm2', 'm3', 'm4'];
+  const ctx = setup(t, { extraMembers: [...others, 'linguist'] });
+  writeRunningMission(ctx, 'builder', 0);
+  others.forEach((name, i) => writeRunningMission(ctx, name, i + 1));
+  const { spawn } = require('node:child_process');
+  const clean = scrubAgentEnv(process.env);
+  for (const name of CALLER_ENV) delete clean[name];
+  const env = {
+    ...clean, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_NO_INTERACTIVE: '1', ATRIS_HANDOFF_WAKE: '1', HOME: ctx.home,
+    ATRIS_TASKS_DB: path.join(ctx.base, 'tasks.db'),
+    ATRIS_MACHINE_ROSTER_PATH: path.join(ctx.home, 'roster.json'),
+    ATRIS_MACHINE_ROSTER_MD_PATH: path.join(ctx.home, 'roster.md'),
+    ATRIS_ROSTER_SESSIONS_DIR: path.join(ctx.home, 'roster-sessions'),
+    PATH: `${ctx.bin}${path.delimiter}${process.env.PATH}`,
+  };
+  const handoff = (to) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [cli, 'member', 'handoff', 'builder', to, `look at the page for ${to}`, '--json'], { cwd: ctx.root, env });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.on('close', () => resolve(JSON.parse(out).handoff.wake));
+  });
+  const wakes = await Promise.all([handoff('validator'), handoff('linguist')]);
+  for (const wake of wakes) if (wake.pid) ctx.pids.push(wake.pid);
+  assert.deepEqual(wakes.map((w) => w.status).sort(), ['not_started', 'started'], JSON.stringify(wakes));
+  assert.equal(wakes.find((w) => w.status === 'not_started').reason, 'at_limit');
+  for (const wake of wakes) if (wake.pid) await waitGone(wake.pid);
+});
+
+test('a wake lock left by a crash never strands the next handoff', (t) => {
+  const { withWakeReservation } = require('../lib/handoff-wake');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wake-lock-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, 'handoff-wake.lock');
+  // holder died
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+  fs.writeFileSync(lock, JSON.stringify({ pid: Number(dead.stdout), at: Date.now() }));
+  assert.equal(withWakeReservation(dir, () => 'ran', { waitMs: 500 }), 'ran');
+  assert.equal(fs.existsSync(lock), false, 'released after the start');
+  // holder alive but stuck past the stale window
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: 0 }));
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  fs.utimesSync(lock, old, old);
+  assert.equal(withWakeReservation(dir, () => 'ran', { waitMs: 500 }), 'ran');
+  // holder alive and fresh: wait, then give up plainly
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  assert.deepEqual(withWakeReservation(dir, () => 'ran', { waitMs: 300 }), { busy: true });
+  fs.rmSync(lock);
+  // a start recorded under the lock is counted by the next one while its run lives
+  withWakeReservation(dir, ({ record }) => record({ member: 'validator', mission_id: 'm', pid: process.pid }));
+  assert.deepEqual(withWakeReservation(dir, ({ recent }) => recent.map((w) => w.member)), ['validator']);
+});

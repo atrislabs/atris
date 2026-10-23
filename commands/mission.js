@@ -6774,8 +6774,8 @@ function runVerifier(command, root = process.cwd()) {
 }
 
 // True when this mission's run left nothing in the shared folder: no file
-// dirtied past the mission's starting dirt (its own bookkeeping aside) and no
-// new commit. Then the work, if any, lives somewhere else (a member's own
+// dirtied past the mission's starting dirt (its own bookkeeping aside), no
+// file that was dirty at the start changed again, and no new commit. Then the work, if any, lives somewhere else (a member's own
 // branch, already merged), and this folder cannot judge it.
 function missionLeftNothingHere(root, { baseline = null, before = null } = {}) {
   const now = gitWorktreeSnapshot(root);
@@ -6784,7 +6784,20 @@ function missionLeftNothingHere(root, { baseline = null, before = null } = {}) {
   if (!startHead || !now.head || startHead !== now.head) return false;
   if (!baseline && !before?.available) return false;
   const receipt = worktreeReceipt(before?.available ? before : now, now, { verifier: 'check', baseline });
-  return receipt.available === true && receipt.new_since_baseline_count === 0;
+  if (receipt.available !== true || receipt.new_since_baseline_count !== 0) return false;
+  // A file already dirty at the start can be changed again without a new
+  // dirty path. Compare what each one holds; any change, or a file whose
+  // start content was never recorded, means the work may be here.
+  const startPaths = baseline
+    ? baseline.paths
+    : (before.entries || []).map(porcelainEntryPath);
+  const hashes = baseline && baseline.content_hashes && typeof baseline.content_hashes === 'object' ? baseline.content_hashes : {};
+  for (const entryPath of new Set(startPaths)) {
+    if (isLoopExhaustPath(entryPath)) continue;
+    const then = Object.prototype.hasOwnProperty.call(hashes, entryPath) ? hashes[entryPath] : null;
+    if (then === null || dirtyContentHash(root, entryPath) !== then) return false;
+  }
+  return true;
 }
 
 // The mission's check, run where the work is. A mission with its own
@@ -6987,6 +7000,20 @@ function missionBaselinePath(missionId, root = process.cwd()) {
 // Stored outside missions.jsonl because that log re-appends the full mission
 // record on every save. Captured after start bookkeeping so the mission's own
 // state writes land inside the baseline, not in new_since_baseline.
+// What a dirty file holds right now, so a file that was already dirty at the
+// start and changed again is not missed. 'missing' for a deleted file; null
+// when it cannot be read (counts as changed: the check cannot tell).
+function dirtyContentHash(root, relPath) {
+  const file = path.join(root, relPath);
+  try {
+    const stat = fs.statSync(file);
+    if (stat.isDirectory()) return 'dir';
+    return crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+  } catch (error) {
+    return error && error.code === 'ENOENT' ? 'missing' : null;
+  }
+}
+
 function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = captureCodeBaseline(root)) {
   const snapshot = gitWorktreeSnapshot(root);
   if (!snapshot.available) return null;
@@ -7003,6 +7030,8 @@ function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = ca
     dirty_count: snapshot.dirty_count,
     dirty_hash: snapshot.dirty_hash,
     paths: Array.from(paths).sort(),
+    content_hashes: Object.fromEntries(Array.from(paths).filter((p) => !isLoopExhaustPath(p)).sort()
+      .map((p) => [p, dirtyContentHash(root, p)])),
     code,
   };
   writeJson(baselineFile, baseline);

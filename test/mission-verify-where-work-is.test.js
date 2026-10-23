@@ -167,3 +167,46 @@ test('when the run changed the main folder, the check stays where that work is',
   assert.equal(result.code_source, undefined);
   assert.match(result.stderr, /Could not find/);
 });
+
+// Codex review of #1483, P1: a file already dirty when the mission started
+// can be broken again without a new dirty path. Any change to it means the
+// work is here, so the check stays here.
+test('a file dirty at the start and changed again keeps the check here', (t) => {
+  const ctx = setup(t);
+  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'],
+    { ATRIS_TEST_WORK: 'printf "broken\\n" >> README.md' });
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  assert.equal(payload.ticks[0].verifier_passed, false);
+  assert.equal(payload.mission.verifier_result.code_source, undefined);
+});
+
+test('a file dirty at the start and left alone still lets the merged main line judge', (t) => {
+  const ctx = setup(t);
+  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(payload.mission.verifier_result));
+  assert.equal(payload.mission.verifier_result.code_source, 'origin/master');
+});
+
+// Codex review of #1483, P2: when the fetch fails, the cached origin/master
+// may be old, so it must not stand in; the local result stands.
+test('a failed fetch keeps the local result', (t) => {
+  const ctx = setup(t);
+  // The main folder saw the merge once, so its cached origin/master has the test.
+  git(ctx.root, ['fetch', '-q', 'origin']);
+  fs.renameSync(ctx.origin, `${ctx.origin}.gone`);
+  t.after(() => { try { fs.renameSync(`${ctx.origin}.gone`, ctx.origin); } catch {} });
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  assert.equal(payload.ticks[0].verifier_passed, false);
+  assert.equal(payload.mission.verifier_result.code_source, undefined);
+  assert.match(payload.mission.verifier_result.stderr, /Could not find/);
+});

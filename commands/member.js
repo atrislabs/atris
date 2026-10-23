@@ -11358,8 +11358,10 @@ function wakeOnHandoff(handoff, root, args) {
       text: `${handoff.to} was not started; the handoff is only written down. to start it: atris member wake ${handoff.to}`,
     };
   }
-  const { wakeHandoffReceiver } = require('../lib/handoff-wake');
-  const yesLock = handoffYesLock(handoff.from, root);
+  const { wakeHandoffReceiver, notStarted, withWakeReservation } = require('../lib/handoff-wake');
+  const resolved = handoffYesLock(handoff, root);
+  if (resolved.refuse) return notStarted(handoff.to, resolved.refuse, resolved.why);
+  const yesLock = resolved.lock;
   const outcome = wakeHandoffReceiver(handoff, {
     listMembers: () => memberUpTeam(root),
     awake: (name) => {
@@ -11367,23 +11369,70 @@ function wakeOnHandoff(handoff, root, args) {
     },
     engine: (name) => require('../lib/member-engine').memberRosterEngine(name, root),
     start: (name, step) => startHandoffReceiver(root, name, step, yesLock),
+    reserve: (fn) => withWakeReservation(path.join(root, '.atris', 'state'), fn),
   });
   return outcome.status === 'started' && yesLock ? { ...outcome, yes_lock_from: yesLock.missionId } : outcome;
 }
 
-// The yes-lock a handoff passes on: the locked mission guard this command
-// runs under (a handoff made from inside a mission tick), else the newest
-// live mission of the member handing off that carries one.
-function handoffYesLock(from, root) {
-  const onPath = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
-  if (onPath) return onPath;
-  try {
-    const live = memberOwnedMissions(from, memberRunMissionMap(root))
-      .find((mission) => MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())
-        && Array.isArray(mission?.yes_locks?.steps) && mission.yes_locks.steps.length);
-    if (live) return { missionId: live.yes_lock_from || live.id, seal: live.yes_locks.steps };
-  } catch {}
-  return null;
+// A mission is finished when nothing it holds can be asked for again.
+const FINISHED_MISSION_STATUSES = new Set(['complete', 'completed', 'stopped', 'archived', 'superseded', 'closed', 'cancelled', 'canceled', 'abandoned', 'done']);
+
+// The yes-lock a handoff passes on, failing closed:
+//   1. the locked mission guard this command runs under (a handoff made from
+//      inside a mission tick); a locked guard whose lock cannot be read stops
+//      the wake;
+//   2. else the locked jobs the step names: a mission id, or a [bet-...] tag
+//      whose lock record names it (any status);
+//   3. else the locked jobs of the member handing off that are not finished
+//      (running, ready, paused, and the rest), since their held steps can
+//      still be asked for.
+// More than one lock in the running is unclear, so nobody starts.
+// Returns { lock } (lock null when no lock applies) or { refuse, why }.
+function handoffYesLock(handoff, root) {
+  const guard = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
+  if (guard && guard.unknown) {
+    return { refuse: 'lock_unknown', why: 'this handoff came from inside a job under a yes-lock that could not be read, so nobody starts without it' };
+  }
+  if (guard) return { lock: guard };
+  const stateDir = path.join(require('../lib/state-home').atrisHome(), 'state');
+  const missions = Array.from(memberRunMissionMap(root).values()).filter(Boolean);
+  const sealOf = (mission) => (Array.isArray(mission?.yes_locks?.steps) ? mission.yes_locks.steps : []);
+  const found = new Map();
+  const add = (missionId, seal) => {
+    if (missionId && Array.isArray(seal) && seal.length && !found.has(missionId)) found.set(missionId, seal);
+  };
+  const addMission = (mission) => add(mission.yes_lock_from || mission.id, sealOf(mission));
+  const summary = String(handoff.summary || '');
+  for (const mission of missions) {
+    if (mission.id && summary.includes(mission.id) && sealOf(mission).length) addMission(mission);
+  }
+  const betIds = Array.from(summary.matchAll(/\[(bet-[A-Za-z0-9._-]+)\]/g)).map((m) => m[1]);
+  if (betIds.length) {
+    let files = [];
+    try { files = fs.readdirSync(path.join(stateDir, 'yes-locks')).filter((f) => f.endsWith('.json')); } catch {}
+    for (const name of files) {
+      let data = null;
+      try { data = JSON.parse(fs.readFileSync(path.join(stateDir, 'yes-locks', name), 'utf8')); } catch {}
+      if (!data || !betIds.includes(data.bet_id) || !data.mission_id) continue;
+      const mission = missions.find((m) => m.id === data.mission_id);
+      if (mission && sealOf(mission).length) addMission(mission);
+      else add(data.mission_id, (data.locks || []).map((l) => ({ step: l.step, text: l.text, categories: l.categories })));
+    }
+  }
+  if (!found.size) {
+    for (const mission of memberOwnedMissions(handoff.from, new Map(missions.map((m) => [m.id, m])))) {
+      if (FINISHED_MISSION_STATUSES.has(String(mission.status || '').toLowerCase())) continue;
+      if (sealOf(mission).length) addMission(mission);
+    }
+  }
+  if (found.size > 1) {
+    return {
+      refuse: 'lock_unclear',
+      why: `${handoff.from} has more than one job under a yes-lock open (${Array.from(found.keys()).join(', ')}), so it is not clear whose lock applies; name the job in the handoff`,
+    };
+  }
+  const [only] = Array.from(found.entries());
+  return { lock: only ? { missionId: only[0], seal: only[1] } : null };
 }
 
 function memberHandoff(from, to, ...args) {
