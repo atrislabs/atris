@@ -1,6 +1,7 @@
 'use strict';
 
 const { addTaste, listTaste } = require('../lib/taste-lessons');
+const { localDay } = require('../lib/local-day');
 
 const VALID_FLAGS = new Set(['--why', '--scope', '--example']);
 
@@ -86,7 +87,7 @@ function tasteCommand(args = [], options = {}) {
       why,
       scope,
       example,
-      added: new Date().toISOString().slice(0, 10),
+      added: localDay(),
       root,
     });
     stdout.write(`saved the operator's ${entry.verdict} verdict for "${entry.subject}".\n`);
