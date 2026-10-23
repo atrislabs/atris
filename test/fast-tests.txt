@@ -166,3 +166,4 @@ test/trust.test.js
 test/idea-inbox.test.js
 test/idea-tick.test.js
 test/idea-timer.test.js
+test/idea-ledger.test.js

@@ -20,6 +20,7 @@ const {
   readIdeas,
   updateIdea,
 } = require('../lib/idea-inbox');
+const { ideaScore, readOutcomes, scoreLine } = require('../lib/idea-ledger');
 
 const VALUE_FLAGS = new Set(['--repo', '--verify', '--max-minutes']);
 
@@ -128,11 +129,23 @@ function ideaJson(idea) {
     task_id: idea.task_id || null,
     link: idea.link || null,
     at: idea.at,
+    tag: idea.tag || null,
   };
 }
 
-function renderIdeaList(ideas, { repo, timerOn = null } = {}) {
+// Ideas the loop files about itself land in the loop's own code, so they go
+// to this atris checkout when it is a git checkout, else to the same repo.
+function loopHome(repo) {
+  const home = path.resolve(__dirname, '..');
+  return fs.existsSync(path.join(home, '.git')) ? home : repo;
+}
+
+function renderIdeaList(ideas, { repo, timerOn = null, score = null } = {}) {
   const lines = [];
+  if (score && score.builds) {
+    lines.push(scoreLine(score));
+    lines.push('');
+  }
   if (!ideas.length) {
     lines.push('no ideas here yet.');
     lines.push('');
@@ -144,7 +157,8 @@ function renderIdeaList(ideas, { repo, timerOn = null } = {}) {
   const width = String(ideas.length).length;
   const pad = ' '.repeat(width + 4 + 10);
   for (const idea of ideas) {
-    lines.push(`  ${String(idea.n).padStart(width)}. ${idea.status.padEnd(9)} ${oneLine(idea.text, 80)}`);
+    const tag = idea.tag === 'loop' ? '[loop] ' : '';
+    lines.push(`  ${String(idea.n).padStart(width)}. ${idea.status.padEnd(9)} ${tag}${oneLine(idea.text, 80)}`);
     if (idea.status === 'landed' && idea.link) lines.push(`${pad}${idea.link}`);
     if (idea.status === 'refused' && idea.reason) lines.push(`${pad}${oneLine(idea.reason, 100)}`);
     if (idea.status === 'building' && idea.task_id) lines.push(`${pad}task ${idea.task_id}`);
@@ -220,6 +234,7 @@ function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = co
     return runIdeaTick({
       root: repo,
       log: json ? () => {} : log,
+      loopRepo: loopHome(repo),
       maxSeconds: Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes * 60) : DEFAULT_BUILD_SECONDS,
     }).then((outcome) => {
       if (json) log(JSON.stringify({ schema: 'atris.idea_tick.v1', repo, ...outcome }, null, 2));
@@ -232,13 +247,14 @@ function ideaAtris(args = process.argv.slice(3), { cwd = process.cwd(), log = co
   if (sentence) return saveIdea(sentence, { repo, verify: flags.verify || '', json, log });
 
   const ideas = readIdeas(repo);
+  const score = ideaScore(readOutcomes(repo));
   if (json) {
-    log(JSON.stringify({ schema: 'atris.idea_list.v1', repo, ideas: ideas.map(ideaJson) }, null, 2));
+    log(JSON.stringify({ schema: 'atris.idea_list.v1', repo, score: { ...score, line: scoreLine(score) }, ideas: ideas.map(ideaJson) }, null, 2));
     return 0;
   }
   let timerOn = null;
   try { timerOn = ideaTimerOn(ideaTimerPlan(repo, keepDeps), keepDeps); } catch {}
-  log(renderIdeaList(ideas, { repo, timerOn }));
+  log(renderIdeaList(ideas, { repo, timerOn, score }));
   return 0;
 }
 
