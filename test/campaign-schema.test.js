@@ -58,7 +58,7 @@ test('the schema exports the lists every surface serves', () => {
   assert.deepEqual(schema.CONFIDENCE, ['open', 'leaning', 'stronger', 'answered']);
   assert.deepEqual(schema.STATES, ['running', 'needs_you', 'resting', 'queued', 'done', 'out_of_budget', 'paused']);
   assert.deepEqual(schema.STOP_REASONS, ['judge_passed', 'stopped', 'done_by_human', 'budget_spent']);
-  assert.deepEqual(schema.MISSION_OUTCOMES, ['kept', 'reverted', 'failed', 'fault']);
+  assert.deepEqual(schema.MISSION_OUTCOMES, ['kept', 'reverted', 'failed', 'fault', 'held']);
   assert.deepEqual(Object.keys(schema.CAMPAIGN_FIELDS).filter((k) => schema.CAMPAIGN_FIELDS[k].required), ['title', 'judge', 'budget']);
   assert.ok(schema.CAMPAIGN_ID.test('cmp-ships-across-atris'));
   assert.ok(!schema.CAMPAIGN_ID.test('ships'));

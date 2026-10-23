@@ -73,6 +73,19 @@ test('a mission starts with its reserve and ends once, releasing it with its rea
   assert.equal(getCampaign(store, 'cmp-a').budget.spent, 2.22);
 });
 
+test('a mission that paused for review ends held, not failed', () => {
+  const store = campaign(20);
+  const deps = { store };
+  const held = { id: 'm1', owner: 'builder', campaign_id: 'cmp-a', status: 'running' };
+  const plain = { ...held, id: 'm2' };
+  recordCampaignMissionStarted('/x', held, 0, deps);
+  recordCampaignMissionStarted('/x', plain, 0, deps);
+  recordCampaignMissionEnded('/x', held, { ...held, status: 'stopped', last_tick_status: 'paused-for-review' }, TERMINAL, deps);
+  recordCampaignMissionEnded('/x', plain, { ...plain, status: 'stopped', last_tick_status: 'errored' }, TERMINAL, deps);
+  const view = getCampaign(store, 'cmp-a');
+  assert.deepEqual(view.missions.map((m) => [m.id, m.status, m.outcome]), [['m1', 'ended', 'held'], ['m2', 'ended', 'failed']]);
+});
+
 function makeTempDir(t, prefix) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
