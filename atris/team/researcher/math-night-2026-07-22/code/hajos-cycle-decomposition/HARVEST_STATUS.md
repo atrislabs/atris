@@ -1,4 +1,4 @@
-# HARVEST_STATUS — Hajos round 5 (harvested 2026-07-23, second harvester)
+# HARVEST_STATUS: Hajos round 5 (harvested 2026-07-23, second harvester)
 
 Context: the first harvester died without reporting. This harvest re-located the
 raw run data (it lives in the session scratchpad, not this directory), re-ran the
@@ -8,7 +8,7 @@ raw artifacts. Raw evidence is now durably copied into `harvest/` here.
 Raw data location (volatile scratchpad, now mirrored to `harvest/`):
 `/private/tmp/claude-501/-Users-keshavrao-arena-atris-cli/fd403b33-f912-4822-af2b-bf1a10d0935d/scratchpad/hajos-cycle-decomposition/`
 
-## Status: COMPLETE — both classes exhausted, no counterexample
+## Status: COMPLETE, both classes exhausted, no counterexample
 
 - Sentinel `r5_all_done.txt` present, content `ALLDONE`.
 - Exit files: 20/20 shards `exit 0` (10 reg8n14 + 10 reg10n15).
@@ -17,12 +17,12 @@ Raw data location (volatile scratchpad, now mirrored to `harvest/`):
 
 ## Harvested totals (tally.py re-run by this harvester, 2026-07-23)
 
-Class 1 — 8-regular graphs on n=14 (bound: floor(13/2) = 6 cycles):
+Class 1: 8-regular graphs on n=14 (bound: floor(13/2) = 6 cycles):
 
     files=10 done_shards=10 total=3459386 escal=0 unknown=0
     hist= {4: 1633554, 5: 1501579, 6: 324253}
 
-Class 2 — 10-regular graphs on n=15 (bound: floor(14/2) = 7 cycles):
+Class 2: 10-regular graphs on n=15 (bound: floor(14/2) = 7 cycles):
 
     files=10 done_shards=10 total=805579 escal=0 unknown=0
     hist= {5: 355085, 6: 359188, 7: 91306}
