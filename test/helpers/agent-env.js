@@ -23,12 +23,19 @@ const MISSION_DRIVER_VARS = [
   'ATRIS_MISSION_DRIVER_PARENT_PID',
 ];
 
+// Score missions export ATRIS_SCORE_BASE so the gate compares against the
+// member's branch. Leaked into a scratch repo with only master, the gate
+// finds no such branch and the score tests fail. Tests that exercise it set
+// it explicitly.
+const SCORE_VARS = ['ATRIS_SCORE_BASE'];
+
 function scrubAgentEnv(base = process.env) {
   const env = { ...base };
   for (const marker of AGENT_ENV_MARKERS) delete env[marker];
   delete env.ATRIS_AGENT_PROOF_ONLY;
   for (const key of PLAYER_IDENTITY_VARS) delete env[key];
   for (const key of MISSION_DRIVER_VARS) delete env[key];
+  for (const key of SCORE_VARS) delete env[key];
   return env;
 }
 
