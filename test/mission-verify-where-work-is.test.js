@@ -7,10 +7,13 @@
 // failed twice ("Could not find 'test/try-repo.test.js'"), and the mission
 // paused on consecutive-verifier-fails although the work was merged.
 //
-// The mission's check has to run where the work is. When the run left
-// nothing in the shared folder, the work is not there, so the check runs in
-// a throwaway copy of the merged main line. When the run did change the
-// shared folder, the work is there, and the check stays there.
+// The check may run on the fresh main line only with proof that the
+// mission's work is there: a landing the mission recorded (`atris mission
+// landed <id> --pr N` or `--sha <commit>`) whose PR is merged, or whose
+// commit is in the freshly fetched main line. Without that proof the local
+// result stands. (Codex review round 3 on #1483 replaced an earlier guess,
+// "nothing changed here, so try master", which let an unmerged broken
+// commit pass on green master.)
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -82,6 +85,9 @@ function setup(t) {
     '',
   ].join('\n'));
   fs.chmodSync(path.join(bin, 'claude'), 0o755);
+  // gh pr view <n> --json ... answers from gh-pr.json, as GitHub would
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\nif [ "$1 $2" = "pr view" ] && [ -f "${base}/gh-pr.json" ]; then cat "${base}/gh-pr.json"; exit 0; fi\nexit 1\n`);
+  fs.chmodSync(path.join(bin, 'gh'), 0o755);
   return { base, root, home, bin, origin };
 }
 
@@ -129,114 +135,117 @@ function lastJson(stdout) {
   return null;
 }
 
-test('a merged job is checked on the merged main line, not on the stale main folder', (t) => {
+function runOnce(ctx, mission, env = {}) {
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'], env);
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  return payload;
+}
+
+function land(ctx, mission, flag, value) {
+  const res = runCli(ctx, ['mission', 'landed', mission.id, flag, String(value), '--json']);
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  return JSON.parse(res.stdout);
+}
+
+function mergedPr(ctx, state = 'MERGED') {
+  const oid = git(ctx.origin, ['rev-parse', 'master']);
+  fs.writeFileSync(path.join(ctx.base, 'gh-pr.json'), JSON.stringify({ state, mergeCommit: state === 'MERGED' ? { oid } : null }));
+  return oid;
+}
+
+test('the live case: a merged PR the mission recorded is checked on the fresh main line', (t) => {
   const ctx = setup(t);
   assert.equal(fs.existsSync(path.join(ctx.root, 'test', 'try-repo.test.js')), false, 'the main folder lacks the test, like the live checkout');
   const mission = startMission(ctx);
-
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
-  const tick = payload.ticks[0];
-  assert.equal(tick.verifier_passed, true, JSON.stringify(payload.mission.verifier_result || tick, null, 2));
+  const oid = mergedPr(ctx);
+  assert.equal(land(ctx, mission, '--pr', 1479).landing.pr, 1479);
+  const payload = runOnce(ctx, mission);
   const result = payload.mission.verifier_result;
-  assert.equal(result.passed, true);
+  assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(result, null, 2));
   assert.equal(result.code_source, 'origin/master');
-  assert.equal(result.code_sha, git(ctx.origin, ['rev-parse', 'master']));
-  assert.match(result.ran_in, /throwaway copy of origin\/master/);
+  assert.equal(result.code_sha, oid);
+  assert.deepEqual(result.landing_proof, { pr: 1479, sha: oid, proof: 'pr_merged' });
+  assert.match(result.ran_in, /fresh copy of origin\/master/);
   assert.equal(result.shared_checkout.passed, false, 'the main folder run is kept as evidence');
-  assert.notEqual(payload.mission.stop_reason, 'consecutive-verifier-fails');
-  // The main folder is left as it was: same branch, no stray copy.
   assert.equal(git(ctx.root, ['rev-parse', '--abbrev-ref', 'HEAD']), 'member/orb-bench-engines');
-  assert.equal(fs.existsSync(path.join(ctx.root, 'test', 'try-repo.test.js')), false);
   assert.equal(git(ctx.root, ['worktree', 'list']).split('\n').length, 1, 'the throwaway copy is removed');
 });
 
-test('when the run changed the main folder, the check stays where that work is', (t) => {
+test('a recorded commit that is in the fresh main line is checked there', (t) => {
   const ctx = setup(t);
   const mission = startMission(ctx);
-  // The worker writes in the shared folder, so the work is here, and a green
-  // main line must not stand in for it.
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'],
-    { ATRIS_TEST_WORK: 'printf "draft\\n" > try-notes.md' });
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
-  assert.equal(payload.ticks[0].verifier_passed, false);
-  const result = payload.mission.verifier_result;
-  assert.equal(result.passed, false);
-  assert.equal(result.code_source, undefined);
-  assert.match(result.stderr, /Could not find/);
+  land(ctx, mission, '--sha', git(ctx.origin, ['rev-parse', 'master']));
+  const payload = runOnce(ctx, mission);
+  assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(payload.mission.verifier_result));
+  assert.equal(payload.mission.verifier_result.landing_proof.proof, 'sha_in_main');
 });
 
-// Codex review of #1483, P1: a file already dirty when the mission started
-// can be broken again without a new dirty path. Any change to it means the
-// work is here, so the check stays here.
-test('a file dirty at the start and changed again keeps the check here', (t) => {
+test('no landing recorded: the local result stands, even when master would pass', (t) => {
   const ctx = setup(t);
-  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
   const mission = startMission(ctx);
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'],
-    { ATRIS_TEST_WORK: 'printf "broken\\n" >> README.md' });
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
+  const payload = runOnce(ctx, mission);
   assert.equal(payload.ticks[0].verifier_passed, false);
   assert.equal(payload.mission.verifier_result.code_source, undefined);
+  assert.match(payload.mission.verifier_result.stderr, /Could not find/);
 });
 
-test('a file dirty at the start and left alone still lets the merged main line judge', (t) => {
+test('a committed broken revision that never merged keeps failing', (t) => {
   const ctx = setup(t);
-  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
   const mission = startMission(ctx);
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
-  assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(payload.mission.verifier_result));
-  assert.equal(payload.mission.verifier_result.code_source, 'origin/master');
+  // the worker commits a broken try page test in the shared folder, and
+  // records its own unmerged commit as the landing
+  const work = 'mkdir -p test && printf "require(\\"node:test\\")(\\"x\\", () => { throw new Error(\\"broken\\"); });\\n" > test/try-repo.test.js && git add test && git commit -qm broken';
+  const payload = runOnce(ctx, mission, { ATRIS_TEST_WORK: work });
+  assert.equal(payload.ticks[0].verifier_passed, false);
+  land(ctx, mission, '--sha', git(ctx.root, ['rev-parse', 'HEAD']));
+  const again = runOnce(ctx, mission);
+  assert.equal(again.ticks[0].verifier_passed, false, 'a commit not in master proves nothing');
+  assert.equal(again.mission.verifier_result.code_source, undefined);
+});
+
+test('a recorded PR that is not merged keeps the local result', (t) => {
+  const ctx = setup(t);
+  const mission = startMission(ctx);
+  mergedPr(ctx, 'OPEN');
+  land(ctx, mission, '--pr', 1479);
+  const payload = runOnce(ctx, mission);
+  assert.equal(payload.ticks[0].verifier_passed, false);
+  assert.equal(payload.mission.verifier_result.code_source, undefined);
 });
 
 // Codex review of #1483, P2: when the fetch fails, the cached origin/master
 // may be old, so it must not stand in; the local result stands.
 test('a failed fetch keeps the local result', (t) => {
   const ctx = setup(t);
-  // The main folder saw the merge once, so its cached origin/master has the test.
   git(ctx.root, ['fetch', '-q', 'origin']);
+  const mission = startMission(ctx);
+  land(ctx, mission, '--sha', git(ctx.origin, ['rev-parse', 'master']));
   fs.renameSync(ctx.origin, `${ctx.origin}.gone`);
   t.after(() => { try { fs.renameSync(`${ctx.origin}.gone`, ctx.origin); } catch {} });
-  const mission = startMission(ctx);
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
-  assert.equal(payload.ticks[0].verifier_passed, false);
-  assert.equal(payload.mission.verifier_result.code_source, undefined);
-  assert.match(payload.mission.verifier_result.stderr, /Could not find/);
-});
-
-// Codex review round 2 on #1483, P2: making a dirty file executable is a
-// change too.
-test('a file dirty at the start made executable keeps the check here', (t) => {
-  const ctx = setup(t);
-  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
-  const mission = startMission(ctx);
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'],
-    { ATRIS_TEST_WORK: 'chmod +x README.md' });
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
+  const payload = runOnce(ctx, mission);
   assert.equal(payload.ticks[0].verifier_passed, false);
   assert.equal(payload.mission.verifier_result.code_source, undefined);
 });
 
 // Codex review round 2 on #1483, P2: with a narrow fetch refspec a fetch
-// succeeds but only FETCH_HEAD moves; the cached origin/master stays old.
-// The check must run on what the fetch actually brought.
+// succeeds but only FETCH_HEAD moves; the check runs on what was fetched.
 test('a narrow fetch refspec still checks the fresh main line, not the cached one', (t) => {
   const ctx = setup(t);
   git(ctx.root, ['config', 'remote.origin.fetch', '+refs/heads/nothing:refs/remotes/origin/nothing']);
-  const cachedBefore = git(ctx.root, ['rev-parse', 'refs/remotes/origin/master']);
-  assert.notEqual(cachedBefore, git(ctx.origin, ['rev-parse', 'master']), 'the cache is behind the merge');
+  const fresh = git(ctx.origin, ['rev-parse', 'master']);
+  assert.notEqual(git(ctx.root, ['rev-parse', 'refs/remotes/origin/master']), fresh, 'the cache is behind the merge');
   const mission = startMission(ctx);
-  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
-  const payload = lastJson(res.stdout);
-  assert.ok(payload, res.stderr || res.stdout);
+  mergedPr(ctx);
+  land(ctx, mission, '--pr', 1479);
+  const payload = runOnce(ctx, mission);
   assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(payload.mission.verifier_result));
-  assert.equal(payload.mission.verifier_result.code_sha, git(ctx.origin, ['rev-parse', 'master']));
+  assert.equal(payload.mission.verifier_result.code_sha, fresh);
+});
+
+test('mission landed refuses a landing with no PR number or commit', (t) => {
+  const ctx = setup(t);
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'landed', mission.id, '--json']);
+  assert.notEqual(res.status, 0);
 });

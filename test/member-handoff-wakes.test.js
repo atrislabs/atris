@@ -532,3 +532,52 @@ test('a wake lock left by a crash never strands the next handoff', (t) => {
   withWakeReservation(dir, ({ record }) => record({ member: 'validator', mission_id: 'm', pid: process.pid }));
   assert.deepEqual(withWakeReservation(dir, ({ recent }) => recent.map((w) => w.member)), ['validator']);
 });
+
+// Codex review round 3 on #1483, P1: the receiver already had an unlocked
+// ready job with the same objective; the handoff reused it and the lock was
+// dropped. A handoff that carries a lock never runs an unlocked job.
+test('an existing unlocked job with the same objective does not drop the lock', async (t) => {
+  const w = lockedWorld(t);
+  w.lockMission('mission-2026-10-22-try-page-aaaa9999', 'builder', 'running');
+  const file = path.join(w.ctx.root, '.atris', 'state', 'missions.jsonl');
+  const now = new Date().toISOString();
+  fs.appendFileSync(file, `${JSON.stringify({ schema: 'atris.mission.v1', id: 'mission-2026-10-22-childstep-try-it-0000aaaa',
+    objective: 'CHILDSTEP try it on 20 repos', owner: 'validator', status: 'ready', runner: 'claude', verifier: '', created_at: now, updated_at: now })}\n`);
+  const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(wake.yes_lock, 'parent');
+  assert.notEqual(wake.mission_id, 'mission-2026-10-22-childstep-try-it-0000aaaa', 'the unlocked job is not reused');
+  const woken = missionRows(w.ctx, wake.worktree).filter((row) => row.id === wake.mission_id).pop();
+  assert.equal(woken.objective, 'CHILDSTEP try it on 20 repos', 'the lock flags are not read as words of the job');
+  assert.equal(woken.yes_lock_from, 'mission-2026-10-22-try-page-aaaa9999');
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77', 'the merge is held');
+  assert.equal(fs.existsSync(w.ghRan), false);
+});
+
+// Codex review round 3 on #1483, P2: handoff records are rewritten whole;
+// a writer must wait for the shared lock instead of racing another one.
+test('handoff record writes wait for the shared lock', async (t) => {
+  const ctx = setup(t);
+  const stateDir = path.join(ctx.root, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  const file = path.join(stateDir, 'member-handoffs.jsonl');
+  fs.writeFileSync(file, `${JSON.stringify({ id: 'handoff_a', from: 'builder', to: 'validator', summary: 's', status: 'open' })}\n`);
+  const lock = path.join(stateDir, 'member-handoffs.lock');
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  const { spawn } = require('node:child_process');
+  const mission = path.resolve(__dirname, '..', 'commands', 'mission.js');
+  const script = `const m = require(${JSON.stringify(mission)});
+    m.updateMemberHandoff('handoff_a', { wake: { status: 'started' } }, ${JSON.stringify(ctx.root)});
+    m.recordMemberHandoff('builder', 'validator', 'second step', ${JSON.stringify(ctx.root)});`;
+  const child = spawn(process.execPath, ['-e', script], { cwd: ctx.root, env: { ...process.env, HOME: ctx.home } });
+  const done = new Promise((resolve) => child.on('close', resolve));
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 1, 'nothing written while another writer holds the lock');
+  assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /started/);
+  fs.rmSync(lock);
+  await done;
+  const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].wake.status, 'started');
+  assert.equal(rows[1].summary, 'second step');
+});

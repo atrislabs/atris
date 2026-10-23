@@ -777,6 +777,8 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--truth',
   '--proof',
   '--base',
+  '--yes-lock',
+  '--yes-lock-from',
 ];
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [

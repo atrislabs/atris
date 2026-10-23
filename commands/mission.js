@@ -1905,13 +1905,31 @@ function recordMemberHandoff(fromMember, toMember, sliceSummary, root = process.
     next_command: `atris member go ${to}`,
     created_at: now,
   };
+  const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
   try {
-    const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
-    fs.mkdirSync(path.dirname(handoffsFile), { recursive: true });
-    fs.appendFileSync(handoffsFile, `${JSON.stringify(handoff)}\n`, 'utf8');
+    withHandoffsLock(handoffsFile, () => fs.appendFileSync(handoffsFile, `${JSON.stringify(handoff)}\n`, 'utf8'));
+  } catch {
+    return null;
+  }
+  try {
     autoQueueMemberNextPush(to, `${from} handoff: ${cleanSummary}`, `Baton pass from ${from}`, parentRoot);
   } catch {}
   return handoff;
+}
+
+// Every write to member-handoffs.jsonl (append or whole-file rewrite) holds
+// one lock file beside it, so concurrent handoffs never lose a row.
+// (Codex review round 3 on #1483.)
+function withHandoffsLock(handoffsFile, fn) {
+  fs.mkdirSync(path.dirname(handoffsFile), { recursive: true });
+  const lockFile = path.join(path.dirname(handoffsFile), 'member-handoffs.lock');
+  return require('../lib/handoff-wake').withFileLock(lockFile, fn, { staleMs: 60 * 1000, waitMs: 30 * 1000 });
+}
+
+function rewriteHandoffs(handoffsFile, lines) {
+  const tmp = `${handoffsFile}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${lines.join('\n')}\n`, 'utf8');
+  fs.renameSync(tmp, handoffsFile);
 }
 
 // Merge `patch` into the newest handoff row with this id. Returns the
@@ -1921,18 +1939,22 @@ function updateMemberHandoff(handoffId, patch, root = process.cwd()) {
   if (!id || !patch) return null;
   const handoffsFile = path.join(resolveMemberWorkspaceRoot(root), '.atris', 'state', 'member-handoffs.jsonl');
   try {
-    const lines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      let row = null;
-      try { row = JSON.parse(lines[i]); } catch {}
-      if (!row || row.id !== id) continue;
-      const updated = { ...row, ...patch };
-      lines[i] = JSON.stringify(updated);
-      fs.writeFileSync(handoffsFile, `${lines.join('\n')}\n`, 'utf8');
-      return updated;
-    }
-  } catch {}
-  return null;
+    return withHandoffsLock(handoffsFile, () => {
+      const lines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        let row = null;
+        try { row = JSON.parse(lines[i]); } catch {}
+        if (!row || row.id !== id) continue;
+        const updated = { ...row, ...patch };
+        lines[i] = JSON.stringify(updated);
+        rewriteHandoffs(handoffsFile, lines);
+        return updated;
+      }
+      return null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
@@ -1942,26 +1964,28 @@ function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
   const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
   if (!fs.existsSync(handoffsFile)) return 0;
   try {
-    const rawLines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
-    let closedCount = 0;
-    const now = stampIso();
-    const updatedLines = rawLines.map((line) => {
-      try {
-        const row = JSON.parse(line);
-        if (row && String(row.to || '').toLowerCase() === receiver && (row.status || 'open') === 'open') {
-          closedCount++;
-          return JSON.stringify({ ...row, status: 'closed', closed_at: now });
-        }
-      } catch {}
-      return line;
-    });
-    if (closedCount > 0) {
-      fs.writeFileSync(handoffsFile, `${updatedLines.join('\n')}\n`, 'utf8');
-    }
-    return closedCount;
+    return withHandoffsLock(handoffsFile, () => closeHandoffRows(handoffsFile, receiver));
   } catch {
     return 0;
   }
+}
+
+function closeHandoffRows(handoffsFile, receiver) {
+  const rawLines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+  let closedCount = 0;
+  const now = stampIso();
+  const updatedLines = rawLines.map((line) => {
+    try {
+      const row = JSON.parse(line);
+      if (row && String(row.to || '').toLowerCase() === receiver && (row.status || 'open') === 'open') {
+        closedCount++;
+        return JSON.stringify({ ...row, status: 'closed', closed_at: now });
+      }
+    } catch {}
+    return line;
+  });
+  if (closedCount > 0) rewriteHandoffs(handoffsFile, updatedLines);
+  return closedCount;
 }
 
 function memberMissionFile(owner, root = process.cwd()) {
@@ -4595,55 +4619,59 @@ function startMission(args, options = {}) {
     }
     exitMissingMission(idLikeObjective, 1, asJson);
   }
-  if (!hasFlag(args, '--duplicate')) {
-    const twin = findActiveTwinMission(mission.objective, mission.owner);
-    if (twin) {
-      const requestedDestination = mission.drive?.destination || '';
-      if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
-        const proposed = proposeMissionDestinationChange(twin, requestedDestination);
-        const proposal = proposed.drive.pending_destination_proposal;
-        const missionRoot = twin.worktree_root || process.cwd();
-        const { mission: saved } = saveMission(
-          proposed,
-          missionRoot,
-          'mission_destination_change_proposed',
-          {
-            current_destination: twin.drive.destination,
-            proposed_destination: proposal.destination,
-            reason: proposal.reason,
-          },
-        );
-        printJsonOrText(
-          {
-            ok: true,
-            action: 'mission_destination_change_proposed',
-            reused: true,
-            operator_gate_required: true,
-            mission: saved,
-            proposal,
-          },
-          [
-            `Destination change proposed for ${saved.id}.`,
-            `Current destination: ${saved.drive.destination}`,
-            `Proposed destination: ${proposal.destination}`,
-            `Operator gate: ${proposal.reason}.`,
-          ],
-          asJson,
-        );
-        return;
-      }
+  // A start that carries a yes-lock never reuses a twin under a different
+  // lock (or none): the reused job would run unlocked. It gets a fresh job
+  // with the lock instead. (Codex review round 3 on #1483.)
+  const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
+  const sameLock = (twin) => JSON.stringify((twin.yes_locks && twin.yes_locks.steps) || []) === JSON.stringify((mission.yes_locks && mission.yes_locks.steps) || [])
+    && (twin.yes_lock_from || null) === (mission.yes_lock_from || null);
+  if (twinCandidate && (sameLock(twinCandidate) || !(mission.yes_locks && mission.yes_locks.steps && mission.yes_locks.steps.length))) {
+    const twin = twinCandidate;
+    const requestedDestination = mission.drive?.destination || '';
+    if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
+      const proposed = proposeMissionDestinationChange(twin, requestedDestination);
+      const proposal = proposed.drive.pending_destination_proposal;
+      const missionRoot = twin.worktree_root || process.cwd();
+      const { mission: saved } = saveMission(
+        proposed,
+        missionRoot,
+        'mission_destination_change_proposed',
+        {
+          current_destination: twin.drive.destination,
+          proposed_destination: proposal.destination,
+          reason: proposal.reason,
+        },
+      );
       printJsonOrText(
-        { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
+        {
+          ok: true,
+          action: 'mission_destination_change_proposed',
+          reused: true,
+          operator_gate_required: true,
+          mission: saved,
+          proposal,
+        },
         [
-          `Already active: ${twin.id} (${twin.status})`,
-          `Same objective, same owner, reusing it instead of starting a clone.`,
-          `Resume: atris mission run ${twin.id}`,
-          `Really want a second one: re-run with --duplicate`,
+          `Destination change proposed for ${saved.id}.`,
+          `Current destination: ${saved.drive.destination}`,
+          `Proposed destination: ${proposal.destination}`,
+          `Operator gate: ${proposal.reason}.`,
         ],
         asJson,
       );
       return;
     }
+    printJsonOrText(
+      { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
+      [
+        `Already active: ${twin.id} (${twin.status})`,
+        `Same objective, same owner, reusing it instead of starting a clone.`,
+        `Resume: atris mission run ${twin.id}`,
+        `Really want a second one: re-run with --duplicate`,
+      ],
+      asJson,
+    );
+    return;
   }
   // Intake gate: a mission without a verifier is a planning wish, and planning
   // wishes silt up the queue (11 swept on 2026-07-06 with zero ticks). Refuse
@@ -6773,56 +6801,54 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
-// True when this mission's run left nothing in the shared folder: no file
-// dirtied past the mission's starting dirt (its own bookkeeping aside), no
-// file that was dirty at the start changed again, and no new commit. Then the work, if any, lives somewhere else (a member's own
-// branch, already merged), and this folder cannot judge it.
-function missionLeftNothingHere(root, { baseline = null, before = null } = {}) {
-  const now = gitWorktreeSnapshot(root);
-  if (!now.available) return false;
-  const startHead = baseline?.code?.base_commit || before?.head || null;
-  if (!startHead || !now.head || startHead !== now.head) return false;
-  if (!baseline && !before?.available) return false;
-  const receipt = worktreeReceipt(before?.available ? before : now, now, { verifier: 'check', baseline });
-  if (receipt.available !== true || receipt.new_since_baseline_count !== 0) return false;
-  // A file already dirty at the start can be changed again without a new
-  // dirty path. Compare what each one holds; any change, or a file whose
-  // start content was never recorded, means the work may be here.
-  const startPaths = baseline
-    ? baseline.paths
-    : (before.entries || []).map(porcelainEntryPath);
-  const hashes = baseline && baseline.content_hashes && typeof baseline.content_hashes === 'object' ? baseline.content_hashes : {};
-  for (const entryPath of new Set(startPaths)) {
-    if (isLoopExhaustPath(entryPath)) continue;
-    const then = Object.prototype.hasOwnProperty.call(hashes, entryPath) ? hashes[entryPath] : null;
-    if (then === null || dirtyContentHash(root, entryPath) !== then) return false;
-  }
-  return true;
+// The landings a mission recorded with `atris mission landed`: an
+// append-only sidecar, so a running driver saving the mission record never
+// drops one. Newest first.
+function missionLandingsPath(missionId, root = process.cwd()) {
+  return path.join(root, '.atris', 'state', 'mission-landings', `${String(missionId).replace(/[^A-Za-z0-9._-]/g, '_')}.jsonl`);
 }
 
-// The mission's check, run where the work is. A mission with its own
-// worktree runs there (the caller already moved into it). A mission in the
-// shared folder runs there first; when that fails and the run left nothing
-// in the folder, the work was made and merged elsewhere, so the check runs
-// again in a throwaway copy of the merged main line, and that run decides.
-// Live miss 2026-10-22 (mission #266): a merged job failed its check twice
-// in a main folder parked on an old branch without the test file.
-function runMissionVerifier(command, { mission = null, cwd = process.cwd(), baseline = null, before = null } = {}) {
+function readMissionLandings(missionId, root = process.cwd()) {
+  if (!missionId) return [];
+  try {
+    return fs.readFileSync(missionLandingsPath(missionId, root), 'utf8').split('\n').filter(Boolean)
+      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .filter((row) => row && (Number.isInteger(row.pr) || /^[0-9a-f]{7,64}$/.test(String(row.sha || ''))))
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+// The mission's check, run where the work is. The local result stands
+// unless the mission recorded a landing (a PR number or commit, with
+// `atris mission landed`) and that landing is proven in the freshly fetched
+// main line: the PR is merged and its merge commit is in it, or the commit
+// is. Then the check runs again in a throwaway copy of that fresh main line,
+// and that run decides. Live miss 2026-10-22 (mission #266): the builder
+// merged PR #1479 from its own branch while the main folder sat on an old
+// branch without the test file. An earlier guess ("nothing changed here, so
+// try master") was replaced by this proof after review: it let an unmerged
+// broken commit pass on green master.
+function runMissionVerifier(command, { mission = null, cwd = process.cwd() } = {}) {
   const here = runVerifier(command, cwd);
   if (!here || here.passed) return here;
   if (mission?.worktree_root || mission?.worktree?.path) return here;
-  if (!missionLeftNothingHere(cwd, { baseline, before })) return here;
+  const landings = readMissionLandings(mission?.id, cwd);
+  if (!landings.length) return here;
   let merged = null;
   try {
-    const { runVerifyAtMergedMain } = require('../lib/job-code-verify');
-    merged = runVerifyAtMergedMain(command, { root: cwd, runVerify: runVerifier });
+    const { runVerifyAtProvenLanding } = require('../lib/job-code-verify');
+    merged = runVerifyAtProvenLanding(command, { root: cwd, landings, runVerify: runVerifier });
   } catch {
     merged = null;
   }
   if (!merged || typeof merged.passed !== 'boolean') return here;
+  const proof = merged.landing_proof || {};
+  const what = proof.pr ? `PR #${proof.pr}` : `commit ${String(proof.sha || '').slice(0, 10)}`;
   return {
     ...merged,
-    ran_in: `a throwaway copy of ${merged.code_source}, because this run changed nothing in ${cwd}`,
+    ran_in: `a fresh copy of ${merged.code_source}, which holds the mission's landing (${what})`,
     shared_checkout: {
       cwd,
       passed: here.passed,
@@ -6830,6 +6856,32 @@ function runMissionVerifier(command, { mission = null, cwd = process.cwd(), base
       stderr: String(here.stderr || '').slice(-500),
     },
   };
+}
+
+// `atris mission landed <id> --pr <n> | --sha <commit>`: the mission says
+// where its work landed. Written to the sidecar, never the mission record,
+// so it works while the mission's own driver holds the record.
+function setMissionLanded(args) {
+  const asJson = wantsJson(args);
+  const usage = 'Usage: atris mission landed <id> --pr <number> | --sha <commit> [--json]';
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log(usage);
+    console.log('Records where the mission\'s work landed, so its check can run on the merged main line once that landing is proven merged.');
+    return;
+  }
+  const ref = String(stripKnownFlags(args, ['--pr', '--sha'], ['--json'])[0] || '').trim();
+  const prText = String(readFlag(args, '--pr', '') || '').replace(/^#/, '').trim();
+  const sha = String(readFlag(args, '--sha', '') || '').trim().toLowerCase();
+  const pr = /^\d+$/.test(prText) ? Number(prText) : null;
+  if (!ref || (!pr && !/^[0-9a-f]{7,64}$/.test(sha))) exitMissionError(usage, 1, asJson);
+  const mission = resolveMission(ref);
+  if (!mission) exitMissingMission(ref, 1, asJson);
+  const landing = { mission_id: mission.id, pr, sha: sha || null, at: stampIso(), by: process.env.ATRIS_AGENT_ID || mission.owner || null };
+  const file = missionLandingsPath(mission.id, process.cwd());
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(landing)}\n`, 'utf8');
+  printJsonOrText({ ok: true, action: 'mission_landed', mission_id: mission.id, landing },
+    [`landing recorded for ${mission.id}: ${pr ? `PR #${pr}` : `commit ${sha.slice(0, 10)}`}`], asJson);
 }
 
 const CHECK_FEEDBACK_LIMIT = 1500;
@@ -7000,22 +7052,6 @@ function missionBaselinePath(missionId, root = process.cwd()) {
 // Stored outside missions.jsonl because that log re-appends the full mission
 // record on every save. Captured after start bookkeeping so the mission's own
 // state writes land inside the baseline, not in new_since_baseline.
-// What a dirty file holds right now (content and mode), so a file that was
-// already dirty at the start and changed again is not missed. 'missing' for a deleted file; null
-// when it cannot be read (counts as changed: the check cannot tell).
-function dirtyContentHash(root, relPath) {
-  const file = path.join(root, relPath);
-  try {
-    const stat = fs.statSync(file);
-    if (stat.isDirectory()) return 'dir';
-    // the mode counts too: making a file executable is a change
-    const mode = (stat.mode & 0o777).toString(8);
-    return `${mode}:${crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex')}`;
-  } catch (error) {
-    return error && error.code === 'ENOENT' ? 'missing' : null;
-  }
-}
-
 function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = captureCodeBaseline(root)) {
   const snapshot = gitWorktreeSnapshot(root);
   if (!snapshot.available) return null;
@@ -7032,8 +7068,6 @@ function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = ca
     dirty_count: snapshot.dirty_count,
     dirty_hash: snapshot.dirty_hash,
     paths: Array.from(paths).sort(),
-    content_hashes: Object.fromEntries(Array.from(paths).filter((p) => !isLoopExhaustPath(p)).sort()
-      .map((p) => [p, dirtyContentHash(root, p)])),
     code,
   };
   writeJson(baselineFile, baseline);
@@ -9309,6 +9343,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
     `- ${memberIdentityLine(mission.owner)} Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
+    `- If this work lands on the main line from another branch or PR, record it right after: \`atris mission landed ${mission.id} --pr <number>\` (or \`--sha <commit>\`), so the check can run on the merged main line.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
@@ -10840,7 +10875,6 @@ async function executeMissionRunTicksPhase(context) {
         tickIdx,
         frozen,
         storedVerifier,
-        runWorktreeBaseline,
       };
       let verifierResult = null;
       if (cachedStep) {
@@ -11210,12 +11244,7 @@ async function verifyMissionRunTickPhase(context) {
   let verifierResult = null;
   if (result.status === 'ran' && verifyEach) {
     if (currentTick.frozen.verifier) {
-      verifierResult = runMissionVerifier(currentTick.frozen.verifier, {
-        mission: currentTick.mission,
-        cwd,
-        baseline: currentTick.runWorktreeBaseline,
-        before: currentTick.tickWorktreeBefore,
-      });
+      verifierResult = runMissionVerifier(currentTick.frozen.verifier, { mission: currentTick.mission, cwd });
     }
     const shouldRunReferee = !currentTick.tickSkipWorker
       && (!verifierResult || verifierResult.passed)
@@ -11544,7 +11573,7 @@ function tickMission(args) {
       const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
       if (protectedLaneGuard.allowed && verify && verifierCommand) {
-        verifierResult = runMissionVerifier(verifierCommand, { mission, cwd, baseline: worktreeBaseline, before: tickWorktreeBefore });
+        verifierResult = runMissionVerifier(verifierCommand, { mission, cwd });
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
 
@@ -12354,6 +12383,7 @@ atris mission - durable goal + loop + owner + proof state
                        [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--json]
   atris mission set-runner <id> <runner|engine> [--model <id>] [--json]
   atris mission set-verifier <id> "<cmd>" [--json]
+  atris mission landed <id> --pr <number> | --sha <commit> [--json]
   atris mission route set <id> [--file <route.json>|--file -] [--json]   Validate and save a falsifiable route from a JSON file or stdin
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
@@ -12852,6 +12882,8 @@ function missionCommand(args) {
       return setMissionRunner(rest);
     case 'set-verifier':
       return setMissionVerifier(rest);
+    case 'landed':
+      return setMissionLanded(rest);
     case 'route':
       return routeMission(rest);
     case 'run':
