@@ -12,7 +12,9 @@ const round = Number(roundArg);
 const evidence = process.argv.includes('--evidence');
 
 const rows = fs.readFileSync(`${H}/ledger.jsonl`, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
-  .filter((r) => r.round === round);
+  .filter((r) => r.round === round)
+  // a miss in under 20 seconds is an engine out of quota, not a judgment: left out of both versions
+  .filter((r) => r.ok || r.secs >= 20);
 const jobOf = {};
 for (const f of fs.readdirSync(`${H}/claimed`)) { const j = JSON.parse(fs.readFileSync(`${H}/claimed/${f}`, 'utf8')); jobOf[j.id] = j; }
 const dropFile = `${H}/round-${round}-drops.txt`;

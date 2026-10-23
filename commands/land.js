@@ -14,7 +14,8 @@ function runGit(args, opts) {
   return gitSpawn.runGit(args, opts);
 }
 
-const CHERRY_CACHE_FILE = path.join('.atris', 'state', 'cherry-cache.json');
+const CHERRY_CACHE_FILE = path.join('atris', 'cherry-cache.json');
+const LEGACY_CHERRY_CACHE_FILE = path.join('.atris', 'state', 'cherry-cache.json');
 const CHERRY_CACHE_MAX = 2000;
 
 // Pluralize a count + noun ("1 change", "2 changes").
@@ -218,29 +219,49 @@ function cherryStats(root, base, ref) {
 }
 
 // `git cherry <base> <ref>` depends only on the two commit shas, so its
-// counts are cached per (base sha, ref sha) under .atris/state. The cache is
-// only written where .atris already exists; a missing or corrupt file means
-// recompute. Entries for refs not seen this run are dropped on save.
+// counts are cached per (base sha, ref sha). The file lives in the shared git
+// dir, so a fresh worktree (which has no .atris yet) reuses what any other
+// worktree of the repo already computed. Only repos that use atris (.atris or
+// atris/ at the root) get a cache; a missing or corrupt file means recompute.
+// Entries for refs not seen this run are dropped on save.
 function cherryCachePath(root) {
-  return path.join(root, CHERRY_CACHE_FILE);
+  const result = runGit(['rev-parse', '--git-common-dir'], { cwd: root, check: false });
+  if (result.status !== 0 || !result.stdout.trim()) return '';
+  return path.join(path.resolve(root, result.stdout.trim()), CHERRY_CACHE_FILE);
+}
+
+function usesAtris(root) {
+  return ['.atris', 'atris'].some((name) => {
+    try {
+      return fs.statSync(path.join(root, name)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function readCherryEntries(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (parsed && parsed.version === 1 && parsed.entries && typeof parsed.entries === 'object') return parsed.entries;
+  } catch {
+    // missing or corrupt: recompute
+  }
+  return null;
 }
 
 function loadCherryCache(root) {
-  const cache = { file: cherryCachePath(root), entries: {}, used: {}, dirty: false, writable: false };
-  try {
-    cache.writable = fs.statSync(path.join(root, '.atris')).isDirectory();
-  } catch {
-    cache.writable = false;
-  }
-  if (!cache.writable) return cache;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(cache.file, 'utf8'));
-    if (parsed && parsed.version === 1 && parsed.entries && typeof parsed.entries === 'object') {
-      cache.entries = parsed.entries;
-    }
-  } catch {
-    cache.entries = {};
-  }
+  const cache = { file: '', entries: {}, used: {}, dirty: false, writable: false };
+  if (!usesAtris(root)) return cache;
+  cache.file = cherryCachePath(root);
+  if (!cache.file) return cache;
+  cache.writable = true;
+  // Older versions kept the cache under .atris/state; read it once so an
+  // upgrade does not pay for a cold board.
+  const current = readCherryEntries(cache.file);
+  const legacy = current ? null : readCherryEntries(path.join(root, LEGACY_CHERRY_CACHE_FILE));
+  cache.entries = current || legacy || {};
+  cache.dirty = Boolean(legacy);
   return cache;
 }
 

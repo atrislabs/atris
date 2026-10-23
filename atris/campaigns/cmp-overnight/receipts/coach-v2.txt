@@ -1,0 +1,21 @@
+I wrote the new instructions to `atris/campaigns/cmp-overnight/prompts/mut-v2.txt`. No other file changed.
+
+All seven placeholders are unchanged, and every hard rule from version one is still there. It grew from about 225 words to about 590, and I didn't loosen any rule.
+
+Each change answers a pattern I saw many times in the evidence:
+
+One. About 25 misses were flagged for reading the source file, mostly on command files. I looked at how the check works: it flags any mention of the file's path outside the one `require` line, and that includes comments, test names, and starting the file as a separate program. The new instructions say this plainly.
+
+Two. About 35 misses were "file not written". Most ended in 20 to 60 seconds, so the agents gave up early. I added a short guide to the input that reaches each kind of change, and a recipe for commands that I took from tests that were kept.
+
+Three. Whole-output comparisons were the biggest reason tests got dropped, about 20 times. Agents now check only the piece the line decides.
+
+Four. Some tests caught the break only because the changed line crashed. Others faked things no real caller does: values that change on each read, mocks that count internal file reads, swapping out the clock. Both kinds are now named as drops.
+
+Five. Agents still wrote tests for harmless edges, like an exact millisecond or a status code no server sends. They are now told to write nothing for those.
+
+Six. Some setups broke the test rules: running git config, starting a local server, deleting HOME. Each is now named.
+
+Seven. Some tests repeated what other tests already check. Agents are now told to read those tests first.
+
+One part is a guess. The advice for code behind a login or an online request asks agents to replace the request function with a stand-in, and I saw no kept test that did this. If those jobs keep failing next round, that line is the first one to change.
