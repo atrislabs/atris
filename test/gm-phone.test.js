@@ -654,7 +654,11 @@ test('phone page: a deck of job cards, one at a time in one spot, flipped by the
   assert.match(script, /tr\.appendChild\(el\('td', k, r\[k\] \|\| ''\)\)/);
   // a card that needs you is the yes card: its two lines and the same armed yes, sent with its key
   assert.match(script, /if \(c\.yes\) \{/);
-  assert.match(script, /yesPill\(function \(\) \{ return api\('\/bet\/yes', \{ confirm: true, key: c\.yes\.key \}\); \}/);
+  assert.match(script, /yesPill\(function \(\) \{ return api\('\/bet\/yes', \{ confirm: true, key: c\.yes\.key, job: c\.job_id \}\); \}/);
+  // the second tap belongs to one button: one card, one command, and a flip draws a fresh one
+  const armed = script.slice(script.indexOf('function armedTap('), script.indexOf('\n  }\n', script.indexOf('function armedTap(')));
+  assert.match(armed, /var armed = false;/);
+  assert.doesNotMatch(armed, /bet\.armed/);
   assert.match(script, /yesPill\(function \(\) \{ return api\('\/bet\/yes', \{ confirm: true \}\); \}, moveOn\)/);
   // one talk box per job: to that job's member, through the route that keeps the turns, kept across flips
   assert.match(script, /convo\(function \(body\) \{ body\.member = member; return api\('\/bet\/steer', body\); \}/);
@@ -1196,7 +1200,9 @@ test('browser: the job deck flips one card at a time in the same spot, keeps the
   assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
   assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
   assert.deepEqual(out.kept_turn, { reply: 'two of five steps are done.', after_flip: 'two of five steps are done.' });
-  assert.deepEqual(out.yes_sent, [{ key: 'm-ask:0' }]);
+  assert.deepEqual(out.yes_sent, [{ key: 'm-ask:0', job: 'm-ask' }]);
+  // codex review on #1563: one tap on A, a flip to B, one tap on B releases nothing
+  assert.deepEqual(out.cross_card, { sent: [], b_label: 'tap again to say yes', a_label_after_flip: 'yes' });
   assert.equal(out.yes_line, 'navigator: got your yes');
   assert.deepEqual(out.moving, []);
   assert.deepEqual(out.esc, { team_open: false, card: true });

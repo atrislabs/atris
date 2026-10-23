@@ -845,9 +845,9 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
 const DECK = {
   columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'],
   cards: [
-    { mission_id: 'm-ask', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', yes: { key: 'm-ask:0', what: 'ok to publish the new version?', why: 'navigator is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Plan the pricing page', member: 'navigator', role: 'plans the work', ovr: '··', engine: 'codex gpt-6.1-sol', status: 'needs you' }] },
-    { mission_id: 'm1', member: 'builder', label: 'working', time: 'at it for 10 minutes', rows: [{ done: 'not yet', work: 'Write the try page', member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'working' }] },
-    { mission_id: 'm2', member: 'launcher', label: 'waiting to start', time: 'waiting 3 minutes', rows: [{ done: 'not yet', work: 'Write the launch thread', member: 'launcher', role: 'writes posts, pages, and launch copy', ovr: 'new', engine: 'codex gpt-6.1-sol', status: 'waiting to start' }] },
+    { job_id: 'm-ask', mission_id: 'm-ask', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', yes: { key: 'm-ask:0', what: 'ok to publish the new version?', why: 'navigator is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Plan the pricing page', member: 'navigator', role: 'plans the work', ovr: '··', engine: 'codex gpt-6.1-sol', status: 'needs you' }] },
+    { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 4 minutes', yes: { key: 'm1:0', what: 'ok to put the billing service live?', why: 'builder is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Put the billing service live', member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'needs you' }] },
+    { job_id: 'm2', mission_id: 'm2', member: 'launcher', label: 'waiting to start', time: 'waiting 3 minutes', rows: [{ done: 'not yet', work: 'Write the launch thread', member: 'launcher', role: 'writes posts, pages, and launch copy', ovr: 'new', engine: 'codex gpt-6.1-sol', status: 'waiting to start' }] },
   ],
 };
 const DECK_ROWS = [{ member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'working', sentence: 'working: write the try page, at it for 10 minutes', on: 'Write the try page', time: 'at it for 10 minutes' }];
@@ -878,7 +878,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     ...scriptedDesk(),
     teamTable: () => ({ ok: true, rows: DECK_ROWS }),
     jobDeck: () => JSON.parse(JSON.stringify(DECK)),
-    answerYes: async ({ key } = {}) => { yesSent.push({ key }); return { ok: true, ack: 'navigator: got your yes' }; },
+    answerYes: async ({ key, job } = {}) => { yesSent.push({ key, job }); return { ok: true, ack: 'navigator: got your yes' }; },
     talk: ({ text }) => ({ ok: true, stay: true, kind: 'question', reply: DECK_REPLY, suggestions: [], thread: [{ who: 'owner', text }, { who: 'orb', text: DECK_REPLY }] }),
   };
   return onPhone(desk, chromePath, async (p, send) => {
@@ -914,6 +914,18 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       const shot = await send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(path.join(shots, 'deck-needs-you.png'), Buffer.from(shot.data, 'base64'));
     }
+    // one tap on A arms only A: after a flip, one tap on B releases nothing,
+    // and back on A its yes starts over
+    const yesLabel = () => p.run("(function () { var b = document.querySelector('#team .deckcard .act .pill'); return b ? b.textContent : null; })()");
+    await tapButton('yes');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await settle();
+    await tapButton('yes');
+    await wait(300);
+    const crossCard = { sent: yesSent.slice(), b_label: await yesLabel() };
+    await press('ArrowLeft', ARROW.ArrowLeft);
+    await settle();
+    crossCard.a_label_after_flip = await yesLabel();
     const counts = [];
     let moved = 0;
     for (const key of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
@@ -966,6 +978,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       typing_arrow: typingArrow,
       kept_turn: { reply, after_flip: afterFlip },
       yes_sent: yesSent,
+      cross_card: crossCard,
       yes_line: yesLine,
       moving,
       esc,
