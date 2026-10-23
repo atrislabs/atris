@@ -534,7 +534,90 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
 }
 const HOLD_WAIT_MS = 900;
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, REPLY };
+// ---- an explanation keeps the card's own answer ------------------------------------
+
+const YES_CARD = { kind: 'yes', job: { what: 'builder wants to send the weekly note to the twelve schools', why: 'it goes out from your account, so it waits for your yes.' } };
+
+// On a card with a "do it" (an idea) and on one with a "yes" (a step that
+// waits for the owner), the owner asks what it means. The reply comes, and
+// the card's own button must still be there and still work: two taps, and
+// the desk is asked to do it or hears the yes.
+async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
+  const runs = [];
+  for (const [id, cardBody, label, armed] of [['b1', CARDS.b1, 'do it', 'tap again to start'], ['yes:y1', YES_CARD, 'yes', 'tap again to say yes']]) {
+    const did = [];
+    const current = { ok: true, status: 'ready', id, ...cardBody, team_working: 0 };
+    const desk = {
+      ...scriptedDesk(),
+      warm: () => current,
+      next: () => current,
+      doIt: async () => { did.push('do it'); return { ok: true, ack: 'started.' }; },
+      answerYes: async () => { did.push('yes'); return { ok: true, ack: 'sent.' }; },
+    };
+    runs.push(await onPhone(desk, chromePath, async (p, send) => {
+      const buttons = () => p.run("Array.prototype.map.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent; })");
+      await p.tap('#bet .sayline .quiet');
+      await wait(250);
+      await p.type('what do you mean?');
+      await p.enter();
+      await p.until(`${SETTLED} && document.querySelector('#bet h1').textContent === ${JSON.stringify(REPLY)}`, 'the reply');
+      await wait(150);
+      const after_reply = await buttons();
+      let error = null;
+      try {
+        await tapLabel(p, send, label);
+        await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === ${JSON.stringify(armed)}; })`, 'the armed tap', 2000);
+        await tapLabel(p, send, armed);
+        const end = Date.now() + 3000;
+        while (!did.length && Date.now() < end) await wait(16);
+      } catch (err) { error = err.message; }
+      return { card: id, label, after_reply, did, error };
+    }));
+  }
+  return runs;
+}
+
+// ---- a send that went through is never sent twice -----------------------------------
+
+// The owner says something on an idea. It reaches the desk, but the reply
+// back to the phone is lost, so the words stay in the box. The owner hits
+// Enter again. Then, on the next card, the owner says something new. Every
+// post the page made and every send the desk took are kept.
+async function lostReplyTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'add the short demo too';
+  const NEW = 'and send it to the twelve schools';
+  const card = id => ({ ok: true, status: 'ready', id, ...CARDS[id], team_working: 0 });
+  let current = card('b1');
+  const took = [];
+  const desk = {
+    ...scriptedDesk(),
+    warm: () => current,
+    say: ({ text }) => { took.push(text); return { ok: true, ack: 'sent to builder.' }; },
+    next: () => { current = card(current.id === 'b1' ? 'b2' : 'b1'); return current; },
+  };
+  return onPhone(desk, chromePath, async (p) => {
+    // the page's own fetch: every say is kept, and the first one's reply never arrives
+    await p.run(`(function () { var real = window.fetch; window.__says = []; window.fetch = function (url, opts) { var go = real(url, opts); if (String(url).indexOf('/bet/say') < 0) return go; window.__says.push(JSON.parse(opts.body)); if (window.__says.length > 1) return go; return go.then(function () { throw new TypeError('Failed to fetch'); }); }; })()`);
+    const title = t => `${SETTLED} && document.querySelector('#bet h1').textContent === ${JSON.stringify(t)}`;
+    await p.tap('#bet .sayline .quiet');
+    await wait(250);
+    await p.type(WORDS);
+    await p.enter();
+    await wait(HOLD_WAIT_MS);
+    await p.until(`${SETTLED} && !document.getElementById('bet').classList.contains('holding')`, 'the lost reply');
+    const kept = await p.run("(function () { var i = document.querySelector('#bet .field input'); return i ? i.value : null; })()");
+    await p.enter();
+    await p.until(title(CARDS.b2.bet.title), 'the next card', 6000).catch(() => {});
+    await p.tap('#bet .sayline .quiet');
+    await wait(250);
+    await p.type(NEW);
+    await p.enter();
+    await p.until(title(CARDS.b1.bet.title), 'the card after', 6000).catch(() => {});
+    return { words: WORDS, new_words: NEW, kept, posts: await p.run('window.__says'), took };
+  });
+}
+
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

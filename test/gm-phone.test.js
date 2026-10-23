@@ -1055,3 +1055,75 @@ test('browser: say something that does not send keeps the words and the cursor i
   // the desk got the same words twice, both naming the card on screen
   assert.deepEqual(out.calls, [{ text: out.words, card: 'b1' }, { text: out.words, card: 'b1' }], show);
 });
+
+// ---- an explanation keeps the card's own answer ------------------------------------
+
+test('browser: what do you mean on a do it or a yes card: the reply comes and the button stays and still works', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.replyKeepsActionTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    // the suggested replies, the card's own button, and the say line, all there
+    for (const b of ['sounds good', 'make it shorter', r.label, 'or say something']) assert.ok(r.after_reply.includes(b), `${r.card}: ${b} missing: ${show}`);
+    // two taps on it act on that card
+    assert.equal(r.error, null, show);
+    assert.deepEqual(r.did, [r.label], show);
+  }
+});
+
+// ---- a send that went through is never sent twice -----------------------------------
+
+test('over http: a typed send carries its own id; a repeat of one that went through gets the first answer and sends nothing', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const steers = [];
+  let fail = false;
+  let desk = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      desk = gmBet.createBetDesk({
+        workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false,
+        readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+        generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+        readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }),
+        runCli: async (args) => { steers.push(String(args[args.length - 1]).replace(/^the owner says: /, '')); return fail ? { code: 1, stdout: '{}' } : { code: 0, stdout: JSON.stringify({ action: 'member_steered' }) }; },
+      });
+      return desk;
+    },
+  });
+  try {
+    desk.state.status = 'ready';
+    desk.state.current = { kind: 'done', id: 'done:intro', job: { owner: 'builder', title: 'Write the intro', bet: { expect: 'more people finish setup.' } } };
+    const say = body => h.call('POST', '/bet/say', { body: { card: 'done:intro', ...body } });
+    // it reaches builder; the reply is lost and the phone sends the same words, same id
+    const first = await say({ text: 'add the short demo too', send: 'k1a2b3c4' });
+    assert.deepEqual([first.status, first.json.ack], [200, 'sent to builder.']);
+    const again = await say({ text: 'add the short demo too', send: 'k1a2b3c4' });
+    assert.deepEqual([again.status, again.json], [200, first.json]);
+    assert.deepEqual(steers, ['add the short demo too'], 'builder heard it once');
+    // new words are a new send
+    assert.equal((await say({ text: 'and the twelve schools', send: 'k9z8y7x6' })).status, 200);
+    assert.deepEqual(steers, ['add the short demo too', 'and the twelve schools']);
+    // a send that did nothing is tried again on a retry with the same id
+    fail = true;
+    assert.equal((await say({ text: 'one more thing', send: 'm5n6o7p8' })).json.ok, false);
+    fail = false;
+    assert.equal((await say({ text: 'one more thing', send: 'm5n6o7p8' })).json.ack, 'sent to builder.');
+    assert.deepEqual(steers.slice(2), ['one more thing', 'one more thing'], 'the failed one, then the retry that went through');
+  } finally {
+    await h.close();
+  }
+});
+
+test('browser: a send whose reply was lost goes again with the same id and reaches the desk once; new words get a new id', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.lostReplyTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the reply was lost: the words stayed in the box for Enter
+  assert.equal(out.kept, out.words, show);
+  assert.equal(out.posts.length, 3, show);
+  const [first, retry, fresh] = out.posts;
+  assert.match(String(first.send), /^[a-z0-9]{8,32}$/, show);
+  assert.equal(retry.send, first.send, show);
+  assert.notEqual(fresh.send, first.send, show);
+  // the desk took each set of words once
+  assert.deepEqual(out.took, [out.words, out.new_words], show);
+});
