@@ -42,7 +42,7 @@ const { renderTable } = require('../lib/text-table');
 const { TEAM_FOOTER } = require('../lib/team-lineup');
 const { readRosterRuns, workerRuns, summarizeRuns, recentRuns, renderRunLine, runView, DEFAULT_DAYS: RUN_DAYS } = require('../lib/roster-runs');
 const { attachSuggestions } = require('../lib/roster-suggest');
-const { availableTools, swapJob, swapMember } = require('../lib/roster-swap');
+const { swapList, swapJob, swapMember } = require('../lib/roster-swap');
 const { PIN_MAX_AGE_DAYS: PIN_STALE_DAYS, attachStaleModels, modelCatalog } = require('../lib/roster-stale');
 const {
   ENGINE_ROLES,
@@ -1402,16 +1402,17 @@ function printJobRoster(root, now = new Date()) {
   console.log(renderRosterReport(rosterReport(root, now)));
 }
 
-// Each installed tool and the models it offers, from local files only. The
-// same list roster set and the phone's engine card check against.
-function availableReport(root) {
-  return availableTools(root);
-}
-
-function renderAvailable(rows) {
+// With the owner's picks: the swap list on top (atris engines, then the
+// picks), then every model under "more models". Without: every tool's list.
+function renderAvailable(rows, list = null) {
   if (!rows.length) return 'no tools found on this machine. run atris engine doctor to check again';
-  const width = Math.max(...rows.map((row) => row.tool.length));
-  return ['on this machine', ...rows.map((row) => `${row.tool.padEnd(width)}  ${row.models.join(', ') || 'its own default'}  (${row.source})`)].join('\n');
+  const top = list && list.picked ? list.options.filter((option) => !option.more) : [];
+  const width = Math.max(...rows.map((row) => row.tool.length), ...top.map((option) => option.tool.length));
+  const full = rows.map((row) => `${row.tool.padEnd(width)}  ${row.models.join(', ') || 'its own default'}  (${row.source})`);
+  if (!top.length) return ['on this machine', ...full].join('\n');
+  const labels = Math.max(...top.map((option) => option.label.length));
+  const picks = top.map((option) => `${option.tool.padEnd(width)}  ${option.label.padEnd(labels)}  ${option.atris ? 'atris' : 'pick'}`);
+  return ['on this machine', ...picks, '', 'more models', ...full].join('\n');
 }
 
 // Only this session's changes, from its own file.
@@ -1612,8 +1613,10 @@ function runRosterCommand(args, root, now = new Date()) {
     return 2;
   }
   if (available) {
-    const rows = availableReport(root);
-    console.log(json ? JSON.stringify({ tools: rows }, null, 2) : renderAvailable(rows));
+    // the same ordered list the phone's engine card reads
+    const list = swapList(root);
+    const rows = list.tools;
+    console.log(json ? JSON.stringify({ tools: rows, list: list.options }, null, 2) : renderAvailable(rows, list));
     return 0;
   }
   if (rest[0] === 'session') return runRosterSessionCommand(rest, json, root, now);

@@ -195,9 +195,13 @@ test('a build cut off mid-flight goes back in line once, then stops for the owne
   assert.equal(readIdeas(repo)[0].attempts, 2);
   updateIdea(repo, idea.id, { status: 'building' });
   const { calls, deps: again } = harness();
-  await runIdeaTick({ root: repo, ...again });
+  const loopRepo = tempRepo();
+  await runIdeaTick({ root: repo, loopRepo, ...again });
   assert.equal(calls.laps.length, 0);
   assert.match(readIdeas(repo)[0].reason, /stopped 2 times without finishing/);
+  // Stopping mid-build twice in a day is the loop's own problem, so it files
+  // one idea about itself in the loop's repo.
+  assert.match(readIdeas(loopRepo)[0].text, /^make the idea loop handle "the build stopped without finishing" at the build stage/);
 });
 
 test('the fast check prefers test:fast, honors --verify, and never guesses for a bare repo', () => {
