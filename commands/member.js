@@ -3385,7 +3385,10 @@ function logDateForScan(relativePath, filePath) {
   const named = dateFromLogPath(relativePath);
   if (named) return named;
   try {
-    return fs.statSync(filePath).mtime.toISOString().slice(0, 10);
+    // Local calendar day, like the dated journal names beside it;
+    // toISOString is UTC and calls an evening write tomorrow's.
+    const mtime = fs.statSync(filePath).mtime;
+    return `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}-${String(mtime.getDate()).padStart(2, '0')}`;
   } catch {
     return null;
   }
@@ -12015,6 +12018,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  logDateForScan,
   memberRunDefaultWallSeconds,
   memberRunWantsReferee,
   proposalPromptForGoal,
