@@ -964,9 +964,10 @@ test('recap today finds sessions started through a shortcut to this folder', () 
     assert.deepEqual(t.sessions, { claude: 1, codex: 1 });
     assert.deepEqual(t.files, ['README.md', 'src/app.js', 'src/login.js'], 'files recorded under the shortcut count as here');
     const noPwd = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
-    assert.deepEqual(noPwd.sessions, { claude: 0, codex: 0 }, 'without the shell path there is nothing to match');
+    assert.deepEqual(noPwd.sessions, { claude: 0, codex: 1 }, 'codex records the shortcut it started in, and that leads here');
+    assert.deepEqual(noPwd.files, ['README.md'], 'its edits count as this folder\'s files');
     const stranger = buildAgentToday({ cwd: fx.project, home: fx.home, env: { PWD: links }, now: fx.now });
-    assert.deepEqual(stranger.sessions, { claude: 0, codex: 0 }, 'a PWD that points somewhere else is ignored');
+    assert.deepEqual(stranger.sessions, noPwd.sessions, 'a PWD that points somewhere else adds nothing');
   } finally {
     cleanup(fx.home);
     cleanup(fx.project);
