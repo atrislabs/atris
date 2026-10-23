@@ -249,6 +249,33 @@ test('try server serves the form, maps a repo, and limits each visitor', async (
   }
 });
 
+test('node lib/try-repo.js starts the page on PORT so a box can host it', async () => {
+  const { spawn } = require('child_process');
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'lib', 'try-repo.js')], {
+    env: { ...process.env, PORT: '0', HOST: '127.0.0.1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    const base = await new Promise((resolve, reject) => {
+      let out = '';
+      const timer = setTimeout(() => reject(new Error(`no listen line: ${out}`)), 10_000);
+      child.stdout.on('data', (chunk) => {
+        out += chunk;
+        const hit = out.match(/listening on (http:\/\/\S+)/);
+        if (hit) { clearTimeout(timer); resolve(hit[1]); }
+      });
+      child.on('exit', (code) => { clearTimeout(timer); reject(new Error(`exited ${code}: ${out}`)); });
+    });
+    const form = await fetch(`${base}/`);
+    assert.equal(form.status, 200);
+    assert.match(await form.text(), /paste a public github link/);
+    const bad = await fetch(`${base}/try?repo=${encodeURIComponent('gitlab.com/a/b')}`);
+    assert.equal(bad.status, 400);
+  } finally {
+    child.kill();
+  }
+});
+
 // The real thing: a small public repo from github, mapped inside the 60s cap.
 test('tryRepo maps a real small public github repo in under a minute', async (t) => {
   const tmpRoot = tmp('atris-try-root-');
