@@ -724,6 +724,25 @@ test('recap today reads a claude code session for this folder only', () => {
   }
 });
 
+test('recap today counts a typed ask saved as a list, like one with a picture', () => {
+  const fx = todayFixture();
+  try {
+    writeJsonl(path.join(claudeProjectDir(fx.home, fx.project, {}), 's1.jsonl'), [
+      { type: 'user', timestamp: fx.ts, message: { content: [{ type: 'text', text: 'why is this button gray' }, { type: 'image', source: {} }] } },
+      { type: 'user', timestamp: fx.ts, message: { content: [{ type: 'text', text: 'make it blue' }] } },
+      { type: 'user', timestamp: fx.ts, message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+      { type: 'user', timestamp: fx.ts, message: { content: '[Request interrupted by user for tool use]' } },
+      { type: 'user', timestamp: fx.ts, message: { content: [{ type: 'tool_result', content: 'ok' }, { type: 'text', text: 'tool note' }] } },
+      { type: 'user', timestamp: fx.ts, isMeta: true, message: { content: [{ type: 'text', text: 'Base directory for this skill: /x' }] } },
+    ]);
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
+    assert.equal(t.prompts, 2, 'list-shaped asks count; interrupt notes, tool results, and skill loads do not');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
 test('recap today reads codex patches and ignores codex sessions in other folders', () => {
   const fx = todayFixture();
   const other = makeTempDir();
