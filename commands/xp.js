@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 const { treeHashFor } = require('../lib/tree-hash');
+const { careerXpRoot } = require('../lib/career-xp-root');
 
 const DEFAULT_GRAPH_DAYS = 365;
 const MAX_SYNC_GRAPH_DAYS = 370;
@@ -22,15 +23,15 @@ const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
 
 // Default single-workspace XP root. Local XP reads task_episodes.jsonl (written
-// by task-db at the resolved workspace root) and writes its projection beside
-// it, so the `--workspace` default must resolve the same shared root, otherwise
+// by task-db at the main checkout's workspace root) and writes its projection
+// beside it, so reads must resolve the same shared root, otherwise
 // `xp --local` from a subdir (e.g. backend/) read the wrong/empty episodes and
-// split the projection into a nested .atris. Explicit --workspace still wins;
-// the multi-root roster path (discoverCareerXpWorkspaces) is untouched. Falls
+// split the projection into a nested .atris. Explicit --workspace selects the
+// repository and nested workspace, then also resolves its shared ledger. Falls
 // back to raw cwd if the resolver can't load.
 function defaultXpWorkspace() {
   try {
-    return require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
+    return careerXpRoot(require('../lib/mission-root').resolveWorkspaceRoot(process.cwd()));
   } catch {
     return process.cwd();
   }
@@ -1047,8 +1048,9 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   };
 }
 
-function collectLocalXpProjectionState(args = [], { write = true } = {}) {
-  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+function collectLocalXpProjectionState(args = [], { write = true, resolveSharedRoot = true } = {}) {
+  const selected = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+  const workspace = resolveSharedRoot ? careerXpRoot(selected) : selected;
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const projectionPath = path.join(workspace, CAREER_XP_PROJECTION_FILE);
@@ -1386,7 +1388,9 @@ function collectAllLocalXpProjection(args = []) {
     try {
       return {
         workspace_root: workspace,
-        projection: collectLocalXpProjection(['--workspace', workspace]),
+        // Keep historical checkout ledgers in the account total. New accepts
+        // write only to main; redirecting these older ledgers would lose XP.
+        projection: collectLocalXpProjectionState(['--workspace', workspace], { resolveSharedRoot: false }).projection,
       };
     } catch (error) {
       return {
@@ -1641,7 +1645,7 @@ LIMIT 25
 }
 
 function buildCareerXpSessionCapsule(args = []) {
-  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+  const workspace = careerXpRoot(path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace())));
   const sinceInput = readInlineFirstFlag(args, '--since', 'today');
   const untilInput = readInlineFirstFlag(args, '--until', null);
   const since = parseSessionBoundary(sinceInput, startOfToday());

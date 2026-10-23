@@ -397,7 +397,8 @@ function refreshCareerXpProjection(workspaceRoot) {
   if (!workspaceRoot) return null;
   try {
     const { collectLocalXpProjection } = require('../commands/xp');
-    return collectLocalXpProjection(['--workspace', workspaceRoot]);
+    const { careerXpRoot } = require('../lib/career-xp-root');
+    return collectLocalXpProjection(['--workspace', careerXpRoot(workspaceRoot)]);
   } catch (error) {
     return {
       ok: false,
