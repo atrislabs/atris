@@ -1,0 +1,14 @@
+DROP test/self-drive--mut-L267-6.test.js: it only catches the break by crashing. Its fake task store has no claim step, and real stores always have one, so the broken line calls a missing function and the dispatch fails. The real damage from the break, claiming tasks that are not open, is never checked.
+DROP test/state-home--mut-L27-9.test.js: the helper it covers is only used to decide whether tests get a throwaway home folder, so the break just fences more often when the home folder is empty, which is the safe direction and nothing depends on the old behavior.
+DROP test/task-prune--mut-L173-0.test.js: package.json requires Node 22.13 or newer, and every one of those versions has the streaming row reader, so the fallback is dead code and the test only passes by swapping out the real database class.
+DROP test/who-cmd--mut-L82-7.test.js: on Linux the code reads each process folder from /proc using the real filesystem, so the fake lsof answer is never used and the test fails on a Linux CI runner whether or not the line is broken.
+DROP test/learnings--mut-L66-1.test.js: Duplicates the confidence ordering behavior already covered in test/learnings.test.js.
+DROP test/next-cmd--mut-L99-0.test.js: Duplicates the same fixture and completion-command assertion in test/next-card.test.js.
+DROP test/official-cli-integration--mut-L23-6.test.js: Duplicates installed-binary detection already covered by the doctor test in test/linear-command.test.js.
+DROP test/site-publish--mut-L357-5.test.js: Exercises only an artificial response without `ok`; production fetch always supplies `ok`, so this break has no practical effect.
+DROP test/zen-cmd--mut-L76-6.test.js: Duplicates the calm-repository check reporting “zen: yes” in test/zen.test.js.
+DROP test/learnings--mut-L66-1.test.js: Duplicates the confidence ordering behavior already covered in test/learnings.test.js.
+DROP test/next-cmd--mut-L99-0.test.js: Duplicates the same fixture and completion-command assertion in test/next-card.test.js.
+DROP test/official-cli-integration--mut-L23-6.test.js: Duplicates installed-binary detection already covered by the doctor test in test/linear-command.test.js.
+DROP test/site-publish--mut-L357-5.test.js: Exercises only an artificial response without `ok`; production fetch always supplies `ok`, so this break has no practical effect.
+DROP test/zen-cmd--mut-L76-6.test.js: Duplicates the calm-repository check reporting “zen: yes” in test/zen.test.js.
