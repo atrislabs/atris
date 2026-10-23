@@ -5,6 +5,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { loadHistory } = require('../lib/policy-lessons');
 
+function localDay(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function makeWorkspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-lessons-'));
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
@@ -59,7 +63,7 @@ test('a repeated revision files one typed lesson and the next load does not dupl
   assert.deepEqual(slugs, ['existing-rule', 'decision-line-was-too-vague']);
   assert.deepEqual(first['decision-line-was-too-vague'], {
     name: 'Decision line was too vague.',
-    date: new Date().toISOString().slice(0, 10),
+    date: localDay(),
     scope: 'workspace',
     rule: 'Decision line was too vague.',
     detector: 'repeated_human_revision_note',
@@ -72,7 +76,7 @@ test('a repeated revision files one typed lesson and the next load does not dupl
       episode_ids: ['episode-1', 'episode-2'],
     },
     status: 'observed',
-    last_detected: new Date().toISOString().slice(0, 10),
+    last_detected: localDay(),
   });
 
   loadHistory(root);
