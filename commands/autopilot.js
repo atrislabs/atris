@@ -4046,13 +4046,6 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   }
 }
 
-/**
- * Entry point when called without a description.
- */
-async function autopilotFromTodo(options = {}) {
-  return autopilotAtris(null, options);
-}
-
 module.exports = {
   askModel,
   snapshotRepoHeads,
