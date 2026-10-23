@@ -7,7 +7,8 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 const { treeHashFor } = require('../lib/tree-hash');
-const { careerXpRoot } = require('../lib/career-xp-root');
+const { careerXpRoot, careerXpLinkedRoots } = require('../lib/career-xp-root');
+const { normalizeActor, taskBuilder } = require('../lib/review-integrity');
 
 const DEFAULT_GRAPH_DAYS = 365;
 const MAX_SYNC_GRAPH_DAYS = 370;
@@ -1048,6 +1049,28 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   };
 }
 
+// Historical linked ledgers predate the shared writer. Recover only records
+// with positive acceptance proof and an identifiable independent reviewer.
+function recoverLinkedTaskEpisodes(workspace) {
+  return careerXpLinkedRoots(workspace).flatMap(root => readJsonl(path.join(root, TASK_EPISODES_FILE), { allowPartialTail: true }))
+    .filter(episode => {
+      if (episode?.state?.status !== 'done' || episode?.career_xp?.eligible !== true
+        || !String(episode.proof || '').trim()
+        || asNumber(episode.career_xp.reward ?? episode.reward?.value) <= 0) return false;
+      const builder = taskBuilder(episode.state);
+      if (!builder) return false;
+      const reviewer = normalizeActor(episode.action?.actor);
+      if (reviewer && reviewer !== builder) return true;
+      const metadata = episode.state.metadata || {};
+      const verifier = normalizeActor(metadata.certified_verified_by);
+      const reviewActors = Array.isArray(metadata.agent_review_actors) ? metadata.agent_review_actors.map(normalizeActor) : [];
+      return metadata.agent_certified === true && metadata.machine_verified === true
+        && Boolean(verifier) && verifier !== builder
+        && verifier === normalizeActor(metadata.independent_review_by)
+        && reviewActors.includes(verifier);
+    });
+}
+
 function collectLocalXpProjectionState(args = [], { write = true, resolveSharedRoot = true } = {}) {
   const selected = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
   const workspace = resolveSharedRoot ? careerXpRoot(selected) : selected;
@@ -1077,10 +1100,12 @@ function collectLocalXpProjectionState(args = [], { write = true, resolveSharedR
     && fileSize(episodePath) > 0
     && fileSize(receiptsPath) === 0;
   const tail = readTaskEpisodeTail(episodePath, cursorPath, { forceReset: replayFromStart });
-  const treeHash = write && tail.episodes.length ? treeHashFor(workspace) : null;
+  const recovered = resolveSharedRoot ? recoverLinkedTaskEpisodes(workspace) : [];
+  const episodes = [...tail.episodes, ...recovered];
+  const treeHash = write && episodes.length ? treeHashFor(workspace) : null;
   const seen = new Set(existingChain.receipts.map(receipt => receipt.receipt_id).filter(Boolean));
   let previousHash = existingChain.integrity.head_hash || null;
-  const newReceipts = tail.episodes
+  const newReceipts = episodes
     .map((episode) => receiptFromTaskEpisode(episode, treeHash))
     .filter(Boolean)
     .filter((receipt) => {
@@ -1383,14 +1408,14 @@ function collectAllLocalXpProjection(args = []) {
   const searchRoots = defaultAllSearchRoots(args).filter(root => fs.existsSync(root));
   const explicitWorkspaces = readFlagValues(args, '--workspace');
   const discovered = searchRoots.flatMap(root => discoverCareerXpWorkspaces(root));
-  const workspaces = uniquePaths([...explicitWorkspaces, ...discovered]);
+  // Local recovery folds old checkout episodes into the durable main ledger.
+  // Canonicalize before aggregation so copies can never earn twice.
+  const workspaces = uniquePaths([...explicitWorkspaces, ...discovered].map(careerXpRoot));
   const projections = workspaces.map((workspace) => {
     try {
       return {
         workspace_root: workspace,
-        // Keep historical checkout ledgers in the account total. New accepts
-        // write only to main; redirecting these older ledgers would lose XP.
-        projection: collectLocalXpProjectionState(['--workspace', workspace], { resolveSharedRoot: false }).projection,
+        projection: collectLocalXpProjectionState(['--workspace', workspace]).projection,
       };
     } catch (error) {
       return {

@@ -146,10 +146,10 @@ test('a real second-actor accept updates the main ledger automatically and survi
     const merged = taskDb.addTask(otherDb, { title: 'merge-only close', workspaceRoot: linked });
     assert.equal(taskDb.doneTask(otherDb, { id: merged.id, actor: 'merger', autoAccepted: true }).updated, true);
     taskDb.close();
-    assert.match(run(main, 'xp', '--local'), /AgentXP 1 \| Today 1/);
+    assert.match(run(main, 'xp', '--local'), /AgentXP 3 \| Today 3/);
     git(main, 'worktree', 'remove', '--force', linked);
-    assert.match(run(main, 'xp', '--local'), /AgentXP 1 \| Today 1/);
-    assert.equal(JSON.parse(run(main, 'xp', 'status', '--local', '--json')).agent_xp, 1);
+    assert.match(run(main, 'xp', '--local'), /AgentXP 3 \| Today 3/);
+    assert.equal(JSON.parse(run(main, 'xp', 'status', '--local', '--json')).agent_xp, 3);
   } finally {
     taskDb.close();
     fs.rmSync(base, { recursive: true, force: true });
@@ -176,6 +176,77 @@ test('shared XP roots preserve nested workspaces and never write into separate g
     assert.equal(careerXpRoot(path.join(base, 'missing')), path.join(base, 'missing'));
     git(standalone, 'init', `--separate-git-dir=${path.join(base, 'git-storage')}`);
     assert.equal(careerXpRoot(standalone), standalone);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+
+test('local XP recovers a real stranded accept once, with independent review and workspace boundaries', (t) => {
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-recover-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: path.join(base, 'tasks.db'), ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd: main, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'legacy', linked);
+    const before = run('xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const episode = {
+      schema: 'atris.task_episode.v1', episode_id: '01M5KC5M7JY5FAQGHJS2Y5FAQG',
+      task_id: 'real-accepted-job', workspace_root: linked, created_at: new Date().toISOString(),
+      state: { status: 'done', title: acceptedReview.title, claimed_by: acceptedReview.claimed_by, metadata: acceptedReview.metadata },
+      action: { event_type: 'reviewed', actor: acceptedReview.actor },
+      reward: { value: acceptedReview.reward }, proof: acceptedReview.proof,
+      career_xp: { eligible: true, reward: acceptedReview.reward }, rl: { label: 'accepted' },
+    };
+    const denied = [
+      { state: { ...episode.state, status: 'open' } },
+      { state: { ...episode.state, status: 'claimed' } },
+      { state: { ...episode.state, status: 'review' } },
+      { proof: '' }, { career_xp: { eligible: false, reward: 1 } },
+      { reward: { value: -1 }, career_xp: { eligible: true, reward: -1 } },
+      { state: { ...episode.state, metadata: { built_by: acceptedReview.actor } } },
+      { state: { ...episode.state, metadata: { ...acceptedReview.metadata, machine_verified: false } } },
+      { state: { ...episode.state, metadata: { ...acceptedReview.metadata, certified_verified_by: 'unrecorded-reviewer' } } },
+      { state: { ...episode.state, claimed_by: null, metadata: {} } },
+    ].map((change, i) => ({ ...episode, ...change, episode_id: `denied-${i}` }));
+    const legacyState = path.join(linked, '.atris', 'state');
+    fs.mkdirSync(legacyState, { recursive: true });
+    const legacyFile = path.join(legacyState, 'task_episodes.jsonl');
+    fs.writeFileSync(legacyFile, [episode, episode, ...denied].map(JSON.stringify).join('\n') + '\n' + '{"episode_id":');
+    const nested = path.join(linked, 'customer', '.atris', 'state');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, 'task_episodes.jsonl'), JSON.stringify({ ...episode, episode_id: 'different-workspace' }) + '\n');
+    const original = fs.readFileSync(legacyFile, 'utf8');
+    const after = run('xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    t.diagnostic(`real xp before recovery: ${before.split('\n')[1]}`);
+    t.diagnostic(`real xp after recovery: ${after.split('\n')[1]}`);
+    for (let i = 0; i < 2; i++) {
+      assert.equal(JSON.parse(run('xp', 'status', '--local', '--json')).agent_xp, 1);
+      assert.equal(JSON.parse(run('xp', 'status', '--all', '--root', base, '--workspace', main, '--workspace', linked, '--json')).agent_xp, 2,
+        'one main receipt plus the separate nested customer workspace, with no duplicate linked credit');
+    }
+    const receipts = fs.readFileSync(path.join(main, '.atris', 'state', 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].receipt_id, `task_review:${episode.episode_id}`);
+    assert.equal(receipts[0].workspace_root, linked);
+    assert.equal(receipts[0].accepted_at, episode.created_at);
+    assert.equal(fs.readFileSync(legacyFile, 'utf8'), original, 'recovery never rewrites the source ledger');
+    git(main, 'worktree', 'remove', '--force', linked);
+    assert.match(run('xp', '--local'), /AgentXP 1 \| Today 1/);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
