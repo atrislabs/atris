@@ -394,7 +394,8 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
   const h = await startHandler({
     makeBetDesk: (log, dir) => {
       ledgerFile = path.join(dir, 'gm-bets.jsonl');
-      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); return new Promise(() => {}); }, runCli: async () => ({ code: 0, stdout: '{}' }) });
+      // the writer reads the installs, then never finishes
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); opts.onBundle({ sources: { installs: { data: { last_week: 1511, week_before: 1640 } } } }); return new Promise(() => {}); }, runCli: async () => ({ code: 0, stdout: '{}' }) });
     },
   });
   try {
@@ -407,13 +408,14 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
     assert.equal(tap.json.question.choices.length, 3);
     // two parts: the question, and what is going on with why the answer matters
     assert.deepEqual(Object.keys(tap.json.question), ['ask', 'line', 'choices']);
+    assert.equal(tap.json.question.line, 'installs dropped to 1,511 last week, down from 1,640.');
     // same token, origin, and json checks as every other post
     assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'customers' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'customers' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope' } })).json.reason, 'bad_choice');
     const answered = await h.call('POST', '/bet/answer', { body: { choice: 'customers' } });
     assert.equal(answered.status, 200);
-    assert.equal(answered.json.ack, 'got it. the next ideas aim at first paying customers.');
+    assert.equal(answered.json.ack, 'got it. the next ideas go after first paying customers.');
     assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).chase.label, 'first paying customers');
     assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'customers' } })).status, 409, 'nothing on screen to answer now');
     assert.equal(calls.length, 1, 'still the one generation in the background');
