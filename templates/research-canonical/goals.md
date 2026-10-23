@@ -1,10 +1,10 @@
-# {{name}} — Research Goals
+# {{name}}: Research Goals
 
 Research direction. Weeks-to-months scale (TODO.md is days, this is weeks).
 
 ## Active Goals
 
-*(No goals yet — add the first research goal to give the agent direction.)*
+*(No goals yet. Add the first research goal to give the agent direction.)*
 
 <!-- Example:
 ### Beat the current baseline on eval set v1
