@@ -1,0 +1,12 @@
+You are reviewing new tests written by fast AI agents. Do not edit anything. Each test was written to catch one deliberate break: the line shown after "::" changed from the first snippet to the second. The automatic check already proved each test passes on the real code and fails on the broken line.
+
+Read each test file and the code it tests. DROP a file only for a concrete reason:
+- it catches the break by accident (for example the change makes the code crash and the test only checks that something did not throw) rather than by checking the behavior the line controls
+- it pins incidental details that a reasonable refactor would change (exact full-output snapshots, internal helpers, private state)
+- it duplicates an existing test of the same behavior
+- it touches the real home folder, git config, the network, or AI engines, or depends on timing or the clock
+- the break is harmless in practice and the test enforces behavior nobody relies on
+
+Final answer format, nothing else: one line per drop as 'DROP <file>: <reason>', then a last line 'kept N of M'.
+
+Files:
