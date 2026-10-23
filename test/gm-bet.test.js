@@ -3550,3 +3550,15 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
 });
+
+test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {
+  const list = ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f'].map((m, i) => ({ engine: 'one', tool: 'tool one', model: m, label: m, current: i === 4, record: null }));
+  const short = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list } });
+  assert.deepEqual(short.options.map(o => o.label), ['m-e', 'm-a', 'm-b', 'more models', 'back to the team']);
+  // a list that would hide only one model shows them all
+  const four = gmCard.swap({ id: 'swap~2', name: 'builder', choices: { scopes: [], options: list.slice(0, 4) } });
+  assert.ok(!four.options.some(o => o.label === 'more models'));
+  const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
+  assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
+  for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
+});

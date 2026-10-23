@@ -897,20 +897,15 @@ const RECORDER = `(function () {
 const SNAP = `(function () {
   function vis(n) { if (!n) return false; var s = getComputedStyle(n); if (s.display === 'none' || s.visibility === 'hidden') return false; var r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
   function txt(n) { return n ? n.textContent.replace(/\\s+/g, ' ').trim() : null; }
-  var team = document.getElementById('team');
-  var up = Boolean(team && !team.hidden && vis(team));
-  var hasCard = document.body.classList.contains('has-card');
-  var root = up ? (document.getElementById('team-inner') || team) : document.getElementById('bet');
+  // one card on the page: its kind says which layer it is
+  var root = document.getElementById('bet');
+  var hasCard = document.body.classList.contains('has-card') && !root.hidden;
+  var kind = root.getAttribute('data-kind');
   var active = document.activeElement;
   var typing = Boolean(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && root && root.contains(active));
   var h1 = root ? root.querySelector('h1') : null;
   var layer = 'home';
-  if (up) {
-    if (root.querySelector('.deckcard')) layer = 'deck';
-    else if (root.querySelector('table.roster') || txt(h1) === 'the team') layer = 'team';
-    else if (root.querySelector('.models, .scopes')) layer = 'swap';
-    else layer = 'talk';
-  } else if (hasCard) layer = 'card';
+  if (hasCard) layer = ({ team: 'team', member: 'talk', swap: 'swap', deck: 'deck' })[kind] || 'card';
   var W = window.__walk || { cards: [] };
   var last = W.cards.length ? W.cards[W.cards.length - 1] : null;
   var scope = layer === 'home' ? null : root;
@@ -965,14 +960,18 @@ async function walkBrowser(url, { chromePath, launch }) {
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
   };
   const byText = (scope, re) => `Array.prototype.find.call(document.querySelectorAll(${JSON.stringify(`${scope} button`)}), function (b) { return ${re}.test(b.textContent.trim()) && b.getBoundingClientRect().width > 0; })`;
+  // Esc, then the motion it starts, to rest
   const esc = async () => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await wait(250);
+    await until("!document.body.hasAttribute('data-busy')", 'the card at rest', 5000).catch(() => {});
+    await wait(150);
   };
   const snap = () => run(SNAP);
-  const settled = "document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning') && Boolean(document.querySelector('#bet h1'))";
-  const teamUp = "(function () { var t = document.getElementById('team'); return Boolean(t && !t.hidden); })()";
+  const settled = "!document.body.hasAttribute('data-busy') && document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning') && Boolean(document.querySelector('#bet h1'))";
+  const kindIs = kinds => `(${settled} && ${JSON.stringify(kinds)}.indexOf(document.getElementById('bet').getAttribute('data-kind')) >= 0)`;
+  const teamUp = kindIs(['team', 'member', 'swap', 'deck']);
   const postsSince = async n => (await run('window.__walk.posts')).slice(n);
 
   // one screen stage: fn returns { snap, extra }; posts during it must name the card
@@ -1005,7 +1004,7 @@ async function walkBrowser(url, { chromePath, launch }) {
   };
   const openTeam = async () => {
     await click("document.getElementById('working')", 'the team link');
-    await until(`${teamUp} && Boolean(document.querySelector('#team .row, #team .why'))`, 'the team', 6000);
+    await until(kindIs(['team']), 'the team', 6000);
     await wait(250);
   };
   const escTo = async (st, want, from) => {
@@ -1051,8 +1050,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on a talk card', async (st) => {
       await toCard();
       await openTeam();
-      await click("document.querySelector('#team .row .who button')", 'a member');
-      await until("Boolean(document.querySelector('#team input'))", 'the talk card', 4000);
+      await click("document.querySelector('#bet tbody td.member button')", 'a member');
+      await until(kindIs(['member']), 'the talk card', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened a member, pressed Esc twice';
       const after = await escTo(st, ['team'], 'talk card');
@@ -1062,8 +1061,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on a swap card', async (st) => {
       await toCard();
       await openTeam();
-      await click("document.querySelector('#team .eng button')", 'an engine');
-      await until("Boolean(document.querySelector('#team .models, #team .scopes')) || /could not|did not/.test(document.getElementById('team-inner').textContent)", 'the swap card', 6000);
+      await click("document.querySelector('#bet tbody td.engine button')", 'an engine');
+      await until(kindIs(['swap', 'member']), 'the swap card', 6000);
       st.card = snapCard(await snap());
       st.did = 'tapped an engine, pressed Esc twice';
       const after = await escTo(st, ['team'], 'swap card');
@@ -1073,8 +1072,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on the job deck', async (st) => {
       await toCard();
       await openTeam();
-      await click(byText('#team', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
-      await until("Boolean(document.querySelector('#team .deckcard'))", 'the job deck', 6000);
+      await click(byText('#bet', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
+      await until(kindIs(['deck']), 'the job deck', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened the job deck, pressed Esc';
       const after = await escTo(st, ['team', 'card'], 'job deck');
