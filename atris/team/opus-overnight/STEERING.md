@@ -1,4 +1,4 @@
-# STEERING — opus-overnight
+# STEERING: opus-overnight
 
 <!-- Operator drops one-line directives here while the autonomous loop runs.
      Each tick reads this file FIRST, applies any unapplied directive as
@@ -8,7 +8,7 @@
 
 <!-- Drop one-line directives below. Format: `- YYYY-MM-DD: <directive>`.
      Examples and usage live in rl-exp2/notes/operator-steering.md.
-     Do NOT put examples here — every `- ` line under `## Pending` is read
+     Do NOT put examples here: every `- ` line under `## Pending` is read
      as a real directive on the next tick. -->
 
 ## Applied
@@ -28,8 +28,8 @@ The autonomous loop runs without the operator present. They can't redirect mid-t
 
 This is the lightest layer of the four-tier feedback design:
 - **Layer 1 (this file):** taste tweaks, one-line drops
-- **Layer 2:** `atris brain edit <tick> "..."` — thumbs-up/down on past ticks
-- **Layer 3:** `atris mission steer <id> --note "..."` — directives attached to mission state (not yet implemented)
-- **Layer 4:** edit MISSION.md / MEMBER.md — durable contract changes
+- **Layer 2:** `atris brain edit <tick> "..."`: thumbs-up/down on past ticks
+- **Layer 3:** `atris mission steer <id> --note "..."`: directives attached to mission state (not yet implemented)
+- **Layer 4:** edit MISSION.md / MEMBER.md: durable contract changes
 
 Use the lightest tier that fits. Most steering belongs in Layer 1.
