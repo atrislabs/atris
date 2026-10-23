@@ -13,7 +13,7 @@ Skills that live in this repo but **DO NOT ship to customers**.
 Put a skill under `_internal-skills/` when the skill itself is the Atris team's
 tool, not the customer's. Examples:
 
-- `tune/` — live Path B RL tuner. Used by Atris engineers during dogfood. Customers access the same capability through the credit-metered `/api/improve` endpoint instead.
+- `tune/`: live Path B RL tuner. Used by Atris engineers during dogfood. Customers access the same capability through the credit-metered `/api/improve` endpoint instead.
 
 ## Install for yourself (Atris team)
 
