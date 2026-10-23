@@ -57,7 +57,7 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
-**No all-caps. ever.** never use the `uppercase` tailwind class, `text-transform: uppercase`, or shout-cased copy on labels, section headers, buttons, badges, or anywhere else. random capitalized text mid-page reads as average ai-generated slop. write labels in sentence case ("Active tasks", not "ACTIVE TASKS") and let copy render as authored.
+**No all-caps. ever.** never use the `uppercase` tailwind class, the css uppercase text transform, or shout-cased copy on labels, section headers, buttons, badges, or anywhere else. random capitalized text mid-page reads as average ai-generated slop. write labels in sentence case ("Active tasks", not "ACTIVE TASKS") and let copy render as authored.
 
 **No eyebrow metadata.** Do not place tiny index, category, status, or implementation-type strips above real content. If the name changes the next action, make it a readable heading. If it does not, remove it. Generator metadata belongs in machine contracts and inspectors, never on the product canvas.
 
