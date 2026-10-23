@@ -119,12 +119,12 @@ curl -s "https://api.atris.ai/api/integrations/gmail/messages?query=in:inbox&max
 ```
 
 **Query syntax** (Gmail search):
-- `in:inbox` — inbox only
-- `in:inbox newer_than:1d` — today's emails
-- `is:unread` — unread only
-- `from:someone@example.com` — from specific sender
-- `subject:invoice` — subject contains word
-- `has:attachment` — emails with attachments
+- `in:inbox`: inbox only
+- `in:inbox newer_than:1d`: today's emails
+- `is:unread`: unread only
+- `from:someone@example.com`: from specific sender
+- `subject:invoice`: subject contains word
+- `has:attachment`: emails with attachments
 
 ### Read Single Email
 ```bash
@@ -158,7 +158,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   }'
 ```
 
-**Reply in thread (IMPORTANT — use this for all replies):**
+**Reply in thread (IMPORTANT: use this for all replies):**
 
 To reply within an existing email thread, you MUST pass `thread_id` and `reply_to_message_id`. Without these, Gmail creates a new thread.
 
@@ -181,9 +181,9 @@ curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   }'
 ```
 
-- `thread_id` — The thread ID from the original message. Tells Gmail which thread to add this to.
-- `reply_to_message_id` — The message ID you're replying to. The backend uses this to set `In-Reply-To` and `References` headers so Gmail threads it correctly.
-- `subject` — Must match the original subject with "Re: " prefix.
+- `thread_id`: The thread ID from the original message. Tells Gmail which thread to add this to.
+- `reply_to_message_id`: The message ID you're replying to. The backend uses this to set `In-Reply-To` and `References` headers so Gmail threads it correctly.
+- `subject`: Must match the original subject with "Re: " prefix.
 
 **With attachments:**
 ```bash
@@ -317,7 +317,7 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/gmail" \
 
 ### "Reply to this email"
 1. Run bootstrap
-2. Read the message: `GET /messages/{message_id}` — extract `id`, `thread_id`, `from`, `subject`
+2. Read the message: `GET /messages/{message_id}`, extract `id`, `thread_id`, `from`, `subject`
 3. Draft reply content
 4. **Show user the reply for approval**
 5. On approval: `POST /send` with `{to, subject: "Re: ...", body, thread_id, reply_to_message_id}`
