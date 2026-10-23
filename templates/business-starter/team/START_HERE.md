@@ -1,4 +1,4 @@
-# Team Start Here — {{name}}
+# Team Start Here: {{name}}
 
 Use this when a collaborator opens the shared business workspace for the first time.
 
