@@ -680,6 +680,43 @@ test('over http: a request from another site is refused on every route, reads to
   }
 });
 
+test('over http: opening the page itself from another site works, and every data route stays refused from one', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const writes = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false, generate: (opts) => { writes.push(opts); return new Promise(() => {}); }, generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  const q = `?t=${TOKEN}`;
+  const open = { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' };
+  // a plain request with exactly these headers, the way a browser sends a top-level open
+  // (fetch would set its own sec-fetch-mode)
+  const get = (route, headers) => new Promise((resolve, reject) => {
+    const [host, port] = h.base.split(':');
+    const req = http.request({ host, port, path: `${route}${q}`, method: 'GET', headers: { host: h.base, ...headers } }, (res) => {
+      let text = '';
+      res.on('data', (d) => { text += d; });
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  try {
+    // the link tapped in a mail or chat app on the web: a top-level open of the page
+    const page = await get('/', open);
+    assert.equal(page.status, 200);
+    assert.match(page.text, /<html/);
+    // the same kind of request for any data route is still refused
+    for (const route of ['/card', '/state']) assert.equal((await get(route, open)).status, 403, route);
+    // the page from another site in a frame, or fetched, is refused
+    assert.equal((await get('/', { ...open, 'sec-fetch-dest': 'iframe' })).status, 403);
+    assert.equal((await get('/', { ...open, 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' })).status, 403);
+    assert.equal(writes.length, 0, 'opening the page starts no work');
+  } finally {
+    await h.close();
+  }
+});
+
 test('over http: the card route hands the desk only the card id, one option or the words, the second tap, the orb, and the footer', async () => {
   const calls = [];
   const h = await startHandler({
