@@ -1377,6 +1377,34 @@ test('working: the member who has each job now follows its bet-tagged handoffs',
   assert.deepEqual(h.d.view().working.map(w => [w.title, w.owner]), [['Write the launch thread for the phone page', 'launcher'], ['Record the demo video of the front office', 'builder']]);
 });
 
+// Live 2026-10-22: the phone said "validator has it" after a handoff that
+// started no validator run. A handoff whose member did not start says so.
+test('working: a handoff whose member did not start says so instead of "has it"', () => {
+  const root = workspace();
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm1', 'Launch the try page');
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b2', 'm2', 'Record the demo video of the front office');
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', human_asks: [] },
+    m2: { id: 'm2', owner: 'builder', status: 'running', human_asks: [] },
+  };
+  const handoffs = [
+    { from: 'builder', to: 'validator', summary: '[b1] try it on 20 repos', status: 'open',
+      wake: { status: 'not_started', reason: 'at_limit', text: 'validator did not start: 6 members are already working and the limit is 6. nobody is working on this step yet. to start it: atris member wake validator' } },
+    { from: 'builder', to: 'linguist', summary: '[b2] write the captions', status: 'open',
+      wake: { status: 'started', reason: 'started', mission_id: 'm-9', text: 'linguist is working on it now (mission m-9)' } },
+  ];
+  const working = jobDesk(root, missions, { handoffs }).d.view().working;
+  const stuck = working.find(w => w.title === 'Launch the try page');
+  assert.equal(stuck.owner, 'validator');
+  assert.equal(stuck.waiting, 'validator did not start: 6 members are already working and the limit is 6. nobody is working on this step yet');
+  const moving = working.find(w => w.title === 'Record the demo video of the front office');
+  assert.equal(moving.owner, 'linguist');
+  assert.equal(moving.waiting, undefined);
+  // the phone page shows the waiting line in place of "has it"
+  const html = require('../lib/gm-phone-page').phonePage('n');
+  assert.match(html, /j\.waiting \? j\.waiting : j\.owner \+ ' has it'/);
+});
+
 test('yes lock on the desk: do it locks the owner steps before the job runs; a held step is a yes card; yes opens only that step', async () => {
   const root = workspace();
   const yesLock = require('../lib/yes-lock');

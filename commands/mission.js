@@ -1914,6 +1914,27 @@ function recordMemberHandoff(fromMember, toMember, sliceSummary, root = process.
   return handoff;
 }
 
+// Merge `patch` into the newest handoff row with this id. Returns the
+// updated row, or null when it is not on file.
+function updateMemberHandoff(handoffId, patch, root = process.cwd()) {
+  const id = String(handoffId || '');
+  if (!id || !patch) return null;
+  const handoffsFile = path.join(resolveMemberWorkspaceRoot(root), '.atris', 'state', 'member-handoffs.jsonl');
+  try {
+    const lines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      let row = null;
+      try { row = JSON.parse(lines[i]); } catch {}
+      if (!row || row.id !== id) continue;
+      const updated = { ...row, ...patch };
+      lines[i] = JSON.stringify(updated);
+      fs.writeFileSync(handoffsFile, `${lines.join('\n')}\n`, 'utf8');
+      return updated;
+    }
+  } catch {}
+  return null;
+}
+
 function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
   const receiver = String(receiverMember || '').trim().toLowerCase();
   if (!receiver) return 0;
@@ -6738,6 +6759,52 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
+// True when this mission's run left nothing in the shared folder: no file
+// dirtied past the mission's starting dirt (its own bookkeeping aside) and no
+// new commit. Then the work, if any, lives somewhere else (a member's own
+// branch, already merged), and this folder cannot judge it.
+function missionLeftNothingHere(root, { baseline = null, before = null } = {}) {
+  const now = gitWorktreeSnapshot(root);
+  if (!now.available) return false;
+  const startHead = baseline?.code?.base_commit || before?.head || null;
+  if (!startHead || !now.head || startHead !== now.head) return false;
+  if (!baseline && !before?.available) return false;
+  const receipt = worktreeReceipt(before?.available ? before : now, now, { verifier: 'check', baseline });
+  return receipt.available === true && receipt.new_since_baseline_count === 0;
+}
+
+// The mission's check, run where the work is. A mission with its own
+// worktree runs there (the caller already moved into it). A mission in the
+// shared folder runs there first; when that fails and the run left nothing
+// in the folder, the work was made and merged elsewhere, so the check runs
+// again in a throwaway copy of the merged main line, and that run decides.
+// Live miss 2026-10-22 (mission #266): a merged job failed its check twice
+// in a main folder parked on an old branch without the test file.
+function runMissionVerifier(command, { mission = null, cwd = process.cwd(), baseline = null, before = null } = {}) {
+  const here = runVerifier(command, cwd);
+  if (!here || here.passed) return here;
+  if (mission?.worktree_root || mission?.worktree?.path) return here;
+  if (!missionLeftNothingHere(cwd, { baseline, before })) return here;
+  let merged = null;
+  try {
+    const { runVerifyAtMergedMain } = require('../lib/job-code-verify');
+    merged = runVerifyAtMergedMain(command, { root: cwd, runVerify: runVerifier });
+  } catch {
+    merged = null;
+  }
+  if (!merged || typeof merged.passed !== 'boolean') return here;
+  return {
+    ...merged,
+    ran_in: `a throwaway copy of ${merged.code_source}, because this run changed nothing in ${cwd}`,
+    shared_checkout: {
+      cwd,
+      passed: here.passed,
+      status: here.status,
+      stderr: String(here.stderr || '').slice(-500),
+    },
+  };
+}
+
 const CHECK_FEEDBACK_LIMIT = 1500;
 const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
@@ -10728,6 +10795,7 @@ async function executeMissionRunTicksPhase(context) {
         tickIdx,
         frozen,
         storedVerifier,
+        runWorktreeBaseline,
       };
       let verifierResult = null;
       if (cachedStep) {
@@ -11097,7 +11165,12 @@ async function verifyMissionRunTickPhase(context) {
   let verifierResult = null;
   if (result.status === 'ran' && verifyEach) {
     if (currentTick.frozen.verifier) {
-      verifierResult = runVerifier(currentTick.frozen.verifier);
+      verifierResult = runMissionVerifier(currentTick.frozen.verifier, {
+        mission: currentTick.mission,
+        cwd,
+        baseline: currentTick.runWorktreeBaseline,
+        before: currentTick.tickWorktreeBefore,
+      });
     }
     const shouldRunReferee = !currentTick.tickSkipWorker
       && (!verifierResult || verifierResult.passed)
@@ -11426,7 +11499,7 @@ function tickMission(args) {
       const protectedLaneGuard = inspectMissionTickProtectedDiff(mission, tickWorktreeBefore, cwd);
 
       if (protectedLaneGuard.allowed && verify && verifierCommand) {
-        verifierResult = runVerifier(verifierCommand);
+        verifierResult = runMissionVerifier(verifierCommand, { mission, cwd, baseline: worktreeBaseline, before: tickWorktreeBefore });
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
 
@@ -12807,6 +12880,8 @@ module.exports = {
   usefulClaudeReceiptSummary,
   autoQueueMemberNextPush,
   recordMemberHandoff,
+  updateMemberHandoff,
+  resolveMemberWorkspaceRoot,
   closeMemberHandoffsForReceiver,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,

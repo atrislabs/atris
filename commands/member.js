@@ -11302,10 +11302,74 @@ function collectMemberOneOnOnes(root = process.cwd(), slugs = []) {
   return queue;
 }
 
+// The env a woken member starts with: its own plain-terminal run, not part of
+// the session or mission driver that handed off (those markers would turn the
+// run into proof-only mode, a native-goal wait, or a child of the old driver).
+const HANDOFF_WAKE_SCRUB_ENV = [
+  'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID',
+  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_AGENT_ID',
+  'ATRIS_MISSION_DRIVER_DETACHED', 'ATRIS_MISSION_DRIVER_PARENT_PID',
+];
+
+// Start the receiver of a handoff on the handed-off step: the same bounded
+// work step `atris member wake <name>` runs (member run, 15 minutes), but
+// detached, so the member handing off is not held while the next one works.
+function startHandoffReceiver(root, to, step) {
+  const env = { ...process.env, ATRIS_CALLER_RUNTIME: 'terminal' };
+  for (const name of HANDOFF_WAKE_SCRUB_ENV) delete env[name];
+  // The handing-off mission's git guard (a temp folder of wrappers first on
+  // PATH) belongs to that mission; the woken run sets up its own.
+  env.PATH = String(env.PATH || '').split(path.delimiter)
+    .filter((dir) => !path.basename(dir).startsWith('atris-mission-git-'))
+    .join(path.delimiter);
+  const res = require('child_process').spawnSync(process.execPath, [
+    path.join(__dirname, '..', 'bin', 'atris.js'),
+    'member', 'run', to, step, '--minutes', '15', '--no-verify', '--detach', '--json',
+  ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  let payload = null;
+  const lines = String(res.stdout || '').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0 && !payload; i -= 1) {
+    try { payload = JSON.parse(lines.slice(i).join('\n')); } catch {}
+  }
+  const ok = res.status === 0 && Boolean(payload && payload.ok !== false && payload.mission_id);
+  return {
+    ok,
+    mission_id: payload ? payload.mission_id || null : null,
+    pid: payload ? payload.pid || null : null,
+    worktree: payload && payload.worktree ? payload.worktree.path || null : null,
+    error: ok ? null : String((payload && payload.error) || res.stderr || (res.error && res.error.message) || `member run exited ${res.status}`),
+  };
+}
+
+// Whether to wake the receiver, and the outcome. Under the test runner a
+// handoff only records unless ATRIS_HANDOFF_WAKE=1 asks, so suites that hand
+// off never start a real engine by accident.
+function wakeOnHandoff(handoff, root, args) {
+  const testRun = Boolean(process.env.NODE_TEST_CONTEXT) && process.env.ATRIS_HANDOFF_WAKE !== '1';
+  if (hasFlag(args, '--no-wake') || testRun) {
+    return {
+      status: 'not_started',
+      reason: 'not_asked',
+      text: `${handoff.to} was not started; the handoff is only written down. to start it: atris member wake ${handoff.to}`,
+    };
+  }
+  const { wakeHandoffReceiver } = require('../lib/handoff-wake');
+  return wakeHandoffReceiver(handoff, {
+    listMembers: () => memberUpTeam(root),
+    awake: (name) => {
+      try { return require('../lib/member-switches').isMemberAwake(name, root); } catch { return true; }
+    },
+    engine: (name) => require('../lib/member-engine').memberRosterEngine(name, root),
+    start: (name, step) => startHandoffReceiver(root, name, step),
+  });
+}
+
 function memberHandoff(from, to, ...args) {
   if (from === '--help' || from === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member handoff [<from> <to> "<slice>"] [--json]');
+    console.log('Usage: atris member handoff [<from> <to> "<slice>"] [--no-wake] [--json]');
     console.log('Passes a completed slice from one member to the next specialist and queues their next_push.');
+    console.log('The next member is started on the slice when it is not already working, unless the team is at its limit.');
+    console.log('--no-wake only writes the handoff down.');
     return;
   }
   const root = process.cwd();
@@ -11324,17 +11388,20 @@ function memberHandoff(from, to, ...args) {
   }
   const targetTo = sliceWords[0];
   const summary = sliceWords.slice(1).join(' ').trim();
-  const { recordMemberHandoff } = require('./mission');
-  const handoff = recordMemberHandoff(from, targetTo, summary, root);
-  if (!handoff) {
+  const { recordMemberHandoff, updateMemberHandoff, resolveMemberWorkspaceRoot } = require('./mission');
+  const recorded = recordMemberHandoff(from, targetTo, summary, root);
+  if (!recorded) {
     console.error(`Could not record handoff from ${from} to ${targetTo}. Check member names.`);
     process.exitCode = 1;
     return null;
   }
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  const wake = { ...wakeOnHandoff(recorded, parentRoot, args), at: new Date().toISOString() };
+  const handoff = updateMemberHandoff(recorded.id, { wake }, parentRoot) || { ...recorded, wake };
   const lines = [
     `Handoff recorded: ${handoff.from} -> ${handoff.to}`,
     `Slice: ${handoff.summary}`,
-    `Next: ${handoff.next_command}`,
+    wake.text,
   ];
   printJsonOrText({ ok: true, action: 'member_handoff', handoff }, lines, asJson);
   return handoff;
@@ -11723,8 +11790,16 @@ async function memberCommand(subcommand, ...args) {
         // more often than a job. Starting a paid run on it costs money and
         // does nothing useful, so name the miss and stop. Jobs keep working
         // as more than one word, or through `atris member run "<job>"`.
-        const extraWords = args.filter((a) => !String(a).startsWith('-')).length;
+        const extraWordList = args.filter((a) => !String(a).startsWith('-'));
+        const extraWords = extraWordList.length;
         if (!/\s/.test(subcommand.trim()) && extraWords === 0) {
+          return memberUnknownWord(subcommand);
+        }
+        // `atris member inbox validator`: an unknown word followed by a member
+        // name is a command shape (verb, then who), not a job. It once started
+        // a mission called "inbox validator"; name the miss instead.
+        if (!/\s/.test(subcommand.trim()) && extraWords === 1
+          && isKnownMemberSlug(String(extraWordList[0]).trim(), process.cwd())) {
           return memberUnknownWord(subcommand);
         }
         return memberSteerOrDispatch(subcommand, ...args);
