@@ -164,3 +164,29 @@ test('collectMd skips symlinked files and folders, so a site only holds files fr
   const names = collectMd(path.join(base, 'docs')).map((f) => path.basename(f));
   assert.deepEqual(names, ['real.md']);
 });
+
+test('serveSite answers only requests addressed to this computer', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-host-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.writeFileSync(path.join(base, 'site', 'index.html'), 'PUBLIC');
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (host) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: host } }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    assert.equal((await get(`127.0.0.1:${port}`)).body, 'PUBLIC');
+    assert.equal((await get(`localhost:${port}`)).body, 'PUBLIC');
+    const other = await get(`attacker.example:${port}`);
+    assert.equal(other.status, 403);
+    assert.notEqual(other.body, 'PUBLIC');
+  } finally {
+    server.close();
+  }
+});
