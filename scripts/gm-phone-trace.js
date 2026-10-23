@@ -14,6 +14,8 @@
 //                                               read the numbers from a plain run)
 //   node scripts/gm-phone-trace.js --team       the team table at phone and
 //                                               laptop size (--shots DIR saves both)
+//   node scripts/gm-phone-trace.js --engine     the engine card from the team
+//                                               table, a swap, and the table after
 //   require('./scripts/gm-phone-trace')         { findChrome, trace } for tests
 
 const fs = require('node:fs');
@@ -840,6 +842,163 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
   }, viewport);
 }
 
+// The engine card a tap on builder's engine cell opens: every model by
+// tool, the current one on top and not tappable, a record where there is one.
+const ENGINE_CARD = {
+  ok: true,
+  member: 'builder',
+  job: 'build',
+  job_key: 'executor',
+  line: 'builder runs on claude opus 5.5.',
+  scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
+  groups: [
+    { engine: 'claude', tool: 'claude code', models: [
+      { engine: 'claude', model: 'opus 5.5', label: 'opus 5.5', current: true, record: null },
+      { engine: 'claude', model: 'haiku 5.5', label: 'haiku 5.5', current: false, record: '3 of 4 landed' },
+      { engine: 'claude', model: 'sonnet 5', label: 'sonnet 5', current: false, record: null },
+    ] },
+    { engine: 'codex', tool: 'codex', models: [
+      { engine: 'codex', model: 'gpt-6.1-sol', label: 'gpt-6.1-sol', current: false, record: '10 of 20 landed' },
+      { engine: 'codex', model: 'gpt-6-astra', label: 'gpt-6-astra', current: false, record: null },
+    ] },
+    { engine: 'agy', tool: 'agy', models: [{ engine: 'agy', model: 'gemini-3.8-flash', label: 'gemini-3.8-flash', current: false, record: null }] },
+  ],
+};
+
+// what the engine card looks like: the line, the scope buttons, the tools in
+// order, each tool's first model, whether the current one takes taps, the
+// smallest words, and anything that moves
+const ENGINE_LOOK = `(function () {
+  var team = document.getElementById('team');
+  var groups = team.querySelectorAll('section.models');
+  var sizes = Array.prototype.map.call(team.querySelectorAll('h1, p, h2, button, span'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  return {
+    title: team.querySelector('h1').textContent,
+    line: team.querySelector('p.why').textContent,
+    scopes: Array.prototype.map.call(team.querySelectorAll('.scopes button'), function (b) { return [b.textContent, b.classList.contains('chosen')]; }),
+    tools: Array.prototype.map.call(groups, function (g) { return g.querySelector('h2').textContent; }),
+    first: Array.prototype.map.call(groups, function (g) { return g.querySelector('button.choice').textContent; }),
+    current_takes_taps: !groups[0].querySelector('button.choice').disabled,
+    buttons: team.querySelectorAll('section.models button.choice').length,
+    shortest_button_px: Math.min.apply(null, Array.prototype.map.call(team.querySelectorAll('section.models button.choice, .scopes button'), function (b) { return Math.round(b.getBoundingClientRect().height); })),
+    smallest_font_px: Math.min.apply(null, sizes),
+    page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+    moving: Array.prototype.filter.call(team.querySelectorAll('*'), function (n) { var c = getComputedStyle(n); return c.animationName !== 'none'; }).map(function (n) { return n.tagName; }),
+  };
+})()`;
+
+// Opens the team table, taps builder's engine cell, reads the card, presses
+// Esc (back to the table), opens it again, picks "for every build job", taps
+// the first codex model, and reads the table that comes back: the row's new
+// engine and the one line over it. With shots, saves the card.
+async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, shots = null } = {}) {
+  const rows = TABLE_ROWS.map(r => ({ ...r }));
+  const swaps = [];
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows }),
+    engineCard: () => ENGINE_CARD,
+    swapEngine: (body) => {
+      swaps.push(body);
+      const row = rows.find(r => r.member === body.member);
+      row.engine = `${body.engine} ${body.model}`;
+      return { ok: true, ack: `build now runs on ${body.engine} ${body.model}. claude opus 5.5 is the backup.`, rows };
+    },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await wait(120);
+    };
+    const cell = '#team tbody tr:nth-child(2) td.eng button';
+    const table = () => p.run("(function () { var team = document.getElementById('team'); var row = team.querySelector('tbody tr:nth-child(2)'); return { open: !team.hidden, title: team.querySelector('h1').textContent, table: Boolean(team.querySelector('table')), engine: row ? row.querySelector('td.eng').textContent : null, said: team.querySelector('p.done') ? team.querySelector('p.done').textContent : null }; })()");
+    // at phone width the engine column sits past the edge; scroll it in like a thumb would
+    const tapCell = async () => {
+      await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+      await wait(60);
+      await p.tap(cell);
+    };
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapCell();
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'the engine card');
+    await wait(80);
+    const look = await p.run(ENGINE_LOOK);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+      fs.writeFileSync(path.join(shots, `engine-card-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    await esc();
+    const back = await table();
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table again');
+    await tapCell();
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'the engine card again');
+    await p.tap('#team .scopes button:nth-child(2)');
+    await p.tap('#team section.models:nth-of-type(2) button.choice');
+    await p.until("Boolean(document.querySelector('#team p.done'))", 'the team table after the swap');
+    const after = await table();
+    if (shots) {
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, `engine-swapped-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    return { viewport: `${viewport.width}x${viewport.height}`, look, back, swaps, after };
+  }, viewport);
+}
+
+// The race codex found: open builder's engine card, press Esc before its
+// answer comes back, open validator's card, then let builder's late answer
+// land. Reads what validator's card shows after, then taps its first model
+// and returns which member each swap the server got was for.
+async function engineRaceTrace({ chromePath = findChrome(), viewport = PHONE, lateMs = 900 } = {}) {
+  const rows = TABLE_ROWS.map(r => ({ ...r }));
+  const swaps = [];
+  let builderAnswered = false;
+  const cardFor = (member) => ({
+    ...ENGINE_CARD,
+    member,
+    line: `${member} runs on claude opus 5.5.`,
+    scopes: [{ id: 'member', label: `just ${member}` }, { id: 'job', label: 'for every build job' }],
+    groups: member === 'builder' ? ENGINE_CARD.groups : [ENGINE_CARD.groups[1]],
+  });
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows }),
+    engineCard: ({ member }) => (member === 'builder'
+      ? new Promise(resolve => setTimeout(() => { builderAnswered = true; resolve(cardFor('builder')); }, lateMs))
+      : cardFor(member)),
+    swapEngine: (body) => { swaps.push(body); return { ok: true, ack: `${body.member} now runs on ${body.engine} ${body.model}.`, rows }; },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    };
+    const tapCell = async (n) => {
+      const cell = `#team tbody tr:nth-child(${n}) td.eng button`;
+      await p.until(`Boolean(document.querySelector(${JSON.stringify(cell)}))`, `row ${n}`);
+      await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+      await p.tap(cell);
+    };
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapCell(2); // builder: its answer is late
+    await p.until("document.querySelector('#team h1').textContent === 'builder'", 'builder card');
+    await esc();
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the table again');
+    await tapCell(5); // validator
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'validator card');
+    const end = Date.now() + lateMs + 3000;
+    while (!builderAnswered && Date.now() < end) await wait(30);
+    await wait(250);
+    const card = await p.run("(function () { var team = document.getElementById('team'); return { title: team.querySelector('h1').textContent, line: team.querySelector('p.why').textContent, groups: team.querySelectorAll('section.models').length, scopes: Array.prototype.map.call(team.querySelectorAll('.scopes button'), function (b) { return b.textContent; }), backs: team.querySelectorAll('button.quiet').length }; })()");
+    await p.tap('#team section.models button.choice');
+    await p.until("Boolean(document.querySelector('#team p.done'))", 'the table after the swap');
+    return { viewport: `${viewport.width}x${viewport.height}`, builderAnswered, card, swaps };
+  }, viewport);
+}
+
 // ---- the job deck: one running job at a time ------------------------------------
 
 const DECK = {
@@ -986,13 +1145,19 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
   });
 }
 
-module.exports = { findChrome, launch, trace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
+module.exports = { findChrome, launch, trace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, engineRaceTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
   const shots = at > 0 ? path.resolve(process.argv[at + 1] || 'gm-phone-shots') : null;
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
-  if (process.argv.includes('--team')) {
+  if (process.argv.includes('--engine')) {
+    (async () => {
+      const out = [];
+      for (const viewport of [PHONE, LAPTOP]) out.push(await engineCardTrace({ viewport, shots }));
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    })().catch(fail);
+  } else if (process.argv.includes('--team')) {
     (async () => {
       const out = [];
       for (const viewport of [PHONE, LAPTOP]) out.push(await teamTableTrace({ viewport, shots }));
