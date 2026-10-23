@@ -8,12 +8,12 @@
 # Output: atris/campaigns/cmp-four-lines-real/evals/runs/<engine>/<arm>-<n>/
 #   workdir/ (no .git, no node_modules), transcript.log, meta.json
 # Env: FOUR_LINES_MODEL picks a model (codex defaults to gpt-6.1-sol, agy to
-# gemini-4-argon-high),
+# gemini-4-argon-high, grok to grok-4.7-build-fast),
 # FOUR_LINES_TIMEOUT caps seconds (900).
 set -euo pipefail
 
 ENGINE="${1:-}"; ARM="${2:-}"; N="${3:-}"
-usage() { echo "usage: $0 <claude|codex|agy> <treatment|control> <n>" >&2; exit 2; }
+usage() { echo "usage: $0 <claude|codex|agy|grok> <treatment|control> <n>" >&2; exit 2; }
 [ -n "$ENGINE" ] && [ -n "$N" ] || usage
 case "$ARM" in treatment|control) ;; *) usage ;; esac
 
@@ -33,7 +33,11 @@ case "$ENGINE" in
     command -v agy >/dev/null || { echo "agy is not installed" >&2; exit 3; }
     [ -f "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" ] || { echo "agy is not logged in (no antigravity-oauth-token)" >&2; exit 3; }
     ;;
-  *) echo "engine '$ENGINE' is not wired yet (claude, codex, and agy so far)" >&2; exit 3 ;;
+  grok)
+    command -v grok >/dev/null || { echo "grok is not installed" >&2; exit 3; }
+    [ -f "$HOME/.grok/auth.json" ] || { echo "grok is not logged in (no ~/.grok/auth.json)" >&2; exit 3; }
+    ;;
+  *) echo "engine '$ENGINE' is not wired yet (claude, codex, agy, and grok so far)" >&2; exit 3 ;;
 esac
 
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
@@ -124,6 +128,30 @@ $PROMPT" --model "${FOUR_LINES_MODEL:-gemini-4-argon-high}" \
         --output-format stream-json > "$OUT/transcript.log" 2>&1 < /dev/null
     CODE=$?
     ;;
+  grok)
+    # A temp GROK_HOME holding only the login, and a temp HOME: no user
+    # config, rules, memory, skills, plugins, MCP servers, or hooks load,
+    # including the ~/.claude ones grok reads for compat. Grok only reads a
+    # folder's AGENTS.md and CLAUDE.md once the folder is trusted, so the temp
+    # home trusts exactly this workdir. The sandbox profile is grok's
+    # workspace one with /tmp denied: writes land in the project, the temp
+    # grok home, and the per-user system temp dir grok itself needs to start.
+    GH="$ROOT/grok-home"; mkdir -p "$GH" "$ROOT/home" "$ROOT/tmp"
+    cp "$HOME/.grok/auth.json" "$GH/auth.json"; chmod 600 "$GH/auth.json"
+    printf '[folders."%s"]\ntrusted = true\ndecided_at = %s\n' "$(pwd -P)" "$(date +%s)" > "$GH/trusted_folders.toml"
+    printf '[profiles.four-lines]\nextends = "workspace"\ndeny = ["/tmp", "/private/tmp"]\n' > "$GH/sandbox.toml"
+    PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" GROK_HOME="$GH" HOME="$ROOT/home" TMPDIR="$ROOT/tmp" \
+    env -u XAI_API_KEY -u GROK_SANDBOX -u GROK_AGENT \
+      perl -e 'alarm shift; exec @ARGV' "$CAP" \
+      grok -p "$PROMPT" --model "${FOUR_LINES_MODEL:-grok-4.7-build-fast}" \
+        --sandbox four-lines --always-approve --no-memory \
+        --output-format streaming-json > "$OUT/transcript.log" 2>&1 < /dev/null
+    CODE=$?
+    # A refresh rotates the token, so save a newer login back to the real home.
+    node -e 'const f=require("fs"),[a,b]=process.argv.slice(1),r=p=>{try{return Object.values(JSON.parse(f.readFileSync(p,"utf8")))[0].expires_at||""}catch{return ""}};
+      if (r(a) > r(b)) { f.copyFileSync(a, b); console.error("grok login refreshed during the run; saved it back"); }' \
+      "$GH/auth.json" "$HOME/.grok/auth.json" || true
+    ;;
 esac
 set -e
 ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SECS=$(( $(date +%s) - T0 ))
@@ -135,7 +163,7 @@ STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" node -e '
 const fs = require("fs"), crypto = require("crypto"), cp = require("child_process");
 const e = process.env, out = e.OUT;
 const sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex");
-let model = e.FOUR_LINES_MODEL || ({ codex: "gpt-6.1-sol", agy: "gemini-4-argon-high" }[e.ENGINE] || null);
+let model = e.FOUR_LINES_MODEL || ({ codex: "gpt-6.1-sol", agy: "gemini-4-argon-high", grok: "grok-4.7-build-fast" }[e.ENGINE] || null);
 for (const line of fs.readFileSync(out + "/transcript.log", "utf8").split("\n")) {
   try { const j = JSON.parse(line); if (j.type === "system" && j.subtype === "init") { model = j.model; break; } } catch {}
 }
@@ -144,7 +172,16 @@ let version = null; try { version = cp.execFileSync(e.ENGINE, ["--version"], { e
 const meta = {
   engine: e.ENGINE, engine_version: version, model, arm: e.ARM, n: Number(e.N),
   atris_md_sha256: sha,
-  isolation: e.ENGINE === "agy" ? {
+  isolation: e.ENGINE === "grok" ? {
+    workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
+    instructions: "GROK_HOME is a new temp dir holding only auth.json, a trust entry for this workdir alone, and the sandbox profile; HOME is a temp dir too. No user config.toml, global rules, ~/.claude CLAUDE.md, skills, plugins, MCP servers, or hooks load; the project AGENTS.md and CLAUDE.md do, because the workdir is trusted",
+    memory: "--no-memory and a new GROK_HOME, so no past sessions or memories exist",
+    auth: "XAI_API_KEY unset; the copied grok login is used, and saved back only if it refreshed mid run",
+    writes: "--always-approve inside a custom sandbox profile: grok workspace with /tmp denied. Writes land in the workdir, the temp grok home, and the per-user system temp dir; home and /tmp fail. Denying the system temp dir stops grok from starting",
+    stdin: "/dev/null, so grok never waits on input",
+    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    probe: "2026-10-23: grok inspect with the temp homes listed 0 user skills, plugins, MCP servers, and hooks (the real home gives 141 skills and the user CLAUDE.md). Without the trust entry no project rules load at all; with it, a probe run named only the project Agents.md and Claude.md and quoted the Acceleration line verbatim. touch in the real home and /tmp failed with Operation not permitted, touch ./ worked",
+  } : e.ENGINE === "agy" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "HOME is a new temp dir holding only the agy login token: no user GEMINI.md, settings.json, skills, MCP servers, knowledge, or past conversations load; only the fresh project AGENTS.md does",
     skills: "only the two skills agy ships with (agy-customizations, antigravity-guide) remain",
