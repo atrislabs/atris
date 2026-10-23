@@ -883,3 +883,51 @@ test('recap today looks where each tool keeps its logs when that folder was move
     cleanup(moved);
   }
 });
+
+test('recap today finds a deep folder whose long name claude code shortened', () => {
+  const fx = todayFixture();
+  try {
+    const deep = path.join(fx.project, 'a'.repeat(120), 'b'.repeat(120), 'mine');
+    const sibling = path.join(fx.project, 'a'.repeat(120), 'b'.repeat(120), 'other');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.mkdirSync(sibling, { recursive: true });
+    const key = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
+    assert.ok(key(deep).length > 200 && key(deep).slice(0, 200) === key(sibling).slice(0, 200), 'both share the shortened prefix');
+    const projects = path.join(fx.home, '.claude', 'projects');
+    writeJsonl(path.join(projects, `${key(deep).slice(0, 200)}-abc123`, 's.jsonl'), [
+      { type: 'user', timestamp: fx.ts, cwd: deep, message: { content: 'fix the deep thing' } },
+    ]);
+    writeJsonl(path.join(projects, `${key(sibling).slice(0, 200)}-zzz999`, 's.jsonl'), [
+      { type: 'user', timestamp: fx.ts, cwd: sibling, message: { content: 'not this folder' } },
+      { type: 'user', timestamp: fx.ts, cwd: sibling, message: { content: 'still not this one' } },
+    ]);
+    const t = buildAgentToday({ cwd: deep, home: fx.home, env: {}, now: fx.now });
+    assert.equal(t.sessions.claude, 1);
+    assert.equal(t.prompts, 1, 'the sibling that shares the prefix is not counted');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('recap today finds sessions started through a shortcut to this folder', () => {
+  const fx = todayFixture();
+  const links = makeTempDir();
+  try {
+    const shortcut = path.join(fs.realpathSync(links), 'proj-link');
+    fs.symlinkSync(fx.project, shortcut);
+    seedClaude({ ...fx, project: shortcut });
+    seedCodex({ ...fx, project: shortcut }, shortcut, {}, 'via-link');
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: { PWD: shortcut }, now: fx.now });
+    assert.deepEqual(t.sessions, { claude: 1, codex: 1 });
+    assert.deepEqual(t.files, ['README.md', 'src/app.js', 'src/login.js'], 'files recorded under the shortcut count as here');
+    const noPwd = buildAgentToday({ cwd: fx.project, home: fx.home, env: {}, now: fx.now });
+    assert.deepEqual(noPwd.sessions, { claude: 0, codex: 0 }, 'without the shell path there is nothing to match');
+    const stranger = buildAgentToday({ cwd: fx.project, home: fx.home, env: { PWD: links }, now: fx.now });
+    assert.deepEqual(stranger.sessions, { claude: 0, codex: 0 }, 'a PWD that points somewhere else is ignored');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+    cleanup(links);
+  }
+});
