@@ -1,4 +1,4 @@
-# Campaign — Validate
+# Campaign: Validate
 
 > Proof that Campaign works, checked by someone other than the builder.
 
