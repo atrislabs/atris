@@ -11,7 +11,7 @@ tags:
 
 # /tidy
 
-Finds what's rotting in your workspace and fixes it. Not just broken refs — ghost names, stale lessons, duplicate data, language drift, dead code.
+Finds what's rotting in your workspace and fixes it. Not just broken refs: ghost names, stale lessons, duplicate data, language drift, dead code.
 
 ## When to use
 
@@ -30,25 +30,25 @@ Finds what's rotting in your workspace and fixes it. Not just broken refs — gh
 
 ### What to look for
 
-**Ghost names** — terms that don't match the current identity. Check package.json `name` and `description`, README title, and PERSONA. Grep the codebase for old names (e.g., "atrisDev" when the product is "atris"). Flag any user-facing string that uses a dead name.
+**Ghost names**: terms that don't match the current identity. Check package.json `name` and `description`, README title, and PERSONA. Grep the codebase for old names (e.g., "atrisDev" when the product is "atris"). Flag any user-facing string that uses a dead name.
 
-**Stale wiki pages** — pages with `last_compiled` frontmatter where the source files have been modified since. The page content may be wrong.
+**Stale wiki pages**: pages with `last_compiled` frontmatter where the source files have been modified since. The page content may be wrong.
 
-**Broken MAP.md references** — file:line refs that point to code that moved or was deleted. The auto-healer fixes what it can; report what it can't.
+**Broken MAP.md references**: file:line refs that point to code that moved or was deleted. The auto-healer fixes what it can; report what it can't.
 
-**Stale lessons** — lessons about bugs that have since been fixed. Grep the named files for the bug pattern. If it's gone, tag the lesson `[resolved]`.
+**Stale lessons**: lessons about bugs that have since been fixed. Grep the named files for the bug pattern. If it's gone, tag the lesson `[resolved]`.
 
-**Duplicate scorecards** — same slug appearing twice in scorecards.md. Keep the one with more data, delete the other.
+**Duplicate scorecards**: same slug appearing twice in scorecards.md. Keep the one with more data, delete the other.
 
-**Abandoned tasks** — in-progress tasks claimed more than 3 days ago. Either finish them, re-scope them, or delete them.
+**Abandoned tasks**: in-progress tasks claimed more than 3 days ago. Either finish them, re-scope them, or delete them.
 
-**Orphan docs** — markdown pages under atris/ that nothing links to. They're invisible and probably stale.
+**Orphan docs**: markdown pages under atris/ that nothing links to. They're invisible and probably stale.
 
-**Dead exports** — functions in module.exports that nothing imports. They add surface area for no reason.
+**Dead exports**: functions in module.exports that nothing imports. They add surface area for no reason.
 
-**Stale TODO items** — tasks older than 14 days that haven't moved. Run `isStillTrue` on each. Tag stale ones `[unverified]`.
+**Stale TODO items**: tasks older than 14 days that haven't moved. Run `isStillTrue` on each. Tag stale ones `[unverified]`.
 
-**Empty sections** — TODO.md sections with placeholder text like "(empty)" or "(clean)".
+**Empty sections**: TODO.md sections with placeholder text like "(empty)" or "(clean)".
 
 4. Present findings as a numbered list, sorted by impact. For each:
    - What's wrong (specific file, line, or term)
