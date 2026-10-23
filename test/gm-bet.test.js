@@ -2393,6 +2393,31 @@ test('working: the member who has each job now follows its bet-tagged handoffs',
   assert.deepEqual(h.d.view().working.map(w => [w.title, w.owner]), [['Write the launch thread for the phone page', 'launcher'], ['Record the demo video of the front office', 'builder']]);
 });
 
+// Live 2026-10-22: the phone said "validator has it" after a handoff that
+// started no validator run. A handoff whose member did not start says so.
+test('working: a handoff whose member did not start says so instead of "has it"', () => {
+  const root = workspace();
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm1', 'Launch the try page');
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b2', 'm2', 'Record the demo video of the front office');
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', human_asks: [] },
+    m2: { id: 'm2', owner: 'builder', status: 'running', human_asks: [] },
+  };
+  const handoffs = [
+    { from: 'builder', to: 'validator', summary: '[b1] try it on 20 repos', status: 'open',
+      wake: { status: 'not_started', reason: 'at_limit', text: 'validator did not start: 6 members are already working and the limit is 6. nobody is working on this step yet. to start it: atris member wake validator' } },
+    { from: 'builder', to: 'linguist', summary: '[b2] write the captions', status: 'open',
+      wake: { status: 'started', reason: 'started', mission_id: 'm-9', text: 'linguist is working on it now (mission m-9)' } },
+  ];
+  const working = jobDesk(root, missions, { handoffs }).d.view().working;
+  const stuck = working.find(w => w.title === 'Launch the try page');
+  assert.equal(stuck.owner, 'validator');
+  assert.equal(stuck.waiting, 'validator did not start: 6 members are already working and the limit is 6. nobody is working on this step yet');
+  const moving = working.find(w => w.title === 'Record the demo video of the front office');
+  assert.equal(moving.owner, 'linguist');
+  assert.equal(moving.waiting, undefined);
+});
+
 test('yes lock on the desk: do it locks the owner steps before the job runs; a held step is a yes card; yes opens only that step', async () => {
   const root = workspace();
   const yesLock = require('../lib/yes-lock');
@@ -2645,6 +2670,123 @@ test('merged changes: one per first-parent commit, merges named by their pull re
     assert.equal(bundle.sources.landed.fact, 'changes merged this week: 2');
     assert.deepEqual(bundle.sources.landed.subjects, ['add the phone page', 'direct fix on master']);
   });
+});
+
+// Codex review round 5 on #1483: a run woken by a handoff always runs under
+// the fixed handoff seal. A held command is a yes card: on the parent job
+// when the handoff found one, else on its own. A yes lets that one command
+// run once.
+test('a held handed-off command is a yes card on its own when it has no parent', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: null });
+  const held = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
+  assert.equal(held.hold, true);
+  assert.match(held.message, /^held: a handed-off job wants to gh pr merge 5\./);
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to gh pr merge 5']);
+  const own = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
+  assert.deepEqual([own.title, own.bet_id, own.command], ['a handed-off job', null, 'gh pr merge 5'], 'no parent: its own card');
+  const yes = await h.d.answerYes();
+  assert.equal(yes.ok, true);
+  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-child']);
+  // the yes lets that one command run, once
+  const once = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
+  assert.equal(once.consume.length, 1);
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] }).hold, true, 'not a different command');
+  yesLock.consume(root, 'm-child', seal, once.consume, { ok: true, claims: once.claims });
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['pr', 'merge', '5'] }).hold, true, 'not twice');
+});
+
+test('a held handed-off command shows on its parent job when there is one', async () => {
+  const root = workspace();
+  doingRow(path.join(root, 'gm-bets.jsonl'), root, 'b1', 'm-parent', 'Launch the try page');
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: 'm-parent' });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] });
+  const h = jobDesk(root, { 'm-parent': { id: 'm-parent', owner: 'builder', status: 'running', human_asks: [] } });
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to npm publish']);
+  const onParent = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
+  assert.deepEqual([onParent.title, onParent.bet_id], ['Launch the try page', 'b1'], 'the card sits on the parent job');
+  await h.d.answerYes();
+  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-child'], 'the yes goes to the run that was held');
+});
+
+// Codex review round 4 on #1483: mission #266 ("do it" on the phone) ran in
+// the shared main folder, which sat on an old branch, so its check could not
+// see the merged work. A "do it" mission runs in its own worktree, where the
+// work and its check live, and the desk still sees it there.
+test('do it starts the mission in its own worktree', async () => {
+  const root = workspace();
+  require('child_process').execFileSync('git', ['init', '-q', '-b', 'master'], { cwd: root });
+  const h = jobDesk(root, { 'm-new': { id: 'm-new', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  h.d.next();
+  await h.d.doIt();
+  const start = h.cli.find(a => a[1] === 'start');
+  assert.ok(start.includes('--worktree'), start.join(' '));
+});
+
+// Codex review round 9 on #1483: a folder with no git has no master to
+// protect and no worktree to make, so the job runs in place as before.
+test('do it outside a git checkout starts the mission in place', async () => {
+  const root = workspace();
+  const h = jobDesk(root, { 'm-new': { id: 'm-new', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  h.d.next();
+  await h.d.doIt();
+  const start = h.cli.find(a => a[1] === 'start');
+  assert.ok(start, 'the mission started');
+  assert.equal(start.includes('--worktree'), false, start.join(' '));
+});
+
+test('the desk reads missions that live in a worktree', () => {
+  const { spawnSync } = require('child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-desk-worktree-'));
+  try {
+    const git = (args, cwd = root) => assert.equal(spawnSync('git', args, { cwd, encoding: 'utf8' }).status, 0, args.join(' '));
+    git(['init', '-q', '-b', 'master']);
+    git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'base']);
+    const wt = path.join(root, '.agent-worktrees', 'builder-try-page');
+    git(['worktree', 'add', '-q', '-b', 'builder-try-page', wt]);
+    fs.mkdirSync(path.join(wt, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(wt, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({ schema: 'atris.mission.v1', id: 'mission-2026-10-22-try-page-aaaa0001', objective: 'launch try page', owner: 'builder', status: 'running', worktree_root: wt, created_at: new Date().toISOString() })}\n`);
+    const missions = gmBet.readDeskMissions(root);
+    assert.equal(missions.get('mission-2026-10-22-try-page-aaaa0001').owner, 'builder');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Codex review round 6 on #1483: each held command is its own card, bound to
+// that exact command; answering one releases only it and hides no other.
+test('two held commands on one step are two cards; the yes on the first releases only the first', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const keys = h.d.state.jobs.yes.filter(y => y.mission_id === 'm-child').map(y => y.key);
+  assert.equal(new Set(keys).size, 2, 'each card has its own key');
+  const card = h.d.next();
+  assert.equal(card.job.what, 'a handed-off job wants to npm publish ./a');
+  await h.d.answerYes();
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
+  assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
+  h.d.pollJobs();
+  const next = h.d.next();
+  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to npm publish ./b'], 'the answer did not hide the later request');
 });
 
 test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {

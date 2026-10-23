@@ -777,6 +777,8 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--truth',
   '--proof',
   '--base',
+  '--yes-lock',
+  '--yes-lock-parent',
 ];
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [
@@ -1000,6 +1002,12 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
+  // a run inside a woken member's run keeps its seal: mission start reads it
+  // from the environment, never from these words
+  if (!process.env.ATRIS_HANDOFF_YES_LOCK) {
+    pushFlagValue(startArgs, args, '--yes-lock');
+    pushFlagValue(startArgs, args, '--yes-lock-parent');
+  }
   // Member runs choose and drive work immediately, so an absent check must not
   // leave autonomous callers with a mission that never ran. A check inferred
   // from the mission text counts as named.
@@ -1297,6 +1305,10 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
       console.error(`${name} is parked; running anyway`);
     }
   } catch { /* an unreadable card is requireMemberDir's problem, not this notice's */ }
+  if (args.filter(require('./mission').isYesLockWord).length > 1) {
+    return printMemberRunResult({ started: false, state: null, mission_id: null,
+      error: 'member run got more than one --yes-lock, so it is not clear which seal applies; nothing started' }, asJson, { quiet });
+  }
   const requestedVerifier = readFlag(args, '--verify', '') || memberRunConfiguredVerifier(paths);
   const missionText = memberRunMissionText(args);
   const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));
@@ -1362,7 +1374,7 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   const missionWordIndices = missionText && !hasMissionOverride ? new Set(memberRunMissionWordIndices(args)) : new Set();
   const executionArgs = args.filter((_, index) => !missionWordIndices.has(index));
   const runArgs = stripKnownFlags(executionArgs,
-    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base'],
+    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base', '--yes-lock', '--yes-lock-parent'],
     ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto', '--ignite', '--wait', '--sync']);
   if (ignite && !hasFlag(runArgs, '--complete-on-pass')) runArgs.push('--complete-on-pass');
   if (memberRunWantsReferee(runArgs, ignite)) runArgs.push('--referee');
@@ -1374,6 +1386,16 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   const caller = callerRuntime(args);
   const runnerSwap = memberRunRunnerSwap(mission, args, caller);
   if (runnerSwap) runArgs.push('--engine', runnerSwap.to);
+  // A run in the foreground (wake, go, run by name) is noted on the start
+  // list under the shared lock, so member up and handoffs count it while it
+  // works. A detached run is noted by whoever started it.
+  if (!hasFlag(runArgs, '--detach') && !hasFlag(runArgs, '--dry-run')) {
+    try {
+      const stateDir = path.join(require('./mission').resolveMemberWorkspaceRoot(process.cwd()), '.atris', 'state');
+      require('../lib/handoff-wake').withWakeReservation(stateDir,
+        ({ record }) => record({ member: name, mission_id: mission.id, pid: process.pid }), { waitMs: 30000 });
+    } catch {}
+  }
   const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson && !quiet, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
@@ -11134,6 +11156,8 @@ async function memberUp(...args) {
     pickTask: (name, taken) => memberUpPick(root, name, taken),
     writeNextJob: (name, opts) => memberUpWriteNextJob(root, name, opts),
     spawn: (name, onExit, onClaim) => memberUpSpawn(root, name, onExit, onClaim),
+    // the start lock handoffs share, so both count what the other started
+    reserve: (fn) => require('../lib/handoff-wake').withWakeReservation(path.join(root, '.atris', 'state'), fn),
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
@@ -11352,10 +11376,108 @@ function collectMemberOneOnOnes(root = process.cwd(), slugs = []) {
   return queue;
 }
 
+// The env a woken member starts with: its own plain-terminal run, not part of
+// the session or mission driver that handed off (those markers would turn the
+// run into proof-only mode, a native-goal wait, or a child of the old driver).
+const HANDOFF_WAKE_SCRUB_ENV = [
+  'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID',
+  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_AGENT_ID',
+  'ATRIS_MISSION_DRIVER_DETACHED', 'ATRIS_MISSION_DRIVER_PARENT_PID',
+];
+
+// Start the receiver of a handoff on the handed-off step: the same bounded
+// work step `atris member wake <name>` runs (member run, 15 minutes), but
+// detached, so the member handing off is not held while the next one works.
+function startHandoffReceiver(root, to, step, parentMissionId = null) {
+  const env = { ...process.env, ATRIS_CALLER_RUNTIME: 'terminal' };
+  for (const name of HANDOFF_WAKE_SCRUB_ENV) delete env[name];
+  // The handing-off mission's git guard (a temp folder of wrappers first on
+  // PATH) belongs to that mission; the woken run sets up its own.
+  env.PATH = String(env.PATH || '').split(path.delimiter)
+    .filter((dir) => !path.basename(dir).startsWith(require('../lib/mission-protected-lane').GUARD_DIR_PREFIX))
+    .join(path.delimiter);
+  // Every woken run is under the fixed handoff seal, whatever handed off:
+  // outward commands and merging to master wait for the owner's yes. The
+  // parent only says where its yes cards show.
+  // The seal goes by environment only, never on the command line the step
+  // text shares, and every job the woken run starts inherits it. A step that
+  // starts with "-" is quoted so it can never read as an option.
+  env.ATRIS_HANDOFF_YES_LOCK = JSON.stringify(require('../lib/yes-lock').handoffSeal());
+  if (parentMissionId) env.ATRIS_HANDOFF_YES_LOCK_PARENT = parentMissionId;
+  else delete env.ATRIS_HANDOFF_YES_LOCK_PARENT;
+  const stepText = /^\s*-/.test(String(step)) ? `step: ${String(step).trim()}` : String(step);
+  const res = require('child_process').spawnSync(process.execPath, [
+    path.join(__dirname, '..', 'bin', 'atris.js'),
+    'member', 'run', to, stepText, '--minutes', '15', '--no-verify', '--detach', '--json',
+  ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  let payload = null;
+  const lines = String(res.stdout || '').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0 && !payload; i -= 1) {
+    try { payload = JSON.parse(lines.slice(i).join('\n')); } catch {}
+  }
+  const ok = res.status === 0 && Boolean(payload && payload.ok !== false && payload.mission_id);
+  return {
+    ok,
+    mission_id: payload ? payload.mission_id || null : null,
+    pid: payload ? payload.pid || null : null,
+    worktree: payload && payload.worktree ? payload.worktree.path || null : null,
+    error: ok ? null : String((payload && payload.error) || res.stderr || (res.error && res.error.message) || `member run exited ${res.status}`),
+  };
+}
+
+// Whether to wake the receiver, and the outcome. Under the test runner a
+// handoff only records unless ATRIS_HANDOFF_WAKE=1 asks, so suites that hand
+// off never start a real engine by accident.
+function wakeOnHandoff(handoff, root, args) {
+  const testRun = Boolean(process.env.NODE_TEST_CONTEXT) && process.env.ATRIS_HANDOFF_WAKE !== '1';
+  if (hasFlag(args, '--no-wake') || testRun) {
+    return {
+      status: 'not_started',
+      reason: 'not_asked',
+      text: `${handoff.to} was not started; the handoff is only written down. to start it: atris member wake ${handoff.to}`,
+    };
+  }
+  const { wakeHandoffReceiver, withWakeReservation } = require('../lib/handoff-wake');
+  const parent = handoffParentMission(handoff, root);
+  const outcome = wakeHandoffReceiver(handoff, {
+    listMembers: () => memberUpTeam(root),
+    awake: (name) => {
+      try { return require('../lib/member-switches').isMemberAwake(name, root); } catch { return true; }
+    },
+    engine: (name) => require('../lib/member-engine').memberRosterEngine(name, root),
+    start: (name, step) => startHandoffReceiver(root, name, step, parent),
+    reserve: (fn) => withWakeReservation(path.join(root, '.atris', 'state'), fn),
+  });
+  return outcome.status === 'started' ? { ...outcome, yes_lock: 'handoff', yes_lock_parent: parent } : outcome;
+}
+
+// The job a handoff came from, only to show the woken run's yes cards on it:
+// the mission whose guard this command runs under (a handoff from inside a
+// mission tick), else the job a [bet-...] tag in the step names. null when
+// neither is found; what the woken run holds never depends on it.
+function handoffParentMission(handoff, root) {
+  const fromGuard = require('../lib/mission-protected-lane').guardMissionOnPath(process.env.PATH);
+  if (fromGuard) return fromGuard;
+  const bets = Array.from(String(handoff.summary || '').matchAll(/\[(bet-[A-Za-z0-9._-]+)\]/g)).map((m) => m[1]);
+  if (!bets.length) return null;
+  const dir = path.join(require('../lib/state-home').atrisHome(), 'state', 'yes-locks');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch {}
+  for (const name of files) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      if (data && data.mission_id && bets.includes(data.bet_id)) return String(data.mission_id);
+    } catch {}
+  }
+  return null;
+}
+
 function memberHandoff(from, to, ...args) {
   if (from === '--help' || from === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member handoff [<from> <to> "<slice>"] [--json]');
+    console.log('Usage: atris member handoff [<from> <to> "<slice>"] [--no-wake] [--json]');
     console.log('Passes a completed slice from one member to the next specialist and queues their next_push.');
+    console.log('The next member is started on the slice when it is not already working, unless the team is at its limit.');
+    console.log('--no-wake only writes the handoff down.');
     return;
   }
   const root = process.cwd();
@@ -11374,17 +11496,21 @@ function memberHandoff(from, to, ...args) {
   }
   const targetTo = sliceWords[0];
   const summary = sliceWords.slice(1).join(' ').trim();
-  const { recordMemberHandoff } = require('./mission');
-  const handoff = recordMemberHandoff(from, targetTo, summary, root);
-  if (!handoff) {
+  const { recordMemberHandoff, updateMemberHandoff, resolveMemberWorkspaceRoot } = require('./mission');
+  const recorded = recordMemberHandoff(from, targetTo, summary, root);
+  if (!recorded) {
     console.error(`Could not record handoff from ${from} to ${targetTo}. Check member names.`);
     process.exitCode = 1;
     return null;
   }
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  // the stored summary is cut at 180 characters; the wake gets the whole step
+  const wake = { ...wakeOnHandoff({ ...recorded, summary }, parentRoot, args), at: new Date().toISOString() };
+  const handoff = updateMemberHandoff(recorded.id, { wake }, parentRoot) || { ...recorded, wake };
   const lines = [
     `Handoff recorded: ${handoff.from} -> ${handoff.to}`,
     `Slice: ${handoff.summary}`,
-    `Next: ${handoff.next_command}`,
+    wake.text,
   ];
   printJsonOrText({ ok: true, action: 'member_handoff', handoff }, lines, asJson);
   return handoff;
@@ -11773,8 +11899,16 @@ async function memberCommand(subcommand, ...args) {
         // more often than a job. Starting a paid run on it costs money and
         // does nothing useful, so name the miss and stop. Jobs keep working
         // as more than one word, or through `atris member run "<job>"`.
-        const extraWords = args.filter((a) => !String(a).startsWith('-')).length;
+        const extraWordList = args.filter((a) => !String(a).startsWith('-'));
+        const extraWords = extraWordList.length;
         if (!/\s/.test(subcommand.trim()) && extraWords === 0) {
+          return memberUnknownWord(subcommand);
+        }
+        // `atris member inbox validator`: an unknown word followed by a member
+        // name is a command shape (verb, then who), not a job. It once started
+        // a mission called "inbox validator"; name the miss instead.
+        if (!/\s/.test(subcommand.trim()) && extraWords === 1
+          && isKnownMemberSlug(String(extraWordList[0]).trim(), process.cwd())) {
           return memberUnknownWord(subcommand);
         }
         return memberSteerOrDispatch(subcommand, ...args);

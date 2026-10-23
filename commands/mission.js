@@ -1905,13 +1905,56 @@ function recordMemberHandoff(fromMember, toMember, sliceSummary, root = process.
     next_command: `atris member go ${to}`,
     created_at: now,
   };
+  const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
   try {
-    const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
-    fs.mkdirSync(path.dirname(handoffsFile), { recursive: true });
-    fs.appendFileSync(handoffsFile, `${JSON.stringify(handoff)}\n`, 'utf8');
+    withHandoffsLock(handoffsFile, () => fs.appendFileSync(handoffsFile, `${JSON.stringify(handoff)}\n`, 'utf8'));
+  } catch {
+    return null;
+  }
+  try {
     autoQueueMemberNextPush(to, `${from} handoff: ${cleanSummary}`, `Baton pass from ${from}`, parentRoot);
   } catch {}
   return handoff;
+}
+
+// Every write to member-handoffs.jsonl (append or whole-file rewrite) holds
+// one lock file beside it, so concurrent handoffs never lose a row.
+// (Codex review round 3 on #1483.)
+function withHandoffsLock(handoffsFile, fn) {
+  fs.mkdirSync(path.dirname(handoffsFile), { recursive: true });
+  const lockFile = path.join(path.dirname(handoffsFile), 'member-handoffs.lock');
+  return require('../lib/handoff-wake').withFileLock(lockFile, fn, { staleMs: 60 * 1000, waitMs: 30 * 1000 });
+}
+
+function rewriteHandoffs(handoffsFile, lines) {
+  const tmp = `${handoffsFile}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${lines.join('\n')}\n`, 'utf8');
+  fs.renameSync(tmp, handoffsFile);
+}
+
+// Merge `patch` into the newest handoff row with this id. Returns the
+// updated row, or null when it is not on file.
+function updateMemberHandoff(handoffId, patch, root = process.cwd()) {
+  const id = String(handoffId || '');
+  if (!id || !patch) return null;
+  const handoffsFile = path.join(resolveMemberWorkspaceRoot(root), '.atris', 'state', 'member-handoffs.jsonl');
+  try {
+    return withHandoffsLock(handoffsFile, () => {
+      const lines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        let row = null;
+        try { row = JSON.parse(lines[i]); } catch {}
+        if (!row || row.id !== id) continue;
+        const updated = { ...row, ...patch };
+        lines[i] = JSON.stringify(updated);
+        rewriteHandoffs(handoffsFile, lines);
+        return updated;
+      }
+      return null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
@@ -1921,26 +1964,28 @@ function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
   const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
   if (!fs.existsSync(handoffsFile)) return 0;
   try {
-    const rawLines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
-    let closedCount = 0;
-    const now = stampIso();
-    const updatedLines = rawLines.map((line) => {
-      try {
-        const row = JSON.parse(line);
-        if (row && String(row.to || '').toLowerCase() === receiver && (row.status || 'open') === 'open') {
-          closedCount++;
-          return JSON.stringify({ ...row, status: 'closed', closed_at: now });
-        }
-      } catch {}
-      return line;
-    });
-    if (closedCount > 0) {
-      fs.writeFileSync(handoffsFile, `${updatedLines.join('\n')}\n`, 'utf8');
-    }
-    return closedCount;
+    return withHandoffsLock(handoffsFile, () => closeHandoffRows(handoffsFile, receiver));
   } catch {
     return 0;
   }
+}
+
+function closeHandoffRows(handoffsFile, receiver) {
+  const rawLines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+  let closedCount = 0;
+  const now = stampIso();
+  const updatedLines = rawLines.map((line) => {
+    try {
+      const row = JSON.parse(line);
+      if (row && String(row.to || '').toLowerCase() === receiver && (row.status || 'open') === 'open') {
+        closedCount++;
+        return JSON.stringify({ ...row, status: 'closed', closed_at: now });
+      }
+    } catch {}
+    return line;
+  });
+  if (closedCount > 0) rewriteHandoffs(handoffsFile, updatedLines);
+  return closedCount;
 }
 
 function memberMissionFile(owner, root = process.cwd()) {
@@ -3217,6 +3262,7 @@ function missionFromArgs(args) {
     '--task',
     '--ask',
     '--yes-lock',
+    '--yes-lock-parent',
     '--campaign',
     '--reserve',
     '--mission-id',
@@ -3260,7 +3306,18 @@ function missionFromArgs(args) {
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
-  const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
+  // The seal is never read from text a caller passes through: two
+  // --yes-lock words (one could be the objective) refuse the start, and a
+  // run woken by a handoff carries its seal in the environment, which every
+  // job it starts inherits. (Codex review round 6 on #1483.)
+  if (args.filter(isYesLockWord).length > 1) {
+    exitMissionError('mission start got more than one --yes-lock, so it is not clear which seal applies; nothing started', 2, wantsJson(args));
+  }
+  const handoffSeal = String(process.env.ATRIS_HANDOFF_YES_LOCK || '').trim();
+  const yesLocks = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLockParent = yesLocks.length
+    ? String((handoffSeal ? process.env.ATRIS_HANDOFF_YES_LOCK_PARENT : readFlag(args, '--yes-lock-parent', '')) || '').trim()
+    : '';
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -3299,6 +3356,9 @@ function missionFromArgs(args) {
     human_asks: humanAsks,
     // the sealed owner steps: the guard holds what each locks until the owner says yes
     ...(yesLocks.length ? { yes_locks: { steps: yesLocks, sealed_at: stampIso() } } : {}),
+    // a run woken by a handoff: the job it came from, only to show its yes
+    // cards there (lib/yes-lock.js handoffYesCards)
+    ...(yesLockParent ? { yes_lock_parent: yesLockParent } : {}),
     ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
@@ -3319,7 +3379,12 @@ function missionFromArgs(args) {
 
 // --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
 // steps a job may not do before the owner says yes. Bad input stops the start.
-const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
+const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy', 'spend']);
+function isYesLockWord(arg) {
+  const text = String(arg || '').trim();
+  return text === '--yes-lock' || text.startsWith('--yes-lock=');
+}
+
 function readYesLockSeal(raw, asJson) {
   if (!raw) return [];
   let list;
@@ -3329,7 +3394,7 @@ function readYesLockSeal(raw, asJson) {
     exitMissionError('--yes-lock takes a JSON list of {step, text, categories}', 2, asJson);
   }
   const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
-  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy', 2, asJson);
+  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy, spend', 2, asJson);
   return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
@@ -4512,6 +4577,15 @@ function normalizedObjective(text) {
   return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// True when `existing` runs under the lock `wanted` carries: the start
+// carries none, or the same seal.
+function lockCovered(existing, wanted) {
+  const want = (wanted && wanted.yes_locks && wanted.yes_locks.steps) || [];
+  if (!want.length) return true;
+  const have = (existing && existing.yes_locks && existing.yes_locks.steps) || [];
+  return JSON.stringify(have) === JSON.stringify(want);
+}
+
 function findActiveTwinMission(objective, owner, root = process.cwd()) {
   const wantObjective = normalizedObjective(objective);
   const wantOwner = String(owner || '').trim().toLowerCase();
@@ -4547,6 +4621,11 @@ function startMission(args, options = {}) {
   const idLikeObjective = String(mission.objective || '').trim();
   if (/^mission-\d{4}-\d{2}-\d{2}-/.test(idLikeObjective)) {
     const existing = resolveMission(idLikeObjective);
+    if (existing && !lockCovered(existing, mission)) {
+      // A start carrying a yes-lock never resumes a job under a weaker lock:
+      // it would run without it. (Codex review round 4 on #1483.)
+      exitMissionError(`${existing.id} is not under the yes-lock this start carries, so resuming it would run without the yes-lock; start a new job instead`, 2, asJson);
+    }
     if (existing) {
       printJsonOrText(
         { ok: true, action: 'mission_recovered', recovered: true, mission: existing, note: 'objective looked like a mission id; recovered the existing mission instead of creating a new one' },
@@ -4560,55 +4639,57 @@ function startMission(args, options = {}) {
     }
     exitMissingMission(idLikeObjective, 1, asJson);
   }
-  if (!hasFlag(args, '--duplicate')) {
-    const twin = findActiveTwinMission(mission.objective, mission.owner);
-    if (twin) {
-      const requestedDestination = mission.drive?.destination || '';
-      if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
-        const proposed = proposeMissionDestinationChange(twin, requestedDestination);
-        const proposal = proposed.drive.pending_destination_proposal;
-        const missionRoot = twin.worktree_root || process.cwd();
-        const { mission: saved } = saveMission(
-          proposed,
-          missionRoot,
-          'mission_destination_change_proposed',
-          {
-            current_destination: twin.drive.destination,
-            proposed_destination: proposal.destination,
-            reason: proposal.reason,
-          },
-        );
-        printJsonOrText(
-          {
-            ok: true,
-            action: 'mission_destination_change_proposed',
-            reused: true,
-            operator_gate_required: true,
-            mission: saved,
-            proposal,
-          },
-          [
-            `Destination change proposed for ${saved.id}.`,
-            `Current destination: ${saved.drive.destination}`,
-            `Proposed destination: ${proposal.destination}`,
-            `Operator gate: ${proposal.reason}.`,
-          ],
-          asJson,
-        );
-        return;
-      }
+  // A start that carries a yes-lock never reuses a twin under a different
+  // lock (or none): the reused job would run without it. It gets a fresh
+  // job under the lock instead. (Codex review rounds 3 and 4 on #1483.)
+  const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
+  if (twinCandidate && lockCovered(twinCandidate, mission)) {
+    const twin = twinCandidate;
+    const requestedDestination = mission.drive?.destination || '';
+    if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
+      const proposed = proposeMissionDestinationChange(twin, requestedDestination);
+      const proposal = proposed.drive.pending_destination_proposal;
+      const missionRoot = twin.worktree_root || process.cwd();
+      const { mission: saved } = saveMission(
+        proposed,
+        missionRoot,
+        'mission_destination_change_proposed',
+        {
+          current_destination: twin.drive.destination,
+          proposed_destination: proposal.destination,
+          reason: proposal.reason,
+        },
+      );
       printJsonOrText(
-        { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
+        {
+          ok: true,
+          action: 'mission_destination_change_proposed',
+          reused: true,
+          operator_gate_required: true,
+          mission: saved,
+          proposal,
+        },
         [
-          `Already active: ${twin.id} (${twin.status})`,
-          `Same objective, same owner, reusing it instead of starting a clone.`,
-          `Resume: atris mission run ${twin.id}`,
-          `Really want a second one: re-run with --duplicate`,
+          `Destination change proposed for ${saved.id}.`,
+          `Current destination: ${saved.drive.destination}`,
+          `Proposed destination: ${proposal.destination}`,
+          `Operator gate: ${proposal.reason}.`,
         ],
         asJson,
       );
       return;
     }
+    printJsonOrText(
+      { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
+      [
+        `Already active: ${twin.id} (${twin.status})`,
+        `Same objective, same owner, reusing it instead of starting a clone.`,
+        `Resume: atris mission run ${twin.id}`,
+        `Really want a second one: re-run with --duplicate`,
+      ],
+      asJson,
+    );
+    return;
   }
   // Intake gate: a mission without a verifier is a planning wish, and planning
   // wishes silt up the queue (11 swept on 2026-07-06 with zero ticks). Refuse
@@ -4736,6 +4817,13 @@ function startMission(args, options = {}) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
+  if (saved.yes_lock_parent && saved.yes_locks && saved.yes_locks.steps) {
+    // the lock record names the job it came from, before any command is held
+    try {
+      require('../lib/yes-lock').writeYesLocks(path.join(require('../lib/state-home').atrisHome(), 'state'), saved.id,
+        { seal: saved.yes_locks.steps, parentMissionId: saved.yes_lock_parent });
+    } catch {}
+  }
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
   const payload = {
@@ -12807,6 +12895,9 @@ module.exports = {
   usefulClaudeReceiptSummary,
   autoQueueMemberNextPush,
   recordMemberHandoff,
+  updateMemberHandoff,
+  resolveMemberWorkspaceRoot,
+  isYesLockWord,
   closeMemberHandoffsForReceiver,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,
