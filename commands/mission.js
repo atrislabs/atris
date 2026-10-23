@@ -38,6 +38,7 @@ const {
   resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
   engineStallReason,
+  engineRegistryView,
   recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
