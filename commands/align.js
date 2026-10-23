@@ -546,7 +546,7 @@ async function alignAtris() {
   // Wake EC2 (the rule)
   const endpoint = await ensureAwake(creds.token, biz.businessId);
   if (!endpoint) {
-    console.error('  EC2 computer did not become ready in time. Aborting.');
+    console.error(`  The cloud computer for "${slug}" did not wake up in time, so nothing ran. Wait a minute, then run the same command again.`);
     process.exit(1);
   }
 

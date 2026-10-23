@@ -243,7 +243,7 @@ async function aeoInit(args) {
   if (!biz.workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
   const awake = await ensureAwake(creds.token, biz.businessId);
-  if (!awake) { console.error('  EC2 computer did not become ready in time.'); process.exit(1); }
+  if (!awake) { console.error(`  The cloud computer for "${slug}" did not wake up in time. Wait a minute, then run the same command again.`); process.exit(1); }
 
   const result = await apiRequestJson(
     `/business/${biz.businessId}/workspaces/${biz.workspaceId}/aeo/init`,
@@ -289,7 +289,7 @@ async function aeoDraft(args) {
   if (!biz.workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
   const awake = await ensureAwake(creds.token, biz.businessId);
-  if (!awake) { console.error('  EC2 computer did not become ready in time.'); process.exit(1); }
+  if (!awake) { console.error(`  The cloud computer for "${slug}" did not wake up in time. Wait a minute, then run the same command again.`); process.exit(1); }
 
   const body = { topic };
   if (opts.slug) body.slug = opts.slug;

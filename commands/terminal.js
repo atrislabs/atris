@@ -188,7 +188,7 @@ async function terminalAtris() {
   // Auto-wake (the rule)
   const awake = await ensureAwake(creds.token, biz.businessId);
   if (!awake) {
-    console.error('  EC2 computer did not become ready in time. Aborting.');
+    console.error(`  The cloud computer for "${slug}" did not wake up in time, so nothing ran. Wait a minute, then run the same command again.`);
     process.exit(1);
   }
 
