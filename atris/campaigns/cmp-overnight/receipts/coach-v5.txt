@@ -1,0 +1,19 @@
+I wrote version 5 of the instructions to `atris/campaigns/cmp-overnight/prompts/mut-v5.txt`. Nothing else changed.
+
+I built it from version 3, not version 4. An unsaved draft already sat in that file and repeated most of what version 4 added, so I replaced it.
+
+It makes four small changes, each backed by two or more misses or drops from these rounds:
+
+One. Write a first test file early, run the break check on it, then fix it. About fourteen misses ended with no file at all, and most of those lines looked easy to reach. Running out of time is my guess at the cause, not something I proved.
+
+Two. A new "states the program never makes" rule. Four tests were dropped for using setups the real program never creates, such as a saved empty string or an error with no message.
+
+Three. A new "outside programs" rule. Four drops came from tests that could start a real AI tool, depended on what was running on this machine, or swapped out the functions that launch programs.
+
+Four. A wider list of breaks to skip. A cutoff at any number other than zero now counts as harmless, and so does one information line appearing or disappearing. That answers seven drops.
+
+I left out version 4's additions: the stronger "do not skip the check" wording, the longer boundary examples, the extra repeat search and the sort example. I also left the existing rules unchanged.
+
+The new file is only a few lines longer than version 3. That matters because version 4 was both longer and slower.
+
+My final checks were blocked by permission prompts. I couldn't confirm by command that every placeholder survived, that the file has no em dashes, or that only this one file changed. I did write it with all seven placeholders kept as written, and I touched no other file.
