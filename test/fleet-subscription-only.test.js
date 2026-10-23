@@ -21,6 +21,8 @@ test('claude flights never receive an api key, even when the parent env has one'
     const env = reviewOnlyEngineEnvironment(worktree, { engine: 'claude' });
     assert.strictEqual(env.ANTHROPIC_API_KEY, '', 'api key must be stripped: subscription only');
     assert.strictEqual(env.CLAUDE_CODE_OAUTH_TOKEN, 'subscription-token', 'subscription token passes through');
+    assert.ok(env.TMPDIR, 'the sealed runtime has its own temp folder');
+    assert.strictEqual(env.CLAUDE_CODE_TMPDIR, env.TMPDIR, 'claude keeps its temp files inside the sealed runtime, not /tmp');
   } finally {
     if (hadKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = hadKey;
     if (hadToken === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN; else process.env.CLAUDE_CODE_OAUTH_TOKEN = hadToken;

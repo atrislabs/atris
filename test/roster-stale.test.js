@@ -56,7 +56,7 @@ test('the catalog shares claude names across claude-family engines', () => {
     { id: 'grok', models: ['grok 4.7 fast', 'grok 4.7'] },
   ]);
   assert.ok(catalog.fable.includes('opus 5.5'));
-  assert.ok(catalog.claude.includes('sonnet 5'));
+  assert.ok(catalog.claude.includes('sonnet 5.5'));
   assert.deepEqual(catalog.grok, ['grok 4.7 fast', 'grok 4.7']);
 });
 

@@ -1,0 +1,42 @@
+DROP test/engine-registry--engine-duties.test.js: Only checks a constant array and JavaScript mutation behavior, not duty validation.
+DROP test/engine-registry--engine-jobs.test.js: Only checks a constant mapping, not job routing.
+DROP test/engine-registry--engine-roles.test.js: Only checks constant membership and freezing, not role enforcement.
+DROP test/engine-registry--roster-layers.test.js: Checks a constant array; its function coverage duplicates engine-registry--roster-decided.test.js.
+DROP test/engine-registry--roster-pin-fields.test.js: Checks a constant array and extraction implemented inside the test, not production pin handling.
+DROP test/engine-registry--roster-sources.test.js: Only checks a constant lookup and JavaScript object behavior, not source reporting.
+DROP test/falsifier-probe--probe-timeout-ms.test.js: Only checks the timeout constant and arithmetic, so broken timeout enforcement would still pass.
+kept 33 of 40
+DROP test/engine-registry--engine-duties.test.js: Only checks a constant array and JavaScript mutation behavior, not duty validation.
+DROP test/engine-registry--engine-jobs.test.js: Only checks a constant mapping, not job routing.
+DROP test/engine-registry--engine-roles.test.js: Only checks constant membership and freezing, not role enforcement.
+DROP test/engine-registry--roster-layers.test.js: Checks a constant array; its function coverage duplicates engine-registry--roster-decided.test.js.
+DROP test/engine-registry--roster-pin-fields.test.js: Checks a constant array and extraction implemented inside the test, not production pin handling.
+DROP test/engine-registry--roster-sources.test.js: Only checks a constant lookup and JavaScript object behavior, not source reporting.
+DROP test/falsifier-probe--probe-timeout-ms.test.js: Only checks the timeout constant and arithmetic, so broken timeout enforcement would still pass.
+kept 33 of 40
+DROP test/functional-owner--functional-member-topics.test.js: only validates a constant array and its own searches; owner resolution could be broken and still pass.
+DROP test/gm-bet--job-poll-ms.test.js: only checks exported constants; polling could be broken and still pass.
+kept 38 of 40
+DROP test/functional-owner--functional-member-topics.test.js: only validates a constant array and its own searches; owner resolution could be broken and still pass.
+DROP test/gm-bet--job-poll-ms.test.js: only checks exported constants; polling could be broken and still pass.
+kept 38 of 40
+DROP test/member-board--member-stop-command.test.js: Every case expects “nothing running”; an implementation that never stops any member would pass.
+kept 39 of 40
+DROP test/member-board--member-stop-command.test.js: Every case expects “nothing running”; an implementation that never stops any member would pass.
+kept 39 of 40
+DROP test/revision-metric--revision-window-hours.test.js: Git commands inherit the real HOME and global git config, so personal signing settings or hooks can break CI.
+DROP test/roster-markdown--old-roster-note.test.js: Mostly checks constant help text; its scanner behavior already appears in test/roster-markdown-lib.test.js.
+DROP test/runner-command--effort-words.test.js: Only checks a constant array and built-in array operations, without testing effort parsing or launch behavior.
+DROP test/runner-command--hidden-profile-names.test.js: Hidden-profile behavior is already covered in test/runner-command.test.js; remaining checks exercise built-in array operations.
+kept 36 of 40
+DROP test/revision-metric--revision-window-hours.test.js: Git commands inherit the real HOME and global git config, so personal signing settings or hooks can break CI.
+DROP test/roster-markdown--old-roster-note.test.js: Mostly checks constant help text; its scanner behavior already appears in test/roster-markdown-lib.test.js.
+DROP test/runner-command--effort-words.test.js: Only checks a constant array and built-in array operations, without testing effort parsing or launch behavior.
+DROP test/runner-command--hidden-profile-names.test.js: Hidden-profile behavior is already covered in test/runner-command.test.js; remaining checks exercise built-in array operations.
+kept 36 of 40
+DROP test/security-scan--default-baseline.test.js: Its loading, writing, missing-file, and malformed-JSON behaviors are already covered by the load-baseline and write-baseline tests.
+DROP test/security-scan--severity-rank.test.js: Duplicates the exact severity ranks checked in severities and the threshold comparisons checked in should-fail.
+kept 22 of 24
+DROP test/security-scan--default-baseline.test.js: Its loading, writing, missing-file, and malformed-JSON behaviors are already covered by the load-baseline and write-baseline tests.
+DROP test/security-scan--severity-rank.test.js: Duplicates the exact severity ranks checked in severities and the threshold comparisons checked in should-fail.
+kept 22 of 24
