@@ -1416,8 +1416,12 @@ function countLines(absPath, line) {
   return fs.readFileSync(absPath, 'utf8').split('\n').filter((entry) => entry === line).length;
 }
 
-function latestReceipt(receiptDir) {
-  const names = fs.readdirSync(receiptDir).filter((name) => name.endsWith('.json')).sort();
+// Names start with the run's millisecond, so a slug picks out one pack's runs
+// when two packs start in the same millisecond.
+function latestReceipt(receiptDir, slug = '') {
+  const names = fs.readdirSync(receiptDir)
+    .filter((name) => name.endsWith('.json') && (!slug || /^[0-9TZ-]+-(.+)-[0-9a-f]{8}\.json$/.exec(name)?.[1] === slug))
+    .sort();
   assert.ok(names.length, 'expected at least one receipt');
   const receiptPath = path.join(receiptDir, names[names.length - 1]);
   return { path: receiptPath, data: JSON.parse(fs.readFileSync(receiptPath, 'utf8')) };
@@ -1803,7 +1807,7 @@ test('pack recover refuses a host.shell parent and a run without action identiti
       options.onRunnerExit({ status: 1, signal: null });
     });
     assert.equal(await runPack([packDir2], dir, { deps: noidFirst.deps }), 0);
-    const noid = latestReceipt(receiptDir);
+    const noid = latestReceipt(receiptDir, 'recover-pack-noid');
     assert.equal(noid.data.recovery.hasMissingIdentity, true);
     const noidIdle = idle();
     await assert.rejects(
