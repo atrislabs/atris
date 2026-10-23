@@ -611,6 +611,38 @@ test('atris zen leaves a side copy alone when a scheduled job uses it', () => {
   }
 });
 
+test('a side copy named only inside a script a scheduled job runs is left alone', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const job = path.join(base, 'campaign-cli');
+    git(checkout, 'worktree', 'add', '-q', '--detach', job);
+    write(job, 'notes.txt', 'unsaved work\n');
+    const days = new Date(Date.now() - 5 * 86400000);
+    const gitDir = path.resolve(job, git(job, 'rev-parse', '--git-dir'));
+    for (const f of [path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD'), path.join(job, 'notes.txt')]) {
+      if (fs.existsSync(f)) fs.utimesSync(f, days, days);
+    }
+    // The crontab runs tick.sh, and only tick.sh names the side copy.
+    const tick = path.join(base, 'tick.sh');
+    fs.writeFileSync(tick, `#!/bin/bash\nCLI="${job}/bin/atris.js"\nnode "$CLI" run\n`);
+    const schedule = path.join(base, 'crontab.txt');
+    fs.writeFileSync(schedule, `7 */3 * * * ${tick} >> ${path.join(base, 'tick.log')} 2>&1\n`);
+
+    const cli = run(process.execPath, [cliPath, 'zen'], checkout, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '30',
+      ATRIS_ZEN_SCHEDULE_FILE: schedule,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy is used by a scheduled job, so it stays/);
+    assert.doesNotMatch(cli.stdout, /put it away/);
+    assert.ok(fs.existsSync(path.join(job, 'notes.txt')));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a side copy left alone for being in use does not count as out of place', () => {
   const { base, checkout } = createRepo();
   try {
