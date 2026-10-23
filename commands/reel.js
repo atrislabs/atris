@@ -14,6 +14,7 @@ const { promisify } = require('util');
 const pexec = promisify(execFile);
 const { buildReelFrame, reelFrames } = require('../lib/reel');
 const { SIZES, KINDS } = require('../lib/card');
+const { makeProfileDir, removeProfileDir, headlessArgs } = require('../lib/headless-chrome');
 
 function parseFlags(argv) {
   const flags = {}; const pos = [];
@@ -56,12 +57,16 @@ async function renderFrames(chrome, ts, spec, dir, w, h, onDone) {
       const hf = path.join(dir, `f-${pad(i)}.html`);
       const pf = path.join(dir, `f-${pad(i)}.png`);
       fs.writeFileSync(hf, html);
-      await pexec(chrome, [
-        '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-        `--window-size=${w},${h}`, '--virtual-time-budget=2200',
-        `--user-data-dir=${path.join(dir, 'ud-' + i)}`,
-        `--screenshot=${pf}`, `file://${hf}`,
-      ], { timeout: 60000 });
+      const profile = makeProfileDir('atris-reel-chrome-');
+      try {
+        await pexec(chrome, headlessArgs(profile, [
+          '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+          `--window-size=${w},${h}`, '--virtual-time-budget=2200',
+          `--screenshot=${pf}`, `file://${hf}`,
+        ]), { timeout: 60000 });
+      } finally {
+        removeProfileDir(profile);
+      }
       onDone && onDone(++done, ts.length);
     }
   }
@@ -125,4 +130,4 @@ async function run(argv) {
   return 0;
 }
 
-module.exports = { run, findChrome, findFfmpeg };
+module.exports = { run, findChrome, findFfmpeg, renderFrames };

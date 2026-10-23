@@ -2144,7 +2144,7 @@ function addMember(root, name, role) {
   fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${role}\n---\n`);
 }
 
-test('team table: one honest row per member with recent work; working only with a live process or a move in the last few minutes', async () => {
+test('team table: one honest status per member; working only with a live process or a move in the last few minutes', async () => {
   const root = workspace();
   for (const [n, r] of [['executor', 'Executor'], ['navigator', 'Navigator'], ['validator', 'Validator'], ['linguist', 'Linguist'], ['scout', 'Scout']]) addMember(root, n, r);
   const file = path.join(root, 'gm-bets.jsonl');
@@ -2164,7 +2164,7 @@ test('team table: one honest row per member with recent work; working only with 
   ];
   const h = jobDesk(root, missions, { handoffs, driverAlive: m => m.id === 'm1' });
   const rows = h.d.teamTable().rows;
-  assert.deepEqual(rows, [
+  assert.deepEqual(rows.map(({ member, on, status, time }) => ({ member, on, status, time })), [
     { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'waiting 2 hours' },
     { member: 'builder', on: 'Launch a try page for any public repo', status: 'working', time: 'about 4 hours left' },
     { member: 'launcher', on: 'Write the launch thread', status: 'working', time: 'at it for 1 hour' },
@@ -2172,10 +2172,123 @@ test('team table: one honest row per member with recent work; working only with 
     { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'waiting 15 minutes' },
     { member: 'researcher', on: 'Survey ten agent teams about pricing', status: 'stopped', time: 'stopped 30 minutes ago' },
     { member: 'validator', on: 'Check the two reports', status: 'done', time: 'finished 1 hour ago' },
+    // nothing in the last day: still on the team, idle, with no work to name
+    { member: 'scout', on: '', status: 'idle', time: '' },
   ]);
+  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, waiting 2 hours');
   // the footer counts only what is really working
   assert.equal(h.d.view().team_working, 2);
   for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
+});
+
+// one play for the season stub: the same shape gm-season reads from the task list
+function play(member, kind, i) {
+  return { event_id: `${member}-${kind}-${i}`, task_id: `T-${member}-${i}`, member, title: `job ${i}`, kind, at: NOW - (i + 1) * 3600000, claimed_at: NOW - (i + 2) * 3600000 };
+}
+
+function seasonOf(counts) {
+  const outcomes = [];
+  for (const [member, kinds] of Object.entries(counts)) {
+    let i = 0;
+    for (const [kind, n] of Object.entries(kinds)) for (let k = 0; k < n; k += 1) outcomes.push(play(member, kind, i++));
+  }
+  return { outcomes, claims: [], missions: [], asleep: [], error: null };
+}
+
+// Which tools count as installed comes from the workspace's own registry
+// file, as it does for a real run, so no probe of this machine's PATH decides
+// what the table shows: the named tools are ready, every other one is missing
+// and was just checked.
+function readyEngines(root, ...ready) {
+  const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
+  const checked = new Date().toISOString();
+  const engines = ids.map(id => (ready.includes(id) ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+}
+
+const PROJECT_ROSTER = '# roster\n\n## search\n- claude code, model: haiku 5.5\n\n## build\n- claude code, model: opus 5.5\n\n## review\n- codex, model: gpt-6.1-sol\n\n## team\n- launcher: codex, model: gpt-6.1-sol\n';
+
+test('team table: every member with a few words of role, the board rating, the exact model, and one status sentence', async () => {
+  const root = workspace();
+  addMember(root, 'validator', 'Reviewer');
+  addMember(root, 'linguist', 'Linguist - operator language and understanding');
+  // a parked member keeps its folder but the table leaves it out
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'coordinator'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'coordinator', 'MEMBER.md'), '---\nname: coordinator\nstatus: parked\nrole: Coordinator\n---\n');
+  // a person on the team: the runner never runs people, so no model shows
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'designer'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'designer', 'MEMBER.md'), '---\nname: designer\ntype: human\nrole: Designer\ndescription: Draws the screens by hand\n---\n');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(10), last_tick_at: NAGO(1), human_asks: [] } };
+  // builder: 4 landed, 1 dropped is round(60 + 39 * 4 / 5) = 91. validator:
+  // 3 landed, 1 sent back is 89. launcher has 2 finished, a rookie. linguist
+  // only claimed a job and finished none, so it has no rating yet.
+  // researcher has no plays at all.
+  const season = seasonOf({
+    builder: { landed: 4, dropped: 1 },
+    validator: { landed: 3, sent_back: 1 },
+    launcher: { landed: 2 },
+    linguist: { took: 1 },
+  });
+  const h = jobDesk(root, missions, { driverAlive: () => true, loadSeason: () => season });
+  const rows = h.d.teamTable().rows;
+  // a role that only repeats the member's name gives its description instead
+  assert.deepEqual(rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]), [
+    ['builder', 'writes and tests the code', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
+    ['designer', 'draws the screens by hand', '··', 'person', 'idle: no work in the last day'],
+    ['launcher', 'writes posts, pages, and launch copy', 'new', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+    ['linguist', 'linguist, operator language and understanding', '··', 'claude opus 5.5', 'idle: no work in the last day'],
+    ['researcher', 'deep researcher', '··', 'claude haiku 5.5', 'idle: no work in the last day'],
+    ['validator', 'reviewer', '89', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+  ]);
+  // the board says the same numbers for the same plays
+  const board = require('../lib/gm-season').rosterRows({ outcomes: season.outcomes, now: NOW });
+  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, [r.ovr, r.finished]])), { builder: [91, 5], validator: [89, 4], launcher: [null, 2], linguist: [null, 0] });
+  // the working count and the talk card still read the same status
+  assert.equal(h.d.view().team_working, 1);
+  assert.deepEqual(rows[0].status, 'working');
+  for (const r of rows) assert.doesNotMatch(r.sentence, /[A-Z]/, 'the status sentence is lowercase');
+});
+
+test('team table: no rating shows two dots, never a made-up number, and an unpinned model shows two dots too', async () => {
+  const root = workspace();
+  readyEngines(root, 'claude', 'codex');
+  // no roster file: the router picks a tool with no model pinned, so no exact model is known
+  const h = jobDesk(root, {}, { loadSeason: () => ({ outcomes: [], error: 'could not open the task list' }) });
+  const rows = h.d.teamTable().rows;
+  assert.deepEqual(rows.map(r => [r.member, r.ovr, r.engine]), [
+    ['builder', '··', '··'],
+    ['launcher', '··', '··'],
+    ['researcher', '··', '··'],
+  ]);
+  // a season loader that throws reads the same way
+  const broken = jobDesk(root, {}, { loadSeason: () => { throw new Error('locked'); }, resolveEngine: () => { throw new Error('bad roster'); } });
+  assert.deepEqual(broken.d.teamTable().rows.map(r => [r.ovr, r.engine]), [['··', '··'], ['··', '··'], ['··', '··']]);
+  // a pick with an engine but no model is not an exact model
+  const bare = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => ({ engine: { id: 'claude' }, model: '' }) });
+  assert.ok(bare.d.teamTable().rows.every(r => r.engine === '··'));
+  // a model label that already starts with the tool name is not said twice
+  const grok = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => ({ engine: { id: 'grok' }, model: 'grok-4.7-build-fast' }) });
+  assert.match(grok.d.teamTable().rows[0].engine, /^grok 4\.7 fast$/);
+});
+
+test('team table: a card with no frontmatter still gives its role, from a role line or its first paragraph', () => {
+  const root = workspace();
+  const card = (name, text) => {
+    fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), text);
+  };
+  card('alpha-judge', '# alpha judge\n\nrole: feature alchemist and gatekeeper. Activated in any chat.\n\n## what it is\n');
+  card('engine-manager', '# engine-manager\n\nOwns the engine fleet: which terminal agents Atris can dispatch to.\n\n## job\n');
+  card('blank', '# blank\n\n## job\n');
+  const h = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => null });
+  const roles = Object.fromEntries(h.d.teamTable().rows.map(r => [r.member, r.role]));
+  assert.equal(roles['alpha-judge'], 'feature alchemist and gatekeeper');
+  assert.equal(roles['engine-manager'], 'owns the engine fleet');
+  assert.equal(roles.blank, '\u00b7\u00b7');
 });
 
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
@@ -2205,6 +2318,8 @@ function jobDesk(root, missions, over = {}) {
     readMissions: () => new Map(Object.entries(missions)),
     readReceipt: m => (m.receipt_path ? RECEIPT : null),
     readHandoffs: () => over.handoffs || [],
+    loadSeason: over.loadSeason || (() => ({ outcomes: [], error: null })),
+    ...(over.resolveEngine ? { resolveEngine: over.resolveEngine } : {}),
     reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
     warmOnCreate: false,
     choices: Boolean(over.choices),
@@ -2687,7 +2802,7 @@ test('a held handed-off command is a yes card on its own when it has no parent',
   const h = jobDesk(root, {});
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to gh pr merge 5']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to merge a pull request on GitHub'], 'plain words, never the raw command');
   const own = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([own.title, own.bet_id, own.command], ['a handed-off job', null, 'gh pr merge 5'], 'no parent: its own card');
   const yes = await h.d.answerYes();
@@ -2707,11 +2822,11 @@ test('a held handed-off command shows on its parent job when there is one', asyn
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: 'm-parent' });
-  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'], cwd: root });
   const h = jobDesk(root, { 'm-parent': { id: 'm-parent', owner: 'builder', status: 'running', human_asks: [] } });
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to npm publish']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to publish a package to npm']);
   const onParent = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([onParent.title, onParent.bet_id], ['Launch the try page', 'b1'], 'the card sits on the parent job');
   await h.d.answerYes();
@@ -2773,6 +2888,10 @@ test('two held commands on one step are two cards; the yes on the first releases
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
   const h = jobDesk(root, {});
@@ -2780,13 +2899,13 @@ test('two held commands on one step are two cards; the yes on the first releases
   const keys = h.d.state.jobs.yes.filter(y => y.mission_id === 'm-child').map(y => y.key);
   assert.equal(new Set(keys).size, 2, 'each card has its own key');
   const card = h.d.next();
-  assert.equal(card.job.what, 'a handed-off job wants to npm publish ./a');
+  assert.equal(card.job.what, 'a handed-off job wants to publish alpha to npm');
   await h.d.answerYes();
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   h.d.pollJobs();
   const next = h.d.next();
-  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to npm publish ./b'], 'the answer did not hide the later request');
+  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to publish beta to npm'], 'the answer did not hide the later request');
 });
 
 test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {

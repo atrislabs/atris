@@ -1,6 +1,6 @@
-# Project Endstate — Build Plan
+# Project Endstate: Build Plan
 
-> **For Executor Agent** — Follow these steps exactly.
+> **For Executor Agent**: Follow these steps exactly.
 
 ---
 

@@ -10,7 +10,7 @@ tags:
 
 # Apps
 
-View and manage your Atris apps — status, runs, data, secrets, members.
+View and manage your Atris apps: status, runs, data, secrets, members.
 
 ## Bootstrap
 
@@ -111,8 +111,8 @@ curl -s "https://api.atris.ai/api/apps/{slug}/secrets" \
 ```
 
 Returns key names and where they're stored:
-- `"storage_tier": "cloud"` — encrypted in Atris vault
-- `"storage_tier": "local"` — on your machine at `~/.atris/secrets/{slug}/`
+- `"storage_tier": "cloud"`: encrypted in Atris vault
+- `"storage_tier": "local"`: on your machine at `~/.atris/secrets/{slug}/`
 
 ### Store Secret (cloud)
 ```bash

@@ -1,8 +1,8 @@
-# CLAUDE.md — Atris Project Instructions
+# CLAUDE.md: Atris Project Instructions
 
 You are in an **Atris-managed project**.
 
-## FIRST MESSAGE — MANDATORY
+## FIRST MESSAGE: MANDATORY
 
 **Before responding to the user's first message, run this command and show the output:**
 
@@ -54,14 +54,14 @@ Do not write new operating doctrine here first. Add it to Atris policy, skills, 
 
 ## Core Files
 
-- `atris/MAP.md` — navigation (use file:line references)
-- `atris task` — current tasks, claims, dialogue, and proof
-- `.atris/state/tasks.projection.json` — readable task projection for UIs/agents
-- `atris/TODO.md` — rendered/legacy task view only
-- `atris/logs/YYYY/YYYY-MM-DD.md` — journal (Inbox + Completed)
-- `atris/wiki/STATUS.md` — current wiki health and next ingest targets
-- `atris/wiki/index.md` — local knowledge index
-- `atris/atris.md` — protocol/spec
+- `atris/MAP.md`: navigation (use file:line references)
+- `atris task`: current tasks, claims, dialogue, and proof
+- `.atris/state/tasks.projection.json`: readable task projection for UIs/agents
+- `atris/TODO.md`: rendered/legacy task view only
+- `atris/logs/YYYY/YYYY-MM-DD.md`: journal (Inbox + Completed)
+- `atris/wiki/STATUS.md`: current wiki health and next ingest targets
+- `atris/wiki/index.md`: local knowledge index
+- `atris/atris.md`: protocol/spec
 
 ## Default Loop
 

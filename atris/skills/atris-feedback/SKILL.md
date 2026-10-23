@@ -30,7 +30,7 @@ One skill for everything: submit feedback, view the queue, resolve/close/delete 
 ## Preferred path: the Atris CLI
 
 The `atris` CLI wraps every feedback operation against the production API and
-handles auth from the user's login. Use it first — it's the canonical,
+handles auth from the user's login. Use it first: it's the canonical,
 audited path and works without needing AWS credentials.
 
 ```bash
@@ -41,7 +41,7 @@ atris feedback close abc123                 # close as wontfix
 atris feedback delete abc123                # delete
 ```
 
-IDs can be short (first 8 chars of the UUID) — the CLI resolves the prefix
+IDs can be short (first 8 chars of the UUID). The CLI resolves the prefix
 against the live list before acting.
 
 If `atris` is not on PATH, it lives at `~/arena/atris-cli/bin/atris.js`.

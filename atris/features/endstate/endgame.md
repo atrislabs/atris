@@ -1,4 +1,4 @@
-# Project Endstate — Endgame
+# Project Endstate: Endgame
 
 HORIZON
   Within 6 days, a cold operator can run two pinned packs from `atris-cli`

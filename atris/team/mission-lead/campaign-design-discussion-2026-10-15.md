@@ -1,4 +1,4 @@
-# Campaign design discussion — 2026-10-15
+# Campaign design discussion: 2026-10-15
 
 For: mission-lead, lead of cmp-campaign (Campaign ships across Atris).
 Source: Keshav's voice discussion with ChatGPT, approximately 16:33–16:51 America/Los_Angeles. Keshav explicitly requested that this be saved for later. This is a handoff, not evidence that Mission Lead has read or acted on it. No implementation requested in this save-only action.

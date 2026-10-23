@@ -1,0 +1,1 @@
+{"id":"test-commands-browse","kind":"test","target":"commands/browse.js","files":["test/browse-command.test.js"]}

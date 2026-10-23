@@ -1,6 +1,6 @@
 ---
 name: research-search
-description: "Fast research sweep — arxiv, semantic scholar, github, web. Finds papers, scores relevance, extracts actionable insights, stores to wiki. Triggers on: research search, find papers, latest research, arxiv, what's new in, sweep papers, research sweep."
+description: "Fast research sweep: arxiv, semantic scholar, github, web. Finds papers, scores relevance, extracts actionable insights, stores to wiki. Triggers on: research search, find papers, latest research, arxiv, what's new in, sweep papers, research sweep."
 version: 1.0.0
 tags:
   - research
@@ -10,7 +10,7 @@ tags:
   - ingestion
 ---
 
-# /research — Fast Research Sweep
+# /research: Fast Research Sweep
 
 Find the latest research on a topic, score it for relevance, extract what you can BUILD with it, store the best finds.
 
@@ -38,24 +38,24 @@ Read `atris/skills/research/program.md` for:
 
 For the given topic, search ALL of these sources in parallel (use Agent tool for parallelism):
 
-**Source A — arxiv API**
+**Source A: arxiv API**
 Run via Bash:
 ```bash
 python3 atris/skills/research/arxiv_search.py "<topic>" --after 2025-10-01 --limit 20
 ```
 Returns JSON array of papers with title, authors, abstract, date, url, categories.
 
-**Source B — Semantic Scholar API**
+**Source B: Semantic Scholar API**
 Run via Bash:
 ```bash
 python3 atris/skills/research/scholar_search.py "<topic>" --after 2025-10-01 --limit 20
 ```
 Returns JSON array with title, authors, abstract, date, url, citation count, venue.
 
-**Source C — Web search**
+**Source C: Web search**
 Use WebSearch tool: `"<topic>" site:arxiv.org OR site:github.com 2025..2026`
 
-**Source D — GitHub**
+**Source D: GitHub**
 Use WebSearch tool: `"<topic>" site:github.com stars:>100 pushed:>2025-10-01`
 
 ### Step 2: Deduplicate and rank
@@ -155,7 +155,7 @@ The research program evolves:
 1. After each sweep, note which papers scored highest and from which source
 2. If a paper leads to a successful implementation (tracked via /storysim or /autoresearch), boost that topic's weight
 3. If a sweep produces nothing actionable, refine the search queries
-4. The program.md file is the "policy" — update it as you learn what works
+4. The program.md file is the "policy": update it as you learn what works
 
 ## Rules
 

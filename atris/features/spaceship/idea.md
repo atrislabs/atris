@@ -1,4 +1,4 @@
-# Spaceship — bounded, self-reporting overnight runner
+# Spaceship: bounded, self-reporting overnight runner
 
 > **Status:** complete
 > **Created:** 2026-06-17
@@ -8,13 +8,13 @@
 
 ## Problem Statement
 
-A team member should be able to run overnight, do valuable work, and tell you about it. The existing overnight loops could not: `atris autopilot --duration` dies on the first halted tick (one bad pick at minute 6 kills the whole night), and every loop (autopilot, pulse, forge_overnight, the web guardian) writes only to local logs — so a halt, a no-op streak, or a dead loop is invisible. The HVAC loop went dark for 11 hours this way.
+A team member should be able to run overnight, do valuable work, and tell you about it. The existing overnight loops could not: `atris autopilot --duration` dies on the first halted tick (one bad pick at minute 6 kills the whole night), and every loop (autopilot, pulse, forge_overnight, the web guardian) writes only to local logs, so a halt, a no-op streak, or a dead loop is invisible. The HVAC loop went dark for 11 hours this way.
 
 ---
 
 ## Solution Design
 
-`atris spaceship` is a supervisor around the real tick. It runs `atris autopilot --auto --iterations=1` in a loop for a wall-clock budget, classifies each tick by what actually landed in git (HEAD moved = shipped), and never dies on a bad tick — it survives halts and keeps picking new work. Every meaningful state change emails Keshav through an SES channel: shipped, halt-streak, idle-streak, finish. It does not reimplement the tick; it wraps the tested one.
+`atris spaceship` is a supervisor around the real tick. It runs `atris autopilot --auto --iterations=1` in a loop for a wall-clock budget, classifies each tick by what actually landed in git (HEAD moved = shipped), and never dies on a bad tick: it survives halts and keeps picking new work. Every meaningful state change emails Keshav through an SES channel: shipped, halt-streak, idle-streak, finish. It does not reimplement the tick; it wraps the tested one.
 
 ---
 
@@ -53,12 +53,12 @@ atris spaceship --hours 4
 
 ## User Impact
 
-The operator can leave a loop running and trust that anything worth knowing reaches their inbox. Silence stops meaning "fine by default" — a dead supervisor is itself the signal (no email for over an hour).
+The operator can leave a loop running and trust that anything worth knowing reaches their inbox. Silence stops meaning "fine by default." A dead supervisor is itself the signal (no email for over an hour).
 
 ---
 
 ## Technical Notes
 
 - Runner: `scripts/spaceship.sh`; CLI wrapper: `commands/spaceship.js`; test: `test/spaceship-supervisor.test.js`.
-- Email channel + read-only reporters live in `atrisos-backend/backend/scripts/` (`spaceship_update.py`, `pulse_digest.py`, `guardian_watch.py`) — SES from `hello@atris.ai`. Override the send command via `SPACESHIP_EMAIL_CMD`.
-- **Open finding (needs review):** the loop ships nothing not because it is unreliable but because the top of the backlog is stale (endgame steps whose verify already passes) or vague (plans the review gate rejects). The real lever is feeding it well-scoped tasks with a currently-failing falsifiable verify. The falsifiability gate also halts without ticking the checkbox when a step was finished on a prior day (no same-day receipt) — a safe auto-advance fix exists but changes core semantics, so it is left for review.
+- Email channel + read-only reporters live in `atrisos-backend/backend/scripts/` (`spaceship_update.py`, `pulse_digest.py`, `guardian_watch.py`): SES from `hello@atris.ai`. Override the send command via `SPACESHIP_EMAIL_CMD`.
+- **Open finding (needs review):** the loop ships nothing not because it is unreliable but because the top of the backlog is stale (endgame steps whose verify already passes) or vague (plans the review gate rejects). The real lever is feeding it well-scoped tasks with a currently-failing falsifiable verify. The falsifiability gate also halts without ticking the checkbox when a step was finished on a prior day (no same-day receipt). A safe auto-advance fix exists but changes core semantics, so it is left for review.

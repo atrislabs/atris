@@ -1,14 +1,14 @@
-# Round-4 soundness chain — Seymour second neighborhood, exhaustive frontier
+# Round-4 soundness chain: Seymour second neighborhood, exhaustive frontier
 
 Claim being certified: there is NO oriented graph (digraph with no loops, no
 2-cycles) on n <= N vertices in which every vertex v has |N++(v)| < |N+(v)|.
 
 ## Audit of round-1 (2026-07-22 overnight) artifacts
 
-* `../seymour-second-neighborhood/verify.py` — standalone counterexample
+* `../seymour-second-neighborhood/verify.py`: standalone counterexample
   verifier, re-read line by line: implements the conjecture statement
   directly (loops/digons rejected, N++ = distance-exactly-2 set). CLEAN.
-* `../seymour-second-neighborhood/sat_search.py` — encoding re-derived and
+* `../seymour-second-neighborhood/sat_search.py`: encoding re-derived and
   found sound AND complete (details below, same core reused in
   `encode.py`).
 * Round-1 report claims: "n=10 and n=11 UNSAT", "hand-proved lemma: min
@@ -37,7 +37,7 @@ In any counterexample every vertex violates |N++(v)| < |N+(v)|. Then:
   outdeg(a),outdeg(b) >= 2 this forces a->b and b->a, a 2-cycle. So min
   out-degree >= 3.
 
-## Round-4 encoding (encode.py) — soundness
+## Round-4 encoding (encode.py): soundness
 
 Variables x_uv (arc u->v), y_vw (upper bound indicator for w in N++(v)).
 * (~x_uv | ~x_vu) for u<v: no 2-cycles; x_vv never referenced: no loops.
@@ -55,7 +55,7 @@ sum_v outdeg(v) = #arcs <= n(n-1)/2, so the minimum out-degree d0 satisfies
 d0 <= floor((n-1)/2). Shards d0 = 1 .. floor((n-1)/2) (d0=0 impossible:
 sinks satisfy the conjecture). In shard d0:
 * every vertex has outdeg >= d0 (totalizer),
-* vertex 0 has outdeg <= d0 (totalizer) — so exactly d0,
+* vertex 0 has outdeg <= d0 (totalizer), so exactly d0,
 * N+(0) is pinned to {1..d0} (unit clauses),
 * lex-leader constraints A <=lex A∘sigma for adjacent transpositions sigma
   within {1..d0} and within {d0+1..n-1} ("twoblock").
@@ -90,7 +90,7 @@ source). "s VERIFIED" on every instance listed in RESULTS below.
 * ctrl_n3_slack: relaxed bound (<= |N+|) at n=3 is SAT (directed triangle).
 * ctrl_n6_shard_slack, ctrl_n12_s3_slack: relaxed bound through the FULL
   shard machinery (pin + twoblock + exact degree) is SAT at n=6 (C3 blowup)
-  and n=12 (C4 blowup with parts of 3) — the shard path is not
+  and n=12 (C4 blowup with parts of 3): the shard path is not
   over-constrained.
 * ctrl_n7_s3: shard path UNSAT where the conjecture is known to hold.
 * Independent non-SAT exhaust (nauty geng|directg + check_d6.c, a from-

@@ -60,6 +60,15 @@ Labels used below:
 - `guarded`: checked by code or a pre-commit hook; bypassing is a bug
 - `expected`: convention; honor it or stop
 
+## values
+
+Four values decide close calls. When a rule above does not settle it, these do.
+
+- **Acceleration.** Progress compounds. Land small working changes early and often so the next agent builds on them today, not next week.
+- **Accuracy.** A win counts only when it is checked. Prove it with a test that failed before and passes after, or a second builder's review when the stakes call for it. Faster tests make faster work.
+- **Ambition.** Take one more level. When the small fix is done, look for the bigger version of the same win.
+- **Agency.** Own the missing piece. A bug, a broken tool, or a gap in your way is yours to fix or file, not a reason to stop.
+
 ## taste
 
 What you ship should not read as generated. The test: if someone said "an AI made this," would they believe it instantly? If yes, that is the bug. The model has no words for restraint and it falls into gravity wells. Beat both.

@@ -1,4 +1,4 @@
-# Dawn patrol status — 2026-07-23 07:56 CEST (certifier forced to close early)
+# Dawn patrol status: 2026-07-23 07:56 CEST (certifier forced to close early)
 
 Scratchpad root: /private/tmp/claude-501/-Users-keshavrao-arena-atris-cli/fd403b33-f912-4822-af2b-bf1a10d0935d/scratchpad/
 
@@ -52,7 +52,7 @@ Scratchpad root: /private/tmp/claude-501/-Users-keshavrao-arena-atris-cli/fd403b
 ## Verdict boundaries as of this close
 - Seymour: n <= 14 fully certified (unchanged). n15: all shards UNSAT, s7
   proof exists+hash-pinned but drat-trim pending (Fisher/Lemma T covers it
-  regardless). n16: all shards UNSAT, s7 drat-trim pending — NOT certified yet.
+  regardless). n16: all shards UNSAT, s7 drat-trim pending. NOT certified yet.
   n17/n18: not claimed, top shards still solving.
 - R55 EXCLUDED_TYPES.md: round-7 state stands; no new exclusions this pass.
 

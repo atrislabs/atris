@@ -1,0 +1,222 @@
+{"id":"slop-atris-team-brainstormer-SOUL-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"fdb79c365593d0d40c668910e00cb5874a3f1005","secs":22}
+{"id":"slop-atris-team-brainstormer-MEMBER-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"40ed0236f007b904c969dd367ed01f993d519cd9","secs":30}
+{"id":"slop-atris-team-auto-improver-SOUL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9f723f4388d4195b4c48d42ae8180406e16f6599","secs":22}
+{"id":"slop-atris-team-_template-SOUL-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"6cf4f21ccfdf966bd3761c6d25e7448bcf732040","secs":33}
+{"id":"slop-atris-team-codex-executor-MEMBER-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"1a12c0122d9650b1e41055f9caca516c4aa2dd01","secs":63}
+{"id":"slop-atris-team-alpha-judge-MEMBER-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"b156937ef29a8f34a59f7d9b073d68dd84f5690c","secs":55}
+{"id":"slop-atris-team-executor-SOUL-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"45a58c3464a7d18e75f7a484900327b054fe2c1c","secs":27}
+{"id":"slop-atris-team-navigator-SOUL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7acfcc8f078f23eb507338e69a7e8b3b9a30ab1d","secs":21}
+{"id":"slop-atris-team-opus-overnight-MISSION-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"28bf888fc027cfff8cc7b78fc0f17470e4f00032","secs":20}
+{"id":"slop-atris-team-opus-overnight-STEERING-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c24d5763cea8185eb9f116500da71381bcb93765","secs":22}
+{"id":"slop-atris-team-mission-lead-goals-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"963d0a6c28877f92ba3ba83d91876c4717685ad1","secs":35}
+{"id":"slop-atris-team-codex-executor-README-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"b4a06d10f25f2ff376ed57c01e5aae8a826fce50","secs":44}
+{"id":"slop-atris-team-mission-lead-campaign-design-discussion-2026-10-15-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"b28c9db04d078abf38faeabb794df18d9631f799","secs":37}
+{"id":"slop-atris-team-launcher-MEMBER-md","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"d9e6f7d19b089dd1c9a4af8ece764cd5cfabe722","secs":41}
+{"id":"slop-atris-team-design-cli-work-REPORT-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"080668ef9b79df61fc060ed46f08ad653d173977","secs":45}
+{"id":"slop-atris-team-mission-lead-MISSION-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"8ce56d92a5d0a6211e8c28fa9363da2b4d7d5a81","secs":37}
+{"id":"slop-atris-team-launcher-SOUL-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"e7db688e7da481d38d5ec31169f09c73119b1c2f","secs":43}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-hajos-cycle-decomposition-REPRODUCE_ROUND4-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"718958150471fa6587f9e0549237da9afe66c8d3","secs":20}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-hajos-cycle-decomposition-RESULTS_ROUND5-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"30fd95ffc011a202ce59b8cc5d55c936379582e2","secs":24}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-artifacts-DAWN_PATROL_STATUS-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"c92a98cf6067675c9a4fa2f5bd003f7b708dabc7","secs":43}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-seymour-r4-SOUNDNESS-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"9454f8bd2cacb5aceebc35faa704bf721822aef1","secs":24}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-hajos-cycle-decomposition-HARVEST_STATUS-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"d288f854e8daee68831260510266a72556ba7600","secs":30}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-artifacts-HARVEST_STATUS_erdos-gyarfas-2power-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"450675c9f365c38b6444e175b37565f5d00b8e5c","secs":46}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-artifacts-HARVEST_STATUS_hajos-cycle-decomposition-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"de504d11b9e353ef2d6dc30c3aa2ab301924d521","secs":41}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-erdos-gyarfas-2power-HARVEST_STATUS-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"06b47ce8227d1e58e838dacb56c967ceaa15fd38","secs":40}
+{"id":"slop-atris-team-researcher-SOUL-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"1b03f02fcbc6c85786936100c19f00d60373d8f5","secs":27}
+{"id":"slop-atris-team-validator-SOUL-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"279e0ab31d877a1b7ecb0cec1319b26939a54658","secs":32}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-code-erdos-gyarfas-2power-RESULTS_36G7-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"5497d31ed7805957ea5ca32ea683cd9e469e2dce","secs":60}
+{"id":"test-commands-caretaker","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c5070ddd27dcf0366147402543512970ecdc4509","secs":32}
+{"id":"test-commands-ask","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"807c7a1843d53d391e578d80be1f4c77d054b144","secs":42}
+{"id":"test-commands-browse","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f444a0ee4a92e92cdcf6c5dee639e30464b1f6b6","secs":38}
+{"id":"slop-atris-team-orb-MEMBER-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"b71bdfc4362b58da3f71000e9326c4df5ff78ba5","secs":84}
+{"id":"slop-atris-team-researcher-math-night-2026-07-22-ROUND1_REPORT-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"111479fb18a563497b7d4c87ebe61d9d5ed2f5d0","secs":64}
+{"id":"test-commands-analytics","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"c2fe98cbe053015de8edd5027d623a0d991de567","secs":70}
+{"id":"test-commands-engine-watch","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"1b823a25e3561940b3e0e95f0b8bae19de81639c","secs":32}
+{"id":"test-commands-drive","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"c6e79830ebf0253f89c799fa610d58c686a396c9","secs":44}
+{"id":"test-commands-card","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"eadda5df660cdd73b54854cc007ce3f0918fc08b","secs":64}
+{"id":"test-commands-decide","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5078cd43b5ecc5d0b856027edde9d2ddb8cdaff1","secs":66}
+{"id":"test-commands-experiments","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"67a3e03badb45189090eff1adb763d47b93887f5","secs":38}
+{"id":"test-commands-context-sync","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"c7e34cde8f5886dc13d97510e384049e85811792","secs":70}
+{"id":"test-commands-errors","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"42b69936b93f42d5edc2a03673c3a98a55f6d427","secs":44}
+{"id":"test-commands-feed","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"040f05ff3861816fc478414bbff099f52980a06c","secs":43}
+{"id":"test-commands-codex-goal","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"e85f799a5a556c490a12cf8e9ee8544d01bf733b","secs":79}
+{"id":"test-commands-app","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"380222297bd0b8519a9b3aec6c06898831672878","secs":105}
+{"id":"test-commands-guide","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"be55677d23bb15728f2e349ce1b6eb35382daea2","secs":31}
+{"id":"test-commands-goal","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"66fb0a54c71a5c8021a9e248d24c3688c96dc0d4","secs":38}
+{"id":"test-commands-install","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"0a33f9f7e2bd4d833bcd0bb18cc3123c568c929a","secs":30}
+{"id":"test-commands-github","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"dd078cfeb34ce3cb11d1bffe88bd3108810a145b","secs":50}
+{"id":"test-commands-harvest","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"9df192a654839e66a802791e88c7c2a93dc30a2b","secs":37}
+{"id":"test-commands-lifecycle","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"f35f10ab379222d74feafb498fbfcf315137476b","secs":33}
+{"id":"test-commands-launchpad","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"229d8d3fcab39ff080900fd39c97ca315d89b22c","secs":35}
+{"id":"test-commands-later","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"977b5188e070450649bec506fab08d12516491f1","secs":37}
+{"id":"test-commands-fleet","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"15f27dcf341edc7778ba7845ea5b42fe76e99e5c","secs":82}
+{"id":"test-commands-align","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"b9f99c54979c2077baf92216023774833f560310","secs":134}
+{"id":"test-commands-chat-scan","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a319778817388a8b0ff0d7d92fcfefbb5f0c8cff","secs":125}
+{"id":"test-commands-log-sync","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"b0ad5169c7e9eee2d021a0dfa1cfcae416d7cc3e","secs":34}
+{"id":"test-commands-aeo","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"508bf7bba28607892e2d6d3d38a31593af6af719","secs":144}
+{"id":"test-commands-founder","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"41bbbc47d20ab27e27e1ffd9dfb299daf615bd4c","secs":73}
+{"id":"test-commands-linear","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"339b34e403fc7966e705cab74490461ac590e66c","secs":58}
+{"id":"test-commands-rainmaker","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1d82dbe794b84fb0f5eb7d26874e720e46c8664f","secs":28}
+{"id":"test-commands-plugin","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b0ddd07ef966dfbdee17c48b8bdc3309aa271f00","secs":41}
+{"id":"test-commands-reel","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"7fe26d4d7987e3bc98b91d056541839b4e8c0964","secs":34}
+{"id":"test-commands-loops","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"1d36eddca2b188d9a05f61ddcabc96b2f3a7b94b","secs":58}
+{"id":"test-commands-meet","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"633067ea07206be1dcc0e2b6eacb4f26eafc4299","secs":58}
+{"id":"test-commands-design","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"201b8e19a7acdfa991e8bb06ff1a09f92ad54214","secs":163}
+{"id":"test-commands-site","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"9cd8c9bd52cac65ae2d505711d66c74bf747d8ff","secs":42}
+{"id":"test-commands-supabase","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1b3bf498ce44f553ebc1321c737fccf8548db08a","secs":27}
+{"id":"test-commands-publish","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"6b53a844cf1862d8cac40fd33bfec309d5912d74","secs":68}
+{"id":"test-commands-proof","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"b8acc7fb044d00a3f851200067a97925055afb16","secs":73}
+{"id":"test-commands-stripe","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"526d62b577a6ba70f4609eea379937d0cbe50bc2","secs":35}
+{"id":"test-commands-teach","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"3c97841ebb602500e30cdb363c280c651181c7f7","secs":30}
+{"id":"test-commands-status","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"98c641415504b8348f9ffc428f6eb43089fc9d12","secs":47}
+{"id":"test-commands-review","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d16a85323157006944e7d0f057753e6becd6ac8f","secs":74}
+{"id":"test-commands-fork","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"3a1bcffa00b6a3736334bd178152dd09335cb84b","secs":150}
+{"id":"test-commands-sign","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"760aa0e5bfead561f9a726b6fb224e7010488e91","secs":68}
+{"id":"test-commands-release","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1cc664c6fc83decb8d202136d438b5afce08d481","secs":87}
+{"id":"test-commands-security-review","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"9f62eebbd537624b55b7808a5b63bb8ecd254278","secs":77}
+{"id":"test-commands-sync-checkout","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7cc171a8823f180efd27627438352b91667a9272","secs":54}
+{"id":"test-commands-vercel","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"fc2f12f6ff23700997953bdda96062567d523e5d","secs":33}
+{"id":"test-commands-version","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"7a186625a76d8053968c537aabae0e71d1653587","secs":36}
+{"id":"test-commands-zen","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"1dbfb0ee11eac8517c67faaee7f8b299df9628f8","secs":30}
+{"id":"test-commands-wiki","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"99b9ed93c3ef01b61734ab761812140d4771beb8","secs":44}
+{"id":"test-commands-tree","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"ac06ca99431e12cbb3e306e0a3b40610de52a005","secs":61}
+{"id":"test-commands-social","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f9cfc5af2e1f6c81f8f09f74c9c1902f68cfe014","secs":107}
+{"id":"test-lib-auto-lessons","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"43cc589c60d16b4c67ef6e690b5631d99d3ac46e","secs":55}
+{"id":"test-lib-improve-vitals-html","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"95fe3cd764e3850f101005c5c60724f2ca400a3b","secs":38}
+{"id":"test-lib-campaign-protect","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"55d629904a166e34d4abf1e4db8721608397c786","secs":57}
+{"id":"test-commands-watch","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"618da59527d2fb97ac39cf6a36410449cafca3b5","secs":79}
+{"id":"test-lib-endstate","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"e581aa0f6e415ba50f56a365f7e06e9100636f27","secs":56}
+{"id":"test-lib-job-code-verify","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ad8d83ffb2329d07e66a1b55cf182659094f2a2f","secs":42}
+{"id":"test-lib-default-runner","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"29d2533afd0afc0b31376fbac3269e82431b44c6","secs":60}
+{"id":"slop-atris-AGENTS-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"e9d9a4507e7a1d8c302207c95b9112007c8f15cd","secs":30}
+{"id":"test-lib-commerce","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"578606f6881512a4970b6857ccf101e36149991f","secs":61}
+{"id":"test-commands-truth","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"b2b69562f91ac452c4b0d07e787ebd57703c02bb","secs":94}
+{"id":"slop-atris-features-audit-gaps-idea-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":16}
+{"id":"test-commands-workspace-clean","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"e68e9cbd1f1054cac0bfc794583639e9fc48d221","secs":84}
+{"id":"slop-atris-CLAUDE-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f805bb80e2714284f3cd00ad33a22510278ff5bf","secs":26}
+{"id":"slop-atris-features-audit-gaps-build-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":24}
+{"id":"test-lib-journal","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"6c363b7668e38f957a5fe8690bf1ba6f0472c758","secs":46}
+{"id":"slop-atris-features-campaign-HANDOFF-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"602985e363a5a9002f94bf7c104e738cf923e6c5","secs":17}
+{"id":"slop-atris-COORDINATION-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"e4f26b207edac29982095e609d98457a1eb84fb5","secs":34}
+{"id":"slop-atris-features-campaign-validate-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"62d717097f7b204aff95f9529fb1cbb9df04f62d","secs":20}
+{"id":"slop-atris-features-endstate-build-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"2b2d667adec114a9e8a920f15740ad4841603e8a","secs":20}
+{"id":"test-commands-scout","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"f422322972fe5ee2bdc906cb74b1d2255eb5ac8b","secs":170}
+{"id":"slop-atris-features-customer-skill-zones-idea-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":24}
+{"id":"slop-atris-features-endstate-contract-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"60453f6cb5d1c8af77e720801d450519010431ca","secs":18}
+{"id":"slop-atris-features-endstate-endgame-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"d52f47575ca4c4da7667970392cba74c6b8356ad","secs":19}
+{"id":"slop-atris-features-endstate-validate-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c3cd210994288a0ad881e21b8bfb7a8da3068ecb","secs":17}
+{"id":"slop-atris-features-endstate-idea-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"594f431e5d815df380fe7c8c06ba22238194f212","secs":21}
+{"id":"slop-atris-features-campaign-build-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"3e9a30e3befdf4616294d7142f9a9e1c58c226d9","secs":33}
+{"id":"test-lib-init-commit","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"c46010a21b9bed5a65d931147325620106762e8f","secs":85}
+{"id":"slop-atris-features-plan-review-by-validator-build-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"36bdada9b18254780a77eaf6a51ade57c6350e14","secs":19}
+{"id":"slop-atris-features-customer-skill-zones-one-pager-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":34}
+{"id":"slop-atris-features-spaceship-validate-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"74f268c11bc21151b2890333a99018544f08b097","secs":21}
+{"id":"slop-atris-features-team-member-standard-validate-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":16}
+{"id":"slop-atris-features-plan-review-by-validator-validate-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"f26d9349ca620bd753ac7e3514e91d33024146a7","secs":27}
+{"id":"slop-atris-features-audit-gaps-validate-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"commit blocked","exit":0,"secs":53}
+{"id":"slop-atris-features-team-member-standard-idea-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-atris-features-plan-review-by-validator-idea-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"a22958f63bb0abdbb390e6eefaf06f9e6ed7ff71","secs":31}
+{"id":"slop-atris-features-wiki-build-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":17}
+{"id":"slop-atris-features-team-member-standard-build-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":29}
+{"id":"slop-atris-features-verify-falsifiability-validate-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"e37e450f4118660ab56f8ef96403160d6db6d51b","secs":22}
+{"id":"slop-atris-features-spaceship-idea-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"04746ae0c1200c4fea1334f26c5ac832568e675a","secs":33}
+{"id":"slop-atris-features-wiki-loop-build-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":13}
+{"id":"slop-atris-features-verify-falsifiability-build-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"e819ef1e9c17eb4e264f32fa2707dad0f44af196","secs":29}
+{"id":"slop-atris-features-verify-falsifiability-idea-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"5a860a3c1e2e5c43afbd72d46228c9f7f4dfc3ec","secs":30}
+{"id":"slop-atris-features-wiki-validate-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":18}
+{"id":"slop-atris-features-wiki-loop-validate-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":19}
+{"id":"slop-atris-npm-takedown-runbook-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"4c8f5611c1467e40cf611ccc0c3832cbb3bb5722","secs":15}
+{"id":"slop-atris-features-self-improving-loop-validate-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":47}
+{"id":"slop-atris-features-wire-the-loop-idea-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":24}
+{"id":"slop-atris-features-wire-the-loop-validate-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":26}
+{"id":"slop-atris-policies-atris-backend-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"91728a777d5447a7229912ee8d53e136166a66c1","secs":18}
+{"id":"slop-atris-features-wire-the-loop-build-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"commit blocked","exit":0,"secs":35}
+{"id":"slop-atris-policies-writing-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"19ee84f6bda20699d9086e942e1bc9a94693273a","secs":25}
+{"id":"slop-atris-policies-ANTISLOP-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"writing problems remain","exit":0,"secs":31}
+{"id":"slop-atris-skills-apps-SKILL-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"1d5c844d236fd8c5c9fe54cd102562e1da03c802","secs":22}
+{"id":"slop-atris-policies-design-seed-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"d3219ec2f7ffef6db65cdcbd5ad163dd5d6c8d9f","secs":31}
+{"id":"slop-atris-skills-autopilot-SKILL-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"ca466db8795a73768392c4225208ee5f45416d22","secs":24}
+{"id":"slop-atris-skills-atris-feedback-SKILL-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"5f4d9b9e921dad2c91604eb8a31f5c5722024651","secs":26}
+{"id":"slop-atris-skills-calendar-SKILL-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"ce46a37678eb2a91a6db92739bec3be1f9a7dd22","secs":23}
+{"id":"slop-atris-skills-copy-editor-SKILL-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"b479edc21a7d217b57d47b16fd9ca30c99dd81e3","secs":18}
+{"id":"slop-atris-skills-clawhub-atris-SKILL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"53782c4fdad9135375f21e48a788da1bdb37c59b","secs":24}
+{"id":"test-commands-setup","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"06091172d5474e4facea4d558c3b1a70e360270c","secs":236}
+{"id":"slop-atris-skills-blocks-SKILL-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"84ce7567194aa3fd2b3ad664ba436852be1ce9aa","secs":37}
+{"id":"slop-atris-features-campaign-lab-demo-html","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"e6174379daabd30b0fc2f07c34dfeff90f2f650d","secs":109}
+{"id":"slop-atris-features-self-improving-loop-idea-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":89}
+{"id":"slop-atris-skills-endgame-SKILL-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"698318421f13ec16c3b243227d6a147a0bd4f7cd","secs":23}
+{"id":"slop-atris-skills-ramp-SKILL-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"4654a3fa8041633b41c851d88f82387f6528a72a","secs":23}
+{"id":"slop-atris-skills-create-app-SKILL-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"73d16d3d54ab6ea6c4789c510a3f4061de759ec9","secs":36}
+{"id":"slop-atris-skills-research-search-SKILL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"d7a7138979ad27a622cd5d02dd2a0b54dbe9406b","secs":26}
+{"id":"slop-atris-skills-notion-SKILL-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"0492b82b6ecdfc6fd1b9aeee9d4ed16793fe5e8f","secs":32}
+{"id":"slop-atris-skills-magic-inbox-SKILL-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"0ab9c4cf0adcc0cf8e22d8dc74b68e70115630c9","secs":34}
+{"id":"test-lib-chat-log-scan","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"7015470f043fadd5fe5568744e884f51f35858ef","secs":200}
+{"id":"slop-atris-thinking-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"bbcece9dcdcd88b741267196c87aac60f7b90373","secs":21}
+{"id":"slop-templates-business-starter-atris-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-atris-skills-clawhub-philosophy-of-work-SKILL-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"b1755576d24175ff291b529dfec5d488d52758ed","secs":64}
+{"id":"slop-templates-business-starter-CLAUDE-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"commit blocked","exit":0,"secs":23}
+{"id":"slop-atris-policies-atris-design-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"4f76a63f5a98ecbccf9773120f96fd1dbdeb48e3","secs":87}
+{"id":"slop-templates-business-starter-context-live-workspace-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":20}
+{"id":"slop-templates-business-starter-goals-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":24}
+{"id":"slop-templates-business-starter-instructions-md","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":20}
+{"id":"slop-templates-business-starter-context-README-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":28}
+{"id":"slop-atris-skills-slides-SKILL-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"97dfd6465917c407e75f745ee17398eb0a0712c2","secs":56}
+{"id":"slop-atris-skills-wake-SKILL-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"1c7a1e89b97af6a331a4fc1e0ca0e6fe54d864ce","secs":49}
+{"id":"slop-templates-business-starter-MAP-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-templates-business-starter-memory-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":20}
+{"id":"slop-atris-skills-email-agent-SKILL-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"7c596cd0d33c8360a9be3fdc766aaa3c21397057","secs":67}
+{"id":"slop-atris-skills-writing-SKILL-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"8abf8f4662745bd284fd5e5d35cadbff22dc7eee","secs":48}
+{"id":"slop-templates-business-starter-policies-LESSONS-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":false,"reason":"commit blocked","exit":0,"secs":19}
+{"id":"slop-templates-business-starter-skills-README-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":18}
+{"id":"slop-atris-skills-drive-SKILL-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"245881cdd1cbca7a6208f00513976fd8cc89d074","secs":77}
+{"id":"slop-templates-business-starter-persona-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":28}
+{"id":"slop-templates-business-starter-team-README-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":11}
+{"id":"slop-templates-business-starter-team-_template-SOUL-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":23}
+{"id":"slop-templates-business-starter-wiki-index-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":false,"reason":"commit blocked","exit":0,"secs":16}
+{"id":"slop-templates-business-starter-team-research-SOUL-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":22}
+{"id":"slop-templates-business-starter-team-comms-SOUL-md","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":25}
+{"id":"slop-templates-business-starter-TODO-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":21}
+{"id":"slop-templates-business-starter-team-START_HERE-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":false,"reason":"commit blocked","exit":0,"secs":23}
+{"id":"slop-templates-business-starter-team-ops-SOUL-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":false,"reason":"commit blocked","exit":0,"secs":28}
+{"id":"slop-templates-business-starter-reports-README-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":false,"reason":"commit blocked","exit":0,"secs":37}
+{"id":"slop-templates-research-canonical-context-live-workspace-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"86d17d78f178cfbab94ca0d1846261931488bb5a","secs":19}
+{"id":"slop-templates-research-canonical-atris-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"d7239e4c93818c331cbbf6f8c45b6007d8fb95c8","secs":27}
+{"id":"slop-atris-skills-design-SKILL-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"0110809b099a8ea97cfef37f3d1e51a9e42e7304","secs":100}
+{"id":"slop-templates-research-canonical-context-README-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"3d46d0c69ca89efc608a0caca17651d1060ba08f","secs":24}
+{"id":"slop-templates-research-canonical-instructions-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"f978de09e96fbb397bdba540601cb014714d4115","secs":22}
+{"id":"slop-atris-skills-create-member-SKILL-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"4469939efec3098a7f8095143870785bcc8cdf5d","secs":105}
+{"id":"slop-templates-research-canonical-goals-md","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"eddaa3ccc96f3dc298e2a6fa1093d744275cf2ad","secs":27}
+{"id":"slop-atris-skills-tidy-SKILL-md","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"202292a308d4a4dc098d1908078f0484ef4920c9","secs":90}
+{"id":"slop-templates-research-canonical-MAP-md","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"7b48889b8a389b14f93b6ad886c1a47c9dd7ce6c","secs":23}
+{"id":"slop-templates-research-canonical-CLAUDE-md","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"8ca1054e0afd3df3f5467bee741f7ab5ac05d454","secs":34}
+{"id":"slop-templates-research-canonical-memory-md","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"b2865b38ed6127079558333753b2c337f9844a81","secs":22}
+{"id":"slop-templates-research-canonical-team-literature-SOUL-md","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"3f4b874ac480b3282affeea1a2c7a7b99a8450b3","secs":10}
+{"id":"slop-templates-research-canonical-reports-README-md","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"a1c413fcd4163bfaec497e4778e99208cb36d678","secs":19}
+{"id":"slop-templates-research-canonical-skills-README-md","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"c1c4ee97506991e0bd5c9188373710c3fa482207","secs":19}
+{"id":"slop-templates-research-canonical-team-experiment-SOUL-md","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"82ce148e3733f86df1103542fdeaba44e432e9b4","secs":17}
+{"id":"slop-templates-research-canonical-persona-md","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"742a803372f8e29a02bf3cfb36f62e925288fb7e","secs":21}
+{"id":"slop-templates-research-canonical-wiki-briefs-research-program-md","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"152599cbaedf19be75b709fde410cbaaf617cfcc","secs":14}
+{"id":"slop-templates-research-canonical-team-hypothesis-SOUL-md","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"80823e088dbffdb61157e5722b99c9292df71593","secs":19}
+{"id":"slop-templates-research-canonical-team-eval-SOUL-md","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"823a0adf9fb7462a444bc81a782a53655ed30957","secs":22}
+{"id":"slop-templates-research-canonical-policies-LESSONS-md","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"9306224856bd163c71b106637ff5ab9f080e145d","secs":25}
+{"id":"slop-templates-research-canonical-TODO-md","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"945ed129219d4cf1a8c015e414f0f1ea9e25e059","secs":18}
+{"id":"slop-templates-research-canonical-team-README-md","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"a5fcf23fe9cb501d5b1143a22bc97340bad3fcfa","secs":20}
+{"id":"slop-templates-research-canonical-wiki-index-md","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"eb60003a9a4284747d458467b3eda549676afb05","secs":23}
+{"id":"test-lib-operator-next","lane":"haiku1","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"001e0ff4d2205478b5b3d604bb3effa792f492fe","secs":21}
+{"id":"test-lib-member-switches","lane":"devin4","engine":"devin","model":"swe-2-high","ok":true,"commit":"a3d491e9937a7bc4fe7868a1f70698a22e7ea4ff","secs":32}
+{"id":"test-lib-local-day","lane":"sonnet1","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7b50be4fc66e7eb8dc682272bed77dccf9538386","secs":35}
+{"id":"test-lib-mission-room","lane":"agy1","engine":"agy","model":"gemini-3.8-flash","ok":true,"commit":"3e82a630aacf4bb98113ee498761020573d22ce7","secs":39}
+{"id":"test-lib-model-names","lane":"devin3","engine":"devin","model":"swe-2-high","ok":true,"commit":"74fe463e2a6ea057c6b4b42b06dfd9a1d0f5b2e7","secs":43}
+{"id":"test-lib-noninteractive","lane":"codex2","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"3917436483a8f50769b2a11b57622e51c10c77ca","secs":44}
+{"id":"test-lib-official-cli-integration","lane":"codex3","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"db2f87c17f29da8eeab1bbf76b432e3ff05c11a7","secs":49}
+{"id":"test-lib-mission-runtime-loop","lane":"devin2","engine":"devin","model":"swe-2-high","ok":true,"commit":"191238237324bf7f462a252ba0a04e2056c43269","secs":51}
+{"id":"test-lib-runs-prune","lane":"codex1","engine":"codex","model":"gpt-6.1-sol","ok":true,"commit":"8694c0fee3b6e2f0dce074330a0f04b2c8dfdbe1","secs":48}
+{"id":"test-lib-workspace-scaffold","lane":"haiku2","engine":"claude","model":"claude-haiku-5-5","ok":true,"commit":"09cc3d016704005d1d19434abe23ad1ce5f62b84","secs":55}
+{"id":"test-lib-zen-fleet","lane":"sonnet2","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"f55341b648b6d5dbd29ceb940016c76b97f30217","secs":53}
+{"id":"test-lib-outbound-send-gate","lane":"grok3","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"708aaec68a95c65a42357a7e0042f06a49cb59ae","secs":98}
+{"id":"test-lib-roster-markdown","lane":"devin1","engine":"devin","model":"swe-2-high","ok":true,"commit":"4ab6771fa2b2355e5a30b3e9b4d829efa31018cd","secs":127}
+{"id":"test-lib-mission-artifact","lane":"grok1","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"0caa42c069ec5181543b490a1e1c70c1a8a41823","secs":142}
+{"id":"test-lib-zen-apply","lane":"sonnet3","engine":"claude","model":"claude-sonnet-5-5","ok":true,"commit":"7e1461a8f50374ae39ca6bbd5beaa4b3ee0c631c","secs":136}
+{"id":"test-lib-sync-telemetry","lane":"grok2","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"78adcac5fc27cddbd6f558730902411c3becb190","secs":166}
+{"id":"test-lib-wish-stats","lane":"grok4","engine":"grok","model":"grok-4.7-build-fast","ok":true,"commit":"a85326e41f9f49ff9d1435c838f5d088e7c2be33","secs":184}

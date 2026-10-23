@@ -10,7 +10,7 @@ tags:
   - flow
 ---
 
-> **The two-engine architecture:** /flow chains forward from identity (who you are → next move). /endgame chains backward from horizon (where you're going → next move). They meet at the same intersection — the next thing /autopilot should ship. Each tick reads both sides and shows them in the visual status block.
+> **The two-engine architecture:** /flow chains forward from identity (who you are → next move). /endgame chains backward from horizon (where you're going → next move). They meet at the same intersection: the next thing /autopilot should ship. Each tick reads both sides and shows them in the visual status block.
 
 ## Visual status block
 
@@ -34,7 +34,7 @@ If identity is missing, edit PERSONA.md. If no horizon is active, /endgame seeds
 
 # /autopilot
 
-Runs ONE plan→do→review tick anchored to the current endgame. If no endgame is active, seeds one from the inbox or wiki signals first. Not a recurring loop — call `/loop` for that.
+Runs ONE plan→do→review tick anchored to the current endgame. If no endgame is active, seeds one from the inbox or wiki signals first. Not a recurring loop. Call `/loop` for that.
 
 ## When to use
 
@@ -43,10 +43,10 @@ Runs ONE plan→do→review tick anchored to the current endgame. If no endgame 
 
 ## What ONE tick does
 
-1. **Read state** — load `atris/TODO.md`. Look for the `## Endgame` section header and `[endgame]`-tagged tasks in `## Backlog`.
-2. **Boundary check** — if no `## Endgame` section exists, OR every `[endgame]`-tagged task in Backlog is done/missing, invoke `/endgame` first to seed the next horizon. `/endgame` will write a new `## Endgame` section + tagged backlog tasks to TODO.md.
-3. **Execute** — run `atris autopilot --auto --iterations=1` via Bash. The CLI prefers `[endgame]`-tagged backlog tasks (priority 0) over reactive signals (priority 1+). One task per tick.
-4. **Stop** — show the output, do not start a conversation, do not chain. The next tick is the cron's job.
+1. **Read state**: load `atris/TODO.md`. Look for the `## Endgame` section header and `[endgame]`-tagged tasks in `## Backlog`.
+2. **Boundary check**: if no `## Endgame` section exists, OR every `[endgame]`-tagged task in Backlog is done/missing, invoke `/endgame` first to seed the next horizon. `/endgame` will write a new `## Endgame` section + tagged backlog tasks to TODO.md.
+3. **Execute**: run `atris autopilot --auto --iterations=1` via Bash. The CLI prefers `[endgame]`-tagged backlog tasks (priority 0) over reactive signals (priority 1+). One task per tick.
+4. **Stop**: show the output, do not start a conversation, do not chain. The next tick is the cron's job.
 
 ## How to invoke
 
@@ -76,9 +76,9 @@ no endgame anywhere, no inbox, clean   → loop journals "nothing left", stops
 
 ## Variants
 
-- `atris autopilot --dry-run` — preview what it would do, do not execute
-- `atris autopilot --auto --iterations=N` — run up to N ticks back-to-back (still one task per tick, boundary checks between)
-- `atris autopilot "<task description>"` — seed a new inbox item, then run
+- `atris autopilot --dry-run`: preview what it would do, do not execute
+- `atris autopilot --auto --iterations=N`: run up to N ticks back-to-back (still one task per tick, boundary checks between)
+- `atris autopilot "<task description>"`: seed a new inbox item, then run
 
 ## Autonomous mode
 
@@ -95,6 +95,6 @@ If the user wants this to fire on a recurring schedule, invoke `/loop` instead. 
 - Always show *why* before executing.
 - Stop after the first tick. Do not chain. Chaining is `/loop`'s job.
 - Endgame tasks always preferred over reactive signals.
-- At every boundary (no current endgame OR all done), reassess via `/endgame` — read inbox/wiki/logs, pick the next horizon, do not just run forever.
+- At every boundary (no current endgame OR all done), reassess via `/endgame`: read inbox/wiki/logs, pick the next horizon, do not just run forever.
 - If a tick fails, halt and journal the failure. Do not pretend it worked.
 - The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal.
