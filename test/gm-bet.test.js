@@ -2828,11 +2828,50 @@ test('scoreboard: the weekly number card has a way out: a question is explained 
   h.tick(24 * 60 * 60 * 1000);
   const tomorrow = h.d.next();
   assert.equal(tomorrow.kind, 'report');
-  // stop tracking this: the number is cleared, and the next card asks which number, if any
-  reading = { ok: true, kind: 'instruction', reply: '' };
+  // stop tracking this: the reader says so, the number is cleared, and the next card asks which number, if any
+  reading = { ok: true, kind: 'instruction', intent: 'stop', reply: '' };
   const stopped = await h.d.say({ text: 'stop tracking this', card: tomorrow.id });
   assert.equal(stopped.ok, true);
   assert.match(stopped.ack, /paying schools/);
   assert.equal(board(), null);
   assert.equal(h.d.next().id, 'question:scoreboard');
+});
+
+test('scoreboard: on the weekly number card, ask me tomorrow passes it for today; any other instruction gets a reply and changes nothing', async () => {
+  const root = workspace();
+  let reading = { ok: true, kind: 'answer', reply: '' };
+  const h = desk(root, { scoreboard: true, questions: false, answered: true, readSaid: async () => reading });
+  const board = () => gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root);
+  h.d.next();
+  h.d.answer({ choice: 'other', text: 'paying schools' });
+  const weekly = h.d.next();
+  assert.equal(weekly.kind, 'report');
+  // something the card cannot do: a reply on the same card, nothing changes
+  reading = { ok: true, kind: 'instruction', intent: 'other', reply: 'this card only keeps the weekly number. say stop tracking this, or ask me tomorrow.' };
+  const other = await h.d.say({ text: 'make the goal bigger', card: weekly.id });
+  assert.deepEqual([other.stay, other.reply], [true, reading.reply]);
+  assert.equal(board().name, 'paying schools');
+  assert.equal(h.d.view().kind, 'report', 'still on the weekly card');
+  // ask me tomorrow: like not now, the number is kept and asked again tomorrow
+  reading = { ok: true, kind: 'instruction', intent: 'later', reply: '' };
+  const later = await h.d.say({ text: 'ask me tomorrow', card: weekly.id });
+  assert.equal(later.ok, true);
+  assert.equal(board().name, 'paying schools', 'still tracking it');
+  assert.notEqual(h.d.next().kind, 'report');
+  h.tick(24 * 60 * 60 * 1000);
+  assert.equal(h.d.next().kind, 'report');
+});
+
+test('reader: on the number card it is asked for an intent, and passes a known one through', async () => {
+  const prompts = [];
+  const run = text => async (p) => { prompts.push(p); return { ok: true, text }; };
+  const card = { kind: 'number', title: 'paying schools: what is it this week?', detail: '', buttons: ['save', 'not now'] };
+  const later = await gmBet.readSaid({ text: 'ask me tomorrow', card, workspaceRoot: workspace(), deps: { runModel: run('{"kind": "instruction", "intent": "later", "reply": ""}'), readContext: () => '' } });
+  assert.deepEqual([later.kind, later.intent], ['instruction', 'later']);
+  assert.match(prompts[0], /"intent": "stop"/);
+  const odd = await gmBet.readSaid({ text: 'ask me tomorrow', card, workspaceRoot: workspace(), deps: { runModel: run('{"kind": "instruction", "intent": "delete everything", "reply": ""}'), readContext: () => '' } });
+  assert.equal(odd.intent, undefined, 'an intent outside the list is dropped');
+  // other cards are not asked for one
+  await gmBet.readSaid({ text: 'hi', card: { kind: 'idea', title: 't', detail: '', buttons: [] }, workspaceRoot: workspace(), deps: { runModel: run('{"kind": "unclear", "reply": "what do you mean?"}'), readContext: () => '' } });
+  assert.doesNotMatch(prompts[2], /intent/);
 });
