@@ -796,9 +796,11 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
   // the ripple starts where the pointer enters the orb
   assert.match(script, /canvas\.addEventListener\('pointerenter', function \(e\) \{/);
-  // pointer events go through to the dots on touch too; a tap still thinks
+  // pointer events go through to the dots on touch too; a tap on the big orb
+  // still thinks, and the small one on a card goes back to it
   assert.match(html, /\.stage canvas \{[^}]*touch-action: none;/);
-  assert.match(script, /node\.addEventListener\('click', function \(\) \{ tapOrb\(false\); \}\);/);
+  assert.match(script, /\[\[canvas, tapBig\], \[lavaTap, tapSmallOrb\]\]/);
+  assert.match(script, /pair\[0\]\.addEventListener\('click', pair\[1\]\);/);
   // still no loop of its own: no new keyframes, and the tap timings are untouched
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   assert.deepEqual(['GROW_MS', 'SETTLE_MS', 'LEAVE_MS', 'GLIDE_MS', 'BEAT_MS', 'FAST_GROW_MS', 'FAST_SETTLE_MS', 'FAST'].map(num), [1050, 900, 400, 520, 340, 460, 440, 0.4]);
@@ -1161,4 +1163,21 @@ test('browser: after an explanation, a do it that did not get going brings the c
   // two taps on do it again reach the desk again
   assert.equal(out.error, null, show);
   assert.equal(out.starts, 2, show);
+});
+
+// ---- the small orb on a card goes back to the big one ------------------------------
+
+test('browser: the small orb on a card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.orbHomeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  const [idea, calm] = runs;
+  for (const r of runs) {
+    // the card goes, the big orb is back with its line, and nothing new was asked for
+    assert.deepEqual(r.home, { has_card: false, big_orb: true, line: 'tap to think', title: null, asked: 0 }, show);
+  }
+  // from an idea: the big orb's tap asks for the next card, the same as on page open
+  assert.deepEqual([idea.tapped.has_card, idea.tapped.title, idea.tapped.asked], [true, 'Record a two minute demo video', 1], show);
+  // from the calm line: the idea that landed waits on the big orb, then comes up on the tap, not passed over
+  assert.deepEqual([calm.stayed.has_card, calm.stayed.asked], [false, 0], show);
+  assert.deepEqual([calm.tapped.has_card, calm.tapped.title, calm.tapped.asked], [true, 'Write a getting started page for the phone', 0], show);
 });
