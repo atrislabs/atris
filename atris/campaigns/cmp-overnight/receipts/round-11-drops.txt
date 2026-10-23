@@ -1,0 +1,6 @@
+DROP test/business-sync-cmd--mut-L888-6.test.js: repeats an existing test in test/commands-3.test.js that already checks a plain network error keeps the watcher retrying.
+DROP test/caretaker-cmd--mut-L49-8.test.js: repeats test/caretaker-cmd--mut-L46-1.test.js and test/caretaker-cmd--mut-L42-6.test.js, which already check that a signed-in scan with no open pull requests succeeds.
+DROP test/goal-cmd--mut-L99-0.test.js: depends on the computer's time zone. Its task times sit one to two hours before "now" in UTC, so in time zones around UTC+11 one task falls on the next local day and the count of 2 breaks.
+DROP test/terminal-cmd--mut-L41-8.test.js: duplicates the committed test/terminal-cmd--mut-L40-0.test.js, which already asserts that a running computer with an endpoint makes ensureAwake return true (and also checks that no wake is sent).
+DROP test/memory-view--mut-L55-11.test.js: Pins an incidental 150-character display cutoff; a reasonable layout refactor could change it.
+DROP test/memory-view--mut-L55-11.test.js: Pins an incidental 150-character display cutoff; a reasonable layout refactor could change it.
