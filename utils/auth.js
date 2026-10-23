@@ -2,7 +2,7 @@ const os = require('os');
 const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const readline = require('readline');
 const agentClient = require('./agent-client');
 
@@ -12,19 +12,20 @@ const agentClient = require('./agent-client');
  */
 function openBrowser(url) {
   const platform = os.platform();
-  // Sanitize URL to prevent shell injection — only allow valid URL characters
-  const sanitizedUrl = url.replace(/[^a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]/g, '');
   let command;
+  let args = [url];
 
   if (platform === 'darwin') {
-    command = `open "${sanitizedUrl}"`;
+    command = 'open';
   } else if (platform === 'win32') {
-    command = `start "" "${sanitizedUrl}"`;
+    command = 'rundll32.exe';
+    args = ['url.dll,FileProtocolHandler', url];
   } else {
-    command = `xdg-open "${sanitizedUrl}"`;
+    command = 'xdg-open';
   }
 
-  exec(command, (error) => {
+  // Pass the URL as data, including on Windows, without a command shell.
+  execFile(command, args, (error) => {
     if (error) {
       console.log(`\nCouldn't open browser automatically. Please visit:\n${url}`);
     }

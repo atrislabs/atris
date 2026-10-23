@@ -20,7 +20,7 @@ function runCli(cwd, args) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...process.env, HOME: cwd, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
 }
 

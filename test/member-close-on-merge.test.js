@@ -25,7 +25,8 @@ function writeFakeGh(bin, log, config) {
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
     `const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(config)}, 'utf8'));`,
     "const [a, b] = process.argv.slice(2);",
-    "if (a === 'pr' && b === 'view') { if (!cfg.view) process.exit(1); console.log(JSON.stringify(cfg.view)); }",
+    "const n = process.argv[4];",
+    "if (a === 'pr' && b === 'view') { const v = (cfg.views && cfg.views[n]) || cfg.view; if (!v) process.exit(1); console.log(JSON.stringify(v)); }",
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
   ].join('\n'), { mode: 0o755 });
@@ -270,5 +271,234 @@ test('a job already closed, or one that is missing, is not counted twice', () =>
     assert.equal(out.closed, 0);
     assert.equal(out.results[0].line, 'pull request #7 (codex/member-work): merged');
     assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+// The main branch takes a different work.txt, so the member's change clashes.
+function clashOnMaster(fx) {
+  fs.writeFileSync(path.join(fx.main, 'work.txt'), 'someone else\n');
+  git(['add', '.'], fx.main);
+  git(['commit', '-qm', 'other work'], fx.main);
+  git(['push', '-q', 'origin', 'master'], fx.main);
+}
+
+test('a change that clashes with the main branch sends its job back on the list', () => {
+  withFixture((fx) => {
+    const a = job(fx, 'review');
+    queue(fx, [a]);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; its job went back on the list$/);
+    const row = taskDb.getTask(fx.db, a);
+    assert.equal(row.status, 'open');
+    assert.equal(row.claimed_by, null);
+    assert.equal(row.metadata.clash_restarts, 1);
+    assert.match(row.metadata.reopen_reason, /pull request #7 could not merge: .*work\.txt; start again/);
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('a clash leaves held jobs, jobs not in review, and twice-restarted jobs for a person', () => {
+  withFixture((fx) => {
+    const held = job(fx, 'review');
+    taskDb.tagTask(fx.db, { id: held, actor: 'keshav', add: ['needs-human'] });
+    const claimed = job(fx, 'claimed');
+    const tired = job(fx, 'review');
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ clash_restarts: 2 }), tired);
+    queue(fx, [held, claimed, tired, 'no-such-job']);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /; left for you$/);
+    assert.equal(statusOf(fx, held), 'review');
+    assert.equal(statusOf(fx, claimed), 'claimed');
+    assert.equal(statusOf(fx, tired), 'review');
+  });
+});
+
+const ghCalls = (fx) => fs.readFileSync(fx.log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+
+// The job's redo merges as pull request #8 while the clashing #7 still sits open.
+function redoMerges(fx, id, oldView) {
+  fs.writeFileSync(queuePath(fx), JSON.stringify({
+    schema: 'atris.autoland_queue.v1',
+    entries: { [BRANCH]: { branch: BRANCH, base: 'master', number: 8, pushed: fx.pushed, requeues: 0, task_ids: [id] } },
+  }));
+  const merged = { number: 8, state: 'MERGED', headRefName: BRANCH, baseRefName: 'master', headRefOid: fx.pushed, isCrossRepository: false };
+  fs.writeFileSync(fx.config, JSON.stringify({ views: { 8: merged, 7: oldView } }));
+  taskDb.claimTask(fx.db, { id, claimedBy: 'generalist' });
+  return requeueDroppedAutolands({ cwd: fx.main });
+}
+
+test('the clashing change closes itself once its job\'s redo merges', () => {
+  withFixture((fx) => {
+    const a = job(fx, 'review');
+    queue(fx, [a]);
+    clashOnMaster(fx);
+    requeueDroppedAutolands({ cwd: fx.main });
+    assert.deepEqual(taskDb.getTask(fx.db, a).metadata.replaced_pull_requests, [{ number: 7, pushed: fx.pushed }]);
+    const out = redoMerges(fx, a, { state: 'OPEN', headRefOid: fx.pushed });
+    assert.equal(statusOf(fx, a), 'done', out.line);
+    assert.deepEqual(out.results[0].replaced, [7]);
+    assert.match(out.results[0].line, /merged; closed its job; closed the clashing change it replaced \(#7\)$/);
+    const close = ghCalls(fx).find((args) => args[0] === 'pr' && args[1] === 'close');
+    assert.deepEqual(close.slice(0, 3), ['pr', 'close', '7']);
+    assert.match(close[4], /Replaced by #8, which merged/);
+  });
+});
+
+test('a clashing change someone else pushed to, or already closed, stays as it is', () => {
+  for (const oldView of [{ state: 'OPEN', headRefOid: 'f'.repeat(40) }, { state: 'CLOSED', headRefOid: null }]) {
+    withFixture((fx) => {
+      const a = job(fx, 'review');
+      queue(fx, [a]);
+      clashOnMaster(fx);
+      requeueDroppedAutolands({ cwd: fx.main });
+      const out = redoMerges(fx, a, oldView);
+      assert.equal(statusOf(fx, a), 'done', out.line);
+      assert.deepEqual(out.results[0].replaced, []);
+      assert.equal(ghCalls(fx).some((args) => args[1] === 'close'), false);
+    });
+  }
+});
+
+// 2026-10-15: the team loop swept for the last time at 07:03 UTC. The
+// builder's change #1319 merged at its own commit at 07:05, and its job
+// (01M4Z4YVHB) sat in review for a week while 46 mission runs came and went.
+// A finished mission run now looks at the merge line too.
+const MERGED_1319 = '2026-10-15T07:05:48Z';
+const AFTER_1319 = Date.parse('2026-10-15T07:20:00Z');
+
+function builderJob(fx) {
+  return taskDb.addTask(fx.db, {
+    title: 'next step toward: Members work for hours without a person stepping in.',
+    workspaceRoot: fx.main, status: 'review', claimedBy: 'builder',
+  }).id;
+}
+
+test('a mission run closes a member job whose own change merged while the team loop was down', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const out = sweepAfterMissionRun({ cwd: fx.worktree, now: AFTER_1319 });
+    assert.equal(out.closed, 1, out && out.line);
+    assert.equal(statusOf(fx, id), 'done');
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('back-to-back mission runs read GitHub once per five minutes', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    queue(fx, [builderJob(fx)]);
+    sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 });
+    const reads = () => fs.readFileSync(fx.log, 'utf8').trim().split('\n').length;
+    const first = reads();
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 + 60 * 1000 }).results.length, 0);
+    assert.equal(reads(), first);
+  });
+});
+
+test('a mission run with nothing in the merge line, or self-landing off, never calls GitHub', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    queue(fx, [builderJob(fx)]);
+    fs.writeFileSync(path.join(fx.main, '.atris', 'policy', 'autoland.json'), '{"enabled":false}');
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    assert.equal(fs.existsSync(fx.log), false);
+  });
+});
+
+// The owner's rule (2026-10-22): merged work closes, whatever its age. A
+// merge more than a day old closes as "merged earlier", which the weekly
+// board does not count, so last week's work is never this week's landing.
+test('a merge more than a day old closes its job without counting it as this week\'s landing', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const out = requeueDroppedAutolands({ cwd: fx.main, now: Date.parse('2026-10-22T09:00:00Z') });
+    assert.equal(out.closed, 1, out.line);
+    assert.equal(statusOf(fx, id), 'done');
+    const completed = taskDb.listTaskEvents(fx.db, { taskId: id }).filter((e) => e.event_type === 'completed');
+    assert.equal(completed[completed.length - 1].payload.action, 'merged_earlier');
+    assert.match(out.results[0].line, /merged over a day ago/);
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('the dry run reads the merge line and changes nothing', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const before = fs.readFileSync(queuePath(fx), 'utf8');
+    const out = requeueDroppedAutolands({ cwd: fx.main, now: Date.parse('2026-10-22T09:00:00Z'), dryRun: true });
+    assert.deepEqual(out.results[0].closed, [id]);
+    assert.equal(statusOf(fx, id), 'review');
+    assert.equal(fs.readFileSync(queuePath(fx), 'utf8'), before);
+  });
+});
+
+// Codex review, 2026-10-22: a mission that queues its change while the sweep
+// is reading GitHub must not be dropped when the sweep saves the list.
+test('a change queued while the sweep runs stays on the list', () => {
+  withFixture((fx) => {
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const late = { branch: 'codex/late', base: 'master', number: 8, pushed: 'b'.repeat(40), requeues: 0, task_ids: ['late-job'] };
+    const out = requeueDroppedAutolands({
+      cwd: fx.main,
+      now: AFTER_1319,
+      closeTask: () => {
+        const file = JSON.parse(fs.readFileSync(queuePath(fx), 'utf8'));
+        file.entries[late.branch] = late;
+        fs.writeFileSync(queuePath(fx), JSON.stringify(file));
+        return { updated: true };
+      },
+    });
+    assert.equal(out.closed, 1, out.line);
+    assert.deepEqual(readQueue(fx), { [late.branch]: late });
+  });
+});
+
+test('a mission run keeps its own timer, so the team loop still gets its turn right after', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const { memberMaintenance } = require('../lib/member-up');
+    queue(fx, [builderJob(fx)]);
+    sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 });
+    const state = path.join(fx.main, '.atris', 'state');
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.json')), false);
+    let loopRan = false;
+    memberMaintenance({ cwd: fx.main, now: AFTER_1319 + 1000, requeueDropped: () => { loopRan = true; return { results: [] }; } });
+    assert.equal(loopRan, true);
+    assert.equal(fs.existsSync(path.join(state, 'member-up-maintenance.lock')), false);
+  });
+});
+
+// While the team loop is up it closes merged jobs itself, along with its code
+// refresh and two-hour warning; a mission run stays out of its way. A loop
+// that died leaves its file behind (2026-10-15), which must not count.
+test('a live team loop does the closing itself; a dead one left behind does not stop the mission run', () => {
+  withFixture((fx) => {
+    const { sweepAfterMissionRun } = require('../lib/member-autoland');
+    const id = builderJob(fx);
+    queue(fx, [id]);
+    setView(fx, { state: 'MERGED', mergedAt: MERGED_1319 });
+    const upFile = path.join(fx.main, '.atris', 'state', 'member-up.json');
+    fs.writeFileSync(upFile, JSON.stringify({ pid: process.pid, started_at: '2026-10-15T06:41:53.787Z' }));
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }), null);
+    assert.equal(statusOf(fx, id), 'review');
+    assert.equal(fs.existsSync(fx.log), false);
+    const dead = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' });
+    fs.writeFileSync(upFile, JSON.stringify({ pid: dead.pid, started_at: '2026-10-15T06:41:53.787Z' }));
+    assert.equal(sweepAfterMissionRun({ cwd: fx.main, now: AFTER_1319 }).closed, 1);
+    assert.equal(statusOf(fx, id), 'done');
   });
 });

@@ -7,8 +7,14 @@ const { buildMemorySpec, parseLessons, parseLearnings } = require('../lib/memory
 const { renderHtml } = require('../lib/html-render');
 const { scanFile } = require('../commands/slop');
 
-function mkWorkspace(lessonsMd, learningsJsonl) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function mkWorkspace(t, lessonsMd, learningsJsonl) {
+  const dir = makeTempDir(t, 'mem-');
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   if (lessonsMd != null) fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), lessonsMd);
   if (learningsJsonl != null) fs.writeFileSync(path.join(dir, 'atris', 'learnings.jsonl'), learningsJsonl);
@@ -16,7 +22,7 @@ function mkWorkspace(lessonsMd, learningsJsonl) {
 }
 
 test('parseLessons reads the lessons.md line format (date, id, status, text)', () => {
-  const ls = parseLessons('- **[2026-06-18] git-first-check** — pass — verify with git diff before git log.\nnoise\n');
+  const ls = parseLessons('- **[2026-06-18] git-first-check** \u2014 pass \u2014 verify with git diff before git log.\nnoise\n');
   assert.equal(ls.length, 1);
   assert.equal(ls[0].date, '2026-06-18');
   assert.equal(ls[0].id, 'git-first-check');
@@ -30,10 +36,10 @@ test('parseLearnings reads JSONL notes', () => {
   assert.equal(ns[0].key, 'narrow-grep');
 });
 
-test('buildMemorySpec turns memory into a renderable, slop-clean page', () => {
+test('buildMemorySpec turns memory into a renderable, slop-clean page', (t) => {
   const lessons = Array.from({ length: 5 }, (_, i) =>
-    `- **[2026-06-1${i}] lesson-${i}-thing** — ${i % 2 ? 'fail' : 'pass'} — something we learned number ${i} about the loop.`).join('\n');
-  const dir = mkWorkspace(lessons + '\n', '{"ts":"t","type":"note","key":"k","insight":"a field note"}\n');
+    `- **[2026-06-1${i}] lesson-${i}-thing** \u2014 ${i % 2 ? 'fail' : 'pass'} \u2014 something we learned number ${i} about the loop.`).join('\n');
+  const dir = mkWorkspace(t, lessons + '\n', '{"ts":"t","type":"note","key":"k","insight":"a field note"}\n');
   const spec = buildMemorySpec(dir);
   assert.equal(spec.theme, 'atris');
   assert.ok(spec.slides.some((s) => s.type === 'bignumber'));
@@ -44,14 +50,14 @@ test('buildMemorySpec turns memory into a renderable, slop-clean page', () => {
   assert.equal(scanFile(out).length, 0);
 });
 
-test('em dashes in the raw lessons file never reach the rendered page', () => {
-  const dir = mkWorkspace('- **[2026-06-18] x-thing** — pass — a — b — c with dashes everywhere.\n');
+test('em dashes in the raw lessons file never reach the rendered page', (t) => {
+  const dir = mkWorkspace(t, '- **[2026-06-18] x-thing** \u2014 pass \u2014 a \u2014 b \u2014 c with dashes everywhere.\n');
   const html = renderHtml(buildMemorySpec(dir));
-  assert.ok(!html.includes('—'), 'renderer sanitizes the source');
+  assert.ok(!html.includes('\u2014'), 'renderer sanitizes the source');
 });
 
-test('missing/empty memory still yields a usable spec', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-empty-'));
+test('missing/empty memory still yields a usable spec', (t) => {
+  const dir = makeTempDir(t, 'mem-empty-');
   const spec = buildMemorySpec(dir);
   assert.ok(spec.slides.length >= 2);
   assert.ok(spec.slides[0].type === 'title');

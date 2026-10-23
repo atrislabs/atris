@@ -31,19 +31,47 @@ const {
   fixtureFetch,
   runOfflineCheck,
   saveFailedOutput,
+  startCountingServer,
   summary,
 } = require('../scripts/det/xsearch-bench');
 
 const fixture = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+
+test('the benchmark HTTP listener stays local and denies malformed requests and writes', async t => {
+  const http = require('node:http');
+  const server = await startCountingServer();
+  t.after(() => server.close());
+  assert.equal(new URL(server.url).hostname, '127.0.0.1');
+  const call = (target, method = 'GET', body = '') => new Promise((resolve, reject) => {
+    const req = http.request(server.url, {
+      path: target, method,
+      headers: { host: 'evil.example', 'content-length': Buffer.byteLength(body) },
+    }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    req.on('error', reject);
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+    req.end(body);
+  });
+  assert.equal(await call('//x:99999'), 401);
+  assert.equal(await call('http://x:99999/'), 401);
+  assert.equal(await call('/', 'POST', '{'), 401);
+  assert.equal(await call('/', 'POST', 'x'.repeat(1_000_001)), 401);
+  assert.equal(await call('/'), 401);
+});
 const CREDS = async () => ({ credentials: { token: 'token-123', agent_token: 'token-123', agent_token_scopes: ['x-search', 'youtube'], agent_token_expires_at: '2099-01-01T00:00:00Z' } });
 
 function noNetwork() {
   return async () => { throw new Error('network is off in tests'); };
 }
 
-function searchDeps(extra = {}) {
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function searchDeps(t, extra = {}) {
   const output = [];
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-post-check-'));
+  const cwd = makeTempDir(t, 'atris-x-post-check-');
   return {
     output,
     deps: {
@@ -329,8 +357,8 @@ test('annotateContent puts the link or warning right under each quote', async ()
 
 // Wired into x-search
 
-test('x-search prints per-post links, other sources, and the tally', async () => {
-  const { output, deps } = searchDeps({ fetchPost: fixtureFetch(fixture.embeds) });
+test('x-search prints per-post links, other sources, and the tally', async (t) => {
+  const { output, deps } = searchDeps(t, { fetchPost: fixtureFetch(fixture.embeds) });
   const status = await xSearchCommand(['AI agent startups launch', '--limit', '5', '--days', '2'], deps);
   assert.equal(status, 0);
   const text = output.join('\n');
@@ -343,17 +371,17 @@ test('x-search prints per-post links, other sources, and the tally', async () =>
   assert.match(text, /posts: 3 checked, 1 unverified, 0 unknown/);
 });
 
-test('x-search marks posts unknown when X cannot be reached, and still exits 0', async () => {
-  const { output, deps } = searchDeps({ fetchPost: noNetwork() });
+test('x-search marks posts unknown when X cannot be reached, and still exits 0', async (t) => {
+  const { output, deps } = searchDeps(t, { fetchPost: noNetwork() });
   assert.equal(await xSearchCommand(['AI agent startups launch'], deps), 0);
   const text = output.join('\n');
   assert.equal(text.split(UNKNOWN_NOTE).length - 1, 4);
   assert.match(text, /posts: 0 checked, 0 unverified, 4 unknown/);
 });
 
-test('x-search --no-check prints the original output', async () => {
+test('x-search --no-check prints the original output', async (t) => {
   let looked = 0;
-  const { output, deps } = searchDeps({ fetchPost: async () => { looked += 1; return { ok: false }; } });
+  const { output, deps } = searchDeps(t, { fetchPost: async () => { looked += 1; return { ok: false }; } });
   assert.equal(await xSearchCommand(['AI agent startups launch', '--no-check'], deps), 0);
   assert.equal(looked, 0);
   const text = output.join('\n');
@@ -361,8 +389,8 @@ test('x-search --no-check prints the original output', async () => {
   assert.doesNotMatch(text, /posts: \d+ checked/);
 });
 
-test('x-search --json adds a checks list and nothing else', async () => {
-  const { output, deps } = searchDeps({ fetchPost: fixtureFetch(fixture.embeds) });
+test('x-search --json adds a checks list and nothing else', async (t) => {
+  const { output, deps } = searchDeps(t, { fetchPost: fixtureFetch(fixture.embeds) });
   assert.equal(await xSearchCommand(['AI agent startups launch', '--json'], deps), 0);
   const parsed = JSON.parse(output[0]);
   assert.deepEqual(Object.keys(parsed), ['status', 'credits_used', 'credits_remaining', 'data', 'checks']);
@@ -371,15 +399,15 @@ test('x-search --json adds a checks list and nothing else', async () => {
   assert.deepEqual(parsed.checks.map((c) => c.handle), ['shivanipod', 'GarryTan', 'swyx', null]);
 });
 
-test('a throwing checker falls back to the original output', async () => {
-  const { output: plain, deps: plainDeps } = searchDeps();
+test('a throwing checker falls back to the original output', async (t) => {
+  const { output: plain, deps: plainDeps } = searchDeps(t);
   await xSearchCommand(['AI agent startups launch', '--no-check'], plainDeps);
 
-  const { output, deps } = searchDeps({ checkXPosts: async () => { throw new Error('boom'); } });
+  const { output, deps } = searchDeps(t, { checkXPosts: async () => { throw new Error('boom'); } });
   assert.equal(await xSearchCommand(['AI agent startups launch'], deps), 0);
   assert.deepEqual(output, plain);
 
-  const { output: bad, deps: badDeps } = searchDeps({ checkXPosts: async () => ({ posts: null, checks: null }) });
+  const { output: bad, deps: badDeps } = searchDeps(t, { checkXPosts: async () => ({ posts: null, checks: null }) });
   assert.equal(await xSearchCommand(['AI agent startups launch'], badDeps), 0);
   assert.deepEqual(bad, plain);
 });
@@ -427,8 +455,8 @@ test('bench offline-check passes on the saved answer', async () => {
   assert.equal(summary([{ pass: true }, { pass: false }], 3), 'bench: 1/2 passed in 3s');
 });
 
-test('bench keeps the full output of a failed paid case', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xsearch-bench-out-'));
+test('bench keeps the full output of a failed paid case', (t) => {
+  const dir = makeTempDir(t, 'xsearch-bench-out-');
   const file = saveFailedOutput(dir, 'topic', '2026-09-29T08:47:25.053Z', 'the whole answer');
   assert.equal(path.basename(file), 'xsearch-topic-2026-09-29T08-47-25-053Z.txt');
   assert.equal(fs.readFileSync(file, 'utf8'), 'the whole answer');

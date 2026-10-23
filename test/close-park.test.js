@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const close = require('../commands/close');
+const { capture } = require('./helpers/close-output');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-close-park-test-'));
@@ -12,25 +13,6 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function capture(fn) {
-  const stdout = [];
-  const stderr = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...args) => stdout.push(args.join(' '));
-  console.error = (...args) => stderr.push(args.join(' '));
-  try {
-    return {
-      code: fn(),
-      stdout: stdout.join('\n'),
-      stderr: stderr.join('\n'),
-    };
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
 }
 
 function runClose(args, cwd, now) {

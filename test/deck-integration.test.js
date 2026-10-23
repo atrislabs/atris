@@ -50,8 +50,9 @@ function makeApi(id) {
   };
 }
 
-test('lint -> build -> review -> confirm runs the whole pipeline', async () => {
+test('lint -> build -> review -> confirm runs the whole pipeline', async (t) => {
   const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-int-'));
+  t.after(() => fs.rmSync(outRoot, { recursive: true, force: true }));
   const ledger = path.join(outRoot, 'deck-receipts.jsonl');
   const api = makeApi('GP1');
 
@@ -64,7 +65,7 @@ test('lint -> build -> review -> confirm runs the whole pipeline', async () => {
   assert.equal(url, 'https://docs.google.com/presentation/d/GP1/edit');
   assert.ok(ops > SPEC.slides.length, 'batch carries create + style ops');
 
-  // 3. review — patch https.get to serve the PNG
+  // 3. review: patch https.get to serve the PNG
   const originalGet = require('https').get;
   require('https').get = (u, cb) => {
     cb({ statusCode: 200, headers: {}, pipe: (dest) => { dest.write(PNG); dest.end(); return dest; } });
@@ -84,7 +85,7 @@ test('lint -> build -> review -> confirm runs the whole pipeline', async () => {
   assert.ok(fs.existsSync(packet.slides[0].thumbnail), 'thumbnail written to disk');
   assert.equal(packet.slides[2].type, 'bullets', 'manifest tags slides with their archetype');
 
-  // 4. confirm — marks ready and drops a receipt
+  // 4. confirm: marks ready and drops a receipt
   const { packet: confirmed, receiptPath } = confirmReview(id, 'thumbnails look good', outRoot, ledger);
   assert.equal(confirmed.status, 'confirmed_visual_review');
   assert.equal(confirmed.ready, true);

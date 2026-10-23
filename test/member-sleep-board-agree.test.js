@@ -28,7 +28,7 @@ function workspace() {
 
 function atris(ws, ...args) {
   const res = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: ws.root, env: { ...process.env, ATRIS_PROGRESS_DIR: ws.dir }, encoding: 'utf8',
+    cwd: ws.root, env: { ...process.env, ATRIS_PROGRESS_DIR: ws.dir, ATRIS_SKIP_UPDATE_CHECK: '1' }, encoding: 'utf8',
   });
   assert.equal(res.status, 0, `atris ${args.join(' ')} failed: ${res.stderr}`);
   return res.stdout;

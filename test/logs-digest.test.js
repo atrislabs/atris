@@ -1,16 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { logsDigest } = require('../commands/log');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-logs-digest-test-'));
-}
+const { makeTempDir: makeFixtureDir } = createTaskHelpFixture('atris-logs-digest-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function captureOutput(fn) {
   const originalLog = console.log;

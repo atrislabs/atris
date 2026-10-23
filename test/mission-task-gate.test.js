@@ -12,10 +12,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const PASSING_VERIFIER = `${process.execPath} -e "process.exit(0)"`;
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], { encoding: 'utf8' });
-  return result.status === 0;
-}
+const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
 function makeWorkspace() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-task-gate-'));

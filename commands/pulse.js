@@ -53,6 +53,9 @@ Options:
   --cadence "<cron>"     Cron cadence for install
   --days <n>             Auto-expire installed heartbeat after n days
   --hours <n>            Auto-expire installed heartbeat after n hours
+  --no-keep-awake        Install without holding the Mac awake for the window (macOS)
+  --no-autopilot         install/tick: never fall back to autopilot (only campaigns and due missions)
+  --no-campaigns         tick: skip pushing campaigns (atris campaign tick)
   --model <id>           Runner model alias/id for installed heartbeat
   --runner-profile <n>   Runner profile for installed heartbeat (e.g. atris-fast)
   --runner-bin <path>    Runner binary for installed heartbeat
@@ -128,9 +131,43 @@ function runAutopilotTick(root, { timeoutMs = 600000 } = {}) {
   };
 }
 
-// The full heartbeat composition: continue a due mission, else author+pursue a
-// new goal via autopilot. This is the /loop skill's logic, encoded for OS cron.
-function runEngine(root, { noClaude = false, autopilotFallback = true, timeoutMs = 600000 } = {}) {
+// Campaigns first: one bounded push on the next campaign here that has work
+// (atris campaign tick). A campaign mission can outlast a mission tick, so it gets
+// up to 50 minutes; the campaign run lock keeps two drivers off one campaign.
+const CAMPAIGN_TICK_MS = 50 * 60 * 1000;
+function runCampaignEngine(root, { timeoutMs = CAMPAIGN_TICK_MS } = {}) {
+  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const result = spawnSync(process.execPath, [cliPath, 'campaign', 'tick', '--json'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  let payload = null;
+  try {
+    payload = JSON.parse(result.stdout || '{}');
+  } catch {}
+  const idle = Boolean(payload && payload.picked === null);
+  return {
+    actor: 'campaign_tick',
+    ok: result.status === 0,
+    reason: idle ? 'no_campaign_work' : (payload && payload.reason) || (result.status === 0 ? 'advanced' : 'error'),
+    idle,
+    status: result.status,
+    payload,
+    stdout: String(result.stdout || '').slice(-2000),
+    stderr: String(result.stderr || '').slice(-2000),
+  };
+}
+
+// The full heartbeat composition: push a campaign that has work, else continue a
+// due mission, else author+pursue a new goal via autopilot. This is the /loop
+// skill's logic, encoded for OS cron.
+function runEngine(root, { noClaude = false, autopilotFallback = true, campaigns = true, timeoutMs = 600000 } = {}) {
+  if (campaigns && !noClaude) {
+    const campaign = runCampaignEngine(root);
+    if (!campaign.idle) return campaign;
+  }
   const mission = runMissionEngine(root, { noClaude, timeoutMs });
   if (pulse.shouldFallbackToAutopilot({ missionReason: mission.reason, autopilotFallback, noClaude })) {
     const ap = runAutopilotTick(root, { timeoutMs });
@@ -284,7 +321,7 @@ function tickCommand(args, root = process.cwd()) {
     // filesystem snapshot when git is absent.
     const isRepo = fs.existsSync(path.join(root, '.git'));
     const before = isRepo ? gitSnapshot(root) : pulse.fsSnapshot(root);
-    engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot') });
+    engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot'), campaigns: !hasFlag(args, '--no-campaigns') });
     const after = isRepo ? gitSnapshot(root) : pulse.fsSnapshot(root);
     // This tick's ACTUAL contribution: files it newly dirtied, or a new commit.
     // Pre-existing dirt is excluded so reward isn't re-credited every tick.
@@ -315,7 +352,9 @@ function tickCommand(args, root = process.cwd()) {
     const changedTail = committed
       ? ' - committed'
       : (changedFiles.length ? ` - ${changedFiles.length} file(s) changed` : '');
-    const what = engine.actor === 'autopilot'
+    const what = engine.actor === 'campaign_tick'
+      ? `campaign ${(engine.payload && engine.payload.campaign && engine.payload.campaign.id) || ''} ${engine.reason}${changedTail}`.replace(/\s+/g, ' ')
+      : engine.actor === 'autopilot'
       ? `autopilot authored/advanced a goal${changedTail}`
       : engine.reason === 'no_due_mission'
         ? 'no due mission; heartbeat alive (no-op)'
@@ -677,6 +716,8 @@ function installCommand(args, root = process.cwd(), options = {}) {
     pathDirs,
     launchLabel: label,
     launchPlistPath: plistPath,
+    // Baked into every tick: a night of campaigns only, no invented goals.
+    tickFlags: ['--no-autopilot', '--no-campaigns'].filter((flag) => hasFlag(args, flag)),
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
@@ -695,6 +736,10 @@ function installCommand(args, root = process.cwd(), options = {}) {
   const apply = commandSpawn('launchctl', ['bootstrap', `gui/${uid}`, plistPath], { encoding: 'utf8', timeout: 10000 });
   const expiryBreadcrumbCleared = apply.status === 0 && clearPulseExpiryBreadcrumb(root);
   const cadenceMapping = pulse.launchIntervalFromCadence({ cron });
+  // Tests pass their own spawnSync and never get a real caffeinate unless they ask.
+  const wantsKeepAwake = apply.status === 0 && process.platform === 'darwin' && !hasFlag(args, '--no-keep-awake')
+    && (!options.spawnSync || options.holdKeepAwake);
+  const keepAwake = wantsKeepAwake ? (options.holdKeepAwake || holdKeepAwake)(slot.stateHome, expiry.seconds) : null;
 
   const out = {
     ok: apply.status === 0,
@@ -718,6 +763,7 @@ function installCommand(args, root = process.cwd(), options = {}) {
     runner_bin: runnerBin || null,
     runner_template_configured: Boolean(runnerCommandTemplate),
     expiry_breadcrumb_cleared: expiryBreadcrumbCleared,
+    keep_awake: keepAwake,
   };
   if (!asJson) {
     if (apply.status === 0) {
@@ -728,12 +774,47 @@ function installCommand(args, root = process.cwd(), options = {}) {
         `script: ${scriptPath}`,
         cadenceMapping.fallback ? `cadence '${cron}' is not directly mappable; using 3600 seconds.` : '',
         `auto-expires in ${expiry.hours ? `${expiry.hours} hours` : `${expiry.days} days`}. stop early: atris pulse uninstall`,
+        ...(keepAwake ? [`keeps this Mac awake until then (lid open); atris pulse uninstall lets it sleep.`] : []),
       ].filter(Boolean).join('\n') + '\n');
     } else {
       writeOutput(`pulse install failed to bootstrap ${label}: ${apply.stderr || apply.status}\nplist: ${plistPath}\n`);
     }
   }
   return emit(out, asJson);
+}
+
+// The heartbeat only ticks while the Mac is awake. On macOS an overnight install
+// holds a no-idle-sleep assertion (caffeinate -i) for exactly the heartbeat's
+// window, so a Mac on its own power settings does not sleep through the night.
+// Closing the lid still sleeps. Uninstall lets it go. --no-keep-awake skips it.
+function keepAwakeFile(stateHome) {
+  return path.join(stateHome, 'keep-awake.pid');
+}
+
+function releaseKeepAwake(stateHome) {
+  const file = keepAwakeFile(stateHome);
+  let pid = 0;
+  try { pid = Number(fs.readFileSync(file, 'utf8').trim()); } catch { return false; }
+  fs.rmSync(file, { force: true });
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    const name = spawnSync('ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8', timeout: 5000 }).stdout.trim();
+    if (!/caffeinate$/.test(name)) return false;
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function holdKeepAwake(stateHome, seconds) {
+  releaseKeepAwake(stateHome);
+  const { spawn } = require('child_process');
+  const child = spawn('caffeinate', ['-i', '-t', String(Math.max(60, Math.floor(seconds)))], { detached: true, stdio: 'ignore' });
+  child.unref();
+  fs.mkdirSync(stateHome, { recursive: true });
+  fs.writeFileSync(keepAwakeFile(stateHome), `${child.pid}\n`);
+  return { pid: child.pid, seconds: Math.floor(seconds) };
 }
 
 function uninstallCommand(args, root = process.cwd(), options = {}) {
@@ -745,6 +826,7 @@ function uninstallCommand(args, root = process.cwd(), options = {}) {
   const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
   const uid = options.uid != null ? options.uid : process.getuid();
   commandSpawn('launchctl', ['bootout', `gui/${uid}/${label}`], { encoding: 'utf8', timeout: 10000 });
+  const keepAwakeReleased = (options.releaseKeepAwake || releaseKeepAwake)(slot.stateHome || slot.activeStateHome);
   const plistHad = fs.existsSync(plistPath);
   fs.rmSync(plistPath, { force: true });
   const existing = commandSpawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
@@ -757,6 +839,7 @@ function uninstallCommand(args, root = process.cwd(), options = {}) {
     ok: apply.status === 0,
     action: 'pulse_uninstall',
     removed: plistHad || had,
+    keep_awake_released: keepAwakeReleased,
     label,
     plist_path: plistPath,
     removed_legacy_crontab: had,
@@ -818,5 +901,6 @@ module.exports = {
   pulseExpiryBreadcrumbPath,
   installCommand,
   runCommand,
+  uninstallCommand,
   refreshOrbPolicyLessons,
 };

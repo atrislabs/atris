@@ -10,7 +10,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execSync, execFileSync, spawnSync } = require('node:child_process');
 
 const {
   run,
@@ -43,14 +43,14 @@ function initRepo() {
   return cwd;
 }
 
-function commitFile(cwd, file, content, subject, { bot = false, atMs } = {}) {
+function commitFile(cwd, file, content, subject, { bot = false, atMs, committedAtMs = atMs } = {}) {
   fs.writeFileSync(path.join(cwd, file), content, 'utf8');
   fs.writeFileSync(path.join(cwd, '.git', 'COMMIT_MSG_FIXTURE'), bot ? `${subject}\n\n${BOT_TRAILER}\n` : `${subject}\n`, 'utf8');
   const date = new Date(atMs).toISOString();
   execSync('git add -A && git commit -q -F .git/COMMIT_MSG_FIXTURE', {
     cwd,
     stdio: 'pipe',
-    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: new Date(committedAtMs).toISOString() },
   });
 }
 
@@ -59,6 +59,68 @@ function cleanup(cwd) {
 }
 
 const HOUR = 60 * 60 * 1000;
+
+for (const control of ['human-in-window', 'human-outside-window', 'agent-in-window']) {
+  test(`real revision reports preserve ${control} across out-of-order descendant dates`, () => {
+    const cwd = initRepo();
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const landed = now - 100 * HOUR;
+    const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
+    try {
+      commitFile(cwd, 'product.js', 'const result = "base";\n', 'initial product', { atMs: landed - HOUR });
+      commitFile(cwd, 'product.js', 'const result = "agent";\n', 'agent landing', { bot: true, atMs: landed });
+      const landing = git('rev-parse', 'HEAD');
+      const correctionAt = landed + (control === 'human-outside-window' ? 74 : 1) * HOUR;
+      commitFile(cwd, 'product.js', 'const result = "corrected";\n', 'correction', {
+        bot: control === 'agent-in-window', atMs: correctionAt,
+      });
+      const correction = git('rev-parse', 'HEAD');
+      const expectedRevised = control === 'human-in-window' ? 1 : 0;
+      const expectedLandings = control === 'agent-in-window' ? 3 : 2;
+      let finalTree;
+      for (const skewed of [false, true]) {
+        git('checkout', '-qb', skewed ? 'skewed' : 'monotonic', correction);
+        commitFile(cwd, 'unrelated.js', 'const unrelated = 1;\n', 'unrelated descendant', {
+          atMs: correctionAt + HOUR,
+          committedAtMs: skewed ? now - 14 * 24 * HOUR - HOUR : correctionAt + HOUR,
+        });
+        commitFile(cwd, 'recent.js', 'const recent = 1;\n', 'recent unrelated landing', {
+          bot: true, atMs: now - HOUR,
+        });
+        assert.strictEqual(git('rev-parse', '--is-shallow-repository'), 'false');
+        git('merge-base', '--is-ancestor', landing, 'HEAD');
+        git('merge-base', '--is-ancestor', correction, 'HEAD');
+        const tree = git('rev-parse', 'HEAD^{tree}');
+        if (finalTree) assert.strictEqual(tree, finalTree, 'only commit metadata differs');
+        finalTree = tree;
+
+        const api = collectRevisionSignals(cwd, { days: 14, now });
+        const actual = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'),
+          'improve', 'revisions', '--days', '14', '--json'], {
+          cwd, encoding: 'utf8', timeout: 30000,
+          env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_UPDATE_NOTIFIER: '1' },
+        });
+        assert.strictEqual(actual.status, 0, actual.stderr);
+        const cli = JSON.parse(actual.stdout);
+        const metric = (summary) => ({ landings: summary.landings, revised: summary.revised,
+          rate: summary.rate, window_hours: summary.window_hours });
+        const expected = { landings: expectedLandings, revised: expectedRevised,
+          rate: expectedRevised / expectedLandings, window_hours: 72 };
+        assert.deepStrictEqual({ api: metric(api), cli: metric(cli) }, { api: expected, cli: expected },
+          skewed ? 'old unrelated date must not hide real ancestors' : 'monotonic control');
+        if (expectedRevised) {
+          for (const summary of [api, cli]) {
+            assert.strictEqual(summary.revisions[0].landing.hash, landing);
+            assert.deepStrictEqual(summary.revisions[0].revised_by.map((c) => c.hash), [correction]);
+            assert.deepStrictEqual(summary.revisions[0].files, ['product.js']);
+          }
+        }
+      }
+    } finally {
+      cleanup(cwd);
+    }
+  });
+}
 
 function buildFixture() {
   const cwd = initRepo();
@@ -172,6 +234,65 @@ test('merge commits are attributed by their first-parent diff', () => {
     assert.ok(summary.revised >= 1, 'the merged landing counts as revised');
     const files = summary.revisions.flatMap((r) => r.files);
     assert.ok(files.includes('m.js'));
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a commit merged in the same pull request as the landing is not a revision', () => {
+  // Live 2026-10-15: an agent commit and a trailer-less follow-up ten minutes
+  // later on the same branch reached master in one merge (#1130), and the
+  // gauge called the follow-up a human fix after landing. It arrived with the
+  // landing, so nothing had landed yet for a person to fix.
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: base - HOUR });
+    execSync('git checkout -q -b side', { cwd, stdio: 'pipe' });
+    commitFile(cwd, 'm.js', 'v1\n', 'bot builds m on a branch', { bot: true, atMs: base });
+    commitFile(cwd, 'm.js', 'v2\n', 'follow-up on the same branch', { atMs: base + HOUR / 6 });
+    execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+    const mergeDate = new Date(base + HOUR / 4).toISOString();
+    execSync('git merge -q --no-ff side -m "merge pull request"', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+    });
+    let summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 1);
+    assert.strictEqual(summary.revised, 0, JSON.stringify(summary.revisions));
+
+    // A change to the same file that reaches master afterward still counts.
+    commitFile(cwd, 'm.js', 'v3\n', 'human fixes m after it landed', { atMs: base + 2 * HOUR });
+    summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 1);
+    assert.deepStrictEqual(summary.revisions[0].revised_by.map((r) => r.subject), ['human fixes m after it landed']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a fix counts only against the landing whose lines it changed', () => {
+  // Live 2026-10-15: a person's follow-up to one agent change in
+  // lib/fleet.js read as a fix of four older landings that only shared the
+  // file. Only the landing whose lines it changed failed the guarantee.
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'f.js', 'a1\na2\n', 'bot lands the top of f', { bot: true, atMs: base });
+    commitFile(cwd, 'f.js', 'a1\na2\nb1\nb2\n', 'bot lands the bottom of f', { bot: true, atMs: base + HOUR });
+    commitFile(cwd, 'f.js', 'a1\na2\nb1\nB2\n', 'human fixes the bottom of f', { atMs: base + 2 * HOUR });
+    let summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 2);
+    assert.deepStrictEqual(summary.revisions.map((r) => r.landing.subject), ['bot lands the bottom of f']);
+
+    // A line added inside the top block touches the top landing's lines.
+    commitFile(cwd, 'f.js', 'a1\nfix\na2\nb1\nB2\n', 'human adds a missing line to the top', { atMs: base + 3 * HOUR });
+    summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.deepStrictEqual(summary.revisions.map((r) => r.landing.subject).sort(), ['bot lands the bottom of f', 'bot lands the top of f']);
+    assert.deepStrictEqual(summary.revisions.find((r) => r.landing.subject === 'bot lands the top of f').revised_by.map((r) => r.subject), ['human adds a missing line to the top']);
   } finally {
     cleanup(cwd);
   }
@@ -301,7 +422,9 @@ test('shared map and test-list files never count as revision overlap', () => {
 // Boot shows this gauge on every session start. One git process per commit
 // cost seconds on a busy repo, so the history is one git log, every plain
 // commit's files come back from one batched diff-tree, and a commit's files
-// are saved by hash so the next read asks git only for the history.
+// are saved by hash so the next read asks git only for the history. Only a
+// suspected fix (same file, inside the window) costs a diff and a blame, to
+// see whose lines it changed, and that answer is saved too.
 function countGitCalls(fn) {
   const gitSpawn = require('../lib/git-spawn');
   const original = gitSpawn.runGit;
@@ -331,18 +454,24 @@ function buildBusyRepo({ atris }) {
   return { cwd, now };
 }
 
+// The cold-read calls on the busy repo: history, files, then one line check
+// for each suspected fix.
+function coldCalls(suspects) {
+  return ['log', 'diff-tree', ...Array.from({ length: suspects }, () => ['diff', 'blame']).flat()];
+}
+
 function assertBusySummary(summary) {
   assert.strictEqual(summary.landings, 6);
   assert.strictEqual(summary.revised, 6);
   assert.deepStrictEqual(summary.revisions.map((r) => r.files), [['f5.js'], ['f4.js'], ['f3.js'], ['f2.js'], ['f1.js'], ['f0.js']]);
 }
 
-test('the gauge reads history in two git calls, not one per commit', () => {
+test('the gauge reads history in two git calls plus a line check per suspected fix', () => {
   const { cwd, now } = buildBusyRepo({ atris: false });
   try {
     const run = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
     assertBusySummary(run.value);
-    assert.deepStrictEqual(run.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(run.calls, coldCalls(6));
     assert.strictEqual(fs.existsSync(path.join(cwd, '.atris')), false, 'no cache file outside a workspace');
   } finally {
     cleanup(cwd);
@@ -353,7 +482,7 @@ test('a second read reuses saved commit files and only asks git for history', ()
   const { cwd, now } = buildBusyRepo({ atris: true });
   try {
     const first = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(first.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(first.calls, coldCalls(6));
     const second = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
     assert.deepStrictEqual(second.calls, ['log']);
     assert.deepStrictEqual(second.value, first.value);
@@ -403,12 +532,14 @@ test('saved commit files are dropped when the shallow boundary changes', () => {
     const second = execSync('git rev-list --reverse HEAD', { cwd, encoding: 'utf8' }).split('\n')[1];
     fs.writeFileSync(path.join(cwd, '.git', 'shallow'), `${second}\n`);
     const shallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(shallow.calls, ['log', 'diff-tree']);
+    // The boundary commit reads as having no parent, so its line check is
+    // skipped and it counts on same-file overlap alone.
+    assert.deepStrictEqual(shallow.calls, coldCalls(5));
 
     // Fetching the full history again changes the boundary back.
     fs.rmSync(path.join(cwd, '.git', 'shallow'));
     const unshallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(unshallow.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(unshallow.calls, coldCalls(6));
     assert.ok(oldest);
     assertBusySummary(unshallow.value);
   } finally {
@@ -465,6 +596,31 @@ test('a file named like a commit hash stays a file of its own commit', () => {
     assert.strictEqual(summary.revised, 1);
     assert.strictEqual(summary.revisions[0].landing.subject, 'bot lands z');
     assert.deepStrictEqual(summary.revisions[0].files, ['z.js']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('editing a member role or goals after a landing is coaching, not a fix', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris', 'team', 'builder'), { recursive: true });
+    commitFile(cwd, 'atris/team/builder/goals.json', '{"goals":[1]}\n', 'bot sets builder goals', { bot: true, atMs: base });
+    commitFile(cwd, 'atris/team/builder/goals.json', '{"goals":[2]}\n', 'keshav steers builder goals', { atMs: base + HOUR });
+    commitFile(cwd, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'a.js', 'v2\n', 'human fixes feature a', { atMs: base + 3 * HOUR });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 2);
+    assert.strictEqual(summary.fixed, 1);
+    assert.strictEqual(summary.coached, 1);
+    assert.deepStrictEqual(summary.revisions.map((r) => r.kind).sort(), ['coaching', 'fix']);
+    const text = formatRevisionsReport(summary);
+    assert.match(text, /real fixes: 1\. coaching \(roles, goals, context\): 1\./);
+    assert.match(text, /a human then coached the team in atris\/team\/builder\/goals\.json/);
+    const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee.sentence, 'two landings this fortnight, one needed a human fix, one got your coaching.');
   } finally {
     cleanup(cwd);
   }

@@ -41,6 +41,7 @@ test('harness-v1 solution engine satisfies all three checks', async () => {
   const stateRoot = makeTempDir();
   try {
     const result = await runBench({
+      pythonCmd: null,
       repoRoot: REPO_ROOT,
       pack: 'harness-v1',
       engine: 'solution',
@@ -59,6 +60,7 @@ test('harness-v1 null engine fails all three checks', async () => {
   const stateRoot = makeTempDir();
   try {
     const result = await runBench({
+      pythonCmd: null,
       repoRoot: REPO_ROOT,
       pack: 'harness-v1',
       engine: 'null',
@@ -102,6 +104,7 @@ test('agent checks receive the engine transcript from a recording engine', async
     };
 
     const result = await runBench({
+      pythonCmd: null,
       repoRoot: dir,
       tasksDir,
       engine: 'null',
@@ -142,6 +145,7 @@ test('agent task path starts with a working shim for this checkout', async () =>
     `);
 
     const result = await runBench({
+      pythonCmd: null,
       repoRoot: REPO_ROOT,
       tasksDir,
       engine: 'null',

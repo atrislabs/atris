@@ -62,52 +62,45 @@ function withTemplateEnv(value, fn) {
 
 // --- resolveClaudeRunnerModel: precedence explicit > env > pinned default ---
 
-test('resolveClaudeRunnerModel honors explicit model first', () => {
-  withEnv('sonnet', () => {
-    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
-    assert.equal(resolveClaudeRunnerModel({ model: 'opus 5.5' }), 'claude-opus-5-5');
-  });
+function testResolution(name, env, check) {
+  test(name, () => withRunnerEnv(env, check));
+}
+
+testResolution('resolveClaudeRunnerModel honors explicit model first', { ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
+  assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({ model: 'opus 5.5' }), 'claude-opus-5-5');
 });
 
-test('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', () => {
-  withEnv('sonnet', () => {
-    assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
-    assert.equal(resolveClaudeRunnerModel(null), 'sonnet');
-  });
+testResolution('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', { ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
+  assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
+  assert.equal(resolveClaudeRunnerModel({ model: null }), 'sonnet');
+  assert.equal(resolveClaudeRunnerModel(null), 'sonnet');
 });
 
-test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () => {
-  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
-    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
-  });
+testResolution('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', { ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+  assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
 });
 
-test('resolveClaudeRunnerModel defaults to pinned Opus 5.5', () => {
-  withEnv(undefined, () => {
-    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
-    assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
-  });
+testResolution('resolveClaudeRunnerModel defaults to pinned Opus 5.5', {}, () => {
+  assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({ model: null }), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'claude-opus-5-5');
+  assert.equal(resolveClaudeRunnerModel({}), DEFAULT_CLAUDE_RUNNER_MODEL);
 });
 
 // --- resolveClaudeRunnerBin: runner swap is config-only ---
 
-test('resolveClaudeRunnerBin defaults to claude', () => {
-  withBinEnv(undefined, () => {
-    assert.equal(resolveClaudeRunnerBin(), 'claude');
-    assert.equal(resolveClaudeRunnerBin(), DEFAULT_CLAUDE_RUNNER_BIN);
-  });
+testResolution('resolveClaudeRunnerBin defaults to claude', {}, () => {
+  assert.equal(resolveClaudeRunnerBin(), 'claude');
+  assert.equal(resolveClaudeRunnerBin(), DEFAULT_CLAUDE_RUNNER_BIN);
 });
 
-test('resolveClaudeRunnerBin honors ATRIS_CLAUDE_BIN', () => {
-  withBinEnv('/opt/atris/bin/claude-nightly', () => {
-    assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
-  });
+testResolution('resolveClaudeRunnerBin honors ATRIS_CLAUDE_BIN', { ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly' }, () => {
+  assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
 });
 
-test('resolveClaudeRunnerBin prefers ATRIS_RUNNER_BIN over legacy env', () => {
-  withRunnerEnv({ ATRIS_RUNNER_BIN: '/opt/glm/runner', ATRIS_CLAUDE_BIN: '/opt/claude' }, () => {
-    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
-  });
+testResolution('resolveClaudeRunnerBin prefers ATRIS_RUNNER_BIN over legacy env', { ATRIS_RUNNER_BIN: '/opt/glm/runner', ATRIS_CLAUDE_BIN: '/opt/claude' }, () => {
+  assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
 });
 
 test('resolveClaudeRunnerCommandTemplate honors ATRIS_CLAUDE_COMMAND_TEMPLATE', () => {

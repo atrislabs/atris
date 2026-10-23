@@ -1,5 +1,5 @@
 const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, preserveAgentClientLogin, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
-const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
+const { getAppBaseUrl, getApiBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
 const agentClient = require('../utils/agent-client');
@@ -17,6 +17,7 @@ const COMMERCE_SCOPES = [COMMERCE_QUOTE_SCOPE, 'transactions:read'];
 const COMMERCE_MAX_USD_LIMIT = 500;
 const COMMERCE_NEVER_PAYS = 'this key can ask for prices and start your approval, it can never pay.';
 const NO_STORED_JWT_MESSAGE = 'not signed in. run atris login first.';
+let envBilledAuthCache = null;
 
 function firstNonEmptyString(...values) {
   for (const value of values) {
@@ -171,6 +172,7 @@ function persistMintedAgentToken(credentials, token, extras = {}) {
     refresh_token: extras.refresh_token || credentials.refresh_token || null,
     ...slot,
   };
+  if (credentials.source === 'env') return next;
   if (credentials.source_profile) {
     saveProfile(credentials.source_profile, next);
     return next;
@@ -270,7 +272,9 @@ async function mintScopedAgentToken(requested = {}, deps = {}) {
     ok: true,
     token: minted,
     meta,
-    storedIn: `${credentials.source_profile ? `profile ${credentials.source_profile}` : '~/.atris/credentials.json'}, ${isCommerceKey(meta.scopes) ? 'commerce_agent_token' : 'agent_token'}`,
+    storedIn: credentials.source === 'env'
+      ? 'process memory'
+      : `${credentials.source_profile ? `profile ${credentials.source_profile}` : '~/.atris/credentials.json'}, ${isCommerceKey(meta.scopes) ? 'commerce_agent_token' : 'agent_token'}`,
   };
 }
 
@@ -306,9 +310,32 @@ async function ensureBilledCommandAuth(scope, deps = {}) {
     return { ok: false, error: NO_STORED_JWT_MESSAGE };
   }
 
+  let cache;
+  if (credentials.source === 'env') {
+    const baseUrl = getApiBaseUrl();
+    if (!envBilledAuthCache || envBilledAuthCache.login !== credentials.token || envBilledAuthCache.api !== api || envBilledAuthCache.baseUrl !== baseUrl) {
+      envBilledAuthCache = { login: credentials.token, api, baseUrl, tokens: new Map() };
+    }
+    cache = envBilledAuthCache.tokens;
+    const cached = cache.get(wanted);
+    if (!deps.forceMint && cached && cached.expiry > Date.now()) {
+      return { ok: true, token: cached.token, minted: false, credentials, meta: cached.meta };
+    }
+    // A rejected or expired token must stay evicted even if its replacement fails.
+    cache.delete(wanted);
+  }
+
   const minted = await mint({ scopes: [wanted] }, deps);
   if (!minted.ok) {
     return { ok: false, error: minted.error || NO_STORED_JWT_MESSAGE };
+  }
+  if (cache) {
+    const claims = decodeJwtClaims(minted.token);
+    const expiry = claims?.exp ? claims.exp * 1000 : Date.parse(minted.meta?.expiresAt);
+    const scopes = claims?.scopes || minted.meta?.scopes || [];
+    if (Array.isArray(scopes) && scopes.includes(wanted) && Number.isFinite(expiry) && expiry > Date.now()) {
+      cache.set(wanted, { token: minted.token, meta: minted.meta, expiry });
+    }
   }
   return {
     ok: true,

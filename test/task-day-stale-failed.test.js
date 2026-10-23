@@ -16,13 +16,8 @@ const { taskDayGroups, taskDayTextGroups, taskDayTitle } = require('../commands/
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-day-stale-test-'));
@@ -163,7 +158,7 @@ test('taskDayTitle ends long rows at a sentence or honest ellipsis', () => {
   const clipped = taskDayTitle('one '.repeat(40));
   assert.ok(clipped.endsWith('...'));
   assert.ok(clipped.length <= 123);
-  assert.equal(taskDayTitle('A live result — with one move'), 'A live result - with one move');
+  assert.equal(taskDayTitle('A live result \u2014 with one move'), 'A live result - with one move');
 });
 
 test('task day text caps eight rows while full and json keep all tasks', () => {

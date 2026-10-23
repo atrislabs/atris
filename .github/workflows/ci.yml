@@ -1,9 +1,8 @@
 name: CI
 
+# No run on push to master: the merge queue already tested the exact merged
+# commit, and a third run only held machines other changes were waiting on.
 on:
-  push:
-    branches:
-      - master
   pull_request:
   merge_group:
 
@@ -17,13 +16,13 @@ concurrency:
 
 jobs:
   unit:
-    name: unit (${{ matrix.shard }}/4)
+    name: unit (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v6
 
@@ -35,10 +34,11 @@ jobs:
       - run: npm ci
 
       - name: Unit tests
-        # Spreads commands.test.js across all four shards (test/helpers/test-part.js).
+        # Assigns expensive files first using measured GitHub run times.
+        # commands.test.js remains split by test/helpers/test-part.js.
         env:
           ATRIS_TEST_SPLIT: '1'
-        run: node --test --test-shard=${{ matrix.shard }}/4
+        run: node scripts/ci-test-shard.js ${{ matrix.shard }}/8
 
   decks:
     runs-on: ubuntu-latest

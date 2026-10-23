@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
@@ -63,6 +64,7 @@ const {
   renderMorningCardRow,
 } = require('../lib/receipt-block');
 const { findCachedMissionStepReceipt } = require('../lib/receipt-evidence');
+const { captureCodeBaseline, collectCodeProvenance } = require('../lib/mission-code-provenance');
 const {
   pruneRuns,
   runsPruneLines,
@@ -115,6 +117,8 @@ const {
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
+// Campaign hooks load on first use, so missions without a campaign never open its store.
+const campaignMissions = () => require('../lib/campaign-missions');
 const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 const CODEX_NATIVE_GOAL_SLOT_STATUSES = new Set(['active', 'paused', 'usage_limited']);
@@ -425,11 +429,30 @@ async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
-function missionTickTimeoutMs(mission, remainingMs) {
-  const cap = Number(mission && mission.roster_max_seconds) > 0
+function missionTickCapMs(mission) {
+  return Number(mission && mission.roster_max_seconds) > 0
     ? Number(mission.roster_max_seconds) * 1000
     : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-  return clampTimeoutMs(remainingMs, cap);
+}
+
+function missionTickTimeoutMs(mission, remainingMs) {
+  return clampTimeoutMs(remainingMs, missionTickCapMs(mission));
+}
+
+// True when the time left on the mission, not the tick's own cap, set the
+// tick's limit, so a kill there means the mission clock ran out.
+function missionTickWallBound(mission, remainingMs) {
+  return remainingMs <= missionTickCapMs(mission);
+}
+
+// The reason a member log shows for a tick. A failed engine tick names its
+// engine beside the reason, so a codex run that timed out stops counting as
+// a claude timeout in the repeat-problem scan. The reason itself is left as
+// is because engine health and backoff match on it.
+function memberLogTickReason(result) {
+  const reason = result && result.reason;
+  if (!reason || !result.engine_id || result.status !== 'errored') return reason;
+  return `${reason} (engine: ${result.engine_id})`;
 }
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
@@ -742,6 +765,8 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--engine',
   '--referee-engine',
   '--budget',
+  '--campaign',
+  '--reserve',
   '--repo',
   '--native-goal-status',
   '--native-goal-objective',
@@ -1478,14 +1503,24 @@ function nearestMissionCandidates(missions, ref, limit = 5) {
     .map((entry) => entry.mission);
 }
 
-function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
+// Sibling folders looked at for a hint. A missing-id error waited 26 seconds
+// on a temp folder holding 276,000 entries, so the scan is capped and never
+// walks the system temp folder.
+const SIBLING_HINT_SCAN_LIMIT = 2000;
+
+function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5, { scanLimit = SIBLING_HINT_SCAN_LIMIT, tmpRoot = os.tmpdir() } = {}) {
   if (!ref) return [];
   const baseRoot = path.resolve(root);
   const parent = path.dirname(baseRoot);
-  let here = baseRoot;
-  try {
-    here = fs.realpathSync(baseRoot);
-  } catch { /* keep raw path */ }
+  const real = (target) => {
+    try {
+      return fs.realpathSync(target);
+    } catch {
+      return target;
+    }
+  };
+  const here = real(baseRoot);
+  if (real(parent) === real(tmpRoot)) return [];
   let entries = [];
   try {
     entries = fs.readdirSync(parent, { withFileTypes: true });
@@ -1493,17 +1528,11 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
     return [];
   }
   const hints = [];
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, scanLimit)) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const candidateRoot = path.join(parent, entry.name);
-    let candidateReal = candidateRoot;
-    try {
-      candidateReal = fs.realpathSync(candidateRoot);
-    } catch {
-      continue;
-    }
-    if (candidateReal === here) continue;
     if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
+    if (real(candidateRoot) === here) continue;
     const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
     if (!mission) continue;
     hints.push({
@@ -1696,6 +1725,7 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
   // this file several times, so unbounded snapshot history taxes everything.
   try { compactMissionLedger(paths.missionsJsonl); } catch {}
   const event = appendEvent(eventType, next, payload, root);
+  if (next.campaign_id) campaignMissions().recordCampaignMissionEnded(root, existing, next, TERMINAL_STATUSES);
   renderMissionStatus(root);
   renderMemberMissionState(next.owner, root);
   return { mission: next, event };
@@ -1744,6 +1774,14 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
   return logPath;
 }
 
+// Shorten at a word boundary so a lesson never ends mid-word.
+function clipWords(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : text.slice(0, max)).replace(/[\s,;:.-]+$/, '')}...`;
+}
+
 function crystallizeMemberSkillLesson(owner, entry = {}, root = process.cwd()) {
   const dir = memberDir(owner, root);
   if (!dir) return null;
@@ -1752,38 +1790,47 @@ function crystallizeMemberSkillLesson(owner, entry = {}, root = process.cwd()) {
   const skillDir = path.join(dir, 'skills', 'auto-learned');
   fs.mkdirSync(skillDir, { recursive: true });
   const skillPath = path.join(skillDir, 'SKILL.md');
-  const existingBullets = [];
+  let lines = null;
   if (fs.existsSync(skillPath)) {
     try {
-      const raw = fs.readFileSync(skillPath, 'utf8');
-      for (const line of raw.split(/\r?\n/)) {
-        if (line.trim().startsWith('- **')) existingBullets.push(line.trim());
-      }
+      lines = fs.readFileSync(skillPath, 'utf8').split(/\r?\n/);
     } catch {}
   }
+  const bulletAt = (lines || []).map((line, i) => (line.trim().startsWith('- **') ? i : -1)).filter((i) => i >= 0);
+  const existingBullets = bulletAt.map((i) => lines[i].trim());
   const verifierText = String(entry.verifier || '').replace(/\s+/g, ' ').trim();
   const nextPushText = String(entry.next_push || '').replace(/\s+/g, ' ').trim();
   const layerLabel = String(entry.layer || 'capabilities').trim();
-  const parts = [`- **${todayName()} (${layerLabel})**: ${summary.slice(0, 140)}`];
-  if (verifierText) parts.push(`Verify: \`${verifierText.slice(0, 80)}\``);
-  if (nextPushText) parts.push(`Next push: ${nextPushText.slice(0, 120)}`);
+  const parts = [`- **${todayName()} (${layerLabel})**: ${clipWords(summary, 240)}`];
+  // A cut-off command cannot be run, so a long one is left out, never clipped.
+  if (verifierText && verifierText.length <= 300) parts.push(`Verify: \`${verifierText}\``);
+  if (nextPushText) parts.push(`Next push: ${clipWords(nextPushText, 200)}`);
   const newBullet = parts.join(' -> ');
   const deduped = [
     newBullet,
     ...existingBullets.filter((b) => !b.includes(summary.slice(0, 80))),
   ].slice(0, 5);
 
-  const content = [
-    '---',
-    'name: auto-learned',
-    `description: Verified patterns crystallized from passing runs for ${owner}. Bounded to 5 newest patterns so context never bloats.`,
-    '---',
-    '',
-    '# Auto-Learned Verified Patterns',
-    '',
-    ...deduped,
-    '',
-  ].join('\n');
+  let content;
+  if (bulletAt.length) {
+    // Keep whatever a person or reviewer wrote around the lessons; only the
+    // lesson list itself is rewritten.
+    const first = bulletAt[0];
+    const last = bulletAt[bulletAt.length - 1];
+    content = [...lines.slice(0, first), ...deduped, ...lines.slice(last + 1)].join('\n');
+  } else {
+    content = [
+      '---',
+      'name: auto-learned',
+      `description: Verified patterns crystallized from passing runs for ${owner}. Bounded to 5 newest patterns so context never bloats.`,
+      '---',
+      '',
+      '# Auto-Learned Verified Patterns',
+      '',
+      ...deduped,
+      '',
+    ].join('\n');
+  }
   fs.writeFileSync(skillPath, content, 'utf8');
   return skillPath;
 }
@@ -3169,6 +3216,10 @@ function missionFromArgs(args) {
     '--base',
     '--task',
     '--ask',
+    '--yes-lock',
+    '--campaign',
+    '--reserve',
+    '--mission-id',
     '--model',
     '--destination',
     '--native-goal-status',
@@ -3185,6 +3236,7 @@ function missionFromArgs(args) {
   const budgetContract = inferRunObjectiveBudgetContract(objective, args);
   const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const campaignId = readFlag(args, '--campaign', '');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const engineFlag = readFlag(args, '--engine', '');
   const runnerSelection = engineFlag
@@ -3208,11 +3260,18 @@ function missionFromArgs(args) {
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
+  const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
-  const id = missionId(objective);
+  // A campaign proposes a mission under an id before it runs; --mission-id
+  // keeps that id so the campaign and the mission name the same thing.
+  const givenId = readFlag(args, '--mission-id', '');
+  if (givenId && !/^[a-z0-9][a-z0-9-]{2,120}$/.test(givenId)) {
+    exitMissionError('--mission-id takes lowercase letters, digits, and dashes', 2, wantsJson(args));
+  }
+  const id = givenId || missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
     id,
@@ -3238,6 +3297,9 @@ function missionFromArgs(args) {
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
+    // the sealed owner steps: the guard holds what each locks until the owner says yes
+    ...(yesLocks.length ? { yes_locks: { steps: yesLocks, sealed_at: stampIso() } } : {}),
+    ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
     receipt_path: null,
@@ -3253,6 +3315,22 @@ function missionFromArgs(args) {
   }
   if (alwaysOn) mission.next_action = nextCandidateTickAction(mission);
   return mission;
+}
+
+// --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
+// steps a job may not do before the owner says yes. Bad input stops the start.
+const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
+function readYesLockSeal(raw, asJson) {
+  if (!raw) return [];
+  let list;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    exitMissionError('--yes-lock takes a JSON list of {step, text, categories}', 2, asJson);
+  }
+  const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
+  if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy', 2, asJson);
+  return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
 function applyMissionStartPatch(mission, patch) {
@@ -4351,6 +4429,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     ...mission,
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
+    ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
@@ -4361,13 +4440,15 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
   nextMission.next_action = `decide next mission, then run: ${nextPlan.command}`;
   nextMission.next_action_preview = nextPlan.preview;
 
+  const codeBaseline = captureCodeBaseline(root);
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(nextMission, root), root, 'mission_continuation_started', {
     parent_mission_id: parent.id,
     parent_objective: parent.objective,
     proof: proof || null,
   });
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, root);
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(root, saved, 0);
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, root, codeBaseline);
   const seededAt = stampIso();
   const { mission: updatedParent } = saveMission({
     ...parent,
@@ -4452,7 +4533,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (args.length === 1 && (firstArg === '--help' || firstArg === '-h' || firstArg === 'help')) {
-    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto] [--campaign <id> [--reserve <dollars>]]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -4539,6 +4620,18 @@ function startMission(args, options = {}) {
       asJson,
     );
   }
+  // --campaign: the campaign must be open and able to hold this mission's
+  // reserve. Checked before any state exists, so a refusal leaves nothing behind.
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, asJson);
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, asJson);
+    }
+  }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
   // member files all land inside the worktree, ticks run there, and the main
@@ -4602,6 +4695,7 @@ function startMission(args, options = {}) {
     if (nodeModulesSource) mission.node_modules_source = nodeModulesSource;
     process.chdir(created.path);
   }
+  const codeBaseline = captureCodeBaseline(process.cwd());
   if (mission.xp_task_enabled) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
@@ -4630,6 +4724,7 @@ function startMission(args, options = {}) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
     ? takeCodexGoalSlotForMission(saved, process.cwd())
     : null;
@@ -4641,7 +4736,7 @@ function startMission(args, options = {}) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
   const payload = {
     ok: true,
@@ -4683,6 +4778,7 @@ function startMission(args, options = {}) {
 
 async function startMissionFromRunObjective(objective, args) {
   const asJson = wantsJson(args);
+  const codeBaseline = captureCodeBaseline(process.cwd());
   const rawObjective = String(objective || '').trim();
   const landRun = hasFlag(args, '--land');
   const dryRun = hasFlag(args, '--dry-run');
@@ -4750,6 +4846,8 @@ async function startMissionFromRunObjective(objective, args) {
   ];
   if (verifier) startArgs.push('--verify', verifier);
   if (budgetTier) startArgs.push('--budget', budgetTier.name);
+  const campaignFlag = readFlag(args, '--campaign', '');
+  if (campaignFlag) startArgs.push('--campaign', campaignFlag);
   if (maxTicksOverride) startArgs.push('--max-ticks', String(maxTicksOverride));
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
@@ -4757,6 +4855,16 @@ async function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, wantsJson(args));
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, wantsJson(args));
+    }
+  }
   if (landOwnerResolution) {
     mission.owner = runOwner;
     mission.owner_resolution = landOwnerResolution.reason || mission.owner_resolution;
@@ -4840,6 +4948,7 @@ async function startMissionFromRunObjective(objective, args) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   if (landRun) {
     const memberState = renderMemberMissionState(saved.owner);
     const logPath = appendMemberLog(saved.owner, 'Mission landing flight dispatched', {
@@ -4871,7 +4980,7 @@ async function startMissionFromRunObjective(objective, args) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
   const nativeGoalOptions = codexNativeGoalOptionsFromArgs(args);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
@@ -6561,6 +6670,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
     tree_hash: treeHashFor(root),
     clean: codeState.clean,
     git_tree: codeState.clean ? codeState.tree : null,
+    code_provenance: collectCodeProvenance(root, loadMissionWorktreeBaseline(mission.id, root)?.code),
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
@@ -6597,7 +6707,7 @@ function runVerifier(command, root = process.cwd()) {
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
-  const startedAt = Date.now();
+  const startedAt = process.hrtime.bigint();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
@@ -6605,11 +6715,15 @@ function runVerifier(command, root = process.cwd()) {
     timeout: timeoutMs,
     env: envWithNodeDir(process.env),
   });
-  const elapsedMs = Date.now() - startedAt;
   // A verifier that blows its window is not a failing check: the code may be
   // fine and the suite merely slow (or starved by a concurrent flight). Report
   // it as a distinct timed-out state so operators do not read slow as broken.
   const timedOut = result.error ? result.error.code === 'ETIMEDOUT' : false;
+  // Steady clock, not wall time: the wall clock can slew, and a kill at the
+  // window once read as 927ms of a 1000ms window. A timed-out run used the
+  // whole window by definition.
+  const measuredMs = Number((process.hrtime.bigint() - startedAt) / 1000000n);
+  const elapsedMs = timedOut ? Math.max(measuredMs, timeoutMs) : measuredMs;
   return {
     command,
     resolved_command: resolvedCommand === command ? null : resolvedCommand,
@@ -6629,17 +6743,29 @@ const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
 function extractCheckFeedback(verifierResult) {
   if (!verifierResult || verifierResult.passed !== false) return '';
-  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+  // A reviewer turn-down goes first: when the tests passed, it is the only
+  // real reason the try failed, and passing test names must not crowd it out.
+  const referee = verifierResult.referee && verifierResult.referee.passed === false
+    ? verifierResult.referee
+    : null;
+  const refereeLines = referee
+    ? [referee.reason, referee.output].filter((value) => String(value || '').trim())
+    : [];
+  const lines = [...new Set([...refereeLines, verifierResult.output, verifierResult.stdout, verifierResult.stderr]
     .filter((value) => String(value || '').trim())
     .flatMap((value) => String(value).split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   if (!lines.length) return '';
 
+  const refereeSet = new Set(refereeLines.flatMap((value) => String(value).split(/\r?\n/)).map((line) => line.trim()).filter(Boolean));
+  const passingLine = /^(?:✔|ℹ )/;
   const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
-  const useful = lines.filter((line) => usefulPattern.test(line));
-  const context = lines.filter((line) => !usefulPattern.test(line));
-  const feedback = [...useful, ...context].join('\n');
+  const rest = lines.filter((line) => !refereeSet.has(line));
+  const useful = rest.filter((line) => !passingLine.test(line) && usefulPattern.test(line));
+  const context = rest.filter((line) => !passingLine.test(line) && !usefulPattern.test(line));
+  const passing = rest.filter((line) => passingLine.test(line));
+  const feedback = [...lines.filter((line) => refereeSet.has(line)), ...useful, ...context, ...passing].join('\n');
   if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
 
   const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
@@ -6780,7 +6906,7 @@ function missionBaselinePath(missionId, root = process.cwd()) {
 // Stored outside missions.jsonl because that log re-appends the full mission
 // record on every save. Captured after start bookkeeping so the mission's own
 // state writes land inside the baseline, not in new_since_baseline.
-function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
+function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = captureCodeBaseline(root)) {
   const snapshot = gitWorktreeSnapshot(root);
   if (!snapshot.available) return null;
   const baselineFile = missionBaselinePath(mission.id, root);
@@ -6796,6 +6922,7 @@ function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
     dirty_count: snapshot.dirty_count,
     dirty_hash: snapshot.dirty_hash,
     paths: Array.from(paths).sort(),
+    code,
   };
   writeJson(baselineFile, baseline);
   return baseline;
@@ -6878,7 +7005,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
@@ -6902,18 +7032,34 @@ const CLAUDE_SESSION_CONTEXT_ROTATE_TICKS = Math.max(
 // before the tick fires. Same tag-plus-text routing the task lane uses
 // (CLI-1189). An operator override is explicit: protected_lane_ack in the
 // mission metadata, set by a human, or ATRIS_ALLOW_PROTECTED_MISSION=1.
-function missionProtectedLaneHold(mission) {
+function missionProtectedLaneHold(mission, root = process.cwd()) {
   if (process.env.ATRIS_ALLOW_PROTECTED_MISSION === '1') return null;
   if (mission?.metadata?.protected_lane_ack) return null;
   const { DENIED_TAGS } = require('../lib/fleet');
   const { declaredProtectedLane, sniffedProtectedLane } = require('../lib/auto-accept-certified');
   const lane = String(mission?.lane || '').toLowerCase();
-  if (DENIED_TAGS.includes(lane)) return { pause_reason: `protected-lane-${lane}` };
   const probe = { title: mission?.objective, objective: mission?.stop_condition, metadata: mission?.metadata || {} };
-  if (declaredProtectedLane(probe)) return { pause_reason: 'protected-lane-declared' };
-  const sniffed = sniffedProtectedLane(probe);
-  if (sniffed) return { pause_reason: `protected-lane-${sniffed.lane}` };
-  return null;
+  let hold = null;
+  if (DENIED_TAGS.includes(lane)) hold = { pause_reason: `protected-lane-${lane}`, lane };
+  else if (declaredProtectedLane(probe)) hold = { pause_reason: 'protected-lane-declared', lane: 'declared' };
+  else {
+    const sniffed = sniffedProtectedLane(probe);
+    if (sniffed) hold = { pause_reason: `protected-lane-${sniffed.lane}`, lane: sniffed.lane };
+  }
+  // Inside a campaign, a person may have allowed this lane by answering the
+  // campaign's ask. Only a person's answer closes an ask, so it counts as the ack.
+  if (hold && mission?.campaign_id && campaignApprovedLane(root, mission.campaign_id, hold.lane)) return null;
+  return hold ? { pause_reason: hold.pause_reason } : null;
+}
+
+function campaignApprovedLane(root, campaignId, lane) {
+  try {
+    const { openCampaignStore } = require('../lib/campaign-store');
+    const { approvedLanes } = require('../lib/campaign-lanes');
+    return approvedLanes(openCampaignStore(root).read(campaignId)).has(lane);
+  } catch {
+    return false;
+  }
 }
 
 function runnerUsesCallerSession(runner) {
@@ -9331,7 +9477,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9516,7 +9662,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -10232,6 +10378,9 @@ async function executeMissionRunTicksPhase(context) {
     let cycleTickLimit = effectiveMaxTicks;
     while (true) {
       while (ticks.length < cycleTickLimit) {
+        // A campaign that is done, paused, or out of money stops its missions.
+        const campaignStop = mission.campaign_id ? campaignMissions().campaignGate(cwd, mission) : null;
+        if (campaignStop) { pauseReason = campaignStop; break; }
         // Re-read before measuring the wall. Detached full-budget drivers use
         // the mission contract as their wall so process startup drift cannot
         // shorten the promised work window.
@@ -10252,7 +10401,7 @@ async function executeMissionRunTicksPhase(context) {
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
       if (effectiveMissionVerifier(mission) !== storedVerifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
-      const protectedHold = missionProtectedLaneHold(mission);
+      const protectedHold = missionProtectedLaneHold(mission, cwd);
       if (protectedHold) { pauseReason = protectedHold.pause_reason; break; }
 
       const tickIdx = Number(mission.last_tick_index || 0) + 1;
@@ -10341,7 +10490,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd) });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,
@@ -10515,7 +10664,7 @@ async function executeMissionRunTicksPhase(context) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          const wallBoundTimeout = missionTickWallBound(tickRuntimeMission, remainingWall * 1000);
           let reason = claudeResult.reason === 'too-deep'
             ? 'too-deep'
             : claudeResult.timedOut
@@ -10605,6 +10754,7 @@ async function executeMissionRunTicksPhase(context) {
           prep: tickWorkerRun.prep || null,
         });
       }
+      if (mission.campaign_id && !cachedStep) campaignMissions().recordCampaignTick(cwd, mission, { ...((tickWorkerRun && tickWorkerRun.usage) || {}), ...(tickEngineId ? { engine: tickEngineId } : {}) });
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
@@ -10752,7 +10902,7 @@ async function executeMissionRunTicksPhase(context) {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
-        reason: result.reason,
+        reason: memberLogTickReason(result),
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
@@ -11168,10 +11318,21 @@ async function runMission(args) {
     context.error = error;
     throw error;
   } finally {
-    if (context.lock) completeMissionRunPhase(context);
+    if (context.lock) {
+      completeMissionRunPhase(context);
+      sweepMergedMemberWork(context);
+    }
   }
 
   return context.returnValue;
+}
+
+// Merged member work closes its jobs even when the team loop is down.
+function sweepMergedMemberWork(context) {
+  try {
+    const out = require('../lib/member-autoland').sweepAfterMissionRun({ cwd: context.cwd || process.cwd() });
+    if (out && out.closed > 0 && !context.asJson) console.log(out.line);
+  } catch {}
 }
 
 function tickMission(args) {
@@ -12611,6 +12772,8 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  crystallizeMemberSkillLesson,
+  listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
   missionCommand,
   startMission,
@@ -12674,6 +12837,8 @@ module.exports = {
   resolveMissionTickRunner,
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
+  missionTickWallBound,
+  memberLogTickReason,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,

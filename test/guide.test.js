@@ -27,7 +27,7 @@ function runCli(args, { cwd = scratch } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...process.env, HOME: cwd, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
   if (result.error) throw result.error;
   return result;
@@ -112,6 +112,9 @@ test('matchIntent finds everyday requests by token overlap', () => {
     ['change the builder', 'change_roster'],
     ['switch the reviewer', 'change_roster'],
     ['make codex review', 'change_roster'],
+    ['run a campaign', 'run_a_campaign'],
+    ['this is a long goal', 'run_a_campaign'],
+    ['set the goal', 'set_goal'],
   ];
   cases.forEach(([phrase, expected]) => {
     assert.equal(matchIntent(phrase).intent?.id, expected, phrase);

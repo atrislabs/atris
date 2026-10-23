@@ -52,8 +52,9 @@ test('template placeholder members are filtered out', () => {
   assert.ok(!rendered.includes('<name>'));
 });
 
-test('heading-only now.md renders dash in now field', () => {
+test('heading-only now.md renders dash in now field', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-now-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   const memberDir = path.join(tmpDir, 'testmember');
   fs.mkdirSync(memberDir);
   fs.writeFileSync(path.join(memberDir, 'now.md'), '# Now\n\n## Another heading\n');
@@ -127,8 +128,9 @@ test('quiet and idle members each get a row, longest-quiet last, with days since
   assert.match(rendered, /^delta +- +- +quiet +- +-$/m);
 });
 
-test('awake member is active with dash engine and live focus suffix', () => {
+test('awake member is active with dash engine and live focus suffix', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-awake-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   const memberDir = path.join(tmpDir, 'scout');
   fs.mkdirSync(memberDir, { recursive: true });
   fs.writeFileSync(path.join(memberDir, 'now.md'), 'watch the perimeter');
@@ -205,8 +207,9 @@ test('unknown subcommands still fail with usage', () => {
   assert.match(err, /usage: atris team/);
 });
 
-test('team --html writes board file with active section and member name', () => {
+test('team --html writes board file with active section and member name', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-html-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   let out = '';
   const code = teamCommand(['--html'], rosterDeps({
     cwd: tmpDir,
@@ -221,8 +224,9 @@ test('team --html writes board file with active section and member name', () => 
   assert.match(html, /linguist/);
 });
 
-test('long now.md focus is not truncated in roster data', () => {
+test('long now.md focus is not truncated in roster data', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-long-now-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   const memberDir = path.join(tmpDir, 'longfocus');
   fs.mkdirSync(memberDir, { recursive: true });
   const longFocus = 'a'.repeat(80);
@@ -405,7 +409,12 @@ test('teamCommand reads live runs through deps.runPs, never the real machine, wh
   let out = '';
   const deps = rosterDeps({ root, members: lineupMembers(), termWidth: 160, write: (s) => { out += s; } });
   delete deps.liveRuns;
-  teamCommand([], { ...deps, runPs: () => ({ status: 0, stdout }) });
+  teamCommand([], {
+    ...deps,
+    projectFolders: [root],
+    runFolders: () => new Map([[101, root]]),
+    runPs: () => ({ status: 0, stdout }),
+  });
   assert.match(out, /^navigator +search +codex · gpt-6\.1-sol +working now +Find the auth router +1m$/m);
 }));
 

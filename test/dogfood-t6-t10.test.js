@@ -5,13 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { scrubAgentEnv } = require('./helpers/agent-env');
+const { runCli } = require('./helpers/dogfood-cli');
 const { formatCalendarEvents } = require('../commands/integrations');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const TIMEOUT_MS = 20000;
 
 function makeTempDir(prefix = 'atris-dogfood-t6-t10-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -19,24 +15,6 @@ function makeTempDir(prefix = 'atris-dogfood-t6-t10-') {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd, env, timeout = TIMEOUT_MS } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ...(env || {}),
-    },
-  });
-  if (result.error && result.error.code === 'ETIMEDOUT') {
-    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ')})`);
-  }
-  if (result.error) throw result.error;
-  return result;
 }
 
 test('T6: code-review missing engine says not installed and exits 2', () => {

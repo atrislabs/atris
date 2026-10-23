@@ -1,8 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const { spawnSync } = require('node:child_process');
 const { DEFAULT_TASK_RESULT_SENTENCE, withTaskReadyResult } = require('./helpers/task-result');
 
@@ -17,13 +16,8 @@ const AGENT_MARKERS = [
   'DEVIN_SESSION_ID',
 ];
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-agent-proof-test-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-agent-proof-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function baseEnv() {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
@@ -38,7 +32,7 @@ function runCli(args, { cwd, input, env } = {}) {
     input,
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...baseEnv(), ...(env || {}) },
+    env: { ...baseEnv(), HOME: cwd, ...(env || {}) },
   });
   if (result.error) throw result.error;
   return result;

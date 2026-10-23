@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { findPython } = require('./helpers/find-python');
 const {
   parseDigestArgs,
   collectVideoBriefs,
@@ -18,14 +19,6 @@ const { ephemeralApplyMessage } = require('../lib/apply-gate');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
-
-function findPython() {
-  for (const candidate of ['python3', 'python']) {
-    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
-    if (!result.error && result.status === 0) return candidate;
-  }
-  return null;
-}
 
 const pythonCmd = findPython();
 
@@ -47,8 +40,10 @@ const STUB_DIGEST = [
   '3. Keep cloud process behind an explicit store request.',
 ].join('\n');
 
-function tempCwd() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-digest-'));
+function tempCwd(t) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-digest-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  return cwd;
 }
 
 function writeBrief(cwd, name, { date, source, title, body } = {}) {
@@ -120,8 +115,8 @@ test('parseDigestArgs defaults to 7 days and accepts --days', () => {
   assert.deepEqual(parseDigestArgs(['--days=3']), { help: false, days: 3 });
 });
 
-test('window filtering by date header keeps only briefs inside the days window', () => {
-  const cwd = tempCwd();
+test('window filtering by date header keeps only briefs inside the days window', (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-today.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=today11',
@@ -143,8 +138,8 @@ test('window filtering by date header keeps only briefs inside the days window',
   assert.ok(!rows.some((row) => row.name === 'youtube-old.md'));
 });
 
-test('digest- files and non-video files are skipped', () => {
-  const cwd = tempCwd();
+test('digest- files and non-video files are skipped', (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -174,8 +169,8 @@ test('digest- files and non-video files are skipped', () => {
   assert.doesNotMatch(prompt, /meeting-notes/);
 });
 
-test('digest writes the output file with sources listed', async () => {
-  const cwd = tempCwd();
+test('digest writes the output file with sources listed', async (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -233,8 +228,8 @@ test('digest writes the output file with sources listed', async () => {
   assert.ok(!filed.includes('\u2014'));
 });
 
-test('digest appends a claimable journal line', async () => {
-  const cwd = tempCwd();
+test('digest appends a claimable journal line', async (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -265,8 +260,8 @@ test('digest appends a claimable journal line', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'digest-2026-08-15', 'measure.py')), true);
 });
 
-test('thin digest prints fill-this then watch-tick next', async () => {
-  const cwd = tempCwd();
+test('thin digest prints fill-this then watch-tick next', async (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -310,9 +305,9 @@ test('digestExperimentSlug uses the digest date', () => {
   assert.equal(digestExperimentSlug('2026-08-15T15:00:00.000Z'), 'digest-2026-08-15');
 });
 
-test('rich digest mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async () => {
+test('rich digest mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = tempCwd();
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -376,9 +371,9 @@ test('rich digest mints a measure.py that validate.py accepts and scores 0 or 1 
   assert.doesNotMatch(claim.sidecar, /2nm/i);
 });
 
-test('experiments keep refuses a minted digest pack at 0 and keeps after check tokens', async () => {
+test('experiments keep refuses a minted digest pack at 0 and keeps after check tokens', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = tempCwd();
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',
@@ -411,8 +406,8 @@ test('experiments keep refuses a minted digest pack at 0 and keeps after check t
   );
 });
 
-test('empty window is a no-op', async () => {
-  const cwd = tempCwd();
+test('empty window is a no-op', async (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-old.md', {
     date: '2026-08-01',
     source: 'https://www.youtube.com/watch?v=old0001',
@@ -464,8 +459,8 @@ test('digest help lists the new usage', async () => {
   assert.equal(printed.text().includes(LEARNER_SCORE_ZERO), false);
 });
 
-test('digest engine failure prints no next-step', async () => {
-  const cwd = tempCwd();
+test('digest engine failure prints no next-step', async (t) => {
+  const cwd = tempCwd(t);
   writeBrief(cwd, 'youtube-in.md', {
     date: TODAY,
     source: 'https://www.youtube.com/watch?v=in11111',

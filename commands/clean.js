@@ -635,6 +635,42 @@ function findStalePages(cwd, atrisDir) {
 }
 
 /**
+ * When a source last changed. A checkout or rebase touches mtimes without
+ * changing content, so a file git holds unchanged counts from its last commit.
+ */
+function contentChangedAt(sourcePath, mtime) {
+  const dir = path.dirname(sourcePath);
+  const name = path.basename(sourcePath);
+  const status = spawnSync('git', ['status', '--porcelain', '--', name], { cwd: dir, encoding: 'utf8' });
+  if (status.status !== 0 || status.stdout.trim()) return mtime;
+  const log = spawnSync('git', ['log', '-1', '--format=%cI', '--', name], { cwd: dir, encoding: 'utf8' });
+  const committed = log.status === 0 ? log.stdout.trim() : '';
+  return committed ? new Date(committed) : mtime;
+}
+
+function looksLikePath(text) {
+  if (!text || /\s/.test(text) || /^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return false;
+  return text.includes('/') || /\.[A-Za-z0-9]+$/.test(text);
+}
+
+// A relative source can be written from the repo root, the page's own folder,
+// or any folder in between (a brief citing "briefs/x.md" from the wiki root).
+// The first place it exists wins; if none, the repo-root path is reported.
+function resolveSource(cwd, pagePath, filePart) {
+  if (path.isAbsolute(filePart)) return filePart;
+  const root = path.resolve(cwd);
+  const fromRoot = path.join(root, filePart);
+  if (fs.existsSync(fromRoot)) return fromRoot;
+  let dir = path.dirname(path.resolve(pagePath));
+  while (dir.startsWith(root + path.sep)) {
+    const candidate = path.join(dir, filePart);
+    if (fs.existsSync(candidate)) return candidate;
+    dir = path.dirname(dir);
+  }
+  return fromRoot;
+}
+
+/**
  * Parse frontmatter from a markdown file and check if any source is newer than last_compiled.
  * Returns { page, staleSource, compiledDate, sourceDate } or null if not stale.
  */
@@ -675,15 +711,19 @@ function checkPageStaleness(cwd, filePath) {
       .replace(/\s*\([^)]*\)\s*$/, '')   // drop trailing "(annotation)"
       .replace(/:\d+(-\d+)?$/, '')        // drop trailing ":N" or ":N-M"
       .trim();
-    const sourcePath = path.isAbsolute(filePart) ? filePart : path.join(cwd, filePart);
+    // A plain-language source ("Voyage AI documentation") or a web link names
+    // no file, so it can never be missing on disk. Only paths are checked.
+    if (!looksLikePath(filePart)) continue;
+    const sourcePath = resolveSource(cwd, filePath, filePart);
     try {
       const stat = fs.statSync(sourcePath);
-      if (stat.mtime > compiledDate) {
+      const changed = stat.mtime > compiledDate ? contentChangedAt(sourcePath, stat.mtime) : null;
+      if (changed && changed > compiledDate) {
         return {
           page: filePath,
           staleSource: source,
           compiledDate: compiledMatch[1],
-          sourceDate: stat.mtime.toISOString().split('T')[0]
+          sourceDate: changed.toISOString().split('T')[0]
         };
       }
     } catch {
@@ -698,6 +738,22 @@ function checkPageStaleness(cwd, filePath) {
   }
 
   return null;
+}
+
+// A day can already be archived when a late entry lands in its journal.
+// Renaming over the archive would erase it, so the late entry is added to the
+// end instead, unless the archive already holds it word for word.
+function moveIntoArchive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.renameSync(src, dest);
+    return;
+  }
+  const late = fs.readFileSync(src, 'utf8');
+  const kept = fs.readFileSync(dest, 'utf8');
+  if (late.trim() && !kept.includes(late.trim())) {
+    fs.writeFileSync(dest, `${kept.replace(/\n*$/, '\n')}\n${late}`);
+  }
+  fs.rmSync(src);
 }
 
 /**
@@ -734,7 +790,7 @@ function archiveOldJournals(atrisDir, dryRun = false) {
           }
           const src = path.join(yearDir, file);
           const dest = path.join(archiveYearDir, file);
-          fs.renameSync(src, dest);
+          moveIntoArchive(src, dest);
         }
         archived++;
       }

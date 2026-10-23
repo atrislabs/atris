@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { findPython } = require('./helpers/find-python');
 const {
   extractTeachNumbers,
   extractTeachMechanisms,
@@ -30,14 +31,6 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
 
-function findPython() {
-  for (const candidate of ['python3', 'python']) {
-    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
-    if (!result.error && result.status === 0) return candidate;
-  }
-  return null;
-}
-
 const pythonCmd = findPython();
 
 const RICH_INSIGHT = '37signals has 80 people and uses the omakase model';
@@ -57,8 +50,9 @@ function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function learnWorkspace() {
+function learnWorkspace(t) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-learn-save-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
   return cwd;
 }
@@ -110,14 +104,14 @@ test('learnExperimentSlug prefixes the key slug', () => {
   assert.equal(learnExperimentSlug('omakase model'), 'learn-omakase-model');
 });
 
-test('thin learn log writes jsonl only', () => {
+test('thin learn log writes jsonl only', (t) => {
   const numbers = extractTeachNumbers(THIN_INSIGHT);
   const mechanisms = extractTeachMechanisms(THIN_INSIGHT);
   assert.deepEqual(numbers, []);
   assert.deepEqual(mechanisms, []);
   assert.equal(isThinTeachLesson({ numbers, mechanisms }), true);
 
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   const saved = saveRichLearn({ cwd, key: 'map-first', insight: THIN_INSIGHT });
   assert.equal(saved.thin, true);
   assert.equal(saved.packRel, null);
@@ -125,9 +119,9 @@ test('thin learn log writes jsonl only', () => {
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel('map-first'))), false);
 });
 
-test('rich learn mint writes a failing apply and prints score 0', () => {
+test('rich learn mint writes a failing apply and prints score 0', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   const out = collect();
   const status = mintRichLearn({
     cwd,
@@ -196,8 +190,8 @@ test('rich learn mint writes a failing apply and prints score 0', () => {
   assert.match(keep.stderr + keep.stdout, /revert|score 0|keep only if/i);
 });
 
-test('rich learn log through the live cli mints the pack', () => {
-  const cwd = learnWorkspace();
+test('rich learn log through the live cli mints the pack', (t) => {
+  const cwd = learnWorkspace(t);
   const result = runCliLearnLog(cwd, {
     type: 'pattern',
     key: RICH_KEY,
@@ -214,8 +208,8 @@ test('rich learn log through the live cli mints the pack', () => {
   assert.match(jsonl, /omakase model/);
 });
 
-test('thin learn log through the live cli stays jsonl only', () => {
-  const cwd = learnWorkspace();
+test('thin learn log through the live cli stays jsonl only', (t) => {
+  const cwd = learnWorkspace(t);
   const result = runCliLearnLog(cwd, {
     type: 'pattern',
     title: 'map-first',
@@ -233,8 +227,8 @@ test('thin learn log through the live cli stays jsonl only', () => {
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel('map-first'))), false);
 });
 
-test('thin learn mint prints check fill this and does not invent a question', () => {
-  const cwd = learnWorkspace();
+test('thin learn mint prints check fill this and does not invent a question', (t) => {
+  const cwd = learnWorkspace(t);
   const out = collect();
   const status = mintRichLearn({
     cwd,
@@ -254,8 +248,8 @@ test('thin learn mint prints check fill this and does not invent a question', ()
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel('map-first'))), false);
 });
 
-test('learn log without a key still refuses invented success', () => {
-  const cwd = learnWorkspace();
+test('learn log without a key still refuses invented success', (t) => {
+  const cwd = learnWorkspace(t);
   const origCwd = process.cwd();
   const out = collect();
   const err = collect();
@@ -312,9 +306,9 @@ function harvestKey(insight) {
   return String(insight).toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 4).join('-');
 }
 
-test('rich learn add mints a failing apply and prints score 0', () => {
+test('rich learn add mints a failing apply and prints score 0', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   const origCwd = process.cwd();
   const out = collect();
   let saved;
@@ -356,8 +350,8 @@ test('rich learn add mints a failing apply and prints score 0', () => {
   assert.equal(JSON.parse(stub.stdout.trim().split('\n').pop()).score, 0);
 });
 
-test('thin learn add prints check fill this and does not invent a question', () => {
-  const cwd = learnWorkspace();
+test('thin learn add prints check fill this and does not invent a question', (t) => {
+  const cwd = learnWorkspace(t);
   const origCwd = process.cwd();
   const out = collect();
   let saved;
@@ -390,9 +384,9 @@ test('thin learn add prints check fill this and does not invent a question', () 
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel('map-first'))), false);
 });
 
-test('rich learn harvest mints a failing apply and prints score 0', () => {
+test('rich learn harvest mints a failing apply and prints score 0', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   writeHarvestNotes(cwd, [RICH_INSIGHT]);
   const origCwd = process.cwd();
   const out = collect();
@@ -426,8 +420,8 @@ test('rich learn harvest mints a failing apply and prints score 0', () => {
   assert.equal(JSON.parse(stub.stdout.trim().split('\n').pop()).score, 0);
 });
 
-test('thin learn harvest prints check fill this and does not invent a question', () => {
-  const cwd = learnWorkspace();
+test('thin learn harvest prints check fill this and does not invent a question', (t) => {
+  const cwd = learnWorkspace(t);
   writeHarvestNotes(cwd, [THIN_INSIGHT]);
   const origCwd = process.cwd();
   const out = collect();
@@ -452,9 +446,9 @@ test('thin learn harvest prints check fill this and does not invent a question',
   assert.equal(fs.existsSync(path.join(cwd, learnApplyRel(harvestKey(THIN_INSIGHT)))), false);
 });
 
-test('rich learn harvest mints from a CRLF journal Notes section', () => {
+test('rich learn harvest mints from a CRLF journal Notes section', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   const date = '2026-09-08';
   const dir = path.join(cwd, 'atris', 'logs', date.slice(0, 4));
   fs.mkdirSync(dir, { recursive: true });
@@ -491,9 +485,9 @@ test('rich learn harvest mints from a CRLF journal Notes section', () => {
   });
 });
 
-test('rich learn harvest through the live cli mints the pack', () => {
+test('rich learn harvest through the live cli mints the pack', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   writeHarvestNotes(cwd, [RICH_INSIGHT, THIN_INSIGHT]);
   const result = runCliLearnHarvest(cwd);
   const key = harvestKey(RICH_INSIGHT);
@@ -515,9 +509,9 @@ test('rich learn harvest through the live cli mints the pack', () => {
   assert.equal(JSON.parse(stub.stdout.trim().split('\n').pop()).score, 0);
 });
 
-test('rich review learning mints a failing apply and prints score 0', () => {
+test('rich review learning mints a failing apply and prints score 0', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   const origCwd = process.cwd();
   const out = collect();
   let saved;
@@ -554,8 +548,8 @@ test('rich review learning mints a failing apply and prints score 0', () => {
   assert.equal(JSON.parse(measured.stdout.trim().split('\n').pop()).score, 0);
 });
 
-test('thin review learning prints check fill this and does not invent a question', () => {
-  const cwd = learnWorkspace();
+test('thin review learning prints check fill this and does not invent a question', (t) => {
+  const cwd = learnWorkspace(t);
   const origCwd = process.cwd();
   const out = collect();
   let saved;
@@ -609,18 +603,18 @@ function harvestOnce(cwd, date = '2026-09-10') {
   return out;
 }
 
-test('learn harvest strips both old and plain timestamp separators', () => {
+test('learn harvest strips both old and plain timestamp separators', (t) => {
   for (const separator of ['\u2014', '-']) {
-    const cwd = learnWorkspace();
+    const cwd = learnWorkspace(t);
     writeNotesLastJournal(cwd, [`13:44 ${separator} ${RICH_INSIGHT}`]);
     const out = harvestOnce(cwd);
     assert.match(out.text(), new RegExp(`next: atris experiments keep learn-${harvestKey(RICH_INSIGHT)}`));
   }
 });
 
-test('learn harvest does not invent-keep a leftover claimable apply line', () => {
+test('learn harvest does not invent-keep a leftover claimable apply line', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   writeNotesLastJournal(cwd, [RICH_INSIGHT]);
   const first = harvestOnce(cwd);
   const key = harvestKey(RICH_INSIGHT);
@@ -646,9 +640,9 @@ test('learn harvest does not invent-keep a leftover claimable apply line', () =>
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', `learn-${harvestKey('[claimable] apply: leftover')}`)), false);
 });
 
-test('learn harvest does not invent-keep a leftover claimable watched line', () => {
+test('learn harvest does not invent-keep a leftover claimable watched line', (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = learnWorkspace();
+  const cwd = learnWorkspace(t);
   writeNotesLastJournal(cwd, [RICH_INSIGHT]);
   const first = harvestOnce(cwd);
   const key = harvestKey(RICH_INSIGHT);

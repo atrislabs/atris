@@ -7,8 +7,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { compactMissionLedger, compactRows } = require('../lib/mission-ledger-compact');
 
-function tempLedger(rows) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ledger-compact-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function tempLedger(t, rows) {
+  const dir = makeTempDir(t, 'atris-ledger-compact-');
   const file = path.join(dir, 'missions.jsonl');
   fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
   return file;
@@ -31,9 +37,9 @@ test('compaction keeps the latest state, the first display number, and first-see
   assert.equal(compacted[1].n, 12, 'a number assigned later still sticks');
 });
 
-test('below the ratio threshold the file is left untouched', () => {
+test('below the ratio threshold the file is left untouched', (t) => {
   const rows = Array.from({ length: 70 }, (unused, i) => ({ id: `m${i}`, status: 'ready' }));
-  const file = tempLedger(rows);
+  const file = tempLedger(t, rows);
   const before = fs.readFileSync(file, 'utf8');
   const receipt = compactMissionLedger(file, { minBytes: 0 });
   assert.equal(receipt.compacted, false);
@@ -41,14 +47,14 @@ test('below the ratio threshold the file is left untouched', () => {
   assert.equal(fs.readFileSync(file, 'utf8'), before);
 });
 
-test('history-heavy ledger compacts to one row per mission and shrinks on disk', () => {
+test('history-heavy ledger compacts to one row per mission and shrinks on disk', (t) => {
   const rows = [];
   for (let i = 0; i < 20; i += 1) {
     for (let save = 0; save < 10; save += 1) {
       rows.push({ id: `m${i}`, n: i + 1, status: save === 9 ? 'complete' : 'running', tick: save });
     }
   }
-  const file = tempLedger(rows);
+  const file = tempLedger(t, rows);
   const receipt = compactMissionLedger(file, { minBytes: 0 });
   assert.equal(receipt.compacted, true);
   assert.equal(receipt.rows_before, 200);
@@ -59,13 +65,13 @@ test('history-heavy ledger compacts to one row per mission and shrinks on disk',
   assert.ok(survived.every((row) => row.status === 'complete' && row.tick === 9));
 });
 
-test('rows without an id (cloud mission receipts) survive compaction in order', () => {
+test('rows without an id (cloud mission receipts) survive compaction in order', (t) => {
   const rows = [];
   for (let i = 0; i < 30; i += 1) {
     rows.push({ cloud: true, task_id: `t${i}`, text: `receipt ${i}` });
     for (let save = 0; save < 10; save += 1) rows.push({ id: `m${i}`, status: 'running', tick: save });
   }
-  const file = tempLedger(rows);
+  const file = tempLedger(t, rows);
   const receipt = compactMissionLedger(file, { minBytes: 0 });
   assert.equal(receipt.compacted, true);
   const survived = fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
@@ -75,8 +81,8 @@ test('rows without an id (cloud mission receipts) survive compaction in order', 
   assert.equal(survived.filter((row) => row.id).length, 30, 'missions still compact to one row each');
 });
 
-test('malformed lines are dropped by compaction, not crashed on', () => {
-  const file = tempLedger([]);
+test('malformed lines are dropped by compaction, not crashed on', (t) => {
+  const file = tempLedger(t, []);
   const junk = Array.from({ length: 80 }, () => JSON.stringify({ id: 'x', status: 'running' }));
   fs.writeFileSync(file, `${junk.join('\n')}\nnot json at all\n{"broken": \n`, 'utf8');
   const receipt = compactMissionLedger(file, { minBytes: 0 });

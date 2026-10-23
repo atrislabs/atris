@@ -5,13 +5,20 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
-const { isConductorArtifact } = require('../lib/conductor-artifacts');
+const { isConductorArtifact, isConductorUntracked } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
 const close = require('./close');
 
-const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
+// Files atris regenerates on its own. Unstaged churn in them is restored
+// before ship commits, unless the commit message names the file. The task
+// projection is rewritten by any task command run in a work folder, and two
+// parallel landings that each carry a copy always clash.
+const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.atris/state/tasks.projection.json'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+// Push also runs local hooks. Backend startup and regression checks alone can
+// exceed the short network-only allowance used by fetch and discovery.
+const GIT_PUSH_TIMEOUT_MS = 5 * 60 * 1000;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
 const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,13 +40,15 @@ function gitNetworkEnvironment(source = process.env, cwd = process.cwd()) {
 // A killed network call leaves stderr empty; name the timeout instead.
 function gitFailureDetail(result) {
   if (result && result.error && result.error.code === 'ETIMEDOUT') return 'timed out';
-  return String((result && (result.stderr || result.stdout)) || '').trim();
+  return [result && result.stdout, result && result.stderr]
+    .map(output => String(output || '').trim()).filter(Boolean).join('\n');
 }
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
   // Only network calls need the SSH probe; local calls skip its extra git spawn.
-  const options = { cwd, encoding: 'utf8', timeout: timeout ?? (network ? 30000 : undefined),
+  const defaultTimeout = args[0] === 'push' ? GIT_PUSH_TIMEOUT_MS : network ? 30000 : undefined;
+  const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout,
     killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
@@ -474,10 +483,30 @@ function statusCounts(root, {
 
 // Remove conductor plumbing from the index after a broad `git add -A`, so the commit
 // records engine output only. Paths that were never staged are simply not listed.
+// GitHub refuses a merge with "Base branch was modified" when another PR
+// merged into the same base a moment earlier; the same merge succeeds on a
+// second try. On 2026-10-15 five parallel dispatches lost three landings to
+// it. Retry only that message, a few times, with a short wait.
+const BASE_MODIFIED_PATTERN = /Base branch was modified/i;
+function mergePrWithRetry(mergeArgs, root, { run = spawnSync, wait = sleepSync, attempts = 4 } = {}) {
+  let merged = run('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
+  for (let attempt = 1; attempt < attempts && merged.status !== 0
+    && BASE_MODIFIED_PATTERN.test(`${merged.stderr || ''}${merged.stdout || ''}`); attempt += 1) {
+    console.log(`merge: base branch moved, retrying (${attempt + 1}/${attempts})`);
+    wait(1500 * attempt);
+    merged = run('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
+  }
+  return merged;
+}
+
 function unstageConductorArtifacts(root) {
   const staged = runGit(['diff', '--cached', '--name-only'], { cwd: root, check: false });
   if (staged.status !== 0) return [];
-  const drop = String(staged.stdout || '').split(/\r?\n/).filter(Boolean).filter(isConductorArtifact);
+  const added = runGit(['diff', '--cached', '--name-only', '--diff-filter=A'], { cwd: root, check: false });
+  const newFiles = new Set(String(added.stdout || '').split(/\r?\n/).filter(Boolean));
+  // A file this commit would add under .atris/ is the tool's own state, never work.
+  const drop = String(staged.stdout || '').split(/\r?\n/).filter(Boolean)
+    .filter((file) => isConductorArtifact(file) || (newFiles.has(file) && isConductorUntracked(file)));
   if (drop.length) runGit(['reset', '-q', 'HEAD', '--', ...drop], { cwd: root, check: false });
   return drop;
 }
@@ -607,7 +636,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     if (registered) {
       if (!fs.existsSync(target) || fs.realpathSync(registered.path) !== fs.realpathSync(target)
         || registered.head !== startCommit) return;
-      const dirt = statusCounts(target, { ignoreUntracked: isConductorArtifact });
+      const dirt = statusCounts(target, { ignoreUntracked: isConductorUntracked });
       if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return;
       // No engine has started. Normal removal still refuses unexpected dirt.
       runGit(['worktree', 'remove', target], { cwd: root });
@@ -624,6 +653,15 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
       throw new Error(String(added.stderr || added.stdout || 'worktree start failed').trim());
     }
     sleepSync(100 * (attempt + 1));
+  }
+  // A resumed branch takes in what the mainline gained since, or a job that
+  // keeps resuming drifts further behind every run until it clashes
+  // (2026-10-15: five long jobs sat 103 to 129 commits behind). The clash
+  // check above proved this merge is clean; if git still refuses, the run
+  // keeps the old start instead of failing.
+  if (resumedFrom) {
+    const caughtUp = runGit(['merge', '--no-edit', '-m', `Merge ${checkoutBase} into ${branch}`, checkoutBase], { cwd: target, check: false });
+    if (caughtUp.status !== 0) runGit(['merge', '--abort'], { cwd: target, check: false });
   }
   try {
     runGit(['config', `branch.${branch}.atris-base`, shipBase], { cwd: target });
@@ -967,7 +1005,7 @@ function shipWorktree(args) {
   const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
   // Conductor plumbing must not make the checkout look dirty, or a flight where the
   // engine wrote nothing commits the fleet's own prompt file and calls it work.
-  const counts = statusCounts(root, { ignoredUnstagedFiles, ignoreUntracked: isConductorArtifact })
+  const counts = statusCounts(root, { ignoredUnstagedFiles, ignoreUntracked: isConductorUntracked })
     || { staged: 0, unstaged: 0, untracked: 0 };
   const dirty = counts.staged || counts.unstaged || counts.untracked;
   if (dirty && !message) {
@@ -1007,7 +1045,7 @@ function shipWorktree(args) {
     // already present before the verifier ran, so counting it here blocks a clean ship.
     const afterVerify = dryRun
       ? { staged: 0, unstaged: 0, untracked: 0 }
-      : statusCounts(root, { ignoreUntracked: isConductorArtifact })
+      : statusCounts(root, { ignoreUntracked: isConductorUntracked })
         || { staged: 0, unstaged: 0, untracked: 0 };
     if (!dryRun && (afterVerify.staged || afterVerify.unstaged || afterVerify.untracked)) {
       console.error(
@@ -1047,7 +1085,7 @@ function shipWorktree(args) {
             throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
           }
         }
-        const primaryCounts = statusCounts(primary, { ignoreUntracked: isConductorArtifact }) || { staged: 0, unstaged: 0, untracked: 0 };
+        const primaryCounts = statusCounts(primary, { ignoreUntracked: isConductorUntracked }) || { staged: 0, unstaged: 0, untracked: 0 };
         if (primaryCounts.staged || primaryCounts.unstaged || primaryCounts.untracked) {
           throw new Error(
             `primary checkout dirty staged=${primaryCounts.staged} ` +
@@ -1078,12 +1116,29 @@ function shipWorktree(args) {
         const mergeArgs = ['pr', 'merge'];
         if (mergeRef) mergeArgs.push(mergeRef);
         mergeArgs.push('--merge');
-        const merged = spawnSync('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
+        const merged = mergePrWithRetry(mergeArgs, root);
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
         // `gh pr merge` on an already-merged PR exits 0 with a warning
         // instead of failing, which would otherwise report a false landing.
         if (/already merged/i.test(`${merged.stdout}${merged.stderr}`)) {
           throw new Error(`gh pr merge reported the PR was already merged (stale PR reused): ${(merged.stdout || merged.stderr).trim()}`);
+        }
+        // A merge queue accepts the request before merging. Deleting its head
+        // here closes the PR and cancels that request, so confirm the outcome.
+        const confirmation = spawnSync('gh', ['pr', 'view', mergeRef, '--json', 'state,mergedAt'], { cwd: root, encoding: 'utf8' });
+        if (confirmation.status !== 0) {
+          throw new Error('could not confirm the merge; the source branch was kept');
+        }
+        let state;
+        try { state = JSON.parse(confirmation.stdout); } catch {
+          throw new Error('could not read the merge result; the source branch was kept');
+        }
+        if (state.state === 'OPEN' && !state.mergedAt) {
+          console.log('merge: pending; kept the source branch while required checks finish');
+          return 0;
+        }
+        if (state.state !== 'MERGED' || !state.mergedAt) {
+          throw new Error('the change was not merged; the source branch was kept');
         }
         console.log('merge: merged');
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
@@ -1122,7 +1177,7 @@ function guard(args) {
   // Conductor plumbing (worktree metadata, the fleet prompt written for this very
   // engine, runtime scratch, the brief ledger) must not count as dirt, otherwise the
   // harness blocks the engine with the harness's own files.
-  const counts = statusCounts(root, { ignoreUntracked: isConductorArtifact });
+  const counts = statusCounts(root, { ignoreUntracked: isConductorUntracked });
   if (counts && (counts.staged || counts.unstaged || counts.untracked) && !hasFlag(args, '--allow-dirty')) {
     console.error(`blocked: checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
     return 3;
@@ -1496,6 +1551,7 @@ function worktreeCommand(args = []) {
 module.exports = {
   branchName,
   collidingFlights,
+  mergePrWithRetry,
   createAgentWorktree,
   deniedLaneForShip,
   createOrFindPr,

@@ -31,8 +31,9 @@ function captureConsole(fn) {
     .finally(() => { console.log = log; console.error = error; });
 }
 
-function tempWorkspace() {
+function tempWorkspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-link-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const name of ['bench-keeper', 'desk', 'oracle']) {
     fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
     fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\n${name === 'oracle' ? 'status: parked\n' : ''}---\n`);
@@ -98,8 +99,8 @@ test('answers are shaped to the contract', () => {
   assert.equal(normalizeLinkAnswer(extractJsonObject('no json here'), members).ok, false);
 });
 
-test('team notes skip stale and parked members and stay under the prompt limit', () => {
-  const root = tempWorkspace();
+test('team notes skip stale and parked members and stay under the prompt limit', (t) => {
+  const root = tempWorkspace(t);
   const now = Date.now();
   assert.match(teamNote(root, 'bench-keeper', now), /business-v2 task pack/);
   assert.equal(teamNote(root, 'bench-keeper', now + 6 * 86400000), null);
@@ -111,8 +112,8 @@ test('team notes skip stale and parked members and stay under the prompt limit',
   assert.match(prompt, /Other team slugs: /);
 });
 
-test('link --json prints the contract plus what ran, and only roster members can be by', async () => {
-  const root = tempWorkspace();
+test('link --json prints the contract plus what ran, and only roster members can be by', async (t) => {
+  const root = tempWorkspace(t);
   const prompts = [];
   const result = await captureConsole(() => linkCommand(['The HOA replies quote real rules', 'Lab pilot needs harder tasks', '--team', '--json'], {
     root,
@@ -140,8 +141,8 @@ test('link --json prints the contract plus what ran, and only roster members can
   assert.doesNotMatch(prompts[0].prompt, /oracle/);
 });
 
-test('link reports an engine failure as json with exit 1', async () => {
-  const root = tempWorkspace();
+test('link reports an engine failure as json with exit 1', async (t) => {
+  const root = tempWorkspace(t);
   const result = await captureConsole(() => linkCommand(['a', 'b', '--json'], {
     root,
     rosterReport: () => REPORT,

@@ -2,28 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  try {
-    require('node:sqlite');
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+const { hasNodeSqlite, makeTempDir: makeRawTempDir, cleanupTempDir } = createTaskHelpFixture('atris-task-plan-result-');
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-plan-result-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
+  return makeRawTempDir();
 }
 
 function writePassingTest(root) {
@@ -40,9 +29,10 @@ function writePassingTest(root) {
 // Accept paths gate on agent env markers, so results must not depend on which
 // agent (if any) is running this suite. Strip the markers from the base env;
 // tests that exercise the gate re-add one explicitly via their env override.
-function baseEnv(env = {}) {
+function baseEnv(env = {}, cwd) {
   const merged = {
     ...process.env,
+    HOME: cwd,
     ATRIS_SKIP_UPDATE_CHECK: '1',
     NODE_NO_WARNINGS: '1',
   };
@@ -55,7 +45,7 @@ function baseEnv(env = {}) {
 function runCli(args, { cwd, env = {} } = {}) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
-    env: baseEnv(env),
+    env: baseEnv(env, cwd),
     encoding: 'utf8',
   });
 }
@@ -64,7 +54,7 @@ function runCliAsync(args, { cwd, env = {} } = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd,
-      env: baseEnv(env),
+      env: baseEnv(env, cwd),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

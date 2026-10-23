@@ -38,12 +38,15 @@ test('sealed flights keep the parent owner names with a temporary home', { skip:
   execSync('git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git remote add origin https://example.invalid/repo.git', { cwd: worktree });
   const keys = ['HOME', 'GIT_CONFIG_GLOBAL', 'ATRIS_OPERATOR', 'ATRIS_OWNER_NAMES'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const previousCwd = process.cwd();
   let environment;
   try {
     process.env.HOME = home;
     delete process.env.GIT_CONFIG_GLOBAL;
     delete process.env.ATRIS_OPERATOR;
     delete process.env.ATRIS_OWNER_NAMES;
+    // Resolve the fixture's Git identity, not the launch checkout's config.
+    process.chdir(worktree);
     resetOwnerIdentityCache();
     environment = reviewOnlyEngineEnvironment(worktree, { engine: 'codex' });
     const result = spawnSync(process.execPath, ['-e',
@@ -53,6 +56,7 @@ test('sealed flights keep the parent owner names with a temporary home', { skip:
     assert.strictEqual(result.status, 0, result.stderr);
     assert.strictEqual(result.stdout, 'true');
   } finally {
+    process.chdir(previousCwd);
     resetOwnerIdentityCache();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;

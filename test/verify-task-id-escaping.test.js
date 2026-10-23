@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { findTaskInContent, escapeRegExp } = require('../commands/verify');
+const { findTaskInContent } = require('../commands/verify');
 
 const SAMPLE = [
   '# TODO',
@@ -14,12 +14,6 @@ const SAMPLE = [
   'more work',
   '',
 ].join('\n');
-
-test('escapeRegExp neutralizes regex metacharacters', () => {
-  assert.equal(escapeRegExp('a.b'), 'a\\.b');
-  assert.equal(escapeRegExp('('), '\\(');
-  assert.equal(escapeRegExp('a+b*c'), 'a\\+b\\*c');
-});
 
 test('findTaskInContent still matches a normal task id', () => {
   const m = findTaskInContent(SAMPLE, '1');

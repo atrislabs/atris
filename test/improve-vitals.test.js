@@ -160,11 +160,20 @@ test('run --json returns vitals json for the bare front door', async () => {
     sentences: [],
     groups: [],
   };
-  const result = await captureConsole(() => run(['--json'], {
-    collectImproveVitals: () => vitals,
-  }));
-  assert.equal(result.code, 0);
-  assert.deepEqual(JSON.parse(result.stdout), vitals);
+  const dir = makeTempDir();
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(dir);
+    const result = await captureConsole(() => run(['--json'], {
+      collectImproveVitals: () => vitals,
+    }));
+    assert.equal(result.code, 0);
+    assert.deepEqual(JSON.parse(result.stdout), vitals);
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'improve-vitals.html')));
+  } finally {
+    process.chdir(previousCwd);
+    cleanupTempDir(dir);
+  }
 });
 
 test('run routes tick subcommand and flagged legacy invocations to the old tick path', async () => {

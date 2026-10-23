@@ -1,0 +1,970 @@
+<title>Vibe Research</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* Layout: a handheld with two screens stacked (lab map on top, dialogue below) and the quest log beside it on wide screens. One dark VHS world, by choice. */
+:root{
+  --night:#0a0d1d; --panel:#121631; --panel2:#0d1027; --line:#2a3160; --ink:#e9ebff; --dim:#8f95c0; --faint:#4b527f;
+  --paper:#f4f1e6; --paper-ink:#1a1c2c; --paper-dim:#5d6080; --edge:#3b4378;
+  --orb:#7fe7ff; --gold:#ffd166; --kept:#7ee08a; --wet:#ff6b6b;
+  --pix:"Press Start 2P", ui-monospace, Menlo, monospace;
+  --vhs:"VT323", ui-monospace, Menlo, monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--night);color:var(--ink)}
+body{font-family:var(--vhs);font-size:21px;line-height:1.2;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+.top{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{font-family:var(--pix);font-size:12px;letter-spacing:.06em;color:var(--orb);text-shadow:-1px 0 #ff3b6b,1px 0 #3be0ff}
+.chip{font-family:var(--pix);font-size:8px;letter-spacing:.08em;padding:6px 8px;border:1px solid var(--line);color:var(--dim);border-radius:3px}
+.menu-btn{margin-left:auto;font-family:var(--pix);font-size:9px;letter-spacing:.08em;background:var(--panel);border:2px solid var(--edge);padding:8px 10px;border-radius:4px}
+.menu-btn:disabled{opacity:.4;cursor:default}
+
+.wrap{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:14px 28px;display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:18px;align-items:start}
+@media (max-width:880px){.wrap{grid-template-columns:minmax(0,1fr)}}
+.game{min-width:0;display:grid;gap:16px}
+
+.frame{position:relative;border:3px solid var(--edge);border-radius:6px;overflow:hidden;background:#000;container-type:inline-size}
+canvas{display:block;width:100%;height:auto;aspect-ratio:320/200;image-rendering:pixelated;touch-action:manipulation}
+.title-menu{position:absolute;left:9%;top:9%;display:flex;flex-direction:column;gap:.08em;font-family:var(--vhs);font-size:max(17px,6.2cqi);line-height:1.02}
+.title-menu button{background:none;border:0;padding:0 0 0 .9em;text-align:left;position:relative;color:#f4f6ff;letter-spacing:.04em;
+  text-shadow:-2px 0 #ff3b6b,2px 0 #3be0ff,4px 4px 0 rgba(31,77,255,.75)}
+.title-menu button::before{content:"";position:absolute;left:0}
+.title-menu button[aria-current="true"]::before{content:"*"}
+.title-menu button:focus-visible{outline:none}
+
+.dialog{position:relative;background:var(--paper);color:var(--paper-ink);border:4px solid var(--paper-ink);border-radius:8px;
+  box-shadow:0 0 0 3px var(--paper),0 0 0 6px var(--edge);padding:20px 20px 16px;min-height:150px;font-size:clamp(21px,2.4vw,26px);line-height:1.12}
+.dialog.wet{border-color:var(--wet)}
+.speaker{position:absolute;top:-13px;left:14px;font-family:var(--pix);font-size:9px;letter-spacing:.08em;background:var(--paper-ink);color:var(--paper);padding:6px 8px;border-radius:3px}
+.speaker:empty{display:none}
+.wet-tag{position:absolute;top:-13px;right:14px;font-family:var(--pix);font-size:8px;letter-spacing:.08em;background:var(--wet);color:var(--paper-ink);padding:6px 8px;border-radius:3px}
+.line{margin:0;min-height:2.3em;max-width:62ch}
+.line.narr{font-style:italic;color:var(--paper-dim)}
+.choices{display:grid;gap:4px;margin-top:10px}
+.choice{background:none;border:2px solid transparent;border-radius:4px;text-align:left;padding:3px 10px 3px 30px;position:relative;color:var(--paper-ink)}
+.choice::before{content:"▶";position:absolute;left:9px;top:3px;opacity:0;font-size:.8em}
+.choice:hover,.choice:focus-visible{border-color:var(--paper-ink);outline:none}
+.choice:hover::before,.choice:focus-visible::before{opacity:1}
+.choice span{display:block;font-size:.78em;color:var(--paper-dim)}
+.next{position:absolute;right:16px;bottom:8px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.text-form{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.text-form input{flex:1 1 220px;min-width:0;font:inherit;background:#fff;color:var(--paper-ink);border:2px solid var(--paper-ink);border-radius:4px;padding:4px 10px}
+.text-form button{background:var(--paper-ink);color:var(--paper);border:0;border-radius:4px;padding:4px 14px;font-family:var(--pix);font-size:10px}
+.controls{font-size:17px;color:var(--dim);margin:0}
+
+/* quest log */
+.log{background:var(--panel);border:2px solid var(--line);border-radius:6px;padding:14px;display:grid;gap:12px;min-width:0}
+.log-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-family:var(--pix);font-size:9px;letter-spacing:.08em}
+.log-sum{color:var(--dim);font-size:7px;text-align:right}
+.rows{display:grid;gap:8px}
+.qrow{display:grid;gap:5px;text-align:left;background:var(--panel2);border:2px solid var(--line);border-radius:6px;padding:9px 10px;min-width:0}
+.qrow:hover{border-color:var(--edge)}
+.qrow[aria-pressed="true"]{border-color:var(--gold)}
+.row-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.st{font-family:var(--pix);font-size:7px;letter-spacing:.06em;padding:4px 5px;border-radius:3px;border:1px solid currentColor}
+.st.running{color:var(--orb)} .st.needs{color:var(--paper-ink);background:var(--wet);border-color:var(--wet);animation:pulse 1.2s ease-in-out infinite}
+.st.resting,.st.paused{color:var(--dim)} .st.queued,.st.building{color:var(--gold)} .st.answered{color:var(--paper-ink);background:var(--kept);border-color:var(--kept)} .st.empty{color:var(--gold)}
+@keyframes pulse{50%{opacity:.55}}
+.src-tag{font-family:var(--pix);font-size:6px;letter-spacing:.06em;color:var(--faint)}
+.src-tag.real{color:var(--kept)}
+.qtext{font-weight:400;font-size:20px;line-height:1.05;overflow-wrap:anywhere}
+.mini{display:flex;gap:3px;align-items:center}
+.mini i{width:16px;height:6px;border-radius:1px;background:#1c2142}
+.mini i.done{background:var(--kept)} .mini i.cur{background:var(--orb);animation:pulse 1s steps(2) infinite} .mini i.cur.stop{animation:none;background:var(--gold)}
+.row-meta{color:var(--dim);font-size:17px;margin-left:6px}
+
+.detail{border-top:1px dashed var(--line);padding-top:12px;display:grid;gap:12px;min-width:0}
+.detail h3{margin:0;font-weight:400;font-size:24px;line-height:1.05;overflow-wrap:anywhere}
+.eyebrow{margin:0;font-family:var(--pix);font-size:7px;letter-spacing:.1em;color:var(--dim)}
+.track{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.stage{border:1px solid var(--line);border-radius:4px;padding:7px 3px 6px;text-align:center;display:grid;gap:4px;min-width:0}
+.stage b{font-family:var(--pix);font-size:6px;letter-spacing:.04em;font-weight:400;color:var(--faint)}
+.stage small{font-size:15px;color:var(--faint);line-height:1}
+.stage.done{border-color:var(--kept)} .stage.done b{color:var(--kept)}
+.stage.cur{border-color:var(--orb);background:rgba(127,231,255,.08)} .stage.cur b,.stage.cur small{color:var(--orb)}
+.stage.cur.stop{border-color:var(--gold);background:rgba(255,209,102,.08)} .stage.cur.stop b,.stage.cur.stop small{color:var(--gold)}
+.meter{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.meter span{font-family:var(--pix);font-size:6px;letter-spacing:.04em;text-align:center;padding:6px 1px;border:1px solid var(--line);color:var(--faint);border-radius:3px}
+.meter span.on{background:var(--kept);color:var(--paper-ink);border-color:var(--kept)}
+.gauge{height:10px;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#0a0c20}
+.gauge i{display:block;height:100%;background:var(--gold)}
+.gauge-row{display:flex;justify-content:space-between;font-size:17px;color:var(--dim)}
+.passes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.passes li{border-left:3px solid var(--line);padding:2px 0 2px 10px;display:grid;gap:2px;font-size:18px;line-height:1.08;color:#c7cbef}
+.passes li.now{border-color:var(--orb)} .passes li.done{border-color:var(--kept)} .passes li.next{border-color:var(--gold);border-left-style:dashed}
+.passes .ph{font-family:var(--pix);font-size:7px;letter-spacing:.06em;color:var(--dim)}
+.passes li.now .ph{color:var(--orb)}
+.party{display:flex;gap:5px;flex-wrap:wrap}
+.party span{font-family:var(--pix);font-size:6px;letter-spacing:.06em;border:1px solid var(--line);border-radius:3px;padding:5px 6px;color:var(--dim)}
+.party span.lead{color:var(--gold);border-color:var(--gold)}
+.flags{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:0}
+.flags dt{font-family:var(--pix);font-size:7px;letter-spacing:.08em;color:var(--dim);padding-top:5px;text-transform:uppercase}
+.flags dd{margin:0;font-size:19px;line-height:1.1;overflow-wrap:anywhere;border-radius:3px}
+.flags dd.empty{color:var(--faint)}
+.flags dd.set{animation:flash 1.2s ease-out}
+@keyframes flash{0%{background:var(--gold);color:var(--paper-ink)}100%{background:transparent}}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.ghost{background:none;border:2px solid var(--edge);border-radius:4px;padding:8px 10px;font-family:var(--pix);font-size:8px;letter-spacing:.04em}
+.ghost.hot{border-color:var(--wet);color:var(--wet)}
+
+.sheet{position:fixed;inset:0;background:rgba(4,5,14,.78);display:grid;place-items:center;padding:16px;z-index:10}
+.sheet-card{position:relative;width:100%;max-width:640px;max-height:88vh;overflow:auto;background:var(--panel);border:3px solid var(--edge);border-radius:8px;padding:22px 20px 20px}
+.close{position:absolute;top:10px;right:10px;background:none;border:0;font-family:var(--pix);font-size:12px;color:var(--dim);padding:6px}
+.sheet-card h2{margin:0;font-family:var(--pix);font-size:15px;line-height:1.5;text-wrap:balance}
+.lede{margin:0;color:#c7cbef;max-width:58ch}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.card{border:2px solid var(--line);border-radius:6px;padding:12px;min-width:0}
+.card.gold{border-color:var(--gold)} .card.orb{border-color:var(--orb)}
+.card header{display:flex;justify-content:space-between;font-family:var(--pix);font-size:9px;letter-spacing:.08em;margin-bottom:8px}
+.card.gold .tag{color:var(--gold)} .card.orb .tag{color:var(--orb)}
+.card dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:0}
+.card dt{color:var(--dim)} .card dd{margin:0;overflow-wrap:anywhere}
+.cmd{background:#05060f;border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:8px}
+.cmd pre{margin:0;overflow-x:auto;font-family:var(--vhs);font-size:19px;color:var(--kept);white-space:pre}
+.small-btn{justify-self:start;background:none;border:1px solid var(--line);border-radius:4px;font-family:var(--pix);font-size:8px;padding:6px 8px;color:var(--dim)}
+.note{margin:0;color:var(--dim);font-size:18px}
+.primary{justify-self:start;background:var(--gold);color:var(--paper-ink);border:0;border-radius:4px;padding:10px 14px;font-family:var(--pix);font-size:10px;letter-spacing:.06em}
+.slots{display:grid;gap:10px}
+.roster{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:0}
+.roster dt{font-family:var(--pix);font-size:8px;color:var(--dim);padding-top:5px}
+.roster dd{margin:0}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--gold);color:var(--paper-ink);font-family:var(--pix);font-size:9px;letter-spacing:.06em;line-height:1.5;padding:10px 14px;border-radius:4px;z-index:20;max-width:calc(100% - 32px);text-align:center}
+.foot{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:0 28px;color:var(--faint);font-size:17px}
+@media (prefers-reduced-motion:reduce){.next,.st.needs,.mini i.cur{animation:none}.flags dd.set{animation:none}}
+</style>
+
+<header class="top">
+  <span class="logo">VIBE RESEARCH</span>
+  <span class="chip">DEMO V2 · RUNS ARE SIMULATED</span>
+  <button class="menu-btn" id="menuBtn" type="button">☰ MENU</button>
+</header>
+
+<main class="wrap">
+  <div class="game">
+    <div class="frame">
+      <canvas id="screen" aria-label="The lab map. The selected quest's party stands in the room it is working in."></canvas>
+      <nav class="title-menu" id="titleMenu" aria-label="Main menu">
+        <button type="button" data-act="play" aria-current="true">PLAY</button>
+        <button type="button" data-act="load">LOAD</button>
+        <button type="button" data-act="save">SAVE</button>
+        <button type="button" data-act="new">NEW GAME</button>
+        <button type="button" data-act="settings">SETTINGS</button>
+        <button type="button" data-act="quit">QUIT</button>
+      </nav>
+    </div>
+    <section class="dialog" id="dialog" aria-live="polite">
+      <span class="speaker" id="speaker"></span>
+      <span class="wet-tag" id="wetTag" hidden>NO RELOAD</span>
+      <p class="line" id="line"></p>
+      <div class="choices" id="choices"></div>
+      <span class="next" id="nextHint" hidden aria-hidden="true">▼</span>
+    </section>
+    <p class="controls">Pick a quest in the log to jump to its lab. Move with arrow keys, WASD, or tap the map. Walk to the orb to start a new quest.</p>
+  </div>
+
+  <aside class="log" aria-label="Quest log">
+    <div class="log-head"><span>QUEST LOG</span><span class="log-sum" id="logSum"></span></div>
+    <div class="rows" id="rows"></div>
+    <div class="detail" id="detail"></div>
+  </aside>
+</main>
+<p class="foot">Demo. Trials, results and fuel are simulated, and nothing is sent or spent. The calm-design quest uses real results from atris/experiments/obelisk-ux, and the overnight-fix question comes from your boot screen.</p>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true">
+    <button class="close" id="sheetClose" type="button" aria-label="Close">✕</button>
+    <div id="sheetBody" style="display:grid;gap:12px"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const W = 320, H = 200, SC = 3, TICK = 2600;
+const $ = id => document.getElementById(id);
+const cv = $('screen'); cv.width = W * SC; cv.height = H * SC;
+const ctx = cv.getContext('2d');
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PIX = '"Press Start 2P", monospace';
+
+/* ---------- content ---------- */
+const CONTENT = {
+  setup: { q: 'Why do new users stall during setup?',
+    react: 'Good one. Lots of people open the app and never finish setup. I want to know why too.',
+    hyps: [
+      { h: 'Login takes too many steps.', d: 'setup time doesn’t drop when we cut a step' },
+      { h: 'People don’t know what to ask first.', d: 'a suggested first task doesn’t raise finishes' },
+      { h: 'The app looks empty until something is connected.', d: 'people who connect an app quit just as often' } ],
+    wet: 'I want to email 5 real people who stalled and ask them why.' },
+  engine: { q: 'Which engine builds best for the money?',
+    react: 'Ooh, money and machines. The party loves this one.',
+    hyps: [
+      { h: 'Codex lands more work per dollar.', d: 'its cost per landed change isn’t lower' },
+      { h: 'Claude needs fewer human fixes.', d: 'its landings need just as many fixes' },
+      { h: 'A cheap model is good enough for small builds.', d: 'its small builds fail review twice as often' } ],
+    wet: 'I want to spend $300 on a paid engine trial to compare them at full speed.' },
+  calm: { q: 'Does the calmer chat design read faster?',
+    react: 'A design question. Sneaky. Everyone has an opinion and nobody has a number.',
+    hyps: [
+      { h: 'Calm proof style reads faster than dense, small text.', d: 'the calm version doesn’t score higher on the UX check' },
+      { h: 'Showing proof inline builds trust faster.', d: 'people trust it just as much without inline proof' },
+      { h: 'Less bold text means people miss the result.', d: 'people find the result just as fast' } ],
+    wet: 'I want to show both designs to 5 real users and watch them read.' },
+  overnight: { q: 'Why do 25 landings a week still need a human fix?',
+    react: 'Ooh. This one is about us. Brave.',
+    hyps: [
+      { h: 'Most fixes come from unclear task specs.', d: 'landings with clear specs need just as many fixes' },
+      { h: 'Most fixes come from checks that skip the real app.', d: 'landings that ran the real app need just as many fixes' },
+      { h: 'Most fixes come from two agents touching the same file.', d: 'landings with no overlap need just as many fixes' } ],
+    wet: 'I want 10 minutes with the human who made those fixes. That’s you.' },
+};
+const CUSTOM = {
+  react: 'I don’t know the answer to that one. Which is exactly why it’s a good quest.',
+  hyps: [
+    { h: 'It’s simpler than it looks.', d: 'the simple fix doesn’t move anything' },
+    { h: 'Something upstream is the real cause.', d: 'fixing upstream changes nothing' },
+    { h: 'Nobody has actually measured it yet.', d: 'a solid measurement already exists' } ],
+  wet: 'I want to ask 5 real people who know this problem firsthand.' };
+const ORB_PICKS = ['setup', 'engine', 'calm', 'overnight'];
+const content = q => q.key === 'custom' ? { ...CUSTOM, q: q.q } : CONTENT[q.key];
+const CHECKS = hyp => ['drop it if ' + hyp.d, 'drop it if our runs disagree', 'drop it if the Skeptic finds a simpler explanation'];
+
+const BASE = { S: '#f2c9a0', K: '#1a1c2c', L: '#2a2f55', F: '#0a0b14' };
+const STARTERS = {
+  scout: { name: 'SCOUT', role: 'Digs up what’s already known', pal: { H: '#2f9e5a', B: '#43c46b' },
+    hello: 'Somebody out there has half-answered this already. I’ll find them.',
+    q3: 'I dug around. People who look at this usually land on one of these. Which do you believe?',
+    q4: 'And what would make you drop it?' },
+  theorist: { name: 'THEORIST', role: 'Makes bold bets', pal: { H: '#5b3bd6', B: '#9b7bff' },
+    hello: 'Three wild guesses already. Two are probably wrong. That’s the fun part.',
+    q3: 'Okay, okay. My three best guesses. Which one would you bet on?',
+    q4: 'Now the brave part. What result would prove us wrong?' },
+  experimenter: { name: 'EXPERIMENTER', role: 'Just runs it', pal: { H: '#d9771f', B: '#ff8c32', K: '#7fe7ff' },
+    hello: 'Talk is cheap. Give me a bench and an hour.',
+    q3: 'Pick one. I’ll test whatever you pick.',
+    q4: 'What result makes us say nope?' },
+};
+const SKEPTIC_PAL = { H: '#9aa0b5', B: '#6b7190' };
+const KEYS = ['scout', 'theorist', 'experimenter'];
+const BUDGETS = [
+  { k: 'quick', label: 'Quick look', sub: '$25 of fuel a pass · about an hour', cost: 25, react: 'A quick look. We’ll know if it’s worth more.' },
+  { k: 'long', label: 'Long run', sub: '$120 a pass · overnight', cost: 120, react: 'A long run. The party gets comfortable.' },
+  { k: 'deep', label: 'Deep dive', sub: '$400 a pass · a few days', cost: 400, react: 'Deep dive. I’ll tell them to bring snacks.' } ];
+const STOPS = [
+  { label: 'When we’re sure, either way', dest: 'answered with confidence, either way', react: 'Sure either way. That’s how real labs work.' },
+  { label: 'Only when the bet is proven', dest: 'the bet is proven', react: 'Stubborn. I like it. The Skeptic won’t.' },
+  { label: 'When the fuel runs out', dest: 'the fuel is spent', react: 'Simple. When the tank is empty, we stop and show you what we found.' } ];
+const PATTERNS = [[false, true, true], [true, true, false], [true, true, true]];
+const SCORES = [[.35, .82, .9], [.78, .86, .4], [.8, .88, .93]];
+const SKEPTIC = [
+  'Two out of three. Cute. Could also be a lucky week. Run it again before anyone puts it on a slide.',
+  'Two of three again, on a different bet. Fine. I’m less annoyed than I’d like to be.',
+  'Three for three. I checked twice. I have nothing. Write it down.' ];
+const progress = n => n <= 0 ? 'open' : n === 1 ? 'leaning yes' : n === 2 ? 'leaning yes, stronger' : 'answered: yes';
+const level = a => ({ 'open': 0, 'leaning yes': 1, 'leaning yes, stronger': 2 })[a] ?? 3;
+const STATUS = { running: 'RUNNING', needs: 'NEEDS YOU', resting: 'RESTING', queued: 'QUEUED', answered: 'ANSWERED', paused: 'PAUSED', empty: 'OUT OF FUEL', building: 'BUILDING' };
+const STAGE_LABELS = ['HYP', 'EXP', 'NOTE', 'RESULT', 'CONCL'];
+const ROOM_OF = ['hyp', 'exp', 'note', 'res', 'con'];
+const stageIdx = step => step <= 0 ? 0 : step <= 3 ? 1 : step === 4 ? 2 : step === 5 ? 3 : 4;
+
+function seeds() {
+  return [
+    { id: 'q-setup', key: 'setup', q: CONTENT.setup.q, starter: 'theorist', hi: 0, ci: 0, bi: 1, pi: 0, fuel: 760, status: 'running', answer: 'leaning yes', nextBet: null, example: true,
+      passes: [
+        { n: 1, bet: CONTENT.setup.hyps[0].h, step: 7, trials: [false, true, true], total: 3, kept: 2, scores: SCORES[0], wetAsked: true, wet: 'skipped' },
+        { n: 2, bet: CONTENT.setup.hyps[1].h, step: 1, trials: [true], total: 3 } ] },
+    { id: 'q-engine', key: 'engine', q: CONTENT.engine.q, starter: 'scout', hi: 0, ci: 0, bi: 0, pi: 2, fuel: 975, status: 'needs', answer: 'open', nextBet: null, example: true,
+      passes: [{ n: 1, bet: CONTENT.engine.hyps[0].h, step: 1, trials: [false], total: 3, wetAsked: true }] },
+    { id: 'q-calm', key: 'calm', q: CONTENT.calm.q, starter: 'experimenter', hi: 0, ci: 0, bi: 0, pi: 0, fuel: 975, status: 'resting', answer: 'leaning yes', nextBet: CONTENT.calm.hyps[1].h, real: true,
+      passes: [{ n: 1, bet: CONTENT.calm.hyps[0].h, step: 7, trials: [false, true], total: 2, kept: 1, scores: [.21, 1], real: true,
+        summary: 'dense-small reverted (UX 0.81 → 0.21) · calm-proof kept (UX 0.81 → 1.00)' }] },
+    { id: 'q-overnight', key: 'overnight', q: CONTENT.overnight.q, starter: 'scout', hi: 0, ci: 0, bi: 1, pi: 0, fuel: 1000, status: 'queued', answer: 'open', nextBet: null, fromBoot: true, passes: [] },
+  ];
+}
+
+/* ---------- simulation ---------- */
+const cur = q => q.passes[q.passes.length - 1];
+const donePasses = q => q.passes.filter(p => p.step >= 6).length;
+function nextBetFor(q, bet) { const list = content(q).hyps.map(x => x.h); return list[(list.indexOf(bet) + 1) % list.length]; }
+function advance(q) {
+  if (q.status !== 'running') return null;
+  const cost = BUDGETS[q.bi].cost; let p = cur(q);
+  if (!p || p.step >= 7) {
+    if (q.answer === 'answered: yes') { q.status = 'answered'; return 'answered'; }
+    if (q.fuel < cost) { q.status = 'empty'; return 'empty'; }
+    const bet = q.nextBet || content(q).hyps[q.hi].h; q.nextBet = null; q.fuel -= cost;
+    q.passes.push({ n: q.passes.length + 1, bet, step: 0, trials: [], total: 3 });
+    return 'start';
+  }
+  p.step += 1; const pi = (p.n - 1) % 3;
+  if (p.step <= 3) {
+    p.trials.push(PATTERNS[pi][p.step - 1]);
+    if (p.n === 1 && p.step === 1 && !p.wetAsked) { p.wetAsked = true; q.status = 'needs'; return 'needs'; }
+    return 'trial';
+  }
+  if (p.step === 4) return 'note';
+  if (p.step === 5) { p.kept = p.trials.filter(Boolean).length; p.scores = SCORES[pi]; return 'res'; }
+  if (p.step === 6) { q.answer = progress(donePasses(q)); return 'con'; }
+  if (q.answer === 'answered: yes') { q.status = 'answered'; return 'answered'; }
+  q.nextBet = nextBetFor(q, p.bet);
+  if (q.fuel < cost) { q.status = 'empty'; return 'empty'; }
+  return 'next';
+}
+
+/* ---------- state ---------- */
+const SKEY = 'vibe-research-v2';
+let quests = [], memStore = null;
+const st = { mode: 'title', talking: false, speaker: '', sel: null, draft: null, at: 'entry', flash: null };
+function persist() {
+  const data = JSON.stringify({ quests, sel: st.sel === 'draft' ? null : st.sel, savedAt: Date.now() });
+  try { localStorage.setItem(SKEY, data); return true; } catch { memStore = data; return false; }
+}
+function boot() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SKEY) || 'null'); } catch { saved = null; }
+  if (!saved || !Array.isArray(saved.quests) || !saved.quests.length) { quests = seeds(); st.sel = 'q-setup'; return; }
+  quests = saved.quests; st.sel = saved.sel || quests[0].id;
+  const steps = Math.min(30, Math.floor((Date.now() - (saved.savedAt || Date.now())) / TICK));
+  let moved = 0, needs = 0;
+  for (const q of quests) { let m = false; for (let i = 0; i < steps; i++) { if (!advance(q)) break; m = true; } if (m) moved++; if (q.status === 'needs') needs++; }
+  if (moved) setTimeout(() => toast(`While you were away: ${moved} quest${moved === 1 ? '' : 's'} moved${needs ? `, ${needs} need${needs === 1 ? 's' : ''} you` : ''}.`), 600);
+}
+const selQ = () => quests.find(q => q.id === st.sel);
+
+/* ---------- map geometry ---------- */
+const ROOMS = {
+  entry: { x: 14, y: 18, w: 80, h: 66, label: 'ENTRY' },
+  hyp:   { x: 120, y: 18, w: 80, h: 66, label: 'HYPOTHESIS' },
+  exp:   { x: 226, y: 18, w: 80, h: 66, label: 'EXPERIMENT' },
+  note:  { x: 226, y: 114, w: 80, h: 66, label: 'NOTEBOOK' },
+  res:   { x: 120, y: 114, w: 80, h: 66, label: 'RESULTS' },
+  con:   { x: 14, y: 114, w: 80, h: 66, label: 'CONCLUSION' } };
+const PATHS = {
+  'entry>hyp': [[54, 61], [160, 61]], 'hyp>exp': [[160, 61], [266, 61]], 'exp>note': [[266, 61], [266, 157]],
+  'note>res': [[266, 157], [160, 157]], 'res>con': [[160, 157], [54, 157]],
+  'con>hyp': [[54, 157], [54, 99], [107, 99], [107, 61], [160, 61]] };
+const ORB = { x: 54, y: 48 };
+const OFF = [[0, 0], [-11, 5], [11, 5], [0, 11]];
+const BODY = ['..HHHH..', '.HHHHHH.', '.HKSSKH.', '..SSSS..', '.BBBBBB.', 'SBBBBBBS', '..BBBB..'];
+const LEGS = [['..L..L..', '..F..F..'], ['.L....L.', 'F......F']];
+const mk = (name, pal, x, y) => ({ name, pal, x, y, tx: x, ty: y, res: null, moving: false, born: performance.now() / 1000 });
+const player = mk('YOU', { H: '#3b2a20', B: '#4d7cff' }, 54, 78);
+let party = [];
+const roomCenter = k => k === 'entry' ? { x: ORB.x + 18, y: ORB.y + 16 } : { x: ROOMS[k].x + ROOMS[k].w / 2, y: ROOMS[k].y + ROOMS[k].h / 2 + 10 };
+
+function stageRoom(q) {
+  const p = cur(q);
+  if (!p) return q.status === 'queued' ? 'hyp' : 'entry';
+  return p.step >= 7 ? 'con' : ROOM_OF[stageIdx(p.step)];
+}
+function scene() {
+  if (st.sel === 'draft' && st.draft) return { lit: { entry: true, hyp: !!st.draft.bet }, bet: !!st.draft.bet, active: null, trials: [], total: 3, run: -1, chart: null, pages: 0, trophy: false, door: false, loop: false };
+  const q = selQ(); if (!q) return { lit: { entry: true }, trials: [], total: 3, run: -1, pages: 0 };
+  const p = cur(q), done = donePasses(q), lit = { entry: true, hyp: true };
+  if (q.passes.some(x => x.step >= 7)) ROOM_OF.forEach(k => { lit[k] = true; });
+  else if (p) ROOM_OF.slice(0, stageIdx(p.step) + 1).forEach(k => { lit[k] = true; });
+  const last = [...q.passes].reverse().find(x => x.scores);
+  return { lit, bet: true, active: (q.status === 'running' || q.status === 'needs') ? stageRoom(q) : null,
+    trials: p ? p.trials : [], total: p ? p.total : 3, run: (q.status === 'running' && p && p.step >= 0 && p.step < 3 && p.trials.length < p.total) ? p.trials.length : -1,
+    chart: last ? last.scores : null, chartPat: last ? last.trials : null, pages: done, trophy: q.status === 'answered', door: true, loop: done > 0 };
+}
+
+/* ---------- dialogue ---------- */
+const dlg = { box: $('dialog'), sp: $('speaker'), line: $('line'), ch: $('choices'), nx: $('nextHint') };
+let typing = null, advanceDlg = null, typeGen = 0;
+function setSpeaker(name, tone) {
+  st.speaker = name; dlg.sp.textContent = name || '';
+  dlg.box.classList.toggle('wet', tone === 'wet'); $('wetTag').hidden = tone !== 'wet';
+  dlg.line.classList.toggle('narr', !name);
+}
+function type(text) {
+  const gen = ++typeGen;
+  return new Promise(res => {
+    if (typing) { const t = typing; typing = null; t.cancel(); }
+    dlg.ch.replaceChildren(); dlg.nx.hidden = true;
+    if (RM) { dlg.line.textContent = text; res(); return; }
+    let i = 0, id = 0; dlg.line.textContent = '';
+    const done = () => { clearInterval(id); if (typing && typing.gen === gen) typing = null; dlg.line.textContent = text; res(); };
+    typing = { gen, finish: done, cancel: () => { clearInterval(id); res(); } };
+    id = setInterval(() => { i += 1; dlg.line.textContent = text.slice(0, i); if (i >= text.length) done(); }, 15);
+  }).then(() => gen === typeGen);
+}
+async function say(name, text, tone) {
+  setSpeaker(name, tone); await type(text);
+  dlg.nx.hidden = false; await new Promise(r => { advanceDlg = r; }); advanceDlg = null; dlg.nx.hidden = true;
+}
+function choiceBtn(o, onPick) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'choice'; b.append(o.label);
+  if (o.sub) { const s = document.createElement('span'); s.textContent = o.sub; b.append(s); }
+  b.addEventListener('click', e => { e.stopPropagation(); onPick(); });
+  return b;
+}
+async function ask(name, text, opts, tone) {
+  setSpeaker(name, tone); await type(text);
+  return new Promise(res => {
+    dlg.ch.replaceChildren(...opts.map((o, i) => choiceBtn(typeof o === 'string' ? { label: o } : o, () => { dlg.ch.replaceChildren(); res(i); })));
+    dlg.ch.firstChild.focus({ preventScroll: true });
+  });
+}
+async function askText(name, text, placeholder) {
+  setSpeaker(name); await type(text);
+  return new Promise(res => {
+    const f = document.createElement('form'); f.className = 'text-form';
+    const inp = document.createElement('input'); inp.id = 'customQuest'; inp.placeholder = placeholder; inp.maxLength = 120; inp.setAttribute('aria-label', 'Your question');
+    const b = document.createElement('button'); b.type = 'submit'; b.textContent = 'OK';
+    f.append(inp, b);
+    f.addEventListener('submit', e => { e.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; } dlg.ch.replaceChildren(); res(v); });
+    f.addEventListener('click', e => e.stopPropagation());
+    dlg.ch.replaceChildren(f); inp.focus({ preventScroll: true });
+  });
+}
+dlg.box.addEventListener('click', () => { if (typing) typing.finish(); else if (advanceDlg) advanceDlg(); });
+dlg.ch.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const bs = [...dlg.ch.querySelectorAll('button.choice')]; if (!bs.length) return;
+  let i = bs.indexOf(document.activeElement); i = (i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length;
+  bs[i].focus(); e.preventDefault(); e.stopPropagation();
+});
+/* non-blocking line about the selected quest, with its controls underneath */
+function narrateQ(q, name, text, tone) {
+  if (st.talking || st.mode !== 'map') return;
+  setSpeaker(name, tone);
+  type(text).then(ok => { if (ok && !st.talking && st.mode === 'map') dlg.ch.replaceChildren(...controlsFor(q).map(c => choiceBtn(c, c.fn))); });
+}
+const leaderName = q => STARTERS[q.starter].name;
+function describe(q) {
+  const p = cur(q), n = p ? p.n : 0, done = donePasses(q), room = ROOMS[stageRoom(q)].label;
+  const trial = p && p.step >= 1 && p.step <= 3 ? `, trial ${Math.min(p.trials.length + 1, 3)} of 3` : '';
+  switch (q.status) {
+    case 'running': if (!p) return 'Setting up the first bet…'; return p.step < 7 ? `Pass ${n}, in ${room}${trial}. The bet: “${p.bet}”` : `Pass ${n} is done. Setting up the next bet…`;
+    case 'needs': return 'The Experimenter is waiting on you.';
+    case 'resting': return `Resting after ${done} pass${done === 1 ? '' : 'es'}. Answer so far: ${q.answer}.${q.nextBet ? ` Next bet on deck: “${q.nextBet}”` : ''}`;
+    case 'queued': return `Queued. The bet is on the board: “${content(q).hyps[q.hi].h}” Start it whenever you like.`;
+    case 'answered': return `Answered: yes, after ${done} passes. The trophy’s on the shelf.`;
+    case 'empty': return `Out of fuel after ${done} pass${done === 1 ? '' : 'es'}. That’s the stop rule. Answer so far: ${q.answer}.`;
+    case 'paused': return `Paused in ${room}. Nothing runs until you say so.`;
+  }
+  return '';
+}
+function controlsFor(q) {
+  const c = [];
+  const n = q.passes.length + 1;
+  if (q.status === 'running') c.push({ label: 'Pause this quest', fn: () => setStatus(q, 'paused') });
+  if (q.status === 'paused') c.push({ label: 'Resume', fn: () => setStatus(q, 'running') });
+  if (q.status === 'resting' || q.status === 'queued') c.push({ label: `Start pass ${n}`, sub: q.real ? 'Simulated from here on' : null, fn: () => setStatus(q, 'running') });
+  if (q.status === 'needs') c.push({ label: 'Answer the Experimenter', fn: () => script(() => askWet(q)) });
+  if (q.status === 'empty') c.push({ label: 'Add $250 of fuel', sub: 'Demo: no money moves', fn: () => { q.fuel += 250; setStatus(q, 'running'); } });
+  if (q.nextBet && ['running', 'paused', 'resting'].includes(q.status)) c.push({ label: 'Change the next bet', fn: () => script(() => changeBet(q)) });
+  if (near()) c.push({ label: 'Talk to the orb', fn: goTalk });
+  return c;
+}
+function setStatus(q, s) {
+  q.status = s; persist(); renderLog();
+  if (q.id === st.sel) narrateQ(q, leaderName(q), s === 'paused' ? 'Paused. We’ll hold right here.' : s === 'running' ? 'Back to work.' : describe(q));
+}
+
+/* ---------- quest log ---------- */
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else if (v != null && v !== false) el.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+function miniTrack(q) {
+  const p = cur(q), stop = q.status !== 'running';
+  return h('span', { class: 'mini', 'aria-hidden': 'true' }, STAGE_LABELS.map((_, i) => {
+    let c = '';
+    if (p && p.step >= 7) c = 'done';
+    else if (p) { const si = stageIdx(p.step); c = i < si ? 'done' : i === si ? 'cur' + (stop ? ' stop' : '') : ''; }
+    else if (q.status === 'queued' && i === 0) c = 'cur stop';
+    return h('i', { class: c });
+  }));
+}
+function rowFor(q) {
+  const p = cur(q), done = donePasses(q);
+  const meta = p ? `pass ${p.n} · ${q.answer}` : 'not started';
+  return h('button', { class: 'qrow', type: 'button', 'aria-pressed': String(st.sel === q.id), onclick: () => select(q.id) },
+    h('span', { class: 'row-top' }, h('span', { class: 'st ' + q.status }, STATUS[q.status]),
+      q.real ? h('span', { class: 'src-tag real' }, 'REAL RESULTS') : q.mine ? h('span', { class: 'src-tag' }, 'YOURS') : q.fromBoot ? h('span', { class: 'src-tag' }, 'FROM YOUR BOOT SCREEN') : h('span', { class: 'src-tag' }, 'EXAMPLE')),
+    h('strong', { class: 'qtext' }, q.q),
+    h('span', { class: 'row-top' }, miniTrack(q), h('span', { class: 'row-meta' }, meta)));
+}
+function detailFor(q) {
+  const p = cur(q), done = donePasses(q), stop = q.status !== 'running', lv = level(q.answer);
+  const si = p ? (p.step >= 7 ? 5 : stageIdx(p.step)) : (q.status === 'queued' ? 0 : -1);
+  const track = h('div', { class: 'track' }, STAGE_LABELS.map((l, i) => {
+    let c = 'stage', sub = '';
+    if (p && p.step >= 7) { c += ' done'; }
+    else if (i < si) c += ' done';
+    else if (i === si) { c += ' cur' + (stop ? ' stop' : ''); }
+    if (i === 1 && p && p.step < 7) sub = `${p.trials.length}/${p.total}`;
+    if (i === 1 && p && p.step >= 7) sub = `${p.kept ?? p.trials.filter(Boolean).length}/${p.total} kept`;
+    return h('div', { class: c }, h('b', {}, l), h('small', {}, sub || (i === si && p && p.step < 7 ? 'now' : '·')));
+  }));
+  const S = STARTERS[q.starter], others = KEYS.filter(k => k !== q.starter);
+  const partyNames = [S.name, ...(q.passes.length ? others.map(k => STARTERS[k].name) : []), ...(q.passes.some(x => x.step >= 6) ? ['SKEPTIC'] : [])];
+  const items = [];
+  if (q.nextBet && !['answered'].includes(q.status)) items.push(h('li', { class: 'next' }, h('span', { class: 'ph' }, `NEXT · MISSION #${q.passes.length + 1}`), `Bet: ${q.nextBet}`, h('span', { class: 'note' }, `suggested by ${S.name}`)));
+  [...q.passes].reverse().forEach(x => {
+    const live = x.step < 7;
+    const where = live ? `now in ${ROOMS[ROOM_OF[stageIdx(x.step)]].label.toLowerCase()}${x.step >= 1 && x.step <= 3 ? `, ${x.trials.length} of ${x.total} trials` : ''}` : '';
+    const result = x.summary || (x.kept != null ? `${x.kept} of ${x.total} trials kept` : '');
+    items.push(h('li', { class: live ? 'now' : 'done' },
+      h('span', { class: 'ph' }, `PASS ${x.n} · MISSION #${x.n} · ${live ? 'RUNNING' : 'ENDED'}`),
+      `Bet: ${x.bet}`,
+      live ? h('span', { class: 'note' }, where) : h('span', { class: 'note' }, result + (x.wet ? ` · real-world step ${x.wet === 'approved' ? 'approved by you' : 'skipped'}` : ''))));
+  });
+  if (!q.passes.length) items.push(h('li', {}, h('span', { class: 'ph' }, 'NO PASSES YET'), 'Each walk through the lab is one mission. The quest keeps them all.'));
+  const ctr = controlsFor(q).filter(c => c.label !== 'Talk to the orb');
+  return [
+    h('p', { class: 'eyebrow' }, `QUEST · LASTS · ${STATUS[q.status]}`),
+    h('h3', {}, q.q),
+    h('p', { class: 'eyebrow' }, p && p.step < 7 ? `WHERE PASS ${p.n} IS RIGHT NOW` : 'THE LAB LOOP'),
+    track,
+    h('p', { class: 'eyebrow' }, `ANSWER · ${q.answer.toUpperCase()}`),
+    h('div', { class: 'meter' }, ['OPEN', 'LEANING', 'STRONGER', 'ANSWERED'].map((l, i) => h('span', { class: i <= lv && (i > 0 || lv === 0) ? 'on' : '' }, l))),
+    h('div', {}, h('div', { class: 'gauge-row' }, h('span', {}, 'Fuel'), h('span', {}, `$${q.fuel} left · $${BUDGETS[q.bi].cost} a pass`)),
+      h('div', { class: 'gauge' }, h('i', { style: `width:${Math.max(0, Math.min(100, q.fuel / 10))}%` }))),
+    h('p', { class: 'eyebrow' }, 'PASSES'),
+    h('ol', { class: 'passes' }, items),
+    h('div', { class: 'party' }, partyNames.map((n, i) => h('span', { class: i === 0 ? 'lead' : '' }, i === 0 ? '★ ' + n : n))),
+    ctr.length ? h('div', { class: 'row' }, ctr.map(c => h('button', { class: 'ghost' + (q.status === 'needs' ? ' hot' : ''), type: 'button', onclick: c.fn }, c.label.toUpperCase()))) : null,
+  ];
+}
+const DRAFT_FLAGS = [['quest', 'Quest'], ['party', 'Leader'], ['bet', 'Bet'], ['check', 'Proves us wrong'], ['fuel', 'Fuel'], ['stop', 'Stop when']];
+function detailForDraft(d) {
+  return [
+    h('p', { class: 'eyebrow' }, 'NEW QUEST · YOUR ANSWERS BECOME FLAGS'),
+    h('dl', { class: 'flags' }, DRAFT_FLAGS.map(([k, l]) => [h('dt', {}, l), h('dd', { class: d[k] ? (st.flash === k ? 'set' : '') : 'empty' }, d[k] || '—')])),
+  ];
+}
+function renderLog() {
+  const rows = quests.map(rowFor);
+  if (st.draft) rows.unshift(h('button', { class: 'qrow', type: 'button', 'aria-pressed': String(st.sel === 'draft'), onclick: () => select('draft') },
+    h('span', { class: 'row-top' }, h('span', { class: 'st building' }, 'BUILDING'), h('span', { class: 'src-tag' }, 'YOURS')),
+    h('strong', { class: 'qtext' }, st.draft.quest || 'A new question…')));
+  $('rows').replaceChildren(...rows);
+  const q = selQ();
+  $('detail').replaceChildren(...(st.sel === 'draft' && st.draft ? detailForDraft(st.draft) : q ? detailFor(q) : []));
+  const c = s => quests.filter(q => q.status === s).length;
+  const parts = [`${quests.length} QUESTS`, c('running') && `${c('running')} RUNNING`, c('needs') && `${c('needs')} NEED YOU`].filter(Boolean);
+  $('logSum').textContent = parts.join(' · ');
+}
+function setDraft(k, v) { st.draft[k] = v; st.flash = k; renderLog(); st.flash = null; }
+
+function buildParty(q) {
+  const room = stageRoom(q), c = roomCenter(room), S = STARTERS[q.starter];
+  const list = [mk(S.name, S.pal, 0, 0)]; list[0].lead = true;
+  if (q.passes.length) KEYS.filter(k => k !== q.starter).forEach(k => list.push(mk(STARTERS[k].name, STARTERS[k].pal, 0, 0)));
+  if (q.passes.some(x => x.step >= 6)) list.push(mk('SKEPTIC', SKEPTIC_PAL, 0, 0));
+  list.forEach((e, i) => { e.x = e.tx = c.x + OFF[i][0]; e.y = e.ty = c.y + OFF[i][1]; e.born = 0; });
+  st.at = room; return list;
+}
+function select(id, quiet) {
+  if (st.talking && id !== st.sel) { toast('Finish this conversation first.'); return; }
+  st.sel = id; renderLog(); persist();
+  if (id === 'draft') return;
+  const q = selQ(); party = buildParty(q);
+  const c = roomCenter(st.at); if (!st.talking) { player.res = null; player.x = player.tx = Math.max(10, c.x - 22); player.y = player.ty = c.y + 6; }
+  if (st.mode !== 'map') { setMode('map', true); }
+  if (quiet) return;
+  if (q.status === 'needs') script(() => askWet(q)); else narrateQ(q, leaderName(q), describe(q));
+}
+
+/* ---------- movement ---------- */
+const keys = new Set();
+const clampX = x => Math.max(10, Math.min(310, x)), clampY = y => Math.max(16, Math.min(192, y));
+function walkTo(e, x, y) { e.tx = x; e.ty = y; return new Promise(r => { e.res = r; }); }
+async function walkPath(e, pts, off) { for (const [x, y] of pts) await walkTo(e, x + off[0], y + off[1]); }
+function roomPath(a, b) { if (a === b) return []; const c = roomCenter(b); return PATHS[a + '>' + b] || [[c.x, c.y]]; }
+function partyTo(room) {
+  const pts = roomPath(st.at, room); st.at = room; if (!pts.length) return;
+  party.forEach((e, i) => walkPath(e, pts, OFF[i] || [0, 0]));
+}
+const near = () => Math.hypot(player.x - ORB.x, player.y - ORB.y) < 20;
+let lastNear = false;
+function update(dt) {
+  if (st.mode === 'map' && !st.talking) {
+    let vx = 0, vy = 0;
+    if (keys.has('ArrowLeft') || keys.has('a')) vx -= 1; if (keys.has('ArrowRight') || keys.has('d')) vx += 1;
+    if (keys.has('ArrowUp') || keys.has('w')) vy -= 1; if (keys.has('ArrowDown') || keys.has('s')) vy += 1;
+    if (vx || vy) { player.res = null; player.x = clampX(player.x + vx * 70 * dt); player.y = clampY(player.y + vy * 70 * dt); player.tx = player.x; player.ty = player.y; player.moving = true; }
+  }
+  for (const e of [player, ...party]) {
+    const dx = e.tx - e.x, dy = e.ty - e.y, d = Math.hypot(dx, dy);
+    if (d > 0.6) { const s = Math.min(d, 80 * dt); e.x += dx / d * s; e.y += dy / d * s; e.moving = true; }
+    else { if (e !== player || !keys.size) e.moving = false; e.x = e.tx; e.y = e.ty; if (e.res) { const r = e.res; e.res = null; r(); } }
+  }
+  const n = near(); if (n !== lastNear) { lastNear = n; const q = selQ(); if (q && st.mode === 'map' && !st.talking && !typing) dlg.ch.replaceChildren(...controlsFor(q).map(c => choiceBtn(c, c.fn))); }
+}
+
+/* ---------- drawing ---------- */
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function outline(x, y, w, h, c) { rect(x, y, w, 1, c); rect(x, y + h - 1, w, 1, c); rect(x, y, 1, h, c); rect(x + w - 1, y, 1, h, c); }
+function text(t, x, y, c, size = 6, font = PIX) { ctx.fillStyle = c; ctx.font = `${size}px ${font}`; ctx.textBaseline = 'top'; ctx.fillText(t, x, y); }
+function drawPerson(e, t) {
+  const ox = Math.round(e.x - 4), oy = Math.round(e.y - 9), f = e.moving ? Math.floor(t * 8) % 2 : 0;
+  rect(ox + 1, oy + 9, 6, 1, 'rgba(0,0,0,.45)');
+  [...BODY, ...LEGS[f]].forEach((row, r) => { for (let c = 0; c < 8; c++) { const ch = row[c]; if (ch !== '.') rect(ox + c, oy + r, 1, 1, e.pal[ch] || BASE[ch]); } });
+  if (e.lead) rect(ox + 3, oy - 2, 2, 1, '#ffd166');
+  const age = t - e.born; if (age < 0.6) { const k = Math.round(age * 12); rect(ox - k, oy, 1, 1, '#ffd166'); rect(ox + 8 + k, oy, 1, 1, '#ffd166'); rect(ox + 3, oy - 3 - k, 1, 1, '#ffd166'); }
+}
+function drawOrb(t) {
+  const p = (Math.sin(t * 2.4) + 1) / 2, r = 11 + p * 4 + (st.speaker === 'ORB' ? 5 : 0);
+  const g = ctx.createRadialGradient(ORB.x, ORB.y, 0, ORB.x, ORB.y, r);
+  g.addColorStop(0, 'rgba(127,231,255,.6)'); g.addColorStop(1, 'rgba(127,231,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(ORB.x - r, ORB.y - r, r * 2, r * 2);
+  rect(ORB.x - 3, ORB.y + 4, 6, 2, '#3b4378'); rect(ORB.x - 5, ORB.y + 6, 10, 3, '#2a3160');
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+    const d = dx * dx + dy * dy; if (d > 17) continue;
+    rect(ORB.x + dx, ORB.y + dy, 1, 1, (dx === -2 && dy === -2) ? '#ffffff' : d > 12 ? '#3fb6d6' : '#7fe7ff');
+  }
+}
+function drawMap(t) {
+  const sc = scene();
+  ctx.setTransform(SC, 0, 0, SC, 0, 0); ctx.imageSmoothingEnabled = false;
+  for (let y = 0; y < H; y += 8) for (let x = 0; x < W; x += 8) rect(x, y, 8, 8, ((x + y) / 8) % 2 ? '#0d1130' : '#0b0f2a');
+  outline(6, 10, 308, 186, '#232a52');
+  const q = selQ();
+  const head = st.sel === 'draft' ? 'NEW QUEST' : q ? q.q.toUpperCase() : '';
+  text(head.length > 34 ? head.slice(0, 33) + '…' : head, 8, 2, '#8f95c0', 5);
+  if (q && st.sel !== 'draft') { const tag = STATUS[q.status]; text(tag, 312 - tag.length * 5, 2, q.status === 'needs' ? '#ff6b6b' : q.status === 'running' ? '#7fe7ff' : '#ffd166', 5); }
+  for (const [key, pts] of Object.entries(PATHS)) {
+    const [a, b] = key.split('>'); const loop = key === 'con>hyp';
+    const on = loop ? sc.loop : sc.lit[a] && sc.lit[b];
+    const c = loop ? (on ? '#ffd166' : '#151a3a') : on ? 'rgba(127,231,255,.6)' : '#1e2448';
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1], len = Math.hypot(x2 - x1, y2 - y1);
+      for (let s = 0; s <= len; s += 3) rect(Math.round(x1 + (x2 - x1) * s / len), Math.round(y1 + (y2 - y1) * s / len), 1, 1, c);
+    }
+  }
+  for (const [k, r] of Object.entries(ROOMS)) {
+    const lit = sc.lit[k];
+    rect(r.x, r.y, r.w, r.h, lit ? '#1b2249' : '#0a0d21');
+    const blink = sc.active === k && Math.floor(t * 3) % 2;
+    outline(r.x, r.y, r.w, r.h, blink ? (q && q.status === 'needs' ? '#ff6b6b' : '#ffd166') : lit ? '#56629f' : '#1c2142');
+    text(lit ? r.label : '???', r.x + 4, r.y + 4, lit ? '#e9ebff' : '#2e3563');
+  }
+  drawOrb(t);
+  if (sc.lit.hyp) {
+    rect(132, 31, 56, 18, '#6b5a3a'); rect(133, 32, 54, 16, '#1d3b2f');
+    if (sc.bet) { rect(137, 36, 40, 1, '#dfeee6'); rect(137, 40, 30, 1, '#dfeee6'); rect(137, 44, 44, 1, '#dfeee6'); }
+  }
+  if (sc.door) { const g = Math.floor(t * 2) % 2; rect(118, 55, 4, 13, g ? '#ffd166' : '#e0b04a'); rect(117, 54, 6, 1, '#ffd166'); }
+  if (sc.lit.exp) for (let i = 0; i < 3; i++) {
+    const bx = 233 + i * 24, by = 54; rect(bx, by, 17, 7, '#3b4378'); rect(bx + 1, by + 7, 1, 5, '#2a3160'); rect(bx + 15, by + 7, 1, 5, '#2a3160');
+    const tr = sc.trials[i]; let c = i >= sc.total ? '#0b0e22' : tr === undefined ? '#141936' : tr ? '#7ee08a' : '#ff6b6b';
+    if (sc.run === i) c = Math.floor(t * 8) % 2 ? '#7fe7ff' : '#141936';
+    rect(bx + 4, by - 7, 9, 6, '#56629f'); rect(bx + 5, by - 6, 7, 4, c);
+  }
+  if (sc.lit.note) {
+    rect(238, 150, 56, 4, '#6b5a3a'); rect(250, 139, 32, 10, '#f4f1e6'); rect(266, 139, 1, 10, '#1a1c2c');
+    for (let i = 0; i < Math.min(8, sc.pages * 2 + 1); i++) rect(i % 2 ? 269 : 253, 141 + Math.floor(i / 2) * 2, 10, 1, '#8f95c0');
+  }
+  if (sc.lit.res) {
+    rect(130, 128, 60, 40, '#56629f'); rect(131, 129, 58, 38, '#11152f');
+    if (sc.chart) sc.chart.forEach((s, i) => { const hh = Math.round(s * 30); rect(140 + i * 15, 164 - hh, 9, hh, sc.chartPat[i] ? '#7ee08a' : '#ff6b6b'); });
+    rect(136, 164, 48, 1, '#8f95c0');
+  }
+  if (sc.lit.con) {
+    rect(22, 142, 64, 2, '#6b5a3a');
+    for (let i = 0; i < Math.min(sc.pages, 6); i++) { rect(26 + i * 10, 130, 7, 10, '#f4f1e6'); rect(29 + i * 10, 131, 1, 1, '#ff6b6b'); }
+    if (sc.trophy) { rect(66, 156, 9, 6, '#ffd166'); rect(68, 162, 5, 2, '#ffd166'); rect(67, 164, 7, 2, '#e0b04a'); }
+  }
+  [player, ...party].sort((a, b) => a.y - b.y).forEach(e => drawPerson(e, t));
+  if (near() && !st.talking) { rect(player.x - 5, player.y - 22, 11, 9, '#f4f1e6'); outline(player.x - 5, player.y - 22, 11, 9, '#1a1c2c'); text('A', player.x - 2, player.y - 20, '#1a1c2c'); }
+}
+
+/* title: a VHS night scene */
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const LIGHTS = Array.from({ length: 46 }, () => ({ x: 150 + rnd() * 175, y: 84 + rnd() * 8, s: rnd() < .2 ? 2 : 1, c: ['#ffe9a8', '#ffffff', '#9fd8ff', '#ffb36b', '#ff6b8a'][Math.floor(rnd() * 5)], f: rnd() * 6 }));
+const PEBBLES = Array.from({ length: 1100 }, () => { const v = Math.pow(rnd(), 1.5); const y = 94 + v * 106; return { x: rnd() * 320, y, s: v > .6 && rnd() < .5 ? 2 : 1, c: `rgba(${150 + v * 70},${140 + v * 60},${120 + v * 50},${.25 + v * .55})` }; });
+function drawTitle(t) {
+  ctx.setTransform(SC, 0, 0, SC, 0, 0);
+  let g = ctx.createLinearGradient(0, 0, 0, 96); g.addColorStop(0, '#03040b'); g.addColorStop(1, '#141a3c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 96);
+  g = ctx.createLinearGradient(0, 92, 0, 200); g.addColorStop(0, '#16140f'); g.addColorStop(1, '#3d3629');
+  ctx.fillStyle = g; ctx.fillRect(0, 92, W, 108);
+  for (const p of PEBBLES) rect(p.x, p.y, p.s, p.s, p.c);
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(150, 200); ctx.quadraticCurveTo(230, 150, 330, 128); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(205, 200); ctx.quadraticCurveTo(270, 158, 330, 142); ctx.stroke();
+  for (const l of LIGHTS) {
+    const a = .55 + .45 * Math.sin(t * 3 + l.f);
+    const r = l.s * 4; const gg = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r);
+    gg.addColorStop(0, l.c); gg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = a * .5; ctx.fillStyle = gg; ctx.fillRect(l.x - r, l.y - r, r * 2, r * 2);
+    ctx.globalAlpha = a; rect(l.x, l.y, l.s, l.s, l.c); ctx.globalAlpha = 1;
+  }
+  const fl = ctx.createRadialGradient(178, 89, 0, 178, 89, 9); fl.addColorStop(0, 'rgba(255,190,120,.95)'); fl.addColorStop(1, 'rgba(255,120,60,0)');
+  ctx.fillStyle = fl; ctx.fillRect(168, 79, 20, 20);
+  for (let i = 0; i < 220; i++) rect(Math.random() * W, Math.random() * H, 1, 1, `rgba(255,255,255,${Math.random() * .12})`);
+  const band = ((t * 38) % 260) - 30; for (let i = 0; i < 40; i++) rect(Math.random() * W, band + Math.random() * 5, 4 + Math.random() * 18, 1, 'rgba(255,255,255,.08)');
+  text('PLAY', 268, 10, '#e9ebff', 12, '"VT323", monospace'); ctx.fillStyle = '#e9ebff'; ctx.beginPath(); ctx.moveTo(292, 12); ctx.lineTo(299, 16); ctx.lineTo(292, 20); ctx.fill();
+  text('OCT.14 2026', 12, 182, '#e9ebff', 11, '"VT323", monospace');
+  text('VIBE RESEARCH', 226, 184, '#7fe7ff', 6);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (let y = 0; y < H * SC; y += 3) { ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(0, y, W * SC, 1); }
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now; const t = now / 1000;
+  update(dt); if (st.mode === 'title') drawTitle(t); else drawMap(t);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- live ticks ---------- */
+function onEvent(q, ev) {
+  if (q.id !== st.sel || st.mode !== 'map') {
+    if (ev === 'needs') toast(`${q.q.slice(0, 40)}${q.q.length > 40 ? '…' : ''} needs you`);
+    if (ev === 'answered') toast(`Answered: ${q.q.slice(0, 40)}${q.q.length > 40 ? '…' : ''}`);
+    return;
+  }
+  const room = stageRoom(q);
+  if (room !== st.at) partyTo(room);
+  if (ev === 'start' && party.length < 3) {
+    KEYS.filter(k => k !== q.starter).forEach((k, i) => { const e = mk(STARTERS[k].name, STARTERS[k].pal, 112, 66 + i * 8); party.push(e); });
+    toast(`${party[1].name} and ${party[2].name} joined your party`);
+    const c = roomCenter(room); party.forEach((e, i) => { if (i > 0) walkTo(e, c.x + OFF[i][0], c.y + OFF[i][1]); });
+  }
+  if (ev === 'con' && !party.some(e => e.name === 'SKEPTIC')) {
+    const sk = mk('SKEPTIC', SKEPTIC_PAL, 20, 176); party.push(sk); const c = roomCenter('con'); walkTo(sk, c.x + OFF[3][0], c.y + OFF[3][1]);
+    toast('SKEPTIC joined your party');
+  }
+  const p = cur(q), L = leaderName(q);
+  const lines = {
+    start: [L, `Pass ${p && p.n}. The bet on the board: “${p && p.bet}”`],
+    trial: ['', p ? `Trial ${p.trials.length}: ${p.trials[p.trials.length - 1] ? 'kept. It helped.' : 'reverted. It didn’t help, so we undid it.'}` : ''],
+    note: ['', `Notebook: page ${p && p.n} written.`],
+    res: ['RESULTS', p ? `${p.kept >= 2 ? 'LEANING YES' : 'LEANING NO'}. ${p.kept} of ${p.total} trials backed the bet.` : ''],
+    con: ['SKEPTIC', SKEPTIC[Math.min(((p && p.n) || 1) - 1, 2)]],
+    next: [L, `Next bet: “${q.nextBet}” Queued. Tap “Change the next bet” if you’d rather pick.`],
+    answered: ['ORB', 'Three passes agree. That’s the stop rule. The quest is answered, and the trophy goes on the shelf.'],
+    empty: ['ORB', 'The tank is empty. That’s the stop rule doing its job. Everything we found is in the passes.'],
+  };
+  if (ev === 'needs') { script(() => askWet(q)); return; }
+  const [who, txt] = lines[ev] || [L, describe(q)];
+  narrateQ(q, who, txt);
+}
+setInterval(() => {
+  let changed = false;
+  for (const q of quests) { const ev = advance(q); if (ev) { changed = true; onEvent(q, ev); } }
+  if (changed) { renderLog(); persist(); }
+}, TICK);
+
+/* ---------- conversations ---------- */
+const menuBtn = $('menuBtn');
+async function script(fn) {
+  if (st.talking) return; st.talking = true; menuBtn.disabled = true;
+  try { await fn(); } finally {
+    st.talking = false; menuBtn.disabled = st.mode === 'title'; setSpeaker('');
+    const q = selQ(); if (q && st.mode === 'map') narrateQ(q, leaderName(q), describe(q));
+  }
+}
+async function askWet(q) {
+  if (q.status !== 'needs') return;
+  const w = await ask('EXPERIMENTER', `${content(q).wet} That’s the real world. There’s no reload.`,
+    [{ label: 'Approve it', sub: 'Demo: nothing is actually sent or spent' }, { label: 'Stay in the dry lab', sub: 'Keep going with what we can undo' }], 'wet');
+  const p = cur(q); if (p) p.wet = w === 0 ? 'approved' : 'skipped';
+  q.status = 'running'; persist(); renderLog();
+  await say('EXPERIMENTER', w === 0 ? 'Approved. In the real thing, it waits for exactly this tap.' : 'Dry lab it is. We’ll work with what we can undo.');
+}
+async function changeBet(q) {
+  const list = content(q).hyps.map(x => x.h);
+  const i = await ask(leaderName(q), 'Sure. Which bet should we run next?', list);
+  q.nextBet = list[i]; persist(); renderLog();
+  await say(leaderName(q), 'Done. That one’s next.');
+}
+async function goTalk() {
+  if (st.talking) return;
+  if (!near()) await walkTo(player, ORB.x, ORB.y + 15);
+  if (near()) script(orbMenu);
+}
+async function orbMenu() {
+  const needs = quests.filter(q => q.status === 'needs');
+  const r = await ask('ORB', `Hello again. ${quests.length} quests in the log${needs.length ? `, and ${needs.length} need${needs.length === 1 ? 's' : ''} you` : ''}. What do you want to do?`,
+    ['Start a new quest', 'Where does everything stand?', 'Never mind']);
+  if (r === 0) await newQuest();
+  else if (r === 1) {
+    const by = s => quests.filter(q => q.status === s).length;
+    await say('ORB', `${by('running')} running, ${by('needs')} waiting on you, ${by('resting') + by('paused')} resting, ${by('queued')} queued, ${by('answered')} answered. Pick any of them in the quest log to jump to its lab.`);
+  }
+}
+async function newQuest() {
+  st.draft = {}; const prevSel = st.sel; st.sel = 'draft'; party = []; renderLog();
+  await say('ORB', 'A new quest! I’ll ask one thing at a time.');
+  const qi = await ask('ORB', 'What are you trying to find out?', [...ORB_PICKS.map(k => CONTENT[k].q), 'Something else…']);
+  let key, qtext;
+  if (qi === ORB_PICKS.length) { key = 'custom'; qtext = await askText('ORB', 'Tell me. One sentence is plenty.', 'Why does…'); }
+  else { key = ORB_PICKS[qi]; qtext = CONTENT[key].q; }
+  const C = key === 'custom' ? { ...CUSTOM, q: qtext } : CONTENT[key];
+  setDraft('quest', qtext);
+  await say('ORB', C.react);
+  const si = await ask('ORB', 'Who should come with you? Pick your starter.', KEYS.map(k => ({ label: STARTERS[k].name, sub: STARTERS[k].role })));
+  const sk = KEYS[si], S = STARTERS[sk];
+  const lead = mk(S.name, S.pal, ORB.x + 18, ORB.y + 16); lead.lead = true; party = [lead]; st.at = 'entry';
+  setDraft('party', S.name);
+  await say(S.name, S.hello);
+  const hi = await ask(S.name, S.q3, C.hyps.map(x => x.h));
+  setDraft('bet', C.hyps[hi].h);
+  const checks = CHECKS(C.hyps[hi]);
+  const ci = await ask(S.name, S.q4, checks.map(c => 'If ' + c.replace('drop it if ', '')));
+  setDraft('check', checks[ci]);
+  await say(S.name, ['Specific. Good. That’s a bet we can actually lose.', 'Fair. If the runs can’t agree, we don’t know anything yet.', 'Brave. The Skeptic is going to love you.'][ci]);
+  await say('ORB', 'Two more, and they’re mine.');
+  const bi = await ask('ORB', 'How far do we go? This quest gets its own $1,000 tank.', BUDGETS.map(b => ({ label: b.label, sub: b.sub })));
+  setDraft('fuel', `${BUDGETS[bi].label} · $${BUDGETS[bi].cost} a pass`);
+  await say('ORB', BUDGETS[bi].react);
+  const pi = await ask('ORB', 'When do we stop?', STOPS.map(s => s.label));
+  setDraft('stop', STOPS[pi].dest);
+  await say('ORB', STOPS[pi].react);
+  const q = { id: 'q-' + Date.now().toString(36).slice(-5), key, q: qtext, starter: sk, hi, ci, bi, pi, fuel: 1000, status: 'running', answer: 'open', nextBet: null, mine: true, passes: [] };
+  await say('', 'The orb glows. Your answers settle into something solid.');
+  await showCompile(q, C);
+  st.draft = null; quests.unshift(q); st.sel = q.id; persist(); renderLog();
+  toast('Quest started. It’s at the top of your log.');
+  void prevSel;
+}
+
+/* ---------- sheets ---------- */
+let sheetResolve = null;
+function openSheet(nodes) { $('sheetBody').replaceChildren(...nodes); $('sheet').hidden = false; const f = $('sheetBody').querySelector('button'); if (f) f.focus({ preventScroll: true }); }
+function closeSheet() { $('sheet').hidden = true; if (sheetResolve) { const r = sheetResolve; sheetResolve = null; r(); } }
+$('sheetClose').addEventListener('click', closeSheet);
+$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+function card(title, tag, tone, rows) {
+  return h('section', { class: 'card ' + tone }, h('header', {}, h('span', {}, title), h('span', { class: 'tag' }, tag)),
+    h('dl', {}, rows.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
+}
+function showCompile(q, C) {
+  return new Promise(res => {
+    const S = STARTERS[q.starter], hyp = C.hyps[q.hi], check = CHECKS(hyp)[q.ci], b = BUDGETS[q.bi], s = STOPS[q.pi];
+    const cmd = `atris mission start "${hyp.h}" \\\n  --owner ${q.starter} \\\n  --verify "${check}" \\\n  --budget ${b.k} \\\n  --destination "${s.dest}" \\\n  --quest ${q.id}`;
+    const pre = h('pre', {}, cmd);
+    const copy = h('button', { class: 'small-btn', type: 'button', onclick: async e => {
+      const btn = e.currentTarget;
+      try { await navigator.clipboard.writeText(cmd.replace(/ \\\n {2}/g, ' ')); btn.textContent = 'COPIED'; }
+      catch { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = 'SELECTED, PRESS ⌘C'; }
+    } }, 'COPY');
+    openSheet([
+      h('p', { class: 'eyebrow' }, 'YOUR ANSWERS, COMPILED'),
+      h('h2', {}, 'One quest. One mission.'),
+      h('p', { class: 'lede' }, 'The quest lasts. It’s your save file. The mission ends after one walk through the lab, and the next one starts from what it learned.'),
+      h('div', { class: 'cards' },
+        card('QUEST', 'LASTS', 'gold', [['question', q.q], ['leader', S.name], ['answer', 'open'], ['id', q.id]]),
+        card('MISSION #1', 'ENDS', 'orb', [['bet', hyp.h], ['check', check], ['fuel', `$${b.cost} (${b.label.toLowerCase()})`], ['stop', s.dest], ['owner', q.starter]])),
+      h('p', { class: 'eyebrow' }, 'WHAT THE TEAM RECEIVES'),
+      h('div', { class: 'cmd' }, pre, copy),
+      h('p', { class: 'note' }, 'This is today’s atris mission start, plus the one new field: --quest.'),
+      h('button', { class: 'primary', type: 'button', onclick: closeSheet }, 'START THE QUEST'),
+    ]);
+    sheetResolve = res;
+  });
+}
+function showLoad() {
+  openSheet([
+    h('p', { class: 'eyebrow' }, 'LOAD'),
+    h('h2', {}, 'Pick up a quest'),
+    h('div', { class: 'slots' }, quests.map(q => { const b = rowFor(q); b.addEventListener('click', closeSheet); return b; })),
+  ]);
+}
+function showSettings() {
+  openSheet([
+    h('p', { class: 'eyebrow' }, 'SETTINGS'),
+    h('h2', {}, 'Who does the work'),
+    h('p', { class: 'lede' }, 'Characters are your team members. The engines behind them come from your roster.'),
+    h('dl', { class: 'roster' },
+      h('dt', {}, 'BUILD'), h('dd', {}, 'Codex, gpt-6.1-sol · then Claude Code, Opus 5.5'),
+      h('dt', {}, 'REVIEW'), h('dd', {}, 'Claude Code, Fable 5.1'),
+      h('dt', {}, 'SEARCH'), h('dd', {}, 'Claude Code, Haiku 5.5'),
+      h('dt', {}, 'TICK'), h('dd', {}, 'One step every 2.6 seconds in this demo')),
+    h('div', { class: 'row' },
+      h('button', { class: 'ghost', type: 'button', onclick: closeSheet }, 'BACK'),
+      h('button', { class: 'ghost', type: 'button', onclick: () => { quests = seeds(); st.sel = 'q-setup'; persist(); closeSheet(); renderLog(); toast('Demo reset to the example quests.'); } }, 'RESET DEMO')),
+  ]);
+}
+function showQuit() {
+  openSheet([
+    h('p', { class: 'eyebrow' }, 'QUIT'),
+    h('h2', {}, 'Everyone stops after the step they’re on.'),
+    h('p', { class: 'lede' }, 'Your quests stay saved. PLAY or LOAD brings you right back to where each one left off.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', type: 'button', onclick: () => { quests.forEach(q => { if (q.status === 'running') q.status = 'paused'; }); persist(); renderLog(); closeSheet(); toast('All quests paused.'); } }, 'PAUSE ALL QUESTS'),
+      h('button', { class: 'ghost', type: 'button', onclick: closeSheet }, 'BACK')),
+  ]);
+}
+
+/* ---------- modes ---------- */
+function setMode(m, quiet) {
+  st.mode = m; $('titleMenu').hidden = m !== 'title'; menuBtn.disabled = m === 'title';
+  if (m === 'title') {
+    if (typing) { const t = typing; typing = null; t.cancel(); }
+    setSpeaker(''); dlg.nx.hidden = true; dlg.ch.replaceChildren();
+    const needs = quests.filter(q => q.status === 'needs').length, running = quests.filter(q => q.status === 'running').length;
+    dlg.line.textContent = `${running} quest${running === 1 ? '' : 's'} running in the background${needs ? `, ${needs} waiting on you` : ''}. PLAY to go in, NEW GAME to start another.`;
+    const c = $('titleMenu').querySelector('[aria-current="true"]'); if (c) c.focus({ preventScroll: true });
+  } else { const q = selQ(); if (q) select(q.id, quiet); }
+}
+const ACTS = {
+  play: () => setMode('map'),
+  load: showLoad,
+  save: () => { const ok = persist(); toast(ok ? 'Saved. Every quest, every pass.' : 'Saved for this visit only. This browser blocks storage.'); },
+  new: async () => { setMode('map', true); await walkTo(player, ORB.x, ORB.y + 15); script(newQuest); },
+  settings: showSettings,
+  quit: showQuit,
+};
+const menuItems = [...$('titleMenu').querySelectorAll('button')];
+menuItems.forEach(b => {
+  const mark = () => { menuItems.forEach(x => x.removeAttribute('aria-current')); b.setAttribute('aria-current', 'true'); };
+  b.addEventListener('mouseenter', mark); b.addEventListener('focus', mark);
+  b.addEventListener('click', () => { mark(); ACTS[b.dataset.act](); });
+});
+menuBtn.addEventListener('click', () => { if (!st.talking) setMode('title'); });
+
+/* ---------- input ---------- */
+const MOVE = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'w', 'a', 's', 'd'];
+addEventListener('keydown', e => {
+  if (!$('sheet').hidden) { if (e.key === 'Escape') closeSheet(); return; }
+  if (st.mode === 'title') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      let i = menuItems.findIndex(b => b.getAttribute('aria-current') === 'true');
+      i = (i + (e.key === 'ArrowDown' ? 1 : -1) + menuItems.length) % menuItems.length; menuItems[i].focus(); e.preventDefault();
+    }
+    return;
+  }
+  if (e.target.closest && e.target.closest('button, input, a')) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    if (typing) { typing.finish(); e.preventDefault(); return; }
+    if (advanceDlg) { advanceDlg(); e.preventDefault(); return; }
+    if (!st.talking && near()) { e.preventDefault(); goTalk(); }
+    return;
+  }
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (MOVE.includes(k) && !st.talking) { keys.add(k); e.preventDefault(); }
+});
+addEventListener('keyup', e => { keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key); });
+addEventListener('blur', () => keys.clear());
+cv.addEventListener('pointerdown', e => {
+  if (st.mode !== 'map' || st.talking) return;
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  if (Math.hypot(x - ORB.x, y - ORB.y) < 13) { goTalk(); return; }
+  player.res = null; player.tx = clampX(x); player.ty = clampY(y);
+});
+
+/* ---------- toast + start ---------- */
+let toastT = 0;
+function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2600); }
+boot();
+{ const q = selQ(); if (q) party = buildParty(q); }
+renderLog();
+setMode('title');
+requestAnimationFrame(frame);
+})();
+</script>

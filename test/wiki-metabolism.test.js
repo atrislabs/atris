@@ -113,7 +113,7 @@ test('wiki consolidate prints pruning keep rules and records current counts', (t
   const result = spawnSync(process.execPath, [cliPath, 'wiki', 'consolidate'], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env },
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
 
   assert.equal(result.status, 0, result.stderr);

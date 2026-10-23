@@ -1,0 +1,25 @@
+diff --git a/atris/MAP.md b/atris/MAP.md
+index e221ec46..0aad70bb 100644
+--- a/atris/MAP.md
++++ b/atris/MAP.md
+@@ -114,7 +114,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
+ | tests | `test/commands.test.js` | node --test test/ |
+ | run one test | `package.json` | npm test, node --test |
+ | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
+-| ci workflows | `.github/workflows` | test and publish gates |
++| ci workflows | `.github/workflows`, `scripts/ci-test-shard.js`, `test/ci-file-durations.json`, `test/ci-test-shard.test.js` | test and publish gates; eight test jobs assign expensive files first using measured GitHub durations, discover new tests automatically, preserve the four command-test parts, and propagate child failure |
+ | pre-commit hook | `scripts/pre-commit` | local gate |
+ | workspace protocol spec | `atris/atris.md` | operating protocol |
+ | persona voice spec | `atris/PERSONA.md` | communication style |
+diff --git a/atris/refs/MAP-NOTES.md b/atris/refs/MAP-NOTES.md
+index 17bd86a2..0b1beb42 100644
+--- a/atris/refs/MAP-NOTES.md
++++ b/atris/refs/MAP-NOTES.md
+@@ -2371,3 +2371,7 @@ When the receipt names a different model than the one asked for, the chat prints
+ `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
+ Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
+ Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
++
++## Balanced GitHub test groups
++
++- `scripts/ci-test-shard.js:15` discovers the Node 24 default test patterns, excluding node_modules. `scripts/ci-test-shard.js:22` assigns every discovered file once, largest measured cost first, to the lightest of eight groups. Unknown files cost one second. `test/ci-file-durations.json` records summed top-level test durations from GitHub run 38693452528, with the four command-test parts measured separately. `scripts/ci-test-shard.js:47` invokes the real Node runner, keeps command-test splitting enabled, and returns failure when the child fails. `test/ci-test-shard.test.js:22` compares eight real child runs with native discovery, including all twelve split cases, new files, helpers, nested tests, TypeScript, and excluded dependency folders.

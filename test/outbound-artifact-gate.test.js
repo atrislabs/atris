@@ -8,12 +8,18 @@ const { spawnSync } = require('node:child_process');
 const script = path.join(__dirname, '..', 'scripts', 'outbound-artifact-gate.js');
 const dayLoopVoicePolicy = path.join(__dirname, '..', 'atris', 'policies', 'day-loop-voice.md');
 
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
 function runGate(args) {
   return spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
 }
 
-function tmpFile(name, content) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outbound-gate-'));
+function tmpFile(t, name, content) {
+  const dir = makeTempDir(t, 'outbound-gate-');
   const file = path.join(dir, name);
   fs.writeFileSync(file, content);
   return file;
@@ -31,8 +37,8 @@ test('fails HTML sends without render proof', () => {
   assert.match(res.stderr, /render-proof-missing/);
 });
 
-test('passes HTML sends with render proof', () => {
-  const proof = tmpFile('render-proof.txt', 'Rendered email preview checked.');
+test('passes HTML sends with render proof', (t) => {
+  const proof = tmpFile(t, 'render-proof.txt', 'Rendered email preview checked.');
   const res = runGate(['--channel', 'email', '--format', 'html', '--body', '<p>Rendered update</p>', '--proof-file', proof]);
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /passed/);
@@ -61,7 +67,7 @@ test('coach gate rejects internal ids and pressure language', () => {
   assert.match(res.stderr, /coach-pressure-language/);
 });
 
-test('warm ping needs proof of a fresh human signal', () => {
+test('warm ping needs proof of a fresh human signal', (t) => {
   const body = 'Devon asked whether the pilot can start Monday.\nI drafted the reply and left it unsent.';
   const missing = runGate([
     '--channel', 'email', '--format', 'plain', '--coach-surface', 'warm-ping', '--body', body,
@@ -69,7 +75,7 @@ test('warm ping needs proof of a fresh human signal', () => {
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /coach-signal-proof-missing/);
 
-  const proof = tmpFile('signal.txt', 'Devon replied at 2026-07-08T09:00:00Z.');
+  const proof = tmpFile(t, 'signal.txt', 'Devon replied at 2026-07-08T09:00:00Z.');
   const passed = runGate([
     '--channel', 'email', '--format', 'plain', '--coach-surface', 'warm-ping',
     '--signal-proof', proof, '--body', body,

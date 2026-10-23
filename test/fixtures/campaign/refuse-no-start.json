@@ -1,0 +1,35 @@
+{
+  "name": "refuse-no-start",
+  "about": "Valid events with no campaign_started are refused.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    }
+  ],
+  "expected": {
+    "error": "no_start"
+  }
+}

@@ -3,25 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { runCli } = require('./helpers/workspace-cli');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const { collectDoctor, renderDoctor } = require('../commands/doctor');
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-start-here-'));
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
-
-function runCli(args, cwd) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
-  });
-  if (result.error) throw result.error;
-  return result;
-}
 
 function folder(name, { members = [], git = false } = {}) {
   const root = path.join(scratch, name);

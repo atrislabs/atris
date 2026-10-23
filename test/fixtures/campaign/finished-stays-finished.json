@@ -1,0 +1,231 @@
+{
+  "name": "finished-stays-finished",
+  "about": "After stopped, later events still change missions, spend, asks, judge history and total, but state stays done with stop_reason stopped; step/kept/reverted counts add up and a step on an unknown mission creates it as proposed.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 50
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "step",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "step",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "step",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "kept",
+      "at": "2026-10-15T10:05:00Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "reverted",
+      "at": "2026-10-15T10:06:00Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "step",
+      "at": "2026-10-15T10:07:00Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m9"
+      }
+    },
+    {
+      "id": "evt-0009",
+      "campaign_id": "cmp-ship",
+      "type": "stopped",
+      "at": "2026-10-15T10:08:00Z",
+      "origin": "laptop",
+      "seq": 9,
+      "actor": "human:keshav",
+      "data": {}
+    },
+    {
+      "id": "evt-0010",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:09:00Z",
+      "origin": "laptop",
+      "seq": 10,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "outcome": "kept",
+        "cost_usd": 3
+      }
+    },
+    {
+      "id": "evt-0011",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:10:00Z",
+      "origin": "laptop",
+      "seq": 11,
+      "actor": "builder",
+      "data": {
+        "ask_id": "a1",
+        "question": "Anything left?"
+      }
+    },
+    {
+      "id": "evt-0012",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:11:00Z",
+      "origin": "laptop",
+      "seq": 12,
+      "actor": "judge",
+      "data": {
+        "passed": false,
+        "reading": 0.2,
+        "summary": "late read"
+      }
+    },
+    {
+      "id": "evt-0013",
+      "campaign_id": "cmp-ship",
+      "type": "budget_added",
+      "at": "2026-10-15T10:12:00Z",
+      "origin": "laptop",
+      "seq": 13,
+      "actor": "human:keshav",
+      "data": {
+        "amount_usd": 5
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "done",
+    "stop_reason": "stopped",
+    "answer": {
+      "text": "late read",
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 55,
+      "spent": 3,
+      "reserved": 0,
+      "available": 52
+    },
+    "asks": [
+      {
+        "id": "a1",
+        "question": "Anything left?",
+        "mission_id": null
+      }
+    ],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 3,
+        "estimate_usd": null,
+        "steps": 3,
+        "kept": 1,
+        "reverted": 1
+      },
+      {
+        "id": "m9",
+        "member": null,
+        "status": "proposed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 1,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 1,
+    "judge_due": false,
+    "last_judge": {
+      "passed": false,
+      "reading": 0.2,
+      "at": "2026-10-15T10:11:00Z"
+    },
+    "warnings": []
+  }
+}

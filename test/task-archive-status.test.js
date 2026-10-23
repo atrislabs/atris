@@ -1,8 +1,8 @@
 'use strict';
 
 // OBL-1622: bulk sweeps (duplicates, off-roadmap cleanup) must write a distinct
-// 'archived' status, never 'failed' — 'failed' is a reward signal and mislabeling
-// good work as failed corrupts it (see atris/reports/failed-tasks-analysis-2026-07-03.md).
+// 'archived' status, never 'failed'. The 'failed' status is a reward signal, and
+// mislabeling good work as failed corrupts it (see atris/reports/failed-tasks-analysis-2026-07-03.md).
 // This also covers the one-time `atris task relabel-archived` migration that fixes
 // the 125 rows the 2026-06-10 backlog reset mislabeled as failed.
 
@@ -16,13 +16,8 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-archive-test-'));

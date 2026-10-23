@@ -7,7 +7,7 @@
  *   atris gmail archive <id> [...] [--account <id>] - Archive messages
  *   atris gmail triage [--account <id>] [--limit N] - Record keep or archive verdicts
  *   atris gmail verdicts [--summary] [--account <id>] [--limit N] - List recent Gmail verdicts
- *   atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - Send an email
+ *   atris gmail send <to> <subject> <body...> --approved [--body-file <path>] [--account <id>] - Send an email
  *   atris gmail voice [account] [--clear]    - Edit an account's writing voice
  *   atris gmail connect [name]              - Connect or reconnect a Gmail account
  *   atris gmail accounts                     - List connected Gmail accounts and the active account
@@ -41,7 +41,7 @@ const { sleepSync } = require('../lib/sleep-sync');
 const CALENDAR_CACHE_PATH = path.join(stateHome(), '.atris', 'calendar-events-cache.json');
 const GMAIL_CONNECT_POLL_MS = 3000;
 const GMAIL_CONNECT_TIMEOUT_MS = 3 * 60 * 1000;
-const GMAIL_SEND_USAGE = 'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]';
+const GMAIL_SEND_USAGE = 'usage: atris gmail send <to> <subject> <body...> --approved [--body-file <path>] [--account <id>]';
 const GMAIL_VOICE_USAGE = 'usage: atris gmail voice [account] [--clear]';
 const GMAIL_TRIAGE_USAGE = 'usage: atris gmail triage [--account <id>] [--limit N]';
 const GMAIL_VERDICTS_USAGE = 'usage: atris gmail verdicts [--summary] [--account <id>] [--limit N]';
@@ -560,10 +560,15 @@ async function gmailArchive(messageIds, options = {}) {
 function parseGmailSendArgs(args = []) {
   let accountId = null;
   let bodyFile = null;
+  let approved = false;
   const positional = [];
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
+    if (arg === '--approved' || arg === '--confirm-approved') {
+      approved = true;
+      continue;
+    }
     if (arg === '--account' || arg === '--body-file') {
       const value = String(args[i + 1] || '').trim();
       if (!value || value.startsWith('--')) {
@@ -596,10 +601,17 @@ function parseGmailSendArgs(args = []) {
     }
   }
 
-  return { to, subject, body, accountId };
+  return { to, subject, body, accountId, approved };
 }
 
 async function gmailSend(to, subject, body, options = {}) {
+  // Approval is checked before any token lookup or network call so an
+  // unapproved send can never reach the server.
+  if (!options.approved) {
+    console.error('Refusing to send without --approved after the exact recipient, subject, and body are confirmed.');
+    console.error(GMAIL_SEND_USAGE);
+    process.exit(2);
+  }
   const token = await getAuthToken();
   const accountId = resolveGmailAccountId(options.accountId);
   const accounts = await fetchGmailAccounts(token);
@@ -864,7 +876,7 @@ async function gmailCommand(subcommand, ...args) {
     }
     case 'send': {
       const parsed = parseGmailSendArgs(args);
-      await gmailSend(parsed.to, parsed.subject, parsed.body, { accountId: parsed.accountId || undefined });
+      await gmailSend(parsed.to, parsed.subject, parsed.body, { accountId: parsed.accountId || undefined, approved: parsed.approved });
       break;
     }
     case 'voice': {
@@ -888,7 +900,7 @@ async function gmailCommand(subcommand, ...args) {
       console.log('  atris gmail archive <id> [...] [--account <id>] - archive messages (reversible, all mail keeps them)');
       console.log('  atris gmail triage [--account <id>] [--limit N] - record keep or archive verdicts without changing mail');
       console.log('  atris gmail verdicts [--summary] [--account <id>] [--limit N] - list recent gmail verdicts');
-      console.log('  atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>] - send an email');
+      console.log('  atris gmail send <to> <subject> <body...> --approved [--body-file <path>] [--account <id>] - send an email');
       console.log('  atris gmail voice [account] [--clear]    - edit or clear an account writing voice');
       console.log('  atris gmail connect [name]               - connect or reconnect a gmail account');
       console.log('  atris gmail accounts                     - list connected gmail accounts and the active account');

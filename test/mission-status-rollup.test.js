@@ -3,11 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { withMissionFullJson } = require('./helpers/mission-json');
+const {
+  runMissionCli: runCli,
+  runMissionGit: runGit,
+} = require('./helpers/mission-json');
 
 function makeTempDir() {
   // Worktrees land in <parent>/.agent-worktrees/<repo>/..., so give the repo a
@@ -20,26 +19,6 @@ function makeTempDir() {
 
 function cleanupTempDir(base) {
   fs.rmSync(base, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-    },
-  });
-  if (result.error) throw result.error;
-  return result;
-}
-
-function runGit(args, cwd) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 15000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  return result;
 }
 
 function initWorkspace(repo) {

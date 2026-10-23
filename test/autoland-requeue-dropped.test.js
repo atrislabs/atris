@@ -26,6 +26,9 @@ function writeFakeGh(bin, log, config) {
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
     "if (a === 'pr' && b === 'merge' && cfg.mergeFails) process.exit(1);",
+    "if (a === 'pr' && b === 'checks') { console.log(JSON.stringify(cfg.checks || [])); if ((cfg.checks || []).some((c) => c.bucket === 'fail')) process.exit(8); }",
+    "if (a === 'run' && b === 'rerun' && cfg.rerunFails) process.exit(1);",
+    "if (a === 'api' && b === 'graphql') console.log(cfg.inQueue ? 'true' : 'false');",
   ].join('\n'), { mode: 0o755 });
 }
 
@@ -186,6 +189,60 @@ test('still queued on github: nothing is pushed or re-queued', () => {
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
     assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+  });
+});
+
+test('already in github\'s merge line: no catch-up push, left to the line', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, {}, { inQueue: true });
+    moveMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued', out.results[0].line);
+    assert.match(out.results[0].line, /in github's merge line/);
+    assert.equal(remoteBranch(fx), fx.pushed);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+  });
+});
+
+const FAILED_CHECKS = [
+  { bucket: 'pass', link: 'https://github.com/acme/repo/actions/runs/111/job/1' },
+  { bucket: 'fail', link: 'https://github.com/acme/repo/actions/runs/222/job/2' },
+  { bucket: 'fail', link: 'https://github.com/acme/repo/actions/runs/222/job/3' },
+];
+
+test('queued with a failed check: the failed checks run again once, then it waits for a fix', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-10-14T00:00:00Z' } }, { checks: FAILED_CHECKS });
+    const first = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(first.results[0].state, 'rerun', first.results[0].line);
+    assert.equal(first.rerun, 1);
+    assert.match(first.line, /1 failed check run again/);
+    assert.deepEqual(ghCalls(fx).filter((c) => c[0] === 'run'), [['run', 'rerun', '222', '--failed']]);
+    assert.equal(readQueue(fx)[BRANCH].reran, fx.pushed);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 0);
+
+    const second = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(second.results[0].state, 'failing');
+    assert.match(second.results[0].line, /failed again after one retry/);
+    assert.equal(ghCalls(fx).filter((c) => c[0] === 'run').length, 1, 'never retried twice');
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+    assert.equal(remoteBranch(fx), fx.pushed);
+  });
+});
+
+test('queued with every check passing or a rerun github refuses: nothing is marked as retried', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-10-14T00:00:00Z' } }, { checks: [FAILED_CHECKS[0]] });
+    assert.equal(requeueDroppedAutolands({ cwd: fx.main }).results[0].state, 'queued');
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-10-14T00:00:00Z' } }, { checks: FAILED_CHECKS, rerunFails: true });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued');
+    assert.match(out.results[0].line, /could not be run again/);
+    assert.equal(readQueue(fx)[BRANCH].reran, undefined);
   });
 });
 

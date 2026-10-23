@@ -1,0 +1,168 @@
+{
+  "name": "metadata-events",
+  "about": "Start seats: a string seat has role null; seat_filled adds a new member/role pair but an identical pair (reviewer/reviewer, builder/builder again) is ignored silently; bet_set replaces the start bet and sets wrong_if; attached sets parent; home_moved sets home; created_from comes from the start.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 200,
+        "seats": [
+          "builder",
+          {
+            "member": "reviewer",
+            "role": "reviewer"
+          }
+        ],
+        "bet": "Mostly wiring.",
+        "created_from": "wish-7"
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "seat_filled",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "mission-lead",
+      "data": {
+        "member": "builder",
+        "role": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "seat_filled",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "mission-lead",
+      "data": {
+        "member": "reviewer",
+        "role": "reviewer"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "seat_filled",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "mission-lead",
+      "data": {
+        "member": "builder",
+        "role": "builder"
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "seat_filled",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "mission-lead",
+      "data": {
+        "member": "scout",
+        "role": "scout"
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "bet_set",
+      "at": "2026-10-15T10:05:00Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "human:keshav",
+      "data": {
+        "bet": "Needs a new runner",
+        "wrong_if": "phase 10 fits the old runner"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "attached",
+      "at": "2026-10-15T10:06:00Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "mission-lead",
+      "data": {
+        "parent_id": "cmp-parent"
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "home_moved",
+      "at": "2026-10-15T10:07:00Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "system",
+      "data": {
+        "to": "cloud-box"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": {
+      "text": "Needs a new runner",
+      "wrong_if": "phase 10 fits the old runner"
+    },
+    "parent": "cmp-parent",
+    "home": "cloud-box",
+    "created_from": "wish-7",
+    "seats": [
+      {
+        "member": "builder",
+        "role": null
+      },
+      {
+        "member": "reviewer",
+        "role": "reviewer"
+      },
+      {
+        "member": "builder",
+        "role": "builder"
+      },
+      {
+        "member": "scout",
+        "role": "scout"
+      }
+    ],
+    "state": "resting",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 200,
+      "spent": 0,
+      "reserved": 0,
+      "available": 200
+    },
+    "asks": [],
+    "missions": [],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": []
+  }
+}

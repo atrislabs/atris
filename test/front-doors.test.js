@@ -210,13 +210,7 @@ test('atris autopilot --help describes the loop and stop control', () => {
   const res = runCli(['autopilot', '--help']);
   assert.equal(res.status, 0, res.stderr || res.stdout);
   assert.match(res.stdout, /Usage: atris autopilot/);
-  assert.match(res.stdout, /until you stop/i);
+  assert.match(res.stdout, /Keep working until you stop/);
   assert.match(res.stdout, /autopilot stop/);
   assert.match(res.stdout, /--legacy/);
-});
-
-test('legacy help still reachable via --legacy', () => {
-  const res = runCli(['autopilot', '--legacy', '--help']);
-  assert.equal(res.status, 0, res.stderr || res.stdout);
-  assert.match(res.stdout, /autopilot/i);
 });

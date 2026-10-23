@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 
 const {
@@ -48,13 +48,8 @@ function fixtureReceipt(overrides = {}) {
   };
 }
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-receipt-block-test-'));
-}
-
-function cleanup(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir: cleanup } = createTaskHelpFixture('atris-receipt-block-test-');
+const makeTempDir = () => makeFixtureDir();
 
 test('receipt block renders all four surfaces deterministically', () => {
   const receipt = fixtureReceipt();

@@ -1,0 +1,125 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const { makeCadence, parseDuration, readLessons, lessonsPath, reviewPrompt } = require('../lib/campaign-cadence');
+const { makeLoop } = require('../lib/campaign-loop');
+const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
+
+function setup(budget = 10) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cadence-'));
+  const store = createMemoryStore({ origin: 'laptop' });
+  store.append({ campaign_id: 'cmp-c', type: 'campaign_started', actor: 'mission-lead', data: { title: 'Cadence', judge: 'npm test', budget, owner: 'mission-lead', seats: ['builder'] } });
+  return { root, store };
+}
+
+function fakeCli(store) {
+  return async (args) => {
+    const id = args.includes('--mission-id') ? args[args.indexOf('--mission-id') + 1] : args[2];
+    if (args[1] === 'start') store.append({ campaign_id: 'cmp-c', type: 'mission_started', actor: 'builder', data: { mission_id: id, member: 'builder' } });
+    if (args[1] === 'run') store.append({ campaign_id: 'cmp-c', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'kept', cost_usd: 0.2 } });
+    return { code: 0, out: '', err: '' };
+  };
+}
+
+test('durations read as minutes by default', () => {
+  assert.equal(parseDuration('50m', 0), 3000000);
+  assert.equal(parseDuration('90s', 0), 90000);
+  assert.equal(parseDuration('1h', 0), 3600000);
+  assert.equal(parseDuration('10', 0), 600000);
+  assert.equal(parseDuration('', 5), 5);
+  assert.throws(() => parseDuration('soon', 0), /50m, 10m/);
+});
+
+test('rounds work, then review: lessons are written and the next plan reads them', async () => {
+  const { root, store } = setup();
+  let clock = 0;
+  const prompts = [];
+  const readings = [{ passed: false, summary: 'pass 1, fail 2' }, { passed: false, summary: 'pass 2, fail 1' }, { passed: true, summary: 'pass 3, fail 0' }];
+  const ask = async (r, view, prompt) => {
+    prompts.push(prompt);
+    if (prompt.startsWith('You review')) return { ok: true, text: `- split work by file so missions never collide\nnot a lesson` };
+    return { ok: true, text: JSON.stringify([{ objective: `Fix part ${prompts.length}`, member: 'builder', estimate_usd: 0.5 }]) };
+  };
+  const loop = makeLoop(root, { parallel: 1 }, {
+    store, cli: fakeCli(store), log: () => {}, skipReconcile: true, ask,
+    judge: async () => { clock += 60000; return readings.shift() || { passed: true, summary: 'pass 3' }; },
+    lessons: (id) => readLessons(root, id),
+  });
+  const cadence = makeCadence(root, loop, { work: '2m', break: '1m', rounds: 5 }, {
+    store, log: () => {}, ask, now: () => clock, sleep: async (ms) => { clock += ms; },
+  });
+  const result = await cadence.run('cmp-c');
+  assert.equal(getCampaign(store, 'cmp-c').state, 'done');
+  assert.ok(result.rounds >= 2, `ran ${result.rounds} rounds`);
+  const file = fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8');
+  assert.match(file, /# Lessons: Cadence/);
+  assert.match(file, /- split work by file so missions never collide/);
+  assert.doesNotMatch(file, /not a lesson/);
+  assert.equal(file.split('- split work by file').length - 1, 1, 'a lesson was written twice');
+  const plans = prompts.filter((p) => p.startsWith('You plan'));
+  assert.ok(plans.length >= 2);
+  assert.doesNotMatch(plans[0], /Lessons from earlier rounds/);
+  assert.match(plans[plans.length - 1], /Lessons from earlier rounds \(follow them\):\n- split work by file/);
+});
+
+test('a campaign that needs a person ends the rounds instead of sleeping', async () => {
+  const { root, store } = setup();
+  store.append({ campaign_id: 'cmp-c', type: 'mission_proposed', actor: 'builder', data: { mission_id: 'm-deploy', member: 'builder', objective: 'Deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'mission_claimed', actor: 'builder', data: { mission_id: 'm-deploy', claim_key: 'deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Deploy?', mission_id: 'm-deploy' } });
+  let slept = 0;
+  const loop = makeLoop(root, {}, { store, cli: fakeCli(store), log: () => {}, skipReconcile: true, judge: async () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
+  const cadence = makeCadence(root, loop, { work: '50m', break: '10m' }, { store, log: () => {}, now: () => 0, sleep: async () => { slept++; } });
+  const result = await cadence.run('cmp-c');
+  assert.equal(result.reason, 'needs you: 1 open ask');
+  assert.equal(slept, 0);
+  assert.match(fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8'), /no review written this round/);
+});
+
+test('the review prompt carries the round and the lessons so far', () => {
+  const view = { title: 'T', judge: 'npm test', basis: 'atris_cloud', last_judge: { passed: false, reading: 0.5 }, answer: { text: 'pass 1, fail 1' } };
+  const prompt = reviewPrompt(view, { kept: 2, failed: 1, vetoed: 0, spent: 0.6, fresh: [] }, '- keep missions small');
+  assert.match(prompt, /This round: 2 kept, 1 failed, 0 could not start, \$0\.6 spent/);
+  assert.match(prompt, /reading 0\.5/);
+  assert.match(prompt, /- keep missions small/);
+});
+
+test('on your own subscription the review prompt shows no dollars, and API billing does', () => {
+  const saved = process.env.ATRIS_BILLING;
+  delete process.env.ATRIS_BILLING;
+  try {
+    const view = { title: 'T', judge: 'npm test', basis: 'own_engines', last_judge: null, answer: { text: null } };
+    const summary = { kept: 1, failed: 0, vetoed: 0, spent: 1.23, fresh: [{ id: 'm-1', status: 'ended', outcome: 'kept', cost_usd: 1.23 }] };
+    assert.doesNotMatch(reviewPrompt(view, summary, ''), /\$/);
+    process.env.ATRIS_BILLING = 'api';
+    assert.match(reviewPrompt(view, summary, ''), /\$1\.23 spent/);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_BILLING;
+    else process.env.ATRIS_BILLING = saved;
+  }
+});
+
+test('a round where nothing ended and the reading held asks no model and writes no lessons', async () => {
+  const { root, store } = setup();
+  store.append({ campaign_id: 'cmp-c', type: 'judge_ran', actor: 'judge', data: { passed: false, exit: 1, summary: '0 of 1' } });
+  let clock = 0;
+  let asked = 0;
+  const loop = { step: async () => { clock += 60000; return { stop: true, reason: 'waiting: nothing to plan' }; } };
+  const ask = async () => { asked += 1; return { ok: true, text: '- keep waiting' }; };
+  const cadence = makeCadence(root, loop, { work: '5m', break: '1m', rounds: 1 }, { store, log: () => {}, ask, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  await cadence.run('cmp-c');
+  assert.equal(asked, 0);
+  assert.match(fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8'), /nothing ended and the reading held/);
+  assert.equal(readLessons(root, 'cmp-c'), '');
+
+  // The same round with a new reading is reviewed as before.
+  const moved = { step: async () => { store.append({ campaign_id: 'cmp-c', type: 'judge_ran', actor: 'judge', data: { passed: false, exit: 1, summary: '1 of 2' } }); return { stop: true, reason: 'waiting: nothing to plan' }; } };
+  await makeCadence(root, moved, { work: '5m', break: '1m', rounds: 1 }, { store, log: () => {}, ask, now: () => clock, sleep: async () => {} }).run('cmp-c');
+  assert.equal(asked, 1);
+  assert.match(fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8'), /- keep waiting/);
+});

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { verifyArtifact } = require('../commands/verify');
@@ -12,9 +12,8 @@ const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function tempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-artifact-'));
-}
+const { makeTempDir: makeFixtureDir } = createTaskHelpFixture('atris-verify-artifact-');
+const tempDir = () => makeFixtureDir();
 
 function write(dir, rel, content) {
   const target = path.join(dir, rel);

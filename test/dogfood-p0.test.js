@@ -3,20 +3,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const TIMEOUT_MS = 20000;
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-dogfood-p0-'));
-}
+const { hasNodeSqlite, makeTempDir: makeRawTempDir, cleanupTempDir } = createTaskHelpFixture('atris-dogfood-p0-');
 
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
+function makeTempDir() {
+  return makeRawTempDir();
 }
 
 function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input } = {}) {
@@ -27,6 +25,7 @@ function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input } = {}) {
     timeout,
     env: {
       ...process.env,
+      HOME: cwd,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ATRIS_NO_INTERACTIVE: '1',
       ...(env || {}),
@@ -37,15 +36,6 @@ function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input } = {}) {
   }
   if (result.error) throw result.error;
   return result;
-}
-
-function hasNodeSqlite() {
-  try {
-    require('node:sqlite');
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 test('P0-1: non-interactive brainstorm with idea captures and exits', () => {
@@ -159,11 +149,16 @@ test('P0-2: whoami/now/skill list/member list --json emit JSON', () => {
 });
 
 test('P0-2: version --json is a contract violation (exit 2)', () => {
-  const res = runCli(['version', '--json'], { cwd: makeTempDir() });
-  assert.equal(res.status, 2);
-  const payload = JSON.parse(res.stdout);
-  assert.equal(payload.ok, false);
-  assert.match(payload.error, /does not support --json/);
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['version', '--json'], { cwd: dir });
+    assert.equal(res.status, 2);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, false);
+    assert.match(payload.error, /does not support --json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('P0-3: fresh init --yes seeds one task visible to status and task list', function () {

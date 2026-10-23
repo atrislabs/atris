@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const http = require('http');
+const crypto = require('crypto');
 const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
@@ -29,10 +30,10 @@ const {
   parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
-  runVerifyCommandCached,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -10645,22 +10646,44 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     reason: (result && result.reason) || null,
     ran_at: new Date().toISOString(),
     ran_by: actor,
-    code_sha: currentHeadSha(workspaceRoot),
+    // The commit the check ran on: the job's own code when it has some,
+    // else the folder the job lives in.
+    code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
+    code_source: (result && result.code_source) || 'checkout',
   };
+  // A check is not a touch. Bumping updated_at here put every failed job at
+  // the front of the next pass, so the same six failing jobs won every hour.
   db.prepare(`
     UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
+       SET metadata = ?
      WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  `).run(JSON.stringify(metadata), taskId);
+}
+
+// When a review job was last given a second check; never checked reads 0.
+function lastCheckedMs(task) {
+  const ranAt = Date.parse(String(task?.metadata?.verify_cache?.ran_at || ''));
+  return Number.isFinite(ranAt) ? ranAt : 0;
+}
+
+// The check already failed on exactly this code: running it again proves
+// nothing until the code changes.
+function failedOnSameCode(task, verify, codeSha) {
+  const cache = task?.metadata?.verify_cache;
+  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
+    && cache.command === verify && codeSha && cache.code_sha === codeSha);
 }
 
 function cachedVerifyVerdict(task, root) {
   const metadata = (task && task.metadata) || {};
   const cache = metadata.verify_cache;
   if (!cache || typeof cache !== 'object') return { fresh: false, command: metadata.verify || null };
+  // A check run on the job's own code stays fresh until that code changes.
+  const currentCode = cache.code_source && cache.code_source !== 'checkout'
+    ? checkedCodeSha(task, root)
+    : currentHeadSha(task.workspace_root || root);
   const fresh = cache.command === metadata.verify
-    && (!cache.code_sha || cache.code_sha === currentHeadSha(task.workspace_root || root));
+    && (!cache.code_sha || cache.code_sha === currentCode);
   return { ...cache, fresh: Boolean(fresh) };
 }
 
@@ -10711,7 +10734,7 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
-  const result = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+  const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
   stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
@@ -10731,7 +10754,10 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
 }
 
 function cmdCertifyVerified(args, options = {}) {
-  const dryRun = hasFlag(args, '--dry-run');
+  // preview: the hourly pass's dry run. Reads the named workspace's jobs and
+  // writes nothing, not even the task list file.
+  const preview = options.preview === true;
+  const dryRun = preview || hasFlag(args, '--dry-run');
   const asJson = wantsJson(args);
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
@@ -10741,13 +10767,18 @@ function cmdCertifyVerified(args, options = {}) {
 
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection } = writeDefaultProjection(taskDb, db);
+  const projection = preview
+    ? enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: options.workspaceRoot || taskDb.workspaceRoot(), limit: 500 }))
+    : writeDefaultProjection(taskDb, db).projection;
+  // Least recently checked first, oldest first among never-checked jobs. The
+  // limit counts checks that actually run, so skipped rows never use a turn.
   const candidates = (projection.tasks || [])
     .filter((t) => t && t.status === 'review')
-    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
-    .slice(0, max);
+    .sort((a, b) => lastCheckedMs(a) - lastCheckedMs(b) || Number(a.updated_at || 0) - Number(b.updated_at || 0));
   const results = [];
+  let checks = 0;
   for (const item of candidates) {
+    if (checks >= max) break;
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
@@ -10809,11 +10840,16 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+      results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
+      continue;
+    }
+    checks += 1;
     if (dryRun) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyCommandCached(verify, task.workspace_root || process.cwd(), verifyCache);
+    const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
     stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
@@ -10840,7 +10876,7 @@ function cmdCertifyVerified(args, options = {}) {
     const certifiedNow = readied.event?.payload?.agent_certified === true;
     results.push({ ref, action: certifiedNow ? 'certified' : 'pass_recorded', verify });
   }
-  const { outPath } = writeDefaultProjection(taskDb, db);
+  const outPath = preview ? null : writeDefaultProjection(taskDb, db).outPath;
   const certified = results.filter((r) => r.action === 'certified').length;
   const payload = {
     ok: true,
@@ -12447,7 +12483,7 @@ function taskBoardTemplate(model) {
     async function api(path, options = {}) {
       const res = await fetch(path, {
         ...options,
-        headers: { 'content-type': 'application/json', ...(options.headers || {}) }
+        headers: { 'content-type': 'application/json', 'x-atris-token': new URLSearchParams(location.search).get('t') || '', ...(options.headers || {}) }
       });
       const data = await res.json();
       if (!res.ok || data.ok === false) throw new Error(data.detail || data.reason || 'request failed');
@@ -12763,18 +12799,30 @@ function taskBoardHtml() {
 }
 
 function readJsonBody(req) {
+  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+    return Promise.reject(Object.assign(new Error('json required'), { statusCode: 415 }));
+  }
   return new Promise((resolve, reject) => {
-    let body = '';
+    let size = 0;
+    const chunks = [];
     req.on('data', chunk => {
-      body += chunk;
-      if (body.length > 1_000_000) {
-        reject(new Error('body too large'));
-        req.destroy();
+      if (size > 1_000_000) return;
+      size += chunk.length;
+      if (size > 1_000_000) {
+        reject(Object.assign(new Error('body too large'), { statusCode: 413 }));
+        return;
       }
+      chunks.push(chunk);
     });
     req.on('end', () => {
+      if (size > 1_000_000) return;
+      const body = Buffer.concat(chunks).toString('utf8');
       if (!body.trim()) return resolve({});
-      try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+      try {
+        const value = JSON.parse(body);
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('object required');
+        resolve(value);
+      } catch (e) { reject(Object.assign(e, { statusCode: 400 })); }
     });
     req.on('error', reject);
   });
@@ -12783,14 +12831,16 @@ function readJsonBody(req) {
 function sendJson(res, status, value, headers = {}) {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': 'http://localhost',
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
     ...headers,
   });
   res.end(JSON.stringify(value, null, 2));
 }
 
 function sendHtml(res, value) {
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' });
   res.end(value);
 }
 
@@ -13434,8 +13484,24 @@ function matchTaskApiRoute(req, url) {
   return null;
 }
 
-async function handleTaskApi(req, res, taskDb, db) {
-  const url = new URL(req.url, 'http://127.0.0.1');
+async function handleTaskApi(req, res, taskDb, db, token) {
+  let url;
+  try {
+    const target = req.url || '/';
+    url = new URL(target, 'http://127.0.0.1');
+    if (!target.startsWith('/') || target.startsWith('//') || /[\\#\0]/.test(target) || decodeURIComponent(url.pathname).includes('\0')) throw new Error('url');
+    decodeURIComponent(target);
+  } catch {
+    return sendJson(res, 400, { ok: false, reason: 'bad_url' });
+  }
+  const host = String(req.headers.host || '').toLowerCase();
+  const port = req.socket.localPort;
+  if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(host)) return sendJson(res, 403, { ok: false, reason: 'host' });
+  const provided = Buffer.from(String(req.headers['x-atris-token'] || (req.method === 'GET' && url.searchParams.get('t')) || ''));
+  const expected = Buffer.from(token);
+  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) return sendJson(res, 403, { ok: false, reason: 'token' });
+  if (req.method === 'GET' && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0)) return sendJson(res, 400, { ok: false, reason: 'body' });
+  if (req.method !== 'GET' && req.headers.origin !== undefined && req.headers.origin !== `http://${host}`) return sendJson(res, 403, { ok: false, reason: 'origin' });
   const matchedRoute = matchTaskApiRoute(req, url);
   if (!matchedRoute) return sendJson(res, 404, { ok: false, reason: 'not_found' });
   return matchedRoute.route.serve({
@@ -13451,26 +13517,32 @@ async function handleTaskApi(req, res, taskDb, db) {
 function createTaskApiServer(taskApi = {}) {
   const taskDb = taskApi.taskDb || getTaskDb();
   const db = taskApi.db || taskDb.open();
-  return http.createServer((req, res) => {
-    handleTaskApi(req, res, taskDb, db).catch((error) => {
-      sendJson(res, 500, { ok: false, reason: 'server_error', detail: String(error && error.message || error) });
-    });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const server = http.createServer((req, res) => {
+    handleTaskApi(req, res, taskDb, db, token).catch((error) => {
+      if (res.headersSent || res.destroyed) return res.destroy();
+      const status = error.statusCode || 500;
+      sendJson(res, status, { ok: false, reason: status < 500 ? 'bad_request' : 'server_error' });
+    }).catch(() => res.destroy());
   });
+  server.taskToken = token;
+  return server;
 }
 
 function cmdServe(args) {
   const host = String(flag(args, '--host') || '127.0.0.1');
+  if (!['127.0.0.1', 'localhost'].includes(host)) throw new Error('task board only listens on 127.0.0.1');
   const port = Number(flag(args, '--port') || process.env.PORT || 8787);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const server = createTaskApiServer({ taskDb, db });
   return new Promise((resolve, reject) => {
     server.on('error', reject);
-    server.listen(port, host, () => {
+    server.listen(port, '127.0.0.1', () => {
       const addr = server.address();
       const actualPort = addr && addr.port || port;
-      console.log(`Task board: http://${host}:${actualPort}`);
-      console.log(`Workspace: ${taskDb.workspaceRoot()}`);
+      console.log(`task board: http://${host}:${actualPort}/?t=${server.taskToken}`);
+      console.log(`workspace: ${taskDb.workspaceRoot()}`);
     });
 
     const shutdown = () => {
@@ -13698,6 +13770,7 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  cmdCertifyVerified,
   refreshKeptTaskList,
   keptCount,
   projectionMissions,

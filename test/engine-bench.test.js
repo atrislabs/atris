@@ -7,8 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { runBenchCommand } = require('../commands/engine');
 
-function tmpRoot(prefix = 'atris-engine-bench-test-') {
+function tmpRoot(t, prefix = 'atris-engine-bench-test-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
   return root;
 }
@@ -29,8 +30,8 @@ function captureOutput(fn) {
   }
 }
 
-test('ranking is by median ascending, failures sorted last', () => {
-  const root = tmpRoot();
+test('ranking is by median ascending, failures sorted last', (t) => {
+  const root = tmpRoot(t);
   const durations = {
     'cursor': [100, 150, 120], // median 120
     'codex': [50, 60, 55], // median 55
@@ -58,8 +59,8 @@ test('ranking is by median ascending, failures sorted last', () => {
   assert.match(stderr, /claude.*FAIL/);
 });
 
-test('delta line appears when a previous scoreboard file exists', () => {
-  const root = tmpRoot();
+test('delta line appears when a previous scoreboard file exists', (t) => {
+  const root = tmpRoot(t);
   
   const stateFile = path.join(root, '.atris', 'state', 'engine-bench.latest.json');
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });
@@ -89,8 +90,8 @@ test('delta line appears when a previous scoreboard file exists', () => {
   assert.match(stdout, /cursor.*slower by 50ms/);
 });
 
-test('--json output shape', () => {
-  const root = tmpRoot();
+test('--json output shape', (t) => {
+  const root = tmpRoot(t);
   const probe = (name) => ({ pass: true, durationMs: 100 });
   const installedEngines = ['codex'];
 
@@ -116,8 +117,8 @@ test('--json output shape', () => {
   assert.equal(parsed2.previous.results[0].engine, 'codex');
 });
 
-test('exit code 1 when an engine has zero passing runs', () => {
-  const root = tmpRoot();
+test('exit code 1 when an engine has zero passing runs', (t) => {
+  const root = tmpRoot(t);
   let calls = 0;
   const probe = (name) => {
     calls++;
@@ -134,8 +135,8 @@ test('exit code 1 when an engine has zero passing runs', () => {
   assert.equal(res, 1); // cursor fails
 });
 
-test('unknown engine name errors cleanly', () => {
-  const root = tmpRoot();
+test('unknown engine name errors cleanly', (t) => {
+  const root = tmpRoot(t);
   const probe = () => ({ pass: true, durationMs: 10 });
 
   assert.throws(() => {

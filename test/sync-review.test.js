@@ -13,8 +13,9 @@ const {
   runSyncReview,
 } = require('../commands/business-sync');
 
-function makeWorkspace() {
+function makeWorkspace(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-review-'));
+  t.after(() => cleanup(dir));
   fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-07-09T10-00-00Z', 'atris', 'wiki'), {
     recursive: true,
@@ -75,114 +76,90 @@ test('listConflictFiles names every conflict path', () => {
   assert.doesNotMatch(listed, /—/);
 });
 
-test('runSyncReview --take local keeps local content and removes packet artifacts', async () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n', base: 'base a\n' },
-      { rel: 'atris/wiki/b.md', local: 'local b\n', remote: 'cloud b\n' },
-    ]);
+test('runSyncReview --take local keeps local content and removes packet artifacts', async (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n', base: 'base a\n' },
+    { rel: 'atris/wiki/b.md', local: 'local b\n', remote: 'cloud b\n' },
+  ]);
 
-    const result = await runSyncReview(dir, { take: 'local' });
-    assert.equal(result.exitCode, 0);
-    assert.deepEqual(result.resolved, ['atris/wiki/a.md', 'atris/wiki/b.md']);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'local a\n');
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/b.md'), 'utf8'), 'local b\n');
-    assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
-    assert.equal(collectConflictResolutionEntries(dir).length, 0);
-    assert.match(result.message, /taking|resolved|local/i);
-  } finally {
-    cleanup(dir);
-  }
+  const result = await runSyncReview(dir, { take: 'local' });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(result.resolved, ['atris/wiki/a.md', 'atris/wiki/b.md']);
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'local a\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/b.md'), 'utf8'), 'local b\n');
+  assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
+  assert.equal(collectConflictResolutionEntries(dir).length, 0);
+  assert.match(result.message, /taking|resolved|local/i);
 });
 
-test('runSyncReview --take cloud keeps cloud content without workspace .remote dumps', async () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
-    ]);
+test('runSyncReview --take cloud keeps cloud content without workspace .remote dumps', async (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
+  ]);
 
-    const result = await runSyncReview(dir, { take: 'cloud' });
-    assert.equal(result.exitCode, 0);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'cloud a\n');
-    assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
-    assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.local')), false);
-    assert.match(result.message, /1 file conflict/);
-    assert.match(result.message, /cloud/);
-  } finally {
-    cleanup(dir);
-  }
+  const result = await runSyncReview(dir, { take: 'cloud' });
+  assert.equal(result.exitCode, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'cloud a\n');
+  assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.local')), false);
+  assert.match(result.message, /1 file conflict/);
+  assert.match(result.message, /cloud/);
 });
 
-test('interactive merge writes conflict markers into the target file', async () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'local only\n', remote: 'cloud only\n' },
-    ]);
+test('interactive merge writes conflict markers into the target file', async (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'local only\n', remote: 'cloud only\n' },
+  ]);
 
-    const answers = ['merge'];
-    const result = await runSyncReview(dir, {
-      ask: async () => answers.shift(),
-    });
-    assert.equal(result.exitCode, 0);
-    assert.deepEqual(result.choices, [{ path: 'atris/wiki/a.md', choice: 'merge' }]);
-    const body = fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8');
-    assert.equal(body, buildConflictMarkers('local only\n', 'cloud only\n'));
-    assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
-  } finally {
-    cleanup(dir);
-  }
+  const answers = ['merge'];
+  const result = await runSyncReview(dir, {
+    ask: async () => answers.shift(),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(result.choices, [{ path: 'atris/wiki/a.md', choice: 'merge' }]);
+  const body = fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8');
+  assert.equal(body, buildConflictMarkers('local only\n', 'cloud only\n'));
+  assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
 });
 
-test('applyReviewChoice merge never dumps .remote beside the workspace file', () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'L\n', remote: 'C\n' },
-    ]);
-    const [entry] = collectConflictResolutionEntries(dir);
-    applyReviewChoice(dir, entry, 'merge');
-    assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
-    assert.match(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), /<<<<<<< local/);
-  } finally {
-    cleanup(dir);
-  }
+test('applyReviewChoice merge never dumps .remote beside the workspace file', (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'L\n', remote: 'C\n' },
+  ]);
+  const [entry] = collectConflictResolutionEntries(dir);
+  applyReviewChoice(dir, entry, 'merge');
+  assert.equal(fs.existsSync(path.join(dir, 'atris/wiki/a.md.remote')), false);
+  assert.match(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), /<<<<<<< local/);
 });
 
-test('invalid --take is rejected without mutating files', async () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
-    ]);
-    const before = fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8');
-    const result = await runSyncReview(dir, { take: 'merge' });
-    assert.equal(result.exitCode, 1);
-    assert.match(result.message, /--take local or --take cloud/);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), before);
-    assert.equal(collectConflictResolutionEntries(dir).length, 1);
-  } finally {
-    cleanup(dir);
-  }
+test('invalid --take is rejected without mutating files', async (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
+  ]);
+  const before = fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8');
+  const result = await runSyncReview(dir, { take: 'merge' });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.message, /--take local or --take cloud/);
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), before);
+  assert.equal(collectConflictResolutionEntries(dir).length, 1);
 });
 
-test('per-file interactive choices can mix local and cloud', async () => {
-  const dir = makeWorkspace();
-  try {
-    writeConflictPacket(dir, [
-      { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
-      { rel: 'atris/wiki/b.md', local: 'local b\n', remote: 'cloud b\n' },
-    ]);
-    const answers = ['local', 'cloud'];
-    const result = await runSyncReview(dir, {
-      ask: async () => answers.shift(),
-    });
-    assert.equal(result.exitCode, 0);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'local a\n');
-    assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/b.md'), 'utf8'), 'cloud b\n');
-  } finally {
-    cleanup(dir);
-  }
+test('per-file interactive choices can mix local and cloud', async (t) => {
+  const dir = makeWorkspace(t);
+  writeConflictPacket(dir, [
+    { rel: 'atris/wiki/a.md', local: 'local a\n', remote: 'cloud a\n' },
+    { rel: 'atris/wiki/b.md', local: 'local b\n', remote: 'cloud b\n' },
+  ]);
+  const answers = ['local', 'cloud'];
+  const result = await runSyncReview(dir, {
+    ask: async () => answers.shift(),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/a.md'), 'utf8'), 'local a\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'atris/wiki/b.md'), 'utf8'), 'cloud b\n');
 });

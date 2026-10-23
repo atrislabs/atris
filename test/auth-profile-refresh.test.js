@@ -10,6 +10,7 @@ const path = require('node:path');
 // Point HOME at a scratch dir BEFORE requiring the module so every path in
 // the suite stays inside the sandbox.
 const scratchHome = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auth-test-'));
+test.after(() => fs.rmSync(scratchHome, { recursive: true, force: true }));
 process.env.HOME = scratchHome;
 
 const auth = require('../utils/auth');

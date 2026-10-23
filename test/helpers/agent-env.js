@@ -1,6 +1,13 @@
 'use strict';
 
-const { AGENT_ENV_MARKERS } = require('../../commands/task');
+// Keep helper consumers light; agent-env.test.js checks these against the producer.
+const AGENT_ENV_MARKERS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CODEX_SANDBOX',
+  'CURSOR_AGENT',
+  'DEVIN_SESSION_ID',
+];
 
 // Tests that spawn the CLI inherit the parent env. When an agent (Claude
 // Code, Codex, Cursor, Devin) runs npm test, its session marker flips the

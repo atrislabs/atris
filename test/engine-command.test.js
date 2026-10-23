@@ -47,8 +47,9 @@ function runCli(args, cwd) {
   return result;
 }
 
-function tmpRoot(prefix = 'atris-engine-test-') {
+function tmpRoot(t, prefix = 'atris-engine-test-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
   return root;
 }
@@ -71,24 +72,24 @@ function writeSavedEngine(root, name) {
   fs.writeFileSync(file, `${JSON.stringify({ default: name })}\n`);
 }
 
-test('default engine precedence: env beats the saved file', () => {
-  const root = tmpRoot();
+test('default engine precedence: env beats the saved file', (t) => {
+  const root = tmpRoot(t);
   writeSavedEngine(root, 'cursor');
   const picked = withEnvProfile('codex', () => resolveDefaultEngine(root));
   assert.equal(picked.name, 'codex');
   assert.equal(picked.source, 'env');
 });
 
-test('default engine precedence: saved file wins when env is unset', () => {
-  const root = tmpRoot();
+test('default engine precedence: saved file wins when env is unset', (t) => {
+  const root = tmpRoot(t);
   writeSavedEngine(root, 'cursor');
   const picked = withEnvProfile(undefined, () => resolveDefaultEngine(root));
   assert.equal(picked.name, 'cursor');
   assert.equal(picked.source, 'saved');
 });
 
-test('default engine resolution canonicalizes aliases and ignores junk env', () => {
-  const root = tmpRoot();
+test('default engine resolution canonicalizes aliases and ignores junk env', (t) => {
+  const root = tmpRoot(t);
   writeSavedEngine(root, 'cursor');
   // Alias spelling in the env still resolves to the canonical house engine.
   const aliased = withEnvProfile('atris2-fast', () => resolveDefaultEngine(root));
@@ -100,8 +101,8 @@ test('default engine resolution canonicalizes aliases and ignores junk env', () 
   assert.equal(junk.source, 'saved');
 });
 
-test('readSavedEngine returns empty for missing or unknown saved names', () => {
-  const root = tmpRoot();
+test('readSavedEngine returns empty for missing or unknown saved names', (t) => {
+  const root = tmpRoot(t);
   assert.equal(readSavedEngine(root), '');
   writeSavedEngine(root, 'made-up-engine');
   assert.equal(readSavedEngine(root), '');
@@ -177,8 +178,8 @@ test('formatEngineSeats: setup hint when empty, ready vs cooling otherwise', () 
   assert.match(lines[1], /^claude work - cooling down, back 1h 30m$/);
 });
 
-test('cli: unknown engine name is a clean exit 2, not a stack trace', () => {
-  const root = tmpRoot();
+test('cli: unknown engine name is a clean exit 2, not a stack trace', (t) => {
+  const root = tmpRoot(t);
   const res = runCli(['engine', 'gpt-6'], root);
   assert.equal(res.status, 2);
   assert.match(res.stderr, /Unknown engine "gpt-6"/);
@@ -192,8 +193,8 @@ test('cli: unknown engine name is a clean exit 2, not a stack trace', () => {
   assert.deepEqual(payload.known, Array.from(RUNNER_PROFILE_NAMES));
 });
 
-test('hidden engine: selectable and routable, absent from every public surface', () => {
-  const root = tmpRoot();
+test('hidden engine: selectable and routable, absent from every public surface', (t) => {
+  const root = tmpRoot(t);
 
   // Selectable: a hidden name flips the default like any other engine.
   const set = runCli(['engine', 'commandcode'], root);
@@ -212,13 +213,11 @@ test('hidden engine: selectable and routable, absent from every public surface',
   assert.ok(!/^.{4}commandcode\s/m.test(rosterOut), 'roster must not list the hidden engine');
 
   // Hidden from the default --json list; present via --all with hidden: true.
-  const jsonPayload = JSON.parse(
-    runCli(['engine', 'list', '--json'], root).stdout.slice(runCli(['engine', 'list', '--json'], root).stdout.indexOf('{'))
-  );
+  const jsonStdout = runCli(['engine', 'list', '--json'], root).stdout;
+  const jsonPayload = JSON.parse(jsonStdout.slice(jsonStdout.indexOf('{')));
   assert.ok(!jsonPayload.engines.some((engine) => engine.id === 'commandcode'));
-  const allPayload = JSON.parse(
-    runCli(['engine', 'list', '--json', '--all'], root).stdout.slice(runCli(['engine', 'list', '--json', '--all'], root).stdout.indexOf('{'))
-  );
+  const allStdout = runCli(['engine', 'list', '--json', '--all'], root).stdout;
+  const allPayload = JSON.parse(allStdout.slice(allStdout.indexOf('{')));
   const commandcode = allPayload.engines.find((engine) => engine.id === 'commandcode');
   assert.ok(commandcode, '--all must include the hidden engine');
   assert.equal(commandcode.hidden, true);
@@ -228,8 +227,8 @@ test('hidden engine: selectable and routable, absent from every public surface',
   assert.ok(!/commandcode/.test(unknown.stderr), 'error hints must not reveal hidden engines');
 });
 
-test('cli: set default persists to .atris/engine.json, reset removes it', () => {
-  const root = tmpRoot();
+test('cli: set default persists to .atris/engine.json, reset removes it', (t) => {
+  const root = tmpRoot(t);
   const set = runCli(['engine', 'codex'], root);
   assert.equal(set.status, 0);
   const file = path.join(root, '.atris', 'engine.json');
@@ -253,8 +252,8 @@ test('cli: set default persists to .atris/engine.json, reset removes it', () => 
   assert.match(again.stdout, /nothing to reset/);
 });
 
-test('cli: resolve without a role or with an unknown role is usage exit 2', () => {
-  const root = tmpRoot();
+test('cli: resolve without a role or with an unknown role is usage exit 2', (t) => {
+  const root = tmpRoot(t);
   const missing = runCli(['engine', 'resolve'], root);
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /usage: atris engine resolve <role>/);
@@ -266,11 +265,11 @@ test('cli: resolve without a role or with an unknown role is usage exit 2', () =
   assert.match(payload.error, /Unknown role "poet"/);
 });
 
-test('routing honors saved health policy: credit_out engines are never picked', () => {
+test('routing honors saved health policy: credit_out engines are never picked', (t) => {
   // Flip every engine to credit_out in this root. Even on a machine where the
   // binaries are installed, resolve must refuse: the health file is policy
   // and routing decides from it, not from what happens to be on the PATH.
-  const root = tmpRoot();
+  const root = tmpRoot(t);
   // Every registered engine, hidden ones included: policy flips are total.
   for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'credit_out', root);
@@ -282,8 +281,8 @@ test('routing honors saved health policy: credit_out engines are never picked', 
   assert.match(payload.error, /No ready installed engine can fill role "executor"/);
 });
 
-test('a settled registry is never rewritten by reads, so readers cannot stomp mutations', () => {
-  const root = tmpRoot();
+test('a settled registry is never rewritten by reads, so readers cannot stomp mutations', (t) => {
+  const root = tmpRoot(t);
   const registryLib = require('../lib/engine-registry');
   registryLib.readEngineRegistry(root);
   const file = registryLib.engineRegistryFile(root);
@@ -295,11 +294,11 @@ test('a settled registry is never rewritten by reads, so readers cannot stomp mu
   assert.equal(fs.statSync(file).mtimeMs, before, 'read paths must not touch the policy file');
 });
 
-test('resolve is probe-free: no child_process call happens on a settled registry', () => {
+test('resolve is probe-free: no child_process call happens on a settled registry', (t) => {
   // Routing must decide from the saved policy file alone. Seed the registry
   // once (the only moment a probe is allowed), then spy on every child_process
   // entry point and assert resolve never touches the machine.
-  const root = tmpRoot();
+  const root = tmpRoot(t);
   const registryLib = require('../lib/engine-registry');
   registryLib.readEngineRegistry(root);
 
@@ -328,10 +327,10 @@ test('resolve is probe-free: no child_process call happens on a settled registry
   }
 });
 
-test('nothing configured: the default comes from registry health, not the machine', () => {
+test('nothing configured: the default comes from registry health, not the machine', (t) => {
   // No env, no .atris/engine.json. The registry health file is the only
   // input: flip it and the pick flips, without any probe in between.
-  const root = tmpRoot();
+  const root = tmpRoot(t);
   for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'not_installed', root);
   }
@@ -355,11 +354,11 @@ test('nothing configured: the default comes from registry health, not the machin
   assert.equal(house.source, 'house');
 });
 
-test('routing believes a ready health flag even when the binary is missing', () => {
+test('routing believes a ready health flag even when the binary is missing', (t) => {
   // Policy over probes, the other direction: an operator-set "ready" wins.
   // The missing binary is a problem for the execution stage, where it must fail
   // in one plain sentence naming the binary.
-  const root = tmpRoot();
+  const root = tmpRoot(t);
   for (const name of Object.keys(RUNNER_PROFILE_DEFS)) {
     setEngineHealth(name, 'not_installed', root);
   }
@@ -383,8 +382,8 @@ test('routing believes a ready health flag even when the binary is missing', () 
   }
 });
 
-test('cli: engine doctor is the explicit probe pass and respects credit_out policy', () => {
-  const root = tmpRoot();
+test('cli: engine doctor is the explicit probe pass and respects credit_out policy', (t) => {
+  const root = tmpRoot(t);
   const binDir = path.join(root, 'fake-bin');
   fs.mkdirSync(binDir, { recursive: true });
   fs.writeFileSync(path.join(binDir, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
@@ -412,8 +411,8 @@ test('cli: engine doctor is the explicit probe pass and respects credit_out poli
   assert.equal(saved.engines.find((engine) => engine.id === 'devin').health.status, 'not_installed');
 });
 
-test('cli: dispatch argument shape errors surface before any environment check', () => {
-  const root = tmpRoot();
+test('cli: dispatch argument shape errors surface before any environment check', (t) => {
+  const root = tmpRoot(t);
   const noEngine = runCli(['engine', 'dispatch', 'CLI-1'], root);
   assert.equal(noEngine.status, 2);
   assert.match(noEngine.stderr, /usage: atris engine dispatch/);

@@ -17,7 +17,7 @@ const AGENT_MARKERS = [
 ];
 
 function runCli(args, { cwd, input } = {}) {
-  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const env = { ...process.env, HOME: cwd, ATRIS_SKIP_UPDATE_CHECK: '1' };
   for (const marker of AGENT_MARKERS) delete env[marker];
   delete env.ATRIS_AGENT_PROOF_ONLY;
   const result = spawnSync(process.execPath, [cliPath, ...args], {

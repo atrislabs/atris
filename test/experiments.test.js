@@ -4,20 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { findPython } = require('./helpers/find-python');
 const { buildPrompt } = require('../commands/autopilot');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-
-function findPython() {
-  for (const candidate of ['python3', 'python']) {
-    const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
-    if (!result.error && result.status === 0) {
-      return candidate;
-    }
-  }
-  return null;
-}
 
 const pythonCmd = findPython();
 

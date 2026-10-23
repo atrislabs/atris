@@ -533,6 +533,7 @@ function showHelpShort() {
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
   console.log('  atris mission                    the one goal');
+  console.log('  atris gm                         play your team as a front office');
   console.log('');
   console.log('More: atris help --all   ·   machine list: atris help --json');
 }
@@ -546,6 +547,7 @@ function helpCatalog() {
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
     { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
     { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
+    { name: 'campaign', summary: 'long goal + judge + budget + seats, made of missions', json: true, interactive_risk: 'low' },
     { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: true, interactive_risk: 'low' },
     { name: 'wish', summary: 'headless inbox / mission intake', json: true, interactive_risk: 'low' },
     { name: 'learn', summary: 'structured project learnings', json: false, interactive_risk: 'low' },
@@ -605,6 +607,7 @@ function showHelpAll() {
   console.log('  who        - Show local engines and team members working, waiting, done, or stale');
   console.log('  stream     - Watch the whole team work live in one terminal');
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
+  console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -636,6 +639,7 @@ function showHelpAll() {
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  decide     - Answer open mission asks and send the decision to the next tick');
+  console.log('  campaign   - Long-running goals with a judge, a budget, and members in seats');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch; atris release preflight before a v* tag');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
@@ -696,6 +700,7 @@ function showHelpAll() {
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
   console.log('  sync-checkout - fetch and fast-forward a clean current branch');
+  console.log('  zen        - make this repo calm and current, keeping everything (--check to only look)');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
   console.log('  live       - Keep a business brain fresh (doctor, pull, watch, push)');
   console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
@@ -1906,12 +1911,13 @@ function showWelcomeVisualization() {
   }
 
   // The guarantee gauge, only when it has bad news: landings a human had to
-  // fix this week. Zero is the healthy state and stays silent; no git history
+  // fix this week. Coaching (role, goal, context edits) is not bad news. Zero is the healthy state and stays silent; no git history
   // (not a repo, git missing) also stays silent.
   try {
     const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7 });
-    if (rev.revised > 0) {
-      console.log(`  ${rev.revised} landing${rev.revised === 1 ? '' : 's'} this week needed a human fix; run atris improve revisions`);
+    const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
+    if (fixed > 0) {
+      console.log(`  ${fixed} landing${fixed === 1 ? '' : 's'} this week needed a human fix; run atris improve revisions`);
     }
   } catch {
     // Silent: the gauge never blocks boot.
@@ -2012,6 +2018,10 @@ if (command === 'guide') {
 } else if (command === 'team') {
   Promise.resolve(require('../commands/team').teamCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'campaign') {
+  Promise.resolve(require('../commands/campaign').campaignCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'who') {
   Promise.resolve(require('../commands/who').whoCommand(process.argv.slice(3)))
@@ -2297,6 +2307,9 @@ if (command === 'guide') {
   require('../commands/watch').watchAtris();
 } else if (command === 'sync-checkout') {
   const code = require('../commands/sync-checkout').syncCheckoutCommand(process.argv.slice(3));
+  process.exit(code);
+} else if (command === 'zen') {
+  const code = require('../commands/zen').zenCommand(process.argv.slice(3));
   process.exit(code);
 } else if (command === 'update' || command === 'sync') {
   const args = process.argv.slice(3);
@@ -2964,7 +2977,7 @@ if (command === 'guide') {
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'gm') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'game') {
   require('../commands/game').gameCommand(process.argv.slice(3))
@@ -2996,7 +3009,12 @@ if (command === 'guide') {
     const mailbox = extractGmailMailboxAccount(raw);
     // Mailbox --account <id> is a selector, not the workspace opt-in.
     // Scratch folders refuse every gmail verb the same way as slack/inbox.
-    const gate = requireAccountBound(mailbox.args.filter((arg) => arg !== '--account'));
+    // Read verbs also run from a project folder (atris/, no business.json).
+    const GMAIL_READ_VERBS = new Set(['inbox', 'list', 'read', 'triage', 'verdicts', 'accounts']);
+    const gate = requireAccountBound(
+      mailbox.args.filter((arg) => arg !== '--account'),
+      { read: GMAIL_READ_VERBS.has(mailbox.args[0]) },
+    );
     if (!gate.ok) {
       process.exit(refuseAccountGlobal());
       return;
@@ -3035,7 +3053,12 @@ if (command === 'guide') {
     const account = extractGmailMailboxAccount(raw);
     // Account --account <id> is a selector, not the workspace opt-in.
     // Scratch folders refuse every slack verb the same way as gmail/inbox.
-    const gate = requireAccountBound(account.args.filter((arg) => arg !== '--account'));
+    // Read verbs also run from a project folder (atris/, no business.json).
+    const SLACK_READ_VERBS = new Set(['channels', 'list', 'dms', 'messages', 'read', 'search']);
+    const gate = requireAccountBound(
+      account.args.filter((arg) => arg !== '--account'),
+      { read: SLACK_READ_VERBS.has(account.args[0]) },
+    );
     if (!gate.ok) {
       process.exit(refuseAccountGlobal());
       return;

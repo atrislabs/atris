@@ -203,11 +203,16 @@ test('ax headless turn surfaces the backend result event as output, not leftover
 });
 
 test('ax returns the prompt when the result event lands, without waiting for the stream to close', async () => {
+  let releaseResponse = () => {};
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.write('data: ' + JSON.stringify({ type: 'text_delta', content: 'Hi.' }) + '\n\n');
     res.write('data: ' + JSON.stringify({ type: 'result', result: 'Hi.' }) + '\n\n');
-    setTimeout(() => res.end(), 1500);
+    const responseTimer = setTimeout(() => res.end(), 1500);
+    releaseResponse = () => {
+      clearTimeout(responseTimer);
+      if (!res.writableEnded) res.end();
+    };
   });
   const port = await listenLocal(server);
   const previousBackendUrl = process.env.AX_BACKEND_URL;
@@ -225,6 +230,7 @@ test('ax returns the prompt when the result event lands, without waiting for the
   } finally {
     if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
     else process.env.AX_BACKEND_URL = previousBackendUrl;
+    releaseResponse();
     await closeServer(server);
   }
 });
@@ -697,18 +703,28 @@ test('ax status slash prints doctor rows without calling the model', async () =>
 });
 
 test('ax streaming requests honor an abort signal', async () => {
-  const controller = new AbortController();
-  controller.abort();
-  await assert.rejects(
-    ax.postTurn('hello', {
-      route: 'cloud',
-      connectionContext: {},
-      signal: controller.signal,
-      output: { isTTY: false, write() {} },
-      showProgress: false,
-    }),
-    error => error && error.name === 'AbortError'
-  );
+  const server = http.createServer((req, res) => res.end());
+  const port = await listenLocal(server);
+  const previousBackendUrl = process.env.AX_BACKEND_URL;
+  process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
+  try {
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      ax.postTurn('hello', {
+        route: 'cloud',
+        connectionContext: {},
+        signal: controller.signal,
+        output: { isTTY: false, write() {} },
+        showProgress: false,
+      }),
+      error => error && error.name === 'AbortError'
+    );
+  } finally {
+    if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
+    else process.env.AX_BACKEND_URL = previousBackendUrl;
+    await closeServer(server);
+  }
 });
 
 test('AX_TIMING prints event timing to stderr without changing chat output', () => {
@@ -1954,7 +1970,9 @@ test('mercury TTY snapshots replace longer drafts and leave final output only', 
   }
 });
 
-test('mercury CLI flags send the model and diffuse, piped text prints once', async () => {
+test('mercury CLI flags send the model and diffuse, piped text prints once', async (t) => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-mercury-home-'));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
   const bodies = [];
   const server = http.createServer((req, res) => {
     if (req.method !== 'POST') {
@@ -1984,7 +2002,7 @@ test('mercury CLI flags send the model and diffuse, piped text prints once', asy
         const child = spawn(process.execPath, [path.join(__dirname, '..', 'ax'), '--mercury',
           ...(diffuse ? ['--diffuse'] : []), '--cloud', 'hello mercury'], {
           cwd: os.tmpdir(),
-          env: { ...process.env, AX_BACKEND_URL: `http://127.0.0.1:${port}/api/atris2/turn`, ATRIS_SKIP_UPDATE_CHECK: '1' },
+          env: { ...process.env, HOME: homeDir, AX_BACKEND_URL: `http://127.0.0.1:${port}/api/atris2/turn`, ATRIS_SKIP_UPDATE_CHECK: '1' },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';

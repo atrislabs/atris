@@ -5,20 +5,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { runCli } = require('./helpers/task-admin-cli');
 
 const taskStore = require('../lib/task-db');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeWorkspace() {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-clear-done-test-')));
@@ -49,22 +41,6 @@ function makeWorkspace() {
 function cleanupWorkspace(dir) {
   taskStore.close();
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd, env }) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 30000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      NODE_NO_WARNINGS: '1',
-      ...env,
-    },
-  });
-  if (result.error) throw result.error;
-  return result;
 }
 
 function addDoneTask(db, dir, title, completedAt) {

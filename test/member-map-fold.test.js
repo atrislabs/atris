@@ -21,8 +21,9 @@ function write(root, rel, text) {
 }
 
 // A shared repo on disk plus one working copy, the way a member sees it.
-function sharedRepo() {
+function sharedRepo(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'map-fold-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const origin = path.join(dir, 'origin.git');
   const work = path.join(dir, 'work');
   git(dir, 'init', '-q', '--bare', '-b', 'master', origin);
@@ -58,8 +59,8 @@ test('foldNotesText: a new section already present word for word is not added tw
   assert.equal(added, 0);
 });
 
-test('foldMapNotesOnMain: notes saved by two member changes land in the shared map on main in one commit', () => {
-  const { origin, work } = sharedRepo();
+test('foldMapNotesOnMain: notes saved by two member changes land in the shared map on main in one commit', (t) => {
+  const { origin, work } = sharedRepo(t);
   write(work, NOTES_FILE, '# Map notes\n\n## Alpha\nrg "a" lib/a.js\n');
   write(work, 'README.md', 'hi\n');
   git(work, 'add', '-A');
@@ -100,8 +101,8 @@ test('foldMapNotesOnMain: notes saved by two member changes land in the shared m
   assert.equal(git(origin, 'rev-parse', 'master'), after);
 });
 
-test('foldMapNotesOnMain: an unreachable main is reported, not thrown', () => {
-  const { work } = sharedRepo();
+test('foldMapNotesOnMain: an unreachable main is reported, not thrown', (t) => {
+  const { work } = sharedRepo(t);
   git(work, 'remote', 'set-url', 'origin', path.join(os.tmpdir(), 'no-such-origin-for-map-fold.git'));
   const result = foldMapNotesOnMain(work, { base: 'master' });
   assert.equal(result.folded, 0);

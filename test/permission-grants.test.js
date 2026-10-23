@@ -8,13 +8,19 @@ const path = require('path');
 
 const grants = require('../lib/permission-grants');
 
-function tempStore() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-grants-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function tempStore(t) {
+  const dir = makeTempDir(t, 'atris-grants-');
   return { dir, file: path.join(dir, 'permission-grants.json') };
 }
 
-test('grant + exact match auto-approves the same command in the same workspace', () => {
-  const { dir, file } = tempStore();
+test('grant + exact match auto-approves the same command in the same workspace', (t) => {
+  const { dir, file } = tempStore(t);
   const added = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   assert.equal(added.ok, true);
   const hit = grants.matchGrant({ command: 'npm  test', workspaceRoot: dir, file });
@@ -22,9 +28,9 @@ test('grant + exact match auto-approves the same command in the same workspace',
   assert.equal(hit.grant_id, added.grant.grant_id);
 });
 
-test('a grant never matches a different command, workspace, or after revoke/expiry', () => {
-  const { dir, file } = tempStore();
-  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-grants-other-'));
+test('a grant never matches a different command, workspace, or after revoke/expiry', (t) => {
+  const { dir, file } = tempStore(t);
+  const other = makeTempDir(t, 'atris-grants-other-');
   const added = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   assert.equal(grants.matchGrant({ command: 'npm test -- --grep x', workspaceRoot: dir, file }), null);
   assert.equal(grants.matchGrant({ command: 'npm test', workspaceRoot: other, file }), null);
@@ -35,8 +41,8 @@ test('a grant never matches a different command, workspace, or after revoke/expi
   assert.equal(grants.matchGrant({ command: 'npm test', workspaceRoot: dir, file }), null);
 });
 
-test('shell metacharacters and dangerous commands are never grantable or matchable', () => {
-  const { dir, file } = tempStore();
+test('shell metacharacters and dangerous commands are never grantable or matchable', (t) => {
+  const { dir, file } = tempStore(t);
   for (const bad of [
     'npm test && rm -rf /',
     'echo hi; whoami',
@@ -62,8 +68,8 @@ test('shell metacharacters and dangerous commands are never grantable or matchab
   assert.equal(grants.matchGrant({ command: 'npm test && rm -rf /', workspaceRoot: dir, file }), null);
 });
 
-test('an ambiguous grant-id prefix refuses to revoke instead of picking one', () => {
-  const { dir, file } = tempStore();
+test('an ambiguous grant-id prefix refuses to revoke instead of picking one', (t) => {
+  const { dir, file } = tempStore(t);
   const a = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   const b = grants.addGrant({ command: 'npm run lint', workspaceRoot: dir, file });
   const shared = commonPrefix(a.grant.grant_id, b.grant.grant_id);
@@ -83,8 +89,8 @@ function commonPrefix(x, y) {
   return x.slice(0, i);
 }
 
-test('recordUse increments and max_uses caps redemption', () => {
-  const { dir, file } = tempStore();
+test('recordUse increments and max_uses caps redemption', (t) => {
+  const { dir, file } = tempStore(t);
   const added = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   const store = grants.loadGrants(file);
   store.grants[0].constraints.max_uses = 1;
@@ -109,8 +115,8 @@ function fakeApi(reply) {
   return api;
 }
 
-test('syncGrants pushes local grants and pulls a web-created grant that then matches', async () => {
-  const { dir, file } = tempStore();
+test('syncGrants pushes local grants and pulls a web-created grant that then matches', async (t) => {
+  const { dir, file } = tempStore(t);
   const root = fs.realpathSync(dir);
   grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
 
@@ -142,8 +148,8 @@ test('syncGrants pushes local grants and pulls a web-created grant that then mat
   assert.equal(hit.grant_id, 'grant-from-web');
 });
 
-test('a web revocation is honored locally and never resurrected (fail closed)', async () => {
-  const { dir, file } = tempStore();
+test('a web revocation is honored locally and never resurrected (fail closed)', async (t) => {
+  const { dir, file } = tempStore(t);
   const root = fs.realpathSync(dir);
   const added = grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   assert.ok(grants.matchGrant({ command: 'npm test', workspaceRoot: dir, file }));
@@ -175,8 +181,8 @@ test('a web revocation is honored locally and never resurrected (fail closed)', 
   assert.equal(grants.matchGrant({ command: 'npm test', workspaceRoot: dir, file }), null);
 });
 
-test('a dangerous grant from the backend is rejected on ingest and never matches', async () => {
-  const { dir, file } = tempStore();
+test('a dangerous grant from the backend is rejected on ingest and never matches', async (t) => {
+  const { dir, file } = tempStore(t);
   const root = fs.realpathSync(dir);
   const apiRequestJson = fakeApi({
     ok: true,
@@ -201,8 +207,8 @@ test('a dangerous grant from the backend is rejected on ingest and never matches
   assert.equal(grants.matchGrant({ command: 'sudo ls', workspaceRoot: dir, file }), null);
 });
 
-test('a failed sync request leaves the local store untouched', async () => {
-  const { dir, file } = tempStore();
+test('a failed sync request leaves the local store untouched', async (t) => {
+  const { dir, file } = tempStore(t);
   grants.addGrant({ command: 'npm test', workspaceRoot: dir, file });
   const before = JSON.stringify(grants.loadGrants(file));
 

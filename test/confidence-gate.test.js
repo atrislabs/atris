@@ -1,20 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-confidence-test-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-confidence-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function runCli(args, { cwd, input } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
@@ -24,6 +18,7 @@ function runCli(args, { cwd, input } = {}) {
     timeout: 15000,
     env: {
       ...process.env,
+      HOME: cwd,
       ATRIS_SKIP_UPDATE_CHECK: '1',
     },
   });

@@ -37,6 +37,8 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.match(mainHelp.stdout, /atris autopilot/);
   assert.match(mainHelp.stdout, /atris mission/);
   assert.match(mainHelp.stdout, /the one goal/);
+  assert.match(mainHelp.stdout, /^ {2}atris gm +play your team as a front office$/m);
+  assert.match(runCli(['help', 'all']).stdout, /^ {2}atris gm +play your team as a front office$/m);
   assert.match(mainHelp.stdout, /help --all/);
   assert.doesNotMatch(mainHelp.stdout, /Golden path:/);
   assert.doesNotMatch(mainHelp.stdout, /task claim|task ready|--proof|MAP, tasks, journal/);
@@ -57,6 +59,7 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.match(allHelp.stdout, /atris autopilot/);
   assert.match(allHelp.stdout, /atris mission/);
   assert.match(allHelp.stdout, /atris recap/);
+  assert.match(allHelp.stdout, /^ {2}gm {9}- Play your team as a front office: ratings, stuck jobs, league, replay, phone$/m);
   assert.match(allHelp.stdout, /atris review/);
   assert.match(allHelp.stdout, /atris stop\b/);
   assert.match(allHelp.stdout, /Keep working/);
