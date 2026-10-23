@@ -5996,7 +5996,7 @@ function cmdAcceptGroup(args) {
       proof,
     });
     if (!done.updated) { accepted.push({ id: task.id, ok: false, reason: 'not_review' }); continue; }
-    taskDb.reviewTask(db, {
+    const reviewed = taskDb.reviewTask(db, {
       id: task.id,
       actor,
       reward: 1,
@@ -6005,6 +6005,7 @@ function cmdAcceptGroup(args) {
       proof,
       careerXpEligible: isVerified, // honest: career XP ONLY for rows the human actually verified
     });
+    refreshCareerXpAfterReview(reviewed);
     stampAcceptGroupMetadata(taskDb, db, task.id, { actor, group: groupLabel, verified: isVerified, sampleVerifiedIds: [...verifiedIds] });
     accepted.push({ id: task.id, ok: true, verified: isVerified, career_xp: isVerified });
   }

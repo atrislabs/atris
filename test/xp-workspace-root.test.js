@@ -322,3 +322,59 @@ test('new main-ledger reviews require a second actor even after completion', (t)
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('group acceptance refreshes verified XP before any XP read and excludes unsampled rows', (t) => {
+  const taskDb = require('../lib/task-db');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-group-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const dbPath = path.join(base, 'tasks.db');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (cwd, ...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'group-work', linked);
+    const db = taskDb.open(dbPath);
+    const rows = Array.from({ length: 2 }, () => taskDb.addTask(db, {
+      title: acceptedReview.title, workspaceRoot: linked, status: 'review', tag: 'xp-group',
+      claimedBy: acceptedReview.claimed_by,
+      metadata: { ...acceptedReview.metadata, latest_agent_proof: acceptedReview.proof },
+    }));
+    taskDb.close();
+    const before = run(main, 'xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const result = JSON.parse(run(linked, 'task', 'accept-group', 'tag=xp-group', '--spot-check', '1',
+      '--confirm-human-accept', '--as', acceptedReview.actor, '--verified', rows[0].id, '--json'));
+    assert.equal(result.accepted, 2);
+    assert.equal(result.verified_career_xp, 1);
+    assert.equal(result.sampled_no_career_xp, 1);
+    // Acceptance must update the balance itself, before a read can repair it.
+    const state = path.join(main, '.atris', 'state');
+    const projection = JSON.parse(fs.readFileSync(path.join(state, 'career_xp.projection.json'), 'utf8'));
+    assert.equal(projection.agent_xp, acceptedReview.reward);
+    assert.equal(projection.today_agent_xp, acceptedReview.reward);
+    const receipts = fs.readFileSync(path.join(state, 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    const episodes = fs.readFileSync(path.join(state, 'task_episodes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(episodes.length, 2);
+    assert.equal(episodes.filter(episode => episode.career_xp.eligible).length, 1);
+    const after = run(main, 'xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    assert.match(run(linked, 'xp', '--local'), /AgentXP 1 \| Today 1/);
+    t.diagnostic(`group acceptance before: ${before.split('\n')[1]}`);
+    t.diagnostic(`group acceptance after: ${after.split('\n')[1]}`);
+  } finally {
+    taskDb.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
