@@ -593,10 +593,11 @@ test('page: every card has a quiet say-something line that opens into one box', 
   // on a card the line itself becomes the box, in its own spot
   assert.match(script, /typeHere\(open, 'say something', 280, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\);/);
   // the words hold as chosen while they are read; an answer or an instruction brings the next card
-  assert.match(script, /var heldAt = hold\(spot\);\n\s+api\('\/bet\/say', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ think\(false, heldAt\); return; \}/);
+  assert.match(script, /var heldAt = hold\(spot\);\n\s+reading\(spot\);\n\s+api\('\/bet\/say', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ think\(false, heldAt\); return; \}/);
   // a question back takes the title's spot, its suggested replies one tap each where the answers were
-  assert.match(script, /box\.appendChild\(el\('h1', null, r\.stay \? r\.reply : \(r\.message \|\| 'that did not go through'\)\)\);/);
-  assert.match(script, /if \(r\.stay\) \(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{ act\.appendChild\(sayChoice\(sug, \{ text: sug \}\)\); \}\);/);
+  assert.match(script, /var title = el\('h1', null, r\.stay \? r\.reply : \(r\.message \|\| 'that did not go through'\)\);\n\s+box\.appendChild\(title\);/);
+  // suggested replies to tap, only the ones the card does not already show
+  assert.match(script, /if \(r\.stay\) \(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{\n\s+if \(have\.indexOf\(String\(sug\)\.trim\(\)\.toLowerCase\(\)\) < 0\) act\.appendChild\(sayChoice\(sug, \{ text: sug \}\)\);/);
   // starting a member that is not running takes a second tap, or keeps it as a note
   assert.match(script, /act\.appendChild\(sayChoice\('start it', \{ text: said, confirm: true \}\)\);/);
   assert.match(script, /act\.appendChild\(sayChoice\('keep it as a note instead', \{ text: said, note: true \}\)\);/);
@@ -1283,4 +1284,74 @@ test('page: something else on the number question goes through say, with no seco
   assert.match(report, /el\('button', null, 'not now'\)/);
   assert.match(report, /think\(false, 0\)/);
   assert.match(report, /box\.appendChild\(sayBox\(\)\);/);
+});
+
+// ---- the card is the conversation -------------------------------------------------
+
+test('browser: a two-turn chat on the number question: one place to type, the turns kept, the choices once, one ellipsis, a long reply at body size, and the owner is you', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const LONG = "I'm asking which number would tell you the overnight work is going well. Pick one of the four buttons, or tell me another number you'd watch.";
+  const seen = [];
+  const desk = gmBet.createBetDesk({
+    workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false, scoreboard: true, ownerName: 'Keshav',
+    generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+    suggestScoreboard: async () => ({ ok: true, choices: [{ name: 'weekly installs', up: true }, { name: 'first runs that finished a recap', up: true }, { name: 'overnight changes Keshav redid', up: false }] }),
+    // a slow reader that, like the live one, offers the card's own choices back
+    readSaid: async (opts) => {
+      seen.push(opts.thread.map(t => t.text));
+      await new Promise(r => setTimeout(r, 1500));
+      return { ok: true, kind: 'question', reply: LONG, suggestions: ['weekly installs', 'first runs that finished a recap', 'overnight changes you redid', 'paying schools'] };
+    },
+    runCli: async () => ({ code: 0, stdout: '{}' }),
+  });
+  desk.warm();
+  for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+  assert.equal(desk.next().id, 'question:scoreboard');
+  const out = await trace.onPhone(desk, CHROME, async (p) => {
+    const look = () => p.run(`(function () {
+      var box = document.getElementById('bet'), h = box.querySelector('h1');
+      return {
+        title: h.textContent, title_top: Math.round(h.getBoundingClientRect().top), title_px: getComputedStyle(h).fontSize,
+        buttons: Array.prototype.map.call(box.querySelectorAll('button'), function (b) { return b.textContent; }),
+        // something else (or the box it becomes while it is read), or the say line
+        places_to_type: box.querySelectorAll('.other, .act .field, .sayline').length,
+        ellipses: (box.innerText.match(/\\u2026/g) || []).length,
+      };
+    })()`);
+    const chat = async (words) => {
+      await p.run("Array.prototype.find.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === 'something else'; }).click()");
+      await new Promise(r => setTimeout(r, 300));
+      await p.type(words);
+      await p.enter();
+      await new Promise(r => setTimeout(r, 700));
+      const loading = await look();
+      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(LONG)} && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('holding')`, 'the reply', 6000);
+      await new Promise(r => setTimeout(r, 300));
+      return { loading, reply: await look() };
+    };
+    const before = await look();
+    const one = await chat('what');
+    const two = await chat('which one is best?');
+    return { before, one, two, why_px: await p.run("(function () { var n = document.createElement('p'); n.className = 'why'; document.getElementById('bet').appendChild(n); var px = getComputedStyle(n).fontSize; n.remove(); return px; })()") };
+  });
+  const show = JSON.stringify({ out, seen }, null, 1);
+  // the owner is you, in the choices and everywhere on the card
+  assert.ok(out.before.buttons.includes('overnight changes you redid'), show);
+  for (const state of [out.before, out.one.loading, out.one.reply, out.two.reply]) {
+    assert.ok(!state.buttons.some(b => /keshav/i.test(b)), show);
+    // one place to type, always: something else on a question card
+    assert.equal(state.places_to_type, 1, show);
+  }
+  for (const turn of [out.one, out.two]) {
+    // one ellipsis while the reply is read
+    assert.equal(turn.loading.ellipses, 1, show);
+    // the choices once, then only the new suggestion
+    assert.deepEqual(turn.reply.buttons, ['weekly installs', 'first runs that finished a recap', 'overnight changes you redid', 'something else', 'paying schools'], show);
+    // a long reply sits in the title's spot at the body size
+    assert.equal(turn.reply.title_top, out.before.title_top, show);
+    assert.equal(turn.reply.title_px, out.why_px, show);
+  }
+  // the second turn continues the same conversation
+  assert.deepEqual(seen, [[], ['what', LONG]], show);
 });
