@@ -822,13 +822,33 @@ function boardWorkspaceRoot(args = []) {
   return taskDb.workspaceRoot(path.resolve(workspaceArg));
 }
 
+// Role and engine per roster member, read only when the board draws a box.
+function boardProfiles(board, workspaceRoot) {
+  if (!process.stdout.isTTY || !workspaceRoot) return {};
+  return require('../lib/gm-season').rosterProfiles(workspaceRoot, board.roster.map(r => r.name));
+}
+
 function loadBoard(workspaceRoot, options = {}) {
   const season = require('../lib/gm-season');
   return season.seasonBoard(season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen }), options);
 }
 
+const BORDERED_ROSTER_COLUMNS = ['member', 'role', 'ovr', 'form', 'record', 'engine', 'status'].map(header => ({ header }));
+
+// The roster as a divided box, or null when it does not fit the width.
+function borderedRoster(roster, profiles, width) {
+  const { renderBorderedTable } = require('../lib/text-table');
+  const rows = roster.map((row) => {
+    const profile = profiles[row.name] || {};
+    return [row.name, profile.role || '··', row.ovr == null ? '··' : row.ovr, row.form || '-', `landed ${row.landed} of ${row.jobs}`, profile.engine || '··', row.status];
+  });
+  return renderBorderedTable(BORDERED_ROSTER_COLUMNS, rows, { width });
+}
+
 // One screen, about 40 rows at most. Pure: board in, lines out.
-function renderBoardLines(board, { interactive = false, width = termWidth() } = {}) {
+// In a terminal the roster is a bordered table with role and engine (from
+// profiles); piped, or too wide for the terminal, it keeps the plain columns.
+function renderBoardLines(board, { interactive = false, width = termWidth(), bordered = Boolean(process.stdout.isTTY), profiles = {} } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   const nameW = nameWidth([
@@ -848,7 +868,10 @@ function renderBoardLines(board, { interactive = false, width = termWidth() } = 
   lines.push('');
 
   lines.push('roster, last 30 days');
-  if (board.roster.length) {
+  const boxed = bordered && board.roster.length ? borderedRoster(board.roster, profiles, width - 2) : null;
+  if (boxed) {
+    lines.push(...boxed.split('\n').map(line => `  ${line}`));
+  } else if (board.roster.length) {
     lines.push(`  ${pad('name', nameW)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
     for (const row of board.roster) {
       const record = `landed ${row.landed} of ${row.jobs}`;
@@ -982,9 +1005,11 @@ function printLeague() {
 }
 
 function printBoard(args = []) {
-  const board = loadBoard(boardWorkspaceRoot(args));
+  const root = boardWorkspaceRoot(args);
+  const board = loadBoard(root);
   if (board.error) return failRead(board.error);
-  console.log(renderBoardLines(board).join('\n'));
+  const profiles = boardProfiles(board, root);
+  console.log(renderBoardLines(board, { profiles }).join('\n'));
   return undefined;
 }
 
@@ -1103,7 +1128,7 @@ async function gmPlay(args = []) {
         lastBoard = board;
         seen = new Set(board.last_plays.map(play => play.id));
         stuck = board.stuck || [];
-        write(renderBoardLines(board, { interactive: true }).join('\n'));
+        write(renderBoardLines(board, { interactive: true, profiles: boardProfiles(board, workspaceRoot) }).join('\n'));
         season.writeLastSeen(workspaceRoot, board.now);
       }
     } catch (err) {

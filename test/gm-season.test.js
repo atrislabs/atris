@@ -1365,3 +1365,52 @@ test('every board, league, card, and replay line fits the terminal width', () =>
   assert.ok(plain.every(l => widthOf(l) <= 90), plain.find(l => widthOf(l) > 90));
   assert.match(plain[0], /\.\.\. +sent back +a title/);
 });
+
+// ---- bordered roster ---------------------------------------------------------
+
+const { renderBorderedTable } = require('../lib/text-table');
+
+test('the table drawer draws a divided box, or gives up when it is wider than the terminal', () => {
+  const columns = [{ header: 'member' }, { header: 'ovr' }];
+  const text = renderBorderedTable(columns, [['builder', 80], ['scout', '··']], { width: 40 });
+  assert.equal(text, [
+    '┌─────────┬─────┐',
+    '│ member  │ ovr │',
+    '├─────────┼─────┤',
+    '│ builder │ 80  │',
+    '│ scout   │ ··  │',
+    '└─────────┴─────┘',
+  ].join('\n'));
+  assert.equal(renderBorderedTable(columns, [['a member with a long name', 80]], { width: 30 }), null);
+});
+
+test('board roster is a bordered table with role, ovr, form, record, engine, status in a wide terminal', () => {
+  const profiles = { builder: { role: 'ships features', engine: 'claude opus 5.5' } };
+  const text = renderBoardLines(fixtureBoard(), { width: 140, bordered: true, profiles }).join('\n');
+  assert.match(text, /^ {2}│ member +│ role +│ ovr +│ form +│ record +│ engine +│ status +│$/m);
+  assert.match(text, /^ {2}│ builder +│ ships features +│ 80 +│ akkd +│ landed 2 of 4 +│ claude opus 5\.5 +│ on a job +│$/m);
+  assert.match(text, /^ {2}│ scout +│ ·· +│ ·· +│ x +│ landed 0 of 1 +│ ·· +│ asleep +│$/m);
+  assert.match(text, /^ {2}┌─+┬/m);
+  assert.doesNotMatch(text, /rookie +x +landed/);
+});
+
+test('board roster keeps the plain columns when the terminal is too narrow or output is piped', () => {
+  const profiles = { builder: { role: 'ships features', engine: 'claude opus 5.5' } };
+  const narrow = renderBoardLines(fixtureBoard(), { width: 70, bordered: true, profiles }).join('\n');
+  const piped = renderBoardLines(fixtureBoard(), { width: 140, bordered: false, profiles }).join('\n');
+  for (const text of [narrow, piped]) {
+    assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
+    assert.doesNotMatch(text, /│/);
+  }
+});
+
+test('roster profiles read role from MEMBER.md and the exact engine model, ·· style nulls otherwise', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-'));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'),
+    '---\nname: builder\nrole: ships features\nengine: claude\nmodel: claude-opus-5-5\n---\n# Builder\n');
+  const profiles = season.rosterProfiles(root, ['builder', 'ghost', '../escape']);
+  assert.deepEqual(profiles.builder, { role: 'ships features', engine: 'claude opus 5.5' });
+  assert.deepEqual(profiles.ghost, { role: null, engine: null });
+  assert.deepEqual(profiles['../escape'], { role: null, engine: null });
+});
