@@ -842,3 +842,24 @@ test('recap today reads a whole first line even when it spans several reads', ()
     cleanup(dir);
   }
 });
+
+test('a first recap before any setup writes nothing to your home or folder', () => {
+  const fx = todayFixture();
+  try {
+    seedClaude(fx);
+    spawnSync('git', ['init', '-q'], { cwd: fx.project });
+    const before = fs.readdirSync(fx.project).sort();
+    const env = { ...process.env, HOME: fx.home };
+    delete env.ATRIS_TASKS_DB;
+    for (const args of [['recap'], ['recap', 'today'], ['recap', '--json']]) {
+      const r = spawnSync(process.execPath, [cliPath, ...args], { cwd: fx.project, encoding: 'utf8', env });
+      assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
+      assert.match(r.stdout, /add a login page|"prompts": 2|2 things/, `${args.join(' ')} shows today: ${r.stdout}`);
+    }
+    assert.equal(fs.existsSync(path.join(fx.home, '.atris')), false, 'reading must not create the task db');
+    assert.deepEqual(fs.readdirSync(fx.project).sort(), before, 'recap must not add files to the folder');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});

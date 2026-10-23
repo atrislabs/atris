@@ -39,7 +39,8 @@ function readProjection(root) {
 
 function loadTasks(root) {
   const taskDb = loadTaskDb();
-  if (taskDb) {
+  // Reading never creates the db: a first run before any setup writes nothing.
+  if (taskDb && fs.existsSync(taskDb.getDbPath())) {
     try {
       const db = taskDb.open();
       const ws = taskDb.workspaceRoot(root);
