@@ -9,9 +9,11 @@ tags:
 
 # Commerce: buy or trade through Atris
 
-You can quote and ask. Only the human can pay. Every dollar leaves only after
-the person acts themselves: a tap in their Link app, a payment page they
-fill in, or a text from their own phone.
+You can quote and ask. For anything bought in the real world, only the human
+pays: every dollar leaves only after the person acts themselves, a tap in
+their Link app, a payment page they fill in, or a text from their own phone.
+The one exception is credits moving between Atris accounts (see "Pay another Atris
+account in credits" below), which an agent key with the `pay` scope may send.
 
 ## Get a key
 
@@ -118,3 +120,22 @@ curl -s "$API/transactions?since=2026-09-01&kinds=ticket,shop,trade&limit=50" -H
 Each transaction: `id, kind, when, what, amount_cents, currency, state, counterparty, receipt_url`.
 `sources` says which ledgers loaded; if one says `failed`, the list is partial. Say so.
 The CLI prints that as "Partial list: could not load ...".
+
+## Pay another Atris account in credits
+
+Credits move between Atris accounts, not cards. 100 credits = $1.
+
+```bash
+atris trust @nora                 # trust score, friends you share
+atris pay @nora 500 for the logo  # -> Paid @nora 500 credits ($5.00). Settled.
+atris pay history
+atris pay accept <id>             # take a payment someone sent you
+atris pay cancel <id>             # cancel one that is still waiting
+atris trust vouch @nora           # vouch = follow
+```
+
+- Some payments wait for the receiver to accept. The CLI prints the id; check it with `atris pay show <id>`.
+- Every payment carries a request id, and the CLI retries once with the same id after a dropped connection, so it never pays twice.
+- An agent key needs the `pay` scope to send, accept, or cancel.
+- A refusal (not enough credits, over the daily limit, blocked) prints in plain words. Tell the person; do not retry.
+- Add `--json` for the raw receipt.
