@@ -1,4 +1,4 @@
-# Validation — Spaceship
+# Validation: Spaceship
 
 > **Role:** System Validation Script
 > **Executor:** Validator Agent
@@ -19,7 +19,7 @@
 ### Step 1: Survives halts (happy + failure path)
 
 - **Action:** `bash scripts/spaceship.sh --repo <tmp-git> --hours 0.003 --interval 1 --tick-cmd <ship/idle/halt/halt/idle stub> --no-email`
-- **Expect:** log shows `tick 1 SHIPPED`, `tick 3 HALTED`, `tick 4 HALTED`, then continues and reaches `spaceship done` — it did not exit on the first halt.
+- **Expect:** log shows `tick 1 SHIPPED`, `tick 3 HALTED`, `tick 4 HALTED`, then continues and reaches `spaceship done`. It did not exit on the first halt.
 
 ### Step 2: Alert thresholds
 
