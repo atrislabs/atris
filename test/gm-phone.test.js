@@ -395,7 +395,7 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
     makeBetDesk: (log, dir) => {
       ledgerFile = path.join(dir, 'gm-bets.jsonl');
       // the writer reads the installs, then never finishes
-      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); opts.onBundle({ sources: { installs: { data: { last_week: 1511, week_before: 1640 } } } }); return new Promise(() => {}); }, runCli: async () => ({ code: 0, stdout: '{}' }) });
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); opts.onBundle({ sources: { installs: { data: { last_week: 1511, week_before: 1640 } } } }); return new Promise(() => {}); }, generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) });
     },
   });
   try {
@@ -409,15 +409,16 @@ test('over http: an empty queue tap gets a question at once; the answer is saved
     // two parts: the question, and what is going on with why the answer matters
     assert.deepEqual(Object.keys(tap.json.question), ['ask', 'line', 'choices']);
     assert.equal(tap.json.question.line, 'installs dropped to 1,511 last week, down from 1,640.');
+    assert.equal(tap.json.question.ask, 'what matters most for this project this month?');
     // same token, origin, and json checks as every other post
-    assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'customers' } })).status, 403);
-    assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'customers' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'money' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'money' } })).status, 403);
     assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope' } })).json.reason, 'bad_choice');
-    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'customers' } });
+    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'money' } });
     assert.equal(answered.status, 200);
-    assert.equal(answered.json.ack, 'got it. the next ideas go after first paying customers.');
-    assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).chase.label, 'first paying customers');
-    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'customers' } })).status, 409, 'nothing on screen to answer now');
+    assert.equal(answered.json.ack, 'got it: making money from it.');
+    assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).focus.label, 'making money from it');
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'money' } })).status, 409, 'nothing on screen to answer now');
     assert.equal(calls.length, 1, 'still the one generation in the background');
   } finally {
     await h.close();
@@ -491,6 +492,17 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
   assert.ok(copy.length > 10);
   for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
+});
+
+test('page: an answer is a conversation that keeps going: the reply holds, then the next card comes on its own', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // the answer posts, the reply replaces the buttons, and moveOn taps the orb after AFTER_MS
+  assert.match(script, /api\('\/bet\/answer', \{ choice: c\.id \}\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ moveOn\(r\.ack\); return; \}/);
+  assert.match(script, /function moveOn\(ack\) \{[\s\S]*?setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
+  assert.match(script, /var AFTER_MS = 1500;/);
+  // a question with no fact shows on its own
+  assert.match(script, /if \(q\.line\) box\.appendChild\(el\('p', 'why', q\.line\)\);/);
 });
 
 test('page: the idle orb answers the pointer like the landing orb, and only the pointer', () => {
