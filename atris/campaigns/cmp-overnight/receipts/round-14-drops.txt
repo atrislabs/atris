@@ -1,0 +1,8 @@
+DROP test/pull-cmd--mut-L833-4.test.js: harmless break. The only change is an extra "0 deleted" in the pull summary line, and nothing reads that text.
+DROP test/roster-markdown--mut-L184-4.test.js: harmless break. The only change is one blank line at the top of the roster file, which changes nothing when the file is read or shown.
+DROP test/context-sync-cmd--mut-L35-7.test.js: Duplicates slug matching with a different business name in test/context-sync-cmd--mut-L35-0.test.js.
+DROP test/scorecard--mut-L127-5.test.js: Depends on the real clock because log selection ends at today, but the fixture uses a fixed date without freezing time.
+DROP test/state-home--mut-L19-0.test.js: Duplicates case-folding coverage in test/test-state-fence.test.js and incorrectly expects case folding on Linux.
+DROP test/context-sync-cmd--mut-L35-7.test.js: Duplicates slug matching with a different business name in test/context-sync-cmd--mut-L35-0.test.js.
+DROP test/scorecard--mut-L127-5.test.js: Depends on the real clock because log selection ends at today, but the fixture uses a fixed date without freezing time.
+DROP test/state-home--mut-L19-0.test.js: Duplicates case-folding coverage in test/test-state-fence.test.js and incorrectly expects case folding on Linux.
