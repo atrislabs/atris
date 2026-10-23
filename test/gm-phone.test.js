@@ -524,7 +524,11 @@ test('page: the team table opens from the footer, one row per member, and a row 
   assert.match(script, /el\('button', null, r\.member\)/);
   assert.match(script, /tr\.appendChild\(el\('td', 'role', r\.role\)\);/);
   assert.match(script, /tr\.appendChild\(el\('td', 'ovr', r\.ovr\)\);/);
-  assert.match(script, /tr\.appendChild\(el\('td', 'eng', r\.engine\)\);/);
+  // the engine cell holds a button with the model as its text; its tap opens
+  // the engine card instead of the talk card
+  assert.match(script, /var eng = tr\.appendChild\(el\('td', 'eng'\)\);/);
+  assert.match(script, /el\('button', null, r\.engine\)/);
+  assert.match(script, /e\.stopPropagation\(\); drawEngine\(r\);/);
   assert.match(script, /tr\.appendChild\(el\('td', 'st ' \+ r\.status\.replace\(\/ \/g, '-'\), r\.sentence\)\);/);
   // the whole row opens the talk card, and the name is a button for the keyboard
   assert.match(script, /tr\.addEventListener\('click', function \(\) \{ drawTalk\(r\); \}\);/);
@@ -1123,6 +1127,32 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.equal(out.talk.said, 'working: launch a try page for any public repo, about 4 hours left.', at);
     assert.deepEqual([out.back.open, out.back.title, out.back.table], [true, 'the team', true], at);
     assert.equal(out.closed.open, false, at);
+  }
+});
+
+test('browser: a tap on an engine cell opens the engine card, Esc goes back, and one tap swaps and shows the table with the new engine', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+    const out = await trace.engineCardTrace({ chromePath: CHROME, viewport });
+    const at = out.viewport;
+    const look = out.look;
+    assert.equal(look.title, 'builder', at);
+    assert.equal(look.line, 'builder runs on claude opus 5.5.', at);
+    assert.deepEqual(look.scopes, [['just builder', true], ['for every build job', false]], at);
+    // every model, grouped by tool, the current one on top and not a tap
+    assert.deepEqual(look.tools, ['claude code', 'codex', 'agy'], at);
+    assert.equal(look.buttons, 6, at);
+    assert.deepEqual(look.first, ['opus 5.5now', 'gpt-6.1-sol10 of 20 landed', 'gemini-3.8-flash'], at);
+    assert.equal(look.current_takes_taps, false, at);
+    assert.ok(look.shortest_button_px >= 44, `${at}: every button is a full tap target`);
+    assert.ok(look.smallest_font_px >= 17, at);
+    assert.equal(look.page_scrolls_sideways, false, at);
+    assert.deepEqual(look.moving, [], `${at}: nothing on the card moves`);
+    // Esc goes back to the table with nothing changed
+    assert.deepEqual([out.back.open, out.back.title, out.back.table, out.back.engine, out.back.said], [true, 'the team', true, 'claude opus 5.5', null], at);
+    // one tap, no yes card: the swap goes to the server and the table comes back with the new engine and one line
+    assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'codex', model: 'gpt-6.1-sol', scope: 'job' }], at);
+    assert.deepEqual([out.after.title, out.after.table, out.after.engine], ['the team', true, 'codex gpt-6.1-sol'], at);
+    assert.equal(out.after.said, 'build now runs on codex gpt-6.1-sol. claude opus 5.5 is the backup.', at);
   }
 });
 
