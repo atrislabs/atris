@@ -1,4 +1,4 @@
-# Owner -> Computer Model Eval — 2026-04-27
+# Owner -> Computer Model Eval: 2026-04-27
 
 ## Goal
 
@@ -15,7 +15,7 @@ Validate that future agents can recover the Owner -> Computer product model from
 
 ## Trial Results
 
-### Trial 1 — CLI-only files
+### Trial 1: CLI-only files
 
 Input files:
 
@@ -33,7 +33,7 @@ The agent recovered:
 - do not add a third owner type yet
 - queued CLI task T113: expose the model in public CLI surfaces without schema changes
 
-### Trial 2 — Backend-only files
+### Trial 2: Backend-only files
 
 Input files:
 
@@ -52,7 +52,7 @@ The agent recovered:
 - do not split lab/community/project/collective into new owner tables yet
 - queued backend guardrail `owner-computer-T1`
 
-### Trial 3 — MAP-only cross-repo comparison
+### Trial 3: MAP-only cross-repo comparison
 
 Input files:
 
@@ -68,7 +68,7 @@ The agent recovered:
 - both repos share the same ontology
 - public language can vary while backend schema stays narrow and stable
 
-### Trial 4 — Public CLI surfaces
+### Trial 4: Public CLI surfaces
 
 Input files:
 
@@ -86,7 +86,7 @@ The agent recovered:
 - `atris business init "Name"` creates a shared owner plus its first/default computer
 - the scaffold includes `.atris/business.json`, `.atris/state/`, and the local `atris/` workspace
 
-### Trial 5 — CLI wiki/templates after propagation
+### Trial 5: CLI wiki/templates after propagation
 
 Input files:
 
@@ -111,7 +111,7 @@ Finding fixed after eval:
 
 - `atris/wiki/systems/atris-business.md` still showed the older `atris/business/<slug>/` local shape. It now shows the canonical `~/arena/atris-business/<slug>/` shape with `.atris/business.json`, `.atris/state/`, and `atris/`.
 
-### Trial 6 — Backend wiki after propagation
+### Trial 6: Backend wiki after propagation
 
 Input files:
 
@@ -136,7 +136,7 @@ Finding fixed after eval:
 
 - `atris/wiki/ai-computer.md` still said `Last updated: 2026-04-09` despite the 2026-04-27 model update. It now says `Last updated: 2026-04-27`.
 
-### Trial 7 — Combined public/product memory after fixes
+### Trial 7: Combined public/product memory after fixes
 
 Input files:
 
