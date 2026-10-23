@@ -208,7 +208,7 @@ async function startHandler(over = {}) {
   const hosts = [];
   const handler = phone.createPhoneHandler({
     workspaceRoot: '/tmp/shop',
-    token: TOKEN,
+    token: over.token || TOKEN,
     hosts,
     tally,
     now: () => clock,
@@ -471,7 +471,7 @@ test('page: the team table opens from the footer, one row per member, and a row 
   assert.match(script, /row\.appendChild\(el\('span', 'on', r\.on\)\);/);
   assert.match(script, /row\.appendChild\(el\('span', 'time', r\.time\)\);/);
   // the talk card steers through the server
-  assert.match(script, /api\('\/bet\/steer', \{ member: r\.member, text: text \}\)/);
+  assert.match(script, /convo\(function \(body\) \{ body\.member = r\.member; return api\('\/bet\/steer', body\); \}/);
   assert.match(html, /\.team \.row \{[^}]*\}/);
 });
 
@@ -482,7 +482,7 @@ test('over http: the team table and a steer go through the same token and json c
   fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
   const ran = [];
   const h = await startHandler({
-    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true}' }; } }),
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true}' }; } }),
   });
   try {
     assert.equal((await h.call('GET', '/bet/team', { token: 'nope' })).status, 403);
@@ -542,7 +542,17 @@ test('page: every card has a quiet say-something line that opens into one box', 
   assert.match(script, /function sayBox\(\) \{/);
   assert.match(script, /var open = el\('button', 'quiet', 'or say something'\);/);
   assert.match(script, /input\.maxLength = 280;/);
-  assert.match(script, /api\('\/bet\/say', \{ text: text \}\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ moveOn\(r\.ack\); return; \}/);
+  // while it reads, the reply spot shows a quiet ellipsis; a question back is answered in place
+  assert.match(script, /reply\.textContent = '\u2026';/);
+  assert.match(script, /return convo\(function \(body\) \{ return api\('\/bet\/say', body\); \}, moveOn, 'say something'\);/);
+  assert.match(script, /post\(body\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ done\(r\.ack\); return; \}/);
+  // the conversation so far stays on the card, and suggested replies are one tap
+  assert.match(script, /drawThread\(r\.thread\.slice\(0, -1\)\);/);
+  assert.match(script, /\(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{/);
+  assert.match(script, /if \(r\.stay\) \{ reply\.textContent = r\.reply;/);
+  // starting a member that is not running takes a second tap, or keeps it as a note
+  assert.match(script, /if \(r\.reason === 'needs_confirm'\) \{/);
+  assert.match(script, /el\('button', 'quiet', 'keep it as a note instead'\)/);
   // on every kind of card
   for (const fn of ['drawBetCard', 'drawJobCard', 'drawQuestionCard', 'drawChoiceCard']) {
     const body = script.slice(script.indexOf(`function ${fn}(`), script.indexOf('\n  }\n', script.indexOf(`function ${fn}(`)));
@@ -554,7 +564,7 @@ test('over http: say something goes through the same token and json checks', asy
   const gmBet = require('../lib/gm-bet');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
   const h = await startHandler({
-    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) }),
   });
   try {
     await h.call('POST', '/bet/think', { body: {} });
@@ -600,6 +610,26 @@ test('over http: the weekly number goes through /bet/report with the same checks
   } finally {
     await h.close();
   }
+});
+
+test('phone link: a rotated link is dead at once in every running server', async () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-rot-'));
+  const first = phone.phoneToken('/tmp/shop', { stateDir }).token;
+  const h = await startHandler({ token: () => phone.readPhoneToken('/tmp/shop', { stateDir }) });
+  try {
+    assert.equal((await h.call('GET', '/state', { token: first })).status, 200);
+    const next = phone.phoneToken('/tmp/shop', { stateDir, rotate: true }).token;
+    assert.equal((await h.call('GET', '/state', { token: first })).status, 403, 'the old link is dead in the server already running');
+    assert.equal((await h.call('GET', '/state', { token: next })).status, 200, 'the new link works in it');
+    // no saved link: nothing gets in
+    fs.rmSync(path.join(stateDir, 'gm-phone-links.json'));
+    assert.equal((await h.call('GET', '/state', { token: next })).status, 403);
+  } finally {
+    await h.close();
+  }
+  const src = fs.readFileSync(path.join(__dirname, '..', 'commands', 'gm.js'), 'utf8');
+  assert.match(src, /token: \(\) => phone\.readPhoneToken\(workspaceRoot, \{ stateDir \}\)/);
+  assert.match(src, /the old link is dead now, even in a phone page that is still open\./);
 });
 
 test('target snapshot restores the file exactly, or removes one that was not there', () => {

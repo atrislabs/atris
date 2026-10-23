@@ -1496,9 +1496,11 @@ async function gmPhone(args = []) {
   const stateDir = path.join(atrisHome(), 'state');
   // the same link across restarts, until --new-link
   const { token, reused } = phone.phoneToken(workspaceRoot, { stateDir, rotate: hasExactFlag(args, '--new-link') });
+  const rotated = hasExactFlag(args, '--new-link');
   const handler = phone.createPhoneHandler({
     workspaceRoot,
-    token,
+    // read on every request, so --new-link kills the old link in every running server
+    token: () => phone.readPhoneToken(workspaceRoot, { stateDir }),
     hosts,
     loadView: () => phone.loadPhoneView(workspaceRoot),
     runStep: phone.makeStepRunner({ cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), cwd: workspaceRoot, logDir: path.join(stateDir, 'gm-phone-runs') }),
@@ -1578,7 +1580,8 @@ async function gmPhone(args = []) {
   }
   console.log(`  ${link}`);
   console.log('');
-  console.log(reused ? 'this is the same link as last time.' : 'this is a new link; any older one stops working.');
+  if (rotated) console.log('this is a new link. the old link is dead now, even in a phone page that is still open.');
+  else console.log(reused ? 'this is the same link as last time.' : 'this is a new link.');
   console.log('anyone with this link can act for you while this runs. ctrl-c stops it. a new link: atris gm phone --new-link');
 
   if (hasExactFlag(args, '--send')) {

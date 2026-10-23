@@ -936,6 +936,8 @@ function desk(root, over = {}) {
     choices: Boolean(over.choices),
     scoreboard: Boolean(over.scoreboard),
     suggestScoreboard: over.suggest || (() => new Promise(() => {})),
+    readSaid: over.readSaid || READ_PLAIN,
+    ...(over.sayTimeoutMs ? { sayTimeoutMs: over.sayTimeoutMs } : {}),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ ok: true, action: 'mission_started', mission: { id: 'mission-2026-10-21-write-a-getting-abc', owner: 'launcher', status: 'planning' } }, null, 2), stderr: '' };
@@ -1495,13 +1497,16 @@ test('say something: on a yes or a finished job it steers that member', async ()
   const h = jobDesk(root, {
     'm-ask': { id: 'm-ask', owner: 'launcher', status: 'running', updated_at: new Date(NOW).toISOString(), human_asks: ['post the thread on x now?'] },
     'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] },
-  });
+  }, { driverAlive: m => m.id === 'm-ask' });
   await h.d.settle();
   assert.equal(h.d.next().kind, 'yes');
+  // launcher is really running: it reaches them now
   assert.deepEqual(await h.d.say({ text: 'wait for tuesday' }), { ok: true, ack: 'sent to launcher.' });
   assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', 'wait for tuesday', '--json']);
   assert.equal(h.d.next().kind, 'done');
-  assert.deepEqual(await h.d.say({ text: 'add a short video too' }), { ok: true, ack: 'sent to builder.' });
+  // builder finished: starting them again takes a second tap
+  assert.equal((await h.d.say({ text: 'add a short video too' })).reason, 'needs_confirm');
+  assert.deepEqual(await h.d.say({ text: 'add a short video too', confirm: true }), { ok: true, ack: 'builder is starting on it.' });
 });
 
 test('say something: the writer is told the owner note and may keep the same deliverable', async () => {
@@ -1512,6 +1517,12 @@ test('say something: the writer is told the owner note and may keep the same del
   const fresh = gmBet.buildPrompt(bundle, { today: TODAY, ownerNote: 'something for schools' });
   assert.match(fresh, /The owner said: "something for schools"\. The next idea must fit that\./);
 });
+
+// a reader that takes words on a question as the answer and anything else as an instruction
+// a reply that stays on the card, without its thread, for comparing
+const stayed = o => ({ ok: o.ok, stay: o.stay, kind: o.kind, reply: o.reply });
+
+const READ_PLAIN = async ({ card }) => ({ ok: true, kind: card.kind === 'question' ? 'answer' : 'instruction', reply: '' });
 
 const SUGGEST = async () => ({ ok: true, choices: [{ name: 'installs each week', up: true }, { name: 'people who ran it twice', up: true }] });
 
@@ -1622,6 +1633,201 @@ test('money: ideas never propose trades or moving money; the code, the writer, a
   assert.match(seen[0], /a trade, buying or selling stocks, shares, crypto, or any security, or moving money between accounts: fail it/);
 });
 
+test('free text: a question back is answered on the same card and saves nothing', async () => {
+  const root = workspace();
+  const seen = [];
+  const reply = 'it is the one number you would check each week to know this is working, like installs this week for atris.';
+  const h = desk(root, { scoreboard: true, readSaid: async (opts) => { seen.push(opts); return { ok: true, kind: 'question', reply }; } });
+  h.d.next();
+  const out = await h.d.say({ text: 'what do you mean?' });
+  assert.deepEqual(stayed(out), { ok: true, stay: true, kind: 'question', reply });
+  assert.deepEqual(out.thread, [{ who: 'owner', text: 'what do you mean?' }, { who: 'orb', text: reply }]);
+  // the reader saw the card and the words
+  assert.deepEqual([seen[0].text, seen[0].card.kind, seen[0].card.title], ['what do you mean?', 'question', 'what number tells you this is going well?']);
+  assert.ok(seen[0].card.buttons.includes('something else'));
+  // nothing saved, and the same card stays up
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root), null);
+  assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(h.ledgerFile)), root), {});
+  assert.deepEqual([h.d.view().status, h.d.view().question.ask], ['ready', 'what number tells you this is going well?']);
+});
+
+test('free text: each card is a short conversation; "why?" after "what do you mean?" is read with the first exchange', async () => {
+  const root = workspace();
+  const seen = [];
+  const first = 'it is the one number you would check each week, like installs this week for atris.';
+  const reader = async (opts) => {
+    seen.push(opts);
+    if (!opts.thread.length) return { ok: true, kind: 'question', reply: first, suggestions: ['installs this week', 'paying customers', 'which bet is it'] };
+    return { ok: true, kind: 'question', reply: `because ${opts.thread[1].text.split(',')[0].replace(/^it is /, '')} tells you if the week worked.` };
+  };
+  const h = desk(root, { scoreboard: true, readSaid: reader });
+  h.d.next();
+  const one = await h.d.say({ text: 'what do you mean?' });
+  // up to 3 suggested replies, plain words only
+  assert.deepEqual(one.suggestions, ['installs this week', 'paying customers']);
+  const two = await h.d.say({ text: 'why?' });
+  assert.deepEqual(seen[1].thread, [{ who: 'owner', text: 'what do you mean?' }, { who: 'orb', text: first }]);
+  assert.equal(two.reply, 'because the one number you would check each week tells you if the week worked.');
+  assert.deepEqual(two.thread.map(t => t.who), ['owner', 'orb', 'owner', 'orb']);
+  // the thread keeps the last 6 turns
+  for (let i = 0; i < 4; i += 1) await h.d.say({ text: `and then ${i}?` });
+  assert.equal(h.d.view().thread.length, 6);
+  // something real ends it: an answer saved clears the thread
+  const kinds = ['question', 'answer'];
+  const sRoot = workspace();
+  const saved = desk(sRoot, { scoreboard: true, readSaid: async () => ({ ok: true, kind: kinds.shift(), reply: 'it is the number you watch each week.' }) });
+  saved.d.next();
+  await saved.d.say({ text: 'what do you mean?' });
+  assert.equal(saved.d.view().thread.length, 2);
+  await saved.d.say({ text: 'paying schools' });
+  assert.deepEqual(saved.d.view().thread, []);
+  // a new card starts a new thread
+  h.d.next();
+  assert.deepEqual(h.d.view().thread, []);
+});
+
+test('free text: talking with one member is a thread too; a question back is answered, an instruction steers', async () => {
+  const root = workspace();
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const seen = [];
+  const h = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(30), last_tick_at: NAGO(1), human_asks: [] } }, {
+    driverAlive: () => true,
+    readSaid: async (opts) => { seen.push(opts); return opts.text.endsWith('?') ? { ok: true, kind: 'question', reply: 'builder is writing the try page and is about halfway.' } : { ok: true, kind: 'instruction', reply: '' }; },
+  });
+  const q = await h.d.talk({ member: 'builder', text: 'how is it going?' });
+  assert.deepEqual([q.stay, q.reply], [true, 'builder is writing the try page and is about halfway.']);
+  assert.deepEqual([seen[0].card.kind, seen[0].card.title], ['member', 'builder']);
+  assert.equal(h.cli.length, 0, 'a question steers nothing');
+  const go = await h.d.talk({ member: 'builder', text: 'do the readme first' });
+  assert.deepEqual(go, { ok: true, ack: 'sent to builder.' });
+  assert.deepEqual(seen[1].thread.map(t => t.who), ['owner', 'orb']);
+});
+
+test('free text: words that end in a question mark are never saved as an answer', async () => {
+  // the live case: the reader called "why?" an answer, and it was saved as the scoreboard
+  const root = workspace();
+  const seen = [];
+  const h = desk(root, { scoreboard: true, readSaid: async (opts) => { seen.push(opts); return opts.hint ? { ok: true, kind: 'question', reply: 'because one weekly number shows if the work is paying off.' } : { ok: true, kind: 'answer', reply: '' }; } });
+  h.d.next();
+  const out = await h.d.say({ text: 'why?' });
+  assert.deepEqual(stayed(out), { ok: true, stay: true, kind: 'question', reply: 'because one weekly number shows if the work is paying off.' });
+  assert.equal(seen[1].hint, 'his message ends with a question mark: it is a question back, not an answer');
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root), null);
+  // if the second read still calls it an answer, the plain line shows and nothing is saved
+  const stubborn = desk(workspace(), { scoreboard: true, readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }) });
+  stubborn.d.next();
+  assert.deepEqual(stayed(await stubborn.d.say({ text: 'and then?' })), { ok: true, stay: true, kind: 'unclear', reply: 'say that another way, or tap a button.' });
+  // the reader is told so too
+  const calls = [];
+  await gmBet.readSaid({ text: 'why?', card: { kind: 'question', title: 'q', buttons: [] }, workspaceRoot: root, hint: 'h', deps: { readerModel: () => 'haiku', runModel: async (p) => { calls.push(p); return { ok: false, reason: 'stub' }; } } });
+  assert.match(calls[0], /- a message that ends with "\?" or asks why, what, or how is a question back, never an answer\./);
+  assert.match(calls[0], /note: h/);
+});
+
+test('free text: a plain answer saves, on the scoreboard card as the scoreboard', async () => {
+  const root = workspace();
+  const h = desk(root, { scoreboard: true, readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }) });
+  h.d.next();
+  assert.deepEqual(await h.d.say({ text: 'paying schools each month' }), { ok: true, ack: 'got it: paying schools each month.' });
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root).name, 'paying schools each month');
+  assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(h.ledgerFile)), root), {}, 'not mixed into the answers');
+});
+
+test('free text: an instruction routes to the writer with the reply saying what will happen', async () => {
+  const root = workspace();
+  const h = desk(root, { questions: false, readSaid: async () => ({ ok: true, kind: 'instruction', reply: 'the next idea will be about the try page.' }) });
+  h.d.next();
+  assert.deepEqual(await h.d.say({ text: 'work on the try page instead' }), { ok: true, ack: 'the next idea will be about the try page.' });
+  assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(h.ledgerFile)), root), {}, 'an instruction is not an answer');
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[h.gen.calls.length - 1].ownerNote, 'work on the try page instead');
+});
+
+test('free text: unclear asks back; a failed, slow, or off-words read falls back and saves nothing', async () => {
+  const unclear = desk(workspace(), { questions: false, readSaid: async () => ({ ok: true, kind: 'unclear', reply: 'do you mean the number, or the project?' }) });
+  unclear.d.next();
+  assert.deepEqual(stayed(await unclear.d.say({ text: 'hmm' })), { ok: true, stay: true, kind: 'unclear', reply: 'do you mean the number, or the project?' });
+  const FALL = { ok: true, stay: true, kind: 'unclear', reply: 'say that another way, or tap a button.' };
+  const slow = desk(workspace(), { questions: false, sayTimeoutMs: 30, readSaid: () => new Promise(() => {}) });
+  slow.d.next();
+  assert.deepEqual(stayed(await slow.d.say({ text: 'what do you mean?' })), FALL);
+  const broken = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'the model exited with code 1' }) });
+  broken.d.next();
+  assert.deepEqual(stayed(await broken.d.say({ text: 'what do you mean?' })), FALL);
+  const worded = desk(workspace(), { questions: false, readSaid: async () => ({ ok: true, kind: 'question', reply: 'it picks the next bet.' }) });
+  worded.d.next();
+  assert.deepEqual(stayed(await worded.d.say({ text: 'why?' })), FALL);
+  for (const d of [slow, broken, worded]) assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(d.ledgerFile)), 'x'), {});
+});
+
+test('free text: the real reader is one quick subscription call on the roster model, strict json, 15 seconds', async () => {
+  const root = workspace();
+  const calls = [];
+  const out = await gmBet.readSaid({
+    text: 'what do you mean?',
+    card: { kind: 'question', title: 'what number tells you this is going well?', detail: null, buttons: ['installs this week', 'something else'] },
+    workspaceRoot: root,
+    deps: { readerModel: () => 'claude-haiku-5-5', runModel: async (prompt, opts) => { calls.push({ prompt, opts }); return { ok: true, text: '{"kind": "question", "reply": "it is the number you watch each week."}' }; } },
+  });
+  assert.deepEqual(out, { ok: true, kind: 'question', reply: 'it is the number you watch each week.' });
+  assert.equal(calls[0].opts.timeoutMs, 15000);
+  assert.deepEqual(calls[0].opts.command.args('P').slice(0, 4), ['-p', 'P', '--model', 'claude-haiku-5-5']);
+  assert.match(calls[0].prompt, /\{"kind": "question" \| "answer" \| "instruction" \| "unclear", "reply": "\.\.\."\}/);
+  assert.match(calls[0].prompt, /what number tells you this is going well\?/);
+  assert.match(calls[0].prompt, /his message: "what do you mean\?"/);
+  // the wrong shape is a failed read
+  const bad = await gmBet.readSaid({ text: 'x', card: { kind: 'bet', title: 't', buttons: [] }, workspaceRoot: root, deps: { readerModel: () => 'haiku', runModel: async () => ({ ok: true, text: '{"kind": "maybe"}' }) } });
+  assert.equal(bad.ok, false);
+});
+
+test('steer from the phone: a member really running is steered; one that is not waits for a second tap, or keeps it as a note', async () => {
+  const root = workspace();
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const h = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(30), last_tick_at: NAGO(1), human_asks: [] } }, { driverAlive: m => m.id === 'm1' });
+  assert.deepEqual(await h.d.steer({ member: 'builder', text: 'readme first' }), { ok: true, ack: 'sent to builder.' });
+  // launcher is not running: one tap starts nothing
+  const cliBefore = h.cli.length;
+  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this' });
+  assert.equal(h.cli.length, cliBefore, 'nothing ran');
+  // the second tap starts them
+  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread', confirm: true }), { ok: true, ack: 'launcher is starting on it.' });
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', 'draft the thread', '--json']);
+  // or it is kept as a note for their next run
+  const noted = await h.d.steer({ member: 'researcher', text: 'look at pricing pages first', note: true });
+  assert.deepEqual(noted, { ok: true, ack: "saved for researcher's next run." });
+  const rows = fs.readFileSync(path.join(root, '.atris', 'state', 'steering.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual([rows[0].schema, rows[0].status, rows[0].scope.member, rows[0].raw, rows[0].memory], ['atris.steering.v1', 'active', 'researcher', 'look at pricing pages first', ['look at pricing pages first']]);
+  // the say box on a done card goes the same way
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-done', 'm-done', 'Write the getting started page');
+  const d2 = jobDesk(root, { 'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } });
+  await d2.d.settle();
+  assert.equal(d2.d.next().kind, 'done');
+  assert.equal((await d2.d.say({ text: 'add a short video' })).reason, 'needs_confirm');
+  assert.equal((await d2.d.say({ text: 'add a short video', confirm: true })).ack, 'builder is starting on it.');
+});
+
+test('send back: a job whose process is still alive is never resent, even when its times look old', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Write the getting started page');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  // after the laptop slept, the mission looks still for 5 hours, but its driver is alive
+  const missions = { m1: { id: 'm1', owner: 'builder', status: 'running', created_at: NAGO(400), last_tick_at: NAGO(300), human_asks: [] } };
+  const h = jobDesk(root, missions, { driverAlive: m => m.id === 'm1' });
+  await h.d.settle();
+  assert.equal(h.cli.filter(a => a[1] === 'start').length, 0);
+  assert.deepEqual(h.d.view().working.map(w => w.title), ['Write the getting started page']);
+  assert.equal(h.ledger()[0].mission_result, undefined);
+  // a row already marked failed, whose process turns out alive, is put back to working, not resent
+  ledgerRow(file, root, 'b2', { status: 'doing', mission_id: 'm2', owner: 'builder', mission_result: 'failed', mission_stalled: true, mission_stop_reason: 'stopped moving 5 hours ago, nothing finished', bet: { ...goodBet({ title: 'Record the demo video' }), check_date: '2026-10-30' } });
+  missions.m2 = { id: 'm2', owner: 'builder', status: 'running', created_at: NAGO(400), last_tick_at: NAGO(300), human_asks: [] };
+  const h2 = jobDesk(root, missions, { driverAlive: () => true });
+  await h2.d.settle();
+  assert.equal(h2.cli.filter(a => a[1] === 'start').length, 0);
+  assert.equal(h2.ledger().find(r => r.id === 'b2').mission_result, null);
+});
+
 test('do it: starts a real mission with every step and the your-yes rule, then runs it', async () => {
   const h = await filled(workspace());
   h.d.next();
@@ -1677,6 +1883,11 @@ test('job time: the hours the idea says, plus a quarter, from 1 to 24 hours; 3 h
   assert.deepEqual(t('about 40 hours of agent time'), { seconds: 86400, ticks: 288 }, 'never over a day');
   assert.deepEqual(t('$0, a short job'), { seconds: 10800, ticks: 36 }, 'no hours: the deep tier');
   assert.deepEqual(gmBet.jobTime({}), { seconds: 10800, ticks: 36 });
+  // whole numbers, decimals, and commas are read whole
+  assert.deepEqual(t('about .5 hours of agent time'), { seconds: 3600, ticks: 12 }, 'half an hour, not five');
+  assert.deepEqual(t('about 2.5 hours'), { seconds: 11250, ticks: 38 });
+  assert.deepEqual(t('1,000 hours of agent time'), { seconds: 86400, ticks: 288 }, 'a thousand hours caps at a day');
+  assert.deepEqual(t('about 1.5-2.5 hours'), { seconds: 11250, ticks: 38 });
 });
 
 test('do it: a mission that will not start leaves the bet ready, says so plainly, and logs why', async () => {
@@ -1925,8 +2136,8 @@ test('team table: one honest row per member with recent work; working only with 
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
   const root = workspace();
   const h = jobDesk(root, {});
-  const out = await h.d.steer({ member: 'builder', text: 'do the readme first' });
-  assert.deepEqual(out, { ok: true, ack: 'sent to builder.' });
+  const out = await h.d.steer({ member: 'builder', text: 'do the readme first', confirm: true });
+  assert.deepEqual(out, { ok: true, ack: 'builder is starting on it.' });
   assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', 'do the readme first', '--json']);
   assert.equal((await h.d.steer({ member: 'nobody', text: 'hi' })).reason, 'gone');
   assert.equal((await h.d.steer({ member: 'builder', text: '   ' })).reason, 'empty');
@@ -1953,6 +2164,7 @@ function jobDesk(root, missions, over = {}) {
     warmOnCreate: false,
     choices: Boolean(over.choices),
     driverAlive: over.driverAlive || (() => false),
+    readSaid: over.readSaid || READ_PLAIN,
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[0] === 'engine' && args[1] === 'ask') {
