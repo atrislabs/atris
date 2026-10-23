@@ -633,8 +633,10 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
   const idea = { ok: true, status: 'ready', id: 'b1', ...CARDS.b1, team_working: 0 };
   const next = { ok: true, status: 'ready', id: 'b2', ...CARDS.b2, team_working: 0 };
   const calm = { ok: true, status: 'ready', id: 'wait:1', kind: 'wait', job: { what: 'writing your next idea.' }, team_working: 0 };
-  for (const from of ['idea', 'calm']) {
-    let current = from === 'idea' ? idea : calm;
+  // a yes card, with two more waiting behind the small line
+  const yes = { ok: true, status: 'ready', id: 'yes:m1:step-3:abc', kind: 'yes', job: { what: 'builder wants to use a setting that could let a push skip the lock', why: 'builder is waiting on your yes for this.' }, team_working: 0, needs_you: 2 };
+  for (const from of ['idea', 'calm', 'yes']) {
+    let current = from === 'idea' ? idea : from === 'yes' ? yes : calm;
     let asked = 0;
     let landed = false;
     // as the real desk does: the calm line stays the card, with the idea ready behind it

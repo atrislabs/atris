@@ -635,6 +635,48 @@ test('over http: the job deck is read through the same token check, one card per
   }
 });
 
+test('over http: no on a yes card is one tap through /bet/no, and not now goes through /bet/think as later', async () => {
+  const calls = [];
+  const h = await startHandler({
+    makeBetDesk: () => ({
+      warm: () => ({ ok: true, status: 'idle' }),
+      next: (o) => { calls.push(['next', o]); return { ok: true, status: 'ready', kind: 'bet' }; },
+      answerNo: async () => { calls.push(['no']); return { ok: true, ack: 'told builder no. it moves on without it.' }; },
+    }),
+  });
+  try {
+    const no = await h.call('POST', '/bet/no', { body: {} });
+    assert.deepEqual([no.status, no.json.ack], [200, 'told builder no. it moves on without it.']);
+    const later = await h.call('POST', '/bet/think', { body: { later: true } });
+    assert.equal(later.status, 200);
+    assert.deepEqual(calls, [['no'], ['next', { sharper: false, later: true }]]);
+    assert.equal((await h.call('POST', '/bet/no', { body: {}, token: 'nope' })).status, 403);
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: a yes card has quiet no and not now beside yes, the rest wait behind a small need-you line that opens the job deck, and the small orb goes home from any card', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  const yesCard = script.slice(script.indexOf('function drawJobCard('), script.indexOf("} else if (s.kind === 'wait')", script.indexOf('function drawJobCard(')));
+  // no: one quiet tap that tells the job no; not now: skips it and brings the next card the re-tap way
+  assert.match(yesCard, /el\('button', 'quiet', 'no'\)/);
+  assert.match(yesCard, /api\('\/bet\/no', \{\}\)\.then\(function \(r\) \{ moveOn\(r\.ack \|\| r\.message \|\| 'sent'\); \}\)/);
+  assert.match(yesCard, /el\('button', 'quiet', 'not now'\)/);
+  assert.match(yesCard, /think\(false, 0, \{ later: true \}\)/);
+  assert.match(script, /api\('\/bet\/think', \{ sharper: Boolean\(sharper\), later: Boolean\(extra && extra\.later\) \}\)/);
+  // the small line: how many yeses wait, and a tap opens the job deck
+  assert.match(html, /<button type="button" class="quiet" id="needs" hidden>/);
+  assert.match(script, /n === 1 \? '1 needs you' : n \+ ' need you'/);
+  assert.match(script, /getElementById\('needs'\)\.addEventListener\('click', openDeck\)/);
+  // the small orb goes home from any card, a yes card too: nothing on the card can hold it
+  assert.match(script, /function tapSmallOrb\(\) \{\n\s+if \(document\.body\.classList\.contains\('has-card'\)\) goHome\(\); else tapBig\(\);/);
+  const home = script.slice(script.indexOf('function goHome('), script.indexOf('function tapBig('));
+  assert.doesNotMatch(home, /yes/);
+});
+
 test('phone page: a deck of job cards, one at a time in one spot, flipped by the arrows or a sideways swipe, with the yes and a talk box per job', () => {
   const html = phonePage('NONCE');
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
@@ -882,8 +924,8 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   // the old decision sheet is gone from the phone: no only-you link, no review asks, no target strip
   for (const gone of ['open-only', 'id="sheet"', 'only you', "'/state'", "'/action'", 'toast', 'oldest', 'target']) assert.equal(html.includes(gone), false, gone);
-  // the footer is one link: the working count, or the team when nothing runs
-  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button><\/div>/);
+  // the footer: the working count, or the team when nothing runs, and the small need-you line while yeses wait
+  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="needs" hidden><\/button><button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button><\/div>/);
   // no small text anywhere on the page
   const sizes = [...html.matchAll(/font-size: (\d+)px/g)].map(m => Number(m[1]));
   assert.ok(sizes.length > 3);
@@ -1053,7 +1095,7 @@ test('page: an answer holds for HOLD_MS, then one crossfade; tap to card stays a
   // the old one waited AFTER_MS on a line of thanks first; that wait is only for yes and nice now
   assert.ok(answerToCard < num('AFTER_MS'));
   // the next card is asked for while the answer holds, never after it
-  assert.match(script, /Promise\.all\(\[api\('\/bet\/think', \{ sharper: Boolean\(sharper\) \}\), afterHold\(heldAt\)\]\)/);
+  assert.match(script, /Promise\.all\(\[api\('\/bet\/think', \{ sharper: Boolean\(sharper\), later: Boolean\(extra && extra\.later\) \}\), afterHold\(heldAt\)\]\)/);
   // no second box: the old something-else box and the card say box are gone
   assert.doesNotMatch(script, /function ownAnswer\(|function sayConvo\(/);
   // the field takes the tapped button's own height to the subpixel, so nothing under it moves
@@ -1389,7 +1431,10 @@ test('browser: after an explanation, a do it that did not get going brings the c
 test('browser: the small orb on a card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);
-  const [idea, calm] = runs;
+  const [idea, calm, yes] = runs;
+  assert.equal(runs.length, 3, show);
+  // from a yes card too: the small orb goes home, and the big orb's tap brings the next card
+  assert.deepEqual([yes.tapped.has_card, yes.tapped.asked], [true, 1], show);
   for (const r of runs) {
     // the card goes, the big orb is back with its line, and nothing new was asked for
     assert.deepEqual(r.home, { has_card: false, big_orb: true, line: 'tap to think', title: null, asked: 0 }, show);

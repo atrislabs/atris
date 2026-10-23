@@ -3072,8 +3072,109 @@ test('two held commands on one step are two cards; the yes on the first releases
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   h.d.pollJobs();
+  // one yes in a row at most: a normal card comes between, then the later request
+  assert.notEqual(h.d.next().kind, 'yes');
   const next = h.d.next();
   assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to publish beta to npm'], 'the answer did not hide the later request');
+});
+
+// three jobs, each waiting on one yes; m-a moved last, so it leads the job deck
+function threeAsks(root) {
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-a', 'm-a', 'Write the launch thread for the phone page');
+  doingRow(file, root, 'b-b', 'm-b', 'Record the demo video of the front office');
+  doingRow(file, root, 'b-c', 'm-c', 'Write the getting started page');
+  const ask = (id, owner, mins, text) => ({ id, owner, status: 'blocked', created_at: new Date(NOW - mins * 60000).toISOString(), human_asks: [text] });
+  return {
+    'm-a': ask('m-a', 'launcher', 1, 'post the thread on x now?'),
+    'm-b': ask('m-b', 'launcher', 5, 'post the video on x now?'),
+    'm-c': ask('m-c', 'builder', 9, 'publish the page now?'),
+  };
+}
+
+test('yes cards never take over: at most one in a row, not now sends it to the back, and the next card is an idea', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const first = h.d.next();
+  assert.deepEqual([first.kind, first.job.what], ['yes', 'post the thread on x now?']);
+  assert.equal(first.needs_you, 2, 'the other two wait behind the small line');
+  // not now: the card is skipped, and the next card is an idea, not another yes
+  const after = h.d.next({ later: true });
+  assert.equal(after.kind, 'bet');
+  assert.equal(after.needs_you, 3, 'a skipped yes is still owed');
+  assert.ok(h.logs.some(l => l.choice === 'later' && l.kind === 'yes'));
+  // after an idea, a different yes not seen yet may show; the skipped one does not come back on its own
+  const second = h.d.next();
+  assert.equal(second.kind, 'yes');
+  assert.notEqual(second.id, first.id);
+  // a plain pass on a yes serves a normal card too
+  assert.equal(h.d.next().kind, 'bet');
+  const third = h.d.next();
+  assert.equal(third.kind, 'yes');
+  assert.ok(![first.id, second.id].includes(third.id));
+  assert.equal(h.d.next().kind, 'bet');
+  assert.notEqual(h.d.next().kind, 'yes', 'every yes was seen once; the rest wait in the deck');
+  // the skipped one is at the back of the job deck
+  const needs = h.d.jobDeck().cards.filter(c => c.label === 'needs you');
+  assert.equal(needs.length, 3);
+  assert.equal(needs[needs.length - 1].yes.what, 'post the thread on x now?');
+});
+
+test('yes cards never take over: with no idea ready, the card after a yes is a question', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  assert.equal(h.d.next().kind, 'yes');
+  const after = h.d.next({ later: true });
+  assert.equal(after.kind, 'question');
+  assert.equal(h.d.next().kind, 'yes', 'after the question, a yes not seen yet');
+});
+
+test('no on a yes card: that one request is told no, the job is pinged to move on, and the card does not come back', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.equal(card.job.what, 'a handed-off job wants to publish alpha to npm');
+  const denied = h.d.state.jobs.yes[0];
+  const no = await h.d.answerNo();
+  assert.equal(no.ok, true);
+  assert.match(no.ack, /no/);
+  assert.equal(h.d.view().status, 'cleared');
+  const ping = h.cli.find(a => a[1] === 'ping');
+  assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-child']);
+  assert.match(ping[3], /the owner said no/);
+  assert.match(ping[3], /do not run it/);
+  // A stays held, and asking again says the owner said no; B is still waiting for its own answer
+  const again = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  assert.equal(again.hold, true);
+  assert.match(again.message, /the owner said no/);
+  assert.deepEqual(yesLock.askedYesLocks(root, 'm-child').map(l => l.held_command), ['npm publish ./b']);
+  h.d.pollJobs();
+  assert.equal(h.d.view().needs_you, 1);
+  // a request told no cannot be approved later
+  assert.equal(yesLock.approveYesLock(root, 'm-child', denied.lock_step, null, new Date(NOW).toISOString(), { hash: denied.lock_hash }), null);
+  // a plain ask is answered no through atris decide, matched by mission and ask
+  const root2 = workspace();
+  const asks = threeAsks(root2);
+  const h2 = jobDesk(root2, asks, { decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-a', ask_index: 0 }] });
+  assert.equal(h2.d.next().kind, 'yes');
+  const no2 = await h2.d.answerNo();
+  assert.equal(no2.ok, true);
+  assert.deepEqual(h2.cli.slice(0, 2), [['decide', '--json'], ['decide', '2', 'no', '--json']]);
+  assert.ok(h2.ledger().find(r => r.id === 'b-a').no_answered);
+  // nothing on screen: no answers nothing
+  assert.equal((await jobDesk(workspace(), {}).d.answerNo()).reason, 'gone');
 });
 
 test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {
