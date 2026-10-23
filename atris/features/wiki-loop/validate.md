@@ -11,7 +11,7 @@ sources:
   - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
 ---
 
-# Wiki Upkeep Loop — Validation
+# Wiki Upkeep Loop: Validation
 
 > **Status:** shipped local upkeep command; the entry point moved to `atris loop wiki`
 > **Validated:** 2026-07-25
