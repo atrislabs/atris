@@ -1,0 +1,350 @@
+DROPPED BY REVIEW lib/brief-ledger.js line 304: `if (minutes < 1) return 'under 1m';` -> `if (minutes <= 1) return 'under 1m';`
+  reviewer said: snapshots the whole rendered review to check one label, "1m" versus "under 1m".
+DROPPED BY REVIEW lib/arg-parser.js line 17: `for (let i = 0; i < args.length; i += 1) {` -> `for (let i = 0; i <= args.length; i += 1) {`
+  reviewer said: the change is harmless, since reading one past the end gives undefined and matches no flag; the test only fails by planting a fake array prototype.
+DROPPED BY REVIEW lib/agent-today.js line 214: `if (!child) return false;` -> `if (!child) return true;`
+  reviewer said: compares the whole today summary object (date, git flag, empty lists), when the line only decides whether a session with no folder gets counted; adding any field would break it.
+DROPPED BY REVIEW lib/auto-lessons.js line 52: `const threshold = Number.isInteger(options.threshold) && options.threshold > 1` -> `const threshold = Number.isInteger(options.threshold) || options.threshold > 1`
+  reviewer said: Duplicates the single-occurrence threshold check in L52-4.
+MISS lib/business-target.js line 48: `const raw = eq > 0 ? arg.slice(0, eq) : arg;` -> `const raw = eq >= 0 ? arg.slice(0, eq) : arg;`
+  check said: file not written
+MISS lib/business-target.js line 52: `if (eq < 0) flags[key] = true;` -> `if (eq <= 0) flags[key] = true;`
+  check said: file not written
+MISS lib/business-simulate.js line 134: `if (value === undefined || value === null || compactText(value) === '') {` -> `if (value === undefined && value === null || compactText(value) === '') {`
+  check said: file not written
+MISS lib/auto-lessons.js line 78: `created_at: compactText(episode.created_at) || null,` -> `created_at: compactText(episode.created_at) && null,`
+  check said: file not written
+DROPPED BY REVIEW lib/business-simulate.js line 257: `if (!next || next.startsWith('-')) throw new Error(`Missing value for --name.\n${SIMULATE_USAGE}`);` -> `if (!next && next.startsWith('-')) throw new Error(`Missing value for --name.\n${SIMULATE_USAGE}`);`
+  reviewer said: pins the full usage text inside the error, so adding a flag to the usage line would break it.
+MISS lib/business-target.js line 106: `return oneLine((result.data && (result.data.detail || result.data.error)) || result.error || `request failed (${result.status})`);` -> `return oneLine((result.data || (result.data.detail || result.data.error)) || result.error || `request failed (${result.status})`);`
+  check said: still passes when the line is broken
+DROPPED BY REVIEW lib/brief-ledger.js line 73: `if (!wt || !fs.existsSync(wt)) return fallback;` -> `if (!wt && !fs.existsSync(wt)) return fallback;`
+  reviewer said: the change is harmless in practice; it only shows up through a made-up "missing/.." path that disappears when the path gets joined.
+DROPPED BY REVIEW lib/agent-today.js line 46: `while (total < maxBytes) {` -> `while (total <= maxBytes) {`
+  reviewer said: Tests a zero-byte limit that no production caller supplies.
+DROPPED BY REVIEW lib/accept-verify-gate.js line 110: `reason: result.reason || 'verify_failed',` -> `reason: result.reason && 'verify_failed',`
+  reviewer said: Duplicates the missing-directory reason checks in L111-0.
+MISS lib/campaign-reading.js line 60: `for (let i = lines.length - 1; i >= 0; i--) if (pattern.test(lines[i])) return lines[i];` -> `for (let i = lines.length + 1; i >= 0; i--) if (pattern.test(lines[i])) return lines[i];`
+  check said: file not written
+DROPPED BY REVIEW lib/accept-verify-gate.js line 111: `detail: result.reason === 'verify_workdir_missing' || result.reason === 'verify_worktree_missing'` -> `detail: result.reason === 'verify_workdir_missing' && result.reason === 'verify_worktree_missing'`
+  reviewer said: Duplicates all three failure cases in L111-0.
+DROPPED BY REVIEW lib/accept-verify-gate.js line 116: `exit_code: typeof result.status === 'number' ? result.status : null,` -> `exit_code: typeof result.status !== 'number' ? result.status : null,`
+  reviewer said: Duplicates the nonzero exit-code assertion in L111-0.
+DROPPED BY REVIEW lib/campaign-new.js line 104: `const engine = (pick.engine && pick.engine.id) || 'claude';` -> `const engine = (pick.engine && pick.engine.id) && 'claude';`
+  reviewer said: repeats the L103 test, which already checks that the draft reports the owner's engine (codex) and fails under this change too.
+DROPPED BY REVIEW lib/agent-today.js line 181: `if (row.type === 'assistant' && Array.isArray(content)) {` -> `if (row.type === 'assistant' || Array.isArray(content)) {`
+  reviewer said: Uses the real file modification time against a fixed date, making the result clock-dependent.
+MISS lib/cleanup-summary.js line 45: `while (insertAt > idx + 1 && !lines[insertAt - 1].trim()) insertAt -= 1;` -> `while (insertAt > idx - 1 && !lines[insertAt - 1].trim()) insertAt -= 1;`
+  check said: file not written
+MISS lib/cleanup-summary.js line 45: `while (insertAt > idx + 1 && !lines[insertAt - 1].trim()) insertAt -= 1;` -> `while (insertAt >= idx + 1 && !lines[insertAt - 1].trim()) insertAt -= 1;`
+  check said: file not written
+DROPPED BY REVIEW lib/ci-runner.js line 190: `if (leftIndex !== -1 || rightIndex !== -1) {` -> `if (leftIndex === -1 || rightIndex !== -1) {`
+  reviewer said: the change only reorders two results neither of which is a known one, which never happens in practice, and the test snapshots the whole summary text.
+DROPPED BY REVIEW lib/campaign-holdout.js line 55: `if (typeof text !== 'string' || !text || !holdoutPath) return text;` -> `if (typeof text !== 'string' && !text || !holdoutPath) return text;`
+  reviewer said: Enforces boxed-string object identity, which production text callers do not rely on.
+DROPPED BY REVIEW lib/cleanup-summary.js line 29: `if (!text || !fs.existsSync(path.join(root, 'atris'))) return false;` -> `if (!text || !fs.existsSync(path.join(root, 'atris'))) return true;`
+  reviewer said: nothing gets written either way, and the only caller (commands/autoland.js:1268) ignores the return value.
+MISS lib/config-guard.js line 28: `if (!value || typeof value !== 'object') return false;` -> `if (!value && typeof value !== 'object') return false;`
+  check said: still passes when the line is broken
+DROPPED BY REVIEW lib/ci-runner.js line 280: `if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {` -> `if (response.statusCode > 300 && response.statusCode < 400 && response.headers.location) {`
+  reviewer said: the change is harmless; the broken code still refuses the 300 response, just with a different error message, so nothing insecure gets downloaded.
+MISS lib/context-gatherer.js line 36: `const body = lastSpace > 0 ? slice.slice(0, lastSpace) : slice;` -> `const body = lastSpace >= 0 ? slice.slice(0, lastSpace) : slice;`
+  check said: file not written
+MISS lib/context-gatherer.js line 53: `if (tokens.length === 1 && (tokens[0] === 'help' || tokens[0].startsWith('-'))) return true;` -> `if (tokens.length === 1 && (tokens[0] === 'help' && tokens[0].startsWith('-'))) return true;`
+  check said: file not written
+MISS lib/commerce.js line 35: `const rawKey = eq > 0 ? arg.slice(2, eq) : arg.slice(2);` -> `const rawKey = eq >= 0 ? arg.slice(2, eq) : arg.slice(2);`
+  check said: file not written
+MISS lib/deck-compose.js line 115: `|| (firstPara && firstPara.text !== docTitle ? firstPara.text : undefined);` -> `|| (firstPara && firstPara.text === docTitle ? firstPara.text : undefined);`
+  check said: still passes when the line is broken
+MISS lib/deck-compose.js line 115: `|| (firstPara && firstPara.text !== docTitle ? firstPara.text : undefined);` -> `&& (firstPara && firstPara.text !== docTitle ? firstPara.text : undefined);`
+  check said: still passes when the line is broken
+DROPPED BY REVIEW lib/chat-log-scan.js line 51: `if (mtime < cutoff) continue;` -> `if (mtime <= cutoff) continue;`
+  reviewer said: Enforces inclusion at one exact millisecond of the age cutoff, a harmless boundary difference.
+DROPPED BY REVIEW lib/deck-compose.js line 109: `const h1 = blocks.find((b) => b.kind === 'h' && b.level === 1);` -> `const h1 = blocks.find((b) => b.kind === 'h' || b.level === 1);`
+  reviewer said: snapshots the whole deck (theme, brand accent, closing slide) to check which heading becomes the title.
+MISS lib/dispatch-scout.js line 190: `for (let index = 0; index < source.length; index += 1) {` -> `for (let index = 0; index <= source.length; index += 1) {`
+  check said: file not written
+MISS lib/design-api.js line 54: `...(options.headers || {}),` -> `...(options.headers && {}),`
+  check said: reads the source file
+DROPPED BY REVIEW lib/default-runner.js line 9: `for (let i = 0; i < list.length; i += 1) {` -> `for (let i = 0; i <= list.length; i += 1) {`
+  reviewer said: the extra loop step only reads one empty slot past the end of the list, and that slot never matches a flag. The test can only catch it by planting a fake value on the array's prototype, which no real caller does.
+MISS lib/design-api.js line 57: `if (options.body !== undefined && options.body !== null) {` -> `if (options.body === undefined && options.body !== null) {`
+  check said: reads the source file
+MISS lib/design-api.js line 57: `if (options.body !== undefined && options.body !== null) {` -> `if (options.body !== undefined || options.body !== null) {`
+  check said: reads the source file
+MISS lib/journal.js line 55: `if (currentContent.length > 0 || currentSection === '__header__') {` -> `if (currentContent.length >= 0 || currentSection === '__header__') {`
+  check said: file not written
+DROPPED BY REVIEW lib/design-api.js line 62: `method: options.method || 'GET',` -> `method: options.method && 'GET',`
+  reviewer said: Opens real TCP listeners and sends network requests.
+DROPPED BY REVIEW lib/campaign-new.js line 106: `return { text: (answer && answer.stdout) || '', engine, ok: Boolean(answer && answer.ok) };` -> `return { text: (answer || answer.stdout) || '', engine, ok: Boolean(answer && answer.ok) };`
+  reviewer said: Pins the entire output, including incidental command quoting and script formatting.
+DROPPED BY REVIEW lib/idea-tick.js line 231: `if (loopIdeas.some((idea) => idea.cause_key === repeat.key && now - (Date.parse(idea.at || '') || 0) < DAY_MS)) return null;` -> `if (loopIdeas.some((idea) => idea.cause_key === repeat.key && now - (Date.parse(idea.at || '') || 0) <= DAY_MS)) return null;`
+  reviewer said: the break only matters when two failures land exactly 24 hours apart to the millisecond. That tie never happens in real runs, so nobody relies on which side of it wins.
+DROPPED BY REVIEW lib/journal.js line 21: `if (!a || !b) return false;` -> `if (!a && !b) return false;`
+  reviewer said: Only distinguishes a missing timestamp from the Unix epoch, which live journal synchronization does not use.
+MISS lib/journal.js line 24: `if (Number.isNaN(ta) || Number.isNaN(tb)) return false;` -> `if (Number.isNaN(ta) && Number.isNaN(tb)) return false;`
+  check said: file not written
+DROPPED BY REVIEW lib/dispatch-scout.js line 131: `.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))` -> `.sort((left, right) => right[1] - left[1] && left[0].localeCompare(right[0]))`
+  reviewer said: Writes git configuration for the fixture repository.
+MISS lib/engine-processes.js line 249: `while (at > 1) {` -> `while (at >= 1) {`
+  check said: file not written
+MISS lib/campaign-missions.js line 121: `if (m.status !== 'running' || m.id.startsWith('plan-')) continue;` -> `if (m.status !== 'running' && m.id.startsWith('plan-')) continue;`
+  check said: touched other files: lib/campaign-missions.js
+DROPPED BY REVIEW lib/cli-json.js line 14: `while (offset < buffer.length) {` -> `while (offset <= buffer.length) {`
+  reviewer said: Pins exact JSON whitespace; the mutation is caught through nontermination rather than a focused write-boundary assertion.
+
+53 of 100 jobs this round were kept.
+MISS commands/activate.js line 102: `if (!Array.isArray(completions) || !completions.length) return null;` -> `if (!Array.isArray(completions) && !completions.length) return null;`
+  check said: file not written
+MISS commands/aeo.js line 113: `return false;` -> `return true;`
+  check said: file not written
+MISS commands/ask.js line 18: `if (typeof text !== 'string') return text;` -> `if (typeof text === 'string') return text;`
+  check said: file not written
+MISS commands/balance.js line 39: `if (!result || !result.ok) {` -> `if (!result && !result.ok) {`
+  check said: file not written
+MISS commands/business.js line 1271: `while (insertAt < lines.length && !/^##\s+/.test(lines[insertAt])) {` -> `while (insertAt <= lines.length && !/^##\s+/.test(lines[insertAt])) {`
+  check said: file not written
+MISS commands/buy.js line 112: `const hints = data.approve_with && typeof data.approve_with === 'object'` -> `const hints = data.approve_with && typeof data.approve_with !== 'object'`
+  check said: file not written
+DROPPED BY REVIEW commands/app.js line 116: `} else if (runtime === 'external') {` -> `} else if (runtime !== 'external') {`
+  reviewer said: it compares the whole generated APP.md word for word, so any wording change to the template breaks it.
+MISS commands/browse.js line 47: `if (dirs.length === 0) {` -> `if (dirs.length !== 0) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/ci.js line 22: `if (argv.length === 0 || argv[0] === 'help' || argv.includes('--help') || argv.includes('-h')) {` -> `if (argv.length === 0 && argv[0] === 'help' || argv.includes('--help') || argv.includes('-h')) {`
+  reviewer said: it compares the full help text line by line, when it only needs to check that no arguments shows help.
+MISS commands/harvest.js line 16: `if (out.length >= limit) return;` -> `if (out.length > limit) return;`
+  check said: file not written
+MISS commands/align.js line 132: `if (depth > 12) return;` -> `if (depth >= 12) return;`
+  check said: reads the source file
+MISS commands/drive.js line 100: `if (!report || !Array.isArray(report.findings)) {` -> `if (!report && !Array.isArray(report.findings)) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/decide.js line 16: `return String(mission.updated_at || mission.created_at || '');` -> `return String(mission.updated_at && mission.created_at || '');`
+  reviewer said: it compares the entire JSON output, so adding any new field breaks it; only the updated-at field matters.
+DROPPED BY REVIEW commands/agent-client.js line 118: `if (!data || typeof data !== 'object') return [];` -> `if (!data && typeof data !== 'object') return [];`
+  reviewer said: it only works because a getter returns different data on each read, so it depends on how many times the code reads the response; the API returns parsed JSON, so a function payload never happens.
+MISS commands/autopilot-front.js line 139: `if (Number.isFinite(pid) && pid > 0) state.child_pid = pid;` -> `if (Number.isFinite(pid) || pid > 0) state.child_pid = pid;`
+  check said: file not written
+DROPPED BY REVIEW commands/orb.js line 127: `if (idx !== -1) {` -> `if (idx === -1) {`
+  reviewer said: it wipes the whole environment and checks a "claude is missing from PATH" warning and a move count of four, neither of which has anything to do with reading --pick.
+MISS commands/signup.js line 39: `for (let i = 0; i < fullBytes; i++) { if (d[i] !== 0) { ok = false; break; } }` -> `for (let i = 0; i < fullBytes; i++) { if (d[i] === 0) { ok = false; break; } }`
+  check said: reads the source file
+MISS lib/design-api.js line 70: `const ok = res.status >= 200 && res.status < 300;` -> `const ok = res.status >= 200 && res.status <= 300;`
+  check said: reads the source file
+DROPPED BY REVIEW commands/avail.js line 177: `for (let d = 0; d <= 6; d += 1) {` -> `for (let d = 0; d < 6; d += 1) {`
+  reviewer said: Pins the entire preview output, including incidental wording, spacing, and emoji.
+DROPPED BY REVIEW lib/functional-owner.js line 109: `if (!haystack || !needle) return 0;` -> `if (!haystack && !needle) return 0;`
+  reviewer said: it adds an empty search term to a shared exported table, which the real table never contains, so the break does no harm in practice.
+MISS lib/landing-proof.js line 133: `if (!mainParent || mainParent === sha || !merged.length || isAncestor(top, sha, mainParent)) {` -> `if (!mainParent && mainParent === sha || !merged.length || isAncestor(top, sha, mainParent)) {`
+  check said: file not written
+DROPPED BY REVIEW commands/cloud.js line 143: `if (deleted > 0) parts.push(`${deleted} deleted`);` -> `if (deleted >= 0) parts.push(`${deleted} deleted`);`
+  reviewer said: Pins the full summary text; including “0 deleted” is harmless.
+DROPPED BY REVIEW lib/loop-doctor.js line 150: `const text = typeof detail === 'string' ? detail.trim() : JSON.stringify(detail);` -> `const text = typeof detail !== 'string' ? detail.trim() : JSON.stringify(detail);`
+  reviewer said: it compares the whole finding, including priority, owner, cadence and mission text that have nothing to do with this break; only the trimmed error value matters.
+DROPPED BY REVIEW commands/console.js line 229: `if (ctx.skills.length === 0) return;` -> `if (ctx.skills.length !== 0) return;`
+  reviewer said: Requires exact ANSI color sequences, so a reasonable styling change breaks it.
+DROPPED BY REVIEW lib/improve-vitals-html.js line 155: `${loops.theirs.length > 14 ? `<p class="quiet">and ${loops.theirs.length - 14} more.</p>` : ''}` -> `${loops.theirs.length >= 14 ? `<p class="quiet">and ${loops.theirs.length - 14} more.</p>` : ''}`
+  reviewer said: it compares an exact block of HTML down to the whitespace, when it only needs to check there is no "and 0 more" line.
+DROPPED BY REVIEW commands/codex-goal.js line 106: `throw new Error(detail || `sqlite3 exited with status ${result.status}`);` -> `throw new Error(detail && `sqlite3 exited with status ${result.status}`);`
+  reviewer said: Deletes HOME, causing the thread database lookup to inspect the real home folder.
+DROPPED BY REVIEW lib/dispatch-scout.js line 207: `try { return JSON.parse(source.slice(start, index + 1)); } catch { start = -1; }` -> `try { return JSON.parse(source.slice(start, index - 1)); } catch { start = -1; }`
+  reviewer said: Duplicates the surrounding-prose JSON coverage in test/dispatch-scout--mut-L204-0.test.js.
+
+13 of 40 jobs this round were kept.
+DROPPED BY REVIEW commands/brainstorm.js line 32: `return path.relative(process.cwd(), logFile) || logFile;` -> `return path.relative(process.cwd(), logFile) && logFile;`
+  reviewer said: it compares all three output lines, including help wording, and replaces the global Date to do it; only the relative journal path matters.
+MISS commands/apps.js line 182: `last_run: app?.last_run || app?.lastRun || app?.last_run_at || null,` -> `last_run: app?.last_run && app?.lastRun || app?.last_run_at || null,`
+  check said: reads the source file
+DROPPED BY REVIEW commands/engine-watch.js line 126: `if (stat.size <= position) return position;` -> `if (stat.size < position) return position;`
+  reviewer said: it fakes file rotation by hooking the exact order of the code's internal file calls, so a harmless reorder breaks it.
+DROPPED BY REVIEW commands/harvest.js line 20: `if (out.length >= limit) break;` -> `if (out.length > limit) break;`
+  reviewer said: harmless break; scanning 201 logs instead of 200 changes nothing anyone relies on, and the test depends on the order the folder lists its files
+DROPPED BY REVIEW commands/caretaker.js line 100: `if (!prev || checkTime(check) >= checkTime(prev)) byName.set(name, check);` -> `if (!prev || checkTime(check) > checkTime(prev)) byName.set(name, check);`
+  reviewer said: it checks which of two checks wins when their timestamps are identical, and real reruns always have later timestamps, so nobody relies on this.
+DROPPED BY REVIEW commands/goal.js line 163: `if (view.metrics.length > 0) {` -> `if (view.metrics.length >= 0) {`
+  reviewer said: snapshots the whole printed output, so any wording change breaks it; checking that no distance row appears would be enough
+DROPPED BY REVIEW commands/fleet.js line 136: `if (res.status >= 300) {` -> `if (res.status > 300) {`
+  reviewer said: harmless break; a hub never answers register with exactly 300, so the test only covers a status code nobody relies on
+MISS commands/log-sync.js line 111: `remoteContent = typeof existing.data?.content === 'string' ? existing.data.content : null;` -> `remoteContent = typeof existing.data?.content !== 'string' ? existing.data.content : null;`
+  check said: reads the source file
+MISS commands/publish.js line 39: `if (di !== -1 && process.argv[di + 1] && !process.argv[di + 1].startsWith('-')) description = process.argv[di + 1];` -> `if (di !== -1 && process.argv[di - 1] && !process.argv[di + 1].startsWith('-')) description = process.argv[di + 1];`
+  check said: reads the source file
+MISS commands/social.js line 131: `if (sugg.length > 0) {` -> `if (sugg.length >= 0) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/skill.js line 108: `if (!root || !fs.existsSync(root)) return false;` -> `if (!root || !fs.existsSync(root)) return true;`
+  reviewer said: fakes a folder appearing between two internal file checks; without that fake the broken line just crashes, so the test pins a race nobody relies on
+DROPPED BY REVIEW commands/zen.js line 122: `if (!result.done.length && result.zen) line(`  matches ${result.upstream || 'origin'}`);` -> `if (!result.done.length || result.zen) line(`  matches ${result.upstream || 'origin'}`);`
+  reviewer said: snapshots all 11 output lines when one check that "matches origin" is absent would do
+DROPPED BY REVIEW lib/campaign-new.js line 192: `if (!process.stdin.isTTY || !process.stderr.isTTY) return Promise.resolve(false);` -> `if (!process.stdin.isTTY && !process.stderr.isTTY) return Promise.resolve(false);`
+  reviewer said: it uses a getter that changes the terminal check after the first read, so it depends on how many times the code reads it, and it compares a long exact output string.
+MISS commands/browse.js line 61: `desc = meta.description || '';` -> `desc = meta.description && '';`
+  check said: reads the source file
+DROPPED BY REVIEW lib/card.js line 50: `const brand = spec.brand || 'Atris';` -> `const brand = spec.brand && 'Atris';`
+  reviewer said: Duplicates the custom brand footer coverage in test/card-command.test.js.
+DROPPED BY REVIEW commands/radar.js line 164: `if (!parent || parent === current) break;` -> `if (!parent && parent === current) break;`
+  reviewer said: Pins an internal filesystem probe count; the break only repeats root checks within an existing eight-iteration limit.
+
+18 of 34 jobs this round were kept.
+MISS commands/activate.js line 130: `if (featureCount > 0 && features.length) {` -> `if (featureCount >= 0 && features.length) {`
+  check said: file not written
+MISS commands/autopilot-front.js line 176: `const killedWrapper = wrapperPid !== childPid && killPid(wrapperPid);` -> `const killedWrapper = wrapperPid !== childPid || killPid(wrapperPid);`
+  check said: file not written
+MISS commands/ask.js line 31: `if (ch === '\\') { escaped = true; continue; }` -> `if (ch !== '\\') { escaped = true; continue; }`
+  check said: file not written
+MISS commands/avail.js line 311: `for (let i = 0; i < argv.length; i += 1) {` -> `for (let i = 0; i <= argv.length; i += 1) {`
+  check said: file not written
+MISS commands/bench.js line 160: `if (removeCandidate && candidateRoot) {` -> `if (removeCandidate || candidateRoot) {`
+  check said: file not written
+MISS commands/brief.js line 197: `if (status === 'done' || status === 'failed' || status === 'cancelled') return false;` -> `if (status === 'done' && status === 'failed' || status === 'cancelled') return false;`
+  check said: file not written
+DROPPED BY REVIEW commands/business-sync.js line 124: `if (before.size !== after.size) return true;` -> `if (before.size === after.size) return true;`
+  reviewer said: duplicates test/commands-2.test.js:2210, which already expects unchanged snapshots to return false and fails on this same change
+DROPPED BY REVIEW commands/analytics.js line 55: `if (inboxMatch && inboxMatch[1].trim()) {` -> `if (inboxMatch || inboxMatch[1].trim()) {`
+  reviewer said: catches the break by accident; the change crashes on a journal with no inbox and the test only notices the missing lines, never the inbox counting the line controls; it also swaps out the global clock
+DROPPED BY REVIEW commands/app.js line 145: `} else if (runtime === 'ios') {` -> `} else if (runtime !== 'ios') {`
+  reviewer said: snapshots the entire app template file, so any wording edit breaks it; the iOS-only endpoint lines would be enough
+DROPPED BY REVIEW commands/brainstorm.js line 73: `if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {` -> `if (args.includes('--help') && args.includes('-h') || args[0] === 'help') {`
+  reviewer said: snapshots the full help text when one check that help printed would do
+MISS commands/errors.js line 110: `const data = result.data || {};` -> `const data = result.data && {};`
+  check said: reads the source file
+MISS commands/drive.js line 118: `if (f.code === 'stale_ready_receipt' && f.mission_id && noVerifier.has(f.mission_id)) {` -> `if (f.code === 'stale_ready_receipt' || f.mission_id && noVerifier.has(f.mission_id)) {`
+  check said: reads the source file
+MISS commands/feed.js line 102: `if (auth.error || !auth.credentials?.token) {` -> `if (auth.error && !auth.credentials?.token) {`
+  check said: reads the source file
+MISS commands/drill.js line 184: `assertOk(payload && payload.mission && payload.mission.id, 'mission start did not return a mission');` -> `assertOk(payload || payload.mission && payload.mission.id, 'mission start did not return a mission');`
+  check said: reads the source file
+DROPPED BY REVIEW commands/browse.js line 70: `const templates = result.data || [];` -> `const templates = result.data && [];`
+  reviewer said: Pins the entire output, including blank lines, indentation, and help wording.
+MISS commands/interview.js line 179: `const subjectRaw = (args.find((a) => !a.startsWith('--')) || 'me').trim();` -> `const subjectRaw = (args.find((a) => !a.startsWith('--')) && 'me').trim();`
+  check said: reads the source file
+MISS commands/pay.js line 55: `if (!creds || !creds.token) return null;` -> `if (!creds && !creds.token) return null;`
+  check said: file not written
+MISS commands/playbook.js line 244: `if (!Number.isFinite(alpha) || alpha <= 0 || alpha >= 1) throw new Error('--alpha needs a number between 0 and 1');` -> `if (!Number.isFinite(alpha) && alpha <= 0 || alpha >= 1) throw new Error('--alpha needs a number between 0 and 1');`
+  check said: file not written
+DROPPED BY REVIEW commands/live.js line 126: `return false;` -> `return true;`
+  reviewer said: Duplicates ordinary-file inclusion coverage in test/commands-2.test.js.
+DROPPED BY REVIEW commands/probe.js line 218: `else if (flag === '--calendar') a.calendar = true;` -> `else if (flag !== '--calendar') a.calendar = true;`
+  reviewer said: catches the break by accident; the changed line sets the calendar option, but the test never checks that option and only fails because help gets skipped
+DROPPED BY REVIEW commands/align.js line 183: `while (Date.now() - start < maxWaitSec * 1000) {` -> `while (Date.now() - start <= maxWaitSec * 1000) {`
+  reviewer said: Enforces an exact millisecond timeout boundary; one extra poll at that boundary is harmless in practice.
+DROPPED BY REVIEW commands/run-front.js line 124: `cadence: readValueFlag(args, '--cadence') || '',` -> `cadence: readValueFlag(args, '--cadence') && '',`
+  reviewer said: snapshots incidental output text full of "?" placeholders on top of the cadence check
+DROPPED BY REVIEW commands/security-review.js line 256: `if (landing.open.length > 10) L.push(`    … and ${landing.open.length - 10} more`);` -> `if (landing.open.length >= 10) L.push(`    … and ${landing.open.length - 10} more`);`
+  reviewer said: pins a full output suffix, including the unrelated posture line, to catch a cosmetic "and 0 more" line
+DROPPED BY REVIEW commands/scout.js line 120: `if (a === '--dir') dir = path.resolve(args.shift() || '.');` -> `if (a === '--dir') dir = path.resolve(args.shift() && '.');`
+  reviewer said: catches the break by accident: with no --dir value the mutant crashes in path.resolve(undefined), and the test never checks that a given --dir path is used; it also snapshots the full help text
+MISS commands/publish.js line 39: `if (di !== -1 && process.argv[di + 1] && !process.argv[di + 1].startsWith('-')) description = process.argv[di + 1];` -> `if (di !== -1 || process.argv[di + 1] && !process.argv[di + 1].startsWith('-')) description = process.argv[di + 1];`
+  check said: reads the source file
+MISS commands/pull.js line 25: `while (current.startsWith(boundary) && current !== boundary) {` -> `while (current.startsWith(boundary) && current === boundary) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/report.js line 195: `.filter(row => Number(row.timestamp_ms) >= cutoff)` -> `.filter(row => Number(row.timestamp_ms) > cutoff)`
+  reviewer said: Enforces inclusion at one exact millisecond of a rolling weekly cutoff, with no demonstrated practical reliance.
+MISS commands/signup.js line 112: `const identity = email || `${handle}@atrismail.com`;` -> `const identity = email && `${handle}@atrismail.com`;`
+  check said: reads the source file
+MISS commands/site.js line 54: `const port = Number(flag(argv, '--port')) || 4321;` -> `const port = Number(flag(argv, '--port')) && 4321;`
+  check said: reads the source file
+DROPPED BY REVIEW commands/apps.js line 196: `const slug = String(app.slug || app.id || 'unknown');` -> `const slug = String(app.slug && app.id || 'unknown');`
+  reviewer said: Pins the entire output, including column padding and whitespace.
+DROPPED BY REVIEW commands/serve.js line 109: `if (Buffer.byteLength(op.find || '', 'utf8') > MAX_EDIT_BYTES ||` -> `if (Buffer.byteLength(op.find || '', 'utf8') >= MAX_EDIT_BYTES ||`
+  reviewer said: harmless boundary; nobody relies on a find string of exactly 1 MiB being accepted rather than rejected
+DROPPED BY REVIEW commands/soul.js line 131: `const preview = soul.identity['PERSONA.md'].split('\n').find(l => l.trim() && !l.startsWith('#')) || '';` -> `const preview = soul.identity['PERSONA.md'].split('\n').find(l => l.trim() && !l.startsWith('#')) && '';`
+  reviewer said: Duplicates persona preview coverage in test/soul-cmd--mut-L131-6.test.js.
+MISS commands/social.js line 291: `const match = agents.find((a) => (a.name || '').toLowerCase() === q)` -> `const match = agents.find((a) => (a.name && '').toLowerCase() === q)`
+  check said: reads the source file
+DROPPED BY REVIEW commands/study.js line 126: `const normalized = String(topic || '').toLowerCase().trim();` -> `const normalized = String(topic && '').toLowerCase().trim();`
+  reviewer said: exact snapshot of the whole tutor guidance block when only "the language topic is detected" matters
+DROPPED BY REVIEW commands/stream.js line 151: `if (type === 'completed' || type === 'done') return `finished ${title}`;` -> `if (type === 'completed' && type === 'done') return `finished ${title}`;`
+  reviewer said: Runs real git config reads without isolating HOME or global git configuration.
+DROPPED BY REVIEW commands/orb.js line 20: `const text = String(value || '').replace(/\s+/g, ' ').trim();` -> `const text = String(value && '').replace(/\s+/g, ' ').trim();`
+  reviewer said: Pins an exact three-line output suffix, including prompt wording unrelated to label preservation.
+
+26 of 62 jobs this round were kept.
+MISS commands/apps.js line 254: `printCloudApps(apps, filter || null);` -> `printCloudApps(apps, filter && null);`
+  check said: reads the source file
+MISS commands/aeo.js line 257: `const created = data.created || [];` -> `const created = data.created && [];`
+  check said: reads the source file
+DROPPED BY REVIEW commands/balance.js line 49: `const message = oneLine(error && error.message);` -> `const message = oneLine(error || error.message);`
+  reviewer said: enforces that a thrown string's text is thrown away, which nobody relies on; a real Error case would test what the line controls
+MISS commands/browse.js line 72: `if (templates.length === 0) {` -> `if (templates.length !== 0) {`
+  check said: reads the source file
+MISS commands/activate.js line 130: `if (featureCount > 0 && features.length) {` -> `if (featureCount > 0 || features.length) {`
+  check said: file not written
+DROPPED BY REVIEW commands/analytics.js line 64: `if (inboxMatch && inboxMatch[1].trim()) {` -> `if (inboxMatch || inboxMatch[1].trim()) {`
+  reviewer said: the mutant crashes on null[1], so the break is caught by accident; it also uses a full-screen output snapshot and mocks the global clock
+DROPPED BY REVIEW commands/app.js line 157: `} else if (runtime === 'template') {` -> `} else if (runtime !== 'template') {`
+  reviewer said: Snapshots the entire generated manifest, including incidental prose and formatting.
+MISS commands/console.js line 265: `if (target === 'claude') {` -> `if (target !== 'claude') {`
+  check said: still passes when the line is broken
+MISS commands/context-sync.js line 119: `if (computerChanged.length > 0) {` -> `if (computerChanged.length >= 0) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/doctor.js line 62: `shim: Boolean(shimBytes != null && shimBytes < 2048),` -> `shim: Boolean(shimBytes != null && shimBytes <= 2048),`
+  reviewer said: harmless boundary (a launcher of exactly 2048 bytes), and it mocks fs.statSync on an internal path
+DROPPED BY REVIEW commands/codex-goal.js line 46: `if (!dbPath || !fs.existsSync(dbPath)) return false;` -> `if (!dbPath && !fs.existsSync(dbPath)) return false;`
+  reviewer said: pins the exact internal count of sqlite calls (4), which a reasonable refactor would change
+MISS commands/drive.js line 122: `if (f.code === 'stale_ready_receipt' && f.mission_id && !dryRun) {` -> `if (f.code === 'stale_ready_receipt' || f.mission_id && !dryRun) {`
+  check said: reads the source file
+MISS commands/feed.js line 108: `const selfEmail = auth.credentials.email || auth.user?.email || null;` -> `const selfEmail = auth.credentials.email && auth.user?.email || null;`
+  check said: reads the source file
+DROPPED BY REVIEW commands/engine-watch.js line 144: `const fsModule = deps.fs || fs;` -> `const fsModule = deps.fs && fs;`
+  reviewer said: depends on the internal order of statSync calls to inject output, and only tests the test-only deps.fs injection point; it also polls on a timer
+MISS commands/errors.js line 111: `const groups = data.groups || [];` -> `const groups = data.groups && [];`
+  check said: reads the source file
+MISS commands/fleet-report.js line 131: `if (b) rows.push({ slug: biz.slug || biz.name, ...b });` -> `if (b) rows.push({ slug: biz.slug && biz.name, ...b });`
+  check said: reads the source file
+MISS commands/fork.js line 63: `if (!files || files.length === 0) {` -> `if (!files && files.length === 0) {`
+  check said: reads the source file
+MISS commands/feedback.js line 155: `if (matches.length > 1) {` -> `if (matches.length >= 1) {`
+  check said: reads the source file
+MISS commands/harvest.js line 38: `if (!clean || isGenericInboxPlaceholder(clean)) return;` -> `if (!clean && isGenericInboxPlaceholder(clean)) return;`
+  check said: file not written
+DROPPED BY REVIEW commands/cloud.js line 199: `if (i > 0) {` -> `if (i >= 0) {`
+  reviewer said: Pins an internal 600ms timer call; delaying the first deletion is harmless.
+MISS commands/interview.js line 186: `if (subjectRaw === 'me' || subjectRaw === '') {` -> `if (subjectRaw !== 'me' || subjectRaw === '') {`
+  check said: reads the source file
+MISS commands/launchpad.js line 154: `if (!mission) return false;` -> `if (!mission) return true;`
+  check said: file not written
+DROPPED BY REVIEW commands/install.js line 30: `if (created.length === 0) {` -> `if (created.length !== 0) {`
+  reviewer said: it locks in the exact list of seven starter files, so adding or removing one breaks it even though the line under test only chooses between listing the files and saying "already installed".
+DROPPED BY REVIEW commands/align.js line 222: `businessName: businesses[slug].name || slug,` -> `businessName: businesses[slug].name && slug,`
+  reviewer said: Pins the entire console transcript, including unrelated spacing and progress messages.
+DROPPED BY REVIEW commands/init.js line 311: `if (args[0] === '-h' || args[0] === '--help' || args[0] === 'help') {` -> `if (args[0] !== '-h' || args[0] === '--help' || args[0] === 'help') {`
+  reviewer said: it checks the whole help text word for word, so any wording change breaks it, when all it needs to check is that `-h` prints usage instead of setting up a workspace.
+DROPPED BY REVIEW commands/loop-front.js line 101: `if (Array.isArray(moves) && moves.length) {` -> `if (Array.isArray(moves) || moves.length) {`
+  reviewer said: it compares the entire loop home screen character for character, when the only thing that matters is that no "ranked next moves" heading shows when there are no moves.
+MISS commands/log-sync.js line 124: `const localMatchesKnown = (knownRemoteHash && localHash === knownRemoteHash);` -> `const localMatchesKnown = (knownRemoteHash || localHash === knownRemoteHash);`
+  check said: reads the source file
+DROPPED BY REVIEW commands/decide.js line 25: `return true;` -> `return false;`
+  reviewer said: Duplicates running-mission ask listing already covered in test/decide.test.js.
+DROPPED BY REVIEW commands/human-missions.js line 344: `if (seconds < 60) return `${seconds}s`;` -> `if (seconds <= 60) return `${seconds}s`;`
+  reviewer said: Enforces a cosmetic distinction between equivalent durations, 60s and 1m 0s.
+DROPPED BY REVIEW commands/dream.js line 236: `const bin = (RUNNER_PROFILE_DEFS.haiku && RUNNER_PROFILE_DEFS.haiku.bin) || 'claude';` -> `const bin = (RUNNER_PROFILE_DEFS.haiku || RUNNER_PROFILE_DEFS.haiku.bin) || 'claude';`
+  reviewer said: Duplicates successful default-runner launch coverage in test/engine-resource.test.js.
+MISS commands/next.js line 105: `if (action.type === 'mission_review_prompt' && action.mission_id) {` -> `if (action.type === 'mission_review_prompt' || action.mission_id) {`
+  check said: reads the source file
+DROPPED BY REVIEW commands/drill.js line 206: `assertOk(payload.ticks && payload.ticks[0] && payload.ticks[0].drill, 'drill runner did not record a touch');` -> `assertOk(payload.ticks || payload.ticks[0] && payload.ticks[0].drill, 'drill runner did not record a touch');`
+  reviewer said: Calls runDrill, which runs git config to set the sandbox repository's user name and email.
+DROPPED BY REVIEW commands/push.js line 192: `if (!result || result.ok) return false;` -> `if (!result || result.ok) return true;`
+  reviewer said: test/commands-2.test.js line 2434 already checks that a successful batch is not retried file by file.
+MISS commands/one-lap.js line 346: `&& receipt.tasks.includes(taskId)` -> `|| receipt.tasks.includes(taskId)`
+  check said: file not written
+MISS commands/rainmaker.js line 27: `const py = process.env.ATRIS_PYTHON || 'python3';` -> `const py = process.env.ATRIS_PYTHON && 'python3';`
+  check said: file not written
+MISS commands/publish.js line 68: `if (entry.startsWith('.env') || entry === 'secrets') continue;` -> `if (entry.startsWith('.env') && entry === 'secrets') continue;`
+  check said: file not written
+DROPPED BY REVIEW commands/release.js line 203: `return result && result.status === 0 ? String(result.stdout || '').trim() : '';` -> `return result || result.status === 0 ? String(result.stdout || '').trim() : '';`
+  reviewer said: it checks all seven preflight lines, most about unrelated checks, so adding or rewording any check breaks it, when the line under test only decides "local master is missing".
+MISS commands/social.js line 342: `if (res.status >= 400) fail(apiErrorMessage(res, `Could not create invite (${res.status})`));` -> `if (res.status > 400) fail(apiErrorMessage(res, `Could not create invite (${res.status})`));`
+  check said: reads the source file
+DROPPED BY REVIEW commands/sync.js line 342: `slug: bizMeta.slug || 'business',` -> `slug: bizMeta.slug && 'business',`
+  reviewer said: duplicates the existing test/sync-cmd--mut-L197-0.test.js, which already makes the same dry-run call and checks the same "Updating Sample (sample) from business environment templates..." line, so it already catches the slug falling back to 'business'.
+MISS commands/pulse.js line 150: `const idle = Boolean(payload && payload.picked === null);` -> `const idle = Boolean(payload || payload.picked === null);`
+  check said: reads the source file
+DROPPED BY REVIEW commands/skill.js line 302: `const hasError = checks.some(c => !c.pass && c.severity === 'ERROR');` -> `const hasError = checks.some(c => !c.pass || c.severity === 'ERROR');`
+  reviewer said: it locks in the check count "12/12" and the column spacing, so adding one new check breaks it even though the line under test only decides PASS or FAIL.
+MISS commands/study.js line 163: `resolve(res.statusCode >= 200 && res.statusCode < 500);` -> `resolve(res.statusCode >= 200 || res.statusCode < 500);`
+  check said: reads the source file
+MISS commands/play.js line 105: `for (const task of tasks || []) {` -> `for (const task of tasks && []) {`
+  check said: file not written
+MISS commands/pull.js line 253: `if (timeoutIdx !== -1 && process.argv[timeoutIdx + 1]) {` -> `if (timeoutIdx !== -1 || process.argv[timeoutIdx + 1]) {`
+  check said: reads the source file
+
+46 of 90 jobs this round were kept.
