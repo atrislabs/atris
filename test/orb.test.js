@@ -226,8 +226,10 @@ test('orb scorecard leaves a live unmatched dispatch out of orphan outcomes', ()
 test('orb scorecard command prints the native summary without writing', () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-orb-scorecard-cli-'));
   try {
-    const ts = new Date().toISOString();
-    const day = ts.slice(0, 10);
+    const at = new Date();
+    const ts = at.toISOString();
+    // Picks are dated by the local day they were made.
+    const day = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
     const indexPath = path.join(fixture, '.atris', 'state', 'orb-runs', 'index.jsonl');
     fs.writeFileSync(path.join(fixture, 'now.md'), `# Now\norb: ship the reader · ${day}\n`, 'utf8');
     writeJsonl(indexPath, [
