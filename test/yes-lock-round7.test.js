@@ -161,7 +161,7 @@ test('gh: reads, pr create and pr comment run; merge, release and api writes are
 test('npm, yarn, pnpm: install, ci, test, run, ls and view run; publish, version and dist-tag are held', (t) => {
   const w = world(t);
   for (const [tool, args] of [['npm', ['install']], ['npm', ['ci']], ['npm', ['test']], ['npm', ['run', 'build']], ['npm', ['ls']],
-    ['npm', ['view', 'atris', 'version']], ['yarn', []], ['yarn', ['test']], ['pnpm', ['install']], ['pnpm', ['run', 'build']]]) {
+    ['npm', ['view', 'atris', 'version']], ['yarn', ['install']], ['yarn', ['test']], ['pnpm', ['install']], ['pnpm', ['run', 'build']]]) {
     assert.ok(runs(w.verdict(tool, args)), `${tool} ${args.join(' ')}`);
   }
   for (const [tool, args] of [['npm', ['publish']], ['npm', ['version', 'patch']], ['npm', ['dist-tag', 'add', 'atris@1.0.0', 'latest']],
