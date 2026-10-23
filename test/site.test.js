@@ -127,3 +127,27 @@ test('serveSite refuses a symlink inside the site folder that points outside it'
     server.close();
   }
 });
+
+test('serveSite answers a null byte in the URL with 400 and keeps serving', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-nul-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.writeFileSync(path.join(base, 'site', 'index.html'), 'PUBLIC');
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: p }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    assert.equal((await get('/%00')).status, 400);
+    assert.equal((await get('/index.html%00.txt')).status, 400);
+    assert.equal((await get('/')).body, 'PUBLIC', 'the server is still up');
+  } finally {
+    server.close();
+  }
+});
