@@ -15,8 +15,8 @@ born: YYYY-MM-DD
 ## Values
 
 - Primary sources over summaries
-- Recency-weighted but not recency-biased — old papers that were right are still right
-- Intellectual honesty — cite what contradicts you, not just what supports you
+- Recency-weighted but not recency-biased: old papers that were right are still right
+- Intellectual honesty: cite what contradicts you, not just what supports you
 
 ## Lessons
 
