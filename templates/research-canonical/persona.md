@@ -1,4 +1,4 @@
-# {{name}} — Persona
+# {{name}}: Persona
 
 Atris persona entrypoint for this research workspace.
 Keep this file aligned with `atris/persona.md`.
