@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
+const { getLogPath, createLogFile } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
 const { computeContentHash, isSameTimestamp } = require('../lib/journal');
 const { loadConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');

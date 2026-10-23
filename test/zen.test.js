@@ -107,7 +107,8 @@ test('a synced repo with only team notes changed is zen', () => {
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /^zen: yes/m);
     assert.match(cli.stdout, /code matches origin\/master/);
-    assert.match(cli.stdout, /3 team files kept/);
+    assert.match(cli.stdout, /3 unsaved team files left in place/);
+    assert.doesNotMatch(cli.stdout, /kept as they are/);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -136,6 +137,9 @@ test('leftovers, drift and stray code each break zen', () => {
     const epoch = Math.floor(hourAgo.getTime() / 1000);
     fs.writeFileSync(idleLog, fs.readFileSync(idleLog, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
     fs.writeFileSync(path.join(base, 'busy', 'wip.js'), 'wip\n');
+    // the merged branch was last moved an hour ago, so it is not a job's fresh branch
+    const doneLog = path.join(checkout, '.git', 'logs', 'refs', 'heads', 'done-work');
+    fs.writeFileSync(doneLog, fs.readFileSync(doneLog, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
     // stray code edit
     fs.writeFileSync(path.join(checkout, 'app.js'), 'edited\n');
 

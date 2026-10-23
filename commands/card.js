@@ -11,6 +11,7 @@ const path = require('path');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const { buildCard, SIZES, KINDS } = require('../lib/card');
+const { makeProfileDir, removeProfileDir, headlessArgs } = require('../lib/headless-chrome');
 
 function parseFlags(argv) {
   const flags = {}; const pos = [];
@@ -46,18 +47,24 @@ function findChrome() {
 
 function renderPng(chrome, html, width, height, outPng) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-card-'));
-  const htmlFile = path.join(tmp, 'card.html');
-  fs.writeFileSync(htmlFile, html);
-  const args = [
-    '--headless=new', '--disable-gpu', '--hide-scrollbars',
-    '--force-device-scale-factor=2',
-    `--window-size=${width},${height}`,
-    '--virtual-time-budget=4000',
-    `--screenshot=${outPng}`,
-    `file://${htmlFile}`,
-  ];
-  execFileSync(chrome, args, { stdio: 'ignore', timeout: 60000 });
-  return fs.existsSync(outPng);
+  const profile = makeProfileDir('atris-card-chrome-');
+  try {
+    const htmlFile = path.join(tmp, 'card.html');
+    fs.writeFileSync(htmlFile, html);
+    const args = headlessArgs(profile, [
+      '--disable-gpu', '--hide-scrollbars',
+      '--force-device-scale-factor=2',
+      `--window-size=${width},${height}`,
+      '--virtual-time-budget=4000',
+      `--screenshot=${outPng}`,
+      `file://${htmlFile}`,
+    ]);
+    execFileSync(chrome, args, { stdio: 'ignore', timeout: 60000 });
+    return fs.existsSync(outPng);
+  } finally {
+    removeProfileDir(profile);
+    removeProfileDir(tmp);
+  }
 }
 
 function run(argv) {

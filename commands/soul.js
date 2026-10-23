@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { localDay } = require('../lib/local-day');
 
 function findAtrisDir() {
   let dir = process.cwd();
@@ -272,7 +273,7 @@ function distillSoul(atrisDir) {
 
   // Append distilled section to persona
   const separator = '\n\n---\n\n';
-  const distilledBlock = `<!-- Distilled ${new Date().toISOString().slice(0, 10)} | ${journalCount} journal entries, ${lessonItems.length} lessons, ${policyRules.length} policy rules -->\n\n` + distilled.join('\n');
+  const distilledBlock = `<!-- Distilled ${localDay()} | ${journalCount} journal entries, ${lessonItems.length} lessons, ${policyRules.length} policy rules -->\n\n` + distilled.join('\n');
 
   if (persona) {
     // Check if already has a distilled section, replace it

@@ -273,13 +273,6 @@ function taskReceiptTitle(row) {
   return compactLine(row?.state?.title || row?.title || row?.task_id || 'untitled work');
 }
 
-// The receipts behind "Completed receipts today", as lines a human can read:
-// one per receipt, landed result + human proof state. Shares the collector
-// with the count so the number and the visible list always match.
-function todayTaskReceiptLines(root = process.cwd(), date = new Date(), limit = 6) {
-  return formatTaskReceiptLines(collectTaskReceiptsToday(root, date), limit);
-}
-
 // Format an already-collected receipt list, so a caller that needs both the
 // count and the lines (renderDefaultNow) parses the receipt files only once.
 function formatTaskReceiptLines(receipts, limit = 6) {

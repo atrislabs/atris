@@ -1,4 +1,4 @@
-# Reports — {{name}}
+# Reports: {{name}}
 
 Past artifacts. Eval notes, findings, replication checks, decision documents.
 

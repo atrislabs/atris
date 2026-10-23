@@ -231,23 +231,25 @@ test('attack 11: two runs racing on one yes: only one gets through', () => {
   }
 });
 
-test('attack 12: a yes covers the exact command the owner saw, in the same folder; a failed run gives it back', () => {
+// Round 6 on #1483 changed two rules here: a new held command is its own
+// card and never replaces a yes already given, and a yes is one attempt, used
+// when the command starts, so a failed run does not get another go.
+test('attack 12: a yes covers the exact command the owner saw, in the same folder, for one attempt', () => {
   const j = lockedJob(PUBLISH);
   try {
     assert.ok(held(j.run('npm publish ./a')));
     j.approve(2);
     assert.ok(held(j.run('npm publish ./b')), 'a different package needs its own yes');
-    assert.ok(held(j.run('npm publish ./a')), 'asking for ./b replaced the yes the owner gave for ./a');
-    j.approve(2);
+    assert.equal(j.run('npm publish ./a').stdout.trim(), 'ran npm publish ./a', 'asking for ./b did not take the yes the owner gave for ./a');
     fs.mkdirSync(path.join(j.root, 'sub'), { recursive: true });
     assert.ok(held(j.run('npm publish ./a', path.join(j.root, 'sub'))), 'the same words in another folder are another command');
     j.approve(2);
     assert.equal(j.run('npm publish ./a', path.join(j.root, 'sub')).stdout.trim(), 'ran npm publish ./a');
-    // a run that fails does not use up the yes
+    // a run that fails used its yes: one yes, one attempt
     assert.ok(held(j.run('npm publish ./broken')));
     j.approve(2);
     assert.equal(j.run('npm publish ./broken').status, 1);
-    assert.equal(j.run('npm publish ./broken').status, 1, 'the yes is still there after a failed run');
+    assert.ok(held(j.run('npm publish ./broken')), 'the failed attempt used the yes');
   } finally {
     j.cleanup();
   }

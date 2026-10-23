@@ -1,4 +1,4 @@
-# COORDINATION.md — how agents and humans share this workspace without friction
+# COORDINATION.md: how agents and humans share this workspace without friction
 
 > Forked from `terrace/atris/COORDINATION.md` (the reference implementation,
 > proven 2026-06-10), in lockstep with the `atrisos-web/atris/COORDINATION.md`
@@ -10,7 +10,7 @@
 
 ```
 Keshav types bullets → today's log, under "## Feedback inbox"
-       (atris/logs/2026/YYYY-MM-DD.md — from Cursor, phone, anywhere)
+       (atris/logs/2026/YYYY-MM-DD.md, from Cursor, phone, anywhere)
             ↓ any agent's next tick (≤15 min)
 atris task add --tag cli  (+ say context, plan, verify cmd)
             ↓ bullet DELETED from inbox (inbox stays empty)
@@ -19,7 +19,7 @@ claim --as <member> → ship → ready --proof → PM accept → one-line receip
 
 Every agent looks in exactly two places: the **inbox** (newest logs) and the
 **plane** (`atris task`). If feedback is anywhere else, the first agent to see
-it moves it to the inbox — never works from a side channel.
+it moves it to the inbox. It never works from a side channel.
 
 ## The five rules
 
@@ -37,11 +37,11 @@ chat-lane work: `--tag chat-lane`). Nothing else is a backlog:
 Changing the plane is a **migration**: move every open item, leave a tombstone
 pointer at the old location, done in one commit. Don't do it twice a quarter.
 
-### 2. Claim before work — and only members claim
+### 2. Claim before work, and only members claim
 
 Tags have **owners**: each product tag belongs to a team member in
 `atris/team/` (encoded as a task). The **`chat-lane`** tag belongs to
-**relay** (terrace `atris/team/relay/MEMBER.md`) — the CLI is one of relay's
+**relay** (terrace `atris/team/relay/MEMBER.md`): the CLI is one of relay's
 four surfaces (iOS, web, Obelisk, CLI), and the chat-lane probe commands are
 how the lane is validated from this repo. Claiming inside a tag means acting
 *as* its owner: `atris task claim <id> --as <member>` after reading that
@@ -49,7 +49,7 @@ member's MEMBER.md (+ SOUL.md when present).
 
 - **Visiting agents never claim.** An agent passing through (a one-off Cursor
   session, a research agent, a cron from another project) may `atris task add`,
-  `say` context, or `atris task delegate --to <member>` — then leave. Picking
+  `say` context, or `atris task delegate --to <member>`, then leave. Picking
   up a task you don't own is the bug this file exists to prevent.
 - Claimed by someone else → skip it this tick. No exceptions for "it's quick".
 - Finish or release: if you can't complete in your tick, `say` what you found
@@ -62,7 +62,7 @@ member's MEMBER.md (+ SOUL.md when present).
 
 Before acting on another agent's triage, probe, or recommendation, check its
 timestamp against the newest fix receipts. Pre-fix evidence is void.
-Chat-lane claims need a live probe receipt from the current cycle — never
+Chat-lane claims need a live probe receipt from the current cycle. Never
 "it worked yesterday".
 
 ### 4. Files are shared
@@ -79,7 +79,7 @@ titled "WAITING ON <who>: <exact action>"
 (e.g. "WAITING ON Keshav: merge atrisos-backend PR #2017 + grant the IAM
 secret read so member secrets resolve").
 - One glance at `atris task` shows everything waiting on Keshav.
-- Never note a human dependency only in a journal paragraph — it disappears.
+- Never note a human dependency only in a journal paragraph: it disappears.
 - When the human acts, the unblocked task re-enters the normal lanes.
 
 ## Tick discipline (any agent, any loop)
@@ -96,7 +96,7 @@ secret read so member secrets resolve").
 ## Roles route by lane, not by speed
 
 Members own lanes (see `atris/team/`). A bug in another member's lane gets a
-task + `delegate --to` naming the owner — not a fix from whoever saw it first.
+task + `delegate --to` naming the owner, not a fix from whoever saw it first.
 Chat-lane bugs found here route to **relay** with a probe receipt attached.
 Found work outside every member's lane? File it unowned and flag the gap to
-the PM — a missing owner is itself feedback.
+the PM. A missing owner is itself feedback.

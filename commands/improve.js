@@ -25,6 +25,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const gitSpawn = require('../lib/git-spawn');
 const ignoredCache = require('../lib/ignored-cache');
+const { localDay } = require('../lib/local-day');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const pulse = require('../lib/pulse');
@@ -375,7 +376,7 @@ function agePhrase(ts, nowMs = Date.now()) {
   if (delta < 60 * 60 * 1000) return `${plural(Math.round(delta / (60 * 1000)), 'minute')} ago`;
   if (delta < DAY_MS) return `${plural(Math.round(delta / (60 * 60 * 1000)), 'hour')} ago`;
   if (delta < 30 * DAY_MS) return `${plural(Math.round(delta / DAY_MS), 'day')} ago`;
-  return `on ${new Date(ms).toISOString().slice(0, 10)}`;
+  return `on ${localDay(new Date(ms))}`;
 }
 
 function plainSentence(value) {
@@ -1715,6 +1716,7 @@ async function run(argv = [], deps = {}) {
 
 module.exports = {
   run,
+  agePhrase,
   runImprove,
   runImproveCore,
   parseImproveArgs,

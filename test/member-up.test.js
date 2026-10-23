@@ -302,3 +302,34 @@ test('checked child result supplies the change summary or the actual failure rea
   assert.deepEqual(memberUpResult(''), { ok: false, reason: 'run ended without a checked task result' });
   assert.deepEqual(memberUpResult('', '', 'SIGTERM'), { ok: false, reason: 'stopped by sigterm' });
 });
+
+// Codex review round 2 on #1483: member up and handoff wakes start members
+// through one shared lock, and each counts what the other just started, so
+// the limit holds across both.
+test('member up shares the wake lock with handoffs and counts their starts', () => {
+  const { withWakeReservation } = require('../lib/handoff-wake');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-up-wake-lock-'));
+  try {
+    // a handoff just started validator; its mission is not running yet
+    withWakeReservation(dir, ({ record }) => record({ member: 'validator', mission_id: 'm-v', pid: process.pid }));
+    const members = ['validator', 'a', 'b', 'c'].map((name) => ({ name }));
+    const tasks = Object.fromEntries(members.map((m, i) => [m.name, [{ id: `t${i}`, title: `task ${m.name}` }]]));
+    const team = fakeTeam(members, tasks);
+    let held = 0;
+    team.deps.reserve = (fn) => withWakeReservation(dir, (r) => {
+      held += 1;
+      assert.equal(fs.existsSync(path.join(dir, 'handoff-wake.lock')), true, 'the count and start run under the lock');
+      return fn(r);
+    });
+    team.deps.spawn = (name, onExit, onClaim) => { team.spawned.push(name); onClaim(tasks[name][0]); return { pid: process.pid }; };
+    const up = createMemberUp(team.deps, { max: 2 });
+    up.check();
+    assert.equal(held, 1);
+    assert.deepEqual(team.spawned, ['a'], 'validator counts as working, so only one more starts');
+    // what member up started is on the shared list for the next handoff
+    const recent = withWakeReservation(dir, ({ recent: r }) => r.map((w) => w.member).sort());
+    assert.deepEqual(recent, ['a', 'validator']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

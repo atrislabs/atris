@@ -1,0 +1,1 @@
+{"id":"test-commands-feed","kind":"test","target":"commands/feed.js","files":["test/feed-command.test.js"]}

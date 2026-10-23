@@ -600,7 +600,10 @@ function buildBenchmarkArtifact(name, packDir, options) {
 function recordExperimentRun(experimentId) {
   const root = process.cwd();
   const state = daily.readDailyState(root);
-  const today = new Date().toISOString().slice(0, 10);
+  // Local calendar day; toISOString is UTC and records an evening run as
+  // tomorrow's anywhere west of Greenwich.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   state.last_run_date = today;
   if (!Array.isArray(state.history)) state.history = [];
   if (!state.history.includes(experimentId)) {

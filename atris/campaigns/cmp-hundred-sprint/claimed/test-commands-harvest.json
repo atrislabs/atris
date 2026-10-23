@@ -1,0 +1,1 @@
+{"id":"test-commands-harvest","kind":"test","target":"commands/harvest.js","files":["test/harvest-command.test.js"]}

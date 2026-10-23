@@ -117,6 +117,21 @@ function resolveTimezone({ tz, where }) {
   return 'America/Los_Angeles';
 }
 
+function parseWholeNumber(raw, min, max) {
+  if (raw === undefined || !/^\d+$/.test(String(raw).trim())) return null;
+  const n = parseInt(raw, 10);
+  if (n < min || n > max) return null;
+  return n;
+}
+
+function requireWholeNumber(flag, raw, min, max) {
+  const n = parseWholeNumber(raw, min, max);
+  if (n === null) {
+    throw new Error(`${flag} needs a whole number from ${min} to ${max}, got: ${raw === undefined ? 'nothing' : raw}`);
+  }
+  return n;
+}
+
 function parseSetArgs(argv) {
   const opts = {
     wake: null,
@@ -138,10 +153,10 @@ function parseSetArgs(argv) {
     else if (a === '--tz') opts.tz = argv[++i];
     else if (a === '--where') opts.where = argv[++i];
     else if (a === '--days') opts.days = argv[++i];
-    else if (a === '--slot-minutes') opts.slotMinutes = parseInt(argv[++i], 10);
-    else if (a === '--window-days') opts.windowDays = parseInt(argv[++i], 10);
+    else if (a === '--slot-minutes') opts.slotMinutes = requireWholeNumber(a, argv[++i], 5, 480);
+    else if (a === '--window-days') opts.windowDays = requireWholeNumber(a, argv[++i], 1, 365);
     else if (a === '--help' || a === '-h') return { help: true };
-    else throw new Error(`unknown arg: ${a}`);
+    else throw new Error(`atris avail set does not take "${a}". Run: atris avail --help`);
   }
   if (opts.wake == null || opts.sleep == null) {
     throw new Error('--wake and --sleep are required (e.g. --wake 2:30pm --sleep 9pm)');
@@ -287,18 +302,30 @@ async function setAvail(argv) {
   return 0;
 }
 
+function parseSlotsDays(raw) {
+  return parseWholeNumber(raw, 1, 365);
+}
+
 async function slotsAvail(argv) {
   const opts = { days: 7, username: null, json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
-    else if (a === '--days') opts.days = parseInt(argv[++i], 10);
+    else if (a === '--days') {
+      const raw = argv[++i];
+      const days = parseSlotsDays(raw);
+      if (days === null) {
+        console.error(`--days needs a whole number from 1 to 365, got: ${raw === undefined ? 'nothing' : raw}`);
+        return 1;
+      }
+      opts.days = days;
+    }
     else if (a === '--user' || a === '--username') opts.username = argv[++i];
     else if (a === '--help' || a === '-h') {
       printHelp();
       return 0;
     } else {
-      console.error(`unknown arg: ${a}`);
+      console.error(`atris avail slots does not take "${a}". Run: atris avail --help`);
       return 1;
     }
   }
@@ -320,7 +347,7 @@ async function slotsAvail(argv) {
   try {
     data = JSON.parse(result.body.toString('utf8'));
   } catch {
-    console.error('Invalid slots response');
+    console.error(`the booking server sent back a reply atris could not read (HTTP ${result.status}). Try again in a minute.`);
     return 1;
   }
   if (result.status < 200 || result.status >= 300) {
@@ -392,7 +419,7 @@ async function availCommand(argv = []) {
   const sub = argv[0].toLowerCase();
   if (sub === 'set' || sub === 'update') return setAvail(argv.slice(1));
   if (sub === 'slots') return slotsAvail(argv.slice(1));
-  console.error(`Unknown subcommand: ${sub}`);
+  console.error(`atris avail does not know "${sub}". Use show, set, or slots.`);
   printHelp();
   return 1;
 }
@@ -402,6 +429,8 @@ module.exports = {
   formatBookingLink,
   parseTimeToDecimal,
   parseDaysArg,
+  parseSlotsDays,
+  parseSetArgs,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,

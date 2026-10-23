@@ -216,7 +216,7 @@ async function startHandler(over = {}) {
   const hosts = [];
   const handler = phone.createPhoneHandler({
     workspaceRoot: '/tmp/shop',
-    token: TOKEN,
+    token: over.token || TOKEN,
     hosts,
     tally,
     now: () => clock,
@@ -226,6 +226,7 @@ async function startHandler(over = {}) {
     snapshotTarget: () => () => { restored += 1; return true; },
     logPath: path.join(dir, 'gm-phone-actions.jsonl'),
     page: phonePage,
+    ...(over.makeBetDesk ? { makeBetDesk: log => over.makeBetDesk(log, dir) } : {}),
   });
   const server = http.createServer((q, s) => {
     handler(q, s).catch(() => { s.writeHead(500); s.end(); });
@@ -433,6 +434,331 @@ test('over http: all clear after five decisions, naming what still runs', async 
   assert.deepEqual(limit, []);
 });
 
+test('over http: an empty queue tap gets a question at once; the answer is saved through /bet/answer', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let ledgerFile = null;
+  // a writer that never finishes: the tap must not wait on it
+  const calls = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      ledgerFile = path.join(dir, 'gm-bets.jsonl');
+      // the writer reads the installs, then never finishes
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile, now: () => NOW, log, generate: (opts) => { calls.push(opts); opts.onBundle({ sources: { installs: { data: { last_week: 1511, week_before: 1640 } } } }); return new Promise(() => {}); }, generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) });
+    },
+  });
+  try {
+    assert.equal(calls.length, 1, 'the desk warms as soon as the server makes it');
+    const started = Date.now();
+    const tap = await h.call('POST', '/bet/think', { body: {} });
+    assert.ok(Date.now() - started < 1000);
+    assert.equal(tap.status, 200);
+    assert.equal(tap.json.kind, 'question');
+    assert.equal(tap.json.question.choices.length, 3);
+    // two parts: the question, and what is going on with why the answer matters
+    assert.deepEqual(Object.keys(tap.json.question), ['ask', 'line', 'choices']);
+    assert.equal(tap.json.question.line, 'installs dropped to 1,511 last week, down from 1,640.');
+    assert.equal(tap.json.question.ask, 'what matters most for this project this month?');
+    // same token, origin, and json checks as every other post
+    assert.equal((await h.call('POST', '/bet/answer', { token: 'nope', body: { choice: 'money' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { origin: 'http://evil.example', body: { choice: 'money' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'nope', card: tap.json.id } })).json.reason, 'bad_choice');
+    const answered = await h.call('POST', '/bet/answer', { body: { choice: 'money', card: tap.json.id } });
+    assert.equal(answered.status, 200);
+    assert.equal(answered.json.ack, 'got it: making money from it.');
+    assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(ledgerFile)), root).focus.label, 'making money from it');
+    assert.equal((await h.call('POST', '/bet/answer', { body: { choice: 'money', card: tap.json.id } })).status, 409, 'nothing on screen to answer now');
+    assert.equal(calls.length, 1, 'still the one generation in the background');
+  } finally {
+    await h.close();
+  }
+});
+
+test('over http: a choice card picks through /bet/pick with the same checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const titles = ['Write a getting started page for the phone', 'Record a two minute demo video for the readme'];
+  let n = 0;
+  const bet = title => ({ title, why_now: 'installs last week were 1,400.', expect: 'more people try it by nov 1.', target: { metric: 'installs', baseline: 1400, goal: 1700 }, metric_source: 'npm', verify: 'test -s docs/a.md', cost: 'about 2 hours', check_date: '2026-10-30', steps: [{ text: 'draft it', who: 'team', member: 'builder', public: false }, { text: 'publish it', who: 'you', public: true }] });
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, readTeam: () => null, generate: () => Promise.resolve(n < 2 ? { ok: true, bet: bet(titles[n++]) } : new Promise(() => {})), generateQuestion: () => new Promise(() => {}), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  try {
+    await new Promise(r => setTimeout(r, 30));
+    const tap = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(tap.json.kind, 'choice');
+    assert.deepEqual(tap.json.choice.options.map(o => o.title), titles);
+    assert.equal((await h.call('POST', '/bet/pick', { token: 'nope', body: { id: tap.json.choice.options[0].id } })).status, 403);
+    const picked = await h.call('POST', '/bet/pick', { body: { id: tap.json.choice.options[0].id } });
+    assert.deepEqual([picked.status, picked.json.kind, picked.json.bet.title], [200, 'bet', titles[0]]);
+    assert.equal((await h.call('POST', '/bet/pick', { body: { id: tap.json.choice.options[1].id } })).status, 409);
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: a choice card is big titles to tap, each with one plain line of why, and a pick opens the full card', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /if \(s\.kind === 'choice'\) \{ drawChoiceCard\(s\); return; \}/);
+  assert.match(script, /api\('\/bet\/pick', \{ id: o\.id \}\)\.then\(function \(r\) \{/);
+  assert.match(script, /turn\(r\);/);
+  assert.match(html, /\.option \.t \{[^}]*font-size: 20px;/);
+  assert.match(html, /\.option \.w \{[^}]*font-size: 17px;/);
+  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
+});
+
+test('page: the team table opens from the footer, one row per member, and a row opens a talk card', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(html, /<section class="team" id="team" hidden role="dialog" aria-label="the team">/);
+  assert.match(script, /getElementById\('working'\)\.addEventListener\('click', openTeam\)/);
+  assert.match(script, /api\('\/bet\/team'\)/);
+  // a real table with exactly these five columns, in this order
+  const cols = /var TEAM_COLUMNS = (\[[^\]]*\]);/.exec(script);
+  assert.ok(cols, 'the columns are named once');
+  assert.deepEqual(JSON.parse(cols[1].replace(/'/g, '"')), ['member', 'role', 'ovr', 'engine', 'status']);
+  assert.match(script, /el\('table', 'roster'\)/);
+  assert.match(script, /el\('th', TEAM_CELLS\[i\], name\)/);
+  // each cell goes in as text: the member, role, rating, model, and the status sentence
+  assert.match(script, /el\('button', null, r\.member\)/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'role', r\.role\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'ovr', r\.ovr\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'eng', r\.engine\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'st ' \+ r\.status\.replace\(\/ \/g, '-'\), r\.sentence\)\);/);
+  // the whole row opens the talk card, and the name is a button for the keyboard
+  assert.match(script, /tr\.addEventListener\('click', function \(\) \{ drawTalk\(r\); \}\);/);
+  // the talk card steers through the server
+  assert.match(script, /convo\(function \(body\) \{ body\.member = r\.member; return api\('\/bet\/steer', body\); \}/);
+  // Esc still steps back one layer: the talk card goes back to the team, the team closes
+  assert.match(script, /teamBack = openTeam;/);
+  assert.match(script, /if \(e\.key !== 'Escape' \|\| e\.isComposing \|\| teamBox\.hidden\) return;/);
+});
+
+test('page: the team table is divided, keeps its columns apart at phone width, and scrolls sideways instead of squashing', () => {
+  const html = phonePage('NONCE');
+  const rule = sel => {
+    const m = new RegExp(`\\n${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(html);
+    assert.ok(m, `no rule for ${sel}`);
+    return m[1];
+  };
+  // the box scrolls sideways; the table never gets narrower than its columns need
+  assert.match(rule('.team .grid'), /overflow-x: auto;/);
+  assert.match(rule('.team .grid'), /border: 1px solid var\(--line\);/);
+  assert.match(rule('.team table'), /min-width: 44rem;/);
+  assert.match(rule('.team table'), /border-spacing: 0;/);
+  // a line between every column and every row
+  assert.match(rule('.team th, .team td'), /border-right: 1px solid var\(--line\);/);
+  assert.match(rule('.team th, .team td'), /border-bottom: 1px solid var\(--line\);/);
+  // short cells stay on one line, the long ones keep a floor width
+  for (const sel of ['.team .who', '.team .ovr', '.team .eng', '.team th']) assert.match(rule(sel), /white-space: nowrap;/, sel);
+  assert.match(rule('.team .role'), /min-width: \d+rem;/);
+  assert.match(rule('.team td.st'), /min-width: \d+rem;/);
+  // the name column stays put while the rest scrolls under it
+  assert.match(rule('.team .who'), /position: sticky; left: 0;/);
+  // the laptop gets room for the table; the talk card stays narrow
+  assert.match(rule('.team .inner.wide'), /max-width: 64rem;/);
+  // same dark page: no glow, no shadow, no motion on the table
+  const team = [...html.matchAll(/\n(\.team[^{]*)\{([^}]*)\}/g)].map(m => m[2]).join('\n');
+  assert.doesNotMatch(team, /box-shadow|animation|transition|glow|filter/);
+});
+
+// finished plays for one member, the shape gm-season reads from the task list
+function seasonPlays(member, kinds) {
+  const out = [];
+  let i = 0;
+  for (const [kind, n] of Object.entries(kinds)) for (let k = 0; k < n; k += 1, i += 1) out.push({ event_id: `${member}-${i}`, task_id: `T${i}`, member, title: `job ${i}`, kind, at: NOW - (i + 1) * HOUR, claimed_at: NOW - (i + 2) * HOUR });
+  return out;
+}
+
+test('over http: the team table and a steer go through the same token and json checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## build\n- claude code, model: opus 5.5\n');
+  // installed tools come from the workspace's registry file, never this machine's PATH
+  const checked = new Date().toISOString();
+  const engines = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS).map(id => (id === 'claude' ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+  const ran = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, loadSeason: () => ({ outcomes: seasonPlays('builder', { landed: 4, dropped: 1 }), error: null }), runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true,"action":"member_steered"}' }; } }),
+  });
+  try {
+    assert.equal((await h.call('GET', '/bet/team', { token: 'nope' })).status, 403);
+    const team = await h.call('GET', `/bet/team?t=${TOKEN}`);
+    assert.deepEqual(team.json.rows, [{
+      member: 'builder',
+      role: 'builder',
+      ovr: '91',
+      engine: 'claude opus 5.5',
+      status: 'working',
+      sentence: 'working: write the try page, at it for 10 minutes',
+      on: 'Write the try page',
+      time: 'at it for 10 minutes',
+    }]);
+    assert.equal((await h.call('POST', '/bet/steer', { token: 'nope', body: { member: 'builder', text: 'hi' } })).status, 403);
+    const sent = await h.call('POST', '/bet/steer', { body: { member: 'builder', text: 'readme first' } });
+    assert.deepEqual([sent.status, sent.json.ack], [200, 'sent to builder.']);
+    assert.deepEqual(ran[0], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: readme first']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('phone link: the token is kept per workspace, private to this user, and reused until --new-link', { skip: process.platform === 'win32' }, () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-links-'));
+  const file = path.join(stateDir, 'gm-phone-links.json');
+  const first = phone.phoneToken('/ws/shop', { stateDir });
+  assert.match(first.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(first.reused, false);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'only this user can read it');
+  // a restart: the same link
+  assert.deepEqual(phone.phoneToken('/ws/shop', { stateDir }), { token: first.token, reused: true });
+  // another workspace gets its own
+  const other = phone.phoneToken('/ws/lab', { stateDir });
+  assert.notEqual(other.token, first.token);
+  assert.equal(phone.phoneToken('/ws/lab', { stateDir }).token, other.token);
+  // --new-link: a new token, saved, and the old one is gone
+  const rotated = phone.phoneToken('/ws/shop', { stateDir, rotate: true });
+  assert.notEqual(rotated.token, first.token);
+  assert.equal(rotated.reused, false);
+  assert.equal(phone.phoneToken('/ws/shop', { stateDir }).token, rotated.token);
+  assert.equal(phone.phoneToken('/ws/lab', { stateDir }).token, other.token, 'rotating one leaves the others');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  // a file loosened by hand is tightened again; a broken file just makes a new link
+  fs.chmodSync(file, 0o644);
+  phone.phoneToken('/ws/shop', { stateDir });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  fs.writeFileSync(file, 'not json');
+  const fresh = phone.phoneToken('/ws/shop', { stateDir });
+  assert.match(fresh.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(fresh.reused, false);
+  // a saved token that is not a real one is never reused
+  fs.writeFileSync(file, JSON.stringify({ '/ws/shop': { token: 'short' } }));
+  assert.notEqual(phone.phoneToken('/ws/shop', { stateDir }).token, 'short');
+});
+
+test('phone link: gm help names --new-link', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'commands', 'gm.js'), 'utf8');
+  assert.match(src, /--new-link\s+gm phone: make a new link; the old one stops working\./);
+  assert.match(src, /phone\.phoneToken\(workspaceRoot, \{ stateDir, rotate: hasExactFlag\(args, '--new-link'\) \}\)/);
+});
+
+test('page: every card has a quiet say-something line that opens into one box', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /function sayBox\(\) \{/);
+  assert.match(script, /var open = el\('button', 'quiet', 'or say something'\);/);
+  // on a card the line itself becomes the box, in its own spot
+  assert.match(script, /typeHere\(open, 'say something', 280, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\);/);
+  // the words hold as chosen while they are read; an answer or an instruction brings the next card
+  assert.match(script, /var heldAt = hold\(spot\);\n\s+reading\(spot\);\n\s+api\('\/bet\/say', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ think\(false, heldAt\); return; \}/);
+  // a question back takes the title's spot, its suggested replies one tap each where the answers were
+  assert.match(script, /var title = el\('h1', null, r\.stay \? r\.reply : \(r\.message \|\| 'that did not go through'\)\);\n\s+box\.appendChild\(title\);/);
+  // suggested replies to tap, only the ones the card does not already show
+  assert.match(script, /if \(r\.stay\) \(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{\n\s+if \(have\.indexOf\(String\(sug\)\.trim\(\)\.toLowerCase\(\)\) < 0\) act\.appendChild\(sayChoice\(sug, \{ text: sug \}\)\);/);
+  // starting a member that is not running takes a second tap, or keeps it as a note
+  assert.match(script, /act\.appendChild\(sayChoice\('start it', \{ text: said, confirm: true \}\)\);/);
+  assert.match(script, /act\.appendChild\(sayChoice\('keep it as a note instead', \{ text: said, note: true \}\)\);/);
+  // the talk card with one member keeps its own box: an ellipsis while it reads, the reply in place
+  assert.match(script, /input\.maxLength = 280;/);
+  assert.match(script, /reply\.textContent = '\u2026';/);
+  // a failed request reads like a refusal, so the box never hangs on the ellipsis
+  assert.match(script, /post\(body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok && !r\.stay\) \{ done\(r\.ack\); return; \}/);
+  // the conversation so far stays on the card, and suggested replies are one tap
+  assert.match(script, /drawThread\(r\.thread\.slice\(0, -1\)\);/);
+  assert.match(script, /\(r\.suggestions \|\| \[\]\)\.forEach\(function \(sug\) \{/);
+  assert.match(script, /if \(r\.stay\) \{ reply\.textContent = r\.reply;/);
+  // starting a member that is not running takes a second tap, or keeps it as a note
+  assert.match(script, /if \(r\.reason === 'needs_confirm'\) \{/);
+  assert.match(script, /el\('button', 'quiet', 'keep it as a note instead'\)/);
+  // editing the words clears the armed second tap, and the second tap sends what is in the box now
+  assert.match(script, /input\.addEventListener\('input', function \(\) \{ if \(pending\) disarm\(\); \}\);/);
+  assert.match(script, /if \(pending\) \{ disarm\(\); go\(\{ confirm: true \}\); return; \}/);
+  assert.match(script, /keep\.addEventListener\('click', function \(\) \{ disarm\(\); go\(\{ note: true \}\); \}\);/);
+  // on every kind of card
+  for (const fn of ['drawBetCard', 'drawJobCard', 'drawQuestionCard', 'drawChoiceCard']) {
+    const body = script.slice(script.indexOf(`function ${fn}(`), script.indexOf('\n  }\n', script.indexOf(`function ${fn}(`)));
+    assert.match(body, /box\.appendChild\(sayBox\(\)\);/, fn);
+  }
+});
+
+test('over http: say something goes through the same token and json checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) }),
+  });
+  try {
+    const shown = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal((await h.call('POST', '/bet/say', { token: 'nope', body: { text: 'hi' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/say', { origin: 'http://evil.example', body: { text: 'hi' } })).status, 403);
+    assert.equal((await h.call('POST', '/bet/say', { body: { text: 'x'.repeat(281) } })).json.reason, 'too_long');
+    const ok = await h.call('POST', '/bet/say', { body: { text: 'more people using it, in schools', card: shown.json.id } });
+    assert.deepEqual([ok.status, ok.json.ack], [200, 'got it: more people using it, in schools.']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: the weekly number card and the something-else answer are one tap each', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(script, /if \(s\.kind === 'report'\) \{ drawReportCard\(s\); return; \}/);
+  assert.match(script, /input\.type = 'number';/);
+  assert.match(script, /api\('\/bet\/report', \{ value: input\.value \}\)/);
+  // something else becomes the box in its own spot, and the words are read first
+  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\); return; \}/);
+  assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\)/);
+});
+
+test('over http: the weekly number goes through /bet/report with the same checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let dirSeen = null;
+  const h = await startHandler({
+    // something else is read first; the reader takes paying schools as the answer
+    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) }); },
+  });
+  try {
+    const q = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(q.json.question.ask, 'what number tells you this is going well?');
+    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools', card: q.json.id } });
+    assert.equal(named.json.ack, 'got it: paying schools.');
+    const r = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(r.json.kind, 'report');
+    assert.equal((await h.call('POST', '/bet/report', { token: 'nope', body: { value: 3 } })).status, 403);
+    const saved = await h.call('POST', '/bet/report', { body: { value: '3' } });
+    assert.deepEqual([saved.status, saved.json.ack], [200, 'saved: 3.']);
+    assert.deepEqual(gmBet.readScoreboard(gmBet.scoreboardPath(dirSeen), root).reports.map(x => x.value), [3]);
+  } finally {
+    await h.close();
+  }
+});
+
+test('phone link: a rotated link is dead at once in every running server', async () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-rot-'));
+  const first = phone.phoneToken('/tmp/shop', { stateDir }).token;
+  const h = await startHandler({ token: () => phone.readPhoneToken('/tmp/shop', { stateDir }) });
+  try {
+    assert.equal((await h.call('GET', '/state', { token: first })).status, 200);
+    const next = phone.phoneToken('/tmp/shop', { stateDir, rotate: true }).token;
+    assert.equal((await h.call('GET', '/state', { token: first })).status, 403, 'the old link is dead in the server already running');
+    assert.equal((await h.call('GET', '/state', { token: next })).status, 200, 'the new link works in it');
+    // no saved link: nothing gets in
+    fs.rmSync(path.join(stateDir, 'gm-phone-links.json'));
+    assert.equal((await h.call('GET', '/state', { token: next })).status, 403);
+  } finally {
+    await h.close();
+  }
+  const src = fs.readFileSync(path.join(__dirname, '..', 'commands', 'gm.js'), 'utf8');
+  assert.match(src, /token: \(\) => phone\.readPhoneToken\(workspaceRoot, \{ stateDir \}\)/);
+  assert.match(src, /the old link is dead now, even in a phone page that is still open\./);
+});
+
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
   const gmTarget = require('../lib/gm-target');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-target-'));
@@ -483,6 +809,102 @@ test('page: one accent, no em dashes, text goes in as text', () => {
   assert.match(html, /\.choice \{ width: 100%; min-height: 52px;/);
 });
 
+test('page: only the orb, its cards, and the working count; big type and no plumbing words', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // the old decision sheet is gone from the phone: no only-you link, no review asks, no target strip
+  for (const gone of ['open-only', 'id="sheet"', 'only you', "'/state'", "'/action'", 'toast', 'oldest', 'target']) assert.equal(html.includes(gone), false, gone);
+  // the footer is one link: the working count, or the team when nothing runs
+  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button><\/div>/);
+  // no small text anywhere on the page
+  const sizes = [...html.matchAll(/font-size: (\d+)px/g)].map(m => Number(m[1]));
+  assert.ok(sizes.length > 3);
+  assert.ok(sizes.every(n => n >= 17), `font sizes ${sizes.join(', ')}`);
+  // the words an owner never needs to read: none anywhere in the page, and
+  // no sentence the page writes says check or test
+  assert.doesNotMatch(html, /receipt|review|proof|running_for/i);
+  const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
+  assert.ok(copy.length > 10);
+  for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
+});
+
+test('page: an answer is a conversation that keeps going: the reply holds, then the next card comes on its own', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // the tapped answer holds as chosen while it saves, and the next card is asked for during the hold
+  assert.match(script, /answer\(b, \{ choice: c\.id \}\);/);
+  assert.match(script, /var heldAt = hold\(spot\);\n\s+api\('\/bet\/answer', body\)\.catch\(offline\)\.then\(function \(r\) \{\n\s+if \(r\.ok\) \{ think\(false, heldAt\); return; \}/);
+  // if it does not go through, why takes the hint's line under the answers, and nothing moves
+  assert.match(script, /if \(hint\) hint\.textContent = r\.message \|\| 'that did not go through';/);
+  // a yes or a nice still shows its thanks, and moveOn taps the orb after AFTER_MS
+  assert.match(script, /function moveOn\(ack\) \{[\s\S]*?setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
+  assert.match(script, /var AFTER_MS = 1500;/);
+  // a question with no fact shows on its own
+  assert.match(script, /if \(q\.line\) box\.appendChild\(el\('p', 'why', q\.line\)\);/);
+});
+
+test('page: the idle orb answers the pointer like the landing orb, and only the pointer', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  // StippleOrb's constants, copied: dots within RADIUS are pushed out by PUSH,
+  // then spring home; the ripple runs out from where the pointer came in
+  assert.deepEqual(['RADIUS', 'PUSH', 'SPRING', 'DAMP', 'WAVE_SPEED', 'WAVE_WIDTH', 'WAVE_LIFE'].map(num), [90, 14, 0.07, 0.8, 620, 70, 1.6]);
+  // the push only in the idle sphere, never under reduced motion
+  assert.match(script, /if \(mode === 'idle'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
+  assert.match(script, /if \(pointer\.inside && !reduced\) \{/);
+  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2;/);
+  // the light eases toward the pointer anywhere on the page (trackWindow), as on the landing page
+  assert.match(script, /light\.x \+= \(light\.tx - light\.x\) \* 0\.06;/);
+  assert.match(script, /var reach = Math\.max\(280, window\.innerWidth \* 0\.4\);/);
+  assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
+  // the ripple starts where the pointer enters the orb
+  assert.match(script, /canvas\.addEventListener\('pointerenter', function \(e\) \{/);
+  // pointer events go through to the dots on touch too; a tap on the big orb
+  // still thinks, and the small one on a card goes back to it
+  assert.match(html, /\.stage canvas \{[^}]*touch-action: none;/);
+  assert.match(script, /\[\[canvas, tapBig\], \[lavaTap, tapSmallOrb\]\]/);
+  assert.match(script, /pair\[0\]\.addEventListener\('click', pair\[1\]\);/);
+  // still no loop of its own: no new keyframes, and the tap timings are untouched
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  assert.deepEqual(['GROW_MS', 'SETTLE_MS', 'LEAVE_MS', 'GLIDE_MS', 'BEAT_MS', 'FAST_GROW_MS', 'FAST_SETTLE_MS', 'FAST'].map(num), [1050, 900, 400, 520, 340, 460, 440, 0.4]);
+});
+
+test('page: card to card is one calm turn in place: crossfade, a small drift, the box eases its height, the orb stays still', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  // short and soft: one crossfade with a small drift, well under half a second
+  assert.equal(num('TURN_IN_MS'), 320);
+  assert.equal(num('DRIFT'), 4);
+  assert.ok(80 + num('TURN_IN_MS') < 500, 'a turn is well under half a second');
+  // a tap with a card up turns in place; the orb melt is only for leaving to the sphere
+  assert.match(script, /var onCard = document\.body\.classList\.contains\('has-card'\);/);
+  assert.match(script, /if \(onCard && isCard\(s\)\) \{ turn\(s\); return; \}/);
+  assert.match(script, /if \(onCard\) \{ dissolve\(function \(\) \{ reveal\(s, true\); \}\); return; \}/);
+  // the box holds its height while the old card leaves, then eases to the new one
+  assert.match(script, /box\.style\.height = from \+ 'px';/);
+  assert.match(script, /box\.style\.height = to \+ 'px';/);
+  // picking from a choice holds as chosen, then is a turn too
+  assert.match(script, /if \(r\.http === 200 && r\.bet\) \{ afterHold\(heldAt\)\.then\(function \(\) \{ turn\(r\); \}\); return; \}/);
+  // the transitions: opacity, a small transform, and height; no new loops.
+  // the new card starts 80ms into the old one's fade, and height eases in
+  // and out, so no single frame moves far
+  assert.match(html, /\.bet\.turning \{ overflow: hidden; transition: opacity 0\.32s ease-out 0\.08s, transform 0\.32s cubic-bezier\(0\.22, 1, 0\.36, 1\) 0\.08s, height 0\.36s cubic-bezier\(0\.4, 0, 0\.2, 1\); \}/);
+  assert.match(html, /\.bet\.ghost\.gone \{ opacity: 0; \}/);
+  // the still copy sits exactly over the card, measured to the subpixel
+  assert.match(script, /ghost\.style\.top = \(r\.top - p\.top\) \+ 'px';/);
+  // the reply after a yes or a nice keeps the card's height until the turn eases it
+  assert.match(script, /function moveOn\(ack\) \{\n\s+var box = document\.getElementById\('bet'\);\n\s+box\.style\.minHeight = box\.offsetHeight \+ 'px';/);
+  assert.match(script, /var from = box\.offsetHeight;\n\s+box\.style\.height = from \+ 'px';\n\s+box\.style\.minHeight = '';/);
+  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  // reduced motion: the new card simply takes the old one's place
+  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; draw\(\); bet\.busy = false; measured\(\); return; \}/);
+  // leaving to the sphere clears the height lock too
+  assert.match(script, /var swap = function \(\) \{\n\s+box\.style\.minHeight = '';/);
+});
+
 test('page: a tap on a card fades it, glides home to the sphere, and the fast bloom stays contained', () => {
   const html = phonePage('NONCE');
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
@@ -509,4 +931,521 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   const total = num('GLIDE_MS') + num('BEAT_MS') + pull + num('FAST_GROW_MS') + num('FAST_SETTLE_MS') + 120;
   // unhurried but never a wait: about two seconds
   assert.ok(total >= 1800 && total <= 2500, `fast re-tap budget ${total}ms`);
+});
+
+// ---- typing on a card is a dialogue box: the eyes stay in one place ------------------
+
+const trace = require('../scripts/gm-phone-trace');
+const CHROME = trace.findChrome();
+
+test('browser: the tapped spot becomes the field, holds as chosen, and the next title lands where the old one was', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.trace({ chromePath: CHROME });
+  assert.equal(out.failed, null, JSON.stringify(out.stretches));
+  const [typed, said, suggestion, idea] = out.stretches;
+  const show = s => JSON.stringify(s);
+  // one: "something else" turns into the field at the same size and spot, the
+  // cursor already in it; the other answers dim and stay put
+  assert.deepEqual(typed.field_vs_button_px, { moved: 0, resized: 0 }, show(typed));
+  assert.equal(typed.cursor_in_field, true);
+  assert.ok(typed.others_dimmed_to < 0.6, show(typed));
+  // "or say something" does the same in its own spot, at the same height
+  assert.deepEqual(said.field_vs_button_px, { center_moved: 0, height_change: 0 }, show(said));
+  assert.equal(said.cursor_in_field, true);
+  for (const s of [typed, said, suggestion, idea]) {
+    // two and four: the typed words or the tapped answer hold in that spot,
+    // styled as chosen, for about 400ms, and nothing else on the card moves
+    assert.equal(s.held_as_chosen, true, show(s));
+    assert.equal(s.held_moved_px, 0, show(s));
+    assert.equal(s.others_moved_px, 0, show(s));
+    assert.ok(s.hold_ms >= 380 && s.hold_ms <= 1500, show(s));
+    // three: the next card crossfades in with its title where the old title was,
+    // under a still copy of the old card fading in the very same spot
+    assert.ok(s.ghost_title_px !== null && s.ghost_title_px <= 1, show(s));
+    assert.ok(s.title_max_px <= 5, show(s));
+    assert.equal(s.title_rest_px, 0, show(s));
+    assert.ok(s.largest_frame_step_px <= 5, show(s));
+  }
+  for (const s of [suggestion, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
+  // a reply instead of a card: it takes the title's spot, its suggested
+  // replies sit where the answers were
+  assert.equal(said.next_title, trace.REPLY);
+  assert.deepEqual(said.suggestions.slice(0, 2), ['sounds good', 'make it shorter']);
+  // the answer to the next card, or the reply, fully in: the hold, then one crossfade
+  for (const s of [typed, said, suggestion, idea]) assert.ok(s.reveal_ms >= 400 && s.reveal_ms < 1500, show(s));
+});
+
+test('page: an answer holds for HOLD_MS, then one crossfade; tap to card stays about two seconds', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  assert.equal(num('HOLD_MS'), 400);
+  // answer to next card: the hold, then the new card fades in after a short overlap
+  const answerToCard = num('HOLD_MS') + num('TURN_IN_MS') + 80;
+  assert.ok(answerToCard <= 900, `answer to card ${answerToCard}ms`);
+  // the old one waited AFTER_MS on a line of thanks first; that wait is only for yes and nice now
+  assert.ok(answerToCard < num('AFTER_MS'));
+  // the next card is asked for while the answer holds, never after it
+  assert.match(script, /Promise\.all\(\[api\('\/bet\/think', \{ sharper: Boolean\(sharper\) \}\), afterHold\(heldAt\)\]\)/);
+  // no second box: the old something-else box and the card say box are gone
+  assert.doesNotMatch(script, /function ownAnswer\(|function sayConvo\(/);
+  // the field takes the tapped button's own height to the subpixel, so nothing under it moves
+  assert.match(script, /field\.style\.height = btn\.getBoundingClientRect\(\)\.height \+ 'px';/);
+  // a crossfade, not out then in: the old card is a still copy fading over the new one
+  assert.match(html, /\.bet\.ghost \{ position: absolute;/);
+  assert.equal(num('DRIFT'), 4);
+  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
+});
+
+// ---- Esc on the team page: one layer back per press -------------------------------
+
+test('page: Esc on the team page goes back the way its own buttons do, and only while it shows', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  // one close path: the close button and Esc both run closeTeam
+  assert.match(script, /function closeTeam\(\) \{ teamBox\.hidden = true; \}/);
+  assert.match(script, /close\.addEventListener\('click', closeTeam\);/);
+  // a talk card's way back is its back button's own
+  assert.match(script, /back\.addEventListener\('click', openTeam\);/);
+  assert.match(script, /teamBack = openTeam;/);
+  // one listener for the whole page, quiet unless the team page shows
+  assert.match(script, /document\.addEventListener\('keydown', function \(e\) \{\n\s*if \(e\.key !== 'Escape' \|\| e\.isComposing \|\| teamBox\.hidden\) return;/);
+});
+
+test('browser: Esc cancels the typing, then steps back one layer at a time, and does nothing on the card', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const { steps } = await trace.escapeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(steps, null, 1);
+  const at = did => {
+    const s = steps.find(x => x.did === did);
+    assert.ok(s, `no step ${did}: ${show}`);
+    const { did: _, ...rest } = s;
+    return rest;
+  };
+  const card = at('the card');
+  assert.equal(card.team_open, false, show);
+  assert.ok(card.card_title, show);
+  // on the plain card Esc does nothing at all
+  assert.deepEqual(at('esc on the card'), card, show);
+  // the team opens over the card; a row opens the talk card; the words arm a second tap
+  assert.equal(at('tapped the team').team_title, 'the team', show);
+  assert.equal(at('tapped the team').rows, 1, show);
+  const typing = at('typing to builder');
+  assert.equal(typing.team_title, 'builder', show);
+  assert.equal(typing.typing, true, show);
+  assert.equal(typing.field_words, 'take the readme first', show);
+  assert.equal(typing.send_says, 'tap again', show);
+  // one: the words are cancelled and the cursor leaves; the talk card stays and the armed tap is gone
+  const one = at('esc 1');
+  assert.deepEqual([one.team_open, one.team_title, one.field_words, one.typing, one.send_says], [true, 'builder', '', false, 'send'], show);
+  // two: the talk card on top closes, back to the team
+  const two = at('esc 2');
+  assert.deepEqual([two.team_open, two.team_title, two.rows, two.field_words], [true, 'the team', 1, null], show);
+  // three: the team closes, the card under it as it was
+  assert.deepEqual(at('esc 3'), card, show);
+  // four: on the card again, nothing
+  assert.deepEqual(at('esc 4'), card, show);
+});
+
+// ---- an answer goes to the question on screen, or nowhere ---------------------------
+
+test('over http: an answer and a say name the card on screen; a page that missed the next card saves nothing', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  // written questions reuse answer ids: a2 is small teams on one, fewer mistakes on the next
+  const list = [
+    { ask: 'who uses the phone page most?', fact: 'the phone page went live this week.', choices: ['solo founders', 'small teams'] },
+    { ask: 'what would make a small team pay?', fact: 'installs dropped to 1,511 last week.', choices: ['saving them hours', 'fewer mistakes'] },
+  ];
+  let n = 0;
+  let dirSeen = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      dirSeen = dir;
+      return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => Promise.resolve(list[n] ? { ok: true, question: list[n++] } : { ok: false, reason: 'no more' }), readSaid: async () => ({ ok: true, kind: 'answer', reply: '' }), runCli: async () => ({ code: 0, stdout: '{}' }) });
+    },
+  });
+  const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
+  const answers = () => Object.values(gmBet.readFocus(gmBet.focusPath(dirSeen), root)).map(r => `${r.ask} ${r.label}`);
+  try {
+    await settle();
+    const first = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(first.json.question.ask, list[0].ask);
+    const saved = await h.call('POST', '/bet/answer', { body: { choice: 'a2', card: first.json.id } });
+    assert.equal(saved.json.ack, 'got it: small teams.');
+    await settle();
+    // the desk moves to the next question, but the page never hears back
+    const next = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(next.json.question.ask, list[1].ask);
+    // small teams tapped again on the old card: a2 on this question is fewer mistakes
+    const stale = await h.call('POST', '/bet/answer', { body: { choice: 'a2', card: first.json.id } });
+    assert.deepEqual([stale.status, stale.json.reason], [409, 'gone']);
+    // a post that names no card saves nothing either
+    assert.deepEqual([(await h.call('POST', '/bet/answer', { body: { choice: 'a2' } })).json.reason], ['gone']);
+    // words said on the old card are not read as an answer to this one
+    const said = await h.call('POST', '/bet/say', { body: { text: 'fewer mistakes', card: first.json.id } });
+    assert.deepEqual([said.status, said.json.reason], [409, 'gone']);
+    assert.deepEqual(answers(), ['who uses the phone page most? small teams']);
+    // the card on screen still takes its answer
+    const right = await h.call('POST', '/bet/answer', { body: { choice: 'a1', card: next.json.id } });
+    assert.equal(right.json.ack, 'got it: saving them hours.');
+    assert.deepEqual(answers(), ['who uses the phone page most? small teams', 'what would make a small team pay? saving them hours']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+    const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
+    const at = out.viewport;
+    const look = out.look;
+    assert.ok(look, `${at}: the table shows`);
+    assert.deepEqual(look.heads, ['member', 'role', 'ovr', 'engine', 'status'], at);
+    assert.equal(look.rows, 5, at);
+    // a line between every pair of columns and every pair of rows
+    assert.deepEqual([look.lines.missing_right, look.lines.missing_bottom], [0, 0], at);
+    assert.deepEqual([look.lines.inner_right, look.lines.inner_bottom], [20, 20], at);
+    // no words spill out of a cell, and names, ratings, and models stay on one line
+    assert.deepEqual(look.spills, [], at);
+    assert.deepEqual(look.wrapped, [], at);
+    assert.ok(look.narrowest.status >= 250, `${at}: the status column keeps its width (${look.narrowest.status}px)`);
+    assert.ok(look.narrowest.role >= 140, `${at}: the role column keeps its width (${look.narrowest.role}px)`);
+    // the page itself never scrolls sideways; only the table box does, and only on the phone
+    assert.equal(look.page_scrolls_sideways, false, at);
+    assert.equal(look.scrolls_sideways, at === '390x844', at);
+    assert.equal(look.name_column_moved_px, 0, `${at}: the name column stays put`);
+    assert.ok(look.smallest_font_px >= 17, at);
+    assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
+    // the two dots show as they are, and the status is one lowercase sentence
+    assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);
+    // a tap on a row opens that member's talk card; Esc goes back to the table, then closes it
+    assert.deepEqual([out.talk.title, out.talk.table], ['builder', false], at);
+    assert.equal(out.talk.said, 'working: launch a try page for any public repo, about 4 hours left.', at);
+    assert.deepEqual([out.back.open, out.back.title, out.back.table], [true, 'the team', true], at);
+    assert.equal(out.closed.open, false, at);
+  }
+});
+
+test('browser: after a lost next card, a tap on the old answer names the old card and saves nothing', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.staleAnswerTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the answer saved, the next card was made, and the page never got it
+  assert.equal(out.title_after_lost, 'who uses the phone page most?', show);
+  // both taps name the card the owner sees
+  assert.deepEqual(out.posts, [{ choice: 'a2', card: 'question:q1' }, { choice: 'a2', card: 'question:q1' }], show);
+  // only the answer to the question on screen is saved; fewer mistakes never is
+  assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
+  // the owner is told, in the line under the answers
+  assert.equal(out.hint, 'that card changed, so nothing was saved. tap the orb for the new one', show);
+});
+
+// ---- words that did not send stay in the box ----------------------------------------
+
+test('browser: say something that does not send keeps the words and the cursor in the box, and Enter tries again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.unsentSayTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  const kept = { field_open: true, words: out.words, cursor_in_field: true, held: false, title: 'Write a getting started page for the phone' };
+  // the network is off: the box stays, the words and the cursor in it, and a line says it did not send
+  assert.deepEqual(out.offline, { ...kept, line: 'that did not send. tap send to try again' }, show);
+  // Enter again reaches the desk, which could not pass it on: the same, with why
+  assert.deepEqual(out.refused, { ...kept, line: 'it did not reach them. try again in a minute.' }, show);
+  // Enter once more goes through: the next card turns in
+  assert.equal(out.sent.title, 'Record a two minute demo video', show);
+  // the desk got the same words twice, both naming the card on screen
+  assert.deepEqual(out.calls, [{ text: out.words, card: 'b1' }, { text: out.words, card: 'b1' }], show);
+});
+
+// ---- an explanation keeps the card's own answer ------------------------------------
+
+test('browser: what do you mean on a do it or a yes card: the reply comes and the button stays and still works', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.replyKeepsActionTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    // the suggested replies, the card's own button, and the say line, all there
+    for (const b of ['sounds good', 'make it shorter', r.label, 'or say something']) assert.ok(r.after_reply.includes(b), `${r.card}: ${b} missing: ${show}`);
+    // two taps on it act on that card
+    assert.equal(r.error, null, show);
+    assert.deepEqual(r.did, [r.label], show);
+  }
+});
+
+// ---- a send that went through is never sent twice -----------------------------------
+
+test('over http: a typed send carries its own id; a repeat of one that went through gets the first answer and sends nothing', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const steers = [];
+  let fail = false;
+  let desk = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      desk = gmBet.createBetDesk({
+        workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false,
+        readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+        generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+        readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }),
+        runCli: async (args) => { steers.push(String(args[args.length - 1]).replace(/^the owner says: /, '')); return fail ? { code: 1, stdout: '{}' } : { code: 0, stdout: JSON.stringify({ action: 'member_steered' }) }; },
+      });
+      return desk;
+    },
+  });
+  try {
+    desk.state.status = 'ready';
+    desk.state.current = { kind: 'done', id: 'done:intro', job: { owner: 'builder', title: 'Write the intro', bet: { expect: 'more people finish setup.' } } };
+    const say = body => h.call('POST', '/bet/say', { body: { card: 'done:intro', ...body } });
+    // it reaches builder; the reply is lost and the phone sends the same words, same id
+    const first = await say({ text: 'add the short demo too', send: 'k1a2b3c4' });
+    assert.deepEqual([first.status, first.json.ack], [200, 'sent to builder.']);
+    const again = await say({ text: 'add the short demo too', send: 'k1a2b3c4' });
+    assert.deepEqual([again.status, again.json], [200, first.json]);
+    assert.deepEqual(steers, ['add the short demo too'], 'builder heard it once');
+    // new words are a new send
+    assert.equal((await say({ text: 'and the twelve schools', send: 'k9z8y7x6' })).status, 200);
+    assert.deepEqual(steers, ['add the short demo too', 'and the twelve schools']);
+    // a send that did nothing is tried again on a retry with the same id
+    fail = true;
+    assert.equal((await say({ text: 'one more thing', send: 'm5n6o7p8' })).json.ok, false);
+    fail = false;
+    assert.equal((await say({ text: 'one more thing', send: 'm5n6o7p8' })).json.ack, 'sent to builder.');
+    assert.deepEqual(steers.slice(2), ['one more thing', 'one more thing'], 'the failed one, then the retry that went through');
+  } finally {
+    await h.close();
+  }
+});
+
+test('browser: a send whose reply was lost goes again with the same id and reaches the desk once; new words get a new id', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.lostReplyTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the reply was lost: the words stayed in the box for Enter
+  assert.equal(out.kept, out.words, show);
+  assert.equal(out.posts.length, 3, show);
+  const [first, retry, fresh] = out.posts;
+  assert.match(String(first.send), /^[a-z0-9]{8,32}$/, show);
+  assert.equal(retry.send, first.send, show);
+  assert.notEqual(fresh.send, first.send, show);
+  // the desk took each set of words once
+  assert.deepEqual(out.took, [out.words, out.new_words], show);
+});
+
+// ---- a word to a teammate that did not send comes back, ready to send again ----------
+
+test('browser: a word to a teammate that did not send keeps the words, send works again, a line says so, and a retry reaches them once', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.talkFailTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  const back = { words: out.words, send_works: true, line: 'that did not send. tap send to try again', done: null };
+  // the network is off: nothing left the phone
+  assert.deepEqual(out.offline, back, show);
+  // it reached builder, but the reply was lost: the same
+  assert.deepEqual(out.lost, back, show);
+  // Enter once more: the first answer comes back, and builder is not told twice
+  assert.equal(out.sent.done, 'builder has it.', show);
+  assert.deepEqual(out.took, [out.words], show);
+  // every try of the same words carried the same id
+  assert.equal(out.posts.length, 3, show);
+  assert.match(String(out.posts[0].send), /^[a-z0-9]{8,32}$/, show);
+  for (const post of out.posts) assert.deepEqual([post.text, post.send], [out.words, out.posts[0].send], show);
+});
+
+// ---- a start that did not get going comes back to do it ----------------------------
+
+test('browser: after an explanation, a do it that did not get going brings the card back with do it and one line, and a retry starts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.startFailTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // never stuck on starting now: the idea is back, do it and all, with why
+  assert.equal(out.failed.starting, false, show);
+  assert.equal(out.failed.title, 'Write a getting started page for the phone', show);
+  assert.ok(out.failed.buttons.includes('do it'), show);
+  assert.equal(out.failed.line, 'it did not get going. try again in a minute.', show);
+  // two taps on do it again reach the desk again
+  assert.equal(out.error, null, show);
+  assert.equal(out.starts, 2, show);
+});
+
+// ---- the small orb on a card goes back to the big one ------------------------------
+
+test('browser: the small orb on a card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.orbHomeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  const [idea, calm] = runs;
+  for (const r of runs) {
+    // the card goes, the big orb is back with its line, and nothing new was asked for
+    assert.deepEqual(r.home, { has_card: false, big_orb: true, line: 'tap to think', title: null, asked: 0 }, show);
+  }
+  // from an idea: the big orb's tap asks for the next card, the same as on page open
+  assert.deepEqual([idea.tapped.has_card, idea.tapped.title, idea.tapped.asked], [true, 'Record a two minute demo video', 1], show);
+  // from the calm line: the idea that landed waits on the big orb, then the tap brings that idea, not one past it
+  assert.deepEqual([calm.stayed.has_card, calm.stayed.asked], [false, 0], show);
+  assert.deepEqual([calm.tapped.has_card, calm.tapped.title, calm.tapped.asked], [true, 'Write a getting started page for the phone', 1], show);
+});
+
+// ---- typing on the calm line: the idea waits for the owner -------------------------
+
+test('browser: on the calm line the owner types, the idea lands and waits; it comes in after they send, or after they clear the box and leave it', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const gmBet = require('../lib/gm-bet');
+  const IDEA = {
+    title: 'Write a getting started page for atris gm phone with a 30 second screen recording',
+    why_now: 'installs last week were 1,400 and the phone page just went live, so new installs have nothing to try first.',
+    expect: '300 more npm installs in the week before nov 1',
+    target: { metric: 'installs', baseline: 1400, goal: 1700 },
+    check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
+    steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
+  };
+  const WORDS = 'make it about schools';
+  const runs = [];
+  for (const end of ['send', 'clear']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+    const writing = [];
+    const said = [];
+    const desk = gmBet.createBetDesk({
+      workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false,
+      readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+      generate: () => new Promise(resolve => writing.push(resolve)),
+      generateQuestion: () => new Promise(() => {}),
+      readSaid: async (p) => { said.push(p); return { ok: true, kind: 'instruction', reply: '' }; },
+      runCli: async () => ({ code: 0, stdout: '{}' }),
+    });
+    // the one generic question is answered, so a tap with nothing ready is the calm line
+    desk.next();
+    desk.answer({ choice: 'money' });
+    assert.equal(desk.next().kind, 'wait');
+    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+      const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null }; })()");
+      const calm = await look();
+      await p.tap('#bet .sayline .quiet');
+      await new Promise(r => setTimeout(r, 250));
+      await p.type(WORDS);
+      // the idea is written while the owner types
+      writing.shift()({ ok: true, bet: IDEA });
+      await new Promise(r => setTimeout(r, 3500));
+      const typing = await look();
+      if (end === 'send') await p.enter();
+      else await p.run("(function () { var i = document.querySelector('#bet .field input'); if (i) { i.value = ''; i.blur(); } })()");
+      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(IDEA.title)}`, 'the idea', 8000).catch(() => {});
+      await new Promise(r => setTimeout(r, 400));
+      return { end, calm, typing, after: await look(), said: said.length };
+    }));
+  }
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    assert.equal(r.calm.title, 'writing your next idea.', show);
+    // the idea landed while the owner typed: the words and the calm line stay
+    assert.deepEqual(r.typing, { title: 'writing your next idea.', words: WORDS }, show);
+    // then it comes in
+    assert.equal(r.after.title, IDEA.title, show);
+  }
+  // sent: the words reached the desk first
+  assert.equal(runs[0].said, 1, show);
+});
+
+// ---- the number question and the weekly number card read first ---------------------
+
+test('over http: "what" typed into something else on the number question is read first: explained, nothing saved; a real name is saved', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  let reading = { ok: true, kind: 'unclear', reply: 'i am asking which number tells you this project is going well, like weekly installs or paying schools.' };
+  let dirSeen = null;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => { dirSeen = dir; return gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, scoreboard: true, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => reading, runCli: async () => ({ code: 0, stdout: '{}' }) }); },
+  });
+  const board = () => gmBet.readScoreboard(gmBet.scoreboardPath(dirSeen), root);
+  try {
+    const q = await h.call('POST', '/bet/think', { body: {} });
+    assert.equal(q.json.question.ask, 'what number tells you this is going well?');
+    // the owner was confused and typed "what" into something else, exactly as it happened
+    const what = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'what', card: q.json.id } });
+    assert.deepEqual([what.status, what.json.stay, what.json.reply], [200, true, reading.reply]);
+    assert.equal(board(), null, 'nothing was saved as the number');
+    // the same box with a real number in it is saved, as before
+    reading = { ok: true, kind: 'answer', reply: '' };
+    const named = await h.call('POST', '/bet/answer', { body: { choice: 'other', text: 'paying schools', card: q.json.id } });
+    assert.equal(named.json.ack, 'got it: paying schools.');
+    assert.equal(board().name, 'paying schools');
+  } finally {
+    await h.close();
+  }
+});
+
+test('page: something else on the number question goes through say, with no second box; the weekly number card has say something and not now', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  // something else is read first, like say something
+  assert.match(script, /if \(c\.other\) \{ typeHere\(b, c\.label, 60, function \(text, field\) \{ say\(field, \{ text: text \}\); \}\); return; \}/);
+  assert.doesNotMatch(script, /answer\(field, \{ choice: 'other'/);
+  // a question with its own something else box has no or say something under it
+  assert.match(script, /if \(!q\.choices\.some\(function \(c\) \{ return c\.other; \}\)\) box\.appendChild\(sayBox\(\)\);/);
+  // the weekly number card: a quiet not now that moves on without saving, and say something
+  const report = script.slice(script.indexOf('function drawReportCard('), script.indexOf('function convo('));
+  assert.match(report, /el\('button', null, 'not now'\)/);
+  assert.match(report, /think\(false, 0\)/);
+  assert.match(report, /box\.appendChild\(sayBox\(\)\);/);
+});
+
+// ---- the card is the conversation -------------------------------------------------
+
+test('browser: a two-turn chat on the number question: one place to type, the turns kept, the choices once, one ellipsis, a long reply at body size, and the owner is you', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  const LONG = "I'm asking which number would tell you the overnight work is going well. Pick one of the four buttons, or tell me another number you'd watch.";
+  const seen = [];
+  const desk = gmBet.createBetDesk({
+    workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false, scoreboard: true, ownerName: 'Keshav',
+    generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+    suggestScoreboard: async () => ({ ok: true, choices: [{ name: 'weekly installs', up: true }, { name: 'first runs that finished a recap', up: true }, { name: 'overnight changes Keshav redid', up: false }] }),
+    // a slow reader that, like the live one, offers the card's own choices back
+    readSaid: async (opts) => {
+      seen.push(opts.thread.map(t => t.text));
+      await new Promise(r => setTimeout(r, 1500));
+      return { ok: true, kind: 'question', reply: LONG, suggestions: ['weekly installs', 'first runs that finished a recap', 'overnight changes you redid', 'paying schools'] };
+    },
+    runCli: async () => ({ code: 0, stdout: '{}' }),
+  });
+  desk.warm();
+  for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+  assert.equal(desk.next().id, 'question:scoreboard');
+  const out = await trace.onPhone(desk, CHROME, async (p) => {
+    const look = () => p.run(`(function () {
+      var box = document.getElementById('bet'), h = box.querySelector('h1');
+      return {
+        title: h.textContent, title_top: Math.round(h.getBoundingClientRect().top), title_px: getComputedStyle(h).fontSize,
+        buttons: Array.prototype.map.call(box.querySelectorAll('button'), function (b) { return b.textContent; }),
+        // something else (or the box it becomes while it is read), or the say line
+        places_to_type: box.querySelectorAll('.other, .act .field, .sayline').length,
+        ellipses: (box.innerText.match(/\\u2026/g) || []).length,
+      };
+    })()`);
+    const chat = async (words) => {
+      await p.run("Array.prototype.find.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === 'something else'; }).click()");
+      await new Promise(r => setTimeout(r, 300));
+      await p.type(words);
+      await p.enter();
+      await new Promise(r => setTimeout(r, 700));
+      const loading = await look();
+      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(LONG)} && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('holding')`, 'the reply', 6000);
+      await new Promise(r => setTimeout(r, 300));
+      return { loading, reply: await look() };
+    };
+    const before = await look();
+    const one = await chat('what');
+    const two = await chat('which one is best?');
+    return { before, one, two, why_px: await p.run("(function () { var n = document.createElement('p'); n.className = 'why'; document.getElementById('bet').appendChild(n); var px = getComputedStyle(n).fontSize; n.remove(); return px; })()") };
+  });
+  const show = JSON.stringify({ out, seen }, null, 1);
+  // the owner is you, in the choices and everywhere on the card
+  assert.ok(out.before.buttons.includes('overnight changes you redid'), show);
+  for (const state of [out.before, out.one.loading, out.one.reply, out.two.reply]) {
+    assert.ok(!state.buttons.some(b => /keshav/i.test(b)), show);
+    // one place to type, always: something else on a question card
+    assert.equal(state.places_to_type, 1, show);
+  }
+  for (const turn of [out.one, out.two]) {
+    // one ellipsis while the reply is read
+    assert.equal(turn.loading.ellipses, 1, show);
+    // the choices once, then only the new suggestion
+    assert.deepEqual(turn.reply.buttons, ['weekly installs', 'first runs that finished a recap', 'overnight changes you redid', 'something else', 'paying schools'], show);
+    // a long reply sits in the title's spot at the body size
+    assert.equal(turn.reply.title_top, out.before.title_top, show);
+    assert.equal(turn.reply.title_px, out.why_px, show);
+  }
+  // the second turn continues the same conversation
+  assert.deepEqual(seen, [[], ['what', LONG]], show);
 });

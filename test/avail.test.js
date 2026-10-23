@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const {
   parseTimeToDecimal,
   parseDaysArg,
+  parseSlotsDays,
+  parseSetArgs,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
@@ -61,5 +63,42 @@ describe('avail formatDecimalHour', () => {
   it('formats fractional hours', () => {
     assert.equal(formatDecimalHour(14.5), '2:30pm');
     assert.equal(formatDecimalHour(21), '9pm');
+  });
+});
+
+describe('avail parseSlotsDays', () => {
+  it('accepts whole numbers in range and refuses the rest', () => {
+    assert.equal(parseSlotsDays('7'), 7);
+    assert.equal(parseSlotsDays('60'), 60);
+    assert.equal(parseSlotsDays('400'), null);
+    assert.equal(parseSlotsDays('abc'), null);
+    assert.equal(parseSlotsDays('0'), null);
+    assert.equal(parseSlotsDays('-3'), null);
+    assert.equal(parseSlotsDays(undefined), null);
+  });
+});
+
+describe('avail parseSetArgs number flags', () => {
+  it('keeps good numbers and refuses ones it would have dropped silently', () => {
+    const ok = parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--slot-minutes', '30', '--window-days', '14']);
+    assert.equal(ok.slotMinutes, 30);
+    assert.equal(ok.windowDays, 14);
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--slot-minutes', '30min']),
+      /--slot-minutes needs a whole number/
+    );
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--window-days']),
+      /got: nothing/
+    );
+  });
+});
+
+describe('avail parseSetArgs unknown flag', () => {
+  it('names the flag and the help command', () => {
+    assert.throws(
+      () => parseSetArgs(['--wake', '9am', '--sleep', '5pm', '--zone', 'PT']),
+      /does not take "--zone"\. Run: atris avail --help/
+    );
   });
 });

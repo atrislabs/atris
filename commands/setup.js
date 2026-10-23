@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { loadCredentials, promptUser } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
@@ -72,6 +70,12 @@ async function setupAtris() {
       method: 'GET',
       token: creds.token,
     });
+
+    if (!result.ok && result.status === 401) {
+      console.error('\n  Your saved login has expired, so Atris could not list your businesses.');
+      console.error('  Run "atris login", then "atris setup" again.');
+      process.exit(1);
+    }
 
     if (!result.ok) {
       console.error(`\n  Could not fetch businesses: ${result.error || 'Unknown error'}`);

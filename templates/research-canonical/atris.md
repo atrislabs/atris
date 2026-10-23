@@ -1,4 +1,4 @@
-# Atris Boot Protocol — {{name}} Research Lab
+# Atris Boot Protocol: {{name}} Research Lab
 
 You are operating in the **{{name}}** Atris research workspace.
 
@@ -50,7 +50,7 @@ and Swarlo is the live claim/report layer.
 
 | File | Purpose |
 |------|---------|
-| `atris/atris.md` | This file — boot protocol |
+| `atris/atris.md` | This file: boot protocol |
 | `atris/MAP.md` | Navigation index |
 | `.atris/state/tasks.projection.json` | Current task projection |
 | `atris/TODO.md` | Rendered/legacy task fallback |

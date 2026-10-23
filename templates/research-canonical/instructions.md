@@ -1,4 +1,4 @@
-# {{name}} — Research Instructions
+# {{name}}: Research Instructions
 
 Standard processes and workflows.
 

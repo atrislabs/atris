@@ -102,6 +102,7 @@ test('atris zen makes a messy repo zen and keeps everything', () => {
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /^ {2}zen\.$/m);
     assert.match(cli.stdout, /saved 1 old stash away/);
+    assert.match(cli.stdout, /nothing was thrown away\. see what zen saved: +git for-each-ref refs\/archive refs\/heads\/zen-backup/);
     assert.match(cli.stdout, /put away 1 idle side copy/);
     assert.match(cli.stdout, /saved 2 stray edits to zen-backup\//);
     assert.match(cli.stdout, /moved 1 unpushed commit to zen-backup\//);
@@ -169,8 +170,9 @@ test('atris zen on a zen repo says so and changes nothing', () => {
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /already zen\./);
-    assert.match(cli.stdout, /1 team note kept as it is/);
-    assert.doesNotMatch(cli.stdout, /everything is kept/);
+    assert.match(cli.stdout, /1 unsaved team note left in place\./);
+    assert.doesNotMatch(cli.stdout, /kept as it is/);
+    assert.doesNotMatch(cli.stdout, /nothing was thrown away/);
     assert.equal(git(checkout, 'for-each-ref'), refs);
     assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /a note/);
   } finally {
@@ -420,6 +422,31 @@ test('a branch with nothing new is not called kept and then cleared', () => {
   }
 });
 
+test('a branch made in the last 30 minutes is not cleared or counted as merged', () => {
+  const { base, checkout } = createRepo();
+  try {
+    // A running job makes its branch a moment before it checks it out, so the
+    // branch has no commits yet and git calls it merged.
+    git(checkout, 'branch', 'job-about-to-start');
+    git(checkout, 'branch', 'old-finished');
+    const log = path.join(checkout, '.git', 'logs', 'refs', 'heads', 'old-finished');
+    const epoch = Math.floor((Date.now() - 2 * 3600 * 1000) / 1000);
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
+
+    const check = checkZen({ cwd: checkout, fetch: false, freshMinutes: 30 });
+    const merged = check.problems.find((p) => p.kind === 'merged_branches');
+    assert.deepEqual(merged && merged.branches, ['old-finished']);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /cleared 1 finished branch/);
+    assert.deepEqual(branches(checkout, 'job-about-to-start'), ['job-about-to-start']);
+    assert.deepEqual(branches(checkout, 'old-finished'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a note moved with git mv picks up upstream edits to its old path', () => {
   const { base, seed, checkout } = createRepo();
   try {
@@ -491,6 +518,28 @@ test('atris zen --all zens every listed repo and skips one with unsaved live dat
   }
 });
 
+test('atris zen --all still says where your copy of a clashing note went', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 from the team'), 'team edit');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 mine'));
+
+    const cli = run(process.execPath, [cliPath, 'zen', '--all', checkout], base, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '0',
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /checkout\s+caught up 1 commit/);
+    const said = cli.stdout.match(/^\s+kept the new atris\/TODO\.md; your copy is in (\S+)$/m);
+    assert.ok(said, cli.stdout);
+    assert.match(fs.readFileSync(said[1], 'utf8'), /line 10 mine/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen --all with no repos says how to list them', () => {
   const cli = run(process.execPath, [cliPath, 'zen', '--all'], os.tmpdir(), {
     ...process.env,
@@ -542,6 +591,49 @@ test('atris zen never rolls back a live database file', () => {
   }
 });
 
+test('atris zen never rolls back rows a running app added to a jsonl ledger, and still catches up', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(checkout, 'workspaces/outbound/ledger.jsonl', '{"id": 1}\n', 'ledger');
+    git(checkout, 'push', '-q');
+    git(seed, 'pull', '-q');
+    commit(seed, 'app.js', 'two\n', 'newer app');
+    git(seed, 'push', '-q');
+    write(checkout, 'workspaces/outbound/ledger.jsonl', '{"id": 1}\n{"id": 2, "written": "by the running app"}\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /stray edit/);
+    assert.match(cli.stdout, /caught up 1 commit/);
+    assert.equal(fs.readFileSync(path.join(checkout, 'workspaces/outbound/ledger.jsonl'), 'utf8'), '{"id": 1}\n{"id": 2, "written": "by the running app"}\n');
+    assert.deepEqual(branches(checkout, 'zen-backup/*'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen --all still zens a repo whose only unsaved change is a growing jsonl log', () => {
+  const one = createRepo();
+  try {
+    commit(one.checkout, 'atris/runs.jsonl', '{"run": 1}\n', 'runs');
+    git(one.checkout, 'push', '-q');
+    write(one.checkout, 'atris/runs.jsonl', '{"run": 1}\n{"run": 2}\n');
+    const list = path.join(one.base, 'zen.json');
+    fs.writeFileSync(list, JSON.stringify({ repos: [one.checkout] }));
+
+    const cli = run(process.execPath, [cliPath, 'zen', '--all'], one.base, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '0',
+      ATRIS_ZEN_FLEET_FILE: list,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /skipped/);
+  } finally {
+    fs.rmSync(one.base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen moves back to main even when team notes are edited on both branches', () => {
   const { base, checkout } = createRepo();
   try {
@@ -584,6 +676,38 @@ test('atris zen leaves a side copy alone when a scheduled job uses it', () => {
     assert.match(cli.stdout, /1 side copy is used by a scheduled job, so it stays/);
     assert.match(cli.stdout, /zen\./);
     assert.ok(fs.existsSync(job));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a side copy named only inside a script a scheduled job runs is left alone', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const job = path.join(base, 'campaign-cli');
+    git(checkout, 'worktree', 'add', '-q', '--detach', job);
+    write(job, 'notes.txt', 'unsaved work\n');
+    const days = new Date(Date.now() - 5 * 86400000);
+    const gitDir = path.resolve(job, git(job, 'rev-parse', '--git-dir'));
+    for (const f of [path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD'), path.join(job, 'notes.txt')]) {
+      if (fs.existsSync(f)) fs.utimesSync(f, days, days);
+    }
+    // The crontab runs tick.sh, and only tick.sh names the side copy.
+    const tick = path.join(base, 'tick.sh');
+    fs.writeFileSync(tick, `#!/bin/bash\nCLI="${job}/bin/atris.js"\nnode "$CLI" run\n`);
+    const schedule = path.join(base, 'crontab.txt');
+    fs.writeFileSync(schedule, `7 */3 * * * ${tick} >> ${path.join(base, 'tick.log')} 2>&1\n`);
+
+    const cli = run(process.execPath, [cliPath, 'zen'], checkout, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '30',
+      ATRIS_ZEN_SCHEDULE_FILE: schedule,
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy is used by a scheduled job, so it stays/);
+    assert.doesNotMatch(cli.stdout, /put it away/);
+    assert.ok(fs.existsSync(path.join(job, 'notes.txt')));
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -776,6 +900,29 @@ test('a wiki over budget in several places is one line to prune, not one per pla
     fs.rmSync(path.join(wiki, 'index.md'));
     const [only] = workspaceZen({ root, dryRun: true }).yours.filter((y) => y.cmd === 'atris wiki consolidate');
     assert.equal(only.text, 'wiki briefs/ has 35 pages, its budget is 30');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a note older than its code is named in plain words, not called a wiki page behind its source', () => {
+  const { workspaceZen } = require('../lib/zen-workspace');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-stale-'));
+  try {
+    fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'lib', 'x.js'), 'module.exports = 1;\n');
+    const note = (name) => {
+      fs.mkdirSync(path.join(root, 'atris', 'features', name), { recursive: true });
+      fs.writeFileSync(path.join(root, 'atris', 'features', name, 'build.md'),
+        '---\nlast_compiled: 2020-01-01\nsources:\n  - lib/x.js:1-2 (the export)\n---\n# build\n');
+    };
+    const staleLine = () => workspaceZen({ root, dryRun: true }).yours.find((y) => y.cmd === 'atris clean --dry-run' && /older than/.test(y.text));
+
+    note('one');
+    assert.equal(staleLine()?.text, 'atris/features/one/build.md is older than the code it describes');
+
+    note('two');
+    assert.equal(staleLine()?.text, '2 notes are older than the code they describe');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

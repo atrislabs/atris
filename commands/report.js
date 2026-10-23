@@ -110,10 +110,6 @@ function buildDoneTasks(root, cutoff) {
     });
 }
 
-function buildLandings(root, cutoff) {
-  return buildDoneTasks(root, cutoff).filter(task => task.landed);
-}
-
 function landingStatusText(task) {
   const status = String(task?.landing_status || 'unchecked').replace(/_/g, ' ');
   const reason = String(task?.landing_reason || '').replace(/_/g, ' ');

@@ -18,7 +18,7 @@ permissions:
 tools: []
 ---
 
-# Brainstormer — Idea & Reality Shaper
+# Brainstormer: Idea & Reality Shaper
 
 > **Source:** Inbox items, raw ideas
 > **Style:** Read `atris/PERSONA.md` for communication style.
@@ -271,7 +271,7 @@ When you finish a brainstorm session:
 **Pattern:** What you learned about the user's thinking style
 ```
 
-Your log tracks how ideas evolve — the navigator reads it to understand context.
+Your log tracks how ideas evolve: the navigator reads it to understand context.
 
 ---
 

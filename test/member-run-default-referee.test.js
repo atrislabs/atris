@@ -109,6 +109,23 @@ test('the default reviewer is never the builder engine, even when the usual pick
   }
 });
 
+test('the default reviewer skips an engine that is not installed', () => {
+  const mission = require('../commands/mission');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-referee-pick-'));
+  const binDir = path.join(base, 'bin');
+  const oldPath = process.env.PATH;
+  try {
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    // Only claude is on PATH, so codex (the usual first pick) is not installed.
+    process.env.PATH = `${binDir}:/usr/bin:/bin`;
+    assert.equal(mission.pickCrossEngineVerifier({ runner: 'fable' }, base), 'claude');
+  } finally {
+    process.env.PATH = oldPath;
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('work the reviewer turns down says so with its reason, not that the check failed', (t) => {
   const { run } = workspace(t, 'VERDICT: FAIL; the new file is empty on a second run');
   const res = run([]);

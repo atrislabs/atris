@@ -58,8 +58,8 @@ function makeOut(calm) {
 }
 
 function teamLine(n) {
-  if (!n) return 'no team notes changed.';
-  return n === 1 ? '1 team note kept as it is.' : `${n} team notes kept as they are.`;
+  if (!n) return 'no unsaved team notes.';
+  return n === 1 ? '1 unsaved team note left in place.' : `${n} unsaved team notes left in place.`;
 }
 
 function printYours(yours, line, dim) {
@@ -69,8 +69,8 @@ function printYours(yours, line, dim) {
 
 function printCheck(result, workspace) {
   const kept = result.team_files
-    ? (result.team_files === 1 ? '1 team file kept as it is' : `${result.team_files} team files kept as they are`)
-    : 'no team files changed';
+    ? (result.team_files === 1 ? '1 unsaved team file left in place' : `${result.team_files} unsaved team files left in place`)
+    : 'no unsaved team files';
   const stale = result.fetched === false ? ' (could not reach origin, using last fetch)' : '';
   const tidy = workspace?.todo.length || 0;
   if (result.zen && tidy) {
@@ -143,7 +143,7 @@ function printApply(result, out) {
   }
   line(dim(`  ${teamLine(result.team_files)}`));
   if (result.saved.length) {
-    line(dim('  everything is kept: git for-each-ref refs/archive refs/heads/zen-backup'));
+    line(dim('  nothing was thrown away. see what zen saved:   git for-each-ref refs/archive refs/heads/zen-backup'));
   }
   line('');
 }

@@ -262,10 +262,6 @@ function captionTrackCandidates(info = {}) {
   return candidates;
 }
 
-function chooseCaptionTrack(info = {}) {
-  return captionTrackCandidates(info)[0] || null;
-}
-
 function formatTimestampFromMs(ms) {
   const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -772,8 +768,10 @@ function dateStamp(now) {
     return now.slice(0, 10);
   }
   const value = now instanceof Date ? now : new Date(now || Date.now());
-  if (Number.isNaN(value.getTime())) return new Date().toISOString().slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  // Local calendar day, the same journal file every other writer uses;
+  // toISOString is UTC and files tonight's notes under tomorrow west of Greenwich.
+  const day = Number.isNaN(value.getTime()) ? new Date() : value;
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
 }
 
 function firstHeading(notes) {
@@ -2532,9 +2530,12 @@ function searchApplyNow(now) {
     const value = now();
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value;
     const ms = Number(value);
-    if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString().slice(0, 10);
+    if (Number.isFinite(ms) && ms > 0) return dateStamp(ms);
     return undefined;
   }
+  // The apply stub is dated by the local day, like the notes it follows;
+  // left to itself the apply gate would stamp the UTC day.
+  if (now === undefined || now === null || now instanceof Date || typeof now === 'number') return dateStamp(now);
   return now;
 }
 
@@ -3966,6 +3967,7 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
 
 module.exports = {
   DEFAULT_QUERY,
+  searchApplyNow,
   DEFAULT_TIMEOUT_MS,
   parseYoutubeArgs,
   buildYoutubePayload,

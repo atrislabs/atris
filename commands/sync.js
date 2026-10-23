@@ -3,6 +3,7 @@ const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { openingLinesForRoot, upsertAgentsOpeningLines } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const {
   upsertAgentVoiceCard,
@@ -43,6 +44,12 @@ function _walkTemplateDir(dir, base = dir) {
   return out;
 }
 
+// Local calendar day (YYYY-MM-DD). toISOString() is the UTC day, which is
+// already tomorrow in the evening anywhere west of Greenwich.
+function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Substitute workspace metadata in template content.
  */
@@ -53,7 +60,7 @@ function _substituteParams(content, params) {
     .replace(/\{\{owner_email\}\}/g, params.owner_email || '')
     .replace(/\{\{business_id\}\}/g, params.business_id || '')
     .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '')
-    .replace(/\{\{today\}\}/g, params.today || new Date().toISOString().slice(0, 10))
+    .replace(/\{\{today\}\}/g, params.today || localDay())
     .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
 }
 
@@ -337,7 +344,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     owner_email: bizMeta.owner_email || '',
     business_id: bizMeta.business_id || '',
     workspace_id: bizMeta.workspace_id || '',
-    today: new Date().toISOString().slice(0, 10),
+    today: localDay(),
     workspace_template: template.key,
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
@@ -641,6 +648,13 @@ function syncAtris(options = {}) {
     updated++;
   }
 
+  const openingLines = openingLinesForRoot(process.cwd());
+  const agentsOpeningResult = upsertAgentsOpeningLines(agentsMdFile, openingLines, { dryRun });
+  if (agentsOpeningResult.action !== 'unchanged') {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} AGENTS.md operating rules`);
+    updated++;
+  }
+
   // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
@@ -721,7 +735,7 @@ Key behaviors:
 
   if (fs.existsSync(rootClaudeMd)) {
     const source = fs.readFileSync(rootClaudeMd, 'utf8');
-    const result = upsertAtrisClaudeBootBlock(source);
+    const result = upsertAtrisClaudeBootBlock(source, { openingLines });
     if (result.action === 'repaired') {
       applyClaudeUpdate(result.content, 'repair atris block in CLAUDE.md (missing end marker)', 'repaired atris block in CLAUDE.md (missing end marker)');
     } else if (result.action === 'updated') {
@@ -731,7 +745,7 @@ Key behaviors:
     }
   } else {
     // Create new CLAUDE.md with just Atris block
-    const content = upsertAtrisClaudeBootBlock().content;
+    const content = upsertAtrisClaudeBootBlock('', { openingLines }).content;
     applyClaudeUpdate(content, 'create CLAUDE.md with atris block', 'created CLAUDE.md with atris block');
   }
 

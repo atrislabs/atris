@@ -18,7 +18,7 @@ Spec: https://github.com/atrislabs/member
 ```
 team/<name>/
 ├── MEMBER.md       REQUIRED  Persona + role + permissions
-├── SOUL.md         REQUIRED  Identity, values, lessons — who the agent is
+├── SOUL.md         REQUIRED  Identity, values, lessons: who the agent is
 ├── MISSION.md      REQUIRED  Durable purpose and goal-selection rule
 ├── goals.json      REQUIRED  Machine-readable goal state
 ├── goals.md        REQUIRED  Human-readable goal state
@@ -64,19 +64,19 @@ Use kebab-case for the name. Create the full bundle in one operation, even when 
 
 ### Step 3: Write SOUL.md
 
-SOUL.md defines who the agent *is* — not what it does (MEMBER.md) or how it communicates (PERSONA.md). Use the template at `atris/team/_template/SOUL.md`.
+SOUL.md defines who the agent *is*, not what it does (MEMBER.md) or how it communicates (PERSONA.md). Use the template at `atris/team/_template/SOUL.md`.
 
 Write five sections:
 
-**Beliefs** — 3-5 convictions that guide judgment when rules don't apply. Not rules — things the agent holds true.
+**Beliefs**: 3-5 convictions that guide judgment when rules don't apply. Not rules, things the agent holds true.
 
-**Values** — 2-3 values ordered by priority. What the agent optimizes for in ambiguous situations.
+**Values**: 2-3 values ordered by priority. What the agent optimizes for in ambiguous situations.
 
-**Lessons** — Start empty. These get synthesized from the agent's journal entries over time. Not copied from elsewhere — earned from experience.
+**Lessons**: Start empty. These get synthesized from the agent's journal entries over time. Not copied from elsewhere, earned from experience.
 
-**Edges** — Honest self-assessment. What this agent is strong at and what it tends to get wrong. This helps the agent (and other agents) calibrate trust.
+**Edges**: Honest self-assessment. What this agent is strong at and what it tends to get wrong. This helps the agent (and other agents) calibrate trust.
 
-**Voice** — One sentence that captures how this agent thinks. The inner monologue, not the output style.
+**Voice**: One sentence that captures how this agent thinks. The inner monologue, not the output style.
 
 The soul should be *specific to this agent*. Two agents with the same role but different souls should make different judgment calls in ambiguous moments.
 
@@ -88,7 +88,7 @@ Use this structure:
 ---
 name: <kebab-case-name>
 role: <Human Readable Title>
-description: <one line — what this member does>
+description: <one line, what this member does>
 version: 1.0.0
 
 skills: []
@@ -100,11 +100,11 @@ permissions:
 
 Below the frontmatter, write three sections:
 
-**Persona** — How the member communicates. Tone, style, decision-making approach. Be specific — "direct and research-driven" is better than "professional and helpful."
+**Persona**: How the member communicates. Tone, style, decision-making approach. Be specific: "direct and research-driven" is better than "professional and helpful."
 
-**Workflow** — Numbered steps the member follows. This is the core operating procedure. Each step should be a concrete action.
+**Workflow**: Numbered steps the member follows. This is the core operating procedure. Each step should be a concrete action.
 
-**Rules** — Hard constraints. What the member must always or never do. Keep it to 3-5 rules.
+**Rules**: Hard constraints. What the member must always or never do. Keep it to 3-5 rules.
 
 ### Step 5: Add permissions
 

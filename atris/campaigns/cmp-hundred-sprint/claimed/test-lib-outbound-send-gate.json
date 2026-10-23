@@ -1,0 +1,1 @@
+{"id":"test-lib-outbound-send-gate","kind":"test","target":"lib/outbound-send-gate.js","files":["test/outbound-send-gate-lib.test.js"]}

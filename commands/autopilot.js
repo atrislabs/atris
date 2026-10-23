@@ -1157,13 +1157,19 @@ function lessonSlug(text, maxLen = 40) {
   return trimmed.replace(/-+$/g, '') || 'unknown';
 }
 
+// Local calendar day (YYYY-MM-DD). toISOString() is the UTC day, which is
+// already tomorrow in the evening anywhere west of Greenwich.
+function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Write a lesson to atris/lessons.md
  * Appends a line in format: - **[YYYY-MM-DD] slug** - pass/fail - explanation
  */
 function writeLesson(cwd, slug, status, explanation) {
   const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = localDay();
   const lessonLine = `- **[${today}] ${slug}** - ${status} - ${explanation}`;
 
   if (!fs.existsSync(lessonsPath)) {
@@ -2959,7 +2965,7 @@ function markLessonAttempted(cwd, slug, reason) {
   if (!meta[slug] || typeof meta[slug] !== 'object') meta[slug] = {};
   meta[slug].status = 'attempted';
   meta[slug].attempts = (typeof meta[slug].attempts === 'number' ? meta[slug].attempts : 0) + 1;
-  meta[slug].last_attempt = new Date().toISOString().slice(0, 10);
+  meta[slug].last_attempt = localDay();
   if (reason) meta[slug].last_attempt_reason = String(reason);
   try {
     const atrisDir = path.join(cwd, 'atris');
@@ -3181,7 +3187,7 @@ function hasRecentVerifyPrePass(cwd, taskTitle, windowDays = 7) {
   if (lessons.length === 0) return false;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - windowDays);
-  const cutoffDate = cutoff.toISOString().split('T')[0];
+  const cutoffDate = localDay(cutoff);
   const needle = `"${taskTitle}"`;
   for (const l of lessons) {
     if (l.id !== 'verify-not-falsifiable') continue;
@@ -4041,13 +4047,6 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
     const cause = end && end.cause ? `; ${end.cause}` : '';
     return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}${cause}` };
   }
-}
-
-/**
- * Entry point when called without a description.
- */
-async function autopilotFromTodo(options = {}) {
-  return autopilotAtris(null, options);
 }
 
 module.exports = {

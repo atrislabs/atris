@@ -2,74 +2,51 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const startMarker = '<!-- ATRIS:START - Auto-generated, do not edit -->';
-const endMarker = '<!-- ATRIS:END -->';
+const START = '<!-- ATRIS:START - Auto-generated, do not edit -->';
+const END = '<!-- ATRIS:END -->';
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-claude-boot-block-'));
-}
-
-function runCli(cwd, args) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    env: { ...process.env, HOME: cwd, ATRIS_SKIP_UPDATE_CHECK: '1' },
-  });
-}
-
-function markerCount(content, marker) {
-  return content.split(marker).length - 1;
-}
-
-test('init emits a hook-aware and terminated CLAUDE.md boot block', () => {
-  const dir = makeTempDir();
-  try {
-    const result = runCli(dir, ['init', '--yes']);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-
-    const content = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
-    assert.match(content, /If a SessionStart hook already displayed the Atris status block in this session, do not run it again\./);
-    assert.match(content, /Otherwise, before your first response, execute `atris atris\.md` and display the full output\./);
-    assert.equal(markerCount(content, startMarker), 1);
-    assert.equal(markerCount(content, endMarker), 1);
-
-    const update = runCli(dir, ['update', '--yes']);
-    assert.equal(update.status, 0, update.stderr || update.stdout);
-    assert.equal(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), content);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test('empty source gets just the block', () => {
+  const { content, action } = upsertAtrisClaudeBootBlock('');
+  assert.equal(action, 'created');
+  assert.ok(content.startsWith(START));
+  assert.ok(content.trimEnd().endsWith(END));
+  assert.match(content, /execute `atris atris\.md`/);
 });
 
-test('update replaces an unterminated boot block with one clean terminated block', () => {
-  const dir = makeTempDir();
-  try {
-    const init = runCli(dir, ['init', '--yes']);
-    assert.equal(init.status, 0, init.stderr || init.stdout);
+test('existing CLAUDE.md without a block gets the block prepended', () => {
+  const { content, action } = upsertAtrisClaudeBootBlock('\n\n# My project\nrules\n');
+  assert.equal(action, 'prepended');
+  assert.ok(content.startsWith(START));
+  assert.ok(content.endsWith(`${END}\n\n# My project\nrules\n`));
+});
 
-    fs.writeFileSync(
-      path.join(dir, 'CLAUDE.md'),
-      `# Project rules\n\n${startMarker}\nold boot instructions without an end marker\n`,
-      'utf8',
-    );
+test('running twice is a no-op', () => {
+  const first = upsertAtrisClaudeBootBlock('# Project\n').content;
+  const second = upsertAtrisClaudeBootBlock(first);
+  assert.equal(second.action, 'unchanged');
+  assert.equal(second.content, first);
+});
 
-    const result = runCli(dir, ['update', '--yes']);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+test('a stale block is replaced and moved to the top, keeping user text', () => {
+  const source = `# Intro\n${START}\nold boot text\n${END}\n\n# Rules\n`;
+  const { content, action } = upsertAtrisClaudeBootBlock(source);
+  assert.equal(action, 'updated');
+  assert.ok(content.startsWith(START));
+  assert.doesNotMatch(content, /old boot text/);
+  assert.ok(content.endsWith(`${END}\n\n# Intro\n# Rules\n`));
+  assert.equal(content.split(START).length, 2);
+});
 
-    const content = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
-    assert.equal(markerCount(content, startMarker), 1);
-    assert.equal(markerCount(content, endMarker), 1);
-    assert.doesNotMatch(content, /old boot instructions/);
-    assert.match(content, /# Project rules/);
-    assert.ok(content.indexOf(endMarker) < content.indexOf('# Project rules'));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test('a block missing its end marker is repaired, keeping only the text before it', () => {
+  const source = `# Keep me\n${START}\nhalf written`;
+  const { content, action } = upsertAtrisClaudeBootBlock(source);
+  assert.equal(action, 'repaired');
+  assert.doesNotMatch(content, /half written/);
+  assert.ok(content.endsWith(`${END}\n\n# Keep me\n`));
+});
+
+test('default argument behaves like an empty file', () => {
+  assert.equal(upsertAtrisClaudeBootBlock().action, 'created');
 });

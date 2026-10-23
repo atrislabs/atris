@@ -472,9 +472,11 @@ function dateStamp(now) {
   if (typeof now === 'string' && /^\d{4}-\d{2}-\d{2}/.test(now)) {
     return now.slice(0, 10);
   }
-  const value = now instanceof Date ? now : new Date(now || Date.now());
-  if (Number.isNaN(value.getTime())) return new Date().toISOString().slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  const parsed = now instanceof Date ? now : new Date(now || Date.now());
+  const value = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  // Local calendar day. toISOString() is the UTC day, which is already
+  // tomorrow in the evening anywhere west of Greenwich.
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
 
 function fileXSearchBrief({ cwd, source, text, now } = {}) {

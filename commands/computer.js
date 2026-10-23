@@ -35,7 +35,7 @@ const {
   runEngineDeviceLoginCommand,
   validEngineLoginSeat,
 } = require('./engine');
-const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
+const { consoleCommand } = require('./console');
 const { streamSession } = require('./serve');
 const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap');
 const { envForcesNonInteractive } = require('../lib/noninteractive');
@@ -4380,6 +4380,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     if (!codeopsCtx) {
       console.error('Atris CodeOps is not available for this account.');
       console.error('Ask an Atris CodeOps admin to add you to the atris-codeops business.');
+      process.exitCode = 1;
       return;
     }
     const codeopsOptions = codeOpsCloudOptions(cloudOptions);
@@ -4418,6 +4419,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
       default:
         console.error(`Unknown CodeOps subcommand: ${codeopsSub}`);
         console.log('Run: atris computer codeops help');
+        process.exitCode = 1;
         return;
     }
     return;

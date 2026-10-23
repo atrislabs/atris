@@ -1,0 +1,1 @@
+{"id":"test-commands-rainmaker","kind":"test","target":"commands/rainmaker.js","files":["test/rainmaker-command.test.js"]}

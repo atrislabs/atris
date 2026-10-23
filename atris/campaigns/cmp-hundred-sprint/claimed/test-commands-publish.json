@@ -1,0 +1,1 @@
+{"id":"test-commands-publish","kind":"test","target":"commands/publish.js","files":["test/publish-command.test.js"]}

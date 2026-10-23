@@ -64,3 +64,16 @@ jobs:
         run: |
           npm config delete //registry.npmjs.org/:_authToken || true
           npm run publish:release
+
+      - name: List this version in the official MCP registry
+        # The registry reads mcpName from the npm package we just published,
+        # so this runs after npm. Version in server.json follows package.json.
+        # A registry outage must not fail an npm release that already shipped.
+        continue-on-error: true
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.json.tmp
+          mv server.json.tmp server.json
+          curl -sSfL https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

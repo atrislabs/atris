@@ -85,8 +85,10 @@ function appendEvent(event, cwd = process.cwd()) {
   fs.appendFileSync(ledgerPath(cwd), `${JSON.stringify(event)}\n`);
 }
 
-function isoDateOnly(date) {
-  return date.toISOString().slice(0, 10);
+// Local calendar day (YYYY-MM-DD). toISOString() is the UTC day, which is
+// already tomorrow in the evening anywhere west of Greenwich.
+function localDay(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function parseDate(value) {
@@ -156,7 +158,8 @@ function foldEvents(events, options = {}) {
       delete flag.parked_at;
       delete flag.why;
     } else if (event.kind === 'escalated') {
-      const day = event.day || (event.at ? String(event.at).slice(0, 10) : null);
+      const at = event.at ? new Date(event.at) : null;
+      const day = event.day || (at && Number.isFinite(at.getTime()) ? localDay(at) : null);
       if (day && !flag.escalated_days.includes(day)) flag.escalated_days.push(day);
     } else if (event.kind === 'probed') {
       flag.probe_runs.push({
@@ -753,7 +756,7 @@ function commandSnooze(args, context = {}) {
 // Escalation core shared by the CLI verb and the hourly pulse tick: append
 // one escalated event per overdue flag per day, return the resulting state.
 function sweepState(cwd = process.cwd(), now = new Date(), options = {}) {
-  const today = isoDateOnly(now);
+  const today = localDay(now);
   const autoClosed = autoCloseResolvedTaskReviewFlags(cwd, now);
   const autoParked = migrateOpenSlots(cwd, now, options);
   let flags = openFlags(cwd, { now });

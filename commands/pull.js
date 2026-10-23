@@ -7,7 +7,7 @@ const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses, businessMatchesSlug } = require('./business');
-const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
+const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
@@ -1023,7 +1023,9 @@ async function pullGeneralJournal(token, agentId) {
   for (let i = 0; i < 3; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().split('T')[0]);
+    // Local calendar day, the same day log sync files the journal under.
+    // toISOString() is the UTC day, already tomorrow in the evening here.
+    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   }
 
   let synced = 0;
@@ -1118,4 +1120,4 @@ async function pullMemberJournal(token, agentId, memberName, memberDir) {
   return synced;
 }
 
-module.exports = { buildPullConflictReviewPacket, mergeSmartPullFiles, normalizePullFilePath, pullAtris };
+module.exports = { buildPullConflictReviewPacket, mergeSmartPullFiles, normalizePullFilePath, pullAtris, pullGeneralJournal };
