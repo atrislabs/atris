@@ -615,6 +615,42 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
   return runs;
 }
 
+// ---- the small orb on a card goes back to the big one ------------------------------
+
+// On an idea, and on the calm line while the next idea is written, the
+// owner taps the small orb at the top. Where the page ends up, and whether
+// it asked for a new card; then a tap on the big orb. On the calm line the
+// idea lands while the owner is on the big orb, and waits there.
+async function orbHomeTrace({ chromePath = findChrome() } = {}) {
+  const runs = [];
+  const idea = { ok: true, status: 'ready', id: 'b1', ...CARDS.b1, team_working: 0 };
+  const next = { ok: true, status: 'ready', id: 'b2', ...CARDS.b2, team_working: 0 };
+  const calm = { ok: true, status: 'ready', id: 'wait:1', kind: 'wait', job: { what: 'writing your next idea.' }, team_working: 0 };
+  for (const from of ['idea', 'calm']) {
+    let current = from === 'idea' ? idea : calm;
+    let asked = 0;
+    let landed = false;
+    // as the real desk does: the calm line stays the card, with the idea ready behind it
+    const desk = { ...scriptedDesk(), warm: () => (current === calm ? { ...calm, queue: landed ? 1 : 0 } : current), next: () => { asked += 1; current = current === calm && landed ? idea : next; return current; } };
+    runs.push(await onPhone(desk, chromePath, async (p) => {
+      const look = () => p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), big_orb: getComputedStyle(document.querySelector('.stage')).display !== 'none' && getComputedStyle(document.getElementById('orb')).visibility !== 'hidden', line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()");
+      await p.tap('#lava');
+      await p.until("!document.body.classList.contains('has-card')", 'the big orb', 4000).catch(() => {});
+      await wait(600);
+      const home = { ...(await look()), asked };
+      // the idea lands while the owner is on the big orb
+      if (from === 'calm') { landed = true; await wait(3500); }
+      const stayed = { ...(await look()), asked };
+      await p.tap('#orb');
+      await p.until("document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1'))", 'a card', 8000).catch(() => {});
+      await wait(400);
+      const tapped = { ...(await look()), asked };
+      return { from, home, stayed, tapped };
+    }));
+  }
+  return runs;
+}
+
 // ---- a start that did not get going comes back to do it ----------------------------
 
 // The owner asks what an idea means, then taps do it twice. The first start
@@ -699,7 +735,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
-module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, onPhone, scriptedDesk, CARDS, REPLY };
+module.exports = { findChrome, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, onPhone, scriptedDesk, CARDS, REPLY };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

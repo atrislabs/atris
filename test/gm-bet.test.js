@@ -1051,8 +1051,9 @@ test('queue: with every question answered and nothing ready, a tap shows a plain
   assert.deepEqual([tap.status, tap.kind, tap.job, tap.events], ['ready', 'wait', WAIT, []]);
   assert.equal(h.gen.calls.length, 1, 'the idea really is being written');
   await h.gen.releaseOne();
-  const v = h.d.view();
-  assert.deepEqual([v.kind, v.bet.title], ['bet', TITLES[0]], 'the idea takes the calm line\'s place on its own');
+  // the calm line stays on screen with the idea ready behind it; the page asks for it
+  assert.deepEqual([h.d.view().kind, h.d.view().queue], ['wait', 1]);
+  assert.deepEqual([h.d.next().kind, h.d.view().bet.title], ['bet', TITLES[0]]);
 });
 
 test('queue: a tap while a background bet is being made shows a card now, and starts no second call', async () => {
@@ -1062,7 +1063,7 @@ test('queue: a tap while a background bet is being made shows a card now, and st
   assert.deepEqual([tap.status, tap.kind], ['ready', 'wait']);
   assert.equal(h.gen.calls.length, 1);
   await h.gen.releaseOne();
-  assert.equal(h.d.view().bet.title, TITLES[0]);
+  assert.equal(h.d.next().bet.title, TITLES[0]);
   assert.equal(h.gen.calls.length, 2, 'and the next one is being written');
 });
 
@@ -2646,7 +2647,7 @@ test('merged changes: one per first-parent commit, merges named by their pull re
   });
 });
 
-test('queue: showing an idea starts the next at once; with none ready the card is one calm line, and the idea takes its place when written', async () => {
+test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {
   const h = await filled(workspace());
   const first = h.d.next();
   assert.equal(first.queue, 2);
@@ -2657,6 +2658,8 @@ test('queue: showing an idea starts the next at once; with none ready the card i
   const tap = dry.d.next();
   assert.deepEqual([tap.kind, tap.job], ['wait', { what: 'writing your next idea.' }]);
   await dry.gen.releaseOne();
+  // the idea waits behind the calm line until the page asks, so typing there is never cut off
   const v = dry.d.view();
-  assert.deepEqual([v.status, v.kind, v.bet && v.bet.title], ['ready', 'bet', TITLES[0]], 'the idea takes the calm line\'s place');
+  assert.deepEqual([v.status, v.kind, v.queue], ['ready', 'wait', 1]);
+  assert.equal(dry.d.next().bet.title, TITLES[0]);
 });

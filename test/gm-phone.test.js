@@ -796,9 +796,11 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
   // the ripple starts where the pointer enters the orb
   assert.match(script, /canvas\.addEventListener\('pointerenter', function \(e\) \{/);
-  // pointer events go through to the dots on touch too; a tap still thinks
+  // pointer events go through to the dots on touch too; a tap on the big orb
+  // still thinks, and the small one on a card goes back to it
   assert.match(html, /\.stage canvas \{[^}]*touch-action: none;/);
-  assert.match(script, /node\.addEventListener\('click', function \(\) \{ tapOrb\(false\); \}\);/);
+  assert.match(script, /\[\[canvas, tapBig\], \[lavaTap, tapSmallOrb\]\]/);
+  assert.match(script, /pair\[0\]\.addEventListener\('click', pair\[1\]\);/);
   // still no loop of its own: no new keyframes, and the tap timings are untouched
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   assert.deepEqual(['GROW_MS', 'SETTLE_MS', 'LEAVE_MS', 'GLIDE_MS', 'BEAT_MS', 'FAST_GROW_MS', 'FAST_SETTLE_MS', 'FAST'].map(num), [1050, 900, 400, 520, 340, 460, 440, 0.4]);
@@ -1161,4 +1163,80 @@ test('browser: after an explanation, a do it that did not get going brings the c
   // two taps on do it again reach the desk again
   assert.equal(out.error, null, show);
   assert.equal(out.starts, 2, show);
+});
+
+// ---- the small orb on a card goes back to the big one ------------------------------
+
+test('browser: the small orb on a card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.orbHomeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  const [idea, calm] = runs;
+  for (const r of runs) {
+    // the card goes, the big orb is back with its line, and nothing new was asked for
+    assert.deepEqual(r.home, { has_card: false, big_orb: true, line: 'tap to think', title: null, asked: 0 }, show);
+  }
+  // from an idea: the big orb's tap asks for the next card, the same as on page open
+  assert.deepEqual([idea.tapped.has_card, idea.tapped.title, idea.tapped.asked], [true, 'Record a two minute demo video', 1], show);
+  // from the calm line: the idea that landed waits on the big orb, then the tap brings that idea, not one past it
+  assert.deepEqual([calm.stayed.has_card, calm.stayed.asked], [false, 0], show);
+  assert.deepEqual([calm.tapped.has_card, calm.tapped.title, calm.tapped.asked], [true, 'Write a getting started page for the phone', 1], show);
+});
+
+// ---- typing on the calm line: the idea waits for the owner -------------------------
+
+test('browser: on the calm line the owner types, the idea lands and waits; it comes in after they send, or after they clear the box and leave it', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const gmBet = require('../lib/gm-bet');
+  const IDEA = {
+    title: 'Write a getting started page for atris gm phone with a 30 second screen recording',
+    why_now: 'installs last week were 1,400 and the phone page just went live, so new installs have nothing to try first.',
+    expect: '300 more npm installs in the week before nov 1',
+    target: { metric: 'installs', baseline: 1400, goal: 1700 },
+    check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
+    steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
+  };
+  const WORDS = 'make it about schools';
+  const runs = [];
+  for (const end of ['send', 'clear']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+    const writing = [];
+    const said = [];
+    const desk = gmBet.createBetDesk({
+      workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false,
+      readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+      generate: () => new Promise(resolve => writing.push(resolve)),
+      generateQuestion: () => new Promise(() => {}),
+      readSaid: async (p) => { said.push(p); return { ok: true, kind: 'instruction', reply: '' }; },
+      runCli: async () => ({ code: 0, stdout: '{}' }),
+    });
+    // the one generic question is answered, so a tap with nothing ready is the calm line
+    desk.next();
+    desk.answer({ choice: 'money' });
+    assert.equal(desk.next().kind, 'wait');
+    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+      const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null }; })()");
+      const calm = await look();
+      await p.tap('#bet .sayline .quiet');
+      await new Promise(r => setTimeout(r, 250));
+      await p.type(WORDS);
+      // the idea is written while the owner types
+      writing.shift()({ ok: true, bet: IDEA });
+      await new Promise(r => setTimeout(r, 3500));
+      const typing = await look();
+      if (end === 'send') await p.enter();
+      else await p.run("(function () { var i = document.querySelector('#bet .field input'); if (i) { i.value = ''; i.blur(); } })()");
+      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(IDEA.title)}`, 'the idea', 8000).catch(() => {});
+      await new Promise(r => setTimeout(r, 400));
+      return { end, calm, typing, after: await look(), said: said.length };
+    }));
+  }
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    assert.equal(r.calm.title, 'writing your next idea.', show);
+    // the idea landed while the owner typed: the words and the calm line stay
+    assert.deepEqual(r.typing, { title: 'writing your next idea.', words: WORDS }, show);
+    // then it comes in
+    assert.equal(r.after.title, IDEA.title, show);
+  }
+  // sent: the words reached the desk first
+  assert.equal(runs[0].said, 1, show);
 });
