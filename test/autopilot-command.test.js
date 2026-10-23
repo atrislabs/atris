@@ -551,6 +551,7 @@ test('atris autopilot --legacy --help routes to the legacy suggest/approve loop 
   try {
     const r = runCli(['autopilot', '--legacy', '--help'], dir);
     assert.equal(r.status, 0);
+    assert.match(r.stdout, /autopilot/i);
     assert.match(r.stdout, /Suggests one task at a time/);
     assert.match(r.stdout, /--dry-run/);
   } finally {
