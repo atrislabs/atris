@@ -22,7 +22,7 @@ sources:
   - atris/skills/wiki/SKILL.md
 ---
 
-# Wiki — Validation
+# Wiki: Validation
 
 > **Status:** v3, local-first wiki with executable upkeep; the repo baseline is no longer clean
 > **Validated:** 2026-07-25
