@@ -453,7 +453,7 @@ test('page: a choice card is big titles to tap, each with one plain line of why,
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   assert.match(script, /if \(s\.kind === 'choice'\) \{ drawChoiceCard\(s\); return; \}/);
   assert.match(script, /api\('\/bet\/pick', \{ id: o\.id \}\)\.then\(function \(r\) \{/);
-  assert.match(script, /showCard\(r, true, true\);/);
+  assert.match(script, /turn\(r\);/);
   assert.match(html, /\.option \.t \{[^}]*font-size: 20px;/);
   assert.match(html, /\.option \.w \{[^}]*font-size: 17px;/);
   assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\)/);
@@ -671,6 +671,39 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   // still no loop of its own: no new keyframes, and the tap timings are untouched
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   assert.deepEqual(['GROW_MS', 'SETTLE_MS', 'LEAVE_MS', 'GLIDE_MS', 'BEAT_MS', 'FAST_GROW_MS', 'FAST_SETTLE_MS', 'FAST'].map(num), [1050, 900, 400, 520, 340, 460, 440, 0.4]);
+});
+
+test('page: card to card is one calm turn in place: crossfade, a small drift, the box eases its height, the orb stays still', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  // short and soft: out, then in, with a small drift
+  assert.equal(num('TURN_OUT_MS'), 220);
+  assert.equal(num('TURN_IN_MS'), 360);
+  assert.equal(num('DRIFT'), 10);
+  assert.ok(num('TURN_OUT_MS') + num('TURN_IN_MS') < 700, 'a turn is well under a second');
+  // a tap with a card up turns in place; the orb melt is only for leaving to the sphere
+  assert.match(script, /var onCard = document\.body\.classList\.contains\('has-card'\);/);
+  assert.match(script, /if \(onCard && isCard\(s\)\) \{ turn\(s\); return; \}/);
+  assert.match(script, /if \(onCard\) \{ dissolve\(function \(\) \{ reveal\(s, true\); \}\); return; \}/);
+  // the box holds its height while the old card leaves, then eases to the new one
+  assert.match(script, /box\.style\.height = from \+ 'px';/);
+  assert.match(script, /box\.style\.height = to \+ 'px';/);
+  // picking from a choice is a turn too
+  assert.match(script, /if \(r\.http === 200 && r\.bet\) \{ bet\.busy = true; turn\(r\); return; \}/);
+  // the transitions: opacity, a small transform, and height; no new loops
+  // height eases in and out, so no single frame moves far
+  assert.match(html, /\.bet\.turning \{ overflow: hidden; transition: opacity 0\.22s ease-in, transform 0\.22s ease-in, height 0\.36s cubic-bezier\(0\.4, 0, 0\.2, 1\); \}/);
+  // the reply after an answer keeps the card's height until the turn eases it
+  assert.match(script, /function moveOn\(ack\) \{\n\s+var box = document\.getElementById\('bet'\);\n\s+box\.style\.minHeight = box\.offsetHeight \+ 'px';/);
+  assert.match(script, /var from = box\.offsetHeight;\n\s+box\.style\.height = from \+ 'px';\n\s+box\.style\.minHeight = '';/);
+  assert.match(html, /\.bet\.turn-out \{ opacity: 0; transform: translateY\(-10px\); \}/);
+  assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(10px\); transition: none; \}/);
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  // reduced motion: the new card simply takes the old one's place
+  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; bet\.last = s; bet\.drawn = s\.id; drawBetCard\(s\); bet\.busy = false; measured\(\); return; \}/);
+  // leaving to the sphere clears the height lock too
+  assert.match(script, /var swap = function \(\) \{\n\s+box\.style\.minHeight = '';/);
 });
 
 test('page: a tap on a card fades it, glides home to the sphere, and the fast bloom stays contained', () => {
