@@ -43,6 +43,12 @@ function _walkTemplateDir(dir, base = dir) {
   return out;
 }
 
+// Local calendar day (YYYY-MM-DD). toISOString() is the UTC day, which is
+// already tomorrow in the evening anywhere west of Greenwich.
+function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Substitute workspace metadata in template content.
  */
@@ -53,7 +59,7 @@ function _substituteParams(content, params) {
     .replace(/\{\{owner_email\}\}/g, params.owner_email || '')
     .replace(/\{\{business_id\}\}/g, params.business_id || '')
     .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '')
-    .replace(/\{\{today\}\}/g, params.today || new Date().toISOString().slice(0, 10))
+    .replace(/\{\{today\}\}/g, params.today || localDay())
     .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
 }
 
@@ -337,7 +343,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     owner_email: bizMeta.owner_email || '',
     business_id: bizMeta.business_id || '',
     workspace_id: bizMeta.workspace_id || '',
-    today: new Date().toISOString().slice(0, 10),
+    today: localDay(),
     workspace_template: template.key,
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
