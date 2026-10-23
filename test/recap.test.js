@@ -1031,3 +1031,69 @@ for (const mod of [require('https'), require('http')]) {
     cleanup(fx.project);
   }
 });
+
+function gitRepo(dir) {
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  const run = (...args) => spawnSync('git', args, { cwd: dir, env });
+  run('init', '-q');
+  return run;
+}
+
+test('recap today from a subfolder counts only that subfolder in git', () => {
+  const fx = todayFixture();
+  try {
+    const run = gitRepo(fx.project);
+    fs.mkdirSync(path.join(fx.project, 'web'));
+    fs.mkdirSync(path.join(fx.project, 'api'));
+    fs.writeFileSync(path.join(fx.project, 'web', 'a.js'), '1');
+    fs.writeFileSync(path.join(fx.project, 'api', 'b.js'), '1');
+    run('add', '.');
+    run('commit', '-qm', 'start both');
+    fs.writeFileSync(path.join(fx.project, 'api', 'b.js'), '2');
+    run('commit', '-qam', 'only the api changed');
+    fs.writeFileSync(path.join(fx.project, 'api', 'b.js'), '3');
+    const t = buildAgentToday({ cwd: path.join(fx.project, 'web'), home: fx.home, env: {} });
+    assert.deepEqual(t.commits, ['start both']);
+    assert.equal(t.unsaved, 0);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('recap today counts every new file inside a new folder', () => {
+  const fx = todayFixture();
+  try {
+    gitRepo(fx.project);
+    fs.mkdirSync(path.join(fx.project, 'pages'));
+    fs.writeFileSync(path.join(fx.project, 'pages', 'one.js'), '1');
+    fs.writeFileSync(path.join(fx.project, 'pages', 'two.js'), '2');
+    const t = buildAgentToday({ cwd: fx.project, home: fx.home, env: {} });
+    assert.equal(t.unsaved, 2);
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
+
+test('recap today never rewrites git index file', () => {
+  const fx = todayFixture();
+  try {
+    const run = gitRepo(fx.project);
+    const file = path.join(fx.project, 'a.txt');
+    fs.writeFileSync(file, 'a');
+    run('add', '.');
+    run('commit', '-qm', 'start');
+    const index = path.join(fx.project, '.git', 'index');
+    const past = new Date(Date.now() - 60 * 60 * 1000);
+    fs.utimesSync(index, past, past);
+    const later = new Date(Date.now() + 60 * 1000);
+    fs.utimesSync(file, later, later);
+    const before = fs.statSync(index).mtimeMs;
+    buildAgentToday({ cwd: fx.project, home: fx.home, env: {} });
+    assert.equal(fs.statSync(index).mtimeMs, before, 'recap must not write inside .git');
+  } finally {
+    cleanup(fx.home);
+    cleanup(fx.project);
+  }
+});
