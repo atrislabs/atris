@@ -49,6 +49,17 @@ esac
 
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
 
+# A temp HOME has no keychain, and macOS answers any app that tries to save a
+# secret there with a "Keychain Not Found" dialog on the owner's screen. Each
+# temp home gets its own empty, never-locking keychain: no dialog, and the
+# owner's login keychain stays out of reach.
+scratch_keychain() {
+  [ "$(uname)" = Darwin ] || return 0
+  local kc="$1/Library/Keychains/login.keychain-db"
+  mkdir -p "$1/Library/Keychains"
+  HOME="$1" security create-keychain -p "" "$kc" >/dev/null 2>&1 || true
+  HOME="$1" security set-keychain-settings "$kc" >/dev/null 2>&1 || true
+}
 W="$ROOT/project"; SHIM="$ROOT/bin"; mkdir -p "$W" "$SHIM"
 
 # The project's own hooks call `atris`; make that this repo's code, not the
@@ -113,7 +124,7 @@ case "$ENGINE" in
     # permission profile matches workspace-write (writes in the project and the
     # temp dirs, no network) and adds a read deny on the real HOME. If the login token
     # refreshes mid run, copy it back so the real login keeps working.
-    CH="$ROOT/codex-home"; mkdir -p "$CH" "$ROOT/home"
+    CH="$ROOT/codex-home"; mkdir -p "$CH" "$ROOT/home"; scratch_keychain "$ROOT/home"
     cp "$HOME/.codex/auth.json" "$CH/auth.json"; chmod 600 "$CH/auth.json"
     PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" CODEX_HOME="$CH" HOME="$ROOT/home" \
     env -u OPENAI_API_KEY -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED -u CODEX_THREAD_ID \
@@ -139,7 +150,7 @@ case "$ENGINE" in
     # the sandbox run unasked, and one that tries to leave it is refused.
     # --dangerously-skip-permissions is gone because it approved those exits,
     # and an unsandboxed cat read the owner's files.
-    AH="$ROOT/agy-home/.gemini/antigravity-cli"; mkdir -p "$AH"
+    AH="$ROOT/agy-home/.gemini/antigravity-cli"; mkdir -p "$AH"; scratch_keychain "$ROOT/agy-home"
     cp "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" "$AH/"; chmod 600 "$AH/antigravity-oauth-token"
     printf '{"toolPermission":"proceed-in-sandbox","allowNonWorkspaceAccess":false,"permissions":{"deny":["read_file(%s)"]}}\n' "$HOME" > "$AH/settings.json"
     PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" HOME="$ROOT/agy-home" \
@@ -161,7 +172,7 @@ $PROMPT" --model "${FOUR_LINES_MODEL:-gemini-4-argon-high}" \
     # workspace one with /tmp and the real HOME denied (deny blocks reads too):
     # writes land in the project, the temp grok home, and the per-user system
     # temp dir grok itself needs to start.
-    GH="$ROOT/grok-home"; mkdir -p "$GH" "$ROOT/home" "$ROOT/tmp"
+    GH="$ROOT/grok-home"; mkdir -p "$GH" "$ROOT/home" "$ROOT/tmp"; scratch_keychain "$ROOT/home"
     cp "$HOME/.grok/auth.json" "$GH/auth.json"; chmod 600 "$GH/auth.json"
     printf '[folders."%s"]\ntrusted = true\ndecided_at = %s\n' "$(pwd -P)" "$(date +%s)" > "$GH/trusted_folders.toml"
     printf '[profiles.four-lines]\nextends = "workspace"\ndeny = ["/tmp", "/private/tmp", "%s"]\n' "$HOME" > "$GH/sandbox.toml"
@@ -205,7 +216,7 @@ const meta = {
     writes: "--always-approve inside a custom sandbox profile: grok workspace with /tmp and the real HOME denied. Writes land in the workdir, the temp grok home, and the per-user system temp dir; home and /tmp fail. Denying the system temp dir stops grok from starting",
     stdin: "/dev/null, so grok never waits on input",
     atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
-    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
+    keychain: "a new empty keychain inside the temp HOME, so the agent cannot reach the owner login keychain and macOS shows no Keychain Not Found dialog. The login comes from the copied token file",
     probe: "2026-10-23: grok inspect with the temp homes listed 0 user skills, plugins, MCP servers, and hooks (the real home gives 141 skills and the user CLAUDE.md). Without the trust entry no project rules load at all; with it, a probe run named only the project Agents.md and Claude.md and quoted the Acceleration line verbatim. touch in the real home and /tmp failed with Operation not permitted, touch ./ worked",
     home_reads: "the real HOME is on the sandbox profile deny list, which grok enforces in the kernel for reads as well as writes, read_file included. Nothing under HOME is re-opened: the login is a copy in the temp GROK_HOME",
     home_reads_probe: "2026-10-23: told to read a canary file in the real HOME, read_file returned Permission denied and cat returned Operation not permitted; the canary contents never appeared in the transcript",
@@ -219,7 +230,7 @@ const meta = {
     prompt_prefix: "one line asking it to apply edits without asking first, since agy otherwise stops to ask and exits without editing",
     stdin: "/dev/null, so agy never waits on input",
     atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
-    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
+    keychain: "a new empty keychain inside the temp HOME, so the agent cannot reach the owner login keychain and macOS shows no Keychain Not Found dialog. The login comes from the copied token file",
     probe: "2026-10-23: probe run in a temp HOME named only the project rule file and the two built-in skills; with --sandbox, touch in the real home and touch ./ both failed and an edit-tool change inside the project landed. Without --sandbox, touch in the real home succeeded, which is why the sandbox is on",
     permissions: "toolPermission proceed-in-sandbox in the temp settings.json replaces --dangerously-skip-permissions: sandboxed commands run unasked, a command asking to bypass the sandbox is refused because nobody can approve it headless",
     home_reads: "the terminal sandbox denies the real HOME, a read_file deny rule on HOME covers the file tool, and allowNonWorkspaceAccess is false. Nothing under HOME is re-opened: the login is a copy in the temp HOME",
@@ -233,7 +244,7 @@ const meta = {
     writes: "a permission profile matching workspace-write, with approval_policy never: shell writes land in the project and the temp dirs, everything else fails, network off",
     stdin: "/dev/null, so codex never waits on input",
     atris_binary: "project hooks and the agent resolve atris to an npm pack copy of this repo in the temp dir, via a PATH shim; the repo itself sits under the read-denied HOME",
-    keychain: "none: the temp HOME has no Library/Keychains, so the agent cannot reach the owner login keychain. The login comes from the copied token file; a 2026-10-23 probe with no keychain started and answered",
+    keychain: "a new empty keychain inside the temp HOME, so the agent cannot reach the owner login keychain and macOS shows no Keychain Not Found dialog. The login comes from the copied token file",
     probe: "2026-10-23: probe run named only the project AGENTS.md and the four built-in codex skills; touch in the real home failed with Operation not permitted, touch ./ worked. Without the temp HOME it also listed ~/.agents/skills, which is why HOME is replaced",
     home_reads: "default_permissions names a profile passed with -c: root readable, project and temp dirs writable, the real HOME denied. It replaces --sandbox workspace-write, which let shell commands read anything. Nothing under HOME is re-opened: the login is a copy in the temp CODEX_HOME",
     home_reads_probe: "2026-10-23: told the canary path, codex declined to try because its policy names the HOME deny. Told to cat a /Users/Shared symlink to a canary in the real HOME and to run a node script reading it, both failed with Operation not permitted and the contents never appeared. Under the old workspace-write, cat read the same canary",
