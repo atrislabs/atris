@@ -34,4 +34,4 @@ jobs:
           git config --global init.defaultBranch master
 
       - name: Sandbox tests
-        run: node --test test/one-lap-runtime.test.js test/secret-gateway.test.js test/fleet-subscription-only.test.js test/engine-ask.test.js
+        run: node --test test/one-lap-runtime*.test.js test/secret-gateway.test.js test/fleet-subscription-only.test.js test/engine-ask.test.js
