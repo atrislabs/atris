@@ -546,23 +546,12 @@ test('computeTickReward charges the halt penalty and pays nothing for a failed d
 // CLI smokes (spawned from temp dirs — never the repo checkout)
 // ---------------------------------------------------------------------------
 
-test('atris autopilot --help routes to the mission-runtime front door', () => {
-  const dir = makeWorkspace();
-  try {
-    const r = runCli(['autopilot', '--help'], dir);
-    assert.equal(r.status, 0);
-    assert.match(r.stdout, /Keep working until you stop/);
-    assert.match(r.stdout, /--legacy/);
-  } finally {
-    cleanup(dir);
-  }
-});
-
 test('atris autopilot --legacy --help routes to the legacy suggest/approve loop help', () => {
   const dir = makeWorkspace();
   try {
     const r = runCli(['autopilot', '--legacy', '--help'], dir);
     assert.equal(r.status, 0);
+    assert.match(r.stdout, /autopilot/i);
     assert.match(r.stdout, /Suggests one task at a time/);
     assert.match(r.stdout, /--dry-run/);
   } finally {

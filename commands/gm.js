@@ -1532,7 +1532,7 @@ async function gmPhone(args = []) {
     const opened = [];
     try {
       for (const address of addresses) {
-        const server = http.createServer((req, res) => { handler(req, res); });
+        const server = http.createServer((req, res) => { handler(req, res).catch(() => res.destroy()); });
         await new Promise((resolve, reject) => {
           server.once('error', reject);
           server.listen(port, address, resolve);

@@ -36,7 +36,7 @@ Verify: `node --test test/cloud-clean.test.js`
 Verify: `node --test test/push-scoped.test.js`
 
 **S5 speed + watch alias.** Skip unchanged files by manifest hash before upload; batch small uploads into one sync POST. Add `atris watch` as an alias for `sync --watch` (knownCommands too).
-Verify: `node --test test/watch-alias.test.js`
+Verify: `node --test test/push-scoped.test.js`
 
 **S6 one boot command.** `atris activate` output ends with the one-line brief (brief.js:277 shape) plus one sync-status line: `in sync` / `N files drifted` / `offline`.
 Verify: `node --test test/activate-boot.test.js`

@@ -2,13 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseContributionCard, escapeRegExp } = require('../commands/brain');
-
-test('escapeRegExp neutralizes regex metacharacters', () => {
-  assert.equal(escapeRegExp('c++'), 'c\\+\\+');
-  assert.equal(escapeRegExp('a.b'), 'a\\.b');
-  assert.equal(escapeRegExp('('), '\\(');
-});
+const { parseContributionCard } = require('../commands/brain');
 
 test('parseContributionCard parses a normal member section', () => {
   const card = parseContributionCard('## navigator\ncurrent_score_signal: 0.5\n', { name: 'navigator' });

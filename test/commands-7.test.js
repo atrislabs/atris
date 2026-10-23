@@ -40,8 +40,9 @@ test('task serve exposes a local task factory API', async () => {
       env: { ...process.env, ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
+    const ready = await waitForOutput(child, /task board: (http:\/\/127\.0\.0\.1:\d+)\/\?t=([A-Za-z0-9_-]+)/);
     const base = ready.match[1];
+    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { 'x-atris-token': ready.match[2], ...options.headers } });
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);

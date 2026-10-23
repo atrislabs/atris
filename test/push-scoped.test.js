@@ -7,6 +7,7 @@ const {
   resolveChangedScopePaths,
   mergePushScopes,
   buildPushChangePlan,
+  buildPushUploadBatches,
 } = require('../commands/push');
 
 test('parsePushArgv keeps business slug and collects positional file paths', () => {
@@ -106,4 +107,32 @@ test('mergePushScopes --changed with no diffs stays empty instead of widening', 
   };
   assert.deepEqual(mergePushScopes({ changed: true, localFiles, baseFiles }), []);
   assert.equal(mergePushScopes({}), null);
+});
+
+test('push skips manifest-unchanged files before upload and batches small changed files', () => {
+  const reads = [];
+  const plan = buildPushChangePlan({
+    baseFiles: {
+      '/atris/wiki/unchanged.md': { hash: 'same', size: 6 },
+      '/atris/wiki/a.md': { hash: 'old-a', size: 5 },
+      '/atris/wiki/b.md': { hash: 'old-b', size: 5 },
+    },
+    localFiles: {
+      '/atris/wiki/unchanged.md': { hash: 'same', size: 6 },
+      '/atris/wiki/a.md': { hash: 'new-a', size: 8 },
+      '/atris/wiki/b.md': { hash: 'new-b', size: 8 },
+    },
+    readFileContent: (filePath) => {
+      reads.push(filePath);
+      return `content:${filePath}`;
+    },
+  });
+
+  assert.deepEqual(reads.sort(), ['/atris/wiki/a.md', '/atris/wiki/b.md']);
+  assert.deepEqual(plan.filesToPush.map((file) => file.path).sort(), ['/atris/wiki/a.md', '/atris/wiki/b.md']);
+  assert.equal(plan.unchangedCount, 1);
+
+  const batches = buildPushUploadBatches(plan.filesToPush, { maxBatchBytes: 1024 });
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0].map((file) => file.path).sort(), ['/atris/wiki/a.md', '/atris/wiki/b.md']);
 });

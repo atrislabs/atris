@@ -127,3 +127,96 @@ test('serveSite refuses a symlink inside the site folder that points outside it'
     server.close();
   }
 });
+
+test('serveSite answers a null byte in the URL with 400 and keeps serving', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-nul-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.writeFileSync(path.join(base, 'site', 'index.html'), 'PUBLIC');
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: p }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    assert.equal((await get('/%00')).status, 400);
+    assert.equal((await get('/index.html%00.txt')).status, 400);
+    assert.equal((await get('/')).body, 'PUBLIC', 'the server is still up');
+  } finally {
+    server.close();
+  }
+});
+
+test('collectMd skips symlinked files and folders, so a site only holds files from its own folder', (t) => {
+  const { collectMd } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-collect-link-'));
+  fs.mkdirSync(path.join(base, 'docs'));
+  fs.mkdirSync(path.join(base, 'elsewhere'));
+  fs.writeFileSync(path.join(base, 'docs', 'real.md'), '# Real');
+  fs.writeFileSync(path.join(base, 'elsewhere', 'other.md'), '# Other');
+  fs.symlinkSync(path.join(base, 'elsewhere', 'other.md'), path.join(base, 'docs', 'linked.md'));
+  fs.symlinkSync(path.join(base, 'elsewhere'), path.join(base, 'docs', 'linked-dir'));
+  const names = collectMd(path.join(base, 'docs')).map((f) => path.basename(f));
+  assert.deepEqual(names, ['real.md']);
+});
+
+test('serveSite answers only requests addressed to this computer', async () => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-serve-host-'));
+  fs.mkdirSync(path.join(base, 'site'));
+  fs.writeFileSync(path.join(base, 'site', 'index.html'), 'PUBLIC');
+  const { server } = await serveSite(path.join(base, 'site'), 0);
+  const { port } = server.address();
+  const get = (host) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: host } }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }).on('error', reject);
+  });
+  try {
+    assert.equal((await get(`127.0.0.1:${port}`)).body, 'PUBLIC');
+    assert.equal((await get(`localhost:${port}`)).body, 'PUBLIC');
+    const other = await get(`attacker.example:${port}`);
+    assert.equal(other.status, 403);
+    assert.notEqual(other.body, 'PUBLIC');
+  } finally {
+    server.close();
+  }
+});
+
+test('serveSite rejects malformed targets and all writes while remaining available', async t => {
+  const http = require('node:http');
+  const { serveSite } = require('../lib/site');
+  const dir = tempDir(t, 'site-http-security-');
+  fs.writeFileSync(path.join(dir, 'index.html'), 'preview');
+  const { server } = await serveSite(dir, 0);
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const call = (target, { method = 'GET', body, headers = {} } = {}) => new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1', port: server.address().port, path: target, method,
+      headers: { ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body) }), ...headers },
+    }, res => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', error => { error.message += ` (${method} ${target}, ${Buffer.byteLength(body || '')} bytes)`; reject(error); });
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+    req.end(body);
+  });
+  for (const target of ['//x:99999', 'http://x:99999/', '/%ZZ', '/?q=%ZZ']) assert.equal(await call(target), 400);
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    assert.equal(await call('/', { method, body: '{', headers: { 'content-type': 'application/json' } }), 405);
+  }
+  assert.equal(await call('/', { body: 'x'.repeat(1_000_001), headers: { 'content-length': 1_000_001 } }), 400);
+  assert.equal(await call('/'), 200);
+  assert.equal(await call('/?q=%23%5C'), 200);
+  assert.equal(await call('/', { method: 'HEAD' }), 200);
+  assert.equal(server.address().address, '127.0.0.1');
+});

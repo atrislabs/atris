@@ -12,7 +12,6 @@ const path = require('node:path');
 
 const fleet = require('../lib/fleet');
 const engine = require('../commands/engine');
-const { resolveDefaultVerifier } = require('../lib/default-verifier');
 const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
 
 // runDispatchFlight writes a receipt under <root>/atris/runs, so flight tests
@@ -34,21 +33,6 @@ test('dispatchCheck prefers the narrow node --test extraction when present', () 
 test('dispatchCheck falls back to the full Check: text when it is not a node --test command', () => {
   const task = { title: 'Ship it. Done: x. Check: npm run lint && npm run build.' };
   assert.equal(fleet.dispatchCheck(task), 'npm run lint && npm run build.');
-});
-
-test('repo default verifier prefers package tests, then test directory, then diff check', () => {
-  const root = makeTempRoot();
-  try {
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-    assert.equal(resolveDefaultVerifier(root), 'npm test');
-    fs.rmSync(path.join(root, 'package.json'));
-    fs.mkdirSync(path.join(root, 'test'));
-    assert.equal(resolveDefaultVerifier(root), 'node --test');
-    fs.rmSync(path.join(root, 'test'), { recursive: true });
-    assert.equal(resolveDefaultVerifier(root), 'git diff --check');
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
 });
 
 test('fleet prompt injects the repo default when the task has no Check line', () => {

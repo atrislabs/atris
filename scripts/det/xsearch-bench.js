@@ -303,5 +303,6 @@ module.exports = {
   fixtureFetch,
   runOfflineCheck,
   saveFailedOutput,
+  startCountingServer,
   summary,
 };

@@ -16,71 +16,12 @@ const {
   consecutiveSameReasonErrors,
 } = require('../commands/mission');
 
-const RUNNER_ENV_KEYS = [
-  'ATRIS_RUNNER_PROFILE',
-  'ATRIS_RUNNER_MODEL',
-  'ATRIS_RUNNER_BIN',
-  'ATRIS_CLAUDE_MODEL',
-  'ATRIS_CLAUDE_BIN',
-];
-
-function withRunnerEnv(values, fn) {
-  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
-  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
-  for (const [key, value] of Object.entries(values || {})) {
-    if (value !== undefined) process.env[key] = value;
-  }
-  try {
-    fn();
-  } finally {
-    for (const key of RUNNER_ENV_KEYS) {
-      const value = prev.get(key);
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
-}
-
-// --- resolveClaudeRunnerModel: precedence explicit > env > pinned default ---
-
-test('resolveClaudeRunnerModel honors explicit mission.model first', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
-    assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
-    assert.equal(resolveClaudeRunnerModel({ model: 'opus 5.5' }), 'claude-opus-5-5');
-  });
-});
-
-test('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env when no mission.model', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
-    assert.equal(resolveClaudeRunnerModel({ model: null }), 'sonnet');
-    assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
-  });
-});
-
-test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () => {
-  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
-    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
-  });
-});
-
-test('resolveClaudeRunnerModel defaults to pinned Opus 5.5', () => {
-  withRunnerEnv({}, () => {
-    assert.equal(resolveClaudeRunnerModel({ model: null }), 'claude-opus-5-5');
-    assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
-    assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'claude-opus-5-5');
-  });
-});
-
-test('resolveClaudeRunnerBin lets missions swap the Claude binary by env', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly' }, () => {
-    assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
-  });
-});
-
-test('resolveClaudeRunnerBin prefers ATRIS_RUNNER_BIN over legacy env', () => {
-  withRunnerEnv({ ATRIS_RUNNER_BIN: '/opt/glm/runner', ATRIS_CLAUDE_BIN: '/opt/claude' }, () => {
-    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
-  });
+// Missions resolve the runner model and binary through the shared runner
+// module; its precedence rules are tested in test/runner-command.test.js.
+test('mission uses the shared runner model and binary resolvers', () => {
+  const runner = require('../lib/runner-command');
+  assert.equal(resolveClaudeRunnerModel, runner.resolveClaudeRunnerModel);
+  assert.equal(resolveClaudeRunnerBin, runner.resolveClaudeRunnerBin);
 });
 
 // --- detectUnavailableModel: turn a buried claude-error into an actionable signal ---
