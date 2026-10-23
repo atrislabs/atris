@@ -210,3 +210,33 @@ test('a failed fetch keeps the local result', (t) => {
   assert.equal(payload.mission.verifier_result.code_source, undefined);
   assert.match(payload.mission.verifier_result.stderr, /Could not find/);
 });
+
+// Codex review round 2 on #1483, P2: making a dirty file executable is a
+// change too.
+test('a file dirty at the start made executable keeps the check here', (t) => {
+  const ctx = setup(t);
+  fs.appendFileSync(path.join(ctx.root, 'README.md'), 'local note\n');
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json'],
+    { ATRIS_TEST_WORK: 'chmod +x README.md' });
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  assert.equal(payload.ticks[0].verifier_passed, false);
+  assert.equal(payload.mission.verifier_result.code_source, undefined);
+});
+
+// Codex review round 2 on #1483, P2: with a narrow fetch refspec a fetch
+// succeeds but only FETCH_HEAD moves; the cached origin/master stays old.
+// The check must run on what the fetch actually brought.
+test('a narrow fetch refspec still checks the fresh main line, not the cached one', (t) => {
+  const ctx = setup(t);
+  git(ctx.root, ['config', 'remote.origin.fetch', '+refs/heads/nothing:refs/remotes/origin/nothing']);
+  const cachedBefore = git(ctx.root, ['rev-parse', 'refs/remotes/origin/master']);
+  assert.notEqual(cachedBefore, git(ctx.origin, ['rev-parse', 'master']), 'the cache is behind the merge');
+  const mission = startMission(ctx);
+  const res = runCli(ctx, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
+  const payload = lastJson(res.stdout);
+  assert.ok(payload, res.stderr || res.stdout);
+  assert.equal(payload.ticks[0].verifier_passed, true, JSON.stringify(payload.mission.verifier_result));
+  assert.equal(payload.mission.verifier_result.code_sha, git(ctx.origin, ['rev-parse', 'master']));
+});

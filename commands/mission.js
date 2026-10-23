@@ -7000,15 +7000,17 @@ function missionBaselinePath(missionId, root = process.cwd()) {
 // Stored outside missions.jsonl because that log re-appends the full mission
 // record on every save. Captured after start bookkeeping so the mission's own
 // state writes land inside the baseline, not in new_since_baseline.
-// What a dirty file holds right now, so a file that was already dirty at the
-// start and changed again is not missed. 'missing' for a deleted file; null
+// What a dirty file holds right now (content and mode), so a file that was
+// already dirty at the start and changed again is not missed. 'missing' for a deleted file; null
 // when it cannot be read (counts as changed: the check cannot tell).
 function dirtyContentHash(root, relPath) {
   const file = path.join(root, relPath);
   try {
     const stat = fs.statSync(file);
     if (stat.isDirectory()) return 'dir';
-    return crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+    // the mode counts too: making a file executable is a change
+    const mode = (stat.mode & 0o777).toString(8);
+    return `${mode}:${crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex')}`;
   } catch (error) {
     return error && error.code === 'ENOENT' ? 'missing' : null;
   }

@@ -406,30 +406,76 @@ test('a handoff naming a locked bet keeps that lock, whoever hands off', async (
   assert.equal(wake.yes_lock_from, 'mission-2026-10-22-try-page-bbbb2222');
 });
 
-test('two open locked jobs and no name: nobody starts, and it says why', async (t) => {
+// Codex review round 2 on #1483: a handed-off member runs locked unless its
+// parent is proven unlocked. Anything unresolved runs under a deny-all lock:
+// every held command exits 77 and the owner gets a plain yes card.
+async function assertDenyAll(w, wake) {
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(wake.yes_lock, 'deny_all', JSON.stringify(wake));
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77', 'the merge is held');
+  assert.equal(fs.existsSync(w.ghRan), false, 'the real gh never ran');
+  const yesLock = require('../lib/yes-lock');
+  const asked = yesLock.askedYesLocks(w.stateDir, wake.mission_id);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].held_command, 'gh pr merge 5 --squash');
+  assert.deepEqual(yesLock.orphanYesCards(w.stateDir).filter((c) => c.mission_id === wake.mission_id).map((c) => c.ask),
+    ['a handed-off job wants to gh pr merge 5 --squash; nothing it belongs to could be found']);
+}
+
+test('two open locked jobs and no name: the woken run is locked to everything', async (t) => {
   const w = lockedWorld(t);
   w.lockMission('mission-2026-10-22-one-cccc3333', 'builder', 'ready');
   w.lockMission('mission-2026-10-22-two-dddd4444', 'builder', 'paused');
-  const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
-  assert.equal(wake.status, 'not_started');
-  assert.equal(wake.reason, 'lock_unclear');
-  assert.match(wake.text, /validator did not start: builder has more than one job under a yes-lock open/);
-  assert.equal(fs.existsSync(w.ghExit), false, 'nothing ran');
+  await assertDenyAll(w, await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']));
 });
 
-test('a handoff from inside a locked guard whose lock cannot be read starts nobody', async (t) => {
+test('a handoff from inside a guard whose lock cannot be read runs locked to everything', async (t) => {
   const w = lockedWorld(t);
-  // a locked guard folder on PATH (it wraps gh) with no readable lock record
+  // a guard folder on PATH with no readable lock record
   const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-git-'));
   t.after(() => fs.rmSync(guardDir, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(guardDir, 'gh'), '#!/bin/sh\nexit 77\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(guardDir, 'git'), '#!/bin/sh\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
   const res = runCli(w.ctx, ['member', 'handoff', 'builder', 'validator', 'CHILDSTEP try it', '--json'],
     { ATRIS_HANDOFF_WAKE: '1', PATH: `${guardDir}${path.delimiter}${w.ctx.bin}${path.delimiter}${process.env.PATH}` });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   const wake = JSON.parse(res.stdout).handoff.wake;
-  assert.equal(wake.status, 'not_started');
-  assert.equal(wake.reason, 'lock_unknown');
-  assert.match(wake.text, /validator did not start: this handoff came from inside a job under a yes-lock that could not be read/);
+  if (wake.pid) { w.ctx.pids.push(wake.pid); await waitGone(wake.pid); }
+  await assertDenyAll(w, wake);
+});
+
+test('no parent on file at all: the woken run is locked to everything', async (t) => {
+  const w = lockedWorld(t);
+  await assertDenyAll(w, await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']));
+});
+
+test('a named bet whose lock record is unreadable: the woken run is locked to everything', async (t) => {
+  const w = lockedWorld(t);
+  fs.mkdirSync(path.join(w.stateDir, 'yes-locks'), { recursive: true });
+  fs.writeFileSync(path.join(w.stateDir, 'yes-locks', 'mission-2026-10-22-try-page-ffff6666.json'), '{"bet_id": "bet-2026-10-22-6f292584", "locks": [');
+  await assertDenyAll(w, await handOffAndWait(w, ['linguist', 'validator', '[bet-2026-10-22-6f292584] CHILDSTEP try it']));
+});
+
+test('a named bet or mission that is not on file: the woken run is locked to everything', async (t) => {
+  const w = lockedWorld(t);
+  await assertDenyAll(w, await handOffAndWait(w, ['linguist', 'validator', '[bet-2026-10-22-unknown1] CHILDSTEP try it']));
+  fs.rmSync(w.ghExit);
+  const second = await handOffAndWait(w, ['linguist', 'validator', 'CHILDSTEP finish mission-2026-10-22-gone-eeee5555']);
+  assert.equal(second.yes_lock, 'deny_all');
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '77');
+});
+
+test('a parent proven unlocked lets the woken run go unlocked', async (t) => {
+  const w = lockedWorld(t);
+  const file = path.join(w.ctx.root, '.atris', 'state', 'missions.jsonl');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const now = new Date().toISOString();
+  fs.appendFileSync(file, `${JSON.stringify({ schema: 'atris.mission.v1', id: 'mission-2026-10-22-plain-abcd0000', objective: 'tidy docs',
+    owner: 'builder', status: 'paused', runner: 'claude', created_at: now, updated_at: now })}\n`);
+  const wake = await handOffAndWait(w, ['builder', 'validator', 'CHILDSTEP try it on 20 repos']);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.equal(wake.yes_lock, 'none');
+  assert.equal(fs.readFileSync(w.ghExit, 'utf8').trim(), '0');
+  assert.equal(fs.existsSync(w.ghRan), true);
 });
 
 // Codex review of #1483, P1: two handoffs at once both counted 5 working and

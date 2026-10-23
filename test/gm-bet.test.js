@@ -1666,3 +1666,22 @@ test('merged changes: one per first-parent commit, merges named by their pull re
     assert.deepEqual(bundle.sources.landed.subjects, ['add the phone page', 'direct fix on master']);
   });
 });
+
+// Codex review round 2 on #1483: a handed-off run whose job could not be
+// found runs locked to everything; what it was held from is a plain yes card.
+test('yes card for a held handed-off job that nothing could be traced to', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.orphanSeal();
+  const held = yesLock.check({ stateDir: root, missionId: 'm-orphan', seal, tool: 'gh', args: ['pr', 'merge', '5'] });
+  assert.equal(held.hold, true);
+  assert.match(held.message, /^held: a handed-off job wants to gh pr merge 5; nothing it belongs to could be found\./);
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.ask, card.job.command], ['yes', 'a handed-off job wants to gh pr merge 5; nothing it belongs to could be found', 'gh pr merge 5']);
+  const yes = await h.d.answerYes();
+  assert.equal(yes.ok, true);
+  assert.deepEqual(h.cli.find(a => a[1] === 'ping').slice(0, 3), ['mission', 'ping', 'm-orphan']);
+  assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-orphan', seal, tool: 'gh', args: ['pr', 'merge', '5'] }).consume, [1], 'the yes lets that one command run once');
+});
