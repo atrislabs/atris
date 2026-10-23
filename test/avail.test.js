@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   parseTimeToDecimal,
   parseDaysArg,
+  parseSlotsDays,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
@@ -61,5 +62,17 @@ describe('avail formatDecimalHour', () => {
   it('formats fractional hours', () => {
     assert.equal(formatDecimalHour(14.5), '2:30pm');
     assert.equal(formatDecimalHour(21), '9pm');
+  });
+});
+
+describe('avail parseSlotsDays', () => {
+  it('accepts whole numbers in range and refuses the rest', () => {
+    assert.equal(parseSlotsDays('7'), 7);
+    assert.equal(parseSlotsDays('60'), 60);
+    assert.equal(parseSlotsDays('400'), null);
+    assert.equal(parseSlotsDays('abc'), null);
+    assert.equal(parseSlotsDays('0'), null);
+    assert.equal(parseSlotsDays('-3'), null);
+    assert.equal(parseSlotsDays(undefined), null);
   });
 });

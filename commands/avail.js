@@ -287,12 +287,27 @@ async function setAvail(argv) {
   return 0;
 }
 
+function parseSlotsDays(raw) {
+  if (raw === undefined || !/^\d+$/.test(String(raw).trim())) return null;
+  const days = parseInt(raw, 10);
+  if (days < 1 || days > 365) return null;
+  return days;
+}
+
 async function slotsAvail(argv) {
   const opts = { days: 7, username: null, json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
-    else if (a === '--days') opts.days = parseInt(argv[++i], 10);
+    else if (a === '--days') {
+      const raw = argv[++i];
+      const days = parseSlotsDays(raw);
+      if (days === null) {
+        console.error(`--days needs a whole number from 1 to 365, got: ${raw === undefined ? 'nothing' : raw}`);
+        return 1;
+      }
+      opts.days = days;
+    }
     else if (a === '--user' || a === '--username') opts.username = argv[++i];
     else if (a === '--help' || a === '-h') {
       printHelp();
@@ -320,7 +335,7 @@ async function slotsAvail(argv) {
   try {
     data = JSON.parse(result.body.toString('utf8'));
   } catch {
-    console.error('Invalid slots response');
+    console.error(`the booking server sent back a reply atris could not read (HTTP ${result.status}). Try again in a minute.`);
     return 1;
   }
   if (result.status < 200 || result.status >= 300) {
@@ -402,6 +417,7 @@ module.exports = {
   formatBookingLink,
   parseTimeToDecimal,
   parseDaysArg,
+  parseSlotsDays,
   buildAvailableHours,
   resolveTimezone,
   formatDecimalHour,
