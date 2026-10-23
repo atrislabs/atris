@@ -7,12 +7,13 @@
 # treatment keeps the four opening lines; control strips them from every file.
 # Output: atris/campaigns/cmp-four-lines-real/evals/runs/<engine>/<arm>-<n>/
 #   workdir/ (no .git, no node_modules), transcript.log, meta.json
-# Env: FOUR_LINES_MODEL picks a model (codex defaults to gpt-6.1-sol),
+# Env: FOUR_LINES_MODEL picks a model (codex defaults to gpt-6.1-sol, agy to
+# gemini-4-argon-high),
 # FOUR_LINES_TIMEOUT caps seconds (900).
 set -euo pipefail
 
 ENGINE="${1:-}"; ARM="${2:-}"; N="${3:-}"
-usage() { echo "usage: $0 <claude|codex> <treatment|control> <n>" >&2; exit 2; }
+usage() { echo "usage: $0 <claude|codex|agy> <treatment|control> <n>" >&2; exit 2; }
 [ -n "$ENGINE" ] && [ -n "$N" ] || usage
 case "$ARM" in treatment|control) ;; *) usage ;; esac
 
@@ -28,7 +29,11 @@ case "$ENGINE" in
     command -v codex >/dev/null || { echo "codex is not installed" >&2; exit 3; }
     [ -f "$HOME/.codex/auth.json" ] || { echo "codex is not logged in (no ~/.codex/auth.json)" >&2; exit 3; }
     ;;
-  *) echo "engine '$ENGINE' is not wired yet (claude and codex so far)" >&2; exit 3 ;;
+  agy)
+    command -v agy >/dev/null || { echo "agy is not installed" >&2; exit 3; }
+    [ -f "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" ] || { echo "agy is not logged in (no antigravity-oauth-token)" >&2; exit 3; }
+    ;;
+  *) echo "engine '$ENGINE' is not wired yet (claude, codex, and agy so far)" >&2; exit 3 ;;
 esac
 
 ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
@@ -101,6 +106,24 @@ case "$ENGINE" in
       if (r(a) > r(b)) { f.copyFileSync(a, b); console.error("codex login refreshed during the run; saved it back"); }' \
       "$CH/auth.json" "$HOME/.codex/auth.json" || true
     ;;
+  agy)
+    # HOME is a temp dir holding only the login token: no user GEMINI.md,
+    # settings, skills, MCP servers, or past conversations load. --add-dir is
+    # the real project path, or agy edits its own scratch folder instead.
+    # --sandbox keeps shell writes out of everything but /tmp; file edits
+    # still land in the project. The headless line stops the ask-first habit.
+    AH="$ROOT/agy-home/.gemini/antigravity-cli"; mkdir -p "$AH"
+    cp "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" "$AH/"; chmod 600 "$AH/antigravity-oauth-token"
+    PATH="$SHIM:$PATH" npm_config_cache="$ROOT/npm-cache" HOME="$ROOT/agy-home" \
+    env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
+      perl -e 'alarm shift; exec @ARGV' "$CAP" \
+      agy -p "You are running headless with edit permission already granted. Apply changes directly and never ask for confirmation.
+
+$PROMPT" --model "${FOUR_LINES_MODEL:-gemini-4-argon-high}" \
+        --add-dir "$(pwd -P)" --mode accept-edits --dangerously-skip-permissions --sandbox \
+        --output-format stream-json > "$OUT/transcript.log" 2>&1 < /dev/null
+    CODE=$?
+    ;;
 esac
 set -e
 ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SECS=$(( $(date +%s) - T0 ))
@@ -112,7 +135,7 @@ STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" node -e '
 const fs = require("fs"), crypto = require("crypto"), cp = require("child_process");
 const e = process.env, out = e.OUT;
 const sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex");
-let model = e.FOUR_LINES_MODEL || (e.ENGINE === "codex" ? "gpt-6.1-sol" : null);
+let model = e.FOUR_LINES_MODEL || ({ codex: "gpt-6.1-sol", agy: "gemini-4-argon-high" }[e.ENGINE] || null);
 for (const line of fs.readFileSync(out + "/transcript.log", "utf8").split("\n")) {
   try { const j = JSON.parse(line); if (j.type === "system" && j.subtype === "init") { model = j.model; break; } } catch {}
 }
@@ -121,7 +144,18 @@ let version = null; try { version = cp.execFileSync(e.ENGINE, ["--version"], { e
 const meta = {
   engine: e.ENGINE, engine_version: version, model, arm: e.ARM, n: Number(e.N),
   atris_md_sha256: sha,
-  isolation: e.ENGINE === "codex" ? {
+  isolation: e.ENGINE === "agy" ? {
+    workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
+    instructions: "HOME is a new temp dir holding only the agy login token: no user GEMINI.md, settings.json, skills, MCP servers, knowledge, or past conversations load; only the fresh project AGENTS.md does",
+    skills: "only the two skills agy ships with (agy-customizations, antigravity-guide) remain",
+    edits: "--add-dir is the resolved project path, so edits land in the project and not in agy scratch",
+    auth: "GEMINI_API_KEY and GOOGLE_API_KEY unset; a copy of the login token is used and the real one is never written",
+    writes: "--sandbox: shell writes fail everywhere except /tmp, including the project; file edits through the edit tool land in the project. Stricter than claude and codex, whose shells can write inside the project",
+    prompt_prefix: "one line asking it to apply edits without asking first, since agy otherwise stops to ask and exits without editing",
+    stdin: "/dev/null, so agy never waits on input",
+    atris_binary: "project hooks resolve atris to this repo via a PATH shim",
+    probe: "2026-10-23: probe run in a temp HOME named only the project rule file and the two built-in skills; with --sandbox, touch in the real home and touch ./ both failed and an edit-tool change inside the project landed. Without --sandbox, touch in the real home succeeded, which is why the sandbox is on",
+  } : e.ENGINE === "codex" ? {
     workdir: "fresh mktemp dir, git init, atris init --yes from this repo, fixture copied in and committed",
     instructions: "CODEX_HOME is a new temp dir holding only auth.json, plus --ignore-user-config and --ignore-rules: no user config.toml, AGENTS.md, instructions, memories, MCP servers, or exec rules load; only the fresh project AGENTS.md does",
     skills: "HOME is a temp dir so ~/.agents/skills does not load; only the four skills codex ships with remain",
