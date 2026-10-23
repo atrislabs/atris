@@ -491,6 +491,31 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
 });
 
+test('page: the idle orb answers the pointer like the landing orb, and only the pointer', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const num = name => Number(script.match(new RegExp(`\\b${name} = ([0-9.]+)`))[1]);
+  // StippleOrb's constants, copied: dots within RADIUS are pushed out by PUSH,
+  // then spring home; the ripple runs out from where the pointer came in
+  assert.deepEqual(['RADIUS', 'PUSH', 'SPRING', 'DAMP', 'WAVE_SPEED', 'WAVE_WIDTH', 'WAVE_LIFE'].map(num), [90, 14, 0.07, 0.8, 620, 70, 1.6]);
+  // the push only in the idle sphere, never under reduced motion
+  assert.match(script, /if \(mode === 'idle'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
+  assert.match(script, /if \(pointer\.inside && !reduced\) \{/);
+  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2;/);
+  // the light eases toward the pointer anywhere on the page (trackWindow), as on the landing page
+  assert.match(script, /light\.x \+= \(light\.tx - light\.x\) \* 0\.06;/);
+  assert.match(script, /var reach = Math\.max\(280, window\.innerWidth \* 0\.4\);/);
+  assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
+  // the ripple starts where the pointer enters the orb
+  assert.match(script, /canvas\.addEventListener\('pointerenter', function \(e\) \{/);
+  // pointer events go through to the dots on touch too; a tap still thinks
+  assert.match(html, /\.stage canvas \{[^}]*touch-action: none;/);
+  assert.match(script, /node\.addEventListener\('click', function \(\) \{ tapOrb\(false\); \}\);/);
+  // still no loop of its own: no new keyframes, and the tap timings are untouched
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  assert.deepEqual(['GROW_MS', 'SETTLE_MS', 'LEAVE_MS', 'GLIDE_MS', 'BEAT_MS', 'FAST_GROW_MS', 'FAST_SETTLE_MS', 'FAST'].map(num), [1050, 900, 400, 520, 340, 460, 440, 0.4]);
+});
+
 test('page: a tap on a card fades it, glides home to the sphere, and the fast bloom stays contained', () => {
   const html = phonePage('NONCE');
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
