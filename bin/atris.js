@@ -143,8 +143,8 @@ const helpRequested = updateCommand === 'help'
 const jsonRequested = process.argv.slice(2).includes('--json');
 const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
-// recap promises local only: no registry call and no background install.
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap'].includes(updateCommand)))) {
+// Local-only commands make no registry call and start no background install.
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {
@@ -602,6 +602,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
+  console.log('  99         - local focus and meditation sessions');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
@@ -2290,6 +2291,9 @@ if (command === 'guide') {
     console.error(error.message || String(error));
     process.exit(1);
   }
+} else if (command === '99') {
+  const code = require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3));
+  exitAfterStdoutDrain(code);
 } else if (command === 'now') {
   const args = process.argv.slice(3);
   const nowCode = require('../commands/now').nowAtris(args);

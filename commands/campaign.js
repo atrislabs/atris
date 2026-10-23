@@ -33,7 +33,7 @@ function printHelp() {
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]   no --budget means no limit; --cloud needs one');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]... [--run]');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]... [--brief <file>] [--run]');
   console.log('        --protect saves paths agents must not touch, and the commit they start from');
   console.log('        --basis atris_cloud: Atris runs it on your Atris computer and bills its engines; the default is your own engines');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
@@ -89,7 +89,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--every', '--steps'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--brief', '--every', '--steps'];
 
 function positionals(args) {
   const out = [];
@@ -389,6 +389,14 @@ async function cmdStart(args, ctx) {
   const protectPlan = protect.length ? planProtect(process.cwd(), protect) : null;
   if (protectPlan && protectPlan.error) return ctx.fail(protectPlan.error);
 
+  const briefFlag = readFlag(args, '--brief', '');
+  let briefText = null;
+  if (briefFlag) {
+    const from = path.resolve(briefFlag);
+    if (!fs.existsSync(from) || !fs.statSync(from).isFile()) return ctx.fail(`--brief ${briefFlag} is not a file`);
+    briefText = fs.readFileSync(from, 'utf8');
+  }
+
   const holdoutFlag = readFlag(args, '--holdout', '');
   let held = null;
   if (holdoutFlag) {
@@ -425,6 +433,12 @@ async function cmdStart(args, ctx) {
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
   ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
   if (protectPlan) saveProtect(ctx.campaignHome, id, protectPlan);
+  if (briefText !== null) {
+    const { briefPath } = require('../lib/campaign-loop');
+    const target = briefPath(process.cwd(), id);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, briefText);
+  }
 
   let cloud = null;
   if (args.includes('--cloud')) {
@@ -800,6 +814,7 @@ async function driveLoop(args, ctx, verb, view) {
     log: ctx.asJson ? () => {} : (line) => console.log(line),
     judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS, view.id),
     lessons: (id) => require('../lib/campaign-cadence').readLessons(process.cwd(), id),
+    brief: (id) => require('../lib/campaign-loop').readBrief(process.cwd(), id),
     ...(sync ? { sync } : {}),
     ...(ctx.loopDeps || {}),
   });

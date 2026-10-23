@@ -4,6 +4,7 @@ const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { openingLinesForRoot, renderAgentsOpeningBlock, upsertAgentsOpeningLines } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const { snapshotBeforeInit, commitInitFiles } = require('../lib/init-commit');
 const { INTENTS } = require('../lib/intents');
@@ -648,6 +649,8 @@ tools: []
   // Create agent instruction files for different tools
   if (withAdapters) {
   const intentTable = renderIntentTable();
+  const openingLines = openingLinesForRoot(process.cwd());
+  const agentsOpeningBlock = renderAgentsOpeningBlock(openingLines);
   const agentInstructions = `# AGENTS.md: Universal Agent Instructions
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
@@ -665,6 +668,8 @@ atris atris.md
 \`\`\`
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
+
+${agentsOpeningBlock}
 
 ## You translate
 
@@ -869,6 +874,10 @@ member -> mission start --verify -> status --status active -> one bounded step -
   const agentsVoiceResult = upsertAgentVoiceCard(agentsMdFile, voiceCard);
   if (agentsVoiceResult.action !== 'unchanged') {
     markReady('adapters', 'AGENTS.md voice card', '✓ Pinned the Atris voice card in AGENTS.md');
+  }
+  const agentsOpeningResult = upsertAgentsOpeningLines(agentsMdFile, openingLines);
+  if (agentsOpeningResult.action !== 'unchanged') {
+    markReady('adapters', 'AGENTS.md operating rules', '✓ Added the atris.md operating rules to AGENTS.md');
   }
 
   // .devin/config.local.json for Devin for Terminal
@@ -1100,7 +1109,7 @@ Read atris/MAP.md. Begin iteration 1.`;
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
   if (fs.existsSync(rootClaudeMd)) {
     const source = fs.readFileSync(rootClaudeMd, 'utf8');
-    const result = upsertAtrisClaudeBootBlock(source);
+    const result = upsertAtrisClaudeBootBlock(source, { openingLines: openingLinesForRoot(process.cwd()) });
     fs.writeFileSync(rootClaudeMd, result.content);
     if (result.action === 'repaired') {
       markReady('adapters', 'CLAUDE.md', '✓ repaired atris block in CLAUDE.md (missing end marker)');
@@ -1111,7 +1120,7 @@ Read atris/MAP.md. Begin iteration 1.`;
     }
   } else {
     // Create new CLAUDE.md with just Atris block
-    fs.writeFileSync(rootClaudeMd, upsertAtrisClaudeBootBlock().content);
+    fs.writeFileSync(rootClaudeMd, upsertAtrisClaudeBootBlock('', { openingLines: openingLinesForRoot(process.cwd()) }).content);
     markReady('adapters', 'CLAUDE.md', '✓ created CLAUDE.md with atris block');
   }
   }
