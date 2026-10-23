@@ -102,6 +102,7 @@ test('atris zen makes a messy repo zen and keeps everything', () => {
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /^ {2}zen\.$/m);
     assert.match(cli.stdout, /saved 1 old stash away/);
+    assert.match(cli.stdout, /nothing was thrown away\. see what zen saved: +git for-each-ref refs\/archive refs\/heads\/zen-backup/);
     assert.match(cli.stdout, /put away 1 idle side copy/);
     assert.match(cli.stdout, /saved 2 stray edits to zen-backup\//);
     assert.match(cli.stdout, /moved 1 unpushed commit to zen-backup\//);
@@ -171,7 +172,7 @@ test('atris zen on a zen repo says so and changes nothing', () => {
     assert.match(cli.stdout, /already zen\./);
     assert.match(cli.stdout, /1 unsaved team note left in place\./);
     assert.doesNotMatch(cli.stdout, /kept as it is/);
-    assert.doesNotMatch(cli.stdout, /everything is kept/);
+    assert.doesNotMatch(cli.stdout, /nothing was thrown away/);
     assert.equal(git(checkout, 'for-each-ref'), refs);
     assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /a note/);
   } finally {
