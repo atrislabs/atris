@@ -602,7 +602,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  99         - local focus and meditation sessions');
+  console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
@@ -2292,8 +2292,8 @@ if (command === 'guide') {
     process.exit(1);
   }
 } else if (command === '99') {
-  const code = require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3));
-  exitAfterStdoutDrain(code);
+  Promise.resolve(require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code));
 } else if (command === 'now') {
   const args = process.argv.slice(3);
   const nowCode = require('../commands/now').nowAtris(args);
