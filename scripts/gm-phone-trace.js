@@ -12,6 +12,8 @@
 //   node scripts/gm-phone-trace.js --shots DIR  also saves a phone screenshot
 //                                               at each moment (slows frames;
 //                                               read the numbers from a plain run)
+//   node scripts/gm-phone-trace.js --team       the team table at phone and
+//                                               laptop size (--shots DIR saves both)
 //   require('./scripts/gm-phone-trace')         { findChrome, trace } for tests
 
 const fs = require('node:fs');
@@ -100,6 +102,8 @@ async function launch(chromePath) {
   const args = headlessArgs(profile, ['--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank']);
   // linux runners often refuse chrome's sandbox; the page is our own, served locally
   if (process.platform === 'linux') args.push('--no-sandbox');
+  // mac: a fresh profile asks the login keychain for chrome's storage key and pops a dialog; use a throwaway key instead
+  if (process.platform === 'darwin') args.push('--use-mock-keychain', '--password-store=basic');
   const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   const quit = () => { try { proc.kill('SIGKILL'); } catch { /* gone */ } removeProfileDir(profile); };
   try {
@@ -356,7 +360,7 @@ async function trace({ chromePath = findChrome(), shots = null } = {}) {
 
 // ---- Esc on the team page: one layer back per press --------------------------------
 
-const TEAM_ROWS = [{ member: 'builder', status: 'not running', on: 'the getting started page', time: 'last seen 2h ago' }];
+const TEAM_ROWS = [{ member: 'builder', role: 'builder', ovr: '91', engine: 'claude opus 5.5', status: 'stopped', sentence: 'stopped: the getting started page, stopped 2 hours ago', on: 'the getting started page', time: 'stopped 2 hours ago' }];
 
 // what is showing: the team page or not, its title, its rows, the talk
 // field's words and whether the cursor is in it, the card under it
@@ -377,17 +381,17 @@ const LAYER = `(function () {
   };
 })()`;
 
-// The real page on a phone-size headless Chrome, served with this desk and
-// at rest on its first card. fn(p, send) drives it; Chrome and the server
-// are closed after, whatever happens.
-async function onPhone(desk, chromePath, fn) {
+// The real page on a phone-size headless Chrome (or the viewport given),
+// served with this desk and at rest on its first card. fn(p, send) drives
+// it; Chrome and the server are closed after, whatever happens.
+async function onPhone(desk, chromePath, fn, viewport = PHONE) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const server = await serve(desk);
   let chrome = null;
   try {
     chrome = await launch(chromePath);
     const { send } = chrome;
-    await send('Emulation.setDeviceMetricsOverride', PHONE);
+    await send('Emulation.setDeviceMetricsOverride', viewport);
     await send('Page.enable');
     await send('Page.navigate', { url: server.url });
     const p = driver(send);
@@ -429,7 +433,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await p.tap('#working');
     await p.until("Boolean(document.querySelector('#team .row'))", 'the team rows');
     await look('tapped the team');
-    await p.tap('#team .row');
+    await p.tap('#team .row .who button');
     await p.until("Boolean(document.querySelector('#team input'))", 'the talk card');
     await p.tap('#team input');
     await p.type('take the readme first');
@@ -553,7 +557,7 @@ async function talkFailTrace({ chromePath = findChrome() } = {}) {
     await p.run("(function () { var real = window.fetch; window.__talks = []; window.fetch = function (url, opts) { var go = real(url, opts); if (String(url).indexOf('/bet/steer') < 0) return go; window.__talks.push(JSON.parse(opts.body)); if (window.__talks.length !== 2) return go; return go.then(function () { throw new TypeError('Failed to fetch'); }); }; })()");
     await p.tap('#working');
     await p.until("Boolean(document.querySelector('#team .row'))", 'the team rows');
-    await p.tap('#team .row');
+    await p.tap('#team .row .who button');
     await p.until("Boolean(document.querySelector('#team input'))", 'the talk card');
     await p.tap('#team input');
     await p.type(WORDS);
@@ -736,12 +740,122 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
-module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, onPhone, scriptedDesk, CARDS, REPLY };
+// ---- the team table at phone and laptop width ---------------------------------------
+
+const LAPTOP = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
+
+// a real-sized team: long roles and statuses, a rookie, and no rating or model
+const TABLE_ROWS = [
+  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'claude haiku 5.5', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours', on: 'Plan the pricing page', time: 'waiting 2 hours' },
+  { member: 'builder', role: 'builder', ovr: '91', engine: 'claude opus 5.5', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left', on: 'Launch a try page for any public repo', time: 'about 4 hours left' },
+  { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'claude opus 5.5', status: 'stopped', sentence: 'stopped: split the big test file so each part runs alone, stopped 30 minutes ago', on: 'Split the big test file so each part runs alone', time: 'stopped 30 minutes ago' },
+  { member: 'linguist', role: 'linguist, operator language and understanding', ovr: '\u00b7\u00b7', engine: '\u00b7\u00b7', status: 'idle', sentence: 'idle: no work in the last day', on: '', time: '' },
+  { member: 'validator', role: 'reviewer', ovr: '89', engine: 'codex gpt-6.1-sol', status: 'idle', sentence: 'idle: no work in the last day', on: '', time: '' },
+];
+
+// what the table looks like on screen: the column names, whether any cell's
+// words spill out of it, every inner line, the side scroll, where the name
+// column sits once scrolled, and whether anything on it moves
+const TABLE_LOOK = `(function () {
+  var team = document.getElementById('team');
+  var grid = team.querySelector('.grid');
+  var table = team.querySelector('table');
+  if (!grid || !table) return null;
+  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
+  var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+  var spills = [], lines = { inner_right: 0, missing_right: 0, inner_bottom: 0, missing_bottom: 0 }, oneLine = [], moving = [];
+  var widths = {};
+  rows.forEach(function (tr, ri) {
+    Array.prototype.forEach.call(tr.children, function (td, ci) {
+      var cs = getComputedStyle(td);
+      if (td.scrollWidth > td.clientWidth + 1) spills.push(heads[ci] + ' of ' + tr.querySelector('.who').textContent);
+      if (ci < tr.children.length - 1) { if (cs.borderRightWidth === '1px') lines.inner_right += 1; else lines.missing_right += 1; }
+      if (ri < rows.length - 1) { if (cs.borderBottomWidth === '1px') lines.inner_bottom += 1; else lines.missing_bottom += 1; }
+      var w = td.getBoundingClientRect().width;
+      widths[heads[ci]] = Math.min(widths[heads[ci]] == null ? Infinity : widths[heads[ci]], Math.round(w));
+      if (['member', 'ovr', 'engine'].indexOf(heads[ci]) >= 0) {
+        var text = td.querySelector('button') || td;
+        var r = document.createRange(); r.selectNodeContents(text);
+        if (r.getClientRects().length > 1) oneLine.push(heads[ci] + ' of ' + tr.querySelector('.who').textContent);
+      }
+      if (cs.animationName !== 'none' || parseFloat(cs.transitionDuration) > 0 || cs.boxShadow !== 'none') moving.push(heads[ci]);
+    });
+  });
+  var g = grid.getBoundingClientRect();
+  var before = table.querySelector('tbody .who').getBoundingClientRect().left;
+  grid.scrollLeft = 200;
+  var scrolled = grid.scrollLeft;
+  var after = table.querySelector('tbody .who').getBoundingClientRect().left;
+  grid.scrollLeft = 0;
+  var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  return {
+    heads: heads,
+    rows: rows.length,
+    spills: spills,
+    lines: lines,
+    wrapped: oneLine,
+    moving: moving,
+    narrowest: widths,
+    grid_width: Math.round(g.width),
+    table_width: Math.round(table.getBoundingClientRect().width),
+    scrolls_sideways: grid.scrollWidth > grid.clientWidth + 1,
+    scrolled_by: Math.round(scrolled),
+    name_column_moved_px: Math.round(Math.abs(after - before)),
+    page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+    smallest_font_px: Math.min.apply(null, sizes),
+    statuses: Array.prototype.map.call(table.querySelectorAll('tbody td.st'), function (n) { return n.textContent; }),
+  };
+})()`;
+
+// Opens the team table at one viewport, reads TABLE_LOOK, then taps a
+// member's role cell (the part of a row that is always on screen), reads
+// the talk card, and presses Esc twice: back to the table, then closed.
+// With shots, saves the table as a png named for the viewport.
+async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, shots = null, rows = TABLE_ROWS } = {}) {
+  const desk = { ...scriptedDesk(), teamTable: () => ({ ok: true, rows }), talk: () => ({ ok: true, ack: 'sent.' }) };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await wait(120);
+    };
+    const layer = () => p.run("(function () { var team = document.getElementById('team'); return { open: !team.hidden, title: team.hidden ? null : team.querySelector('h1').textContent, table: Boolean(team.querySelector('table')), said: team.querySelector('p.why') ? team.querySelector('p.why').textContent : null }; })()");
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await wait(100);
+    const look = await p.run(TABLE_LOOK);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, `team-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    await p.tap('#team tbody tr:nth-child(2) .role');
+    await p.until("Boolean(document.querySelector('#team input'))", 'the talk card');
+    const talk = await layer();
+    await esc();
+    const back = await layer();
+    await esc();
+    const closed = await layer();
+    return { viewport: `${viewport.width}x${viewport.height}`, look, talk, back, closed };
+  }, viewport);
+}
+
+module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
-  trace({ shots: at > 0 ? path.resolve(process.argv[at + 1] || 'gm-phone-shots') : null }).then((out) => {
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    if (out.failed) process.exitCode = 1;
-  }, (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); });
+  const shots = at > 0 ? path.resolve(process.argv[at + 1] || 'gm-phone-shots') : null;
+  const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
+  if (process.argv.includes('--team')) {
+    (async () => {
+      const out = [];
+      for (const viewport of [PHONE, LAPTOP]) out.push(await teamTableTrace({ viewport, shots }));
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    })().catch(fail);
+  } else {
+    trace({ shots }).then((out) => {
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+      if (out.failed) process.exitCode = 1;
+    }, fail);
+  }
 }
