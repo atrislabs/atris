@@ -1692,6 +1692,57 @@ test('working: the footer says plainly how long each job has left', () => {
   for (const w of h.d.view().working) assert.doesNotMatch(JSON.stringify(w), /budget|tick/);
 });
 
+function addMember(root, name, role) {
+  fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${role}\n---\n`);
+}
+
+test('team table: one honest row per member with recent work; working only with a live process or a move in the last few minutes', async () => {
+  const root = workspace();
+  for (const [n, r] of [['executor', 'Executor'], ['navigator', 'Navigator'], ['validator', 'Validator'], ['linguist', 'Linguist'], ['scout', 'Scout']]) addMember(root, n, r);
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Launch a try page for any public repo');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(40), last_tick_at: NAGO(20), max_wall_seconds: 5 * 3600, human_asks: [] },
+    m2: { id: 'm2', owner: 'launcher', status: 'running', objective: 'Write the launch thread. why now: x', created_at: NAGO(60), last_tick_at: NAGO(2), human_asks: [] },
+    m3: { id: 'm3', owner: 'researcher', status: 'running', objective: 'Survey ten agent teams about pricing.', created_at: NAGO(90), last_tick_at: NAGO(30), human_asks: [] },
+    m4: { id: 'm4', owner: 'executor', status: 'planning', objective: 'Split the big test file.', created_at: NAGO(10), human_asks: [] },
+    m5: { id: 'm5', owner: 'navigator', status: 'blocked', objective: 'Plan the pricing page.', created_at: NAGO(150), updated_at: NAGO(120), human_asks: ['ship the pricing page now?'] },
+    m6: { id: 'm6', owner: 'validator', status: 'complete', objective: 'Check the two reports.', created_at: NAGO(200), updated_at: NAGO(60), human_asks: [] },
+    m7: { id: 'm7', owner: 'scout', status: 'complete', objective: 'Old scouting.', created_at: NAGO(5000), updated_at: NAGO(4320), human_asks: [] },
+  };
+  const handoffs = [
+    { id: 'h1', from: 'builder', to: 'linguist', summary: '[b1] Rewrite the page in plain words', status: 'open', created_at: NAGO(15) },
+  ];
+  const h = jobDesk(root, missions, { handoffs, driverAlive: m => m.id === 'm1' });
+  const rows = h.d.teamTable().rows;
+  assert.deepEqual(rows, [
+    { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'waiting 2 hours' },
+    { member: 'builder', on: 'Launch a try page for any public repo', status: 'working', time: 'about 4 hours left' },
+    { member: 'launcher', on: 'Write the launch thread', status: 'working', time: 'at it for 1 hour' },
+    { member: 'executor', on: 'Split the big test file', status: 'waiting to start', time: 'waiting 10 minutes' },
+    { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'waiting 15 minutes' },
+    { member: 'researcher', on: 'Survey ten agent teams about pricing', status: 'stopped', time: 'stopped 30 minutes ago' },
+    { member: 'validator', on: 'Check the two reports', status: 'done', time: 'finished 1 hour ago' },
+  ]);
+  // the footer counts only what is really working
+  assert.equal(h.d.view().team_working, 2);
+  for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
+});
+
+test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
+  const root = workspace();
+  const h = jobDesk(root, {});
+  const out = await h.d.steer({ member: 'builder', text: 'do the readme first' });
+  assert.deepEqual(out, { ok: true, ack: 'sent to builder.' });
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', 'do the readme first', '--json']);
+  assert.equal((await h.d.steer({ member: 'nobody', text: 'hi' })).reason, 'gone');
+  assert.equal((await h.d.steer({ member: 'builder', text: '   ' })).reason, 'empty');
+  assert.equal((await h.d.steer({ member: 'builder', text: 'x'.repeat(281) })).reason, 'too_long');
+  assert.ok(h.logs.some(l => l.choice === 'steer' && l.member === 'builder'));
+});
+
 function jobDesk(root, missions, over = {}) {
   const ledgerFile = path.join(root, 'gm-bets.jsonl');
   const cli = [];
@@ -1710,6 +1761,7 @@ function jobDesk(root, missions, over = {}) {
     reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
     warmOnCreate: false,
     choices: Boolean(over.choices),
+    driverAlive: over.driverAlive || (() => false),
     runCli: over.runCli || (async (args) => {
       cli.push(args);
       if (args[0] === 'engine' && args[1] === 'ask') {
@@ -1926,11 +1978,10 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
   const html = phonePage('NONCE');
-  assert.match(html, /<button type="button" class="quiet" id="working" hidden aria-expanded="false"><\/button><div class="jobs" id="jobs" hidden><\/div>/);
-  assert.match(html, /btn\.textContent = jobs\.length \+ ' working';/);
-  assert.match(html, /row\.appendChild\(el\('span', 'meta', j\.owner \+ ' has it' \+ \(j\.left \? ', ' \+ j\.left : ''\)\)\);/);
+  assert.match(html, /<button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button>/);
+  assert.match(html, /btn\.textContent = n \? n \+ ' working' : 'the team';/);
   // no pulse or loop on the new pieces
-  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.jobs .meta'));
+  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.team .row'));
   assert.ok(css.length > 40);
   assert.doesNotMatch(css, /animation|transition/);
   // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
@@ -2045,7 +2096,9 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.doesNotMatch(html, /#fff\b|#ffffff|#f6f5f2|background: white/i);
   // no decision sheet on the phone, and the team row is gone
   assert.doesNotMatch(html, /things only you can do|id="sheet"/);
-  assert.doesNotMatch(html, /id="team"/);
+  // the old row of team circles is gone; the team is the table behind the footer link
+  assert.equal((html.match(/id="team"/g) || []).length, 1);
+  assert.match(html, /<section class="team" id="team" hidden role="dialog"/);
   assert.match(html, /tap again to start/);
   assert.match(html, /sharper idea/);
   assert.match(html, /not now/);

@@ -459,6 +459,44 @@ test('page: a choice card is big titles to tap, each with one plain line of why,
   assert.match(script, /\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice\)/);
 });
 
+test('page: the team table opens from the footer, one row per member, and a row opens a talk card', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.match(html, /<section class="team" id="team" hidden role="dialog" aria-label="the team">/);
+  assert.match(script, /getElementById\('working'\)\.addEventListener\('click', openTeam\)/);
+  assert.match(script, /api\('\/bet\/team'\)/);
+  // each row: the member, what they are on, the status, and the time
+  assert.match(script, /row\.appendChild\(el\('span', 'who', r\.member\)\);/);
+  assert.match(script, /row\.appendChild\(el\('span', 'st ' \+ r\.status\.replace\(\/ \/g, '-'\), r\.status\)\);/);
+  assert.match(script, /row\.appendChild\(el\('span', 'on', r\.on\)\);/);
+  assert.match(script, /row\.appendChild\(el\('span', 'time', r\.time\)\);/);
+  // the talk card steers through the server
+  assert.match(script, /api\('\/bet\/steer', \{ member: r\.member, text: text \}\)/);
+  assert.match(html, /\.team \.row \{[^}]*\}/);
+});
+
+test('over http: the team table and a steer go through the same token and json checks', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
+  const ran = [];
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true}' }; } }),
+  });
+  try {
+    assert.equal((await h.call('GET', '/bet/team', { token: 'nope' })).status, 403);
+    const team = await h.call('GET', `/bet/team?t=${TOKEN}`);
+    assert.deepEqual(team.json.rows, [{ member: 'builder', on: 'Write the try page', status: 'working', time: 'at it for 10 minutes' }]);
+    assert.equal((await h.call('POST', '/bet/steer', { token: 'nope', body: { member: 'builder', text: 'hi' } })).status, 403);
+    const sent = await h.call('POST', '/bet/steer', { body: { member: 'builder', text: 'readme first' } });
+    assert.deepEqual([sent.status, sent.json.ack], [200, 'sent to builder.']);
+    assert.deepEqual(ran[0], ['member', 'steer', 'builder', 'readme first', '--json']);
+  } finally {
+    await h.close();
+  }
+});
+
 test('target snapshot restores the file exactly, or removes one that was not there', () => {
   const gmTarget = require('../lib/gm-target');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-target-'));
@@ -514,8 +552,8 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   // the old decision sheet is gone from the phone: no only-you link, no review asks, no target strip
   for (const gone of ['open-only', 'id="sheet"', 'only you', "'/state'", "'/action'", 'toast', 'oldest', 'target']) assert.equal(html.includes(gone), false, gone);
-  // the footer is the working count and its list, nothing else
-  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="working" hidden aria-expanded="false"><\/button><div class="jobs" id="jobs" hidden><\/div><\/div>/);
+  // the footer is one link: the working count, or the team when nothing runs
+  assert.match(html, /<div class="foot" id="foot"><button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button><\/div>/);
   // no small text anywhere on the page
   const sizes = [...html.matchAll(/font-size: (\d+)px/g)].map(m => Number(m[1]));
   assert.ok(sizes.length > 3);
