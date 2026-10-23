@@ -18,7 +18,8 @@ commit() { git commit -q -m "$1
 Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>"; }
 last="$(git rev-parse HEAD)"
 
-for round in $(seq 1 "$ROUNDS"); do
+START_ROUND="${START_ROUND:-1}"
+for round in $(seq "$START_ROUND" $(( START_ROUND + ROUNDS - 1 ))); do
   v=$(newest); old=$(( v > 1 ? v - 1 : 1 ))
   n=$(node -e '
     const fs = require("fs"), H = process.argv[1], [round, v, old, size] = process.argv.slice(2).map(Number);
@@ -89,6 +90,19 @@ $(cat "$part")"
     fi
   done
   wait
+  # a review that did not finish gets a second reviewer from a third AI family
+  for part in "$H"/round-"$round"-review-*.txt; do
+    [ -e "$part" ] || continue
+    grep -qE "^kept " "$part.out" 2>/dev/null && continue
+    log "round $round: review $(basename "$part") did not finish, asking Gemini"
+    prompt="$(cat "$H/review-prompt.txt")
+$(cat "$part")"
+    perl -e 'alarm 1500; exec @ARGV' agy -p "$prompt" --model gemini-3.8-flash --add-dir "$ROOT" < /dev/null > "$part.out" 2>&1
+    if ! grep -qE "^kept " "$part.out"; then
+      log "round $round: no reviewer finished $(basename "$part"), its tests are left out"
+      cut -d' ' -f1 "$part" | sed 's/^/DROP /; s/$/: no reviewer finished/' >> "$H/round-$round-drops.txt"
+    fi
+  done
   cat "$H"/round-"$round"-review-*.out 2>/dev/null | grep -E "^DROP test/" >> "$H/round-$round-drops.txt"
   awk '{print $2}' "$H/round-$round-drops.txt" | sed 's/:$//' | sort -u | while read -r f; do
     grep -qxF "$f" "$H/round-$round-files.txt" && [ -f "$f" ] && git rm -q "$f"
@@ -130,6 +144,18 @@ $(cat "$H/round-$round-evidence.txt")
 
 Write the improved instructions to atris/campaigns/cmp-overnight/prompts/mut-v$next.txt and change no other file." \
     --model claude-opus-5-5 --permission-mode acceptEdits --allowedTools "Read,Write" --no-session-persistence < /dev/null > "$H/round-$round-coach.log" 2>&1
+  if [ ! -f "$H/prompts/mut-v$next.txt" ]; then
+    log "round $round: Claude coach did not write, asking Codex"
+    env -u OPENAI_API_KEY perl -e 'alarm 900; exec @ARGV' codex exec --model gpt-6.1-sol -c model_reasoning_effort='"high"' --cd "$ROOT" --sandbox workspace-write -c approval_policy='"never"' --ephemeral "$(cat "$H/coach-prompt.txt")
+
+Current instructions (version $v), the file prompts/mut-v$v.txt:
+$(cat "$H/prompts/mut-v$v.txt")
+
+This round's evidence:
+$(cat "$H/round-$round-evidence.txt")
+
+Write the improved instructions to atris/campaigns/cmp-overnight/prompts/mut-v$next.txt and change no other file." < /dev/null >> "$H/round-$round-coach.log" 2>&1
+  fi
   if [ -f "$H/prompts/mut-v$next.txt" ] && grep -q "{{file}}" "$H/prompts/mut-v$next.txt" && grep -q "{{after}}" "$H/prompts/mut-v$next.txt"; then
     git add -f "$H/prompts/mut-v$next.txt" && commit "Coach writes instructions v$next from round $round's misses and drops"
     log "round $round: coach wrote v$next"
