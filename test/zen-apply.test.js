@@ -491,6 +491,28 @@ test('atris zen --all zens every listed repo and skips one with unsaved live dat
   }
 });
 
+test('atris zen --all still says where your copy of a clashing note went', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 from the team'), 'team edit');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 10', 'line 10 mine'));
+
+    const cli = run(process.execPath, [cliPath, 'zen', '--all', checkout], base, {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_ZEN_FRESH_MINUTES: '0',
+    });
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /checkout\s+caught up 1 commit/);
+    const said = cli.stdout.match(/^\s+kept the new atris\/TODO\.md; your copy is in (\S+)$/m);
+    assert.ok(said, cli.stdout);
+    assert.match(fs.readFileSync(said[1], 'utf8'), /line 10 mine/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen --all with no repos says how to list them', () => {
   const cli = run(process.execPath, [cliPath, 'zen', '--all'], os.tmpdir(), {
     ...process.env,
