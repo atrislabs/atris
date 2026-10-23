@@ -2291,6 +2291,88 @@ test('team table: a card with no frontmatter still gives its role, from a role l
   assert.equal(roles.blank, '\u00b7\u00b7');
 });
 
+test('job deck: one card per running job, needs you first, with a divided row of done, work, member, role, ovr, engine, status', () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  addMember(root, 'scout', 'Scout');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Launch a try page for any public repo');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(40), last_tick_at: NAGO(2), human_asks: [] },
+    m5: { id: 'm5', owner: 'navigator', status: 'blocked', objective: 'Plan the pricing page.', created_at: NAGO(150), updated_at: NAGO(120), human_asks: ['ship the pricing page now?'] },
+    m6: { id: 'm6', owner: 'scout', status: 'complete', objective: 'Old scouting.', created_at: NAGO(200), updated_at: NAGO(60), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { loadSeason: () => seasonOf({ builder: { landed: 4, dropped: 1 } }) });
+  const deck = h.d.jobDeck();
+  assert.equal(deck.cards.length, 2, 'finished jobs are not on the deck');
+  assert.deepEqual(deck.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+  assert.deepEqual(deck.cards.map(c => [c.mission_id, c.label, c.member]), [['m5', 'needs you', 'navigator'], ['m1', 'working', 'builder']]);
+  // role, ovr, and engine are the team table's own cells
+  const table = new Map(h.d.teamTable().rows.map(r => [r.member, r]));
+  for (const c of deck.cards) {
+    const t = table.get(c.member);
+    assert.deepEqual([c.rows[0].role, c.rows[0].ovr, c.rows[0].engine], [t.role, t.ovr, t.engine]);
+  }
+  assert.deepEqual(deck.cards[0].rows[0].ovr, '\u00b7\u00b7', 'no rating is two dots');
+  assert.deepEqual(deck.cards[1].rows[0].ovr, '91');
+  assert.deepEqual(deck.cards[1].rows[0].engine, 'claude opus 5.5');
+  assert.deepEqual(deck.cards[1].rows[0].work, 'Launch a try page for any public repo');
+  for (const c of deck.cards) assert.doesNotMatch(JSON.stringify(c.rows), gmBet.OWNER_BANNED);
+});
+
+// a command, a flag, a path, or a file name: never in a cell the owner reads
+const CODE_TELL = /`|(^|\s)--?[a-z]|\/|\.(js|md|json)\b|\bnpm (publish|test)\b/i;
+
+test('job deck: a card that needs you carries its yes in plain words, and a yes from the deck answers that job alone', async () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    // the work and the ask both name a command, a flag, and a path
+    'm-ask': { id: 'm-ask', owner: 'navigator', status: 'blocked', objective: 'Fix lib/gm-bet.js so the `npm test` run passes.', created_at: NAGO(30), updated_at: NAGO(20), human_asks: ['ok to run `npm publish --tag next` from lib/release.js?'] },
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(40), last_tick_at: NAGO(1), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { driverAlive: () => true });
+  const [needs, working] = h.d.jobDeck().cards;
+  assert.deepEqual([needs.member, needs.label, working.member, working.label], ['navigator', 'needs you', 'builder', 'working']);
+  // the yes card's own two lines, and the key the page sends back with the yes
+  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish the new version?', why: 'navigator is waiting on your yes for this.' });
+  assert.equal(working.yes, undefined, 'only a card that needs you has a yes');
+  // plain words in every cell: the path and the command are gone, the meaning stays
+  assert.equal(needs.rows[0].work, 'Fix a file so the run passes');
+  assert.deepEqual([needs.rows[0].done, working.rows[0].done], ['not yet', 'not yet']);
+  for (const c of h.d.jobDeck().cards) assert.doesNotMatch(JSON.stringify([c.rows, c.yes || null]), CODE_TELL);
+  // the main screen shows something else: a yes from the deck leaves it alone
+  const before = h.d.view().status;
+  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0' }), { ok: true, ack: 'navigator: got your yes' });
+  assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
+  assert.equal(h.d.view().status, before);
+  // said once: the card stops asking, and the same yes again, or a made-up one, goes nowhere
+  assert.equal(h.d.jobDeck().cards[0].yes, undefined);
+  const calls = h.cli.length;
+  assert.equal((await h.d.answerYes({ key: 'm-ask:0' })).reason, 'gone');
+  assert.equal((await h.d.answerYes({ key: 'nobody:0' })).reason, 'gone');
+  assert.equal(h.cli.length, calls, 'nothing runs for a yes that is not asked');
+});
+
+test('job deck: the yes on a card is the desk yes card for that job, in plain words, and a yes on the deck clears it on the main screen', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  const h = jobDesk(root, { 'm-ask': { id: 'm-ask', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['run `git push --tags` now?'] } });
+  const shown = h.d.next();
+  assert.equal(shown.kind, 'yes');
+  // the main yes card reads in plain words too
+  assert.equal(shown.job.what, 'ok to make a release?');
+  const card = h.d.jobDeck().cards[0];
+  assert.deepEqual(card.yes, { key: 'm-ask:0', ...shown.job });
+  assert.equal((await h.d.answerYes({ key: card.yes.key })).ok, true);
+  assert.equal(h.d.view().status, 'cleared', 'the same yes on the main screen is answered too');
+});
+
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
   const root = workspace();
   const h = jobDesk(root, {});

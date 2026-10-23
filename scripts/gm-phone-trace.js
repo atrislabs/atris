@@ -840,7 +840,140 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
   }, viewport);
 }
 
-module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
+// ---- the job deck: one running job at a time ------------------------------------
+
+const DECK = {
+  columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'],
+  cards: [
+    { mission_id: 'm-ask', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', yes: { key: 'm-ask:0', what: 'ok to publish the new version?', why: 'navigator is waiting on your yes for this.' }, rows: [{ done: 'not yet', work: 'Plan the pricing page', member: 'navigator', role: 'plans the work', ovr: '··', engine: 'codex gpt-6.1-sol', status: 'needs you' }] },
+    { mission_id: 'm1', member: 'builder', label: 'working', time: 'at it for 10 minutes', rows: [{ done: 'not yet', work: 'Write the try page', member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'working' }] },
+    { mission_id: 'm2', member: 'launcher', label: 'waiting to start', time: 'waiting 3 minutes', rows: [{ done: 'not yet', work: 'Write the launch thread', member: 'launcher', role: 'writes posts, pages, and launch copy', ovr: 'new', engine: 'codex gpt-6.1-sol', status: 'waiting to start' }] },
+  ],
+};
+const DECK_ROWS = [{ member: 'builder', role: 'writes and tests the code', ovr: '91', engine: 'claude opus 5.5', status: 'working', sentence: 'working: write the try page, at it for 10 minutes', on: 'Write the try page', time: 'at it for 10 minutes' }];
+const DECK_REPLY = 'two of five steps are done.';
+
+const DECK_LOOK = `(function () {
+  var c = document.querySelector('#team .deckcard');
+  if (!c) return null;
+  var b = c.getBoundingClientRect();
+  var h1 = c.querySelector('h1');
+  return {
+    count: c.querySelector('.count').textContent,
+    label: c.querySelector('.label').textContent,
+    title: h1 ? h1.textContent : null,
+    yes: Boolean(c.querySelector('.act .pill')),
+    heads: Array.prototype.map.call(c.querySelectorAll('thead th'), function (n) { return n.textContent; }),
+    cells: Array.prototype.map.call(c.querySelectorAll('tbody td'), function (n) { return n.textContent; }),
+    x: b.left, y: b.top,
+  };
+})()`;
+
+// Opens the deck from the team page and flips it with the arrows, a
+// sideways swipe, and an up and down one; types to a job and flips away
+// and back; says yes on the card that needs it; then presses Esc.
+async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
+  const yesSent = [];
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows: DECK_ROWS }),
+    jobDeck: () => JSON.parse(JSON.stringify(DECK)),
+    answerYes: async ({ key } = {}) => { yesSent.push({ key }); return { ok: true, ack: 'navigator: got your yes' }; },
+    talk: ({ text }) => ({ ok: true, stay: true, kind: 'question', reply: DECK_REPLY, suggestions: [], thread: [{ who: 'owner', text }, { who: 'orb', text: DECK_REPLY }] }),
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const press = async (key, vk) => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: vk });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: vk });
+    };
+    const ARROW = { ArrowLeft: 37, ArrowRight: 39 };
+    const settle = async () => { await wait(80); await p.until("!document.querySelector('#team .bet.ghost') && !document.querySelector('#team .deckcard.turning')", 'the card at rest'); };
+    const count = () => p.run("document.querySelector('#team .deckcard .count').textContent");
+    const tapButton = async (label) => {
+      const r = await p.run(`(function () { var n = Array.prototype.find.call(document.querySelectorAll('#team button'), function (b) { return b.textContent === ${JSON.stringify(label)}; }); if (!n) return null; var b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+      if (!r) throw new Error(`no button reads ${label}`);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    };
+    const swipe = async (x0, y0, x1, y1) => {
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+      for (let i = 1; i <= 6; i++) await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 6, y: y0 + ((y1 - y0) * i) / 6 }] });
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    // a flip is the crossfade in place when a still copy of the old card shows over the new one
+    await p.run("(function () { window.__ghost = false; new MutationObserver(function () { if (document.querySelector('#team .bet.ghost')) window.__ghost = true; }).observe(document.getElementById('team'), { childList: true, subtree: true }); })()");
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapButton('the jobs, one at a time');
+    await p.until("Boolean(document.querySelector('#team .deckcard'))", 'the deck');
+    const first = await p.run(DECK_LOOK);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, 'deck-needs-you.png'), Buffer.from(shot.data, 'base64'));
+    }
+    const counts = [];
+    let moved = 0;
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
+      await press(key, ARROW[key]);
+      await settle();
+      const l = await p.run(DECK_LOOK);
+      counts.push(l.count);
+      moved = Math.max(moved, Math.abs(l.x - first.x), Math.abs(l.y - first.y));
+    }
+    const at = await p.run("(function () { var b = document.querySelector('#team .deckcard .count').getBoundingClientRect(); return { x: b.left + 150, y: b.top + b.height / 2 }; })()");
+    await swipe(at.x + 100, at.y, at.x - 100, at.y);
+    await settle();
+    const swiped = await count();
+    await swipe(at.x + 40, at.y, at.x - 30, at.y + 200);
+    await wait(500);
+    await settle();
+    const scrolled = await count();
+    await p.run("document.getElementById('team').scrollTop = 0");
+    // typing: the arrows move the cursor, not the deck
+    await p.tap('#team .deckcard .jobtalk input');
+    await p.type('how far along is it?');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await wait(500);
+    const typingArrow = await count();
+    await p.enter();
+    await p.until(`(function () { var r = document.querySelector('#team .deckcard .jobtalk .reply'); return Boolean(r && r.textContent === ${JSON.stringify(DECK_REPLY)}); })()`, 'the reply');
+    const reply = await p.run("document.querySelector('#team .deckcard .jobtalk .reply').textContent");
+    await p.run('document.activeElement.blur()');
+    await press('ArrowRight', ARROW.ArrowRight);
+    await settle();
+    await press('ArrowLeft', ARROW.ArrowLeft);
+    await settle();
+    const afterFlip = await p.run("(function () { var r = document.querySelector('#team .deckcard .jobtalk .reply'); return r ? r.textContent : null; })()");
+    // the yes: armed, then sent with the card's key
+    await tapButton('yes');
+    await tapButton('tap again to say yes');
+    await p.until("Boolean(document.querySelector('#team .deckcard > .mission'))", 'the line after the yes');
+    const yesLine = await p.run("document.querySelector('#team .deckcard > .mission').textContent");
+    const moving = await p.run("Array.prototype.filter.call(document.querySelectorAll('#team *'), function (n) { return getComputedStyle(n).animationName !== 'none'; }).map(function (n) { return n.tagName + '.' + n.className; })");
+    await press('Escape', 27);
+    await wait(150);
+    const esc = await p.run("({ team_open: !document.getElementById('team').hidden, card: Boolean(document.querySelector('#bet h1')) })");
+    return {
+      first: { count: first.count, label: first.label, title: first.title, yes: first.yes, heads: first.heads, cells: first.cells },
+      counts,
+      moved_px: Math.round(moved * 10) / 10,
+      ghost_seen: await p.run('window.__ghost'),
+      swiped,
+      scrolled,
+      typing_arrow: typingArrow,
+      kept_turn: { reply, after_flip: afterFlip },
+      yes_sent: yesSent,
+      yes_line: yesLine,
+      moving,
+      esc,
+    };
+  });
+}
+
+module.exports = { findChrome, launch, trace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

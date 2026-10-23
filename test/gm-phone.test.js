@@ -608,6 +608,66 @@ test('over http: the team table and a steer go through the same token and json c
   }
 });
 
+test('over http: the job deck is read through the same token check, one card per running job', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', runner: 'claude', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, loadSeason: () => ({ error: null, outcomes: ['landed', 'landed', 'landed', 'dropped'].map((kind, i) => ({ event_id: `e${i}`, task_id: `T-${i}`, member: 'builder', title: `job ${i}`, kind, at: NOW - (i + 1) * 3600000, claimed_at: NOW - (i + 2) * 3600000 })) }), resolveEngine: () => ({ engine: { id: 'claude' }, model: 'opus 5.5' }) }),
+  });
+  try {
+    assert.equal((await h.call('GET', '/bet/jobs', { token: 'nope' })).status, 403);
+    const deck = await h.call('GET', `/bet/jobs?t=${TOKEN}`);
+    assert.equal(deck.status, 200);
+    assert.deepEqual(deck.json.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+    assert.deepEqual(deck.json.cards.map(c => [c.member, c.label, c.rows[0].ovr, c.rows[0].engine]), [['builder', 'working', '89', 'claude opus 5.5']]);
+    // a yes from the deck names its key and still takes the second tap; a key nobody asked goes nowhere
+    assert.equal((await h.call('POST', '/bet/yes', { body: { key: 'nobody:0' } })).json.reason, 'needs_confirm');
+    const gone = await h.call('POST', '/bet/yes', { body: { key: 'nobody:0', confirm: true } });
+    assert.deepEqual([gone.status, gone.json.reason], [409, 'gone']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('phone page: a deck of job cards, one at a time in one spot, flipped by the arrows or a sideways swipe, with the yes and a talk box per job', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  // the team page offers the deck while a job is running, and the deck reads from the server
+  assert.match(script, /deckEntry\(rows\);/);
+  assert.match(script, /api\('\/bet\/jobs'\)/);
+  // one card at a time, with its place in the deck
+  assert.match(script, /'job ' \+ \(deckAt \+ 1\) \+ ' of ' \+ deckCards\.length/);
+  // the arrows flip it, never while the owner types; a swipe flips only when it goes sideways
+  assert.match(script, /e\.key === 'ArrowLeft'/);
+  assert.match(script, /e\.key === 'ArrowRight'/);
+  assert.match(script, /addEventListener\('touchstart'/);
+  assert.match(script, /Math\.abs\(dx\) > 50 && Math\.abs\(dx\) > Math\.abs\(dy\)/);
+  // a flip is the main card's own turn in place, in the same spot
+  assert.match(script, /function crossfade\(draw\) \{[\s\S]*?turnInPlace\(box, draw, function \(\) \{ bet\.busy = false; measured\(\); \}\);/);
+  assert.match(script, /turnInPlace\(card, function \(\) \{ fillDeckCard\(card\); \}/);
+  assert.match(script, /el\('article', 'bet'\)\);\n\s+card\.classList\.add\('up', 'deckcard'\);/);
+  // a divided table: the seven columns from the server, each cell as text
+  assert.match(script, /el\('table', 'jobs'\)/);
+  assert.match(script, /tr\.appendChild\(el\('td', k, r\[k\] \|\| ''\)\)/);
+  // a card that needs you is the yes card: its two lines and the same armed yes, sent with its key
+  assert.match(script, /if \(c\.yes\) \{/);
+  assert.match(script, /yesPill\(function \(\) \{ return api\('\/bet\/yes', \{ confirm: true, key: c\.yes\.key \}\); \}/);
+  assert.match(script, /yesPill\(function \(\) \{ return api\('\/bet\/yes', \{ confirm: true \}\); \}, moveOn\)/);
+  // one talk box per job: to that job's member, through the route that keeps the turns, kept across flips
+  assert.match(script, /convo\(function \(body\) \{ body\.member = member; return api\('\/bet\/steer', body\); \}/);
+  assert.match(script, /'talk to this job'/);
+  assert.match(script, /deckTalk\[c\.member\]/);
+  // no pulsing or looping anywhere
+  assert.doesNotMatch(html, /infinite/);
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  const deckCss = html.split('/* the job deck')[1].split('*/').slice(1).join('*/').split('/*')[0];
+  assert.doesNotMatch(deckCss, /animation/);
+  assert.match(deckCss, /\.deckspot \{ position: relative; \}/);
+});
+
 test('phone link: the token is kept per workspace, private to this user, and reused until --new-link', { skip: process.platform === 'win32' }, () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-links-'));
   const file = path.join(stateDir, 'gm-phone-links.json');
@@ -900,7 +960,7 @@ test('page: card to card is one calm turn in place: crossfade, a small drift, th
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   // reduced motion: the new card simply takes the old one's place
-  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; draw\(\); bet\.busy = false; measured\(\); return; \}/);
+  assert.match(script, /if \(reduced\) \{ box\.style\.minHeight = ''; draw\(\); after\(\); return; \}/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+box\.style\.minHeight = '';/);
 });
@@ -1124,6 +1184,22 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.deepEqual([out.back.open, out.back.title, out.back.table], [true, 'the team', true], at);
     assert.equal(out.closed.open, false, at);
   }
+});
+
+test('browser: the job deck flips one card at a time in the same spot, keeps the turns, says yes with its key, and Esc goes back to talking', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.deckTrace({ chromePath: CHROME });
+  assert.deepEqual(out.first, { count: 'job 1 of 3', label: 'needs you', title: 'ok to publish the new version?', yes: true, heads: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], cells: ['not yet', 'Plan the pricing page', 'navigator', 'plans the work', '\u00b7\u00b7', 'codex gpt-6.1-sol', 'needs you'] });
+  assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3']);
+  assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
+  assert.equal(out.ghost_seen, true, 'a flip is the crossfade in place');
+  assert.equal(out.swiped, 'job 1 of 3', 'a sideways swipe flips back');
+  assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
+  assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
+  assert.deepEqual(out.kept_turn, { reply: 'two of five steps are done.', after_flip: 'two of five steps are done.' });
+  assert.deepEqual(out.yes_sent, [{ key: 'm-ask:0' }]);
+  assert.equal(out.yes_line, 'navigator: got your yes');
+  assert.deepEqual(out.moving, []);
+  assert.deepEqual(out.esc, { team_open: false, card: true });
 });
 
 test('browser: after a lost next card, a tap on the old answer names the old card and saves nothing', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
