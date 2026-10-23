@@ -12,6 +12,9 @@ const {
   runningSession,
   startRecord,
   endRecord,
+  automaticEndRecord,
+  pauseRecord,
+  resumeRecord,
   sessionStatus,
   sessionsToday,
 } = require('../lib/ninety-nine');
@@ -21,6 +24,8 @@ function usage() {
     'usage: atris 99 focus <25|50|90>',
     '       atris 99 meditate <10|20|30>',
     '       atris 99 stop [note words]',
+    '       atris 99 pause',
+    '       atris 99 resume',
     '       atris 99 status [--json]',
     '       atris 99 today [--json]',
   ].join('\n');
@@ -63,6 +68,11 @@ function ninetyNineAtris(args = process.argv.slice(3), {
       log(`usage: atris 99 ${action} [--json]`);
       return 2;
     }
+  } else if (action === 'pause' || action === 'resume') {
+    if (rest.length) {
+      log(`usage: atris 99 ${action}`);
+      return 2;
+    }
   } else if (action !== 'stop') {
     log(usage());
     return 2;
@@ -86,15 +96,14 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     const records = parseSessionLog(text);
     let sessions = foldSessions(records);
     const time = now();
-    const active = runningSession(sessions, time);
+    let active = runningSession(sessions, time);
     const stopTarget = action === 'stop'
-      ? active || sessions.findLast((session) => session.status === 'running')
+      ? active || sessions.findLast((session) => automaticEndRecord(session, time)?.status === 'done')
       : null;
 
     for (const session of sessions) {
-      if (session.status === 'running' && session !== stopTarget
-        && time.getTime() >= Date.parse(session.planned_end_at)) {
-        const end = endRecord(session, time);
+      const end = automaticEndRecord(session, time);
+      if (end && session !== stopTarget) {
         text = appendRecord(file, text, end);
         records.push(end);
       }
@@ -112,6 +121,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     }
 
     sessions = foldSessions(records);
+    active = runningSession(sessions, time);
     if (action === 'focus' || action === 'meditate') {
       if (active) {
         log('a session is already running; use atris 99 stop first');
@@ -119,13 +129,23 @@ function ninetyNineAtris(args = process.argv.slice(3), {
       }
       appendRecord(file, text, startRecord(action, Number(rest[0]), time, randomUUID()));
       log(`${action} started for ${rest[0]} minutes`);
+    } else if (action === 'pause' || action === 'resume') {
+      let record;
+      try {
+        record = action === 'pause' ? pauseRecord(active, time) : resumeRecord(active, time);
+      } catch (error) {
+        log(error.message);
+        return 1;
+      }
+      appendRecord(file, text, record);
+      log(`${active.kind} ${action === 'pause' ? 'paused' : 'resumed'}`);
     } else if (action === 'status') {
       const result = sessionStatus(active, time);
       if (json) log(JSON.stringify(result));
       else if (!active) log('nothing running');
       else {
         const seconds = result.running.remaining_seconds;
-        log(`${active.kind}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`);
+        log(`${active.kind}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left${active.status === 'paused' ? ' (paused)' : ''}`);
       }
     } else {
       const result = sessionsToday(sessions, time);
@@ -135,6 +155,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
           log(`${session.kind} ${session.planned_min} minutes: ${session.status}`);
         }
         log(`${result.finished_minutes} finished minutes today`);
+        log(`Today: ${result.counts.focus} focus, ${result.counts.meditate} meditate, ${result.finished_minutes} min`);
       }
     }
     return 0;
