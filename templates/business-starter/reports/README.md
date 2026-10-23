@@ -1,4 +1,4 @@
-# Reports — {{name}}
+# Reports: {{name}}
 
 Past artifacts. Reports, analyses, decision documents.
 
