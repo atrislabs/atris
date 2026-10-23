@@ -8,6 +8,7 @@ const {
 } = require('./autopilot');
 const { detectLessonContradictions } = require('../lib/lesson-contradiction');
 const taskDb = require('../lib/task-db');
+const { localDay } = require('../lib/local-day');
 const { validateDetector, appendLedgerEntry, readLedger } = require('../lib/lesson-ledger');
 
 /**
@@ -57,7 +58,7 @@ function autoResolveLessons(cwd, options = {}) {
   const dryRun = !!options.dryRun;
   const lessons = parseLessons(cwd);
   const metadata = loadLessonMetadata(cwd);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const checked = [];
   const resolved = [];
 
