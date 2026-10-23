@@ -1,0 +1,4 @@
+{"round":1,"at":"2026-10-23T13:48:19.039Z","versions":[{"version":1,"tried":100,"passed":78,"dropped":25,"kept":53,"keep_rate":0.53,"secs_per_job":115}]}
+{"round":2,"at":"2026-10-23T13:59:58.264Z","versions":[{"version":1,"tried":100,"passed":26,"dropped":5,"kept":21,"keep_rate":0.21,"secs_per_job":36}]}
+{"round":3,"at":"2026-10-23T14:12:32.270Z","versions":[{"version":1,"tried":100,"passed":29,"dropped":2,"kept":27,"keep_rate":0.27,"secs_per_job":36}]}
+{"round":4,"at":"2026-10-23T14:44:26.066Z","versions":[{"version":1,"tried":106,"passed":44,"dropped":8,"kept":36,"keep_rate":0.34,"secs_per_job":46}]}

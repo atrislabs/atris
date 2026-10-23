@@ -755,3 +755,636 @@ test('pause records and inferred ends are validated before any append', (t) => {
     assert.deepEqual(parseSessionLog(records.map(JSON.stringify).join('\n')), records);
   }
 });
+
+function health(at, fields = {}) {
+  return { v: 1, type: 'health_day', date: '2026-10-23', ...fields, at: at.toISOString(), source: 'ios' };
+}
+
+test('merged phone history appended after a newer mac start replays in stable timestamp order', (t) => {
+  const f = fixture(t);
+  const phone = start(new Date(f.now().getTime() - 60 * minute), { id: 'phone', kind: 'meditate', minutes: 20, source: 'ios' });
+  const mac = start(new Date(f.now().getTime() - 25 * minute), { id: 'mac' });
+  const end = event('end', phone, new Date(Date.parse(phone.at) + 20 * minute), { source: 'ios', status: 'done' });
+  f.seed([mac, end, phone]);
+  const before = f.text();
+  const today = JSON.parse(f.run('today', '--json').output);
+  assert.equal(today.finished_minutes, 45);
+  assert.deepEqual(today.counts, { focus: 1, meditate: 1 });
+  assert.deepEqual(today.sessions.map((session) => session.id), ['phone', 'mac']);
+  assert.ok(f.text().startsWith(before));
+  const tied = [phone, event('pause', phone, new Date(Date.parse(phone.at) + minute)), event('resume', phone, new Date(Date.parse(phone.at) + minute))];
+  const original = JSON.stringify(tied);
+  assert.equal(foldSessions(tied)[0].status, 'running');
+  assert.equal(JSON.stringify(tied), original);
+  assert.equal(foldSessions([tied[0], tied[2], tied[1]])[0].status, 'paused');
+  assert.equal(foldSessions([mac, mac]).length, 1);
+});
+
+test('health days print the newest daily totals and expose the same record as json', (t) => {
+  const f = fixture(t);
+  const older = health(new Date(f.now().getTime() - minute), { sleep_min: 300, steps: 5 });
+  const latest = health(f.now(), { sleep_min: 412, steps: 8120, workout_min: 45, mindful_min: 20 });
+  f.seed([latest, { ...latest, date: '2026-10-22', steps: 9999 }, older]);
+  const before = f.text();
+  assert.equal(f.run('today').output.split('\n').at(-1), 'Health: sleep 6h 52m, 8,120 steps, workout 45 min, mindful 20 min');
+  assert.deepEqual(JSON.parse(f.run('today', '--json').output).health_day, latest);
+  assert.equal(f.text(), before);
+  assert.equal(f.run('status').output, 'nothing running');
+  assert.equal(f.run('focus', '25').code, 0);
+});
+
+test('missing health fields remain unknown rather than carrying older values or becoming zero', (t) => {
+  const f = fixture(t);
+  const older = health(new Date(f.now().getTime() - minute), { sleep_min: 400, workout_min: 45, mindful_min: 20 });
+  const latest = health(f.now(), { steps: 0 });
+  f.seed([latest, older]);
+  assert.equal(f.run('today').output.split('\n').at(-1), 'Health: 0 steps');
+  const result = JSON.parse(f.run('today', '--json').output).health_day;
+  assert.deepEqual(result, latest);
+  assert.ok(!Object.hasOwn(result, 'sleep_min'));
+  f.seed([health(f.now())]);
+  assert.equal(f.run('today').output.split('\n').at(-1), 'Health: unknown');
+  for (const invalid of [{ date: '2026-02-30' }, { sleep_min: null }, { steps: -1 }, { workout_min: '45' }, { mindful_min: Infinity }]) {
+    f.seed([{ ...latest, ...invalid }]);
+    const before = f.text();
+    assert.equal(f.run('today').code, 1);
+    assert.equal(f.text(), before);
+  }
+});
+
+// Exercise the real JSON API helper, replacing only its HTTP transport. No
+// listener or socket is opened, including when a test accidentally uses a URL.
+function fakeHttps(handler) {
+  const { EventEmitter } = require('node:events');
+  return (options, callback) => {
+    const req = new EventEmitter();
+    let body = '';
+    req.setTimeout = () => {};
+    req.hasHeader = (name) => Object.keys(options.headers).some((key) => key.toLowerCase() === name.toLowerCase());
+    req.setHeader = (name, value) => { options.headers[name] = value; };
+    req.write = (chunk) => { body += chunk; };
+    req.destroy = (error) => { req.emit('error', error); req.emit('close'); };
+    req.end = () => process.nextTick(async () => {
+      try {
+        const response = await handler({ ...options, body: body ? JSON.parse(body) : undefined });
+        const res = new EventEmitter();
+        res.statusCode = response.status || 200;
+        res.headers = {};
+        callback(res);
+        res.emit('data', Buffer.from(JSON.stringify(response.data)));
+        res.emit('end');
+        req.emit('close');
+      } catch (error) { req.destroy(error); }
+    });
+    return req;
+  };
+}
+
+function syncFixture(t, sync = { target: 'personal' }) {
+  const f = fixture(t);
+  const configPath = path.join(f.dir, 'config.json');
+  const statePath = path.join(f.dir, 'state', 'sync-state.json');
+  fs.writeFileSync(configPath, JSON.stringify({ sync }));
+  const credentials = { token: 'mock-user-token', user_id: 'mock-user' };
+  const calls = [];
+  let rows = [];
+  let clock = Date.parse('2026-10-24T00:00:00.000Z');
+  const workspaceFiles = new Map();
+  let snapshotsToHold = 0;
+  const snapshotWaiters = [];
+  let pageSize = 1000;
+  const { lineIdentity } = require('../lib/ninety-nine');
+  const add = (lines) => {
+    let stored = 0;
+    for (const line of lines) {
+      if (rows.some((row) => lineIdentity(row.line) === lineIdentity(line))) continue;
+      rows.push({ line, received: new Date(++clock).toISOString() });
+      stored++;
+    }
+    return { stored, skipped: lines.length - stored };
+  };
+  let failure;
+  const handler = (call) => {
+    calls.push(call);
+    assert.equal(call.headers.Authorization, `Bearer ${credentials.token}`);
+    assert.ok(!call.headers['X-API-Key']);
+    if (failure) return failure(call);
+    const url = new URL(call.path, 'https://mock.invalid');
+    if (url.pathname === '/api/me/apps/project-99/records') {
+      if (call.method === 'POST') {
+        assert.ok(call.body.lines.length <= 500);
+        assert.ok(call.body.lines.every((line) => Buffer.byteLength(JSON.stringify(line)) <= 2048));
+        return { data: add(call.body.lines) };
+      }
+      assert.equal(call.method, 'GET');
+      assert.equal(url.searchParams.get('limit'), '1000');
+      const since = url.searchParams.get('since');
+      const page = rows.filter((row) => !since || row.received > since).slice(0, pageSize);
+      return { data: { lines: page.map((row) => row.line), next_since: page.at(-1)?.received || null } };
+    }
+    if (url.pathname === '/api/business/') return { data: [{ id: 'business-id', slug: 'example-business', workspace_id: 'default-workspace' }] };
+    if (/\/snapshot$/.test(url.pathname)) {
+      assert.equal(url.searchParams.get('paths'), 'atris/99');
+      assert.equal(url.searchParams.get('include_content'), 'true');
+      const data = { files: [...workspaceFiles].map(([file, content]) => ({ path: `/${file}`, content })) };
+      if (snapshotsToHold) {
+        return new Promise((resolve) => {
+          snapshotWaiters.push(() => resolve({ data }));
+          if (--snapshotsToHold === 0) snapshotWaiters.splice(0).forEach((release) => release());
+        });
+      }
+      return { data };
+    }
+    if (/\/sync$/.test(url.pathname)) {
+      assert.equal(call.body.files.length, 1);
+      const file = call.body.files[0];
+      assert.match(file.path, /^atris\/99\/sessions\.[a-zA-Z0-9_-]+\.jsonl$/);
+      assert.ok(file.content.startsWith(workspaceFiles.get(file.path) || ''));
+      workspaceFiles.set(file.path, file.content);
+      return { data: { results: [{ path: file.path, status: 'written' }] } };
+    }
+    throw new Error(`unexpected mock request ${call.method} ${call.path}`);
+  };
+  t.mock.method(require('node:https'), 'request', fakeHttps(handler));
+  t.mock.method(require('node:http'), 'request', fakeHttps(handler));
+  return Object.assign(f, {
+    configPath, statePath, credentials, calls, add, workspaceFiles,
+    get rows() { return rows; },
+    setPageSize(value) { pageSize = value; },
+    remoteText(file = 'atris/99/sessions.jsonl') { return workspaceFiles.get(file) || ''; },
+    setRemoteText(value, file = 'atris/99/sessions.jsonl') { workspaceFiles.set(file, value); },
+    holdSnapshots(count) { snapshotsToHold = count; },
+    failWith(value) { failure = value; },
+    state() { return fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, 'utf8')) : null; },
+    async sync(...args) {
+      const output = [];
+      const code = await ninetyNineAtris(['sync', ...args], {
+        logPath: f.logPath, configPath, statePath, credentials: () => credentials,
+        log: (line) => output.push(line),
+      });
+      return { code, output: output.join('\n') };
+    },
+  });
+}
+
+test('personal sync sends only missing identities, pulls a union, saves received-time cursors, and repeats idempotently', async (t) => {
+  const f = syncFixture(t);
+  const mac = start(f.now());
+  const phone = start(new Date(f.now().getTime() - 60 * minute), { id: 'phone', kind: 'meditate', minutes: 20, source: 'ios' });
+  const totals = health(f.now(), { sleep_min: 412 });
+  f.seed([mac, totals, mac], false);
+  const prefix = f.text();
+  f.add([totals, phone]);
+  f.setPageSize(1);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 1 lines and pulled 1 lines (personal)' });
+  assert.ok(f.text().startsWith(prefix + '\n'));
+  assert.deepEqual(f.calls.filter((call) => call.method === 'POST').map((call) => call.body.lines), [[mac]]);
+  const checkpoint = Object.values(f.state().targets)[0];
+  assert.equal(checkpoint.since, '2026-10-24T00:00:00.002Z');
+  assert.ok(checkpoint.known.includes(`health_day|2026-10-23|${totals.at}|ios`));
+  assert.equal(checkpoint.known.length, 3);
+  assert.equal(fs.statSync(f.statePath).mode & 0o777, 0o600);
+  const after = f.text();
+  f.calls.length = 0;
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 0 lines (personal)' });
+  assert.equal(f.text(), after);
+  assert.equal(f.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.equal(new URL(f.calls[0].path, 'https://mock.invalid').searchParams.get('since'), checkpoint.since);
+  const later = { ...totals, steps: 8120, at: new Date(f.now().getTime() + minute).toISOString() };
+  f.add([later]);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 1 lines (personal)' });
+  assert.equal(f.records().at(-1).steps, 8120);
+  assert.deepEqual(JSON.parse(f.run('today', '--json').output).counts, { focus: 0, meditate: 1 });
+});
+
+test('personal sync batches at 500 lines and enforces the serialized byte limit before any push', async (t) => {
+  const f = syncFixture(t);
+  const records = Array.from({ length: 501 }, (_, i) => health(new Date(f.now().getTime() + i), { steps: i }));
+  f.seed(records);
+  assert.equal((await f.sync()).code, 0);
+  assert.deepEqual(f.calls.filter((call) => call.method === 'POST').map((call) => call.body.lines.length), [500, 1]);
+  const began = start(f.now());
+  const tooLarge = event('end', began, f.now(), { status: 'partial', note: '界'.repeat(700) });
+  f.seed([began, tooLarge]);
+  f.calls.length = 0;
+  const beforeState = fs.readFileSync(f.statePath, 'utf8');
+  assert.match((await f.sync()).output, /exceeds 2 kb/);
+  assert.equal(f.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.equal(fs.readFileSync(f.statePath, 'utf8'), beforeState);
+});
+
+test('personal sync reads every page beyond 1000 lines using server receipt time', async (t) => {
+  const f = syncFixture(t);
+  const records = Array.from({ length: 1001 }, (_, i) => health(new Date(f.now().getTime() - i), { steps: i }));
+  f.add(records);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 1001 lines (personal)' });
+  assert.deepEqual(f.records(), records);
+  assert.equal(Object.values(f.state().targets)[0].since, '2026-10-24T00:00:01.001Z');
+  assert.equal(f.calls.length, 3);
+  assert.equal((await f.sync()).output, 'sent 0 lines and pulled 0 lines (personal)');
+});
+
+test('a partially acknowledged personal batch retries safely without losing pulled lines', async (t) => {
+  const f = syncFixture(t);
+  const local = Array.from({ length: 501 }, (_, i) => health(new Date(f.now().getTime() + i), { steps: i }));
+  f.seed(local);
+  let pushed = 0;
+  f.failWith((call) => {
+    if (call.method === 'GET') return { data: { lines: [], next_since: null } };
+    if (++pushed === 1) return { data: f.add(call.body.lines) };
+    return { status: 400, data: {} };
+  });
+  assert.equal((await f.sync()).code, 1);
+  assert.ok(!fs.existsSync(f.statePath));
+  f.failWith(null);
+  f.calls.length = 0;
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 1 lines and pulled 0 lines (personal)' });
+  assert.deepEqual(f.calls.filter((call) => call.method === 'POST').map((call) => call.body.lines), [[local.at(-1)]]);
+  assert.deepEqual(f.records(), local);
+});
+
+for (const target of ['personal', 'workspace']) {
+  test(`${target} dry-run previews missing lines without writing locally or remotely`, async (t) => {
+    const f = syncFixture(t, { target, ...(target === 'workspace' ? { business: 'example-business' } : {}) });
+    const local = health(f.now(), { steps: 8120 });
+    const remote = { ...local, at: new Date(f.now().getTime() - minute).toISOString(), steps: 8000 };
+    f.seed([local], false);
+    if (target === 'personal') f.add([remote]);
+    else f.setRemoteText(JSON.stringify(remote));
+    const before = f.text();
+    const remoteBefore = f.remoteText();
+    const result = await f.sync('--dry-run');
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /would send 1 lines and pull 1 lines/);
+    assert.match(result.output, /send: .*8120/);
+    assert.match(result.output, /pull: .*8000/);
+    assert.equal(f.text(), before);
+    assert.equal(f.remoteText(), remoteBefore);
+    assert.ok(!fs.existsSync(f.statePath));
+    assert.ok(!fs.existsSync(`${f.logPath}.lock`));
+    assert.ok(!fs.existsSync(path.dirname(f.statePath)));
+    assert.equal(f.calls.filter((call) => call.method !== 'GET').length, 0);
+    f.calls.length = 0;
+    const missingLog = path.join(f.dir, 'absent', 'sessions.jsonl');
+    assert.equal(await ninetyNineAtris(['sync', '--dry-run'], {
+      logPath: missingLog, configPath: f.configPath, statePath: f.statePath,
+      credentials: () => f.credentials, log: () => {},
+    }), 0);
+    assert.ok(!fs.existsSync(path.dirname(missingLog)));
+  });
+
+  test(`${target} missing auth and authorization failures give a clear token-free message`, async (t) => {
+    const f = syncFixture(t, { target, ...(target === 'workspace' ? { business: 'example-business' } : {}) });
+    const lines = [];
+    const code = await ninetyNineAtris(['sync'], {
+      logPath: f.logPath, configPath: f.configPath, credentials: () => null, log: (line) => lines.push(line),
+    });
+    assert.equal(code, 1);
+    assert.match(lines.join('\n'), /signed-in user login; run atris login/);
+    assert.equal(f.calls.length, 0);
+    f.failWith(() => ({ status: 401, data: { detail: f.credentials.token } }));
+    const result = await f.sync();
+    assert.equal(result.code, 1);
+    assert.match(result.output, /run atris login/);
+    assert.ok(!result.output.includes(f.credentials.token));
+    if (target === 'personal') assert.ok(!fs.existsSync(f.statePath));
+    else {
+      assert.match(f.state().device_id, /^[0-9a-f-]{36}$/);
+      assert.deepEqual(f.state().targets, {});
+    }
+    assert.ok(!fs.existsSync(`${f.logPath}.lock`));
+    assert.ok(!fs.existsSync(`${f.statePath}.lock`));
+  });
+}
+
+test('workspace sync reads the legacy file, writes only its device file, and skips an idempotent repeat', async (t) => {
+  const f = syncFixture(t, { target: 'workspace', business: 'example-business' });
+  const mac = start(f.now());
+  const phone = start(new Date(f.now().getTime() - 60 * minute), { id: 'phone', kind: 'meditate', minutes: 20, source: 'ios' });
+  const totals = health(f.now(), { steps: 8120 });
+  f.seed([mac, totals], false);
+  const localBefore = f.text();
+  const remoteBefore = [phone, totals].map(JSON.stringify).join('\n');
+  f.setRemoteText(remoteBefore);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 1 lines and pulled 1 lines (workspace)' });
+  assert.ok(f.text().startsWith(localBefore + '\n'));
+  const deviceId = f.state().device_id;
+  const deviceFile = `atris/99/sessions.${deviceId}.jsonl`;
+  assert.equal(f.remoteText(), remoteBefore);
+  assert.equal(f.remoteText(deviceFile), JSON.stringify(mac) + '\n');
+  assert.equal(f.workspaceFiles.size, 2);
+  assert.ok(f.calls.some((call) => call.path.startsWith('/api/business/business-id/workspaces/default-workspace/sync?')));
+  assert.ok(f.state());
+  f.calls.length = 0;
+  const after = f.text();
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 0 lines (workspace)' });
+  assert.equal(f.text(), after);
+  assert.equal(f.calls.filter((call) => call.method === 'POST').length, 0);
+  fs.writeFileSync(f.configPath, JSON.stringify({ sync: { target: 'workspace', business: 'example-business', workspace: 'chosen-workspace' } }));
+  assert.equal((await f.sync()).code, 0);
+  assert.equal(f.state().device_id, deviceId);
+  assert.ok(f.calls.some((call) => call.path.includes('/workspaces/chosen-workspace/')));
+});
+
+test('workspace sync creates a missing remote file and refuses unconfirmed writes', async (t) => {
+  const f = syncFixture(t, { target: 'workspace', business: 'example-business' });
+  const record = health(f.now(), { mindful_min: 20 });
+  f.seed([record]);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 1 lines and pulled 0 lines (workspace)' });
+  const deviceFile = `atris/99/sessions.${f.state().device_id}.jsonl`;
+  assert.equal(f.remoteText(deviceFile), JSON.stringify(record) + '\n');
+  f.setRemoteText('', deviceFile);
+  const beforeState = fs.readFileSync(f.statePath, 'utf8');
+  f.failWith((call) => {
+    if (call.method === 'POST') return { data: { results: [] } };
+    if (call.path.includes('/snapshot')) return { data: { files: [] } };
+    return { data: [{ id: 'business-id', slug: 'example-business', workspace_id: 'default-workspace' }] };
+  });
+  const result = await f.sync();
+  assert.equal(result.code, 1);
+  assert.match(result.output, /did not confirm/);
+  assert.equal(fs.readFileSync(f.statePath, 'utf8'), beforeState);
+  assert.deepEqual(f.records(), [record]);
+});
+
+test('workspace sync reads every device and legacy log while appending only to its own existing bytes', async (t) => {
+  const f = syncFixture(t, { target: 'workspace', business: 'example-business' });
+  fs.mkdirSync(path.dirname(f.statePath), { recursive: true });
+  fs.writeFileSync(f.statePath, JSON.stringify({ v: 1, device_id: 'mac-test', targets: {} }));
+  const ownFile = 'atris/99/sessions.mac-test.jsonl';
+  const old = health(new Date(f.now().getTime() - 2 * minute), { steps: 1 });
+  const legacy = health(new Date(f.now().getTime() - minute), { steps: 2 });
+  const phone = start(new Date(f.now().getTime() - 60 * minute), { id: 'phone', source: 'ios' });
+  const local = start(f.now());
+  const prefix = `  ${JSON.stringify(old)}  `;
+  f.setRemoteText(prefix, ownFile);
+  f.setRemoteText(JSON.stringify(legacy));
+  f.setRemoteText([phone, legacy].map(JSON.stringify).join('\n'), 'atris/99/sessions.ios-phone.jsonl');
+  f.setRemoteText(JSON.stringify(old), 'atris/99/sessions.another-device.jsonl');
+  for (const file of ['atris/99/config.json', 'atris/99/sessions.phone.jsonl.bak', 'atris/99/sub/sessions.other.jsonl']) {
+    f.setRemoteText('not a session log', file);
+  }
+  const before = new Map(f.workspaceFiles);
+  f.seed([local, phone, local], false);
+  const localBefore = f.text();
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 1 lines and pulled 2 lines (workspace)' });
+  assert.equal(f.remoteText(ownFile), prefix + '\n' + JSON.stringify(local) + '\n');
+  assert.ok(f.text().startsWith(localBefore + '\n'));
+  assert.deepEqual(f.records().slice(3), [old, legacy]);
+  for (const [file, content] of before) {
+    if (file !== ownFile) assert.equal(f.remoteText(file), content);
+  }
+  f.calls.length = 0;
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 0 lines (workspace)' });
+  assert.ok(f.calls.every((call) => call.method === 'GET'));
+});
+
+test('two concurrent workspace devices preserve all lines across stale snapshots and later appends', async (t) => {
+  const first = syncFixture(t, { target: 'workspace', business: 'example-business' });
+  const second = fixture(t);
+  const secondState = path.join(second.dir, 'state', 'sync-state.json');
+  const syncSecond = async () => {
+    const output = [];
+    const code = await ninetyNineAtris(['sync'], {
+      logPath: second.logPath, statePath: secondState, configPath: first.configPath,
+      credentials: () => first.credentials, log: (line) => output.push(line),
+    });
+    return { code, output: output.join('\n') };
+  };
+  const mac = start(first.now());
+  const phone = start(second.now(), { id: 'phone', source: 'ios' });
+  const legacy = health(new Date(first.now().getTime() - minute), { steps: 5 });
+  first.seed([mac]);
+  second.seed([phone]);
+  const legacyText = JSON.stringify(legacy);
+  first.setRemoteText(legacyText);
+  // Both reads must finish before either upload, reproducing the shared-file race.
+  first.holdSnapshots(2);
+  assert.deepEqual(await Promise.all([first.sync(), syncSecond()]), [
+    { code: 0, output: 'sent 1 lines and pulled 1 lines (workspace)' },
+    { code: 0, output: 'sent 1 lines and pulled 1 lines (workspace)' },
+  ]);
+  const firstId = first.state().device_id;
+  const secondId = JSON.parse(fs.readFileSync(secondState, 'utf8')).device_id;
+  assert.notEqual(firstId, secondId);
+  const firstFile = `atris/99/sessions.${firstId}.jsonl`;
+  const secondFile = `atris/99/sessions.${secondId}.jsonl`;
+  const firstPrefix = first.remoteText(firstFile);
+  const secondPrefix = first.remoteText(secondFile);
+  assert.deepEqual(parseSessionLog(firstPrefix), [mac]);
+  assert.deepEqual(parseSessionLog(secondPrefix), [phone]);
+  assert.deepEqual(await Promise.all([first.sync(), syncSecond()]), [
+    { code: 0, output: 'sent 0 lines and pulled 1 lines (workspace)' },
+    { code: 0, output: 'sent 0 lines and pulled 1 lines (workspace)' },
+  ]);
+  const at = new Date(first.now().getTime() + 25 * minute);
+  const macEnd = event('end', mac, at, { status: 'done' });
+  const phoneEnd = event('end', phone, at, { status: 'done', source: 'ios' });
+  fs.appendFileSync(first.logPath, JSON.stringify(macEnd) + '\n');
+  fs.appendFileSync(second.logPath, JSON.stringify(phoneEnd) + '\n');
+  first.holdSnapshots(2);
+  assert.deepEqual(await Promise.all([first.sync(), syncSecond()]), [
+    { code: 0, output: 'sent 1 lines and pulled 0 lines (workspace)' },
+    { code: 0, output: 'sent 1 lines and pulled 0 lines (workspace)' },
+  ]);
+  assert.equal(first.remoteText(firstFile), firstPrefix + JSON.stringify(macEnd) + '\n');
+  assert.equal(first.remoteText(secondFile), secondPrefix + JSON.stringify(phoneEnd) + '\n');
+  assert.equal(first.remoteText(), legacyText);
+  assert.equal(first.workspaceFiles.size, 3);
+  assert.deepEqual(await Promise.all([first.sync(), syncSecond()]), [
+    { code: 0, output: 'sent 0 lines and pulled 1 lines (workspace)' },
+    { code: 0, output: 'sent 0 lines and pulled 1 lines (workspace)' },
+  ]);
+  const expected = [mac, phone, macEnd, phoneEnd, legacy].map(JSON.stringify).sort();
+  assert.deepEqual(first.records().map(JSON.stringify).sort(), expected);
+  assert.deepEqual(second.records().map(JSON.stringify).sort(), expected);
+  assert.equal(first.state().device_id, firstId);
+  assert.equal(JSON.parse(fs.readFileSync(secondState, 'utf8')).device_id, secondId);
+  assert.equal(first.calls.filter((call) => call.method === 'POST').length, 4);
+});
+
+test('workspace sync refuses invalid device ids and unreadable device logs without uploading', async (t) => {
+  const f = syncFixture(t, { target: 'workspace', business: 'example-business' });
+  fs.mkdirSync(path.dirname(f.statePath), { recursive: true });
+  f.seed([health(f.now())]);
+  for (const device_id of ['', '../other', null, 42]) {
+    const text = JSON.stringify({ v: 1, device_id, targets: {} });
+    fs.writeFileSync(f.statePath, text);
+    assert.match((await f.sync()).output, /check the 99 sync-state device id/);
+    assert.equal(fs.readFileSync(f.statePath, 'utf8'), text);
+  }
+  assert.equal(f.calls.length, 0);
+  fs.writeFileSync(f.statePath, JSON.stringify({ v: 1, device_id: 'mac-test', targets: {} }));
+  const before = f.text();
+  for (const content of [null, 'not json']) {
+    f.setRemoteText(content, 'atris/99/sessions.phone.jsonl');
+    assert.equal((await f.sync()).code, 1);
+    assert.equal(f.text(), before);
+    assert.ok(f.calls.every((call) => call.method === 'GET'));
+  }
+});
+
+test('personal sync leaves the cursor unchanged after a failed push and retries as a union', async (t) => {
+  const f = syncFixture(t);
+  const local = health(f.now(), { steps: 1 });
+  const remote = { ...local, at: new Date(f.now().getTime() - minute).toISOString() };
+  f.seed([local]);
+  f.add([remote]);
+  const before = f.text();
+  f.failWith((call) => call.method === 'POST'
+    ? { data: { stored: 0, skipped: 0 } }
+    : { data: { lines: [remote], next_since: null } });
+  assert.match((await f.sync()).output, /did not acknowledge/);
+  assert.equal(f.text(), before);
+  assert.ok(!fs.existsSync(f.statePath));
+  f.failWith(null);
+  assert.equal((await f.sync()).code, 0);
+  assert.equal(f.records().length, 2);
+});
+
+test('bad remote records or a stuck cursor fail without appending or saving state', async (t) => {
+  const f = syncFixture(t);
+  const local = health(f.now(), { steps: 1 });
+  f.seed([local]);
+  for (const data of [
+    { lines: [{ broken: true }], next_since: null },
+    { lines: [], next_since: 'invalid' },
+    { lines: [local], next_since: '2026-10-24T00:00:00.000Z' },
+  ]) {
+    f.failWith(() => ({ data }));
+    const before = f.text();
+    assert.equal((await f.sync()).code, 1);
+    assert.equal(f.text(), before);
+    assert.ok(!fs.existsSync(f.statePath));
+  }
+});
+
+test('no sync config stays local, and invalid sync configuration and arguments never make requests', async (t) => {
+  const f = syncFixture(t);
+  fs.unlinkSync(f.configPath);
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sync is off (local only)' });
+  fs.writeFileSync(f.configPath, '{}');
+  assert.deepEqual(await f.sync('--dry-run'), { code: 0, output: 'sync is off (local only)' });
+  for (const sync of [{ target: 'bad' }, { target: 'personal', app_slug: '99' }, { target: 'personal', app_slug: '../escape' }, { target: 'workspace' }]) {
+    fs.writeFileSync(f.configPath, JSON.stringify({ sync }));
+    assert.equal((await f.sync()).code, 1);
+  }
+  for (const args of [['--json'], ['extra'], ['--dry-run', '--dry-run']]) assert.equal((await f.sync(...args)).code, 2);
+  assert.equal(f.calls.length, 0);
+  assert.ok(!fs.existsSync(path.dirname(f.logPath)));
+  assert.ok(!fs.existsSync(f.statePath));
+  assert.match(f.run('sync', '--help').output, /both targets merge in both directions/);
+});
+
+test('sync checkpoints are separate for each signed-in account', async (t) => {
+  const f = syncFixture(t);
+  f.seed([health(f.now(), { steps: 1 })]);
+  assert.equal((await f.sync()).code, 0);
+  f.credentials.user_id = 'another-user';
+  f.calls.length = 0;
+  assert.equal((await f.sync()).code, 0);
+  assert.equal(Object.keys(f.state().targets).length, 2);
+  assert.equal(new URL(f.calls[0].path, 'https://mock.invalid').searchParams.get('since'), null);
+});
+
+test('workspace device id survives separate cli runs and a lost upload acknowledgement', (t) => {
+  const f = fixture(t);
+  const remoteFile = path.join(f.dir, 'mock-workspace.json');
+  const failureFile = path.join(f.dir, 'mock-failed-once');
+  const preload = path.join(f.dir, 'mock-workspace-http.cjs');
+  fs.writeFileSync(preload, `const fakeHttps = ${fakeHttps.toString()};
+    const fs = require('node:fs');
+    const remoteFile = ${JSON.stringify(remoteFile)};
+    const failureFile = ${JSON.stringify(failureFile)};
+    const handler = (call) => {
+      if (call.headers.Authorization !== 'Bearer stored-user-token') throw new Error('wrong login');
+      const files = fs.existsSync(remoteFile) ? JSON.parse(fs.readFileSync(remoteFile, 'utf8')) : [];
+      const url = new URL(call.path, 'https://mock.invalid');
+      if (url.pathname === '/api/business/') {
+        return {data: [{id: 'business-id', slug: 'example-business', workspace_id: 'workspace-id'}]};
+      }
+      if (url.pathname.endsWith('/snapshot')) return {data: {files}};
+      if (!url.pathname.endsWith('/sync') || call.method !== 'POST') throw new Error('unexpected request');
+      const file = call.body.files[0];
+      if (files.length && (files[0].path !== file.path || !file.content.startsWith(files[0].content))) {
+        throw new Error('device file changed or old lines were removed');
+      }
+      fs.writeFileSync(remoteFile, JSON.stringify(call.body.files));
+      if (!fs.existsSync(failureFile)) {
+        fs.writeFileSync(failureFile, 'failed after saving');
+        return {status: 500, data: {}};
+      }
+      return {data: {results: [{path: file.path, status: 'written'}]}};
+    };
+    require('node:https').request = fakeHttps(handler);
+    require('node:http').request = fakeHttps(handler);
+  `);
+  const homeDir = path.join(f.dir, '.atris');
+  fs.mkdirSync(homeDir);
+  fs.writeFileSync(path.join(homeDir, 'credentials.json'), JSON.stringify({ token: 'stored-user-token', user_id: 'stored-user' }));
+  const config = path.join(f.dir, 'config.json');
+  fs.writeFileSync(config, JSON.stringify({ sync: { target: 'workspace', business: 'example-business' } }));
+  const env = f.env();
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('ATRIS_') && key !== 'ATRIS_99_LOG') delete env[key];
+  }
+  Object.assign(env, { ATRIS_99_CONFIG: config, NODE_OPTIONS: `--require=${preload}` });
+  const run = () => spawnSync(process.execPath, [cli, '99', 'sync'], { cwd: f.dir, env, encoding: 'utf8', timeout: 15000 });
+  const first = health(f.now(), { steps: 10 });
+  f.seed([first]);
+  const failed = run();
+  assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+  assert.match(failed.stdout, /sync request failed/);
+  const statePath = path.join(homeDir, '99', 'sync-state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.match(state.device_id, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(state.targets, {});
+  assert.equal(fs.statSync(statePath).mode & 0o777, 0o600);
+  const second = health(new Date(f.now().getTime() + minute), { steps: 20 });
+  fs.appendFileSync(f.logPath, JSON.stringify(second) + '\n');
+  const resumed = run();
+  assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
+  assert.equal(resumed.stdout, 'sent 1 lines and pulled 0 lines (workspace)\n');
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).device_id, state.device_id);
+  assert.deepEqual(JSON.parse(fs.readFileSync(remoteFile, 'utf8')), [{
+    path: `atris/99/sessions.${state.device_id}.jsonl`,
+    content: [first, second].map(JSON.stringify).join('\n') + '\n',
+  }]);
+  const repeated = run();
+  assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr);
+  assert.equal(repeated.stdout, 'sent 0 lines and pulled 0 lines (workspace)\n');
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).device_id, state.device_id);
+});
+
+test('real dispatcher awaits sync and uses the config override, stored login, and default state path', (t) => {
+  const f = fixture(t);
+  const preload = path.join(f.dir, 'mock-http.cjs');
+  fs.writeFileSync(preload, `const fakeHttps = ${fakeHttps.toString()};
+    const handler = (call) => {
+      if (call.headers.Authorization !== 'Bearer stored-user-token') throw new Error('wrong login');
+      if (call.method === 'GET') return {data: {lines: [], next_since: null}};
+      return {data: {stored: call.body.lines.length, skipped: 0}};
+    };
+    require('node:https').request = fakeHttps(handler);
+    require('node:http').request = fakeHttps(handler);
+  `);
+  const homeDir = path.join(f.dir, '.atris');
+  fs.mkdirSync(homeDir);
+  fs.writeFileSync(path.join(homeDir, 'credentials.json'), JSON.stringify({ token: 'stored-user-token', user_id: 'stored-user' }));
+  const config = path.join(f.dir, 'override.json');
+  fs.writeFileSync(config, JSON.stringify({ sync: { target: 'personal' } }));
+  f.seed([health(f.now(), { steps: 10 })]);
+  const env = f.env();
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('ATRIS_') && key !== 'ATRIS_99_LOG') delete env[key];
+  }
+  Object.assign(env, { ATRIS_99_CONFIG: config, NODE_OPTIONS: `--require=${preload}` });
+  const result = spawnSync(process.execPath, [cli, '99', 'sync'], { cwd: f.dir, env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout, 'sent 1 lines and pulled 0 lines (personal)\n');
+  assert.ok(fs.existsSync(path.join(homeDir, '99', 'sync-state.json')));
+  fs.unlinkSync(path.join(homeDir, 'credentials.json'));
+  const missing = spawnSync(process.execPath, [cli, '99', 'sync'], { cwd: f.dir, env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+  assert.match(missing.stdout, /signed-in user login; run atris login/);
+});

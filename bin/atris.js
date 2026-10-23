@@ -602,7 +602,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  99         - local focus and meditation sessions');
+  console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
@@ -611,7 +611,7 @@ function showHelpAll() {
   console.log('  who        - Show local engines and team members working, waiting, done, or stale');
   console.log('  stream     - Watch the whole team work live in one terminal');
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
-  console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone');
+  console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -2292,8 +2292,8 @@ if (command === 'guide') {
     process.exit(1);
   }
 } else if (command === '99') {
-  const code = require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3));
-  exitAfterStdoutDrain(code);
+  Promise.resolve(require('../commands/ninety-nine').ninetyNineAtris(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code));
 } else if (command === 'now') {
   const args = process.argv.slice(3);
   const nowCode = require('../commands/now').nowAtris(args);
