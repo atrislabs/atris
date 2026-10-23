@@ -1,0 +1,18 @@
+DROP test/plugin-cmd--mut-L409-7.test.js: the publish command it runs calls real `git add`, `git commit` and `git push` in the test folder; it only stays safe because the temp folder happens not to sit inside a git repo.
+DROP test/manifest--mut-L197-0.test.js: it repeats test/manifest--mut-L191-6.test.js, which already checks that two different edits to a synced file become a conflict and would catch this break too.
+DROP test/lifecycle-cmd--mut-L96-7.test.js: it repeats test/lifecycle-cmd--mut-L94-0.test.js, which already checks that sleep finds a saved workspace by its name when the service is down, and that test fails on this break too.
+DROP test/secret-gateway--mut-L127-7.test.js: Node only hands over a request header as a list for set-cookie, and no client sends its credential in set-cookie. So this break can't happen in practice, and the test only reaches it by faking the server's listen and address internals.
+DROP test/align-cmd--mut-L607-4.test.js: Only forbids a harmless “+0 more” line; all paths remain visible.
+DROP test/ask-cmd--mut-L73-4.test.js: Pins an arbitrary animation boundary and write chunking; either branch prints the same response.
+DROP test/errors-cmd--mut-L46-7.test.js: Account routing is already covered by test/errors-cmd--mut-L118-0.test.js, which asserts the account request occurs.
+DROP test/member-tidy--mut-L43-5.test.js: Pins equivalent age wording, “2d old” versus “48h old”, and runs git without isolating the real home or global config.
+DROP test/mission-code-provenance--mut-L59-7.test.js: Runs git initialization and commit before replacing HOME, exposing real global git config and hooks.
+DROP test/search-cmd--mut-L306-7.test.js: Duplicates the matching wiki-path assertion in test/commands-7.test.js.
+DROP test/zen-cmd--mut-L72-0.test.js: Pins singular grammar; the existing test/zen.test.js already checks that multiple files report their correct count.
+DROP test/align-cmd--mut-L607-4.test.js: Only forbids a harmless “+0 more” line; all paths remain visible.
+DROP test/ask-cmd--mut-L73-4.test.js: Pins an arbitrary animation boundary and write chunking; either branch prints the same response.
+DROP test/errors-cmd--mut-L46-7.test.js: Account routing is already covered by test/errors-cmd--mut-L118-0.test.js, which asserts the account request occurs.
+DROP test/member-tidy--mut-L43-5.test.js: Pins equivalent age wording, “2d old” versus “48h old”, and runs git without isolating the real home or global config.
+DROP test/mission-code-provenance--mut-L59-7.test.js: Runs git initialization and commit before replacing HOME, exposing real global git config and hooks.
+DROP test/search-cmd--mut-L306-7.test.js: Duplicates the matching wiki-path assertion in test/commands-7.test.js.
+DROP test/zen-cmd--mut-L72-0.test.js: Pins singular grammar; the existing test/zen.test.js already checks that multiple files report their correct count.
