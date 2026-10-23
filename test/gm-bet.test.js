@@ -150,6 +150,53 @@ test('bundle: missing sources are left out, never invented', async () => {
   assert.match(gmBet.validateBet(goodBet(), { bundle, today: TODAY }).reasons.join(' | '), /no number we can read here for a target/);
 });
 
+test('bundle: the goal, open missions, who is on what, and the latest journal reach both writers; stale sources say so', async () => {
+  const root = workspace();
+  fs.writeFileSync(path.join(root, 'atris', 'now.md'), '# now\n\nLast updated: 2026-09-29 at 00:47 local time\n\n- keep the workspace coherent\n');
+  fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# TODO.md\n\n## Endgame\n\n**Slug:** zero-revision-nights\n**Picked:** 2026-10-15 00:48\n**Horizon:** Overnight agent work lands itself and holds up.\n\n## Backlog\n');
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'scoreboard.json'), JSON.stringify({ goal: 'first outside customer pays for atris', metrics: [], updated_at: '2026-07-16T18:45:12.647Z' }));
+  fs.mkdirSync(path.join(root, 'atris', 'logs', '2026'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'logs', '2026', '2026-10-02.md'), '# old day\n- an old line\n');
+  fs.writeFileSync(path.join(root, 'atris', 'logs', '2026', '2026-10-20.md'), '# 2026-10-20\n\n- shipped the phone orb preview\n- first-timer page drafted\n');
+  const ago = d => new Date(Date.UTC(2026, 9, 21) - d * 86400000).toISOString();
+  const missions = new Map(Object.entries({
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page for first-timers. why now: installs fell.', created_at: ago(1), updated_at: ago(0) },
+    m2: { id: 'm2', owner: 'launcher', status: 'complete', objective: 'Post the launch thread.', created_at: ago(3), updated_at: ago(2) },
+    m3: { id: 'm3', owner: 'researcher', status: 'paused', objective: 'Survey ten agent teams about pricing.', created_at: ago(40), updated_at: ago(30) },
+    // still says running, but has not moved in days: a dead run, like the old match sheet
+    m4: { id: 'm4', owner: 'builder', status: 'running', objective: 'Write a match sheet pairing merges with jobs.', created_at: ago(3), last_tick_at: ago(2) },
+  }));
+  const deps = { ...fixtureDeps, readMissions: () => missions };
+  const events = [];
+  const bundle = await gmBet.readBundle(root, { deps, emit: e => events.push(e), ledgerFile: path.join(root, 'bets.jsonl'), today: TODAY });
+  const text = gmBet.bundleText(bundle);
+  // a stale now.md is labeled stale, in the facts and in the text
+  assert.equal(events.find(e => e.key === 'now').line, 'read now.md, last updated 2026-09-29 at 00:47 local time, 22 days ago, stale');
+  assert.match(text, /## atris\/now\.md \(stale: 22 days old, prefer the fresher sections\)/);
+  // the goal: the endgame horizon and the goal sentence, each with its age
+  assert.match(text, /## the goal\n- horizon: Overnight agent work lands itself and holds up\. \(picked 2026-10-15\)\n- goal: first outside customer pays for atris \(set 2026-07-16, stale: 97 days old\)/);
+  // open missions as plain titles, fresh first; finished ones are left out
+  assert.match(text, /## open missions\n- Write the try page for first-timers \(builder\)\n- Survey ten agent teams about pricing \(researcher, stale: 30 days old\)/);
+  assert.doesNotMatch(text, /Post the launch thread|match sheet/);
+  // what each member is on now, one line each
+  assert.match(text, /- builder: Builder\. Writes and tests the code\. now on: Write the try page for first-timers/);
+  // the newest journal day only
+  assert.match(text, /## latest journal, 2026-10-20\n# 2026-10-20\n- shipped the phone orb preview\n- first-timer page drafted/);
+  assert.doesNotMatch(text, /an old line/);
+  // bounded: each new section has a cap
+  assert.ok(text.length < 20000, `bundle text ${text.length}`);
+  // both writers get the goal, and the rule to prefer fresh sections
+  const idea = gmBet.buildPrompt(bundle, { today: TODAY });
+  assert.match(idea, /Overnight agent work lands itself and holds up/);
+  assert.match(idea, /- a section marked stale is old: prefer the fresh ones, and never present a stale line as what is happening now\./);
+  const prompts = [];
+  await gmBet.generateQuestion({ workspaceRoot: root, bundle, ledgerFile: path.join(root, 'bets.jsonl'), deps: { runModel: async (p) => { prompts.push(p); return { ok: false, reason: 'stub' }; } } });
+  assert.match(prompts[0], /Overnight agent work lands itself and holds up/);
+  assert.match(prompts[0], /first outside customer pays for atris/);
+  assert.match(prompts[0], /- a section marked stale is old: prefer the fresh ones/);
+});
+
 test('installWeeks sums the newest 7 days and the 7 before', () => {
   assert.deepEqual(gmBet.installWeeks(npmBody()), { last_week: 1400, week_before: 1300, through: '2026-09-30' });
   assert.equal(gmBet.installWeeks({ downloads: [] }), null);
