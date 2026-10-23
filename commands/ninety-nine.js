@@ -37,7 +37,8 @@ function usage() {
     'sync is off without a sync block in ~/.atris/99/config.json (ATRIS_99_CONFIG overrides it).',
     'personal: {"sync":{"target":"personal","app_slug":"project-99"}}',
     'workspace: {"sync":{"target":"workspace","business":"your-business","workspace":"optional-id"}}',
-    'both targets merge in both directions; workspace reads atris/99/sessions.jsonl.',
+    'both targets merge in both directions; workspace reads atris/99/sessions.*.jsonl and legacy sessions.jsonl.',
+    'workspace writes only sessions.<device>.jsonl; its stable device id lives in the local sync state.',
     'personal uses your user login and defaults to app_slug project-99; its records api must be deployed first.',
     'dry-run reads cloud records and shows missing lines without saving logs or the sync cursor.',
   ].join('\n');
@@ -47,6 +48,16 @@ function readJson(file, fallback) {
   const text = readLog(file);
   if (!text) return fallback;
   try { return JSON.parse(text); } catch { throw new Error('check the 99 config or sync-state json'); }
+}
+
+function saveSyncState(file, state) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 async function syncNinetyNine(args, { log, logPath, configPath, statePath, request, credentials = loadCredentials }) {
@@ -93,7 +104,13 @@ async function syncNinetyNine(args, { log, logPath, configPath, statePath, reque
       || (checkpoint.since != null && !Number.isFinite(Date.parse(checkpoint.since)))) {
       throw new Error('check the 99 sync-state json');
     }
-    const result = await syncLines({ records, sync: config.sync, checkpoint, credentials: creds, dryRun, request });
+    if (config.sync.target === 'workspace' && state.device_id === undefined) {
+      state.device_id = randomUUID();
+      // Save the identity before uploading, even if the reply or later log save fails.
+      // The state lock keeps simultaneous local runs on the same device file.
+      if (!dryRun) saveSyncState(stateFile, state);
+    }
+    const result = await syncLines({ records, sync: config.sync, checkpoint, deviceId: state.device_id, credentials: creds, dryRun, request });
     if (dryRun) {
       log(`would send ${result.send.length} lines and pull ${result.pull.length} lines (${config.sync.target})`);
       for (const record of result.send) log(`send: ${JSON.stringify(record)}`);
@@ -101,13 +118,7 @@ async function syncNinetyNine(args, { log, logPath, configPath, statePath, reque
     } else {
       for (const record of result.pull) text = appendRecord(file, text, record);
       state.targets[key] = result.checkpoint;
-      const temporary = `${stateFile}.${randomUUID()}.tmp`;
-      try {
-        fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-        fs.renameSync(temporary, stateFile);
-      } finally {
-        fs.rmSync(temporary, { force: true });
-      }
+      saveSyncState(stateFile, state);
       log(`sent ${result.send.length} lines and pulled ${result.pull.length} lines (${config.sync.target})`);
     }
     return 0;
