@@ -1,0 +1,8 @@
+DROP test/soul-cmd--mut-L252-4.test.js: duplicates test/soul-cmd--mut-L241-4.test.js, which checks the same thing (distill with nothing to learn leaves the persona unchanged) and fails on this same break, because the break always adds the empty policies header and rewrites the persona.
+DROP test/zen-cmd--mut-L62-0.test.js: duplicates test/zen-apply.test.js line 173, which already checks the singular wording "1 unsaved team note left in place" and fails on this break.
+DROP test/policy-lessons--mut-L101-4.test.js: Enforces a zero-day fallback that production callers cannot reach; the caller validates that days is positive.
+DROP test/pulse-cmd--mut-L665-6.test.js: Replaces an internal function to throw a string, while the real function throws Error objects; the break does not affect actual cadence failures.
+DROP test/wiki-cmd--mut-L350-0.test.js: Duplicates the default local wiki query behavior already covered in test/commands-8.test.js.
+DROP test/policy-lessons--mut-L101-4.test.js: Enforces a zero-day fallback that production callers cannot reach; the caller validates that days is positive.
+DROP test/pulse-cmd--mut-L665-6.test.js: Replaces an internal function to throw a string, while the real function throws Error objects; the break does not affect actual cadence failures.
+DROP test/wiki-cmd--mut-L350-0.test.js: Duplicates the default local wiki query behavior already covered in test/commands-8.test.js.
