@@ -12,6 +12,10 @@ const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
 
+// Scratch missions must not inherit the surrounding mission driver's identity.
+delete process.env.ATRIS_MISSION_DRIVER_DETACHED;
+delete process.env.ATRIS_MISSION_DRIVER_PARENT_PID;
+
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-run-reliability-'));
 }

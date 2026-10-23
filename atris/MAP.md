@@ -178,6 +178,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | test suite speed baseline | `atris/receipts/test-suite-speed-baseline-2026-10-22.md` | Untouched full-suite timing, existing failures and saved local test inventory before parallel splits. |
 | full suite after one-lap split | `atris/receipts/test-suite-speed-after-one-lap-2026-10-22.md` | Measured full-suite timing and exact failure comparison; three additional mission-process failures block acceptance. |
 | additional mission test failure diagnosis | `atris/receipts/test-suite-speed-driver-diagnosis-2026-10-22.md` | Inherited background-driver settings reproduce the three new failures; removing only those settings passes all 23 affected checks without code changes. |
+| isolated mission subprocess tests | `test/member-run-start.test.js:16`, `test/mission-run-reliability.test.js:16`, `atris/receipts/test-suite-speed-driver-isolation-2026-10-22.md` | Both test processes clear only the two inherited mission-driver markers before launching scratch missions; real subprocess assertions stay unchanged. |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |

@@ -2496,3 +2496,5 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 - Credential gateway: `lib/secret-gateway.js:240`, unchanged read-only grant, placeholder credential, local Host checks, body rejection and loopback binding.
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
 - Proof and user-visible changes: `atris/receipts/local-http-security.md`.
+
+Mission test isolation: `test/member-run-start.test.js:16` and `test/mission-run-reliability.test.js:16` clear the two inherited detached-driver markers before scratch subprocesses start. See `atris/receipts/test-suite-speed-driver-isolation-2026-10-22.md` for the inherited-environment run.

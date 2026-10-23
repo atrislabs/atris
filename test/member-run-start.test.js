@@ -12,6 +12,10 @@ const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
 // A codex session around the suite would make member run pick codex_goal.
 for (const name of ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME']) delete process.env[name];
 
+// Scratch missions must not inherit the surrounding mission driver's identity.
+delete process.env.ATRIS_MISSION_DRIVER_DETACHED;
+delete process.env.ATRIS_MISSION_DRIVER_PARENT_PID;
+
 function workspace(t, beforeCleanup) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-start-'));
   t.after(async () => {
