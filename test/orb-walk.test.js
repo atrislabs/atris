@@ -97,7 +97,8 @@ test('judge: TypeSafe gets Noul questions with the screen as state, and the key 
   const judge = walk.pickJudge({ env: { TYPESAFE_API_KEY: KEY, OPENAI_API_KEY: 'sk-other-0123456789abcdef' }, fetchFn, dir: os.tmpdir() });
   assert.equal(judge.name, 'typesafe jev');
   const out = await judge.ask(['next', 'plain'], STATE);
-  assert.deepEqual(out, { next: { yes: true, p: 0.93 }, plain: { yes: false, p: 0.41 } });
+  // a Noul probability is read as a plain yes or no
+  assert.deepEqual(out, { next: { yes: true, why: null }, plain: { yes: false, why: null } });
   assert.equal(seen[0].url, 'https://api.typesafe.ai/v1/systemone');
   assert.equal(seen[0].init.headers.authorization, `Bearer ${KEY}`);
   const body = JSON.parse(seen[0].init.body);
@@ -107,24 +108,25 @@ test('judge: TypeSafe gets Noul questions with the screen as state, and the key 
   assert.ok(!seen[0].init.body.includes(KEY), 'the key is never in the body');
 });
 
-test('judge: OpenAI gets a strict json schema answer of yes and p per question', async () => {
+test('judge: OpenAI gets a strict json schema answer of a plain yes or no and one reason per question', async () => {
   let sent = null;
   const fetchFn = async (url, init) => {
     sent = { url, body: JSON.parse(init.body), auth: init.headers.authorization };
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answers: { yes: true, p: 0.9 }, plain: { yes: false, p: 0.96 } }) } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answers: { yes: true, why: 'the box asks for the number' }, plain: { yes: false, why: 'it says  npm' } }) } }] }) };
   };
   const judge = walk.pickJudge({ env: { OPENAI_API_KEY: 'sk-test-0123456789abcdef' }, fetchFn, dir: os.tmpdir() });
   assert.match(judge.name, /^openai /);
   const out = await judge.ask(['answers', 'plain'], STATE);
-  // a model that gave p as how sure it is of a no is read as a low chance of yes
-  assert.deepEqual(out.answers, { yes: true, p: 0.9 });
-  assert.equal(out.plain.yes, false);
-  assert.ok(Math.abs(out.plain.p - 0.04) < 1e-9);
+  assert.deepEqual(out, { answers: { yes: true, why: 'the box asks for the number' }, plain: { yes: false, why: 'it says npm' } });
   assert.equal(sent.url, 'https://api.openai.com/v1/chat/completions');
   const schema = sent.body.response_format.json_schema;
   assert.equal(schema.strict, true);
   assert.deepEqual(schema.schema.required, ['answers', 'plain']);
-  assert.deepEqual(schema.schema.properties.plain, { type: 'object', properties: { yes: { type: 'boolean' }, p: { type: 'number' } }, required: ['yes', 'p'], additionalProperties: false });
+  assert.deepEqual(schema.schema.properties.plain, { type: 'object', properties: { yes: { type: 'boolean' }, why: { type: 'string' } }, required: ['yes', 'why'], additionalProperties: false });
+  // the box counts as an answer, and a judge that gives no plain yes or no gave no answer
+  assert.match(sent.body.messages[1].content, /The box to type in counts as an answer/);
+  const vague = walk.pickJudge({ env: { OPENAI_API_KEY: 'sk-test-0123456789abcdef' }, fetchFn: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ plain: { yes: 'maybe', why: '' } }) } }] }) }), dir: os.tmpdir() });
+  await assert.rejects(vague.ask(['plain'], STATE), /gave no answer/);
 });
 
 test('judge: codex runs read-only from an empty folder with the schema, and never gets a key', async () => {
@@ -136,7 +138,7 @@ test('judge: codex runs read-only from an empty folder with the schema, and neve
     child.stderr = new EventEmitter();
     child.kill = () => {};
     setImmediate(() => {
-      fs.writeFileSync(args[args.indexOf('-o') + 1], JSON.stringify({ next: { yes: true, p: 0.88 } }));
+      fs.writeFileSync(args[args.indexOf('-o') + 1], JSON.stringify({ next: { yes: true, why: 'do it is right there' } }));
       child.emit('close', 0);
     });
     return child;
@@ -144,7 +146,7 @@ test('judge: codex runs read-only from an empty folder with the schema, and neve
   try {
     const judge = walk.pickJudge({ env: { PATH: '/usr/bin', TYPESAFE_API_KEY: '', OPENAI_API_KEY: '' }, spawnFn, dir });
     assert.equal(judge.name, 'codex');
-    assert.deepEqual(await judge.ask(['next'], STATE), { next: { yes: true, p: 0.88 } });
+    assert.deepEqual(await judge.ask(['next'], STATE), { next: { yes: true, why: 'do it is right there' } });
     assert.equal(call.bin, 'codex');
     assert.deepEqual(call.args.slice(0, 3), ['exec', '--sandbox', 'read-only']);
     assert.ok(call.args.includes('--output-schema'));
@@ -179,16 +181,21 @@ test('judge: a failed call never puts the key in what is printed or saved', asyn
 
 // ---- the pass rule -------------------------------------------------------------------
 
-test('a stage passes only when every rule holds and every judged answer clears the threshold', () => {
-  const stage = (answers, checks = [{ name: 'a way forward', ok: true }]) => ({ name: 's', checks, ask: Object.keys(answers), judged: { answers } });
-  const good = { answers: { yes: true, p: 0.95 }, next: { yes: true, p: 0.9 }, plain: { yes: true, p: 0.82 } };
+test('a stage passes only when every rule holds and no judged question gets a no from most of its votes', () => {
+  const y = { yes: true, why: null };
+  const n = why => ({ yes: false, why });
+  const stage = (votes, checks = [{ name: 'a way forward', ok: true }]) => ({ name: 's', checks, ask: ['answers', 'next', 'plain'], judged: { votes } });
+  const good = [{ answers: y, next: y, plain: y }, { answers: y, next: n('no clear next step'), plain: y }, { answers: y, next: y, plain: y }];
+  // one no in three is a pass, and every vote shows in the judge cell
   assert.equal(walk.stageResult(stage(good)).result, 'pass');
-  assert.equal(walk.stageResult(stage(good)).judge, '3/3 (min .82)');
-  const low = { ...good, plain: { yes: true, p: 0.79 } };
-  const out = walk.stageResult(stage(low));
+  assert.equal(walk.stageResult(stage(good)).judge, 'answers yyy, next yny, plain yyy');
+  const two = [good[0], { ...good[1], plain: n('it says ovr') }, { ...good[2], plain: n('model names') }];
+  const out = walk.stageResult(stage(two));
   assert.equal(out.result, 'fail');
-  assert.equal(out.note, 'judge doubts plain words (p 0.79)');
-  assert.equal(walk.stageResult(stage(low), 0.75).result, 'pass', 'the threshold is adjustable');
+  assert.equal(out.note, 'judge says no to plain words (2 of 3): it says ovr');
+  // any number of votes: most of them saying no fails it
+  assert.equal(walk.stageResult(stage([{ answers: y, next: y, plain: n('x') }])).result, 'fail');
+  assert.equal(walk.stageResult(stage([...good, good[0], good[0]])).judge, 'answers yyyyy, next ynyyy, plain yyyyy');
   assert.equal(walk.stageResult(stage(good, [{ name: 'plain words', ok: false, why: 'the title has a path: lib/x' }])).result, 'fail');
   assert.equal(walk.stageResult({ name: 's', checks: [], ask: ['next'], judged: { error: 'codex is not installed' } }).result, 'fail');
   assert.equal(walk.stageResult({ name: 's', checks: [], ask: ['next'], judged: { skipped: true } }).result, 'pass', 'rules only with --no-judge');
@@ -231,6 +238,23 @@ test('contract: every tap posts the card id and the option id, and a confirm opt
   assert.deepEqual(posts[2], { p: walk.CONTRACT.act, body: { card_id: 'bet-8', text: 'make it shorter' } });
 });
 
+test('contract: a card id that comes back with other options fails the walk', async () => {
+  const deck = id => ({ id, kind: 'deck', title: 'post the thread on x now?', body: null, options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-a', key: 'm-a:0' } }, { id: 'back', label: 'the whole team', action: 'back' }], input: null, job: null, table: null });
+  let served = deck('deck~1');
+  const http = { get: async () => ({ status: 200, json: { ok: true, card: served } }), post: async () => ({ status: 200, json: { ok: true, card: served } }) };
+  const a = walk.contractAdapter(http);
+  const first = await a.open();
+  assert.deepEqual(failed(walk.cardChecks(first, { changed: a.changed })), []);
+  // the same id with job B's yes under it
+  served = { ...deck('deck~1'), options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-b', key: 'm-b:0' } }, { id: 'back', label: 'the whole team', action: 'back' }] };
+  const again = await a.open();
+  assert.deepEqual(failed(walk.cardChecks(again, { changed: a.changed })), ['a card keeps its options']);
+  // a new id for new options is fine
+  served = { ...served, id: 'deck~2' };
+  const fresh = await a.open();
+  assert.deepEqual(failed(walk.cardChecks(fresh, { changed: a.changed })), []);
+});
+
 // ---- one whole walk on the made-up workspace, with a fake judge and no network ------------
 
 test('walk: the made-up workspace walks every http stage with a fake judge and no network', { timeout: 60000 }, async () => {
@@ -242,7 +266,7 @@ test('walk: the made-up workspace walks every http stage with a fake judge and n
   };
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'orb-walk-test-'));
   const asked = [];
-  const judge = { name: 'fake', ask: async (ids, state) => { asked.push(state.stage); return Object.fromEntries(ids.map(id => [id, { yes: true, p: 0.95 }])); } };
+  const judge = { name: 'fake', ask: async (ids, state) => { asked.push(state); return Object.fromEntries(ids.map(id => [id, { yes: true, why: null }])); } };
   let server = null;
   try {
     server = await walk.startFixture(root, process.env);
@@ -275,9 +299,14 @@ test('walk: the made-up workspace walks every http stage with a fake judge and n
     assert.equal(byName['a real answer, which saves'].checks.find(c => c.name === 'the answer was saved').ok, true);
     assert.equal(byName['"something else", then "what"'].checks.find(c => c.name === '"what" saved nothing').ok, true);
     assert.equal(byName['the idea card'].checks.find(c => c.name === 'an idea came').ok, true);
-    // every stage with a screen was judged, and only by the fake
-    assert.ok(asked.length >= 12, `judged ${asked.length}`);
-    assert.ok(out.stages.filter(s => s.card && s.ask.length).every(s => s.judged && s.judged.answers));
+    // every stage with a screen was judged three times, and only by the fake
+    const judged = out.stages.filter(s => s.card && s.ask.length);
+    assert.ok(judged.length >= 12, `judged ${judged.length}`);
+    assert.equal(asked.length, judged.length * 3);
+    assert.ok(judged.every(s => s.judged && s.judged.votes && s.judged.votes.length === 3));
+    // the judge is told exact model names are wanted on the team and the swap card, and nowhere else
+    const wanted = new Set(asked.filter(a => a.screen.wanted).map(a => a.stage));
+    assert.deepEqual([...wanted].sort(), ['"more models"', 'a swap card', 'the team page']);
     assert.deepEqual(outside, []);
   } finally {
     global.fetch = realFetch;
