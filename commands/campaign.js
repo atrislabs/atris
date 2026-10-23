@@ -42,7 +42,7 @@ function printHelp() {
   console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
-  console.log('  atris campaign budget <id> --add <dollars>');
+  console.log('  atris campaign budget <id> --add <dollars> | --limit <dollars> (local ceiling)');
   console.log('  atris campaign ask <id> "<question>" [--mission <id>]   stop before anything that cannot be undone');
   console.log('  atris campaign answer <id> <ask-id> "<answer>"     a person answers; agents cannot');
   console.log('  atris campaign pause|resume|stop <id>');
@@ -89,7 +89,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--every', '--steps'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--limit', '--data', '--timeout', '--as', '--holdout', '--protect', '--every', '--steps'];
 
 function positionals(args) {
   const out = [];
@@ -687,11 +687,42 @@ const cmdBet = simpleEvent('bet_set', (args, words) => {
   return { data: wrongIf ? { bet, wrong_if: wrongIf } : { bet } };
 }, (d) => `bet set: ${d.bet}`);
 
-const cmdBudget = simpleEvent('budget_added', (args) => {
+const cmdAddBudget = simpleEvent('budget_added', (args) => {
   const amount = Number(readFlag(args, '--add', ''));
   if (!(amount > 0)) return { error: 'say how much to add: atris campaign budget <id> --add <dollars>' };
   return { data: { amount_usd: amount } };
 }, (d, view) => `added ${money(d.amount_usd)}; budget is now ${money(view.budget.total)}`, (d) => ({ action: 'add_budget', amount_usd: d.amount_usd }));
+
+function cmdBudget(args, ctx) {
+  if (!args.some((arg) => arg === '--limit' || arg.startsWith('--limit='))) return cmdAddBudget(args, ctx);
+  if (args.some((arg) => arg === '--add' || arg.startsWith('--add='))) return ctx.fail('use either --limit or --add, not both');
+  const limits = readAll(args, '--limit');
+  const amount = Number(limits[0]);
+  if (limits.length !== 1 || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(limits[0]) || !(amount >= 0.01 && amount < NO_LIMIT_BUDGET)) {
+    return ctx.fail('--limit takes one finite dollar amount in whole cents, for example --limit 20');
+  }
+  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  if (error !== undefined) return error;
+  try {
+    ctx.store.append({ campaign_id: view.id, type: 'budget_limited', actor: ctx.actor, data: { amount_usd: amount } }, {
+      check: (current) => {
+        const refuse = (message) => { throw Object.assign(new Error(message), { code: 'budget_limit_refused' }); };
+        if (!current || current.error) refuse('the campaign cannot be read, so its budget cannot be changed');
+        if (current.basis === 'atris_cloud' || cloudLink(ctx.store, view.id)) refuse('a cloud campaign cannot use a local budget limit');
+        const limitCents = Math.round(amount * 100);
+        if (limitCents > Math.round(current.budget.total * 100)) refuse('--limit can only lower the budget; use --add to add money');
+        const committedCents = Math.round(current.budget.spent * 100) + Math.round(current.budget.reserved * 100);
+        if (limitCents < committedCents) refuse(`the limit cannot be below ${money(committedCents / 100)} already spent or reserved`);
+      },
+    });
+  } catch (err) {
+    if (err.code === 'budget_limit_refused') return ctx.fail(err.message);
+    throw err;
+  }
+  const after = getCampaign(ctx.store, view.id);
+  ctx.out(`local budget limited to ${money(after.budget.total)}; work has not been started\n${renderShow(after)}`, { ok: true, action: 'budget_limited', via: 'local', campaign: after, next: decide(after) });
+  return 0;
+}
 
 // The no-reload line: anything that cannot be undone waits here for a person.
 const cmdAsk = simpleEvent('ask_opened', (args, words) => {
@@ -720,7 +751,7 @@ const cmdEvent = (args, ctx) => {
   const type = words[2];
   if (!type) return ctx.fail('name the event type: atris campaign event <id> <type> [--data \'<json>\']');
   // Events that only the judge or a person may write have their own verbs.
-  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
+  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', budget_limited: 'atris campaign budget --limit', campaign_started: 'atris campaign start' };
   if (guarded[type]) return ctx.fail(`${type} cannot be written by hand; use ${guarded[type]}`);
   let data;
   try {

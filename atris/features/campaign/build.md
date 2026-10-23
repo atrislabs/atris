@@ -8,6 +8,51 @@
 
 Add Campaign as a durable, event-sourced struct above Mission, shared by the CLI and backend, with members seated in it and missions linked to it. No UI in this plan beyond the CLI status screen.
 
+## Current contract: lower a local research budget (2026-10-22)
+
+Keshav asked to put a ceiling on existing research before proceeding. The
+installed CLI can add money but cannot replace its local unlimited sentinel
+with a finite ceiling. This slice serves the durable-history and measured-usage
+principles in `idea.md` → Solution Design / The Struct. The phases below are
+dated implementation history, not evidence that every phase remains unfinished.
+
+Owner: executor; executed_by: codex; scope and acceptance: root orchestrator.
+Reuse `commands/campaign.js`, the transactional `campaign-store.append(check)`
+contract, the pure fold in `lib/campaign-core.js`, existing mission reservations
+in `lib/campaign-missions.js`, and cloud-link metadata in `campaign-sync.js`.
+No new product module, dependency, provider API, or billing path is needed.
+
+`atris campaign budget <id> --limit <dollars>` appends `budget_limited` for a
+local campaign. A finite positive whole-cent amount below the unlimited
+sentinel must not exceed the current total or fall below recorded spend plus
+reservations. Check those conditions inside the store transaction, preserve
+all earlier events, and retain pause state. The pure fold also refuses an
+increase or a reduction below existing commitments. `--add` keeps its existing
+meaning and cannot be combined with `--limit`.
+
+This event is a CLI-only extension pending a coordinated cloud rollout.
+Refuse changes on a cloud-linked/cloud-billed campaign, and refuse sync of a
+campaign containing this event before any network request. Older CLI readers
+reject the unknown event, so update the installed reader before applying it.
+No cloud, desktop, web, or provider-spending compatibility is claimed.
+
+Acceptance: real SQLite reopen retains the cap and all prior events; invalid,
+raising, conflicting, or below-commitment requests write nothing; a reservation
+arriving between command read and append is respected; over-budget new mission
+admission refuses without creating a mission; paused work stays paused; no
+judge, research, cloud request, or training job runs while setting a limit.
+Use `node --test test/campaign-budget-limit.test.js`, the affected campaign
+suites, existing CLI golden conformance, and independent cross-model review.
+Latency/cost improvements are unmeasured; this is a correctness control over
+recorded mission costs, not a universal provider circuit breaker.
+
+Apply a conservative $20 ceiling to the existing stopped research only after
+review unless Keshav selects another amount. Read back the saved state and
+keep research paused until he proceeds. Direct paid training remains outside
+this accounting and outside this authorization. Rollback before application:
+use the prior installed CLI. After application: keep a reader supporting the
+event; do not erase history or silently increase the cap to downgrade.
+
 ---
 
 ## Phase -1 — Fix the storage Campaign will stand on (from Astra review, 2026-10-15)

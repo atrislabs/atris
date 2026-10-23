@@ -2,6 +2,22 @@
 
 > Proof that Campaign works, checked by someone other than the builder.
 
+## Current local budget proof, 2026-10-22
+
+Implemented, independently tested and installed locally: lowering an existing
+local campaign with `budget --limit`, retaining history, pause, recorded spend
+and reservations. The actual research campaign was saved and read back at
+$20, with no warnings, no running missions and no resume. This does not grant
+paid research or training authority. No cloud deployment or npm publication.
+
+169 affected tests passed, including 15 new regressions. The CLI's 21 golden
+files and 14 decision cases passed; other surfaces were not tested for the
+new event. Independent test witness and Opus source-review receipts are linked
+in [the application receipt](../../receipts/research-budget-limit-2026-10-22.md).
+Opus approved this paused local application, not a broader rollout. The receipt
+records remaining provider, old-reader, replay-order and first-pull limits.
+The original acceptance list below is historical scope, not a new completion claim.
+
 ---
 
 ## Acceptance Checks

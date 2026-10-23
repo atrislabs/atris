@@ -1,5 +1,15 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
+Local campaign ceilings (2026-10-22): `commands/campaign.js:696` implements
+`campaign budget --limit` using the existing transactional append check.
+`lib/campaign-schema.js:158` accepts finite whole-cent limits and
+`lib/campaign-core.js:252` prevents replayed limits from increasing the total
+or undercutting committed costs. `lib/campaign-sync.js:151` refuses cloud sync
+before network work, with a post-link recheck for a concurrent local limit.
+`test/campaign-budget-limit.test.js` covers both stores, stale command reads,
+cloud races, pause/history retention, real CLI restarts and mission refusal.
+Check: `node --test test/campaign-budget-limit.test.js`.
+
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Hourly cleanup failed stops: `commands/autoland.js:869` reads saved failure counts into the summary; `test/engine-resource.test.js:589` proves real ESRCH using a harmless signal 0 probe, saved failures, singular/plural messages, and combined outcomes.
