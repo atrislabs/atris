@@ -1,0 +1,1 @@
+{"id":"test-commands-workspace-clean","kind":"test","target":"commands/workspace-clean.js","files":["test/workspace-clean-command.test.js"]}

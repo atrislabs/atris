@@ -1,0 +1,1 @@
+{"id":"test-commands-wiki","kind":"test","target":"commands/wiki.js","files":["test/wiki-command.test.js"]}

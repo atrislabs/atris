@@ -10,7 +10,7 @@ An agent could write `Verify: true` on any task and the tick would count as a su
 
 ## Solution design
 
-Two locks, one thought. The task's `Verify:` field must point at a rubric, not be a raw shell string. Before any work happens, the rubric runs against the current tree. If it passes already, the rubric is trivial or the task is already done — halt, don't proceed. Only when the rubric actually fails at t=0 does the work begin. The same rubric (snapshotted) runs again after the work. That round-trip — fail before, pass after — is proof the task was real and the rubric is real.
+Two locks, one thought. The task's `Verify:` field must point at a rubric, not be a raw shell string. Before any work happens, the rubric runs against the current tree. If it passes already, the rubric is trivial or the task is already done: halt, don't proceed. Only when the rubric actually fails at t=0 does the work begin. The same rubric (snapshotted) runs again after the work. That round-trip, failing before and passing after, is proof the task was real and the rubric is real.
 
 ```
 task with Verify: "atris verify <slug> --section preflight"
@@ -41,11 +41,11 @@ task with Verify: "atris verify <slug> --section preflight"
 
 ## User impact
 
-The slop cannon and the editor collapse into the same person. The editor writes a rubric once (`validate.md`). The slop cannon generates against it. No more "I ran the tests, they passed" hand-waving — the rubric runs, the gate decides.
+The slop cannon and the editor collapse into the same person. The editor writes a rubric once (`validate.md`). The slop cannon generates against it. No more "I ran the tests, they passed" hand-waving. The rubric runs, the gate decides.
 
 ## Technical notes
 
-- Gate runs only when `context.kind === 'endgame'` and `verifyResult.explicit` is true. Reactive ticks (inbox, staleness, imagined) keep their `npm test` default — they'd always pass at t=0 and break the loop.
+- Gate runs only when `context.kind === 'endgame'` and `verifyResult.explicit` is true. Reactive ticks (inbox, staleness, imagined) keep their `npm test` default. They'd always pass at t=0 and break the loop.
 - Verify cmd is captured once in `runTaskOnce` and reused after execute. An agent cannot swap rubrics mid-tick.
 - Deferred: `[refactor]` tag for behavior-preserving changes where pre-verify can't fail by definition. Needs its own contract.
 - Deferred: distinguishing `already-satisfied` (task done, no penalty, remove) from `verify-not-falsifiable` (trivial rubric, penalty). Both halt as `verify-not-falsifiable` for now; human reviews the lesson to disambiguate.

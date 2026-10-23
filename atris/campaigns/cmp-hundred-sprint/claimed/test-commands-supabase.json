@@ -1,0 +1,1 @@
+{"id":"test-commands-supabase","kind":"test","target":"commands/supabase.js","files":["test/supabase-command.test.js"]}

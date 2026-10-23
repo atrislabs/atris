@@ -1,4 +1,4 @@
-# Skills — {{name}}
+# Skills: {{name}}
 
 Custom callable skills specific to {{name}}.
 

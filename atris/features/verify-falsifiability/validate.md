@@ -1,4 +1,4 @@
-# Validation — verify-falsifiability
+# Validation: verify-falsifiability
 
 > **Role:** System Validation Script
 > **Rule:** If ANY step fails, the feature is broken.
@@ -43,7 +43,7 @@ grep -qE "(fail|ℹ fail) 0" /tmp/atris-verify-suite.log
 ### 3. reactive kinds are exempt
 
 - **Action:** Same trivial `Verify: true`, but `kind: 'inbox'`.
-- **Expect:** Gate does not fire. (Tick may still halt for unrelated reasons — the claude CLI spawn — but not for `verify-not-falsifiable`.)
+- **Expect:** Gate does not fire. (Tick may still halt for unrelated reasons, the claude CLI spawn, but not for `verify-not-falsifiable`.)
 
 ### 4. `atris verify <slug> --section` round-trip
 
@@ -57,4 +57,4 @@ grep -qE "(fail|ℹ fail) 0" /tmp/atris-verify-suite.log
 - [ ] `atris autopilot --dry-run` does not falsely report `verify-not-falsifiable` on reactive ticks.
 - [ ] `atris update --all --dry-run` still scans all 45 projects cleanly.
 
-**Status:** Verified — 2026-04-19
+**Status:** Verified: 2026-04-19

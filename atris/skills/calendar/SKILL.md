@@ -154,7 +154,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-calendar/events" \
   }'
 ```
 
-**IMPORTANT:** Use `POST` to create events. Do NOT use `PUT` — that is for updating existing events.
+**IMPORTANT:** Use `POST` to create events. Do NOT use `PUT`. That is for updating existing events.
 
 ### Update Event
 ```bash

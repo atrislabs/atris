@@ -1,4 +1,4 @@
-# atris-design.md — frontend aesthetics
+# atris-design.md: frontend aesthetics
 
 > ai-generated ui has a look. you know it when you see it. this policy helps you not make that.
 
@@ -13,33 +13,33 @@ models default to safe choices because that's what dominates training data. with
 - zero animation
 - flat, lifeless backgrounds
 
-this is the "distribution center" — statistically average, aesthetically dead.
+this is the "distribution center": statistically average, aesthetically dead.
 
 ---
 
 ## vocabulary is the lever
 
-designers get better results from AI than engineers do. not because they're more creative — because they own the **language of craft**. an engineer says "make it look nice." a designer says "tighten the vertical rhythm, increase negative space, make the hierarchy bolder here and quieter there."
+designers get better results from AI than engineers do. not because they're more creative, but because they own the **language of craft**. an engineer says "make it look nice." a designer says "tighten the vertical rhythm, increase negative space, make the hierarchy bolder here and quieter there."
 
 the model can only aim at the words you give it. **name the move you want, precisely, in craft vocabulary.** vague prompts produce vague output.
 
 core terms to use when directing AI:
-- **vertical rhythm** — spacing consistency down the page, locked to a baseline grid
-- **negative space** — intentional emptiness as a design element, not absence
-- **bolder / quieter** — relative emphasis, not absolute size
-- **affordances** — visual cues that signal interaction (and now: agentic affordances for AI users)
-- **meta-design** — designing the *system* of design, not just one screen
-- **conviction** — committing to a global maximum instead of iterating toward a local one
+- **vertical rhythm**: spacing consistency down the page, locked to a baseline grid
+- **negative space**: intentional emptiness as a design element, not absence
+- **bolder / quieter**: relative emphasis, not absolute size
+- **affordances**: visual cues that signal interaction (and now: agentic affordances for AI users)
+- **meta-design**: designing the *system* of design, not just one screen
+- **conviction**: committing to a global maximum instead of iterating toward a local one
 
 ---
 
 ## raising the floor vs raising the ceiling
 
-AI is best used to **raise the floor** — automate the mechanical 80% (layout scaffolding, responsive grids, state matrices, boilerplate). this frees human attention for **raising the ceiling** — the last 10-20% that requires taste, instinct, and conviction.
+AI is best used to **raise the floor**: automate the mechanical 80% (layout scaffolding, responsive grids, state matrices, boilerplate). this frees human attention for **raising the ceiling**, the last 10-20% that requires taste, instinct, and conviction.
 
 don't use AI to make the final call. use it to clear the drudgery so you can spend your time on the part that matters: the unique spin, the unexpected choice, the thing a model would never pick on its own.
 
-**cognitive delegation, not cognitive surrender.** AI routes you to the destination (like Google Maps). you keep the viewpoint and make the final decision. accepting an 8-page AI plan without reading it is cognitive surrender — that's how everything starts looking the same.
+**cognitive delegation, not cognitive surrender.** AI routes you to the destination (like Google Maps). you keep the viewpoint and make the final decision. accepting an 8-page AI plan without reading it is cognitive surrender. that's how everything starts looking the same.
 
 ---
 
@@ -102,7 +102,7 @@ match fallback metrics with `size-adjust`, `ascent-override`, `descent-override`
 
 use `color-mix()` for variants: `color-mix(in oklch, var(--brand) 80%, white)`. use `light-dark()` for theme-aware values.
 
-**tint your neutrals:** never use pure gray. always tint toward your brand hue — even 0.01 chroma in OKLCH creates subconscious cohesion:
+**tint your neutrals:** never use pure gray. always tint toward your brand hue. even 0.01 chroma in OKLCH creates subconscious cohesion:
 ```css
 --gray-100: oklch(95% 0.01 250); /* not #f5f5f5 */
 --gray-900: oklch(15% 0.01 250); /* not #1a1a1a */
@@ -110,21 +110,21 @@ use `color-mix()` for variants: `color-mix(in oklch, var(--brand) 80%, white)`. 
 
 **gray on color:** never put gray text on colored backgrounds. it looks washed out. use a darker shade of the background color or transparency instead.
 
-dark backgrounds are easier to make look good. steal from places you like — linear.app, vercel.com, raycast.com, arc browser. but don't default to dark mode with glowing accents — it looks "cool" without requiring actual design decisions.
+dark backgrounds are easier to make look good. steal from places you like: linear.app, vercel.com, raycast.com, arc browser. but don't default to dark mode with glowing accents. it looks "cool" without requiring actual design decisions.
 
 ---
 
 ## layout
 
-**avoid:** the template look — hero section, 3 feature cards, testimonial carousel, big footer. every ai does this. also avoid:
-- wrapping everything in cards — not everything needs a container
-- nesting cards inside cards — visual noise, flatten the hierarchy
-- identical card grids — same-sized cards with icon + heading + text, repeated endlessly
-- the hero metric layout — big number, small label, supporting stats, gradient accent
-- centering everything — left-aligned text with asymmetric layouts feels more designed
-- same spacing everywhere — without rhythm, layouts feel monotonous
+**avoid:** the template look: hero section, 3 feature cards, testimonial carousel, big footer. every ai does this. also avoid:
+- wrapping everything in cards: not everything needs a container
+- nesting cards inside cards: visual noise, flatten the hierarchy
+- identical card grids: same-sized cards with icon + heading + text, repeated endlessly
+- the hero metric layout: big number, small label, supporting stats, gradient accent
+- centering everything: left-aligned text with asymmetric layouts feels more designed
+- same spacing everywhere: without rhythm, layouts feel monotonous
 
-**the move:** break the grid sometimes. asymmetry is interesting. whitespace is a feature, not wasted space. don't cram everything into 16px/24px spacing — use dramatic gaps.
+**the move:** break the grid sometimes. asymmetry is interesting. whitespace is a feature, not wasted space. don't cram everything into 16px/24px spacing. use dramatic gaps.
 
 **fluid spacing:** use `clamp()` for spacing that breathes on larger screens:
 ```css
@@ -138,7 +138,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 
 ## motion
 
-**avoid:** static pages with nothing moving, or the opposite — bouncing everything
+**avoid:** static pages with nothing moving, or the opposite: bouncing everything
 
 **specific anti-patterns:**
 - cursor-following lines or elements
@@ -146,7 +146,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 - buttons that follow the cursor (harder to click, not clever)
 - FAQ/content that breaks if you scroll past before the fade-in finishes
 - animations that swap styles endlessly without purpose (rotating shapes, morphing buttons)
-- bounce or elastic easing — they feel dated and tacky. real objects decelerate smoothly.
+- bounce or elastic easing: they feel dated and tacky. real objects decelerate smoothly.
 
 **the move:** one well-timed animation beats ten scattered ones. page load with staggered reveals (50-100ms delays) creates more impact than hover effects on every button.
 
@@ -157,7 +157,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 ```
 never linear, never bounce, never elastic. 150-300ms duration for most transitions.
 
-**only animate transform and opacity.** never animate width, height, padding, margin — they trigger layout recalculation and cause jank. for height animations, use `grid-template-rows` transitions.
+**only animate transform and opacity.** never animate width, height, padding, margin. they trigger layout recalculation and cause jank. for height animations, use `grid-template-rows` transitions.
 
 **reduced motion:** always respect `prefers-reduced-motion`. provide a beautiful static alternative:
 ```css
@@ -182,14 +182,14 @@ never linear, never bounce, never elastic. 150-300ms duration for most transitio
 **button hierarchy:** don't make every button primary. use ghost buttons, text links, secondary styles. hierarchy matters.
 
 **every interactive element needs ALL states:**
-- default — resting
-- hover — subtle feedback (brighten, scale 1.02-1.05)
-- focus — visible keyboard indicator (never remove without replacement)
-- active — click/tap feedback
-- disabled — clearly non-interactive
-- loading — async action feedback
-- error — validation state
-- success — confirmation
+- default: resting
+- hover: subtle feedback (brighten, scale 1.02-1.05)
+- focus: visible keyboard indicator (never remove without replacement)
+- active: click/tap feedback
+- disabled: clearly non-interactive
+- loading: async action feedback
+- error: validation state
+- success: confirmation
 
 missing states create confusion and broken experiences.
 
@@ -203,7 +203,7 @@ missing states create confusion and broken experiences.
 - arrows/icons that move backwards or vertically on hover
 - hiding critical info or functionality behind hover (hover doesn't exist on mobile)
 
-**the move:** hover should make elements feel "lickable" — inviting to click. slightly brighten, scale up (1.02-1.05), or add a subtle glow. the user should feel pulled toward clicking, not confused about what happened.
+**the move:** hover should make elements feel "lickable": inviting to click. slightly brighten, scale up (1.02-1.05), or add a subtle glow. the user should feel pulled toward clicking, not confused about what happened.
 
 test every hover on mobile. if something only works on hover, it's broken for half your users.
 
@@ -211,13 +211,13 @@ test every hover on mobile. if something only works on hover, it's broken for ha
 
 ## responsive
 
-**avoid:** hiding critical functionality on mobile — adapt the interface, don't amputate it. also avoid:
+**avoid:** hiding critical functionality on mobile. adapt the interface, don't amputate it. also avoid:
 - fixed widths that break on small screens
 - touch targets smaller than 44x44px
 - text smaller than 14px on mobile
 - horizontal scroll from content overflow
 
-**the move:** mobile-first, then enhance for larger screens. use fluid layouts with `clamp()` and container queries. adapt the interface for different contexts — don't just shrink it.
+**the move:** mobile-first, then enhance for larger screens. use fluid layouts with `clamp()` and container queries. adapt the interface for different contexts. don't just shrink it.
 
 ```css
 /* container queries > media queries for components */
@@ -230,9 +230,9 @@ test every hover on mobile. if something only works on hover, it's broken for ha
 
 ## scroll behavior
 
-**avoid:** scrolljacking — never override native browser scroll with custom scroll logic. it feels like "moving through molasses" and users hate it.
+**avoid:** scrolljacking. never override native browser scroll with custom scroll logic. it feels like "moving through molasses" and users hate it.
 
-**the move:** let the browser handle scrolling. if you want scroll-triggered effects, use intersection observer to trigger animations as sections enter the viewport — but don't mess with scroll speed or direction.
+**the move:** let the browser handle scrolling. if you want scroll-triggered effects, use intersection observer to trigger animations as sections enter the viewport, but don't mess with scroll speed or direction.
 
 use the "peeking" technique: let a few pixels of the next section peek above the fold instead of full-screen heroes with "scroll down" arrows. this naturally signals more content below.
 
@@ -242,15 +242,15 @@ use the "peeking" technique: let a few pixels of the next section peek above the
 
 **avoid:** solid white, solid light gray, flat nothing
 
-**the move:** add depth. layered gradients, subtle patterns, mesh effects. backgrounds set mood — flat backgrounds say "I didn't think about this."
+**the move:** add depth. layered gradients, subtle patterns, mesh effects. backgrounds set mood. flat backgrounds say "I didn't think about this."
 
-but don't use glassmorphism everywhere — blur effects, glass cards, glow borders used decoratively rather than purposefully. it's AI slop.
+but don't use glassmorphism everywhere: blur effects, glass cards, glow borders used decoratively rather than purposefully. it's AI slop.
 
 ---
 
 ## accessibility
 
-this isn't optional — it's part of good design.
+this isn't optional. it's part of good design.
 
 - **contrast:** 4.5:1 minimum for text, 3:1 for UI components (WCAG AA)
 - **focus indicators:** visible, high-contrast focus rings on all interactive elements. never `outline: none` without a replacement.
@@ -264,11 +264,11 @@ this isn't optional — it's part of good design.
 
 **avoid:**
 - glassmorphism everywhere (blur effects, glass cards, glow borders)
-- rounded elements with thick colored border on one side — lazy accent
-- sparklines as decoration — tiny charts that convey nothing meaningful
-- rounded rectangles with generic drop shadows — safe, forgettable
-- large icons with rounded corners above every heading — templated look
-- modals unless there's truly no better alternative — modals are lazy
+- rounded elements with thick colored border on one side: lazy accent
+- sparklines as decoration: tiny charts that convey nothing meaningful
+- rounded rectangles with generic drop shadows: safe, forgettable
+- large icons with rounded corners above every heading: templated look
+- modals unless there's truly no better alternative: modals are lazy
 - non-system emojis used as decoration (lazy AI tell)
 
 ---
@@ -277,7 +277,7 @@ this isn't optional — it's part of good design.
 
 **make every word earn its place.**
 - don't repeat information users can already see
-- don't repeat the same information — redundant headers, intros that restate the heading
+- don't repeat the same information: redundant headers, intros that restate the heading
 - labels and buttons should be unambiguous
 - error copy should help users fix the problem, not blame them
 - empty states should guide toward action
@@ -295,10 +295,10 @@ this isn't optional — it's part of good design.
 ## hero section (the H1 test)
 
 your hero must answer four questions in seconds:
-1. **what is it?** — clear product description
-2. **who is it for?** — the target user
-3. **to what end?** — why should they care
-4. **what's the CTA?** — one clear next step
+1. **what is it?**: clear product description
+2. **who is it for?**: the target user
+3. **to what end?**: why should they care
+4. **what's the CTA?**: one clear next step
 
 if a stranger can't answer all four in 5 seconds of looking at your hero, rewrite it.
 
@@ -311,13 +311,13 @@ if a stranger can't answer all four in 5 seconds of looking at your hero, rewrit
 - "fake dashboard" mockups with Fisher-Price primary colors (red/yellow/green/blue)
 - non-system emojis used as decoration (lazy AI tell)
 
-**the move:** real product screenshots at high resolution. if you don't have a product yet, use a well-designed mockup — but make it sharp and believable.
+**the move:** real product screenshots at high resolution. if you don't have a product yet, use a well-designed mockup, but make it sharp and believable.
 
 ---
 
 ## context matters
 
-don't impose an aesthetic — match the project. a fintech dashboard shouldn't look like a gaming site. read the room.
+don't impose an aesthetic. match the project. a fintech dashboard shouldn't look like a gaming site. read the room.
 
 if the project already has a design system, use it. don't fight it to show off.
 
@@ -368,33 +368,33 @@ the fingerprints of AI-generated work:
 - sparklines as decoration
 - rounded rectangles with drop shadows
 - large icons with rounded corners above headings
-- **"claude beige"** — the generic off-white/off-gray background every AI site defaults to
-- **instrument serif** overuse — the italicized serif headline that now signals "AI-generated" the way inter once did
-- **generic tinted backgrounds** — flat color-tinted sections with no texture, depth, or intention
+- **"claude beige"**: the generic off-white/off-gray background every AI site defaults to
+- **instrument serif** overuse: the italicized serif headline that now signals "AI-generated" the way inter once did
+- **generic tinted backgrounds**: flat color-tinted sections with no texture, depth, or intention
 
 a distinctive interface should make someone ask "how was this made?" not "which AI made this?"
 
 ### anti-attractors
 
-models have attractor states — defaults they fall into because training data is weighted toward them. purple gradients, instrument serif, "claude beige" — these are gravity wells. to escape them you need **anti-attractors**: deliberate constraints that force the model off its well-trodden path.
+models have attractor states: defaults they fall into because training data is weighted toward them. purple gradients, instrument serif, "claude beige". these are gravity wells. to escape them you need **anti-attractors**: deliberate constraints that force the model off its well-trodden path.
 
 techniques:
-- **name the thing you don't want** — "no purple, no serif headline, no off-white background" closes the attractor
-- **seed with a reference** — point at a specific site, era, or designer's work as the target aesthetic
-- **inject a constraint** — "monochrome only," "no rounded corners," "one font weight" — scarcity forces creativity
-- **rotate your defaults** — if your last three projects used dark mode, force light. if they used sans, force serif. the convergence trap is real.
+- **name the thing you don't want**: "no purple, no serif headline, no off-white background" closes the attractor
+- **seed with a reference**: point at a specific site, era, or designer's work as the target aesthetic
+- **inject a constraint**: "monochrome only," "no rounded corners," "one font weight". scarcity forces creativity
+- **rotate your defaults**: if your last three projects used dark mode, force light. if they used sans, force serif. the convergence trap is real.
 
 ---
 
-## ax — agentic experience
+## ax: agentic experience
 
-UX is design for humans. **AX is design for AI agents** that are becoming primary users of software. when an agent interacts with your CLI, API, or surface, visual affordances don't help — it can't see your button. what it needs:
+UX is design for humans. **AX is design for AI agents** that are becoming primary users of software. when an agent interacts with your CLI, API, or surface, visual affordances don't help. it can't see your button. what it needs:
 
-- **speed** — fast responses, low latency, no unnecessary round trips
-- **clarity** — unambiguous output, structured data, predictable shapes
-- **verbosity where needed** — error messages that tell the agent what to do next, not just what failed
-- **edge case coverage** — agents will hit paths humans never touch; handle them explicitly
-- **agentic affordances** — `llms.txt`, `robots.txt`, clear `--help`, machine-readable status, stable exit codes
+- **speed**: fast responses, low latency, no unnecessary round trips
+- **clarity**: unambiguous output, structured data, predictable shapes
+- **verbosity where needed**: error messages that tell the agent what to do next, not just what failed
+- **edge case coverage**: agents will hit paths humans never touch; handle them explicitly
+- **agentic affordances**: `llms.txt`, `robots.txt`, clear `--help`, machine-readable status, stable exit codes
 
 AX is not optional anymore. if your tool is agent-facing, design the agent's experience as deliberately as the human's.
 
@@ -402,17 +402,17 @@ AX is not optional anymore. if your tool is agent-facing, design the agent's exp
 
 ## conviction over local maxima
 
-good design is a bet. iterating toward "slightly better" produces a **local maximum** — safe, defensible, forgettable. great design requires **conviction**: choosing a global maximum that might look wrong at first but is a superior endpoint.
+good design is a bet. iterating toward "slightly better" produces a **local maximum**: safe, defensible, forgettable. great design requires **conviction**: choosing a global maximum that might look wrong at first but is a superior endpoint.
 
-the engineer's instinct is to optimize incrementally. the designer's job is to make a bet and commit. AI accelerates iteration, which makes the local-maximum trap *worse* — you can now converge on average faster than ever.
+the engineer's instinct is to optimize incrementally. the designer's job is to make a bet and commit. AI accelerates iteration, which makes the local-maximum trap *worse*. you can now converge on average faster than ever.
 
-**subtraction over addition.** the strongest design move is often removing something. steve jobs as editor, not steve jobs as builder. when a screen feels cluttered, don't add structure — delete until it breathes.
+**subtraction over addition.** the strongest design move is often removing something. steve jobs as editor, not steve jobs as builder. when a screen feels cluttered, don't add structure. delete until it breathes.
 
 ---
 
 ## the scarcity principle
 
-taste emerges from constraints. the european and japanese craft traditions produced distinctive work because materials were scarce — you had to choose carefully. in an era of infinite digital materials (every color, every font, every layout is free), taste must be **intentionally cultivated through self-imposed scarcity**.
+taste emerges from constraints. the european and japanese craft traditions produced distinctive work because materials were scarce. you had to choose carefully. in an era of infinite digital materials (every color, every font, every layout is free), taste must be **intentionally cultivated through self-imposed scarcity**.
 
 pick constraints before you start: one font, two colors, three spacing values. scarcity forces decisions. infinite options produce the distribution center.
 

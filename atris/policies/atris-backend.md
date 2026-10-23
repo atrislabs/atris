@@ -1,4 +1,4 @@
-# atris-backend.md — backend architecture
+# atris-backend.md: backend architecture
 
 > ai backend code smells like over-engineering. this policy keeps it simple.
 

@@ -514,29 +514,91 @@ test('page: the team table opens from the footer, one row per member, and a row 
   assert.match(html, /<section class="team" id="team" hidden role="dialog" aria-label="the team">/);
   assert.match(script, /getElementById\('working'\)\.addEventListener\('click', openTeam\)/);
   assert.match(script, /api\('\/bet\/team'\)/);
-  // each row: the member, what they are on, the status, and the time
-  assert.match(script, /row\.appendChild\(el\('span', 'who', r\.member\)\);/);
-  assert.match(script, /row\.appendChild\(el\('span', 'st ' \+ r\.status\.replace\(\/ \/g, '-'\), r\.status\)\);/);
-  assert.match(script, /row\.appendChild\(el\('span', 'on', r\.on\)\);/);
-  assert.match(script, /row\.appendChild\(el\('span', 'time', r\.time\)\);/);
+  // a real table with exactly these five columns, in this order
+  const cols = /var TEAM_COLUMNS = (\[[^\]]*\]);/.exec(script);
+  assert.ok(cols, 'the columns are named once');
+  assert.deepEqual(JSON.parse(cols[1].replace(/'/g, '"')), ['member', 'role', 'ovr', 'engine', 'status']);
+  assert.match(script, /el\('table', 'roster'\)/);
+  assert.match(script, /el\('th', TEAM_CELLS\[i\], name\)/);
+  // each cell goes in as text: the member, role, rating, model, and the status sentence
+  assert.match(script, /el\('button', null, r\.member\)/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'role', r\.role\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'ovr', r\.ovr\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'eng', r\.engine\)\);/);
+  assert.match(script, /tr\.appendChild\(el\('td', 'st ' \+ r\.status\.replace\(\/ \/g, '-'\), r\.sentence\)\);/);
+  // the whole row opens the talk card, and the name is a button for the keyboard
+  assert.match(script, /tr\.addEventListener\('click', function \(\) \{ drawTalk\(r\); \}\);/);
   // the talk card steers through the server
   assert.match(script, /convo\(function \(body\) \{ body\.member = r\.member; return api\('\/bet\/steer', body\); \}/);
-  assert.match(html, /\.team \.row \{[^}]*\}/);
+  // Esc still steps back one layer: the talk card goes back to the team, the team closes
+  assert.match(script, /teamBack = openTeam;/);
+  assert.match(script, /if \(e\.key !== 'Escape' \|\| e\.isComposing \|\| teamBox\.hidden\) return;/);
 });
+
+test('page: the team table is divided, keeps its columns apart at phone width, and scrolls sideways instead of squashing', () => {
+  const html = phonePage('NONCE');
+  const rule = sel => {
+    const m = new RegExp(`\\n${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(html);
+    assert.ok(m, `no rule for ${sel}`);
+    return m[1];
+  };
+  // the box scrolls sideways; the table never gets narrower than its columns need
+  assert.match(rule('.team .grid'), /overflow-x: auto;/);
+  assert.match(rule('.team .grid'), /border: 1px solid var\(--line\);/);
+  assert.match(rule('.team table'), /min-width: 44rem;/);
+  assert.match(rule('.team table'), /border-spacing: 0;/);
+  // a line between every column and every row
+  assert.match(rule('.team th, .team td'), /border-right: 1px solid var\(--line\);/);
+  assert.match(rule('.team th, .team td'), /border-bottom: 1px solid var\(--line\);/);
+  // short cells stay on one line, the long ones keep a floor width
+  for (const sel of ['.team .who', '.team .ovr', '.team .eng', '.team th']) assert.match(rule(sel), /white-space: nowrap;/, sel);
+  assert.match(rule('.team .role'), /min-width: \d+rem;/);
+  assert.match(rule('.team td.st'), /min-width: \d+rem;/);
+  // the name column stays put while the rest scrolls under it
+  assert.match(rule('.team .who'), /position: sticky; left: 0;/);
+  // the laptop gets room for the table; the talk card stays narrow
+  assert.match(rule('.team .inner.wide'), /max-width: 64rem;/);
+  // same dark page: no glow, no shadow, no motion on the table
+  const team = [...html.matchAll(/\n(\.team[^{]*)\{([^}]*)\}/g)].map(m => m[2]).join('\n');
+  assert.doesNotMatch(team, /box-shadow|animation|transition|glow|filter/);
+});
+
+// finished plays for one member, the shape gm-season reads from the task list
+function seasonPlays(member, kinds) {
+  const out = [];
+  let i = 0;
+  for (const [kind, n] of Object.entries(kinds)) for (let k = 0; k < n; k += 1, i += 1) out.push({ event_id: `${member}-${i}`, task_id: `T${i}`, member, title: `job ${i}`, kind, at: NOW - (i + 1) * HOUR, claimed_at: NOW - (i + 2) * HOUR });
+  return out;
+}
 
 test('over http: the team table and a steer go through the same token and json checks', async () => {
   const gmBet = require('../lib/gm-bet');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
   fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## build\n- claude code, model: opus 5.5\n');
+  // installed tools come from the workspace's registry file, never this machine's PATH
+  const checked = new Date().toISOString();
+  const engines = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS).map(id => (id === 'claude' ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
   const ran = [];
   const h = await startHandler({
-    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true,"action":"member_steered"}' }; } }),
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, loadSeason: () => ({ outcomes: seasonPlays('builder', { landed: 4, dropped: 1 }), error: null }), runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true,"action":"member_steered"}' }; } }),
   });
   try {
     assert.equal((await h.call('GET', '/bet/team', { token: 'nope' })).status, 403);
     const team = await h.call('GET', `/bet/team?t=${TOKEN}`);
-    assert.deepEqual(team.json.rows, [{ member: 'builder', on: 'Write the try page', status: 'working', time: 'at it for 10 minutes' }]);
+    assert.deepEqual(team.json.rows, [{
+      member: 'builder',
+      role: 'builder',
+      ovr: '91',
+      engine: 'claude opus 5.5',
+      status: 'working',
+      sentence: 'working: write the try page, at it for 10 minutes',
+      on: 'Write the try page',
+      time: 'at it for 10 minutes',
+    }]);
     assert.equal((await h.call('POST', '/bet/steer', { token: 'nope', body: { member: 'builder', text: 'hi' } })).status, 403);
     const sent = await h.call('POST', '/bet/steer', { body: { member: 'builder', text: 'readme first' } });
     assert.deepEqual([sent.status, sent.json.ack], [200, 'sent to builder.']);
@@ -1029,6 +1091,38 @@ test('over http: an answer and a say name the card on screen; a page that missed
     assert.deepEqual(answers(), ['who uses the phone page most? small teams', 'what would make a small team pay? saving them hours']);
   } finally {
     await h.close();
+  }
+});
+
+test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+    const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
+    const at = out.viewport;
+    const look = out.look;
+    assert.ok(look, `${at}: the table shows`);
+    assert.deepEqual(look.heads, ['member', 'role', 'ovr', 'engine', 'status'], at);
+    assert.equal(look.rows, 5, at);
+    // a line between every pair of columns and every pair of rows
+    assert.deepEqual([look.lines.missing_right, look.lines.missing_bottom], [0, 0], at);
+    assert.deepEqual([look.lines.inner_right, look.lines.inner_bottom], [20, 20], at);
+    // no words spill out of a cell, and names, ratings, and models stay on one line
+    assert.deepEqual(look.spills, [], at);
+    assert.deepEqual(look.wrapped, [], at);
+    assert.ok(look.narrowest.status >= 250, `${at}: the status column keeps its width (${look.narrowest.status}px)`);
+    assert.ok(look.narrowest.role >= 140, `${at}: the role column keeps its width (${look.narrowest.role}px)`);
+    // the page itself never scrolls sideways; only the table box does, and only on the phone
+    assert.equal(look.page_scrolls_sideways, false, at);
+    assert.equal(look.scrolls_sideways, at === '390x844', at);
+    assert.equal(look.name_column_moved_px, 0, `${at}: the name column stays put`);
+    assert.ok(look.smallest_font_px >= 17, at);
+    assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
+    // the two dots show as they are, and the status is one lowercase sentence
+    assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);
+    // a tap on a row opens that member's talk card; Esc goes back to the table, then closes it
+    assert.deepEqual([out.talk.title, out.talk.table], ['builder', false], at);
+    assert.equal(out.talk.said, 'working: launch a try page for any public repo, about 4 hours left.', at);
+    assert.deepEqual([out.back.open, out.back.title, out.back.table], [true, 'the team', true], at);
+    assert.equal(out.closed.open, false, at);
   }
 });
 
