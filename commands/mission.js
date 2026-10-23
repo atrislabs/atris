@@ -3238,6 +3238,7 @@ function missionFromArgs(args) {
     '--task',
     '--ask',
     '--yes-lock',
+    '--yes-lock-from',
     '--campaign',
     '--reserve',
     '--mission-id',
@@ -3282,6 +3283,7 @@ function missionFromArgs(args) {
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
   const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
   const yesLocks = readYesLockSeal(readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLockFrom = yesLocks.length ? String(readFlag(args, '--yes-lock-from', '') || '').trim() : '';
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -3320,6 +3322,7 @@ function missionFromArgs(args) {
     human_asks: humanAsks,
     // the sealed owner steps: the guard holds what each locks until the owner says yes
     ...(yesLocks.length ? { yes_locks: { steps: yesLocks, sealed_at: stampIso() } } : {}),
+    ...(yesLockFrom ? { yes_lock_from: yesLockFrom } : {}),
     ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
@@ -3341,6 +3344,17 @@ function missionFromArgs(args) {
 // --yes-lock '[{"step":3,"text":"...","categories":["publish"]}]': the owner
 // steps a job may not do before the owner says yes. Bad input stops the start.
 const YES_LOCK_CATEGORIES = new Set(['publish', 'tag', 'post', 'send', 'merge', 'deploy']);
+// The lock a mission's guard enforces: its own, or, for a member woken by a
+// handoff, the handing-off mission's (yes_lock_from). Binding to that id
+// means the owner's yes on the parent job opens the step for both, and a
+// held command shows up as a yes card on the parent job.
+function missionYesLockGuard(mission) {
+  return {
+    missionId: (mission && mission.yes_lock_from) || (mission && mission.id),
+    yesLockSeal: (mission && mission.yes_locks && mission.yes_locks.steps) || [],
+  };
+}
+
 function readYesLockSeal(raw, asJson) {
   if (!raw) return [];
   let list;
@@ -9544,7 +9558,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9729,7 +9743,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -10557,7 +10571,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), ...missionYesLockGuard(mission), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,

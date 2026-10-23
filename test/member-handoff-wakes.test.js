@@ -287,3 +287,55 @@ test('atris member inbox validator is not a command and starts nothing', (t) => 
     assert.doesNotMatch(job.stdout, /nothing started/, args.join(' '));
   }
 });
+
+// Coordinator ask 2026-10-22: the try page bet has later steps that merge,
+// post and publish, held until the owner says yes. A member woken by a
+// handoff from that mission must run under the same lock, or the lock is
+// gone the moment work changes hands.
+test('a member woken by a handoff runs under the handing-off mission yes-lock', async (t) => {
+  const ctx = setup(t);
+  const yesLock = require('../lib/yes-lock');
+  const stateDir = path.join(ctx.home, '.atris', 'state');
+  const ghRan = path.join(ctx.base, 'gh-ran.txt');
+  const ghExit = path.join(ctx.base, 'gh-exit.txt');
+  const handoffOut = path.join(ctx.base, 'handoff.json');
+  // The real gh never runs while the step is locked.
+  fs.writeFileSync(path.join(ctx.bin, 'gh'), `#!/bin/sh\necho "$*" >> "${ghRan}"\nexit 0\n`);
+  fs.chmodSync(path.join(ctx.bin, 'gh'), 0o755);
+  // builder's tick hands off; validator's tick tries to merge.
+  fs.writeFileSync(path.join(ctx.bin, 'claude'), [
+    '#!/bin/sh',
+    'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages --model"; exit 0; fi',
+    'if [ "$1" = "--version" ]; then echo "2.0.0 (Claude Code)"; exit 0; fi',
+    `printf '%s\\n---\\n' "$*" >> "${ctx.callLog}"`,
+    'case "$*" in',
+    `  *PARENTSTEP*) "${process.execPath}" "${cli}" member handoff builder validator "CHILDSTEP try it on 20 repos" --json > "${handoffOut}" ;;`,
+    `  *CHILDSTEP*) gh pr merge 5 --squash; echo $? > "${ghExit}" ;;`,
+    'esac',
+    'echo \'{"type":"result","is_error":false,"result":"did my step"}\'',
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(ctx.bin, 'claude'), 0o755);
+
+  const seal = [{ step: 3, text: 'merge the try page', categories: ['merge'] }];
+  const started = runCli(ctx, ['mission', 'start', 'launch try page PARENTSTEP', '--owner', 'builder', '--runner', 'claude',
+    '--no-verify', '--yes-lock', JSON.stringify(seal), '--json']);
+  assert.equal(started.status, 0, started.stderr || started.stdout);
+  const parent = JSON.parse(started.stdout).mission;
+  // what the phone's do it writes beside the ledger
+  yesLock.writeYesLocks(stateDir, parent.id, { betId: 'bet-1', seal });
+
+  const ran = runCli(ctx, ['mission', 'run', parent.id, '--max-ticks', '1', '--json'], { ATRIS_HANDOFF_WAKE: '1' });
+  assert.ok(fs.existsSync(handoffOut), ran.stderr || ran.stdout);
+  const wake = JSON.parse(fs.readFileSync(handoffOut, 'utf8')).handoff.wake;
+  if (wake.pid) ctx.pids.push(wake.pid);
+  assert.equal(wake.status, 'started', JSON.stringify(wake));
+  assert.ok(await waitGone(wake.pid), 'the woken run finishes');
+
+  assert.equal(fs.existsSync(ghExit), true, 'validator tried to merge');
+  assert.equal(fs.readFileSync(ghExit, 'utf8').trim(), '77', 'the merge is held');
+  assert.equal(fs.existsSync(ghRan), false, 'the real gh never ran');
+  // The held step shows up on the parent job, where the owner's yes card lives.
+  assert.deepEqual(yesLock.askedYesLocks(stateDir, parent.id).map((l) => l.step), [3]);
+  assert.equal(wake.yes_lock_from, parent.id, 'the handoff names the lock the woken run is under');
+});

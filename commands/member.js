@@ -1000,6 +1000,8 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
   pushFlagValue(startArgs, args, '--base');
+  pushFlagValue(startArgs, args, '--yes-lock');
+  pushFlagValue(startArgs, args, '--yes-lock-from');
   // Member runs choose and drive work immediately, so an absent check must not
   // leave autonomous callers with a mission that never ran. A check inferred
   // from the mission text counts as named.
@@ -1362,7 +1364,7 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   const missionWordIndices = missionText && !hasMissionOverride ? new Set(memberRunMissionWordIndices(args)) : new Set();
   const executionArgs = args.filter((_, index) => !missionWordIndices.has(index));
   const runArgs = stripKnownFlags(executionArgs,
-    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base'],
+    ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base', '--yes-lock', '--yes-lock-from'],
     ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto', '--ignite', '--wait', '--sync']);
   if (ignite && !hasFlag(runArgs, '--complete-on-pass')) runArgs.push('--complete-on-pass');
   if (memberRunWantsReferee(runArgs, ignite)) runArgs.push('--referee');
@@ -11314,17 +11316,20 @@ const HANDOFF_WAKE_SCRUB_ENV = [
 // Start the receiver of a handoff on the handed-off step: the same bounded
 // work step `atris member wake <name>` runs (member run, 15 minutes), but
 // detached, so the member handing off is not held while the next one works.
-function startHandoffReceiver(root, to, step) {
+function startHandoffReceiver(root, to, step, yesLock = null) {
   const env = { ...process.env, ATRIS_CALLER_RUNTIME: 'terminal' };
   for (const name of HANDOFF_WAKE_SCRUB_ENV) delete env[name];
   // The handing-off mission's git guard (a temp folder of wrappers first on
   // PATH) belongs to that mission; the woken run sets up its own.
   env.PATH = String(env.PATH || '').split(path.delimiter)
-    .filter((dir) => !path.basename(dir).startsWith('atris-mission-git-'))
+    .filter((dir) => !path.basename(dir).startsWith(require('../lib/mission-protected-lane').GUARD_DIR_PREFIX))
     .join(path.delimiter);
+  // The lock does not leave with the guard: the woken run is bound to the
+  // handing-off mission's yes-lock and sets up the same guard each tick.
+  const lockArgs = yesLock ? ['--yes-lock', JSON.stringify(yesLock.seal), '--yes-lock-from', yesLock.missionId] : [];
   const res = require('child_process').spawnSync(process.execPath, [
     path.join(__dirname, '..', 'bin', 'atris.js'),
-    'member', 'run', to, step, '--minutes', '15', '--no-verify', '--detach', '--json',
+    'member', 'run', to, step, '--minutes', '15', '--no-verify', ...lockArgs, '--detach', '--json',
   ], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   let payload = null;
   const lines = String(res.stdout || '').trim().split('\n');
@@ -11354,14 +11359,31 @@ function wakeOnHandoff(handoff, root, args) {
     };
   }
   const { wakeHandoffReceiver } = require('../lib/handoff-wake');
-  return wakeHandoffReceiver(handoff, {
+  const yesLock = handoffYesLock(handoff.from, root);
+  const outcome = wakeHandoffReceiver(handoff, {
     listMembers: () => memberUpTeam(root),
     awake: (name) => {
       try { return require('../lib/member-switches').isMemberAwake(name, root); } catch { return true; }
     },
     engine: (name) => require('../lib/member-engine').memberRosterEngine(name, root),
-    start: (name, step) => startHandoffReceiver(root, name, step),
+    start: (name, step) => startHandoffReceiver(root, name, step, yesLock),
   });
+  return outcome.status === 'started' && yesLock ? { ...outcome, yes_lock_from: yesLock.missionId } : outcome;
+}
+
+// The yes-lock a handoff passes on: the locked mission guard this command
+// runs under (a handoff made from inside a mission tick), else the newest
+// live mission of the member handing off that carries one.
+function handoffYesLock(from, root) {
+  const onPath = require('../lib/mission-protected-lane').guardYesLockOnPath(process.env.PATH);
+  if (onPath) return onPath;
+  try {
+    const live = memberOwnedMissions(from, memberRunMissionMap(root))
+      .find((mission) => MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())
+        && Array.isArray(mission?.yes_locks?.steps) && mission.yes_locks.steps.length);
+    if (live) return { missionId: live.yes_lock_from || live.id, seal: live.yes_locks.steps };
+  } catch {}
+  return null;
 }
 
 function memberHandoff(from, to, ...args) {
