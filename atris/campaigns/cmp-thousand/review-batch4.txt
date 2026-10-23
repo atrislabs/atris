@@ -1,0 +1,32 @@
+DROP test/security-scan--git-tracked-files.test.js: Git inherits the real HOME and global config, allowing user settings and hooks to affect fixture commands.
+DROP test/task-db--relabel-archived-tasks.test.js: The limit assertion depends on creation timestamps; same-millisecond ties can select a nonmatching row and return zero.
+DROP test/theme--font-personalities.test.js: Only snapshots constants and checks object properties; font resolution could break without failing it.
+DROP test/theme--project-theme-file.test.js: Checks a path constant and files it writes itself; theme loading and saving could break without failing it.
+kept 31 of 35
+DROP test/security-scan--git-tracked-files.test.js: Git inherits the real HOME and global config, allowing user settings and hooks to affect fixture commands.
+DROP test/task-db--relabel-archived-tasks.test.js: The limit assertion depends on creation timestamps; same-millisecond ties can select a nonmatching row and return zero.
+DROP test/theme--font-personalities.test.js: Only snapshots constants and checks object properties; font resolution could break without failing it.
+DROP test/theme--project-theme-file.test.js: Checks a path constant and files it writes itself; theme loading and saving could break without failing it.
+kept 31 of 35
+DROP test/wiki--private-wiki-root.test.js: checks a constant and repeats private-folder lookup behavior covered by test/wiki--find-local-wiki-dir.test.js.
+DROP test/wiki--wiki-root.test.js: checks a constant and standard path operations; root selection is already covered by the prompt and folder tests.
+kept 33 of 35
+DROP test/wiki--private-wiki-root.test.js: checks a constant and repeats private-folder lookup behavior covered by test/wiki--find-local-wiki-dir.test.js.
+DROP test/wiki--wiki-root.test.js: checks a constant and standard path operations; root selection is already covered by the prompt and folder tests.
+kept 33 of 35
+DROP test/wish-audit--waiting-input-statuses.test.js: only checks a constant Set and native Set behavior, not how wishes are handled.
+DROP test/wish-audit--wish-sweep-limit.test.js: only checks a constant; broken sweep limiting would still pass.
+DROP test/wish-audit--with-wish-answer-audit-context.test.js: would pass with only `return fn()`, even if context installation and restoration were broken.
+DROP test/wish-store--read-wish-events.test.js: duplicates event ordering, malformed-line handling, and missing-file coverage in test/wish--read-wish-events.test.js.
+DROP test/zen--idle-with-only-notes.test.js: real git commands inherit system configuration and global config overrides, allowing host ignore rules and templates to affect results.
+kept 29 of 34
+DROP test/wish-audit--waiting-input-statuses.test.js: only checks a constant Set and native Set behavior, not how wishes are handled.
+DROP test/wish-audit--wish-sweep-limit.test.js: only checks a constant; broken sweep limiting would still pass.
+DROP test/wish-audit--with-wish-answer-audit-context.test.js: would pass with only `return fn()`, even if context installation and restoration were broken.
+DROP test/wish-store--read-wish-events.test.js: duplicates event ordering, malformed-line handling, and missing-file coverage in test/wish--read-wish-events.test.js.
+DROP test/zen--idle-with-only-notes.test.js: real git commands inherit system configuration and global config overrides, allowing host ignore rules and templates to affect results.
+kept 29 of 34
+BAD atris/experiments/weight-optimize/README.md: Replacing paired dashes with commas makes the definition of “scale” read as a list of separate subjects, leaving “which is a resource/engineering question” unclear.
+kept 40 of 41
+BAD atris/experiments/weight-optimize/README.md: Replacing paired dashes with commas makes the definition of “scale” read as a list of separate subjects, leaving “which is a resource/engineering question” unclear.
+kept 40 of 41
