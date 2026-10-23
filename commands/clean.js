@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const escapeRegExp = require('../lib/escape-regexp');
+const { localDay } = require('../lib/local-day');
 const { wikiMetabolismNudge } = require('../lib/wiki');
 
 /**
@@ -723,7 +724,7 @@ function checkPageStaleness(cwd, filePath) {
           page: filePath,
           staleSource: source,
           compiledDate: compiledMatch[1],
-          sourceDate: changed.toISOString().split('T')[0]
+          sourceDate: localDay(changed)
         };
       }
     } catch {
