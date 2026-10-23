@@ -287,6 +287,12 @@ function pickSeedPlayer(workspaceRoot, tasks, args = []) {
   return null;
 }
 
+// Local calendar day; toISOString is UTC and stamps an evening mission
+// with tomorrow anywhere west of Greenwich.
+function localDay(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function ensureStarterMission(taskDb, db, workspaceRoot, tasks, args = []) {
   if (hasFlagOrValue(args, '--no-seed')) return { tasks, seeded: null };
   if (!fs.existsSync(path.join(workspaceRoot, 'atris'))) return { tasks, seeded: null };
@@ -303,7 +309,7 @@ function ensureStarterMission(taskDb, db, workspaceRoot, tasks, args = []) {
       assigned_to: player,
       delegate_via: 'agentxp_gm',
       auto_seeded_by: 'atris gm',
-      created_for_day: new Date().toISOString().slice(0, 10),
+      created_for_day: localDay(),
     },
   });
   taskDb.noteTask(db, {
@@ -1951,6 +1957,7 @@ async function gmCommand(...args) {
 
 module.exports = {
   displayCommand,
+  ensureStarterMission,
   gmCommand,
   pickClub,
   playAction,
