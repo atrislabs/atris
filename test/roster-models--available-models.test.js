@@ -32,7 +32,7 @@ test('availableModels returns known Claude names and filters engine seed models'
       { id: 'unknown', models: 'not an array' },
     ];
     const expected = [
-      { engine: 'claude', models: ['opus 5.5', 'opus 5', 'sonnet 5', 'haiku 5.5', 'fable 5.1'], source: 'known names' },
+      { engine: 'claude', models: ['fable 5.1', 'opus 5.5', 'sonnet 5.5', 'haiku 5.5'], source: 'known names' },
       { engine: 'custom', models: ['first', 'second'], source: 'known names' },
       { engine: 'unknown', models: [], source: 'known names' },
     ];
