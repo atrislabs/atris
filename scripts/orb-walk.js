@@ -14,11 +14,12 @@
 //           screen, never two yes cards in a row, Esc and the small orb lead
 //           somewhere
 //   judge   a fast decision model answers narrow yes or no questions about
-//           the screen, given as json, each with a probability; TypeSafe's
+//           the screen, given as json, each with one short reason; TypeSafe's
 //           Jev when TYPESAFE_API_KEY is set, else OpenAI when OPENAI_API_KEY
 //           is set, else codex exec in a read-only sandbox
-// A stage passes when every rule holds and every judged answer is yes with
-// p at or over the threshold (0.8 unless --threshold says otherwise).
+// One call to a model is a coin flip, so each question is asked several
+// times (3 unless --votes says otherwise). A stage passes when every rule
+// holds and no question gets a no from most of its votes.
 //
 // The page is moving to one card contract: every card is { id, kind, title,
 // body, options: [{ id, label, action }], input, job, table } and every tap
@@ -26,7 +27,7 @@
 // the server answers GET /card (CONTRACT below), and today's /bet answers
 // otherwise (legacyAdapter, which taps the way lib/gm-phone-page.js does).
 //
-//   node scripts/orb-walk.js [--real-copy <workspace>] [--threshold 0.8]
+//   node scripts/orb-walk.js [--real-copy <workspace>] [--votes 3]
 //        [--judge typesafe|openai|codex] [--no-judge] [--no-browser] [--json] [--keep]
 
 const fs = require('node:fs');
@@ -41,7 +42,7 @@ const CONTRACT = { read: '/card', act: '/act' };
 const LAYERS = new Set(['team', 'talk', 'swap', 'deck']);
 const TEAM_COLUMNS = ['member', 'role', 'ovr', 'engine', 'status'];
 const KEY_NAMES = ['TYPESAFE_API_KEY', 'OPENAI_API_KEY'];
-const DEFAULT_THRESHOLD = 0.8;
+const DEFAULT_VOTES = 3;
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 // ---- the rules ---------------------------------------------------------------------
@@ -90,8 +91,9 @@ function namesCard(post, id) {
 }
 
 // The rules for one screen. ctx.prev: the main card served just before this
-// one, for the two-yes rule.
-function cardChecks(card, { prev = null } = {}) {
+// one, for the two-yes rule. ctx.changed: card ids the server sent again
+// with other options, for the one-id-one-set-of-options rule.
+function cardChecks(card, { prev = null, changed = null } = {}) {
   if (!card) return [check('a screen to check', false, 'nothing was on screen')];
   const options = (card.options || []).filter(o => !o.disabled);
   const out = [];
@@ -113,6 +115,7 @@ function cardChecks(card, { prev = null } = {}) {
     const list = `${unnamed.slice(0, 3).join(', ')}${unnamed.length > 3 ? ` and ${unnamed.length - 3} more` : ''}`;
     out.push(check('every tap names the card', unnamed.length === 0, !card.id ? `this screen has no card id for ${list} to send` : `${list} send no card id`));
   }
+  if (changed && card.id) out.push(check('a card keeps its options', !changed.includes(card.id), 'this card id came back with other options, so a tap on it could act on something it did not show'));
   if (card.kind === 'yes') out.push(check('one yes at a time', !(prev && prev.kind === 'yes' && prev.id !== card.id), 'a yes card came right after another yes card'));
   if (LAYERS.has(card.layer)) out.push(check('a way back', (card.options || []).some(o => o.back), 'no way back from here'));
   return out;
@@ -144,14 +147,26 @@ function layerOf(kind) {
   return LAYERS.has(kind) ? kind : 'card';
 }
 
+// what a card offers, for telling when one id comes back with other options
+const offerOf = c => JSON.stringify({ options: (c.options || []).map(o => [o.id, o.label, o.action, o.binds || null]), input: c.input ? [c.input.action || null, c.input.label || null] : null });
+
 function contractAdapter(http) {
   let env = {};
   const served = [];
+  const offers = new Map();
+  const changed = [];
+  const watch = (c) => {
+    if (!c || !c.id) return;
+    const offer = offerOf(c);
+    if (offers.has(c.id) && offers.get(c.id) !== offer && !changed.includes(c.id)) changed.push(c.id);
+    offers.set(c.id, offer);
+  };
   const remember = (c) => { if (c && !LAYERS.has(layerOf(c.kind)) && c.kind !== 'reply' && (!served.length || served[served.length - 1].id !== c.id)) served.push({ id: c.id, kind: c.kind }); };
   async function act(body) {
     let r = await http.post(CONTRACT.act, body);
     if (r.json.reason === 'needs_confirm') r = await http.post(CONTRACT.act, { ...body, confirm: true });
     if ('card' in r.json) env = r.json;
+    watch(env.card);
     remember(env.card);
     return { card: current(), out: r.json, status: r.status };
   }
@@ -167,14 +182,15 @@ function contractAdapter(http) {
       run: text => act({ card_id: c.id, option_id: o.id, ...(text != null ? { text } : {}) }),
     }));
     const input = c.input ? { label: c.input.label, placeholder: c.input.placeholder, post: { path: CONTRACT.act, body: { card_id: c.id } }, run: text => act({ card_id: c.id, text }) } : null;
-    return { id: c.id, kind: c.kind, layer: layerOf(c.kind), title: c.title, body: c.body, line: c.line || c.count || null, options, input, table: c.table || null, thread: c.thread || [], count: c.count || null };
+    return { id: c.id, kind: c.kind, layer: layerOf(c.kind), title: c.title, body: c.body, line: c.line || c.count || null, options, input, table: c.table || null, thread: c.thread || [], count: c.count || null, who: c.job && !c.table ? [c.job.member, c.job.role].filter(Boolean).join(', ') : null };
   }
   return {
     mode: 'contract',
     http,
     served,
+    changed,
     current,
-    async open() { const r = await http.get(CONTRACT.read); env = r.json; remember(env.card); return current(); },
+    async open() { const r = await http.get(CONTRACT.read); env = r.json; watch(env.card); remember(env.card); return current(); },
     async orb() { return (await act({ orb: true, ...(env.card ? { card_id: env.card.id } : {}) })).card; },
     async openTeam() { return (await act({ open: 'team', ...(env.card ? { card_id: env.card.id } : {}) })).card; },
     async openDeck() { return (await act({ open: 'deck', ...(env.card ? { card_id: env.card.id } : {}) })).card; },
@@ -448,14 +464,17 @@ async function pickAdapter(http) {
 // ---- the judge ----------------------------------------------------------------------
 
 const QUESTIONS = {
-  answers: 'Do these options answer the question shown?',
+  answers: 'Do these options answer the question shown? The box to type in counts as an answer when what it asks for fits the question.',
   next: 'Would a busy founder know what to do next?',
   plain: 'Is this plain language with no system words?',
 };
 // the judged questions, short, for the note column
 const DOUBT = { answers: 'the options answer it', next: 'a founder knows what to do next', plain: 'plain words' };
 const ABOUT = 'One screen of a phone app. A busy founder uses it to make decisions about the AI team that works for them. title is the big line, body and line are the smaller words, options are the buttons, input is a box to type in, table is a grid on screen, thread is the conversation so far, did is what the founder just did.';
-const RULES = `${ABOUT} Answer each question about this screen with yes (true or false) and p, the probability from 0 to 1 that the answer is yes: above 0.5 when yes is true, below 0.5 when yes is false. Judge only what the screen shows.`;
+const RULES = `${ABOUT} Answer each question about this screen with yes, true or false, and why, one short reason in plain words. Judge only what the screen shows. When the screen says something is wanted on it, that is not a system word.`;
+// The owner asked to see the exact model each member runs on, on the team
+// table and the swap card; everywhere else a model name is a system word.
+const MODEL_NAMES_WANTED = 'exact model names and the tool each one runs in: the owner asked to see the specific model each member runs on here, so those names are wanted on this screen. Judge every other word as usual.';
 const HOME_PICTURE = 'a big dotted orb in the middle of a dark screen; the orb is the button';
 
 // the screen as the judge reads it: words only, no ids or posts
@@ -471,26 +490,26 @@ function judgeScreen(stage) {
   if (c.table) screen.table = { columns: c.table.columns, rows: c.table.rows.slice(0, 6) };
   if (c.thread && c.thread.length) screen.thread = c.thread.map(t => `${t.who === 'owner' ? 'founder' : 'app'}: ${t.text}`);
   if (c.kind === 'home') screen.picture = HOME_PICTURE;
+  if (c.layer === 'team' || c.layer === 'swap') screen.wanted = MODEL_NAMES_WANTED;
+  // the line under the title that says who this is about, as the page shows it
+  if (c.who) screen.who = c.who;
   return { stage: stage.name, did: stage.did || null, screen };
 }
 
 function answerSchema(ids) {
-  const one = { type: 'object', properties: { yes: { type: 'boolean' }, p: { type: 'number' } }, required: ['yes', 'p'], additionalProperties: false };
+  const one = { type: 'object', properties: { yes: { type: 'boolean' }, why: { type: 'string' } }, required: ['yes', 'why'], additionalProperties: false };
   return { type: 'object', properties: Object.fromEntries(ids.map(id => [id, one])), required: ids, additionalProperties: false };
 }
 
 const clampP = p => (Number.isFinite(Number(p)) ? Math.min(1, Math.max(0, Number(p))) : null);
 
-// p is kept as the probability of yes. A model that gave p as how sure it is
-// of its own answer (yes false with p 0.9) is read that way instead.
+// One vote: a plain yes or no per question, and the judge's reason when it gave one.
 function normalizeAnswers(ids, raw) {
   const out = {};
   for (const id of ids) {
     const a = raw && raw[id];
-    const p = clampP(a && a.p);
-    if (!a || p == null) throw new Error(`the judge gave no answer for "${QUESTIONS[id] || id}"`);
-    const yes = a.yes === true;
-    out[id] = { yes, p: yes === (p >= 0.5) ? p : 1 - p };
+    if (!a || typeof a.yes !== 'boolean') throw new Error(`the judge gave no answer for "${QUESTIONS[id] || id}"`);
+    out[id] = { yes: a.yes, why: typeof a.why === 'string' && a.why.trim() ? a.why.trim().replace(/\s+/g, ' ').slice(0, 200) : null };
   }
   return out;
 }
@@ -523,7 +542,7 @@ function typesafeJudge({ key, fetchFn = fetch, model = 'jev-latest', url = 'http
       for (const id of ids) {
         const a = json && json.answers && json.answers[id];
         const p = clampP(a && a.noul);
-        raw[id] = p == null ? null : { yes: p >= 0.5, p };
+        raw[id] = p == null ? null : { yes: p >= 0.5, why: null };
       }
       return normalizeAnswers(ids, raw);
     },
@@ -568,7 +587,7 @@ function codexJudge({ spawnFn = spawn, model = null, dir, env = process.env, tim
       const schemaFile = path.join(dir, `schema-${n}.json`);
       const outFile = path.join(dir, `answer-${n}.json`);
       fs.writeFileSync(schemaFile, JSON.stringify(answerSchema(ids)));
-      const prompt = `${RULES}\n\nQuestions:\n${ids.map(id => `- ${id}: ${QUESTIONS[id]}`).join('\n')}\n\nThe screen, as json:\n${JSON.stringify(state)}\n\nAnswer with json only, one entry per question id, each { "yes": true or false, "p": 0 to 1 }. Do not run any command.`;
+      const prompt = `${RULES}\n\nQuestions:\n${ids.map(id => `- ${id}: ${QUESTIONS[id]}`).join('\n')}\n\nThe screen, as json:\n${JSON.stringify(state)}\n\nAnswer with json only, one entry per question id, each { "yes": true or false, "why": "one short reason" }. Do not run any command.`;
       const args = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-schema', schemaFile, '-o', outFile, '-c', 'model_reasoning_effort="low"', ...(model ? ['-m', model] : []), prompt];
       return new Promise((resolve, reject) => {
         let child;
@@ -615,46 +634,65 @@ function pickJudge({ env = process.env, which = null, fetchFn = fetch, spawnFn =
   throw new Error(`no judge called ${pick}; use typesafe, openai, or codex`);
 }
 
-// Asks the judge about every stage that has a screen and questions, a few at a time.
-async function judgeStages(stages, judge, { concurrency = 4, env = process.env } = {}) {
+// Asks the judge about every stage that has a screen and questions, votes
+// times each, a few calls at a time. A call that fails is no vote; a stage
+// with no vote at all says why.
+async function judgeStages(stages, judge, { votes = DEFAULT_VOTES, concurrency = 4, env = process.env } = {}) {
   const todo = stages.filter(s => s.card && s.ask && s.ask.length && !s.skipped);
   if (!judge) {
     for (const s of todo) s.judged = { skipped: true };
     return;
   }
+  const calls = todo.flatMap(s => Array.from({ length: votes }, () => s));
+  const got = new Map(todo.map(s => [s, { votes: [], errors: [] }]));
   let at = 0;
   const worker = async () => {
-    while (at < todo.length) {
-      const s = todo[at++];
+    while (at < calls.length) {
+      const s = calls[at++];
       try {
-        s.judged = { answers: await judge.ask(s.ask, judgeScreen(s)) };
+        got.get(s).votes.push(await judge.ask(s.ask, judgeScreen(s)));
       } catch (err) {
-        s.judged = { error: redact((err && err.message) || err, env) };
+        got.get(s).errors.push(redact((err && err.message) || err, env));
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(concurrency, calls.length) }, worker));
+  for (const s of todo) {
+    const g = got.get(s);
+    s.judged = g.votes.length ? { votes: g.votes, ...(g.errors.length ? { errors: g.errors } : {}) } : { error: g.errors[0] || 'the judge did not answer' };
+  }
 }
 
-// pass, fail, or skip for one stage, and the line that says why
-function stageResult(stage, threshold = DEFAULT_THRESHOLD) {
+// Each question's votes, in order: y or n per vote, how many said no, and
+// the reason the first no gave.
+function tally(stage) {
+  const votes = (stage.judged && stage.judged.votes) || [];
+  return (stage.ask || []).map((id) => {
+    const said = votes.map(v => v[id]).filter(Boolean);
+    const no = said.filter(a => !a.yes);
+    return { id, letters: said.map(a => (a.yes ? 'y' : 'n')).join(''), no: no.length, of: said.length, why: (no.find(a => a.why) || {}).why || null };
+  });
+}
+
+// pass, fail, or skip for one stage, and the line that says why. A question
+// fails when most of its votes say no.
+function stageResult(stage) {
   const checks = stage.checks || [];
   const okChecks = checks.filter(c => c.ok).length;
   const failed = checks.find(c => !c.ok);
   const j = stage.judged || null;
-  const asked = j && j.answers ? Object.entries(j.answers) : [];
-  const low = asked.filter(([, a]) => !(a.p >= threshold));
-  const minP = asked.length ? Math.min(...asked.map(([, a]) => a.p)) : null;
+  const t = j && j.votes ? tally(stage) : [];
+  const lost = t.filter(q => q.no * 2 > q.of || q.of === 0);
   let judgeCell = '-';
   if (j && j.skipped) judgeCell = 'not asked';
   else if (j && j.error) judgeCell = 'no answer';
-  else if (asked.length) judgeCell = `${asked.length - low.length}/${asked.length} (min ${minP.toFixed(2).replace(/^0/, '')})`;
+  else if (t.length) judgeCell = t.map(q => `${q.id} ${q.letters}`).join(', ');
   if (stage.skipped) return { result: 'skip', checks: '-', judge: '-', note: stage.note || 'not reached' };
   const notes = checks.filter(c => !c.ok).map(c => c.why || c.name);
   if (j && j.error) notes.push(`the judge did not answer: ${j.error}`);
-  if (low.length) notes.push(`judge doubts ${low.map(([id, a]) => `${DOUBT[id] || id} (p ${a.p.toFixed(2)})`).join(', ')}`);
+  for (const q of lost) notes.push(`judge says no to ${DOUBT[q.id] || q.id} (${q.no} of ${q.of})${q.why ? `: ${q.why}` : ''}`);
   const note = notes.length ? notes.join('; ') : 'ok';
-  const judgedOk = !stage.ask || !stage.ask.length || (j && j.skipped) || (j && j.answers && low.length === 0);
+  const judgedOk = !stage.ask || !stage.ask.length || (j && j.skipped) || (j && j.votes && lost.length === 0);
   return { result: !failed && judgedOk ? 'pass' : 'fail', checks: `${okChecks}/${checks.length}`, judge: judgeCell, note };
 }
 
@@ -685,7 +723,7 @@ function stageRunner(adapter) {
     if (!st.skipped) {
       const prev = st.card && st.card.id && st.card.kind === 'yes' ? previousServed(adapter.served, st.card.id) : null;
       // what this stage is for first, then the rules every screen keeps
-      st.checks = [...st.extra, ...(st.card ? cardChecks(st.card, { prev }) : [])];
+      st.checks = [...st.extra, ...(st.card ? cardChecks(st.card, { prev, changed: adapter.changed || null }) : [])];
       if (!st.card && !st.extra.length) st.checks.push(check('a screen to check', false, 'nothing was on screen'));
       if (!st.card) st.ask = [];
     }
@@ -787,7 +825,7 @@ async function walkHttp(a, world) {
   await stage('"not now" on the weekly number', async (st) => {
     const card = a.current();
     if (card.kind !== 'report') return live ? skip(st, 'no weekly number card to pass') : (() => { throw new Error('the weekly number card is not on screen'); })();
-    st.did = 'tapped "not now"';
+    st.did = `tapped "not now" on "${card.title}"`;
     st.card = await a.tap(needOption(card, /^not now$/i, '"not now"'));
     st.extra.push(check('it moved on', st.card.kind !== 'report', 'the weekly number card stayed'));
   });
@@ -838,7 +876,7 @@ async function walkHttp(a, world) {
   await stage('"talk to this job"', async (st) => {
     const deck = a.current();
     if (deck.layer !== 'deck' && live) return skip(st, 'no job deck in this copy');
-    if (!deck.input || !/talk to this job/i.test(String(deck.input.label || deck.input.placeholder))) throw new Error('this job has no "talk to this job" box');
+    if (!deck.input || !/^talk to /i.test(String(deck.input.label || deck.input.placeholder))) throw new Error('this job has no box to talk to it');
     st.did = 'typed "what are you on right now?" to this job';
     st.card = await a.type(deck, 'what are you on right now?');
     st.extra.push(check('an answer came back', Boolean((st.card.thread && st.card.thread.length) || (st.card.line && st.card.line !== deck.line) || st.card.kind === 'reply'), 'nothing came back'));
@@ -862,7 +900,7 @@ async function walkHttp(a, world) {
     if (y.kind !== 'yes') return live ? skip(st, 'no yes card to answer') : (() => { throw new Error('no yes card is on screen'); })();
     const o = findOption(y, re);
     st.extra.push(check(`"${label}" is there`, Boolean(o), `the yes card has no "${label}", so the orb was tapped instead`));
-    st.did = o ? `tapped "${label}"` : 'tapped the orb';
+    st.did = o ? `tapped "${label}" on the yes card "${y.title}"` : 'tapped the orb';
     st.card = o ? await a.tap(o) : await a.orb();
     st.extra.push(check('it moved on', st.card.id !== y.id, 'the same yes card stayed'));
     return undefined;
@@ -897,20 +935,15 @@ const RECORDER = `(function () {
 const SNAP = `(function () {
   function vis(n) { if (!n) return false; var s = getComputedStyle(n); if (s.display === 'none' || s.visibility === 'hidden') return false; var r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
   function txt(n) { return n ? n.textContent.replace(/\\s+/g, ' ').trim() : null; }
-  var team = document.getElementById('team');
-  var up = Boolean(team && !team.hidden && vis(team));
-  var hasCard = document.body.classList.contains('has-card');
-  var root = up ? (document.getElementById('team-inner') || team) : document.getElementById('bet');
+  // one card on the page: its kind says which layer it is
+  var root = document.getElementById('bet');
+  var hasCard = document.body.classList.contains('has-card') && !root.hidden;
+  var kind = root.getAttribute('data-kind');
   var active = document.activeElement;
   var typing = Boolean(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && root && root.contains(active));
   var h1 = root ? root.querySelector('h1') : null;
   var layer = 'home';
-  if (up) {
-    if (root.querySelector('.deckcard')) layer = 'deck';
-    else if (root.querySelector('table.roster') || txt(h1) === 'the team') layer = 'team';
-    else if (root.querySelector('.models, .scopes')) layer = 'swap';
-    else layer = 'talk';
-  } else if (hasCard) layer = 'card';
+  if (hasCard) layer = ({ team: 'team', member: 'talk', swap: 'swap', deck: 'deck' })[kind] || 'card';
   var W = window.__walk || { cards: [] };
   var last = W.cards.length ? W.cards[W.cards.length - 1] : null;
   var scope = layer === 'home' ? null : root;
@@ -965,14 +998,18 @@ async function walkBrowser(url, { chromePath, launch }) {
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
   };
   const byText = (scope, re) => `Array.prototype.find.call(document.querySelectorAll(${JSON.stringify(`${scope} button`)}), function (b) { return ${re}.test(b.textContent.trim()) && b.getBoundingClientRect().width > 0; })`;
+  // Esc, then the motion it starts, to rest
   const esc = async () => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await wait(250);
+    await until("!document.body.hasAttribute('data-busy')", 'the card at rest', 5000).catch(() => {});
+    await wait(150);
   };
   const snap = () => run(SNAP);
-  const settled = "document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning') && Boolean(document.querySelector('#bet h1'))";
-  const teamUp = "(function () { var t = document.getElementById('team'); return Boolean(t && !t.hidden); })()";
+  const settled = "!document.body.hasAttribute('data-busy') && document.body.classList.contains('has-card') && !document.querySelector('.bet.ghost') && !document.getElementById('bet').classList.contains('turning') && Boolean(document.querySelector('#bet h1'))";
+  const kindIs = kinds => `(${settled} && ${JSON.stringify(kinds)}.indexOf(document.getElementById('bet').getAttribute('data-kind')) >= 0)`;
+  const teamUp = kindIs(['team', 'member', 'swap', 'deck']);
   const postsSince = async n => (await run('window.__walk.posts')).slice(n);
 
   // one screen stage: fn returns { snap, extra }; posts during it must name the card
@@ -1005,7 +1042,7 @@ async function walkBrowser(url, { chromePath, launch }) {
   };
   const openTeam = async () => {
     await click("document.getElementById('working')", 'the team link');
-    await until(`${teamUp} && Boolean(document.querySelector('#team .row, #team .why'))`, 'the team', 6000);
+    await until(kindIs(['team']), 'the team', 6000);
     await wait(250);
   };
   const escTo = async (st, want, from) => {
@@ -1051,8 +1088,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on a talk card', async (st) => {
       await toCard();
       await openTeam();
-      await click("document.querySelector('#team .row .who button')", 'a member');
-      await until("Boolean(document.querySelector('#team input'))", 'the talk card', 4000);
+      await click("document.querySelector('#bet tbody td.member button')", 'a member');
+      await until(kindIs(['member']), 'the talk card', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened a member, pressed Esc twice';
       const after = await escTo(st, ['team'], 'talk card');
@@ -1062,8 +1099,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on a swap card', async (st) => {
       await toCard();
       await openTeam();
-      await click("document.querySelector('#team .eng button')", 'an engine');
-      await until("Boolean(document.querySelector('#team .models, #team .scopes')) || /could not|did not/.test(document.getElementById('team-inner').textContent)", 'the swap card', 6000);
+      await click("document.querySelector('#bet tbody td.engine button')", 'an engine');
+      await until(kindIs(['swap', 'member']), 'the swap card', 6000);
       st.card = snapCard(await snap());
       st.did = 'tapped an engine, pressed Esc twice';
       const after = await escTo(st, ['team'], 'swap card');
@@ -1073,8 +1110,8 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on the job deck', async (st) => {
       await toCard();
       await openTeam();
-      await click(byText('#team', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
-      await until("Boolean(document.querySelector('#team .deckcard'))", 'the job deck', 6000);
+      await click(byText('#bet', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
+      await until(kindIs(['deck']), 'the job deck', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened the job deck, pressed Esc';
       const after = await escTo(st, ['team', 'card'], 'job deck');
@@ -1129,7 +1166,8 @@ function wrapWords(text, width) {
 function renderTable(rows, { width = 110 } = {}) {
   const head = ['stage', 'checks', 'judge', 'result', 'note'];
   const cells = rows.map(r => [r.stage, r.checks, r.judge, r.result, r.note]);
-  const widths = head.map((h, i) => Math.max(h.length, ...cells.map(c => String(c[i]).length)));
+  // the judge cell is one line per question
+  const widths = head.map((h, i) => Math.max(h.length, ...cells.map(c => (i === 2 ? Math.max(...String(c[i]).split(', ').map(x => x.length)) : String(c[i]).length))));
   const fixed = widths.slice(0, 4).reduce((a, b) => a + b, 0) + 3 * 5 + 1;
   widths[4] = Math.max(12, Math.min(widths[4], width - fixed - 3));
   const rule = (l, m, r) => `${l}${widths.map(w => '─'.repeat(w + 2)).join(m)}${r}`;
@@ -1138,8 +1176,9 @@ function renderTable(rows, { width = 110 } = {}) {
   for (const c of cells) {
     const note = wrapWords(c[4], widths[4]);
     const stage = wrapWords(c[0], widths[0]);
-    const h = Math.max(note.length, stage.length);
-    for (let i = 0; i < h; i += 1) out.push(line([stage[i] || '', i ? '' : c[1], i ? '' : c[2], i ? '' : c[3], note[i] || '']));
+    const judge = String(c[2]).split(', ');
+    const h = Math.max(note.length, stage.length, judge.length);
+    for (let i = 0; i < h; i += 1) out.push(line([stage[i] || '', i ? '' : c[1], judge[i] || '', i ? '' : c[3], note[i] || '']));
   }
   out.push(rule('└', '┴', '┘'));
   return out.join('\n');
@@ -1252,15 +1291,15 @@ async function startRealCopy(root, source, env) {
 // ---- the command ------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { realCopy: null, threshold: DEFAULT_THRESHOLD, judge: null, browser: true, json: false, keep: false, help: false };
+  const opts = { realCopy: null, votes: DEFAULT_VOTES, judge: null, browser: true, json: false, keep: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const value = () => { const v = argv[i + 1]; if (v == null || v.startsWith('--')) throw new Error(`${a} needs a value`); i += 1; return v; };
     if (a === '--help' || a === '-h' || a === 'help') opts.help = true;
     else if (a === '--real-copy') opts.realCopy = value();
     else if (a.startsWith('--real-copy=')) opts.realCopy = a.slice(12);
-    else if (a === '--threshold') opts.threshold = Number(value());
-    else if (a.startsWith('--threshold=')) opts.threshold = Number(a.slice(12));
+    else if (a === '--votes') opts.votes = Number(value());
+    else if (a.startsWith('--votes=')) opts.votes = Number(a.slice(8));
     else if (a === '--judge') opts.judge = value();
     else if (a.startsWith('--judge=')) opts.judge = a.slice(8);
     else if (a === '--no-judge') opts.judge = 'none';
@@ -1269,12 +1308,12 @@ function parseArgs(argv) {
     else if (a === '--keep') opts.keep = true;
     else throw new Error(`unknown option ${a}`);
   }
-  if (!(opts.threshold > 0 && opts.threshold <= 1)) throw new Error('--threshold takes a number over 0 and up to 1, like 0.8');
+  if (!(Number.isInteger(opts.votes) && opts.votes >= 1 && opts.votes <= 9)) throw new Error('--votes takes a whole number from 1 to 9, like 3');
   return opts;
 }
 
 const HELP = [
-  'Usage: atris gm walk [--real-copy <workspace>] [--threshold 0.8] [--judge typesafe|openai|codex] [--no-judge] [--no-browser] [--json] [--keep]',
+  'Usage: atris gm walk [--real-copy <workspace>] [--votes 3] [--judge typesafe|openai|codex] [--no-judge] [--no-browser] [--json] [--keep]',
   '',
   'Walks every stage of the orb on the phone page and prints one row per stage.',
   'It starts the phone server on a free port with a temp home and a made-up',
@@ -1285,7 +1324,7 @@ const HELP = [
   'Each stage passes when the rules hold (a way forward, no option twice, no',
   'command, flag, or path in the words, every tap names the card on screen,',
   'never two yes cards in a row, Esc and the small orb lead somewhere) and a',
-  'fast judge says yes, with p at or over the threshold, to: do these options',
+  'fast judge says yes by most of its votes to: do these options (the box counts)',
   'answer the question shown, would a busy founder know what to do next, and',
   'is this plain language. The judge is TypeSafe Jev when TYPESAFE_API_KEY is',
   'set, else OpenAI when OPENAI_API_KEY is set, else codex exec read-only.',
@@ -1296,7 +1335,8 @@ const HELP = [
   '                    and run the real atris gm phone with the real writers;',
   '                    HOME stays yours only for the claude login, and every',
   '                    atris state file goes to the temp folder',
-  '  --threshold <p>   the p each judged answer must reach (default 0.8)',
+  '  --votes <n>       ask each judged question n times; a question fails when',
+  '                    most of its votes say no (default 3)',
   '  --judge <name>    use this judge instead of the first one with a key',
   '  --no-judge        rules only, no judge',
   '  --no-browser      skip the Chrome pass',
@@ -1307,7 +1347,7 @@ const HELP = [
 ].join('\n');
 
 // The whole walk, for main and the tests. Returns the stages and the rows.
-async function walk({ server, judge, threshold = DEFAULT_THRESHOLD, browser = true, chromePath = null, launch = null, env = process.env }) {
+async function walk({ server, judge, votes = DEFAULT_VOTES, browser = true, chromePath = null, launch = null, env = process.env }) {
   const http = client(server.base, server.token);
   const adapter = await pickAdapter(http);
   const stages = await walkHttp(adapter, server.world);
@@ -1321,8 +1361,8 @@ async function walk({ server, judge, threshold = DEFAULT_THRESHOLD, browser = tr
       }
     }
   }
-  await judgeStages(stages, judge, { concurrency: judge && /^codex/.test(judge.name) ? 6 : 8, env });
-  const rows = stages.map(s => ({ stage: s.name, ...stageResult(s, threshold) }));
+  await judgeStages(stages, judge, { votes, concurrency: judge && /^codex/.test(judge.name) ? 8 : 12, env });
+  const rows = stages.map(s => ({ stage: s.name, ...stageResult(s) }));
   return { mode: adapter.mode, stages, rows };
 }
 
@@ -1342,15 +1382,15 @@ async function main(argv = [], { env = process.env, stdout = process.stdout, std
     server = opts.realCopy ? await startRealCopy(root, opts.realCopy, env) : await startFixture(root, env);
     const trace = opts.browser ? require('./gm-phone-trace') : null;
     stdout.write(`walking the stages, then asking ${judge ? judge.name : 'no judge'}...\n`);
-    const out = await walk({ server, judge, threshold: opts.threshold, browser: opts.browser, chromePath: trace ? trace.findChrome() : null, launch: trace ? trace.launch : null, env });
+    const out = await walk({ server, judge, votes: opts.votes, browser: opts.browser, chromePath: trace ? trace.findChrome() : null, launch: trace ? trace.launch : null, env });
     const passed = out.rows.filter(r => r.result === 'pass').length;
     const seconds = Math.round((Date.now() - started) / 1000);
-    const head = `${opts.realCopy ? 'a copy of a real workspace' : 'made-up workspace'}, ${out.mode === 'contract' ? 'one-card contract' : 'today\'s /bet cards'}, judge ${judge ? judge.name : 'off'}, threshold ${opts.threshold}${opts.browser ? '' : ', no chrome pass'}`;
+    const head = `${opts.realCopy ? 'a copy of a real workspace' : 'made-up workspace'}, ${out.mode === 'contract' ? 'one-card contract' : 'today\'s /bet cards'}, judge ${judge ? `${judge.name}, ${opts.votes} ${opts.votes === 1 ? 'vote' : 'votes'} a question` : 'off'}${opts.browser ? '' : ', no chrome pass'}`;
     const table = renderTable(out.rows, { width: Math.max(90, Math.min(140, (stdout.columns || 120))) });
     const summary = `${passed} of ${out.rows.length} stages passed in ${seconds}s.`;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const reportFile = path.join(fs.realpathSync(os.tmpdir()), `atris-orb-walk-${stamp}.txt`);
-    const json = { schema: 'atris.orb_walk.v1', at: new Date().toISOString(), mode: out.mode, world: server.world.mode, judge: judge ? judge.name : null, threshold: opts.threshold, rows: out.rows, stages: out.stages.map(s => ({ name: s.name, did: s.did || null, screen: s.card ? judgeScreen(s).screen : null, checks: s.checks || [], judged: s.judged || null, skipped: Boolean(s.skipped) })) };
+    const json = { schema: 'atris.orb_walk.v1', at: new Date().toISOString(), mode: out.mode, world: server.world.mode, judge: judge ? judge.name : null, votes: opts.votes, rows: out.rows, stages: out.stages.map(s => ({ name: s.name, did: s.did || null, screen: s.card ? judgeScreen(s).screen : null, checks: s.checks || [], judged: s.judged || null, skipped: Boolean(s.skipped) })) };
     fs.writeFileSync(reportFile, redact(`${head}\n${table}\n${summary}\n`, env));
     fs.writeFileSync(reportFile.replace(/\.txt$/, '.json'), redact(`${JSON.stringify(json, null, 2)}\n`, env));
     if (opts.json) stdout.write(`${redact(JSON.stringify({ ...json, report: reportFile }, null, 2), env)}\n`);
