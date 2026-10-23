@@ -286,6 +286,26 @@ test('atris zen saves a side copy nobody touched in days, then puts it away', ()
   }
 });
 
+test('atris zen says how long until a side copy with unsaved work gets saved', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const old = path.join(base, 'old');
+    git(checkout, 'worktree', 'add', '-q', old, '-b', 'old-branch');
+    write(old, 'wip.js', 'half done\n');
+    const when = new Date(Date.now() - 2.5 * 86400000);
+    fs.utimesSync(path.join(old, 'wip.js'), when, when);
+    ageHistory(old, when);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner/);
+    assert.match(cli.stdout, /that is due in 12 hours/);
+    assert.ok(fs.existsSync(old));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('atris zen keeps team notes from unpushed commits in the tree', () => {
   const { base, seed, checkout } = createRepo();
   try {
