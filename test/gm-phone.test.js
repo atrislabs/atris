@@ -1156,6 +1156,17 @@ test('browser: a tap on an engine cell opens the engine card, Esc goes back, and
   }
 });
 
+test('browser: a late engine card answer for one member never lands on another member\'s card, and a tap swaps the member shown', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const out = await trace.engineRaceTrace({ chromePath: CHROME });
+  assert.equal(out.builderAnswered, true, 'the late answer really arrived while validator was shown');
+  assert.equal(out.card.title, 'validator');
+  assert.equal(out.card.line, 'validator runs on claude opus 5.5.');
+  assert.equal(out.card.groups, 1, 'only validator\'s models, none of builder\'s');
+  assert.deepEqual(out.card.scopes, ['just validator', 'for every build job']);
+  assert.equal(out.card.backs, 2, 'one back link and the close link, no second set');
+  assert.deepEqual(out.swaps.map((s) => s.member), ['validator']);
+});
+
 test('browser: after a lost next card, a tap on the old answer names the old card and saves nothing', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const out = await trace.staleAnswerTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);

@@ -39,7 +39,7 @@ const ENV_KEYS = [
 // A workspace with a builder card, claude and codex marked ready in its own
 // registry file, a codex models cache, and the fixture roster in a scratch
 // HOME. Env changes are undone after.
-function withRoom(fn) {
+function withRoom(fn, { ready = ['claude', 'codex'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-set-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-set-home-'));
   const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -55,7 +55,7 @@ function withRoom(fn) {
   }
   const checked = new Date().toISOString();
   const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
-  const engines = ids.map((id) => (['claude', 'codex'].includes(id)
+  const engines = ids.map((id) => (ready.includes(id)
     ? { id, health: { status: 'ready', checked_at: checked } }
     : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
@@ -150,11 +150,44 @@ test('roster set --member writes that member its own team line, leaving the job 
   assert.equal(res.out, 'builder now runs on codex gpt-6-astra. every other build job stays on claude opus 5.5.');
   assert.deepEqual(section(text(), 'team'), ['- researcher: claude code, model: haiku 5.5', '- builder: codex, model: gpt-6-astra']);
   assert.deepEqual(section(text(), 'build'), ['- claude code, model: opus 5.5, max: 45 min']);
-  // a second swap replaces the member's line in place
+  // a swap of a member that has a line changes it in place, and the old lead backs it up
   assert.equal(cli('--member', 'researcher', 'claude', 'opus', '5.5').exit, 0);
-  assert.deepEqual(section(text(), 'team'), ['- researcher: claude code, model: opus 5.5', '- builder: codex, model: gpt-6-astra']);
+  assert.deepEqual(section(text(), 'team'), ['- researcher: claude code, model: opus 5.5, backup claude code haiku 5.5', '- builder: codex, model: gpt-6-astra']);
   assert.equal(cli('--member', 'nobody', 'codex', 'gpt-6-astra').exit, 2);
 }));
+
+test('a member swap changes only the lead: backups, limits, until, and notes stay, and the old lead backs up first', () => withRoom(({ root, rosterFile, cli, text }) => {
+  fs.writeFileSync(rosterFile, ROSTER.replace('## team\n', '## team\n- builder: claude code, model: opus 5.5, backup codex gpt-6-astra, max 20 min, until 2027-01-31 <!-- keep -->\n'));
+  const res = cli('--member', 'builder', 'codex', 'gpt-6.1-sol');
+  assert.equal(res.exit, 0, res.err);
+  assert.deepEqual(section(text(), 'team'), [
+    '- builder: codex, model: gpt-6.1-sol, backup claude code opus 5.5, backup codex gpt-6-astra, max 20 min, until 2027-01-31 <!-- keep -->',
+    '- researcher: claude code, model: haiku 5.5',
+  ]);
+  // it reads back: the new lead runs, with both backups behind it in order
+  const { readRosterState, rosterPickFromValue } = require('../lib/engine-registry');
+  const line = readRosterState(root).machine.team.find((entry) => entry.member === 'builder');
+  const pick = rosterPickFromValue(line.value, 'executor');
+  assert.deepEqual([pick.engine, pick.model, pick.backup, pick.backup_model], ['codex', 'gpt-6.1-sol', 'claude', 'claude-opus-5-5']);
+  assert.deepEqual(pick.more_backups.map((b) => [b.engine, b.model]), [['codex', 'gpt-6-astra']]);
+  assert.equal(pick.max_seconds, 1200);
+  assert.equal(pick.until, '2027-01-31');
+  // swapping to a model that is already a backup moves it up, and the old lead takes the front of the backups
+  assert.equal(cli('--member', 'builder', 'codex', 'gpt-6-astra').exit, 0);
+  assert.equal(section(text(), 'team')[0], '- builder: codex, model: gpt-6-astra, backup codex gpt-6.1-sol, backup claude code opus 5.5, max 20 min, until 2027-01-31 <!-- keep -->');
+}));
+
+test('a label that is not a real model (devin\'s built-in router) saves no model pin', () => withRoom(({ root, cli, text }) => {
+  const res = cli('build', 'devin', 'built-in', 'router');
+  assert.equal(res.exit, 0, res.err);
+  assert.equal(res.out, 'build now runs on devin. claude opus 5.5 is the backup.');
+  assert.deepEqual(section(text(), 'build'), ['- devin, max: 45 min', '- claude code, model: opus 5.5, max: 45 min']);
+  const { readRosterState } = require('../lib/engine-registry');
+  assert.equal(readRosterState(root).machine.picks.executor.workers[0].model, '');
+  // the member line is written the same way: the tool alone
+  assert.equal(cli('--member', 'builder', 'devin', 'built-in', 'router').exit, 0);
+  assert.ok(section(text(), 'team').includes('- builder: devin'), text());
+}, { ready: ['claude', 'codex', 'devin'] }));
 
 // --- the orb's engine card, over real http with the page's token check ----------
 
@@ -271,6 +304,23 @@ test('orb swap: one tap through the token-checked route swaps the job, says what
     await h.close();
   }
 }));
+
+test('orb: tapping devin\'s built-in router writes devin with no model, and the card shows it as current after', () => withRoom(async ({ root, text }) => {
+  const h = await startPhone(root);
+  try {
+    const card = await h.call('POST', '/bet/engine', { body: { member: 'builder' } });
+    const devin = card.json.groups.find((g) => g.engine === 'devin');
+    assert.deepEqual(devin.models.map((m) => [m.label, m.model, m.current]), [['built-in router', '', false]]);
+    const out = await h.call('POST', '/bet/swap', { body: { member: 'builder', engine: 'devin', model: devin.models[0].model, scope: 'job' } });
+    assert.equal(out.status, 200, out.text);
+    assert.equal(section(text(), 'build')[0], '- devin, max: 45 min');
+    const after = await h.call('POST', '/bet/engine', { body: { member: 'builder' } });
+    assert.equal(after.json.groups[0].engine, 'devin');
+    assert.equal(after.json.groups[0].models[0].current, true);
+  } finally {
+    await h.close();
+  }
+}, { ready: ['claude', 'codex', 'devin'] }));
 
 test('the phone page opens the engine card from the engine cell and has no looping motion', () => {
   const { phonePage } = require('../lib/gm-phone-page');

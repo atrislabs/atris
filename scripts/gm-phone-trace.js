@@ -947,7 +947,59 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
   }, viewport);
 }
 
-module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
+// The race codex found: open builder's engine card, press Esc before its
+// answer comes back, open validator's card, then let builder's late answer
+// land. Reads what validator's card shows after, then taps its first model
+// and returns which member each swap the server got was for.
+async function engineRaceTrace({ chromePath = findChrome(), viewport = PHONE, lateMs = 900 } = {}) {
+  const rows = TABLE_ROWS.map(r => ({ ...r }));
+  const swaps = [];
+  let builderAnswered = false;
+  const cardFor = (member) => ({
+    ...ENGINE_CARD,
+    member,
+    line: `${member} runs on claude opus 5.5.`,
+    scopes: [{ id: 'member', label: `just ${member}` }, { id: 'job', label: 'for every build job' }],
+    groups: member === 'builder' ? ENGINE_CARD.groups : [ENGINE_CARD.groups[1]],
+  });
+  const desk = {
+    ...scriptedDesk(),
+    teamTable: () => ({ ok: true, rows }),
+    engineCard: ({ member }) => (member === 'builder'
+      ? new Promise(resolve => setTimeout(() => { builderAnswered = true; resolve(cardFor('builder')); }, lateMs))
+      : cardFor(member)),
+    swapEngine: (body) => { swaps.push(body); return { ok: true, ack: `${body.member} now runs on ${body.engine} ${body.model}.`, rows }; },
+  };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const esc = async () => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    };
+    const tapCell = async (n) => {
+      const cell = `#team tbody tr:nth-child(${n}) td.eng button`;
+      await p.until(`Boolean(document.querySelector(${JSON.stringify(cell)}))`, `row ${n}`);
+      await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+      await p.tap(cell);
+    };
+    await p.tap('#working');
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the team table');
+    await tapCell(2); // builder: its answer is late
+    await p.until("document.querySelector('#team h1').textContent === 'builder'", 'builder card');
+    await esc();
+    await p.until("Boolean(document.querySelector('#team tbody tr'))", 'the table again');
+    await tapCell(5); // validator
+    await p.until("Boolean(document.querySelector('#team section.models'))", 'validator card');
+    const end = Date.now() + lateMs + 3000;
+    while (!builderAnswered && Date.now() < end) await wait(30);
+    await wait(250);
+    const card = await p.run("(function () { var team = document.getElementById('team'); return { title: team.querySelector('h1').textContent, line: team.querySelector('p.why').textContent, groups: team.querySelectorAll('section.models').length, scopes: Array.prototype.map.call(team.querySelectorAll('.scopes button'), function (b) { return b.textContent; }), backs: team.querySelectorAll('button.quiet').length }; })()");
+    await p.tap('#team section.models button.choice');
+    await p.until("Boolean(document.querySelector('#team p.done'))", 'the table after the swap');
+    return { viewport: `${viewport.width}x${viewport.height}`, builderAnswered, card, swaps };
+  }, viewport);
+}
+
+module.exports = { findChrome, launch, trace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, engineRaceTrace, onPhone, scriptedDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
