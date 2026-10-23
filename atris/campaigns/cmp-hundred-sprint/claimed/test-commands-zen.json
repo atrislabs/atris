@@ -1,0 +1,1 @@
+{"id":"test-commands-zen","kind":"test","target":"commands/zen.js","files":["test/zen-command.test.js"]}

@@ -143,10 +143,10 @@ curl -s "https://api.atris.ai/api/integrations/google-drive/search?q=quarterly+r
 ```
 
 Simple queries search by file name. For advanced queries, use Drive query syntax:
-- `name contains 'budget'` — name search
-- `mimeType = 'application/vnd.google-apps.spreadsheet'` — only sheets
-- `mimeType = 'application/vnd.google-apps.document'` — only docs
-- `modifiedTime > '2026-01-01'` — recently modified
+- `name contains 'budget'`: name search
+- `mimeType = 'application/vnd.google-apps.spreadsheet'`: only sheets
+- `mimeType = 'application/vnd.google-apps.document'`: only docs
+- `modifiedTime > '2026-01-01'`: recently modified
 
 ### Get File Metadata
 ```bash
@@ -169,10 +169,10 @@ curl -s "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/expo
 ```
 
 **Export formats:**
-- `text/plain` — plain text (default, good for Docs)
-- `text/html` — HTML
-- `application/pdf` — PDF
-- `text/csv` — CSV (for Sheets)
+- `text/plain`: plain text (default, good for Docs)
+- `text/html`: HTML
+- `application/pdf`: PDF
+- `text/csv`: CSV (for Sheets)
 
 ### Upload File
 ```bash
@@ -241,7 +241,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_
   -d '{"name": "Copy of Document", "folder_id": "OPTIONAL_FOLDER_ID"}'
 ```
 
-Works with Docs, Sheets, Slides — creates a full copy.
+Works with Docs, Sheets, Slides. It creates a full copy.
 
 ### Share File
 ```bash
@@ -440,10 +440,10 @@ curl -s "https://api.atris.ai/api/integrations/google-drive/sheets/{spreadsheet_
 ```
 
 **Range uses A1 notation:**
-- `Sheet1` — entire sheet
-- `Sheet1!A1:D10` — specific range
-- `Sheet1!A:A` — entire column A
-- `Sheet1!1:1` — entire row 1
+- `Sheet1`: entire sheet
+- `Sheet1!A1:D10`: specific range
+- `Sheet1!A:A`: entire column A
+- `Sheet1!1:1`: entire row 1
 
 ### Update Cells
 ```bash
@@ -500,20 +500,20 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 ```
 
 **Common request types:**
-- `repeatCell` — format a range (bold, colors, font size, alignment)
-- `mergeCells` — merge a range into one cell
-- `updateBorders` — add borders to cells
-- `autoResizeDimensions` — auto-fit column widths
-- `addConditionalFormatRule` — highlight cells based on rules
-- `addChart` — embed a chart
-- `addSheet` / `deleteSheet` — manage sheets/tabs
-- `sortRange` — sort rows by a column
+- `repeatCell`: format a range (bold, colors, font size, alignment)
+- `mergeCells`: merge a range into one cell
+- `updateBorders`: add borders to cells
+- `autoResizeDimensions`: auto-fit column widths
+- `addConditionalFormatRule`: highlight cells based on rules
+- `addChart`: embed a chart
+- `addSheet` / `deleteSheet`: manage sheets/tabs
+- `sortRange`: sort rows by a column
 
-**Range format:** `{"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3}` — sheetId 0 = first tab, indices are 0-based.
+**Range format:** `{"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3}`. Here, sheetId 0 is the first tab, and indices are 0-based.
 
 **Color format:** RGB floats 0-1, e.g. `{"red": 0.2, "green": 0.6, "blue": 1.0}`
 
-You can send multiple requests in one call — they execute in order.
+You can send multiple requests in one call. They execute in order.
 
 ---
 
@@ -571,7 +571,7 @@ You can send multiple requests in one call — they execute in order.
 ### "Format a spreadsheet"
 1. Run bootstrap
 2. Find the sheet, get its `spreadsheetId`
-3. Build requests array — bold headers, colors, borders, auto-resize, etc.
+3. Build requests array: bold headers, colors, borders, auto-resize, etc.
 4. **Show user what formatting will be applied, get approval**
 5. Apply: `POST /google-drive/sheets/{id}/batchUpdate` with `{"requests": [...]}`
 
@@ -603,7 +603,7 @@ You can send multiple requests in one call — they execute in order.
 ### "Delete files"
 1. Run bootstrap
 2. Find the files
-3. **Confirm with user** — show file names
+3. **Confirm with user**: show file names
 4. Trash (recoverable): `DELETE /google-drive/files/{id}?trash=true`
 5. Or permanent delete: `DELETE /google-drive/files/{id}`
 

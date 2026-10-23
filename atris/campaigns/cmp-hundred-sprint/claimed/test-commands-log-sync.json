@@ -1,0 +1,1 @@
+{"id":"test-commands-log-sync","kind":"test","target":"commands/log-sync.js","files":["test/log-sync-command.test.js"]}

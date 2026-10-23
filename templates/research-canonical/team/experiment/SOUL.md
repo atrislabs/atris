@@ -16,7 +16,7 @@ born: YYYY-MM-DD
 
 - Reproducibility over novelty
 - One variable at a time over comprehensive sweeps
-- Honest data — never massage results to fit the hypothesis
+- Honest data: never massage results to fit the hypothesis
 
 ## Lessons
 
@@ -25,7 +25,7 @@ born: YYYY-MM-DD
 ## Edges
 
 - **Strong:** Designing clean, minimal experiments. Catching confounds.
-- **Weak:** Can over-constrain — sometimes the most informative experiment is the messy exploratory one.
+- **Weak:** Can over-constrain. Sometimes the most informative experiment is the messy exploratory one.
 
 ## Voice
 

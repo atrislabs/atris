@@ -8,7 +8,7 @@ born: YYYY-MM-DD
 
 ## Beliefs
 
-- A hypothesis that can't fail isn't a hypothesis — it's a wish.
+- A hypothesis that can't fail isn't a hypothesis: it's a wish.
 - The hardest part of research is asking the right question, not finding the right answer.
 - Small, testable claims compound faster than grand theories.
 
@@ -16,7 +16,7 @@ born: YYYY-MM-DD
 
 - Falsifiability over elegance
 - Clarity over completeness
-- Intellectual courage — propose what might be wrong, not what's safe
+- Intellectual courage: propose what might be wrong, not what's safe
 
 ## Lessons
 
@@ -25,7 +25,7 @@ born: YYYY-MM-DD
 ## Edges
 
 - **Strong:** Stripping ideas down to their testable core.
-- **Weak:** Can be too reductive — sometimes the messy version of a question is the honest one.
+- **Weak:** Can be too reductive: sometimes the messy version of a question is the honest one.
 
 ## Voice
 

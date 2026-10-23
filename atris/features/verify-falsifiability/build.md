@@ -1,20 +1,20 @@
-# verify-falsifiability — Build Plan
+# verify-falsifiability: Build Plan
 
 > Executed 2026-04-19. Recorded retrospectively.
 
 ## Files touched
 
 **Modified:**
-- `commands/autopilot.js` — added falsifiability gate in `runTaskOnce` (before the phase loop). Runs Verify pre-execute for endgame + explicit-Verify tasks; halts with `verify-not-falsifiable` on pre-pass; proceeds on pre-fail. Verify cmd snapshotted for post-execute reuse.
-- `commands/verify.js` — added `verifyRubric(slug, section, opts)`. Extracts first fenced `bash|sh` block under `## <section>` in `atris/features/<slug>/validate.md`, writes to tmp, executes, returns exit code.
-- `bin/atris.js` — route `atris verify <slug> --section <name>` to `verifyRubric`. Preserves existing `atris verify` and `atris verify <task-id>` paths.
-- `atris.md` — one line added to the task-shape section: Verify must be a falsifiable rubric or test, not a raw shell shortcut. Prefer `atris verify <slug> --section <name>`. Rubric is read-only, deterministic, references only the working tree.
+- `commands/autopilot.js`: added falsifiability gate in `runTaskOnce` (before the phase loop). Runs Verify pre-execute for endgame + explicit-Verify tasks; halts with `verify-not-falsifiable` on pre-pass; proceeds on pre-fail. Verify cmd snapshotted for post-execute reuse.
+- `commands/verify.js`: added `verifyRubric(slug, section, opts)`. Extracts first fenced `bash|sh` block under `## <section>` in `atris/features/<slug>/validate.md`, writes to tmp, executes, returns exit code.
+- `bin/atris.js`: route `atris verify <slug> --section <name>` to `verifyRubric`. Preserves existing `atris verify` and `atris verify <task-id>` paths.
+- `atris.md`: one line added to the task-shape section: Verify must be a falsifiable rubric or test, not a raw shell shortcut. Prefer `atris verify <slug> --section <name>`. Rubric is read-only, deterministic, references only the working tree.
 
 **Created:**
-- `test/autopilot-verify-falsifiability.test.js` — 8 tests covering the falsifiability gate and rubric extraction
-- `atris/features/verify-falsifiability/idea.md` — this feature
-- `atris/features/verify-falsifiability/build.md` — this file
-- `atris/features/verify-falsifiability/validate.md` — runnable rubric
+- `test/autopilot-verify-falsifiability.test.js`: 8 tests covering the falsifiability gate and rubric extraction
+- `atris/features/verify-falsifiability/idea.md`: this feature
+- `atris/features/verify-falsifiability/build.md`: this file
+- `atris/features/verify-falsifiability/validate.md`: runnable rubric
 
 ## Build steps
 
@@ -26,13 +26,13 @@
 
 4. **Falsifiability gate.** Added to `runTaskOnce` in `commands/autopilot.js`, directly after the existing no-verify-field guard and before the plan/do/review loop. Guarded by `context.kind === 'endgame' && verifyResult.explicit`. Runs `execSync(verifyCmd, { timeout: 60000 })`. On success: writes `verify-not-falsifiable` lesson, halts. On throw: proceeds as normal. The cmd captured in `verifyCmd` is reused by the existing post-execute verify block unchanged.
 
-5. **Test harness.** Eight node:test cases in isolated tmp dirs. Three halt cases, two proceed cases, three `verifyRubric` cases. Each fixture writes its own `TODO.md` and `lessons.md`. Proceed cases assert that the halt reason is anything *other than* `verify-not-falsifiable` — the gate let the tick through, subsequent failures (no claude CLI) are out of scope for this test.
+5. **Test harness.** Eight node:test cases in isolated tmp dirs. Three halt cases, two proceed cases, three `verifyRubric` cases. Each fixture writes its own `TODO.md` and `lessons.md`. Proceed cases assert that the halt reason is anything *other than* `verify-not-falsifiable`: the gate let the tick through, subsequent failures (no claude CLI) are out of scope for this test.
 
 6. **Self-rubric.** This feature's `validate.md#preflight` runs the full test file. That makes the feature self-verifying: `atris verify verify-falsifiability --section preflight` exits 0 iff the gate is live and correct.
 
 ## Testing strategy
 
-`node --test test/autopilot-verify-falsifiability.test.js` — 8 tests.
+`node --test test/autopilot-verify-falsifiability.test.js`: 8 tests.
 
 ```
 ✔ trivial Verify (true) halts with verify-not-falsifiable
@@ -51,12 +51,12 @@ Two of the "proceed past gate" tests run for ~95s each because `runTaskOnce` tri
 
 - **Rubric missing:** `verifyRubric` returns 2, prints `✗ No rubric at <path>`. The autopilot gate treats this as "no explicit Verify" and applies the existing no-verify-field halt.
 - **Section missing:** `verifyRubric` returns 2, prints `✗ No fenced bash block under "## <section>"`. Same handling.
-- **Rubric hangs:** `execSync` has a 60s timeout. Worth tightening to 10s with explicit documentation of the limit — open item.
+- **Rubric hangs:** `execSync` has a 60s timeout. Worth tightening to 10s with explicit documentation of the limit. Open item.
 - **Judge integrity failure:** `verifyJudgeIntegrity()` already halts before the gate runs. Tamper protection unchanged.
 
 ## Dependencies
 
-None new. Uses `child_process.spawnSync` (already imported), `fs`, `path`, `os` — all Node built-ins.
+None new. Uses `child_process.spawnSync` (already imported), `fs`, `path`, `os`: all Node built-ins.
 
 ## Rollback plan
 

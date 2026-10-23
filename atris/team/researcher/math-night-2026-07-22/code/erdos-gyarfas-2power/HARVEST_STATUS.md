@@ -1,4 +1,4 @@
-# HARVEST_STATUS — Erdos-Gyarfas n=36 girth>=7 (harvested 2026-07-23, second harvester)
+# HARVEST_STATUS: Erdos-Gyarfas n=36 girth>=7 (harvested 2026-07-23, second harvester)
 
 Context: the first harvester died without reporting. Raw run data lives in the
 session scratchpad, not this directory:
@@ -7,7 +7,7 @@ Durable copies of the raw evidence are now in `harvest/` here.
 
 ## Status: exhaustion COMPLETE, zero survivors. Near-miss recovery RESTARTED (was dead).
 
-### Main sweep — complete and verified by this harvester
+### Main sweep: complete and verified by this harvester
 - 8/8 shard generator logs (gen36g7_0..7.log) end "All done ... CPU time".
 - 8/8 filter stats logs (stats36g7_0..7.log) present with STATS lines.
 - Shard totals: 11,057,343 / 11,518,401 / 10,931,495 / 10,884,399 / 10,945,277 /
@@ -20,7 +20,7 @@ Durable copies of the raw evidence are now in `harvest/` here.
   (cmp, 6,168 graphs); sample36_c.txt vs sample36_py.txt byte-identical
   (cmp, 120 graphs). filter.c agrees with the pure-python exact detector.
 
-### Near-miss recovery — the one discrepancy found in RESULTS_36G7.md
+### Near-miss recovery: the one discrepancy found in RESULTS_36G7.md
 - stats36g7_5.log shows noC4C8=1: exactly one shard-5 graph has no C8
   (it contains a C16, since noC4C8C16=0), so the conjecture verdict is
   unaffected either way.

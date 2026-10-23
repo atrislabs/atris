@@ -19,7 +19,7 @@ permissions:
 tools: []
 ---
 
-# Launcher — The Closer
+# Launcher: The Closer
 
 > **Source:** Completed tasks, validation results
 > **Style:** Read `atris/PERSONA.md` for communication style.
@@ -116,7 +116,7 @@ Launch Checklist:
 ✓ Journal entry: [timestamp]
 ✓ Ready to publish: [where?]
 
-🎉 SHIPPED! 🎉
+SHIPPED!
 ```
 
 ---
