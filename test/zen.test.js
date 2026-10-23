@@ -70,16 +70,30 @@ test('side copies left for their owners get one line each and a clock', () => {
     `  ${path.join('~', 'work', 'a')}`,
     'zen saves it to zen-backup/ once nobody has touched it for 3 days',
   ]);
-  assert.deepEqual(sideCopyLines(['/x/a', '/x/b', '/x/c', '/x/d', '/x/e'], 1), [
+  assert.deepEqual(sideCopyLines(['/x/a', '/y/b', '/z/c', '/w/d', '/v/e'], 1), [
     '5 side copies have unsaved work, left for their owners',
     '  /x/a',
-    '  /x/b',
-    '  /x/c',
+    '  /y/b',
+    '  /z/c',
     '  and 2 more',
     'zen saves each one to zen-backup/ once nobody has touched it for 1 day',
   ]);
   assert.deepEqual(sideCopyLines(['/x/a'], 3, 12 * 3600000).slice(-1), ['that is due in 12 hours']);
   assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3, 49 * 3600000).slice(-1), ['the first one is due in 2 days']);
+});
+
+test('side copies that share a folder are one line with the count', () => {
+  const { sideCopyLines } = require('../lib/zen');
+  const home = os.homedir();
+  const runs = path.join(home, 'web', '.claude', 'worktrees');
+  const copies = Array.from({ length: 27 }, (_, i) => path.join(runs, `wf_5fcd-${i}`));
+  assert.deepEqual(sideCopyLines([...copies.slice(0, 2), path.join(home, 'cli', 'lead'), ...copies.slice(2)], 3).slice(0, 3), [
+    '28 side copies have unsaved work, left for their owners',
+    `  27 in ${path.join('~', 'web', '.claude', 'worktrees')}/`,
+    `  ${path.join('~', 'cli', 'lead')}`,
+  ]);
+  // Two in one folder still read better by name.
+  assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3).slice(1, 3), ['  /x/a', '  /x/b']);
 });
 
 test('a side copy in the system temp folder is named from $TMPDIR', () => {
