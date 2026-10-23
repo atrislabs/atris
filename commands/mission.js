@@ -4814,11 +4814,12 @@ function startMission(args, options = {}) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
-  if (saved.yes_lock_parent && saved.yes_locks && saved.yes_locks.steps) {
-    // the lock record names the job it came from, before any command is held
+  if ((saved.yes_lock_parent || process.env.ATRIS_HANDOFF_YES_LOCK) && saved.yes_locks && saved.yes_locks.steps) {
+    // the lock record names the member and the job it came from, before any
+    // command is held, so a yes card can say who is asking
     try {
       require('../lib/yes-lock').writeYesLocks(path.join(require('../lib/state-home').atrisHome(), 'state'), saved.id,
-        { seal: saved.yes_locks.steps, parentMissionId: saved.yes_lock_parent });
+        { seal: saved.yes_locks.steps, parentMissionId: saved.yes_lock_parent || null, owner: saved.owner || null });
     } catch {}
   }
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
