@@ -531,7 +531,7 @@ test('over http: the team table and a steer go through the same token and json c
   fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: Builder\n---\n');
   const ran = [];
   const h = await startHandler({
-    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true}' }; } }),
+    makeBetDesk: (log, dir) => gmBet.createBetDesk({ workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}), readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }), readMissions: () => new Map([['m1', { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: new Date(NOW - 600000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] }]]), driverAlive: () => true, runCli: async (args) => { ran.push(args); return { code: 0, stdout: '{"ok":true,"action":"member_steered"}' }; } }),
   });
   try {
     assert.equal((await h.call('GET', '/bet/team', { token: 'nope' })).status, 403);
@@ -540,7 +540,7 @@ test('over http: the team table and a steer go through the same token and json c
     assert.equal((await h.call('POST', '/bet/steer', { token: 'nope', body: { member: 'builder', text: 'hi' } })).status, 403);
     const sent = await h.call('POST', '/bet/steer', { body: { member: 'builder', text: 'readme first' } });
     assert.deepEqual([sent.status, sent.json.ack], [200, 'sent to builder.']);
-    assert.deepEqual(ran[0], ['member', 'steer', 'builder', 'readme first', '--json']);
+    assert.deepEqual(ran[0], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: readme first']);
   } finally {
     await h.close();
   }

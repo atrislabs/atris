@@ -1497,12 +1497,12 @@ test('say something: on a yes or a finished job it steers that member', async ()
   const h = jobDesk(root, {
     'm-ask': { id: 'm-ask', owner: 'launcher', status: 'running', updated_at: new Date(NOW).toISOString(), human_asks: ['post the thread on x now?'] },
     'm-done': { id: 'm-done', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] },
-  }, { driverAlive: m => m.id === 'm-ask' });
+  }, { live: ['launcher'] });
   await h.d.settle();
   assert.equal(h.d.next().kind, 'yes');
-  // launcher is really running: it reaches them now
+  // launcher is really running: it reaches them now, through a steer that cannot start anyone
   assert.deepEqual(await h.d.say({ text: 'wait for tuesday' }), { ok: true, ack: 'sent to launcher.' });
-  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', 'wait for tuesday', '--json']);
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', '--no-ignite', '--json', '--', 'the owner says: wait for tuesday']);
   assert.equal(h.d.next().kind, 'done');
   // builder finished: starting them again takes a second tap
   assert.equal((await h.d.say({ text: 'add a short video too' })).reason, 'needs_confirm');
@@ -1633,6 +1633,22 @@ test('money: ideas never propose trades or moving money; the code, the writer, a
   assert.match(seen[0], /a trade, buying or selling stocks, shares, crypto, or any security, or moving money between accounts: fail it/);
 });
 
+test('send back: a stopped job whose process is still alive is never resent', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Write the getting started page');
+  const h = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'stopped', stop_reason: 'no progress', human_asks: [] } }, { driverAlive: () => true });
+  await h.d.settle();
+  assert.equal(h.cli.filter(a => a[1] === 'start').length, 0);
+  assert.notEqual(h.ledger()[0].mission_result, 'failed');
+  // and a row already marked failed is put back, whatever the status
+  ledgerRow(file, root, 'b2', { status: 'doing', mission_id: 'm2', owner: 'builder', mission_result: 'failed', mission_halted: true, bet: { ...goodBet({ title: 'Record the demo video' }), check_date: '2026-10-30' } });
+  const h2 = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'stopped', human_asks: [] }, m2: { id: 'm2', owner: 'builder', status: 'complete', human_asks: [] } }, { driverAlive: () => true });
+  await h2.d.settle();
+  assert.equal(h2.cli.filter(a => a[1] === 'start').length, 0);
+  assert.equal(h2.ledger().find(r => r.id === 'b2').mission_result, null);
+});
+
 test('free text: a question back is answered on the same card and saves nothing', async () => {
   const root = workspace();
   const seen = [];
@@ -1692,6 +1708,7 @@ test('free text: talking with one member is a thread too; a question back is ans
   const seen = [];
   const h = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(30), last_tick_at: NAGO(1), human_asks: [] } }, {
     driverAlive: () => true,
+    live: ['builder'],
     readSaid: async (opts) => { seen.push(opts); return opts.text.endsWith('?') ? { ok: true, kind: 'question', reply: 'builder is writing the try page and is about halfway.' } : { ok: true, kind: 'instruction', reply: '' }; },
   });
   const q = await h.d.talk({ member: 'builder', text: 'how is it going?' });
@@ -1780,18 +1797,20 @@ test('free text: the real reader is one quick subscription call on the roster mo
   assert.equal(bad.ok, false);
 });
 
-test('steer from the phone: a member really running is steered; one that is not waits for a second tap, or keeps it as a note', async () => {
+test('steer from the phone: it can only reach a live run; one that is not running takes a second tap, or keeps it as a note', async () => {
   const root = workspace();
-  const NAGO = m => new Date(NOW - m * 60000).toISOString();
-  const h = jobDesk(root, { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(30), last_tick_at: NAGO(1), human_asks: [] } }, { driverAlive: m => m.id === 'm1' });
+  const h = jobDesk(root, {}, { live: ['builder'] });
   assert.deepEqual(await h.d.steer({ member: 'builder', text: 'readme first' }), { ok: true, ack: 'sent to builder.' });
-  // launcher is not running: one tap starts nothing
-  const cliBefore = h.cli.length;
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: readme first']);
+  // launcher is not running: the steer that cannot start anyone finds nothing, and the page asks
   assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this' });
-  assert.equal(h.cli.length, cliBefore, 'nothing ran');
-  // the second tap starts them
+  assert.ok(h.cli.every(a => !a.includes('--detach')), 'nothing was started');
+  // the second tap starts them in the background, and says so from the start result
   assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread', confirm: true }), { ok: true, ack: 'launcher is starting on it.' });
-  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', 'draft the thread', '--json']);
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', '--detach', '--json', '--', 'the owner says: draft the thread']);
+  // a start that did not happen says so
+  const failed = jobDesk(workspace(), {}, { detach: { code: 1, stdout: JSON.stringify({ ok: false, action: 'member_run_not_started' }) } });
+  assert.deepEqual(await failed.d.steer({ member: 'launcher', text: 'go', confirm: true }), { ok: false, reason: 'not_started', message: 'launcher did not start. try again in a minute.' });
   // or it is kept as a note for their next run
   const noted = await h.d.steer({ member: 'researcher', text: 'look at pricing pages first', note: true });
   assert.deepEqual(noted, { ok: true, ack: "saved for researcher's next run." });
@@ -1805,6 +1824,28 @@ test('steer from the phone: a member really running is steered; one that is not 
   assert.equal(d2.d.next().kind, 'done');
   assert.equal((await d2.d.say({ text: 'add a short video' })).reason, 'needs_confirm');
   assert.equal((await d2.d.say({ text: 'add a short video', confirm: true })).ack, 'builder is starting on it.');
+});
+
+test('steer from the phone: owner words are never options, even when they start with a dash', async () => {
+  const h = jobDesk(workspace(), {}, { live: ['builder'] });
+  await h.d.steer({ member: 'builder', text: '--verify=printf example' });
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: --verify=printf example']);
+  await h.d.steer({ member: 'launcher', text: '-rf everything', confirm: true });
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'launcher', '--detach', '--json', '--', 'the owner says: -rf everything']);
+});
+
+test('free text: a reply that comes back after the card changed is dropped, and the card is left alone', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const h = await filled(workspace(), { readSaid: async () => { await gate; return { ok: true, kind: 'instruction', reply: '' }; } });
+  const idea = h.d.next();
+  const pending = h.d.say({ text: 'make it smaller' });
+  // the owner taps do it while the read is still out
+  assert.equal((await h.d.doIt()).ok, true);
+  release();
+  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done' });
+  const row = h.ledger().find(r => r.id === idea.id);
+  assert.equal(row.status, 'doing', 'the started job is still tracked');
 });
 
 test('send back: a job whose process is still alive is never resent, even when its times look old', async () => {
@@ -2138,11 +2179,11 @@ test('team table: a talk card steers a member through atris member steer, capped
   const h = jobDesk(root, {});
   const out = await h.d.steer({ member: 'builder', text: 'do the readme first', confirm: true });
   assert.deepEqual(out, { ok: true, ack: 'builder is starting on it.' });
-  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', 'do the readme first', '--json']);
+  assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', '--detach', '--json', '--', 'the owner says: do the readme first']);
   assert.equal((await h.d.steer({ member: 'nobody', text: 'hi' })).reason, 'gone');
   assert.equal((await h.d.steer({ member: 'builder', text: '   ' })).reason, 'empty');
   assert.equal((await h.d.steer({ member: 'builder', text: 'x'.repeat(281) })).reason, 'too_long');
-  assert.ok(h.logs.some(l => l.choice === 'steer' && l.member === 'builder'));
+  assert.ok(h.logs.some(l => /^steer/.test(l.choice) && l.member === 'builder' && !/do the readme first/.test(l.command)), 'logged by length, never by its words');
 });
 
 function jobDesk(root, missions, over = {}) {
@@ -2167,6 +2208,12 @@ function jobDesk(root, missions, over = {}) {
     readSaid: over.readSaid || READ_PLAIN,
     runCli: over.runCli || (async (args) => {
       cli.push(args);
+      // member steer: --no-ignite only reaches a live run; --detach starts one in the background
+      if (args[0] === 'member' && args[1] === 'steer') {
+        const name = args[2];
+        if (args.includes('--no-ignite')) return (over.live || []).includes(name) ? { code: 0, stdout: JSON.stringify({ ok: true, action: 'member_steered', member: name }) } : { code: 3, stdout: JSON.stringify({ ok: false, action: 'member_not_running', member: name }) };
+        if (args.includes('--detach')) return over.detach || { code: 0, stdout: JSON.stringify({ ok: true, action: 'member_run_detached', member: name, pid: 4242 }) };
+      }
       if (args[0] === 'engine' && args[1] === 'ask') {
         const review = over.review || { verdict: 'pass', reason: 'the page is there and the clip plays.' };
         if (review.code) return { code: review.code, stdout: '', stderr: 'codex is out of credits' };
