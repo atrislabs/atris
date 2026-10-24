@@ -508,3 +508,24 @@ test('browser: Esc on an armed do it steps back to do it at once, and the next t
   assert.deepEqual([out.esc, out.label], [[], 'do it'], show);
   assert.deepEqual([out.again, out.did], [['tap again to start'], []], show);
 });
+
+test('browser: send is dim while its box is empty and lights up with the first word, also for words put back after a failed send', { skip, timeout: 90000 }, async () => {
+  let fail = true;
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => { if (fail) { fail = false; return { ok: false, reason: 'steer_failed', message: 'it did not reach them. try again in a minute.' }; } return { card }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const dim = () => p.run("Number(getComputedStyle(document.querySelector('#bet .field .send')).opacity)");
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    const empty = await dim();
+    await p.type('take the readme first');
+    const typed = await dim();
+    await press(send, 'Enter', 13, '\r');
+    await p.until(`${titled(CARDS.b1.title)} && Boolean(document.querySelector('#bet .field input')) && document.querySelector('#bet .field input').value === 'take the readme first'`, 'the words back', 8000);
+    await wait(200);
+    return { empty, typed, back: await dim() };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.ok(out.empty < 0.6, show);
+  assert.equal(out.typed, 1, show);
+  assert.equal(out.back, 1, show);
+});
