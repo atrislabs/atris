@@ -966,3 +966,53 @@ test('browser: a big orb tap the Mac answers with nothing to show frees its id, 
   assert.deepEqual([out.after.has_card, out.after.title, out.did], [true, CARDS.b1.title, ['orb', 'orb']], show);
   assert.ok(out.taps.length === 2 && out.taps[1] !== out.taps[0], show);
 });
+
+// the cards the owner opens from the footer: they sit over the Mac's card and
+// never stand for what a big orb tap made
+const onKind = kind => `document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy') && document.getElementById('bet').getAttribute('data-kind') === ${JSON.stringify(kind)} && document.getElementById('bet').classList.contains('up')`;
+
+test('browser: a big orb tap whose idea never reached the page keeps its id through the team, the job deck, and a talk card, so the next tap shows that idea', { skip, timeout: 180000 }, async () => {
+  const routes = {
+    // the team from the footer, then closed back to the big orb
+    team: async (p, send) => { await p.tap('#working'); await p.until(onKind('team'), 'the team', 8000); await tapText(p, send, 'close'); },
+    // the job deck from the footer, back to the team, then closed
+    deck: async (p, send) => { await p.tap('#needs'); await p.until(onKind('deck'), 'the deck', 8000); await tapText(p, send, 'back to the team'); await p.until(onKind('team'), 'the team', 8000); await tapText(p, send, 'close'); },
+    // the team, a member's talk card, back to the team, then closed
+    talk: async (p, send) => { await p.tap('#working'); await p.until(onKind('team'), 'the team', 8000); await tapText(p, send, 'navigator'); await p.until(onKind('member'), 'the talk card', 8000); await tapText(p, send, 'back to the team'); await p.until(onKind('team'), 'the team', 8000); await tapText(p, send, 'close'); },
+  };
+  const runs = {};
+  for (const [name, route] of Object.entries(routes)) {
+    const did = [];
+    let ideas = 0;
+    // the Mac's own card under the team stays the idea the first tap made
+    const desk = trace.cardDesk(null, async (action, { card }) => {
+      did.push(action);
+      if (action === 'orb') { ideas += 1; return { card: [CARDS.b1, CARDS.b2][ideas - 1] || CARDS.b2 }; }
+      if (action === 'open:team') return { card: teamOf(1) };
+      if (action === 'open:deck') return { card: deckCard(1) };
+      if (action === 'member') return { card: gmCard.member({ id: 'member~1', name: 'navigator', sentence: 'waiting for your yes: plan the pricing page.' }) };
+      if (action === 'back') return { card: card && card.kind === 'team' ? CARDS.b1 : teamOf(2) };
+      return { card };
+    }, { needs: () => 1 });
+    // the first tap reaches the Mac, which makes its idea, and the answer never comes back
+    const hang = "if (n === 1) { real.apply(this, arguments); return new Promise(function () {}); }";
+    runs[name] = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await send('Page.addScriptToEvaluateOnNewDocument', { source: ORB_TAPS(hang) });
+      await quickClock(p, send, "document.getElementById('line').textContent === 'tap to think'");
+      await p.tap('#orb');
+      await p.until("document.getElementById('line').textContent.indexOf('still working') >= 0 && !document.body.hasAttribute('data-busy')", 'the page stops waiting', 8000);
+      await route(p, send);
+      await p.until(onBigOrb, 'the big orb', 8000).catch(() => {});
+      await p.tap('#orb');
+      await p.until(atRestOnCard, 'a card', 10000).catch(() => {});
+      return { taps: await p.run('window.__orbTaps'), orbs: did.filter(a => a === 'orb').length, after: await look(p) };
+    }, trace.PHONE, { firstCard: false });
+  }
+  const show = JSON.stringify(runs, null, 1);
+  for (const name of Object.keys(routes)) {
+    const r = runs[name];
+    // the owner sees the idea the first tap made, and the Mac made no other
+    assert.deepEqual([name, r.after.has_card, r.after.title, r.orbs], [name, true, CARDS.b1.title, 1], show);
+    assert.ok(r.taps.length === 2 && r.taps[0] && r.taps[1] === r.taps[0], `${name}: ${show}`);
+  }
+});
