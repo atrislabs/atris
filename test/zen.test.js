@@ -96,6 +96,17 @@ test('side copies that share a folder are one line with the count', () => {
   assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3).slice(1, 3), ['  /x/a', '  /x/b']);
 });
 
+test('a side copy made inside another one is named from it, right under it', () => {
+  const { sideCopyLines } = require('../lib/zen');
+  const outer = '/w/agent-worktrees/youtube-lead-make-captioned-20261013';
+  const inner = path.join(outer, '.agent-worktrees', 'youtube-lead-score-gate-20261021');
+  assert.deepEqual(sideCopyLines([inner, '/x/other', outer], 3).slice(1, 4), [
+    '  /x/other',
+    `  ${outer}`,
+    `    inside it: ${path.join('.agent-worktrees', 'youtube-lead-score-gate-20261021')}`,
+  ]);
+});
+
 test('a side copy in the system temp folder is named from $TMPDIR', () => {
   const { sideCopyLines } = require('../lib/zen');
   const fake = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zen-tmpdir-'));
