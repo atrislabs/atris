@@ -86,34 +86,58 @@ async function quickClock(p, send) {
   await p.until("document.readyState === 'complete' && Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')", 'the page again', 8000);
 }
 
-test('browser: a tap whose answer never comes gives up, and the card comes back ready to try again', { skip, timeout: 90000 }, async () => {
+test('browser: a do it whose two steps on the Mac outlast the give-up is never called a failure, a retry meanwhile does not start it twice, and the result shows when it is done', { skip, timeout: 90000 }, async () => {
   const did = [];
-  let answer = false;
+  // confirming do it on the Mac: two steps, each slower than the page waits for both
   const desk = trace.cardDesk(CARDS.b1, async (action) => {
     did.push(action);
-    if (!answer) await new Promise(() => {});
-    return { card: CARDS.b2 };
+    await wait(1600);
+    await wait(1600);
+    return { card: CARDS.b2, ack: 'builder has it and is starting now.' };
   });
   const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    // the page's give-up of a minute and a half comes after about a second here
     await quickClock(p, send);
-    await tapText(p, send, 'not now');
-    await wait(400);
-    const waiting = await look(p);
-    await p.until(`document.querySelector('#bet h1') && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)} && !document.body.hasAttribute('data-busy') && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back', 8000).catch(() => {});
-    const gaveUp = await look(p);
-    answer = true;
-    await tapText(p, send, 'not now');
-    await p.until(`document.querySelector('#bet h1') && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b2.title)}`, 'the next card', 8000).catch(() => {});
-    return { waiting, gaveUp, after: await look(p), did };
+    const t0 = Date.now();
+    await tapText(p, send, 'do it');
+    await wait(450);
+    await tapText(p, send, 'tap again to start');
+    await p.until(`${titled(CARDS.b1.title)} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back', 8000);
+    const gaveUp = { at_ms: Date.now() - t0, ...(await look(p)) };
+    // the owner tries again while the Mac is still at it
+    await tapText(p, send, 'do it');
+    await wait(450);
+    await tapText(p, send, 'tap again to start');
+    await p.until(titled(CARDS.b2.title), 'the result', 10000).catch(() => {});
+    return { gaveUp, done_ms: Date.now() - t0, after: await look(p), did };
   });
   const show = JSON.stringify(out, null, 1);
-  // while it waits the page is busy, and then it is not
-  assert.equal(out.waiting.busy, true, show);
-  assert.deepEqual([out.gaveUp.busy, out.gaveUp.has_card, out.gaveUp.title], [false, true, CARDS.b1.title], show);
-  assert.equal(out.gaveUp.note, 'that did not reach the mac. try again.', show);
-  // the try again goes through
+  // the page let go before the Mac was done, and said what is true
+  assert.ok(out.gaveUp.at_ms < 3200, show);
+  assert.equal(out.gaveUp.note, 'the mac is still working on it. you will see the result here once it is done.', show);
+  assert.doesNotMatch(JSON.stringify(out.gaveUp), /did not (reach|go through)/, show);
+  assert.equal(out.gaveUp.busy, false, show);
+  // one start on the Mac, however many taps, and its result on screen
+  assert.deepEqual(out.did, ['do'], show);
   assert.equal(out.after.title, CARDS.b2.title, show);
-  assert.deepEqual(out.did, ['skip', 'skip'], show);
+});
+
+test('browser: a slow do it with no retry still shows its result by itself once the Mac is done', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); await wait(1600); await wait(1600); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await quickClock(p, send);
+    await tapText(p, send, 'do it');
+    await wait(450);
+    await tapText(p, send, 'tap again to start');
+    await p.until(`${titled(CARDS.b1.title)} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back', 8000);
+    const gaveUp = await look(p);
+    await p.until(titled(CARDS.b2.title), 'the result', 8000).catch(() => {});
+    return { gaveUp, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.match(out.gaveUp.note, /still working on it/, show);
+  assert.deepEqual([out.after.title, out.did], [CARDS.b2.title, ['do']], show);
 });
 
 // the card on screen reads this title, at rest
