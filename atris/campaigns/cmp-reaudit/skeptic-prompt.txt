@@ -1,0 +1,10 @@
+Another reviewer claims this automated test locks in a bug as correct behavior. Your job is to try to prove that claim wrong. You did not write the test or the claim.
+
+Test file: {{FILE}}
+Code it checks: {{TARGET}}{{FN}}
+The claim: {{NOTE}}
+
+Read the test, the code, the code's comments, and its callers (grep for them). Read only; do not edit or run anything. A claim is confirmed only if the asserted result is something a user or caller would clearly not want, and nothing in the code's comments, names, callers, or other tests shows it is intended. If it is a deliberate choice, a harmless edge nobody reaches, or a matter of taste, refute it.
+
+Answer with exactly one line of JSON and nothing else:
+{"verdict":"confirmed|refuted","reason":"one plain sentence with the evidence"}

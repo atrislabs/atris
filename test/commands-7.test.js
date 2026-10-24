@@ -42,7 +42,9 @@ test('task serve exposes a local task factory API', async () => {
     });
     const ready = await waitForOutput(child, /task board: (http:\/\/127\.0\.0\.1:\d+)\/\?t=([A-Za-z0-9_-]+)/);
     const base = ready.match[1];
-    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { 'x-atris-token': ready.match[2], ...options.headers } });
+    // a fresh connection per request: the server drops idle ones after 5s, and slow CLI steps
+    // between requests let fetch reuse a socket that is already closing (ECONNRESET)
+    const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { connection: 'close', 'x-atris-token': ready.match[2], ...options.headers } });
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
