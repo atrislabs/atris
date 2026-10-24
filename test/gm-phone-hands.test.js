@@ -712,3 +712,24 @@ test('browser: the big orb\'s keyboard ring sits on the sphere, not around the s
   // 8% in from each side: where the dots' edge is
   assert.ok(Math.abs(out.top - 0.08 * out.size) < 1 && Math.abs(out.left - 0.08 * out.size) < 1, show);
 });
+
+test('browser: the small orb\'s keyboard ring reads as a real 1px ring, not a hairline shrunk with the orb', { skip, timeout: 90000 }, async () => {
+  const fs = require('node:fs');
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    let tabs = 0;
+    while ((await look(p)).active !== 'DIV#lava' && tabs++ < 12) await press(send, 'Tab', 9);
+    await wait(200);
+    if (process.env.GM_HANDS_SHOTS) {
+      const r = await p.rect('#lava');
+      const { data } = await send('Page.captureScreenshot', { format: 'png', clip: { x: r.x - 20, y: Math.max(0, r.y - 20), width: r.w + 40, height: r.h + 40, scale: 4 } });
+      fs.writeFileSync(process.env.GM_HANDS_SHOTS, Buffer.from(data, 'base64'));
+    }
+    return p.run("(function () { var l = document.getElementById('lava'), s = getComputedStyle(l), m = /scale\\(([\\d.]+)\\)/.exec(l.style.transform); var k = m ? Number(m[1]) : 1; return { focused: document.activeElement === l, scale: k, width: parseFloat(s.outlineWidth) * k, gap: parseFloat(s.outlineOffset) * k, style: s.outlineStyle }; })()");
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.focused, true, show);
+  assert.ok(out.scale < 0.5, show);
+  // as seen on screen: a 1px ring 4px out from the orb
+  assert.ok(Math.abs(out.width - 1) < 0.1 && Math.abs(out.gap - 4) < 0.3, show);
+});
