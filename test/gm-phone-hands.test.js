@@ -840,3 +840,114 @@ test('browser: a big orb tap tried again while the first one\'s answer is lost s
   // the second tap carried the first tap's id, so the Mac answered it with the first tap's card
   assert.ok(out.taps.length === 2 && out.taps[0] && out.taps[1] === out.taps[0], show);
 });
+
+// ---- the big orb's tap id lives until a card lands ----------------------------------
+
+// every big orb tap, recorded with the id it carries;
+// `first` is what happens to the first tap after it reaches the Mac (or not)
+const ORB_TAPS = first => `(function () {
+  var real = window.fetch;
+  window.__orbTaps = [];
+  window.fetch = function (url, opts) {
+    var b = null;
+    try { b = opts && opts.method === 'POST' && opts.body ? JSON.parse(opts.body) : null; } catch (e) { b = null; }
+    if (String(url).indexOf('/act') >= 0 && b && b.orb) {
+      window.__orbTaps.push(b.send || null);
+      var n = window.__orbTaps.length;
+      ${first}
+    }
+    return real.apply(this, arguments);
+  };
+})()`;
+const orbDesk = (did) => trace.cardDesk(null, async (action) => { did.push(action); return { card: [CARDS.b1, CARDS.b2][did.length - 1] || CARDS.b2 }; });
+const atRestOnCard = "document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')";
+const onBigOrb = "!document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy') && document.getElementById('line').textContent === 'tap to think'";
+
+test('browser: a big orb tap whose answer is cut off mid-read keeps its id, so the retry shows the card the Mac made', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  // the first tap reaches the Mac; its answer starts and the link drops mid-read
+  const cut = "if (n === 1) return real.apply(this, arguments).then(function (r) { var body = new ReadableStream({ start: function (c) { c.enqueue(new TextEncoder().encode('{\"ok\":true,')); c.error(new TypeError('the link dropped')); } }); return new Response(body, { status: r.status, headers: { 'content-type': 'application/json' } }); });";
+  const out = await trace.onPhone(orbDesk(did), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: ORB_TAPS(cut) });
+    await quickClock(p, send, "document.getElementById('line').textContent === 'tap to think'");
+    await p.tap('#orb');
+    await p.until("document.getElementById('line').textContent.indexOf('did not go through') >= 0 && !document.body.hasAttribute('data-busy')", 'the line why', 8000).catch(() => {});
+    await p.tap('#orb');
+    await p.until(atRestOnCard, 'a card', 10000).catch(() => {});
+    return { taps: await p.run('window.__orbTaps'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.after.has_card, out.after.title, out.did], [true, CARDS.b1.title, ['orb']], show);
+  assert.ok(out.taps.length === 2 && out.taps[0] && out.taps[1] === out.taps[0], show);
+});
+
+test('browser: a big orb tap\'s late answer that lands while its retry is out never frees the id, so the next tap still shows the first card', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  // the first tap reaches the Mac and its answer is held; the retry never reaches it
+  const held = "if (n === 1) { var got = real.apply(this, arguments); return new Promise(function (resolve, reject) { window.__release = function () { got.then(resolve, reject); }; }); } if (n === 2) return new Promise(function () {});";
+  const out = await trace.onPhone(orbDesk(did), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: ORB_TAPS(held) });
+    await quickClock(p, send, "document.getElementById('line').textContent === 'tap to think'");
+    const gaveUp = "document.getElementById('line').textContent.indexOf('still working') >= 0 && !document.body.hasAttribute('data-busy')";
+    await p.tap('#orb');
+    await p.until(gaveUp, 'the page stops waiting', 8000).catch(() => {});
+    await p.tap('#orb');
+    await p.until("document.body.hasAttribute('data-busy')", 'the retry out', 3000).catch(() => {});
+    // the first answer comes while the retry is still out
+    await p.run('window.__release()');
+    await wait(100);
+    await p.until(gaveUp, 'the page stops waiting on the retry', 8000).catch(() => {});
+    await p.tap('#orb');
+    await p.until(atRestOnCard, 'a card', 10000).catch(() => {});
+    return { taps: await p.run('window.__orbTaps'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.after.has_card, out.after.title, out.did], [true, CARDS.b1.title, ['orb']], show);
+  assert.ok(out.taps.length === 3 && out.taps[0] && out.taps[1] === out.taps[0] && out.taps[2] === out.taps[0], show);
+});
+
+test('browser: a big orb tap whose card a look brought in frees its id, so the next real tap brings the next card', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const { phonePage } = require('../lib/gm-phone-page');
+  // the page's first look gets nothing; the first tap reaches the Mac and its answer hangs
+  const hang = "if (n === 1) { real.apply(this, arguments); return new Promise(function () {}); }";
+  const firstLookFails = `(function () { var real = window.fetch, looks = 0; window.fetch = function (url, opts) { if (String(url).indexOf('/card') >= 0 && !(opts && opts.method === 'POST') && looks++ === 0) return Promise.reject(new TypeError('the Mac is away')); return real.apply(this, arguments); }; })()`;
+  const out = await trace.onPhone(orbDesk(did), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: ORB_TAPS(hang) });
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: firstLookFails });
+    await quickClock(p, send, "!document.body.classList.contains('opening') && document.getElementById('line').textContent === 'tap to think'");
+    await p.tap('#orb');
+    // a look brings the card the first tap made, then the owner goes home with the small orb
+    await p.until(`${atRestOnCard} && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)}`, 'the card from a look', 12000).catch(() => {});
+    const fromLook = await look(p);
+    await p.tap('#lava');
+    await p.until(onBigOrb, 'the big orb', 8000).catch(() => {});
+    await p.tap('#orb');
+    await p.until(`${atRestOnCard} && document.querySelector('#bet h1').textContent !== ${JSON.stringify(CARDS.b1.title)}`, 'the next card', 10000).catch(() => {});
+    return { fromLook, taps: await p.run('window.__orbTaps'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false, page: nonce => phonePage(nonce, null) });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.fromLook.title, CARDS.b1.title, show);
+  assert.deepEqual([out.after.has_card, out.after.title, out.did], [true, CARDS.b2.title, ['orb', 'orb']], show);
+  assert.ok(out.taps.length === 2 && out.taps[0] && out.taps[1] !== out.taps[0], show);
+});
+
+test('browser: a big orb tap the Mac answers with nothing to show frees its id, so the next tap brings the card that is ready by then', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  // the first tap: the Mac has nothing to show yet; by the second, a card is ready
+  const desk = trace.cardDesk(null, async (action) => { did.push(action); return { card: did.length === 1 ? null : CARDS.b1 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: ORB_TAPS('') });
+    await send('Page.reload', {});
+    await p.until(`document.readyState === 'complete' && ${onBigOrb}`, 'the big orb', 8000);
+    await p.tap('#orb');
+    await wait(400);
+    await p.until(onBigOrb, 'the big orb again', 8000).catch(() => {});
+    await p.tap('#orb');
+    await p.until(atRestOnCard, 'the card', 10000).catch(() => {});
+    return { taps: await p.run('window.__orbTaps'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.after.has_card, out.after.title, out.did], [true, CARDS.b1.title, ['orb', 'orb']], show);
+  assert.ok(out.taps.length === 2 && out.taps[1] !== out.taps[0], show);
+});
