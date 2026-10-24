@@ -1400,17 +1400,22 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const out = await trace.deckTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
-  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to navigator'], show);
+  // previous and next sit at the top beside the count, the answers and the way back below
+  assert.deepEqual(out.first.buttons, ['previous', 'next', 'yes', 'no', 'not now', 'the whole team', 'talk to navigator'], show);
   assert.deepEqual(out.counts, ['2 of 3', '3 of 3', '1 of 3', '3 of 3'], show);
+  // on every card, with or without a yes, previous and next are in the same spot, so a thumb never chases them
+  for (const at of out.pager) assert.deepEqual(at, out.pager[0], `previous and next stay put: ${JSON.stringify(out.pager)}`);
+  assert.equal(out.pager[0][0].y, out.pager[0][1].y, 'previous and next share one line');
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
   assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
   assert.equal(out.scrolled, '1 of 3', 'an up and down swipe does not flip');
   assert.equal(out.typing_arrow, '1 of 3', 'the arrows type while the box has the cursor');
   // one tap arms only this card's yes; a flip draws a fresh card, so nothing is left armed
-  assert.equal(out.armed_a[0], 'tap again to say yes', show);
-  assert.equal(out.fresh_b[0], 'yes', show);
-  assert.equal(out.fresh_a[0], 'yes', show);
+  const yesOf = buttons => buttons.find(t => t === 'yes' || t === 'tap again to say yes');
+  assert.equal(yesOf(out.armed_a), 'tap again to say yes', show);
+  assert.equal(yesOf(out.fresh_b), 'yes', show);
+  assert.equal(yesOf(out.fresh_a), 'yes', show);
   // the yes sends the job and the hash its card binds, once
   assert.deepEqual(out.yes_sent, [{ job: 'm-nav', key: 'm-nav:step-2:abc', hash: 'abc' }], show);
   assert.equal(out.yes_line, 'navigator: got your yes');

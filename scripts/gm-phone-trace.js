@@ -1072,11 +1072,15 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await settle();
     const freshA = await look(p);
     const counts = [];
+    // where previous and next sit on the page on every card, so a thumb on next never chases it
+    const pagerAt = () => p.run("(function () { return ['prev', 'next'].map(function (id) { var n = document.querySelector('#bet [data-option=\"' + id + '\"]'); if (!n) return null; var r = n.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round((r.top + window.scrollY) * 10) / 10 }; }); })()");
+    const pager = [await pagerAt()];
     let moved = 0;
     for (const k of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
       await press(k);
       await settle();
       counts.push(await count());
+      pager.push(await pagerAt());
       const s = await spot();
       moved = Math.max(moved, Math.abs(s.x - firstAt.x), Math.abs(s.y - firstAt.y));
     }
@@ -1115,6 +1119,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       fresh_b: freshB.buttons,
       fresh_a: freshA.buttons,
       counts,
+      pager,
       moved_px: Math.round(moved * 10) / 10,
       ghost_seen: await p.run('window.__ghost'),
       swiped,
