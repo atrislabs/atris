@@ -121,11 +121,24 @@ test('over http: the page goes over the link packed when the phone takes it, abo
   }
 });
 
-test('browser: on a weak wifi the page comes over packed, under 45KB for its 107KB', browser, async () => {
-  const out = await health.firstPaintTrace({ chromePath: CHROME, latency: 60, kbps: 1000 });
-  assert.ok(out.page_bytes_sent < 45000, JSON.stringify(out));
-  assert.ok(out.page_bytes > 90000, JSON.stringify(out));
-  assert.deepEqual(out.console, []);
+test('browser: on a weak wifi the page comes over packed, under 45KB for its 107KB, and stays dark until it can show the dots or the card whole', browser, async () => {
+  for (const card of [trace.CARDS.b1, null]) {
+    const out = await health.firstPaintTrace({ chromePath: CHROME, card, latency: 60, kbps: 1000 });
+    const show = JSON.stringify(out);
+    assert.ok(out.page_bytes_sent < 45000, show);
+    assert.ok(out.page_bytes > 90000, show);
+    assert.equal(out.words_before_script, 0, show);
+    assert.equal(out.first_frame.card, Boolean(card), show);
+    if (!card) assert.equal(out.first_frame.dots, true, show);
+    assert.deepEqual(out.console, [], show);
+  }
+});
+
+test('page: nothing on the screen shows until the page\'s script has run, and the script says so first thing', () => {
+  const html = phonePage('NONCE');
+  assert.match(html, /body:not\(\.on\) \.screen, body:not\(\.on\) nav \{ visibility: hidden; \}/);
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.ok(script.indexOf("document.body.classList.add('on');") < script.indexOf('function el('), 'before any of its work');
 });
 
 // ---- the home screen ------------------------------------------------------------------
