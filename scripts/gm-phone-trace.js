@@ -1015,11 +1015,17 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await esc(send);
     await p.until(titled('the team'), 'the team again', 8000);
     const back = await where();
+    // the footer's team link from a talk card: the same place as its way back
+    await p.tap('#bet tbody tr:nth-child(2) td.role');
+    await p.until(titled('builder'), 'the talk card again', 8000);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team from the footer', 8000);
+    const footerTeam = await where();
     await esc(send);
     await p.until(titled(CARDS.b1.title), 'the first card again', 8000);
     const closed = await where();
     const footerAfter = await p.run(FOOTER);
-    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed, footer: { team: footer, card: footerAfter } };
+    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed, footerTeam, footer: { team: footer, card: footerAfter } };
   }, viewport);
 }
 

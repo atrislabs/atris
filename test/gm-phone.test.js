@@ -1389,6 +1389,9 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     // on a laptop a move between a wide table card and a plain card still goes through the sphere
     const turn = at !== '1280x800';
     for (const m of [out.talk.moved, out.back.moved, out.closed.moved]) assert.equal(m.plan === 'hold 150, turn 420', turn, `${at}: ${m.plan}`);
+    // the footer's team link from a talk card goes to the same place the same way
+    assert.equal(out.footerTeam.kind, 'team', at);
+    assert.equal(out.footerTeam.moved.plan === 'turn 420', turn, `${at}: ${out.footerTeam.moved.plan}`);
   }
 });
 
