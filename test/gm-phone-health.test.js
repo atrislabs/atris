@@ -249,3 +249,25 @@ test('browser: zoom the big orb to 200% and back and the sphere is redrawn sharp
     assert.deepEqual(out.console, []);
   }
 });
+
+// ---- the console ----------------------------------------------------------------------
+
+test('walk: a stage fails on any error, warning, or uncaught error in the console; the Mac refusing a stale tap is not one', () => {
+  const walk = require('../scripts/orb-walk');
+  const heard = [
+    { method: 'Runtime.exceptionThrown', params: { exceptionDetails: { text: 'Uncaught', exception: { description: 'TypeError: b is null' } } } },
+    { method: 'Runtime.consoleAPICalled', params: { type: 'warning', args: [{ type: 'string', value: 'slow frame' }] } },
+    { method: 'Runtime.consoleAPICalled', params: { type: 'log', args: [{ type: 'string', value: 'just a note' }] } },
+    { method: 'Log.entryAdded', params: { entry: { level: 'error', text: 'Refused to load the image', url: 'http://127.0.0.1:1/?t=x' } } },
+    { method: 'Log.entryAdded', params: { entry: { level: 'verbose', text: 'a violation', url: '' } } },
+    { method: 'Log.entryAdded', params: { entry: { level: 'error', text: 'Failed to load resource: the server responded with a status of 409 (Conflict)', url: 'http://127.0.0.1:1/act' } } },
+  ];
+  const lines = heard.map(health.consoleLine).filter(Boolean);
+  assert.deepEqual(lines.map(l => l.kind), ['uncaught', 'warning', 'error', 'error']);
+  assert.equal(lines[2].url, 'http://127.0.0.1:1/', 'the link key never reaches a report');
+  const fails = walk.consoleCheck(lines);
+  assert.equal(fails.ok, false);
+  assert.match(fails.why, /TypeError: b is null/);
+  assert.equal(walk.consoleCheck(lines.slice(3)).ok, true, 'a refusal alone passes');
+  assert.equal(walk.consoleCheck([]).ok, true);
+});

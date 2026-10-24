@@ -84,6 +84,15 @@ function cardWords(card) {
 
 const check = (name, ok, why = '') => ({ name, ok: Boolean(ok), why: ok ? '' : why });
 
+// What the page put in the console during a stage (lines from
+// scripts/gm-phone-health.js consoleLine): any error, warning, or uncaught
+// error fails it. A 409 from /act is the Mac refusing a stale tap on
+// purpose, which the page shows as a line on the card, so it is not one.
+function consoleCheck(lines) {
+  const own = (lines || []).filter(l => !(l.kind === 'error' && /status of 409/.test(l.text) && /\/act$/.test(l.url || '')));
+  return check('nothing in the console', own.length === 0, own.slice(0, 2).map(l => `${l.kind}: ${String(l.text).slice(0, 120)}`).join('; '));
+}
+
 // What a tap on this option or a send in this box would post names the card.
 function namesCard(post, id) {
   if (!post || !post.body) return false;
@@ -980,6 +989,9 @@ async function walkBrowser(url, { chromePath, launch }) {
   const stages = [];
   const chrome = await launch(chromePath);
   const { send } = chrome;
+  // every console line chrome reports, so each stage can fail on its own
+  const said = [];
+  if (send.on) { const { consoleLine } = require('./gm-phone-health'); send.on((m) => { const line = consoleLine(m); if (line) said.push(line); }); }
   const run = async (expr) => {
     const out = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
     if (out.exceptionDetails) throw new Error(`the page threw: ${out.exceptionDetails.exception ? out.exceptionDetails.exception.description : out.exceptionDetails.text}`);
@@ -1016,12 +1028,14 @@ async function walkBrowser(url, { chromePath, launch }) {
   async function stage(name, fn, ask = ['next', 'plain']) {
     const st = { name, card: null, extra: [], ask, did: null, skipped: false };
     let mark = 0;
+    const heardAt = said.length;
     try {
       mark = (await run('window.__walk.posts.length')) || 0;
       await fn(st);
     } catch (err) {
       st.extra.push(check('the step worked', false, String((err && err.message) || err)));
     }
+    if (send.on) st.extra.push(consoleCheck(said.slice(heardAt)));
     try {
       const posts = (await postsSince(mark)).filter(p => !p.home);
       const unnamed = posts.filter(p => !(p.body && p.onCard && (p.body.card_id === p.onCard || p.body.card === p.onCard)));
@@ -1056,6 +1070,7 @@ async function walkBrowser(url, { chromePath, launch }) {
   try {
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
     await send('Page.enable');
+    if (send.on) { await send('Runtime.enable'); await send('Log.enable'); }
     await send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER });
     await send('Page.navigate', { url });
     await until("document.readyState === 'complete'", 'the page', 10000);
@@ -1407,6 +1422,7 @@ async function main(argv = [], { env = process.env, stdout = process.stdout, std
 }
 
 module.exports = {
+  consoleCheck,
   CONTRACT,
   QUESTIONS,
   cardChecks,
