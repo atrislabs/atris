@@ -280,3 +280,24 @@ test('browser: back from the lock screen, the page looks at once and shows the c
     assert.equal(r.title, CARDS.b2.title, show);
   }
 });
+
+test('browser: a card the Mac changed never swaps in under a held finger; the press lands on the card it began on', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const at = await middle(p, "#bet [data-option='skip']");
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    desk.current = CARDS.b2;
+    // a look comes every five seconds; one passes while the finger is down
+    await wait(6200);
+    const held = await look(p);
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await p.until(titled(CARDS.b2.title), 'the Mac card', 8000).catch(() => {});
+    return { held, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.held.title, CARDS.b1.title, show);
+  // the release is on the old card, so the Mac refuses it and shows its own
+  assert.equal(out.after.title, CARDS.b2.title, show);
+  assert.deepEqual(out.did, [], show);
+});
