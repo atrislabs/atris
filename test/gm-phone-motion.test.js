@@ -75,3 +75,21 @@ test('browser: on a phone six times slower the sphere re-forms in about the same
   // before; now the same within a quarter
   assert.ok(slow.reform_clock_ms <= 1.25 * fast.reform_clock_ms, both);
 });
+
+test('browser: the big orb sets its fill color once a brightness level, not once a dot, and still draws every dot', { skip, timeout: 90000 }, async () => {
+  const { onPhone, cardDesk } = require('../scripts/gm-phone-trace');
+  // every fill color set and every dot drawn, counted from before the page runs
+  const COUNT = "(function () { var P = CanvasRenderingContext2D.prototype, d = Object.getOwnPropertyDescriptor(P, 'fillStyle'), arc = P.arc; window.__draw = { styles: 0, arcs: 0 }; Object.defineProperty(P, 'fillStyle', { get: d.get, set: function (v) { window.__draw.styles += 1; d.set.call(this, v); }, configurable: true }); P.arc = function () { window.__draw.arcs += 1; return arc.apply(this, arguments); }; })();";
+  const out = await onPhone(cardDesk(null, async () => ({ card: null })), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: COUNT });
+    await send('Page.reload');
+    await p.until("document.readyState === 'complete' && document.getElementById('line').textContent === 'tap to think'", 'the big orb');
+    await new Promise(r => setTimeout(r, 600));
+    return p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, s0 = window.__draw.styles, a0 = window.__draw.arcs; setTimeout(function () { var n = o.frame - f0; done({ frames: n, styles: (window.__draw.styles - s0) / n, arcs: (window.__draw.arcs - a0) / n }); }, 1000); })");
+  }, undefined, { firstCard: false });
+  const said = show(out);
+  assert.ok(out.frames > 20, said);
+  // 5500 dots on a phone: before, 5500 color changes a frame; now at most one a level
+  assert.ok(out.arcs > 4000, said);
+  assert.ok(out.styles <= 130, said);
+});
