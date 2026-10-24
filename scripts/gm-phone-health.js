@@ -10,9 +10,18 @@
 // lib/headless-chrome.js, by way of the trace's launch.
 //
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
+//   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const http = require('node:http');
+const phone = require('../lib/gm-phone');
+const { phonePage } = require('../lib/gm-phone-page');
 const trace = require('./gm-phone-trace');
+
+const TOKEN = 'h'.repeat(43);
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -23,7 +32,17 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // was on screen then (a card, or the big orb with its line).
 const FRAMES = 90;
 const PROBE = `(function () {
-  var P = window.__health = { paints: [], shifts: [], frames: [] };
+  var P = window.__health = { paints: [], shifts: [], frames: [], asks: { out: {}, most: {} } };
+  // every ask to the Mac, by method and path: how many are out now, and the most at once
+  var fetch0 = window.fetch;
+  window.fetch = function (url, opts) {
+    var key = ((opts && opts.method) || 'GET') + ' ' + String(url).replace(/[?].*/, '');
+    var a = P.asks;
+    a.out[key] = (a.out[key] || 0) + 1;
+    a.most[key] = Math.max(a.most[key] || 0, a.out[key]);
+    var back = function () { a.out[key] -= 1; };
+    return fetch0.apply(window, arguments).then(function (r) { back(); return r; }, function (e) { back(); throw e; });
+  };
   try { new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { P.paints.push({ name: e.name, t: e.startTime }); }); }).observe({ type: 'paint', buffered: true }); } catch (e) { /* no paint timing */ }
   try {
     new PerformanceObserver(function (l) {
@@ -69,26 +88,109 @@ function consoleLine(m) {
   return null;
 }
 
-// The real page with this desk, reopened from nothing with the probe in it.
-// latency: ms each request waits on the way (a phone on wifi); cpu: how many
-// times slower the cpu runs (1 is this machine). fn(p, send, said) drives it;
-// said is every console line so far.
-async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, cpu = 1, page } = {}) {
-  return trace.onPhone(desk, chromePath, async (p, send) => {
+// The real phone handler over http with this desk, on a port that stays
+// the same across a stop and a start. sleep(): the Mac takes connections
+// and never answers (it went to sleep mid-session); wake() answers what it
+// held. stop() and start(): the server quits and comes back.
+async function serveDesk(desk, page = phonePage) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-health-'));
+  const hosts = [];
+  const handler = phone.createPhoneHandler({
+    workspaceRoot: dir, token: TOKEN, hosts, loadView: () => ({}), runStep: async () => ({ code: 0, last_line: 'ok' }),
+    writeTarget: () => true, snapshotTarget: () => () => true, logPath: path.join(dir, 'gm-phone-actions.jsonl'), page, makeBetDesk: () => desk,
+  });
+  const answer = (q, s) => { handler(q, s).catch(() => { s.writeHead(500); s.end(); }); };
+  let asleep = false;
+  const held = [];
+  const seen = [];
+  const server = http.createServer((q, s) => { seen.push(`${q.method} ${q.url.replace(/\?.*/, '')}`); if (asleep) { held.push([q, s]); return; } answer(q, s); });
+  const listen = port => new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
+  await listen(0);
+  const port = server.address().port;
+  hosts.push(`127.0.0.1:${port}`);
+  let up = true;
+  const stop = () => new Promise(r => { if (!up) { r(); return; } up = false; server.closeAllConnections(); server.close(() => r()); });
+  return {
+    url: `http://127.0.0.1:${port}/?t=${TOKEN}`,
+    seen,
+    held,
+    sleep: () => { asleep = true; },
+    wake: () => { asleep = false; for (const [q, s] of held.splice(0)) answer(q, s); },
+    stop,
+    start: async () => { if (!up) { await listen(port); up = true; } },
+    close: async () => { asleep = false; held.splice(0); await stop(); fs.rmSync(dir, { recursive: true, force: true }); },
+  };
+}
+
+// chrome, retried once: with several traces running at once a start can time out
+async function launchOnce(chromePath) {
+  try { return await trace.launch(chromePath); } catch (err) {
+    if (!/did not start/.test(err.message)) throw err;
+    return trace.launch(chromePath);
+  }
+}
+
+// The real page with this desk, opened with the probe in it from the first
+// moment. latency: ms each request waits on the way (a phone on wifi); cpu:
+// how many times slower the cpu runs (1 is this machine). fn(p, send, said,
+// server) drives it; said is every console line so far.
+async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, cpu = 1, page = phonePage } = {}) {
+  if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
+  const server = await serveDesk(desk, page);
+  let chrome = null;
+  try {
+    chrome = await launchOnce(chromePath);
+    const { send } = chrome;
     const said = [];
     send.on((m) => { const line = consoleLine(m); if (line) said.push(line); });
     await send('Runtime.enable');
     await send('Log.enable');
     await send('Network.enable');
+    await send('Page.enable');
+    await send('Emulation.setDeviceMetricsOverride', viewport);
+    if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     if (latency) await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: -1, uploadThroughput: -1 });
     if (cpu > 1) await send('Emulation.setCPUThrottlingRate', { rate: cpu });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: PROBE });
-    await send('Page.reload', { ignoreCache: true });
-    await wait(200);
-    await p.until("document.readyState === 'complete' && Boolean(window.__health)", 'the page to open again', 15000);
-    return fn(p, send, said);
-  }, viewport, { firstCard: false, reduced, ...(page ? { page } : {}) });
+    await send('Page.navigate', { url: server.url });
+    const p = driver(send);
+    await p.until("document.readyState === 'complete' && Boolean(window.__health)", 'the page to open', 15000);
+    return await fn(p, send, said, server);
+  } finally {
+    if (chrome) chrome.close();
+    await server.close();
+  }
 }
+
+// run an expression in the page; wait for one to hold; tap what one finds
+function driver(send) {
+  const run = async (expr) => {
+    const out = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+    if (out.exceptionDetails) throw new Error(`page: ${out.exceptionDetails.exception ? out.exceptionDetails.exception.description : out.exceptionDetails.text}`);
+    return out.result.value;
+  };
+  const until = async (expr, what, ms = 8000) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { if (await run(expr)) return; await wait(20); }
+    throw new Error(`waited ${ms}ms for ${what}`);
+  };
+  // find: an expression for the node, in the page
+  const tap = async (find, what) => {
+    const r = await run(`(function () { var n = ${find}; if (!n) return null; n.scrollIntoView({ block: 'center' }); var b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    if (!r) throw new Error(`nothing to tap: ${what}`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  };
+  // the button on the card that reads these words
+  const button = words => `Array.prototype.find.call(document.querySelectorAll('#bet button, .foot button'), function (b) { return b.textContent === ${JSON.stringify(words)} && b.getBoundingClientRect().width > 0; })`;
+  const tapButton = words => tap(button(words), `the button "${words}"`);
+  return { run, until, tap, tapButton };
+}
+
+// at rest: no motion under way, and a card up and faded in
+const AT_REST = "!document.body.hasAttribute('data-busy') && document.body.classList.contains('has-card') && !document.getElementById('bet').hidden && document.getElementById('bet').classList.contains('up') && !document.querySelector('.bet.ghost')";
+const titled = t => `${AT_REST} && Boolean(document.querySelector('#bet h1')) && document.querySelector('#bet h1').textContent === ${JSON.stringify(t)}`;
 
 // ---- first paint ---------------------------------------------------------------------
 
@@ -119,7 +221,46 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, 
   }, { latency, cpu, ...opts });
 }
 
-module.exports = { PROBE, consoleLine, openPage, firstPaintTrace };
+// ---- the Mac asleep ---------------------------------------------------------------------
+
+// The Mac goes to sleep under a card: it takes every connection and answers
+// none. After asleepMs the owner taps "sharper idea"; then the Mac wakes and
+// answers what it held. Then the same on the calm line, which looks more
+// often. card_asks_out: asks for the card still waiting when the owner
+// tapped; tap_reached_mac: the tap's post got to the Mac while it slept, not
+// stuck behind the asks; next_card: the card the page came to after waking.
+async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
+  const { b1, b2, calm } = trace.CARDS;
+  const desk = trace.cardDesk(b1, async () => ({ card: b2 }));
+  const out = {};
+  await openPage(desk, async (p, send, said, server) => {
+    await p.until(titled(b1.title), 'the first card', 10000);
+    server.sleep();
+    await wait(asleepMs);
+    out.card_asks_out = await p.run("window.__health.asks.out['GET /card'] || 0");
+    const before = server.held.length;
+    await p.tapButton('sharper idea');
+    await wait(2500);
+    out.tap_reached_mac = server.held.slice(before).some(([q]) => q.method === 'POST');
+    out.asks_held_by_mac = server.held.length;
+    server.wake();
+    await p.until(titled(b2.title), 'the next card after waking', 10000).then(() => { out.next_card = b2.title; }, () => { out.next_card = null; });
+    out.console = said.slice();
+  }, opts);
+  // the calm line looks for the idea every second and a half
+  const calmDesk = trace.cardDesk(calm, async () => ({ card: calm }));
+  await openPage(calmDesk, async (p, send, said, server) => {
+    await p.until("document.body.classList.contains('waiting') && Boolean(document.querySelector('#bet .sayline .field'))", 'the calm line', 10000);
+    server.sleep();
+    await wait(calmMs);
+    out.calm_card_asks_out = await p.run("window.__health.asks.out['GET /card'] || 0");
+    out.calm_card_asks_most = await p.run("window.__health.asks.most['GET /card'] || 0");
+    server.wake();
+  }, opts);
+  return out;
+}
+
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -130,7 +271,9 @@ if (require.main === module) {
       for (const card of [trace.CARDS.b1, null]) for (const cpu of [1, 4]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, cpu })) });
       print(out);
     })().catch(fail);
+  } else if (process.argv.includes('--asleep')) {
+    asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --asleep\n');
   }
 }

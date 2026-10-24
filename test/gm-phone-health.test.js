@@ -77,3 +77,15 @@ test('browser: a card already up on the Mac is the first thing painted, with no 
     assert.deepEqual(none.console, [], JSON.stringify(none));
   }
 });
+
+// ---- the Mac asleep -------------------------------------------------------------------
+
+test('browser: while the Mac sleeps the page has one ask for the card out at a time, under a card and on the calm line; a tap still reaches it, and on waking the page goes on', browser, async () => {
+  const out = await health.asleepTrace({ chromePath: CHROME, asleepMs: 16000, calmMs: 6000 });
+  const show = JSON.stringify(out);
+  assert.equal(out.card_asks_out, 1, show);
+  assert.equal(out.calm_card_asks_most, 1, show);
+  assert.equal(out.tap_reached_mac, true, show);
+  assert.equal(out.next_card, trace.CARDS.b2.title, show);
+  assert.deepEqual(out.console, [], show);
+});
