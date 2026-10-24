@@ -1211,8 +1211,24 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
     assert.ok(s.title_max_px <= 5, show(s));
     assert.equal(s.title_rest_px, 0, show(s));
     assert.ok(s.largest_frame_step_px <= 5, show(s));
-    // tap to the next card fully in: about a second
-    assert.ok(s.reveal_ms >= 800 && s.reveal_ms <= 1500, show(s));
+    // tap to the next card fully in: about a second, step by step as the page
+    // sets its motion, so a busy machine's late frames never count against it.
+    // each step runs for real, at least about half of what it is set to today,
+    // so a step cut to nothing fails even when the order and the total fit
+    const floors = { hold: 120, glide: 130, beat: 50, spiral: 150, bloom: 70, fade: 150 };
+    assert.deepEqual(s.motion.map(([step]) => step), Object.keys(floors), show(s));
+    for (const [step, ms] of s.motion) assert.ok(ms >= floors[step], `${step} ${ms}ms: ${show(s)}`);
+    assert.ok(s.motion_ms >= 900 && s.motion_ms <= 1250, show(s));
+    // the clock is the motion plus the wait on the stub desk (its own speed,
+    // left out) plus late timers and frames. it never beats the motion by
+    // more than the one frame the spiral can start into. what a slow machine
+    // adds stays within a dozen frames at its pace (about how many times the
+    // motion waits on a timer or a frame), and never past twice the motion
+    // whatever the frames, so a page that freezes fails. 16 times slower, the
+    // machine added at most 1.7 seconds
+    assert.ok(Number.isFinite(s.reveal_ms) && Number.isFinite(s.waited_ms), show(s));
+    assert.ok(s.late_ms >= -s.slowest_frame_ms, show(s));
+    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms, 2 * s.motion_ms), show(s));
   }
   for (const s of [answered, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
   // a reply instead of a card takes the title's spot; it only explains, so the
