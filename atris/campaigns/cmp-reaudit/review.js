@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// review.js <repo> <sample.jsonl> <out.jsonl> [--workers 6] [--prefer codex|claude] [--prompt file]
+// review.js <repo> <sample.jsonl> <out.jsonl> [--workers 6] [--prefer codex|claude|agy] [--prompt file]
 // Blind second look at landed tests. Each sample line names a test file, the
 // code it checks, and the engine that wrote it. A reviewer from a different
 // AI family reads both (read only) and answers keep, weak, or remove.
@@ -30,12 +30,15 @@ function run(cmd, args) {
 async function review(job) {
   const prompt = template.replace('{{FILE}}', job.file).replace('{{TARGET}}', job.target || 'the module it loads')
     .replace('{{FN}}', job.fn ? `, function ${job.fn}` : '').replace('{{NOTE}}', job.note || '');
-  const other = prefer === 'codex' ? 'claude' : 'codex';
-  const reviewer = job.writer === prefer ? other : prefer;
+  // never the engine that wrote the test, nor any the job says to avoid (an earlier grader)
+  const avoid = new Set([job.writer, ...(job.avoid || [])]);
+  const reviewer = [prefer, 'claude', 'codex', 'agy'].find((e) => !avoid.has(e));
   const r = reviewer === 'claude'
     ? await run('claude', ['-p', '--model', 'claude-sonnet-5-5', '--allowedTools=Read,Grep,Glob', '--', prompt])
-    : await run('codex', ['exec', '-m', 'gpt-6.1-sol', '-s', 'read-only', prompt]);
-  const m = [...r.out.matchAll(/\{"verdict":\s*"(keep|weak|remove|pins-bug|fine)",\s*"reason":\s*"((?:[^"\\]|\\.)*)"\}/g)].pop();
+    : reviewer === 'agy'
+      ? await run('agy', ['-p', prompt, '--model', 'gemini-3.8-flash', '--add-dir', repo])
+      : await run('codex', ['exec', '-m', 'gpt-6.1-sol', '-s', 'read-only', prompt]);
+  const m = [...r.out.matchAll(/\{"verdict":\s*"(keep|weak|remove|pins-bug|fine|confirmed|refuted)",\s*"reason":\s*"((?:[^"\\]|\\.)*)"\}/g)].pop();
   return { file: job.file, group: job.group, writer: job.writer, reviewer, verdict: m ? m[1] : 'no-answer', reason: m ? JSON.parse(`"${m[2]}"`) : r.out.slice(-200) };
 }
 
