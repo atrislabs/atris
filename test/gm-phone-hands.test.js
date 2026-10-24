@@ -529,3 +529,24 @@ test('browser: send is dim while its box is empty and lights up with the first w
   assert.equal(out.typed, 1, show);
   assert.equal(out.back, 1, show);
 });
+
+test('browser: a tap shows no system flash box, a double tap never zooms, and a long press on a button selects nothing, while card words stay selectable', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p) => p.run(`(function () {
+    var cs = function (sel) { return getComputedStyle(document.querySelector(sel)); };
+    return {
+      touch: cs('html').touchAction,
+      flash: [cs('#bet .pill').webkitTapHighlightColor, cs('#working').webkitTapHighlightColor, cs('#bet .links button').webkitTapHighlightColor],
+      buttons: [cs('#bet .pill').userSelect, cs('#bet .links button').userSelect, cs('#lava').userSelect, cs('#orb').userSelect],
+      words: [cs('#bet h1').userSelect, cs('#bet .why').userSelect],
+    };
+  })()`));
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.touch, 'manipulation', show);
+  assert.deepEqual(out.flash, ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'], show);
+  assert.deepEqual(out.buttons, ['none', 'none', 'none', 'none'], show);
+  assert.deepEqual(out.words, ['auto', 'auto'], show);
+  // iPhone's long-press menu is off on the same things
+  const { phonePage } = require('../lib/gm-phone-page');
+  assert.match(phonePage('N'), /button, \.lava, \.stage canvas \{ -webkit-touch-callout: none;/);
+});
