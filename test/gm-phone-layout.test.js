@@ -85,3 +85,45 @@ test('layout: with a notched phone on its side the wide cards start past the not
     assert.equal(r.scroll_w, r.vw, show);
   }
 });
+
+// every row of small links on the card: its lines (by the links on them),
+// whether a dot that shows sits between two links on one line, and each
+// line's middle against the card's
+const LINK_ROWS = `Array.prototype.filter.call(document.querySelectorAll('#bet .links'), function (row) { return row.querySelector('button'); }).map(function (row) {
+  var card = document.getElementById('bet').getBoundingClientRect();
+  var lines = {};
+  Array.prototype.forEach.call(row.querySelectorAll('button'), function (b) {
+    var r = b.getBoundingClientRect(), k = Math.round(r.top);
+    lines[k] = lines[k] || { left: Infinity, right: -Infinity, bottom: r.bottom, links: [] };
+    lines[k].left = Math.min(lines[k].left, r.left); lines[k].right = Math.max(lines[k].right, r.right); lines[k].links.push(b.textContent);
+  });
+  // a group's heading words ("who it is for:") are part of their line
+  if (row.firstChild && row.firstChild.nodeType === 3) {
+    var range = document.createRange(); range.selectNode(row.firstChild);
+    Array.prototype.forEach.call(range.getClientRects(), function (t) {
+      var mid = (t.top + t.bottom) / 2;
+      Object.keys(lines).forEach(function (k) { if (mid >= Number(k) && mid <= lines[k].bottom) { lines[k].left = Math.min(lines[k].left, t.left); lines[k].right = Math.max(lines[k].right, t.right); } });
+    });
+  }
+  var dots = Array.prototype.filter.call(row.querySelectorAll('.sep'), function (s) { return getComputedStyle(s).display !== 'block'; }).map(function (s) {
+    var a = s.previousElementSibling.getBoundingClientRect(), z = s.nextElementSibling.getBoundingClientRect();
+    return { between: s.previousElementSibling.textContent + ' | ' + s.nextElementSibling.textContent, one_line: Math.abs(a.top - z.top) <= 1 };
+  });
+  return { lines: Object.keys(lines).map(function (k) { var l = lines[k]; return { links: l.links, off_center: Math.round(((l.left + l.right) / 2 - (card.left + card.right) / 2) * 10) / 10 }; }), dots: dots };
+})`;
+
+test('layout: a row of small links that wraps keeps every dot between two links on one line, and every line is centered', { skip, timeout: 90000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, cases: only('deck', 'swap', 'idea', 'reply'), viewports: ['phone', 'small', 'laptop'], probe: LINK_ROWS });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, rows: r.probe })), null, 1);
+  let wrapped = 0;
+  for (const r of rows) {
+    for (const row of r.probe) {
+      if (row.lines.length > 1) wrapped += 1;
+      for (const d of row.dots) assert.ok(d.one_line, show);
+      // the side of a link's own space (the dot and its gaps) is the only give
+      for (const l of row.lines) assert.ok(Math.abs(l.off_center) <= 8, show);
+    }
+  }
+  // the deck's five links wrap on the phones, so the case is really measured
+  assert.ok(wrapped >= 2, show);
+});

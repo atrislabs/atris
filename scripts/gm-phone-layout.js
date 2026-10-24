@@ -210,7 +210,8 @@ async function layout({ chromePath = trace.findChrome(), cases = CASES, viewport
       }
     }
   } finally {
-    if (chrome) chrome.close();
+    // ask Chrome to quit first, so its helper processes go with it and nothing holds the run open
+    if (chrome) { await Promise.race([chrome.send('Browser.close').catch(() => {}), wait(2000)]); chrome.close(); }
     await server.close();
   }
   return out;
