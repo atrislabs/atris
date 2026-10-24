@@ -28,7 +28,8 @@ function readFile(filePath) {
 }
 
 function countFiles(dir) {
-  try { return fs.readdirSync(dir, { recursive: true }).filter(f => !f.startsWith('.') && fs.statSync(path.join(dir, f)).isFile()).length; } catch { return 0; }
+  const isFile = (f) => { try { return fs.statSync(path.join(dir, f)).isFile(); } catch { return false; } }; // a dead link skips itself, not the count
+  try { return fs.readdirSync(dir, { recursive: true }).filter(f => !f.startsWith('.') && isFile(f)).length; } catch { return 0; }
 }
 
 // ── Soul snapshot ──────────────────────────────────────
