@@ -1649,6 +1649,19 @@ test('browser: the team opened from the big orb closes back to the big orb, and 
   assert.deepEqual([out.fromCard.has_card, out.fromCard.kind], [true, 'idea'], show);
 });
 
+test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  for (const reduced of [false, true]) {
+    const out = await trace.teamOverWaitTrace({ chromePath: CHROME, reduced });
+    const show = JSON.stringify(out, null, 1);
+    // back on the calm line: its sphere and its open box, not a plain card
+    assert.deepEqual([out.back.kind, out.back.waiting, out.back.sphere, out.back.box_open], ['wait', true, true, true], show);
+    // a note sent there folds in, and its box clears
+    assert.deepEqual([out.noted.words, out.noted.notes], ['', ['make it about schools', "got it, i'll fold that in."]], show);
+    // once the idea is ready it shows on its own
+    assert.deepEqual([out.landed.kind, out.landed.title], ['idea', trace.CARDS.b1.title], show);
+  }
+});
+
 test('browser: the small orb on any card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);

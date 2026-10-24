@@ -786,6 +786,52 @@ async function teamFromHomeTrace({ chromePath = findChrome() } = {}) {
   });
 }
 
+// ---- the team closed over the calm line goes back into the calm line ----------------------------
+
+// While an idea is being written, the owner opens the team and closes it.
+// The desk answers back with the calm line, and the page goes into it the
+// way the orb does: the sphere's dots, the box open for a note. A note sent
+// there folds in and its box clears, and the idea, once ready, grows out
+// of the dots on its own.
+async function teamOverWaitTrace({ chromePath = findChrome(), reduced = false } = {}) {
+  let notes = [];
+  let ready = false;
+  let n = 1;
+  const calm = () => gmCard.wait({ id: 'wait:9', thread: notes.length ? [...notes.map(text => ({ who: 'owner', text })), { who: 'orb', text: FOLDED }] : [] });
+  const desk = cardDesk(calm(), async (action, { card, text }) => {
+    n += 1;
+    if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
+    if (action === 'back') return { card: calm() };
+    if (action === 'say' && card.kind === 'wait') { notes = [...notes, text]; return { card: calm(), ack: FOLDED }; }
+    if (action === 'orb') return { card: ready ? CARDS.b1 : calm() };
+    return { card };
+  }, { queue: () => (ready ? 1 : 0) });
+  return onPhone(desk, chromePath, async (p, send) => {
+    const rest = "!document.body.hasAttribute('data-busy')";
+    await p.until(`${rest} && document.body.classList.contains('waiting')`, 'the calm line', 8000);
+    await wait(300);
+    const state = () => p.run("(function () { var i = document.querySelector('#bet .sayline .field input'); return { kind: document.getElementById('bet').getAttribute('data-kind'), waiting: document.body.classList.contains('waiting'), sphere: getComputedStyle(document.querySelector('.stage')).display !== 'none', box_open: Boolean(i), words: i ? i.value : null, notes: Array.prototype.map.call(document.querySelectorAll('#bet .waitnotes .turn'), function (t) { return t.textContent; }) }; })()");
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team over the calm line', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && document.getElementById('bet').getAttribute('data-kind') === 'wait'`, 'the calm line again', 8000).catch(() => {});
+    await wait(500);
+    const back = await state();
+    await p.tap('#bet .sayline .field input');
+    await wait(150);
+    await p.type('make it about schools');
+    await p.enter();
+    await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet .waitnotes .turn'), function (t) { return t.textContent === ${JSON.stringify(FOLDED)}; })`, 'the note folded in', 6000).catch(() => {});
+    await wait(400);
+    const noted = await state();
+    ready = true;
+    await p.until(titled(CARDS.b1.title), 'the idea out of the dots', 10000).catch(() => {});
+    const landed = await look(p);
+    return { reduced, back, noted, landed };
+  }, PHONE, { firstCard: false, reduced });
+}
+
 // ---- a start that did not get going comes back to do it --------------------------------------
 
 // The owner asks what an idea means, then taps do it twice. The first start
@@ -1633,7 +1679,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
