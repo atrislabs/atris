@@ -645,7 +645,9 @@ test('over http: the job deck is a card through the same token check, one card p
     const row = deck.table.rows[0];
     assert.deepEqual([deck.count, deck.label, row[1], row[3]], ['job 1 of 1', 'working', 'builder', 'working']);
     assert.ok(!row.includes('not yet'), row.join(' | '));
-    assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
+    assert.equal(deck.body, 'builder is working on it. nothing needs you here.');
+    // the time is said once, on its own line under the table
+    assert.ok(deck.time && !deck.body.includes(deck.time), `${deck.body} | ${deck.time}`);
     assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
     const odd = await post({ card_id: deck.id, option_id: 'yes', confirm: true });
