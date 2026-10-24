@@ -1444,7 +1444,7 @@ test('browser: after a lost answer, a tap on the old card does nothing and the p
   assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
   // the second tap is refused, and the page lands on the card the Mac has, saying so
   assert.equal(out.at_end.title, 'what would make a small team pay?', show);
-  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now', show);
+  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
 });
 
 // ---- words that did not send stay in the box ----------------------------------------

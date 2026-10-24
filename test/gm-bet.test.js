@@ -1430,6 +1430,21 @@ test('owner words: no fixed page string, card template, or question uses our int
   for (const t of [...copy, ...labels]) assert.doesNotMatch(t, banned, t);
 });
 
+test('owner words: every refusal the desk or the page can show ends like a sentence, with no semicolons', () => {
+  // the line under the options and the line under the orb read the same way on every card
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'gm-bet.js'), 'utf8');
+  const said = [...src.matchAll(/(?:message: |refuse\('[a-z_]+', |out\.message \|\| )(['`])((?:(?!\1)[^\n])*)\1/g)].map(m => m[2]);
+  assert.ok(said.length > 25, `found ${said.length}`);
+  for (const t of said) {
+    assert.match(t, /[.?!]$/, t);
+    assert.doesNotMatch(t, /;/, t);
+  }
+  const html = phonePage('NONCE');
+  const errors = [...html.matchAll(/'((?:that|this|it) [^'\n]*(?:try again|stopped working)[^'\n]*)'/g)].map(m => m[1]);
+  assert.ok(errors.length >= 4, errors.join(' | '));
+  for (const t of errors) assert.match(t, /\.$/, t);
+});
+
 test('owner words: the writer is told the words, and a card that uses one gets one free rewrite before it is kept', async () => {
   const { bundle } = await bundleFor(workspace());
   assert.match(gmBet.buildPrompt(bundle, { today: TODAY }), /- title, why_now, and expect are read by the owner, so they never use these words: bet, bets, check date/);
@@ -1459,11 +1474,11 @@ test('question: the answer is saved next to the ledger, only for this workspace,
   const q = h.d.next();
   // an answer from a page that missed the next card is saved against nothing, and the words say the new card is already there
   const stale = h.d.answer({ choice: 'money', card: 'question:old' });
-  assert.deepEqual(stale, { ok: false, reason: 'gone', message: 'that card changed, so nothing was saved. here is the one on screen now' });
+  assert.deepEqual(stale, { ok: false, reason: 'gone', message: 'that card changed, so nothing was saved. here is the one on screen now.' });
   assert.ok(q && q.id !== 'question:old');
-  assert.deepEqual(h.d.answer({ choice: 'nope' }), { ok: false, reason: 'bad_choice', message: 'that is not one of the answers' });
+  assert.deepEqual(h.d.answer({ choice: 'nope' }), { ok: false, reason: 'bad_choice', message: 'that is not one of the answers.' });
   assert.equal(h.d.answer({ choice: 'money' }).ok, true);
-  assert.deepEqual(h.d.answer({ choice: 'money' }), { ok: false, reason: 'gone', message: 'there is no question on screen' });
+  assert.deepEqual(h.d.answer({ choice: 'money' }), { ok: false, reason: 'gone', message: 'there is no question on screen.' });
   const file = path.join(path.dirname(h.ledgerFile), 'gm-focus.jsonl');
   assert.equal(gmBet.focusPath(path.dirname(h.ledgerFile)), file);
   const focus = gmBet.readFocus(file, root);
@@ -1587,7 +1602,7 @@ test('choice: with 2 or more ideas ready a tap shows up to 3 to pick from; one t
   assert.deepEqual([rows[c.choice.options[2].id].status, rows[c.choice.options[1].id].status], ['passed', 'proposed']);
   assert.equal((await h.d.doIt()).ok, true);
   // a pick with nothing on screen, or an id not on the card, does nothing
-  assert.deepEqual(h.d.pick({ id: 'nope' }), { ok: false, reason: 'gone', message: 'there is nothing to pick on screen' });
+  assert.deepEqual(h.d.pick({ id: 'nope' }), { ok: false, reason: 'gone', message: 'there is nothing to pick on screen.' });
   // one idea ready: the single card, as before
   const one = desk(workspace(), { choices: true });
   one.d.warm();
@@ -1958,7 +1973,7 @@ test('steer from the phone: it can only reach a live run; one that is not runnin
   assert.deepEqual(await h.d.steer({ member: 'builder', text: 'readme first' }), { ok: true, ack: 'sent to builder.' });
   assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: readme first']);
   // launcher is not running: the steer that cannot start anyone finds nothing, and the page asks
-  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this' });
+  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this.' });
   assert.ok(h.cli.every(a => !a.includes('--detach')), 'nothing was started');
   // the second tap starts them in the background, and says so from the start result
   assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread', confirm: true }), { ok: true, ack: 'launcher is starting on it.' });
@@ -2002,7 +2017,7 @@ test('free text: a reply that comes back after the card changed is dropped, and 
   assert.equal((await h.d.doIt()).ok, true);
   release();
   // the refusal comes back with the card on screen now, so it says where the new card is
-  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done. here is the one on screen now' });
+  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done. here is the one on screen now.' });
   const row = h.ledger().find(r => r.id === idea.id);
   assert.equal(row.status, 'doing', 'the started job is still tracked');
 });

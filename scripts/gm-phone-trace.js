@@ -76,9 +76,9 @@ function cardDesk(first, on, extra = {}) {
         return apply(await on('orb', { body, card: current }));
       }
       if (body.open) return apply(await on(`open:${body.open}`, { body, card: current }));
-      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now');
+      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now.');
       const option = body.option_id ? current.options.find(o => o.id === body.option_id) : null;
-      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card');
+      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card.');
       if (option && option.confirm && body.confirm !== true) return refuse('needs_confirm', option.confirm);
       const action = option ? option.action : current.input && current.input.action;
       const text = body.text || (option && option.binds && option.binds.text) || '';
@@ -514,7 +514,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     n += 1;
     if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
     if (action === 'member') return { card: memberCard(option.binds.member, n) };
-    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this', confirm: { text } }) };
+    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this.', confirm: { text } }) };
     if (action === 'back') {
       if (card.kind === 'reply') return { card: memberCard('builder', n) };
       if (card.kind === 'member') return { card: teamCard(TEAM_ROWS, n) };
@@ -544,7 +544,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await wait(200);
     await p.type('take the readme first');
     await p.enter();
-    await p.until(titled('tap again to start builder on this'), 'the second tap it asks for');
+    await p.until(titled('tap again to start builder on this.'), 'the second tap it asks for');
     await at('sent to builder');
     for (let i = 1; i <= 4; i++) { await esc(send); await wait(200); await rest().catch(() => {}); await at(`esc ${i}`); }
     return { viewport: `${PHONE.width}x${PHONE.height}`, steps };
@@ -636,7 +636,7 @@ async function talkFailTrace({ chromePath = findChrome() } = {}) {
   const took = [];
   let n = 1;
   const desk = cardDesk(memberCard('builder', 1), async (action, { text }) => {
-    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here' };
+    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here.' };
     took.push(text);
     n += 1;
     return { card: memberCard('builder', n, 'builder has it.') };
