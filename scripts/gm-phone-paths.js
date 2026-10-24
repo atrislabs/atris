@@ -398,7 +398,56 @@ async function resizeTrace({ chromePath = findChrome(), first = CARDS.b1, from =
   }
 }
 
-module.exports = { pathsTrace, summarizePath, openTrace, resizeTrace, PATHS, PATH_RECORDER };
+// ---- the page in the background --------------------------------------------------------------
+
+// The page told it is hidden (as a phone does when another app comes up,
+// or a laptop when another tab does) for holdMs, then shown again: the
+// looks it sent to the Mac and the frames the orb drew while hidden, and
+// how soon after it came back it looked again. first: the card it opens
+// on, or null for the big orb.
+const HIDE = `(function () {
+  var hidden = false;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return hidden; } });
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return hidden ? 'hidden' : 'visible'; } });
+  var real = window.fetch, looks = window.__looks = [];
+  window.fetch = function (url) { looks.push({ t: performance.now(), url: String(url).split('?')[0] }); return real.apply(this, arguments); };
+  window.__hide = function (v) { hidden = v; window.__hiddenAt = performance.now(); document.dispatchEvent(new Event('visibilitychange')); };
+})();`;
+
+async function hiddenTrace({ chromePath = findChrome(), first = null, holdMs = 6000, page = phonePage } = {}) {
+  if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
+  const server = await serve(cardDesk(first, async (a, { card }) => ({ card })), page);
+  const chrome = await launch(chromePath);
+  try {
+    const { send } = chrome;
+    const p = driver(send);
+    await send('Emulation.setDeviceMetricsOverride', PHONE);
+    await send('Page.enable');
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: HIDE });
+    await send('Page.navigate', { url: server.url });
+    await p.until(`document.readyState === 'complete' && (${READY})`, 'the page at rest');
+    await wait(500);
+    const at = await p.run("(function () { window.__hide(true); return { t: performance.now(), frame: document.getElementById('orb').__orb.frame, looks: window.__looks.length }; })()");
+    await wait(holdMs);
+    const back = await p.run("(function () { var r = { t: performance.now(), frame: document.getElementById('orb').__orb.frame, looks: window.__looks.length }; window.__hide(false); return r; })()");
+    await wait(600);
+    const end = await p.run("({ frame: document.getElementById('orb').__orb.frame, looks: window.__looks.slice() })");
+    const next = end.looks.slice(back.looks).find(l => l.t >= back.t);
+    return {
+      first: first ? first.kind : 'big orb',
+      hidden_ms: Math.round(back.t - at.t),
+      looks_while_hidden: back.looks - at.looks,
+      frames_while_hidden: back.frame - at.frame,
+      look_after_ms: next ? Math.round(next.t - back.t) : null,
+      frames_after: end.frame - back.frame,
+    };
+  } finally {
+    chrome.close();
+    await server.close();
+  }
+}
+
+module.exports = { pathsTrace, summarizePath, openTrace, resizeTrace, hiddenTrace, PATHS, PATH_RECORDER };
 
 if (require.main === module) {
   const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };

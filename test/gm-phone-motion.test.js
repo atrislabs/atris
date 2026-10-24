@@ -148,3 +148,15 @@ test('browser: under reduced motion every path is plain fades: nothing travels, 
   const flip = byName(out)['deck flip'];
   assert.ok(flip.card_fade > 0 && flip.card_fade <= 0.15, show(flip));
 });
+
+test('browser: in the background the page sends no looks and draws nothing, and back on screen it looks at once', { skip, timeout: 90000 }, async () => {
+  const { CARDS } = require('../scripts/gm-phone-trace');
+  for (const first of [null, CARDS.calm]) {
+    const r = await paths.hiddenTrace({ chromePath: CHROME, first, holdMs: 6000 });
+    // before: a look every 5 seconds on the big orb, five in 6 seconds on the calm line
+    assert.deepEqual([r.looks_while_hidden, r.frames_while_hidden], [0, 0], show(r));
+    assert.ok(r.look_after_ms !== null && r.look_after_ms < 100, show(r));
+    // and the sphere picks up where it was
+    assert.ok(r.frames_after > 10, show(r));
+  }
+});
