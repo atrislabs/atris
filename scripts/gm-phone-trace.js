@@ -983,10 +983,16 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await p.until(`${titled('builder')} && document.getElementById('bet').getAttribute('data-kind') === 'swap'`, 'the swap card', 8000);
     const short = await look(p);
     const opened = await p.run(MOVED);
+    // where each model sits on the page, by its option id
+    const MODELS_AT = "(function () { var out = {}; Array.prototype.forEach.call(document.querySelectorAll('#bet button.choice'), function (b) { var r = b.getBoundingClientRect(); out[b.getAttribute('data-option')] = { x: Math.round(r.left), y: Math.round((r.top + window.scrollY) * 10) / 10 }; }); return out; })()";
+    const shortAt = await p.run(MODELS_AT);
     const id = short.card;
     await tapLabel(p, send, 'more models');
     await p.until(`${SETTLED} && Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent.indexOf('m-two') === 0; })`, 'the full list', 8000);
     const full = await look(p);
+    const fullAt = await p.run(MODELS_AT);
+    // how far each model already shown moved when the full list came in
+    const kept_moved_px = Math.max(0, ...Object.keys(shortAt).map(k => (fullAt[k] ? Math.max(Math.abs(fullAt[k].x - shortAt[k].x), Math.abs(fullAt[k].y - shortAt[k].y)) : Infinity)));
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
@@ -1008,7 +1014,7 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     // where the line about the swap sits: under the title, above the table, on screen
     const news = await p.run("(function () { var n = document.querySelector('#bet .mission'), h = document.querySelector('#bet h1'), g = document.querySelector('#bet .grid'); var r = n.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), under_title: r.top >= h.getBoundingClientRect().bottom, above_table: r.bottom <= g.getBoundingClientRect().top, screen: window.innerHeight }; })()");
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
-    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news };
+    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news, kept_moved_px };
   }, viewport);
 }
 

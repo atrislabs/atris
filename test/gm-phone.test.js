@@ -1386,6 +1386,8 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.notEqual(out.full.card, out.id, at);
     assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 landed'], at);
     assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
+    // the models already shown stay exactly where they were; the new ones come in under them
+    assert.ok(out.kept_moved_px <= 0.5, `${at}: shown models moved ${out.kept_moved_px}px`);
     assert.ok(!out.full.options.includes('more'), at);
     // one tap, no yes card: the swap goes to the desk with who it is for, and the team comes back with one line
     assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'two', model: 'm-two', scope: 'job' }], at);

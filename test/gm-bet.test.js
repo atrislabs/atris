@@ -3734,7 +3734,9 @@ test('card contract: a swap list with no picks opens short too, the model in use
   const four = gmCard.swap({ id: 'swap~2', name: 'builder', choices: { scopes: [], options: list.slice(0, 4) } });
   assert.ok(!four.options.some(o => o.label === 'more models'));
   const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
-  assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
+  // the three already shown keep their places, so nothing on the card moves; the rest come in under them
+  assert.deepEqual(all.options.map(o => o.label), ['m-e', 'm-a', 'm-b', 'm-c', 'm-d', 'm-f', 'back to the team']);
+  assert.deepEqual(all.options.slice(0, 3).map(o => o.id), short.options.slice(0, 3).map(o => o.id));
   for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
 });
 
