@@ -139,7 +139,8 @@ test('calendarCommand date asks for local midnight to local midnight and reports
   assert.deepStrictEqual(result.out, ['📅 Events on 2026-08-24:\n', 'No events on 2026-08-24.']);
 });
 
-test('calendarCommand today lists events and writes the offline cache', async () => {
+test('calendarCommand today lists events and writes the offline cache', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-05-20T12:00:00') });
   reset({
     loggedIn: true,
     reply: {
@@ -156,7 +157,10 @@ test('calendarCommand today lists events and writes the offline cache', async ()
 
   assert.strictEqual(result.exitCode, null);
   assert.strictEqual(apiCalls.length, 1);
-  assert.strictEqual(apiCalls[0].url, '/integrations/google-calendar/events?days=1');
+  const params = new URL(apiCalls[0].url, 'https://example.invalid').searchParams;
+  assert.strictEqual(params.get('time_min'), new Date('2026-05-20T00:00:00').toISOString());
+  assert.strictEqual(params.get('time_max'), new Date('2026-05-21T00:00:00').toISOString());
+  assert.strictEqual(params.get('days'), null);
   assert.strictEqual(result.out[0], "📅 Today's events:\n");
   const bar = '─'.repeat(50);
   assert.deepStrictEqual(result.out.slice(1), [
@@ -170,7 +174,7 @@ test('calendarCommand today lists events and writes the offline cache', async ()
   const cache = JSON.parse(fs.readFileSync(CACHE_PATH, 'utf8'));
   assert.strictEqual(cache.ok, true);
   assert.strictEqual(cache.source, 'calendarRange');
-  assert.strictEqual(cache.days, 1);
+  assert.strictEqual(cache.days, null);
   assert.strictEqual(cache.count, 2);
   assert.deepStrictEqual(cache.events[0], {
     id: 'a', start: '2026-05-20', end: '', summary: 'Standup', location: 'HQ', htmlLink: '',
