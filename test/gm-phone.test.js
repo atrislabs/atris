@@ -1018,6 +1018,8 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   assert.ok(copy.includes('this link stopped working. open a new one from the mac.'));
   // after not now on an idea, the line under the orb says another what
   assert.ok(copy.includes('tap when you want another idea'));
+  // a talk card's title is the name, so the line under it never says the name again
+  assert.match(script, /el\('p', 'jobline', \[card\.job\.member !== card\.title && card\.job\.member, card\.job\.role\]\.filter\(Boolean\)\.join\(' · '\)\)/);
   assert.ok(!copy.some(t => /^not now\. /.test(t)), 'the orb line never repeats not now after the got-it line');
 });
 
