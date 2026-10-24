@@ -6,6 +6,7 @@
 # This is a fast per-fix check; the full suite before merge is the final net
 # for any path it cannot see (a require built at run time, for example).
 set -u
+. "$(cd "$(dirname "$0")" && pwd)/group-timeout.sh"
 N="$1"
 H="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$H/../../.." && pwd)"
@@ -23,7 +24,7 @@ git -C "$W" log -1 --format=%B | grep -q "Co-authored-by: Atris" || { echo "REJE
 run() { # dir file tz -> exit code; output kept in $RUN_OUT
   local T; T=$(mktemp -d) || return 99
   RUN_OUT=$(cd "$1" && env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$3" ATRIS_SKIP_UPDATE_CHECK=1 \
-    perl -e 'alarm shift; exec @ARGV' 300 node --test "$2" 2>&1); local c=$?; rm -rf "$T"; return $c
+    group_timeout 300 node --test "$2" 2>&1); local c=$?; rm -rf "$T"; return $c
 }
 # a real assertion failure: exit 1, a failed test, an assertion error, and no load error
 failed_for_real() {

@@ -37,18 +37,8 @@ Do this, in order, and nothing else:
 Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>
 Never use --no-verify. If the commit is blocked, stop and report why. Do not push.
 Reply last with one line: FIXED <subject> or NOT A BUG <reason> or NO REPRO <reason> or BLOCKED <reason>."
-# run the worker in its own process group; on timeout stop the whole group,
-# since the codex launcher does not pass the signal on to its worker
-group_timeout() { perl -e '
-  my $secs = shift; my $pid = fork();
-  if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
-  my $stop = sub { my $code = shift; kill "TERM", -$pid; sleep 5; kill "KILL", -$pid; waitpid($pid, 0); exit $code; };
-  local $SIG{ALRM} = sub { $stop->(124) };          # timed out
-  local $SIG{TERM} = sub { $stop->(143) };          # the wrapper was cancelled
-  local $SIG{INT}  = sub { $stop->(130) };
-  alarm $secs; waitpid($pid, 0); my $st = $?; alarm 0; kill "TERM", -$pid;
-  exit(($st & 127) ? 128 + ($st & 127) : $st >> 8);  # a signal death is a failure, never 0
-' "$@"; }
+# the worker runs in its own process group; a timeout or cancel stops all of it
+. "$H/group-timeout.sh"
 unset ANTHROPIC_API_KEY # subscription only, never the API
 cd "$W" && group_timeout 1500 codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox "$PROMPT" </dev/null > "$H/fix-out/$N.txt" 2>&1
 code=$?
