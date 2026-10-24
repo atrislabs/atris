@@ -12,6 +12,7 @@
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
 //   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
 //   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, and a refused tap
+//   node scripts/gm-phone-health.js --focus     each Tab stop on a card and the big orb, and its ring on screen
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
@@ -286,6 +287,54 @@ async function readerTrace(opts = {}) {
   }, opts);
 }
 
+// ---- the focus ring -----------------------------------------------------------------------
+
+// One stop per Tab press: what has the focus, and how wide its ring is on
+// screen in css px: the outline's own width times the scale the element is
+// drawn at (the small orb on a card is a big orb drawn at a fifth).
+const FOCUSED = `(function () {
+  var n = document.activeElement;
+  if (!n || n === document.body) return null;
+  var s = getComputedStyle(n);
+  var scale = 1;
+  for (var m = n; m && m.nodeType === 1; m = m.parentElement) {
+    var t = getComputedStyle(m).transform;
+    var k = t && t !== 'none' ? t.match(/matrix\\(([^,]+),\\s*([^,]+)/) : null;
+    if (k) scale *= Math.hypot(Number(k[1]), Number(k[2]));
+  }
+  var width = s.outlineStyle === 'none' ? 0 : parseFloat(s.outlineWidth) || 0;
+  return { what: n.id || (n.textContent || '').trim().slice(0, 40) || n.tagName.toLowerCase(), ring_px: Math.round(width * scale * 100) / 100, offset_px: Math.round((parseFloat(s.outlineOffset) || 0) * scale * 100) / 100 };
+})()`;
+
+async function tabStops(p, send, most = 12) {
+  const stops = [];
+  for (let i = 0; i < most; i++) {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await wait(60);
+    const at = await p.run(FOCUSED);
+    if (at && stops.some(x => x.what === at.what)) break;
+    if (at) stops.push(at);
+  }
+  return stops;
+}
+
+// Tab through an idea card, then through the big orb with no card.
+async function focusTrace(opts = {}) {
+  const card = trace.CARDS.b1;
+  const out = {};
+  await openPage(trace.cardDesk(card, async () => ({ card })), async (p, send, said) => {
+    await p.until(titled(card.title), 'the card', 10000);
+    out.card = await tabStops(p, send);
+    out.console = said.slice();
+  }, opts);
+  await openPage(trace.cardDesk(null, async () => ({ card })), async (p, send) => {
+    await p.until("document.getElementById('orb').__orb.frame > 2", 'the big orb', 10000);
+    out.orb = await tabStops(p, send);
+  }, opts);
+  return out;
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -325,7 +374,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -340,9 +389,11 @@ if (require.main === module) {
     headTrace().then(print, fail);
   } else if (process.argv.includes('--reader')) {
     readerTrace().then(print, fail);
+  } else if (process.argv.includes('--focus')) {
+    focusTrace().then(print, fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --asleep\n');
   }
 }

@@ -183,3 +183,13 @@ test('browser: when a tap does not go through, its one line why is a status, so 
   assert.equal(out.refused.text, 'that did not go through. try again.', JSON.stringify(out.refused));
   assert.equal(out.refused.role, 'status', JSON.stringify(out.refused));
 });
+
+// ---- the focus ring -------------------------------------------------------------------
+
+test('browser: the small orb on a card shows a focus ring of 2px on screen, though it is the big orb drawn at a fifth', browser, async () => {
+  const out = await health.focusTrace({ chromePath: CHROME });
+  const lava = out.card.find(s => s.what === 'lava');
+  assert.ok(lava, JSON.stringify(out.card));
+  assert.ok(lava.ring_px >= 1.95 && lava.ring_px <= 2.05, JSON.stringify(lava));
+  assert.ok(lava.offset_px >= 3.9, JSON.stringify(lava));
+});
