@@ -1394,7 +1394,7 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.deepEqual(out.short.buttons, ['atris fastatris', 'm-onenow', 'more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team'], at);
     // more models: a new card with every model, and each model keeps its own option id
     assert.notEqual(out.full.card, out.id, at);
-    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 landed'], at);
+    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 finished this week'], at);
     assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
     assert.ok(!out.full.options.includes('more'), at);
     // one tap, no yes card: the swap goes to the desk with who it is for, and the team comes back with one line

@@ -3440,10 +3440,10 @@ const SWAP_CHOICES = {
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
     { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
-    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 finished this week' },
     { more: true, label: 'more models', options: [
       { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
-      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 finished this week' },
       { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: null },
     ] },
   ],
