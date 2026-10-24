@@ -1393,6 +1393,9 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.equal(out.engine, 'two m-two', at);
     // on a phone the swap card opens, and the team comes back after a swap, in one turn in place
     if (at === '390x844') assert.deepEqual([out.opened.plan, out.swapped.plan], ['hold 150, turn 420', 'hold 150, turn 420'], at);
+    // the line about the swap is the first thing under the title, above the table, on screen, and said once
+    assert.deepEqual([out.news.under_title, out.news.above_table, out.news.bottom <= out.news.screen], [true, true, true], `${at}: ${JSON.stringify(out.news)}`);
+    assert.ok(!/\bline\b/.test(out.swapped.plan), `${at}: no line under the orb first (${out.swapped.plan})`);
   }
 });
 

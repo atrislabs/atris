@@ -3722,6 +3722,8 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
+  // the line is on the team card, so the answer carries no line of its own to show under the orb first
+  assert.equal(done.body.ack, undefined);
 });
 
 test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {

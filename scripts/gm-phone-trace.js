@@ -966,7 +966,8 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
       swaps.push({ member: 'builder', ...option.binds });
       rows.find(r => r.member === 'builder').engine = `${option.binds.engine} ${option.binds.model}`;
       n += 1;
-      return { card: teamCard(rows, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`), ack: 'swapped.' };
+      // as the desk does: the team comes back with the line on it, and no line of its own under the orb
+      return { card: teamCard(rows, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`) };
     }
     if (action === 'back') { n += 1; return { card: card.kind === 'swap' ? teamCard(rows, n) : CARDS.b1 }; }
     return { card };
@@ -1000,8 +1001,14 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .mission'))`, 'the team after the swap', 8000);
     const after = await look(p);
     const swapped = await p.run(MOVED);
+    if (shots) {
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, `swap-after-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    // where the line about the swap sits: under the title, above the table, on screen
+    const news = await p.run("(function () { var n = document.querySelector('#bet .mission'), h = document.querySelector('#bet h1'), g = document.querySelector('#bet .grid'); var r = n.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), under_title: r.top >= h.getBoundingClientRect().bottom, above_table: r.bottom <= g.getBoundingClientRect().top, screen: window.innerHeight }; })()");
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
-    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped };
+    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news };
   }, viewport);
 }
 
