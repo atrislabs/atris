@@ -140,6 +140,8 @@ test('browser: under reduced motion every path is plain fades: nothing travels, 
     // before, a card that came while the sphere showed took it away in one frame, and the footer jumped 370px in sight
     assert.ok(p.card_fade <= 0.15 && p.sphere_drop <= 0.15, show(p));
     assert.equal(p.footer_seen_jump, 0, show(p));
+    // the line's words fade out and in too, never change in a frame
+    assert.ok(p.line_fade <= 0.15, show(p));
     if (p.lands) assert.deepEqual([p.after.orb_frames, p.after.running], [0, []], show(p));
   }
   // a flip is a fade out and in, never words swapped in one frame (before: no fade, the footer jumped 121px)
