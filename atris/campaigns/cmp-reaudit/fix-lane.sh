@@ -37,8 +37,16 @@ Do this, in order, and nothing else:
 Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>
 Never use --no-verify. If the commit is blocked, stop and report why. Do not push.
 Reply last with one line: FIXED <subject> or NOT A BUG <reason> or NO REPRO <reason> or BLOCKED <reason>."
-cd "$W" && env -u ANTHROPIC_API_KEY perl -e 'alarm shift; exec @ARGV' 1500 \
-  codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox "$PROMPT" </dev/null > "$H/fix-out/$N.txt" 2>&1
+# run the worker in its own process group; on timeout stop the whole group,
+# since the codex launcher does not pass the signal on to its worker
+group_timeout() { perl -e '
+  my $secs = shift; my $pid = fork();
+  if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
+  local $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 5; kill "KILL", -$pid; waitpid($pid, 0); exit 124; };
+  alarm $secs; waitpid($pid, 0); my $code = $? >> 8; alarm 0; kill "TERM", -$pid; exit $code;
+' "$@"; }
+unset ANTHROPIC_API_KEY # subscription only, never the API
+cd "$W" && group_timeout 1500 codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox "$PROMPT" </dev/null > "$H/fix-out/$N.txt" 2>&1
 code=$?
 echo "lane $N exit $code :: $(grep -E '^(FIXED|NOT A BUG|NO REPRO|BLOCKED)' "$H/fix-out/$N.txt" | tail -1)"
 exit $code
