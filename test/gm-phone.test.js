@@ -633,6 +633,8 @@ test('over http: the job deck is a card through the same token check, one card p
     assert.equal(deck.kind, 'deck');
     // the deck card is about the job; the rating and the model live on the team table
     assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
+    // its status goes with it, so the page colors the cell the way the team page does
+    assert.deepEqual(deck.table.status, ['working']);
     const row = deck.table.rows[0];
     assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['1 of 1', 'working', 'builder', 'working']);
     assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
@@ -1427,6 +1429,8 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.equal(out.row.scrolls_sideways, false, show);
   assert.deepEqual(out.row.cells.map(c => c.col), ['done', 'work', 'member', 'role', 'status'], show);
   assert.ok(out.row.cells.every(c => c.inside && !c.spills), show);
+  // a job that needs the owner says so in amber in its row too, as on the team page and above the title
+  assert.equal(out.row.cells.find(c => c.col === 'status').color, 'rgb(255, 140, 66)', show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
   assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
