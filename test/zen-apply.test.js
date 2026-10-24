@@ -192,8 +192,12 @@ test('atris zen names where the unsaved team notes are, biggest first', () => {
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     // Three biggest places by name, the rest as a count, so a big number
-    // reads as "mostly agent notes" instead of an unexplained total.
-    assert.match(cli.stdout, /6 unsaved team notes left in place: atris\/ 3, \.codex\/ 1, crm\.db 1, and 1 more place\./);
+    // reads as "mostly agent notes" instead of an unexplained total. A lone
+    // fourth place is named instead of counted.
+    assert.match(cli.stdout, /6 unsaved team notes left in place: atris\/ 3, \.codex\/ 1, crm\.db 1, events\.jsonl 1\./);
+    write(checkout, '.claude/notes.md', 'n\n');
+    const five = zen(checkout, 0);
+    assert.match(five.stdout, /7 unsaved team notes left in place: atris\/ 3, \S+ 1, \S+ 1, and 2 more places\./);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
