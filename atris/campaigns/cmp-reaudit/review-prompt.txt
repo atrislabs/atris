@@ -1,0 +1,14 @@
+You are grading one automated test that an AI wrote and that was merged into this repository today. You did not write it. Be strict: a test that merely runs code is not a good test.
+
+Test file: {{FILE}}
+It is meant to check: {{TARGET}}{{FN}}
+{{NOTE}}
+
+Read the test file and the code it checks (read only; do not edit or run anything). Then grade it:
+
+keep: it checks behavior a user or caller relies on, it would fail on a realistic bug, it does not pin incidental wording or formatting that a harmless edit would change, and it cleans up anything it creates.
+weak: harmless and correct, but adds little: it only checks that something prints or exists, pins exact incidental text, or repeats what another test in test/ already checks.
+remove: it is wrong or harmful: it asserts buggy behavior as correct, depends on timing, the network, the real home folder or the machine it runs on, or leaves files behind.
+
+Answer with exactly one line of JSON and nothing else:
+{"verdict":"keep|weak|remove","reason":"one plain sentence"}
