@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
+const { ensureFreshCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
@@ -158,7 +158,7 @@ async function pullAtris() {
     process.exit(1);
   }
 
-  const creds = loadCredentials();
+  const creds = await ensureFreshCredentials(apiRequestJson);
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);
@@ -206,7 +206,7 @@ async function pullAtris() {
 
 async function pullBusiness(slug) {
   const elapsedMs = startTimer();
-  const creds = loadCredentials();
+  const creds = await ensureFreshCredentials(apiRequestJson);
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);

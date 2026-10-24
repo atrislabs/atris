@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
-const { loadCredentials } = require('../utils/auth');
+const { loadCredentials, ensureFreshCredentials } = require('../utils/auth');
 const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
@@ -4942,7 +4942,7 @@ async function memberPush(name) {
     process.exit(1);
   }
 
-  const creds = loadCredentials();
+  const creds = await ensureFreshCredentials(apiRequestJson);
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);
@@ -5007,7 +5007,7 @@ async function memberPush(name) {
 // --- PULL subcommand ---
 
 async function memberPull(nameOrAgentId) {
-  const creds = loadCredentials();
+  const creds = await ensureFreshCredentials(apiRequestJson);
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);
