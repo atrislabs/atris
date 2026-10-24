@@ -256,3 +256,27 @@ test('browser: the back button steps back a card, then to the big orb, and only 
   // from the big orb the back button leaves, as it always did
   assert.doesNotMatch(out.three, /127\.0\.0\.1/, show);
 });
+
+test('browser: back from the lock screen, the page looks at once and shows the card the Mac has now', { skip, timeout: 90000 }, async () => {
+  const runs = [];
+  for (const how of ['visibilitychange', 'online']) {
+    const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+    const read = desk.card;
+    const reads = [];
+    desk.card = () => { reads.push(Date.now()); return read(); };
+    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+      await wait(800);
+      desk.current = CARDS.b2;
+      const t0 = Date.now();
+      await p.run(how === 'online' ? "window.dispatchEvent(new Event('online'))" : "document.dispatchEvent(new Event('visibilitychange'))");
+      await p.until(titled(CARDS.b2.title), 'the Mac card', 3000).catch(() => {});
+      return { how, looked_ms: reads.filter(t => t >= t0).map(t => t - t0)[0], shown_ms: Date.now() - t0, title: (await look(p)).title };
+    }));
+  }
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    // the look comes at once, not on the next one five seconds on
+    assert.ok(r.looked_ms != null && r.looked_ms < 400, show);
+    assert.equal(r.title, CARDS.b2.title, show);
+  }
+});
