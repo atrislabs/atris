@@ -1362,6 +1362,7 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.equal(look.page_scrolls_sideways, false, at);
     assert.equal(look.scrolls_sideways, at === '390x844', at);
     assert.equal(look.name_column_moved_px, 0, `${at}: the name column stays put`);
+    assert.equal(look.name_header_moved_px, 0, `${at}: its header stays over it`);
     assert.ok(look.smallest_font_px >= 17, at);
     assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
     assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);

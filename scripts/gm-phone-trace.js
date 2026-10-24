@@ -863,9 +863,11 @@ const TABLE_LOOK = `(function () {
   });
   var g = grid.getBoundingClientRect();
   var before = table.querySelector('tbody td.member').getBoundingClientRect().left;
+  var headBefore = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 200;
   var scrolled = grid.scrollLeft;
   var after = table.querySelector('tbody td.member').getBoundingClientRect().left;
+  var headAfter = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 0;
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
   return {
@@ -881,6 +883,7 @@ const TABLE_LOOK = `(function () {
     scrolls_sideways: grid.scrollWidth > grid.clientWidth + 1,
     scrolled_by: Math.round(scrolled),
     name_column_moved_px: Math.round(Math.abs(after - before)),
+    name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),
     statuses: Array.prototype.map.call(table.querySelectorAll('tbody td.status'), function (n) { return n.textContent; }),
