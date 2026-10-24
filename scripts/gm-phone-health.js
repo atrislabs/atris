@@ -10,6 +10,7 @@
 // lib/headless-chrome.js, by way of the trace's launch.
 //
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
+//   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
@@ -221,6 +222,34 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, 
   }, { latency, cpu, ...opts });
 }
 
+// ---- the head: what a phone reads to put the page on its home screen ----------------------
+
+// Every meta tag by name, every icon link, and the title, from the live page,
+// with the console after opening. An icon's href is cut to its first 40
+// characters; decoded: an inline image that decodes in the page, with its size.
+const HEAD = `(async function () {
+  var meta = {};
+  document.querySelectorAll('meta[name]').forEach(function (m) { meta[m.getAttribute('name')] = m.getAttribute('content'); });
+  var links = [];
+  var icons = document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]');
+  for (var i = 0; i < icons.length; i++) {
+    var l = icons[i];
+    var img = new Image();
+    var size = await new Promise(function (resolve) { img.onload = function () { resolve([img.naturalWidth, img.naturalHeight]); }; img.onerror = function () { resolve(null); }; img.src = l.href; });
+    links.push({ rel: l.rel, type: l.type || null, sizes: l.getAttribute('sizes'), href: l.getAttribute('href').slice(0, 40), decoded: size });
+  }
+  return { title: document.title, lang: document.documentElement.lang, meta: meta, icons: links };
+})()`;
+
+async function headTrace(opts = {}) {
+  const desk = trace.cardDesk(trace.CARDS.b1, async () => ({ card: trace.CARDS.b1 }));
+  return openPage(desk, async (p, send, said) => {
+    await p.until(AT_REST, 'the first card', 10000);
+    await wait(300);
+    return { ...(await p.run(HEAD)), console: said.slice() };
+  }, opts);
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -260,7 +289,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -271,9 +300,11 @@ if (require.main === module) {
       for (const card of [trace.CARDS.b1, null]) for (const cpu of [1, 4]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, cpu })) });
       print(out);
     })().catch(fail);
+  } else if (process.argv.includes('--head')) {
+    headTrace().then(print, fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --asleep\n');
   }
 }

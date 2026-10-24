@@ -89,3 +89,28 @@ test('browser: while the Mac sleeps the page has one ask for the card out at a t
   assert.equal(out.next_card, trace.CARDS.b2.title, show);
   assert.deepEqual(out.console, [], show);
 });
+
+// ---- the home screen ------------------------------------------------------------------
+
+const HOME_TAGS = {
+  'color-scheme': 'dark',
+  'apple-mobile-web-app-capable': 'yes',
+  'mobile-web-app-capable': 'yes',
+  'apple-mobile-web-app-status-bar-style': 'black-translucent',
+  'apple-mobile-web-app-title': 'orb',
+};
+
+test('page: added to the home screen it opens on its own with no browser bars, the dark page under the status bar, under a short name', () => {
+  const html = phonePage('NONCE');
+  for (const [name, content] of Object.entries(HOME_TAGS)) assert.ok(html.includes(`<meta name="${name}" content="${content}">`), name);
+  assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/);
+  assert.ok(!/user-scalable=no|maximum-scale=1/.test(html), 'pinch zoom stays on');
+});
+
+test('browser: the live page has the home screen tags, and opening it puts nothing in the console', browser, async () => {
+  const out = await health.headTrace({ chromePath: CHROME });
+  for (const [name, content] of Object.entries(HOME_TAGS)) assert.equal(out.meta[name], content, name);
+  assert.equal(out.meta['theme-color'], '#141110');
+  assert.equal(out.lang, 'en');
+  assert.deepEqual(out.console, [], JSON.stringify(out.console));
+});
