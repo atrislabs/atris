@@ -140,3 +140,31 @@ test('browser: a tap on a card the Mac no longer has, with nothing up there, goe
   // the refused tap did nothing; only the big orb asked for a card
   assert.deepEqual(out.did, ['orb'], show);
 });
+
+// a job deck card, the kind whose arrows turn it in place
+const deckCard = (n = 1) => gmCard.deck({ id: `deck~${n}`, at: 0, total: 2, card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'working', time: 'about 4 hours left', rows: [{ done: 'not yet', work: 'split the big test file', member: 'builder', role: 'builder', status: 'working' }] }, columns: ['done', 'work', 'member', 'role', 'status'], job: { member: 'builder', role: 'builder' } });
+
+test('browser: flipping a deck the Mac has moved past turns to the Mac\'s card with one line why, or to the big orb when nothing is up', { skip, timeout: 120000 }, async () => {
+  const runs = [];
+  for (const next of [CARDS.b2, null]) {
+    const did = [];
+    const desk = trace.cardDesk(deckCard(), async (action) => { did.push(action); return { card: deckCard(did.length + 1) }; });
+    runs.push(await trace.onPhone(desk, CHROME, async (p, send) => {
+      desk.current = next;
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+      // at once, not on the next look five seconds later
+      if (next) await p.until(titled(next.title), 'the Mac card', 2500).catch(() => {});
+      else await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000).catch(() => {});
+      await wait(300);
+      return { next: next && next.title, did, ...(await look(p)) };
+    }));
+  }
+  const show = JSON.stringify(runs, null, 1);
+  const [moved, empty] = runs;
+  assert.deepEqual([moved.title, moved.busy, moved.has_card], [CARDS.b2.title, false, true], show);
+  assert.equal(moved.note, 'that card changed, so nothing was done. here is the one on screen now', show);
+  assert.deepEqual([empty.has_card, empty.busy, empty.line], [false, false, 'tap to think'], show);
+  // the refused flips did nothing on the Mac
+  assert.deepEqual([moved.did, empty.did], [[], []], show);
+});
