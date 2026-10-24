@@ -83,7 +83,7 @@ test('fix with no name reports an empty local skills folder and exits with an er
     }
     assert.strictEqual(exitCode, 1);
     assert.deepStrictEqual(errors, [
-      'Skill "--all" not found. Run "atris skill list" to see available skills.'
+      'No skills found in atris/skills/.'
     ]);
     assert.deepStrictEqual(output, []);
     assert.deepStrictEqual(fs.readdirSync(skillsDir), []);
