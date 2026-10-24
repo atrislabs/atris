@@ -315,3 +315,22 @@ test('layout: the footer sits at the bottom of the screen on every card that fit
     assert.ok(fit >= 8, show);
   }
 });
+
+test('layout: when the team table scrolls sideways on a phone the name column keeps its heading over it', { skip, timeout: 90000 }, async () => {
+  const probe = `(function () {
+    var grid = document.querySelector('#bet .grid'), th = grid.querySelector('th.member'), td = grid.querySelector('td.member'), role = grid.querySelector('th.role');
+    var before = th.getBoundingClientRect().left;
+    grid.scrollLeft = 200;
+    var out = { scrolled: grid.scrollLeft, head_moved: Math.abs(th.getBoundingClientRect().left - before), head_over_names: Math.abs(th.getBoundingClientRect().left - td.getBoundingClientRect().left), head_on_top: document.elementFromPoint(th.getBoundingClientRect().left + 10, th.getBoundingClientRect().top + 10) === th, role_left: role.getBoundingClientRect().left };
+    grid.scrollLeft = 0;
+    return out;
+  })()`;
+  const rows = await layout({ chromePath: CHROME, cases: only('team'), viewports: ['phone', 'small'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);
+  for (const r of rows) {
+    assert.ok(r.probe.scrolled >= 100, show);
+    assert.ok(r.probe.head_moved <= 0.5, show);
+    assert.ok(r.probe.head_over_names <= 0.5, show);
+    assert.equal(r.probe.head_on_top, true, show);
+  }
+});
