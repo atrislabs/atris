@@ -286,11 +286,13 @@ test('orb swap card: every model on this machine by tool, the one in use on top,
     assert.ok(tools.lastIndexOf('claude') < tools.indexOf('codex'), 'no tool is split up');
     assert.ok(all.filter((o) => o.binds.engine === 'claude').length > 1, 'every claude model is offered, not just four');
     // each model says its tool and its 7-day record
-    assert.deepEqual(all.filter((o) => o.binds.engine === 'codex').map((o) => [o.label, o.detail]).sort(), [['gpt-6-astra', 'codex, 1 of 2 landed'], ['gpt-6.1-sol', 'codex']]);
+    assert.deepEqual(all.filter((o) => o.binds.engine === 'codex').map((o) => [o.label, o.detail]).sort(), [['gpt-6-astra', 'codex, 1 of 2 finished this week'], ['gpt-6.1-sol', 'codex']]);
+    // nothing on the swap card uses a word the owner should not read
+    for (const o of all) assert.doesNotMatch(`${o.label} ${o.detail || ''}`, require('../lib/gm-bet').OWNER_BANNED);
     // the data under it still keeps each tool's recorded models first
     const data = h.desk.engineCard({ member: 'builder' });
     assert.deepEqual(data.groups.map((g) => g.tool), ['claude code', 'codex']);
-    assert.deepEqual(data.groups[1].models.map((m) => [m.label, m.record]), [['gpt-6-astra', '1 of 2 landed'], ['gpt-6.1-sol', null]]);
+    assert.deepEqual(data.groups[1].models.map((m) => [m.label, m.record]), [['gpt-6-astra', '1 of 2 finished this week'], ['gpt-6.1-sol', null]]);
   } finally {
     await h.close();
   }

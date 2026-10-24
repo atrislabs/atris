@@ -489,10 +489,12 @@ test('over http: a choice card picks through /act with the same checks', async (
     await new Promise(r => setTimeout(r, 30));
     const c = (await post({ orb: true })).json.card;
     assert.equal(c.kind, 'choice');
-    assert.deepEqual(c.options.map(o => o.label), titles);
+    // the owner reads every idea lowercase, like the cards around it
+    const shown = titles.map(x => x[0].toLowerCase() + x.slice(1));
+    assert.deepEqual(c.options.map(o => o.label), shown);
     assert.equal((await post({ card_id: c.id, option_id: c.options[0].id }, { token: 'nope' })).status, 403);
     const picked = await post({ card_id: c.id, option_id: c.options[0].id });
-    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', titles[0]]);
+    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', shown[0]]);
     assert.equal((await post({ card_id: c.id, option_id: c.options[1].id })).status, 409, 'the choice is gone once one is picked');
   } finally {
     await h.close();
@@ -546,6 +548,11 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   assert.deepEqual(team.table.columns, ['member', 'role', 'ovr', 'engine', 'status']);
   assert.deepEqual(team.options.map(o => [o.id, o.cell ? o.cell.column : null]), [['talk:builder', 'member'], ['swap:builder', 'engine'], ['talk:sam', 'member'], ['back', null]]);
   assert.deepEqual(gmCard.cardProblems(team), []);
+  // the hint names the two things to tap in plain words
+  assert.equal(team.body, 'tap a name to talk to them, or their engine to change it.');
+  // with jobs running, the way into the job deck says what it does
+  const busy = gmCard.team({ id: 'team~2', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }], deck: true });
+  assert.equal(busy.options.find(o => o.action === 'deck').label, 'go through the jobs');
 });
 
 test('page: the team table is divided, keeps its columns apart at phone width, and scrolls sideways instead of squashing', () => {
@@ -634,12 +641,16 @@ test('over http: the job deck is a card through the same token check, one card p
     const deck = (await post({ open: 'deck' })).json.card;
     assert.equal(deck.kind, 'deck');
     // the deck card is about the job; the rating and the model live on the team table
-    assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
+    // and no done column: every job in the deck is open, so it would say "not yet" on every card
+    assert.deepEqual(deck.table.columns, ['work', 'member', 'role', 'status']);
     // its status goes with it, so the page colors the cell the way the team page does
     assert.deepEqual(deck.table.status, ['working']);
     const row = deck.table.rows[0];
-    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['1 of 1', 'working', 'builder', 'working']);
-    assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
+    assert.deepEqual([deck.count, deck.label, row[1], row[3]], ['job 1 of 1', 'working', 'builder', 'working']);
+    assert.ok(!row.includes('not yet'), row.join(' | '));
+    assert.equal(deck.body, 'builder is working on it. nothing needs you here.');
+    // the time is said once, on its own line under the table
+    assert.ok(deck.time && !deck.body.includes(deck.time), `${deck.body} | ${deck.time}`);
     assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
     const odd = await post({ card_id: deck.id, option_id: 'yes', confirm: true });
@@ -761,7 +772,7 @@ test('page: a yes card is drawn from its options: yes takes a second tap, no and
   assert.match(script, /armed = true; btn\.textContent = o\.confirm; btn\.classList\.add\('armed'\);/);
   assert.match(script, /send\(btn, \{ option_id: o\.id, confirm: true \}, o\);/);
   // the yes card's options come from the Mac: yes is the pill, no and not now quiet links on one line
-  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting on your yes for this.', request: { job: 'm1', key: 'm1:0', hash: null } });
+  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting for your yes.', request: { job: 'm1', key: 'm1:0', hash: null } });
   assert.deepEqual(y.options.map(o => [o.label, o.style]), [['yes', 'primary'], ['no', 'quiet'], ['not now', 'quiet']]);
   assert.equal(y.options[0].confirm, 'tap again to say yes');
   // quiet options next to each other share one line, and a group of them is headed by its words
@@ -787,9 +798,11 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   // a flip turns the card in place; it is the same deck moving, not an answer
   assert.match(script, /var IN_PLACE = \['flip', 'more', 'scope'\];/);
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
-  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 5 minutes', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
-  assert.deepEqual([d.count, d.label], ['1 of 2', 'needs you']);
-  assert.deepEqual(d.options.map(o => o.label), ['previous', 'next', 'yes', 'no', 'not now', 'the whole team']);
+  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'asked 5 minutes ago', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting for your yes.' } } });
+  assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
+  assert.deepEqual(d.options.map(o => o.label), ['previous', 'next', 'yes', 'no', 'not now', 'back to the team']);
+  // the deck's way back has the same words as the talk and swap cards' way back
+  assert.equal(d.options.find(o => o.action === 'back').label, gmCard.member({ id: 'member~1', name: 'builder', sentence: 'idle.' }).options.find(o => o.action === 'back').label);
   assert.deepEqual(d.options.find(o => o.id === 'yes').binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
   assert.deepEqual(gmCard.cardProblems(d), []);
@@ -1003,6 +1016,14 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
   assert.ok(copy.length > 10);
   for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
+  // and none names a command to run: a dead link says what to do in plain words
+  for (const t of copy) assert.doesNotMatch(t, /\bgm (phone|walk)\b|\batris (gm|engine|member)\b|\bnpm\b/i, t);
+  assert.ok(copy.includes('this link stopped working. open a new one from the mac.'));
+  // after not now on an idea, the line under the orb says another what
+  assert.ok(copy.includes('tap when you want another idea'));
+  // a talk card's title is the name, so the line under it never says the name again
+  assert.match(script, /el\('p', 'jobline', \[card\.job\.member !== card\.title && card\.job\.member, card\.job\.role\]\.filter\(Boolean\)\.join\(' · '\)\)/);
+  assert.ok(!copy.some(t => /^not now\. /.test(t)), 'the orb line never repeats not now after the got-it line');
 });
 
 test('page: an act holds the chosen spot, then one motion: the card fades into the sphere, the dots spiral in once the answer is in, and the next card blooms', () => {
@@ -1242,7 +1263,7 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
   // a reply instead of a card takes the title's spot; it only explains, so the
   // idea's own options are on it once, with the answers it adds and its box
   assert.equal(said.next_title, trace.REPLY);
-  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharper idea', 'not now', 'or say something']);
+  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharpen it', 'not now', 'or say something']);
 });
 
 test('page: an act to the next card is one motion of about a second when the answer is in', () => {
@@ -1355,6 +1376,8 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     const look = out.look;
     assert.ok(look, `${at}: the table shows`);
     assert.deepEqual(look.heads, ['member', 'role', 'ovr', 'engine', 'status'], at);
+    // the headers the owner reads are ovr and engine, the same as the terminal's team tables
+    assert.deepEqual(look.head_words, ['member', 'role', 'ovr', 'engine', 'status'], at);
     assert.equal(look.rows, 5, at);
     // a line between every pair of columns and every pair of rows
     assert.deepEqual([look.lines.missing_right, look.lines.missing_bottom], [0, 0], at);
@@ -1423,7 +1446,7 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.deepEqual(out.short.buttons, ['atris fastatris', 'm-onenow', 'more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team'], at);
     // more models: a new card with every model, and each model keeps its own option id
     assert.notEqual(out.full.card, out.id, at);
-    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 landed'], at);
+    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 finished this week'], at);
     assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
     // the models already shown stay exactly where they were; the new ones come in under them
     assert.ok(out.kept_moved_px <= 0.5, `${at}: shown models moved ${out.kept_moved_px}px`);
@@ -1451,14 +1474,14 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
   // previous and next sit at the top beside the count, the answers and the way back below
-  assert.deepEqual(out.first.buttons, ['previous', 'next', 'yes', 'no', 'not now', 'the whole team', 'talk to navigator'], show);
-  assert.deepEqual(out.counts, ['2 of 3', '3 of 3', '1 of 3', '3 of 3'], show);
+  assert.deepEqual(out.first.buttons, ['previous', 'next', 'yes', 'no', 'not now', 'back to the team', 'talk to navigator'], show);
+  assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3'], show);
   // on every card, with or without a yes, previous and next are in the same spot, so a thumb never chases them
   for (const at of out.pager) assert.deepEqual(at, out.pager[0], `previous and next stay put: ${JSON.stringify(out.pager)}`);
   assert.equal(out.pager[0][0].y, out.pager[0][1].y, 'previous and next share one line');
   // on a phone the job's one row stacks, one line per column: nothing scrolls sideways and every value is in view
   assert.equal(out.row.scrolls_sideways, false, show);
-  assert.deepEqual(out.row.cells.map(c => c.col), ['done', 'work', 'member', 'role', 'status'], show);
+  assert.deepEqual(out.row.cells.map(c => c.col), ['work', 'member', 'role', 'status'], show);
   assert.ok(out.row.cells.every(c => c.inside && !c.spills), show);
   // a job that needs the owner says so in amber in its row too, as on the team page and above the title
   assert.equal(out.row.cells.find(c => c.col === 'status').color, 'rgb(255, 140, 66)', show);
@@ -1466,9 +1489,9 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.deepEqual(out.footer, ['the team'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
-  assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
-  assert.equal(out.scrolled, '1 of 3', 'an up and down swipe does not flip');
-  assert.equal(out.typing_arrow, '1 of 3', 'the arrows type while the box has the cursor');
+  assert.equal(out.swiped, 'job 1 of 3', 'a sideways swipe flips');
+  assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
+  assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
   // one tap arms only this card's yes; a flip draws a fresh card, so nothing is left armed
   const yesOf = buttons => buttons.find(t => t === 'yes' || t === 'tap again to say yes');
   assert.equal(yesOf(out.armed_a), 'tap again to say yes', show);
@@ -1476,7 +1499,7 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.equal(yesOf(out.fresh_a), 'yes', show);
   // the yes sends the job and the hash its card binds, once
   assert.deepEqual(out.yes_sent, [{ job: 'm-nav', key: 'm-nav:step-2:abc', hash: 'abc' }], show);
-  assert.equal(out.yes_line, 'navigator: got your yes');
+  assert.equal(out.yes_line, 'told navigator yes.');
   assert.deepEqual(out.moving, []);
   assert.equal(out.back.kind, 'team', show);
 });
@@ -1493,7 +1516,7 @@ test('browser: after a lost answer, a tap on the old card does nothing and the p
   assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
   // the second tap is refused, and the page lands on the card the Mac has, saying so
   assert.equal(out.at_end.title, 'what would make a small team pay?', show);
-  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now', show);
+  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
 });
 
 // ---- words that did not send stay in the box ----------------------------------------
@@ -1704,8 +1727,8 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
     check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
     steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
   });
-  const IDEA = idea('Write a getting started page for atris gm phone with a 30 second screen recording');
-  const NOTED = idea('Write a getting started page for schools that try atris gm phone in class');
+  const IDEA = idea('write a getting started page for atris gm phone with a 30 second screen recording');
+  const NOTED = idea('write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
   const FOLDED = 'got it, i\'ll fold that in.';
   const runs = [];

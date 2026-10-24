@@ -78,9 +78,9 @@ function cardDesk(first, on, extra = {}) {
         return apply(await on('orb', { body, card: current }));
       }
       if (body.open) return apply(await on(`open:${body.open}`, { body, card: current }));
-      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now');
+      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now.');
       const option = body.option_id ? current.options.find(o => o.id === body.option_id) : null;
-      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card');
+      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card.');
       if (option && option.confirm && body.confirm !== true) return refuse('needs_confirm', option.confirm);
       const action = option ? option.action : current.input && current.input.action;
       const text = body.text || (option && option.binds && option.binds.text) || '';
@@ -516,7 +516,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     n += 1;
     if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
     if (action === 'member') return { card: memberCard(option.binds.member, n) };
-    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this', confirm: { text } }) };
+    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this.', confirm: { text } }) };
     if (action === 'back') {
       if (card.kind === 'reply') return { card: memberCard('builder', n) };
       if (card.kind === 'member') return { card: teamCard(TEAM_ROWS, n) };
@@ -546,7 +546,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await wait(200);
     await p.type('take the readme first');
     await p.enter();
-    await p.until(titled('tap again to start builder on this'), 'the second tap it asks for');
+    await p.until(titled('tap again to start builder on this.'), 'the second tap it asks for');
     await at('sent to builder');
     for (let i = 1; i <= 4; i++) { await esc(send); await wait(200); await rest().catch(() => {}); await at(`esc ${i}`); }
     return { viewport: `${PHONE.width}x${PHONE.height}`, steps };
@@ -638,7 +638,7 @@ async function talkFailTrace({ chromePath = findChrome() } = {}) {
   const took = [];
   let n = 1;
   const desk = cardDesk(memberCard('builder', 1), async (action, { text }) => {
-    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here' };
+    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here.' };
     took.push(text);
     n += 1;
     return { card: memberCard('builder', n, 'builder has it.') };
@@ -978,7 +978,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
 
 // a real-sized team: long roles and statuses, a rookie, and no rating or model
 const TABLE_ROWS = [
-  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours' },
+  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, asked 2 hours ago' },
   { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left' },
   { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'stopped', sentence: 'stopped: split the big test file so each part runs alone, stopped 30 minutes ago' },
   { member: 'linguist', role: 'linguist, operator language and understanding', ovr: '··', engine: '··', status: 'idle', sentence: 'idle: no work in the last day' },
@@ -1001,7 +1001,9 @@ const TABLE_LOOK = `(function () {
   var grid = box.querySelector('.grid');
   var table = box.querySelector('table');
   if (!grid || !table) return null;
-  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
+  // each column by its key (the class on its header), and the words the owner reads over it
+  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.className; });
+  var words = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
   var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
   var spills = [], lines = { inner_right: 0, missing_right: 0, inner_bottom: 0, missing_bottom: 0 }, oneLine = [], moving = [];
   var widths = {};
@@ -1068,6 +1070,7 @@ const TABLE_LOOK = `(function () {
   window.scrollTo(0, 0);
   return {
     heads: heads,
+    head_words: words,
     rows: rows.length,
     spills: spills,
     lines: lines,
@@ -1152,11 +1155,11 @@ const SWAP = {
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
     { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
-    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 finished this week' },
     { more: true, label: 'more models', options: [
       { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
-      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
-      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: '2 of 2 landed' },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 finished this week' },
+      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: '2 of 2 finished this week' },
     ] },
   ],
 };
@@ -1239,10 +1242,10 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
 // ---- the job deck -------------------------------------------------------------------------------
 
 // the deck card is about the job: the rating and the model live on the team table
-const DECK_COLUMNS = ['done', 'work', 'member', 'role', 'status'];
+const DECK_COLUMNS = ['work', 'member', 'role', 'status'];
 const DECK_JOBS = [
-  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
-  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'waiting 20 minutes', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
+  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'asked 2 hours ago', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting for your yes.' } },
+  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'asked 20 minutes ago', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting for your yes.' } },
   { job_id: 'm-b2', mission_id: 'm-b2', member: 'builder', label: 'working', time: 'about 4 hours left', rows: [{ done: 'not yet', work: 'split the big test file', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working' }] },
 ];
 
@@ -1266,7 +1269,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
   const desk = cardDesk(CARDS.b1, async (action, { option }) => {
     if (action === 'open:deck') { at = 0; return { card: deckCard() }; }
     if (action === 'flip') { at = (at + option.binds.step + DECK_JOBS.length) % DECK_JOBS.length; return { card: deckCard() }; }
-    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `${DECK_JOBS[at].member}: got your yes`; return { card: deckCard() }; }
+    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `told ${DECK_JOBS[at].member} yes.`; return { card: deckCard() }; }
     if (action === 'back') { n += 1; return { card: teamCard(TABLE_ROWS, n) }; }
     if (action === 'talk') return { card: deckCard() };
     return { card: deckCard() };
@@ -1338,7 +1341,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await esc(send);
     await wait(150);
     // back to the first card, then its yes: armed, then sent with what the card binds
-    while ((await count()) !== '1 of 3') { await press('ArrowLeft'); await settle(); }
+    while ((await count()) !== 'job 1 of 3') { await press('ArrowLeft'); await settle(); }
     await tapLabel(p, send, 'yes');
     await tapLabel(p, send, 'tap again to say yes');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .mission'))`, 'the line after the yes', 8000);
