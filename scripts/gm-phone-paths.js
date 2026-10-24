@@ -262,7 +262,7 @@ async function runPath(send, spec, { cpu = 1, page = phonePage } = {}) {
     const marks = await p.run('window.__paths.marks');
     const after = await p.run(AFTER_REST);
     if (cpu > 1) await send('Emulation.setCPUThrottlingRate', { rate: 1 });
-    return { name: spec.name, lands: Boolean(spec.lands), ...summarizePath(frames, marks.length ? marks[marks.length - 1].t : frames[0].t), after };
+    return { name: spec.name, starts: spec.first ? spec.first.kind : 'big orb', lands: Boolean(spec.lands), ...summarizePath(frames, marks.length ? marks[marks.length - 1].t : frames[0].t), after };
   } finally {
     await server.close();
   }
