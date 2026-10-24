@@ -1456,7 +1456,11 @@ test('owner words: the writer is told the words, and a card that uses one gets o
 test('question: the answer is saved next to the ledger, only for this workspace, and a wrong one is refused', async () => {
   const root = workspace();
   const h = desk(root, { questions: false });
-  h.d.next();
+  const q = h.d.next();
+  // an answer from a page that missed the next card is saved against nothing, and the words say the new card is already there
+  const stale = h.d.answer({ choice: 'money', card: 'question:old' });
+  assert.deepEqual(stale, { ok: false, reason: 'gone', message: 'that card changed, so nothing was saved. here is the one on screen now' });
+  assert.ok(q && q.id !== 'question:old');
   assert.deepEqual(h.d.answer({ choice: 'nope' }), { ok: false, reason: 'bad_choice', message: 'that is not one of the answers' });
   assert.equal(h.d.answer({ choice: 'money' }).ok, true);
   assert.deepEqual(h.d.answer({ choice: 'money' }), { ok: false, reason: 'gone', message: 'there is no question on screen' });
@@ -1997,7 +2001,8 @@ test('free text: a reply that comes back after the card changed is dropped, and 
   // the owner taps do it while the read is still out
   assert.equal((await h.d.doIt()).ok, true);
   release();
-  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done' });
+  // the refusal comes back with the card on screen now, so it says where the new card is
+  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done. here is the one on screen now' });
   const row = h.ledger().find(r => r.id === idea.id);
   assert.equal(row.status, 'doing', 'the started job is still tracked');
 });
