@@ -244,6 +244,17 @@ test('browser: in a screen reader\'s list of landmarks the small orb has its own
   assert.deepEqual(out.console, [], show);
 });
 
+test('browser: on the team table each button tells a screen reader what it does: talk to builder, builder\'s model, m-one. tap to change it', browser, async () => {
+  const out = await health.tableNamesTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out);
+  assert.equal(out.cells.length, 6, show);
+  for (const c of out.cells) {
+    const who = out.cells[out.cells.indexOf(c) - (c.column === 'engine' ? 1 : 0)].words;
+    assert.equal(c.heard, c.column === 'member' ? `talk to ${c.words}` : `${who}'s model, ${c.words}. tap to change it`, show);
+  }
+  assert.deepEqual(out.console, [], show);
+});
+
 // ---- the focus ring -------------------------------------------------------------------
 
 test('browser: the small orb on a card shows a focus ring of 2px on screen, though it is the big orb drawn at a fifth', browser, async () => {

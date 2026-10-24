@@ -358,6 +358,26 @@ async function landmarkTrace(opts = {}) {
   }, opts);
 }
 
+// The team card: what a screen reader says for each button in the table,
+// by its cell's column, from chrome's accessibility tree.
+async function tableNamesTrace(opts = {}) {
+  const card = gmCard.team({ id: 'team-1', rows: TEAM_ROWS, deck: true });
+  return openPage(trace.cardDesk(card, async () => ({ card })), async (p, send, said) => {
+    await p.until(titled(card.title), 'the team', 10000);
+    await wait(300);
+    const cells = await p.run("Array.prototype.map.call(document.querySelectorAll('#bet td button'), function (b) { return { column: b.closest('td').className.split(' ')[0], words: b.textContent }; })");
+    // each button's name as chrome gives it to a screen reader, button by button
+    const { root } = await send('DOM.getDocument', { depth: 0 });
+    const { nodeIds } = await send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: '#bet td button' });
+    for (let i = 0; i < nodeIds.length; i++) {
+      const { nodes } = await send('Accessibility.getPartialAXTree', { nodeId: nodeIds[i], fetchRelatives: false });
+      const own = nodes.find(n => n.role && n.role.value === 'button');
+      cells[i].heard = own && own.name ? own.name.value : null;
+    }
+    return { cells, console: said.slice() };
+  }, opts);
+}
+
 // ---- the focus ring -----------------------------------------------------------------------
 
 // One stop per Tab press: what has the focus, and how wide its ring is on
@@ -676,7 +696,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, tableNamesTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
