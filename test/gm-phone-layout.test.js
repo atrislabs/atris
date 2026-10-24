@@ -127,3 +127,35 @@ test('layout: a row of small links that wraps keeps every dot between two links 
   // the deck's five links wrap on the phones, so the case is really measured
   assert.ok(wrapped >= 2, show);
 });
+
+
+// every title, body, line, and label to read on the card: how many lines
+// it takes and the words on its last line
+const LAST_LINES = `Array.prototype.map.call(document.querySelectorAll('#bet h1, #bet .why, #bet .mission, #bet .option .t, #bet .option .w, #bet .choice .w, #bet button.choice:not(:has(.t))'), function (n) {
+  var words = [], walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+  for (var t = walker.nextNode(); t; t = walker.nextNode()) {
+    var re = /\\S+/g, m;
+    while ((m = re.exec(t.textContent))) {
+      var r = document.createRange(); r.setStart(t, m.index); r.setEnd(t, m.index + m[0].length);
+      var rect = r.getClientRects()[0];
+      if (rect) words.push({ w: m[0], top: Math.round(rect.top) });
+    }
+  }
+  var tops = [];
+  words.forEach(function (x) { if (tops.indexOf(x.top) < 0) tops.push(x.top); });
+  var last = words.filter(function (x) { return x.top === tops[tops.length - 1]; }).map(function (x) { return x.w; });
+  return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' ') };
+})`;
+
+test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'small', 'side', 'laptop'], probe: LAST_LINES });
+  const alone = [];
+  let wrapped = 0;
+  for (const r of rows) for (const p of r.probe) {
+    if (p.lines < 2) continue;
+    wrapped += 1;
+    if (p.last.split(' ').length < 2) alone.push(`${r.case} ${r.size} ${p.what}: ${p.last}`);
+  }
+  assert.deepEqual(alone, []);
+  assert.ok(wrapped >= 40, String(wrapped));
+});
