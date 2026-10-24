@@ -682,3 +682,10 @@ test('browser: pushing the big orb\'s dots around with a held mouse and letting 
   assert.deepEqual([out.dragged.asked, out.dragged.has_card, out.dragged.busy], [0, false, false], show);
   assert.equal(out.asked, 1, show);
 });
+
+test('browser: pulling down at the top of a card never reloads the page', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(trace.CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p) => p.run("getComputedStyle(document.documentElement).overscrollBehaviorY"));
+  // contain: the phone's own pull-down reload is off, and the page edge still gives a little
+  assert.equal(out, 'contain');
+});
