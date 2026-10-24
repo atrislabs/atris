@@ -107,9 +107,46 @@ test('page: added to the home screen it opens on its own with no browser bars, t
   assert.ok(!/user-scalable=no|maximum-scale=1/.test(html), 'pinch zoom stays on');
 });
 
-test('browser: the live page has the home screen tags, and opening it puts nothing in the console', browser, async () => {
+test('page: the icon is the amber orb, inline: an svg for the tab and a real 180px png for the home screen, and the page lets in inline images only', async () => {
+  const icon = require('../lib/gm-phone-icon');
+  const zlib = require('node:zlib');
+  const html = phonePage('NONCE');
+  assert.ok(html.includes(`<link rel="icon" type="image/svg+xml" href="${icon.iconSvg()}">`));
+  assert.ok(html.includes(`<link rel="apple-touch-icon" sizes="180x180" href="${icon.touchIconPng()}">`));
+  assert.match(decodeURIComponent(icon.iconSvg()), /^data:image\/svg\+xml,<svg [^"]*xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  const png = Buffer.from(icon.touchIconPng().split(',')[1], 'base64');
+  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.equal(png.readUInt32BE(16), 180);
+  assert.equal(png.readUInt32BE(20), 180);
+  // every chunk's check sum holds, and the pixels decode: the page dark at a corner, amber in the middle
+  let at = 8, idat = [];
+  while (at < png.length) {
+    const len = png.readUInt32BE(at), type = png.toString('ascii', at + 4, at + 8);
+    assert.equal(png.readUInt32BE(at + 8 + len), zlib.crc32(png.subarray(at + 4, at + 8 + len)), type);
+    if (type === 'IDAT') idat.push(png.subarray(at + 8, at + 8 + len));
+    at += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const pixel = (x, y) => { const row = y * (1 + 180 * 3); const px = [0, 0, 0]; for (let i = 0; i <= x; i++) for (let k = 0; k < 3; k++) px[k] = (px[k] + raw[row + 1 + i * 3 + k]) & 0xff; return px; };
+  assert.deepEqual(pixel(0, 0), [0x14, 0x11, 0x10]);
+  const mid = pixel(90, 90);
+  assert.ok(mid[0] > 240 && mid[1] > 120 && mid[2] < 120, `amber in the middle: ${mid}`);
+  assert.ok(png.length < 16000, `small: ${png.length} bytes`);
+  const s = await serveDesk(trace.cardDesk(trace.CARDS.b1, async () => ({ card: trace.CARDS.b1 })));
+  try {
+    const csp = (await s.get('/')).headers.get('content-security-policy');
+    assert.match(csp, /(^|; )img-src data:(;|$)/);
+    assert.match(csp, /default-src 'none'/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('browser: the live page has the home screen tags and both icons decode, and opening it puts nothing in the console', browser, async () => {
   const out = await health.headTrace({ chromePath: CHROME });
   for (const [name, content] of Object.entries(HOME_TAGS)) assert.equal(out.meta[name], content, name);
+  assert.deepEqual(out.icons.map(i => [i.rel, Boolean(i.decoded)]), [['icon', true], ['apple-touch-icon', true]], JSON.stringify(out.icons));
+  assert.deepEqual(out.icons[1].decoded, [180, 180]);
   assert.equal(out.meta['theme-color'], '#141110');
   assert.equal(out.lang, 'en');
   assert.deepEqual(out.console, [], JSON.stringify(out.console));
