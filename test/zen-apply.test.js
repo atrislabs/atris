@@ -457,6 +457,26 @@ test('a clashing map edit that only moved line numbers is not handed back, since
   }
 });
 
+test('a clashing map edit that only moved the ends of line ranges is not handed back either', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/refs/MAP-NOTES.md', '- detect: `lib/init.js:12-166`\n- inject: `lib/init.js:168-252`\n', 'notes');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    commit(seed, 'atris/refs/MAP-NOTES.md', '- detect: `lib/init.js:36-190` finds the project\n- inject: `lib/init.js:197-276`\n', 'notes words');
+    git(seed, 'push', '-q');
+    // Seen on a real catch-up: the last refresh moved both ends of each range.
+    write(checkout, 'atris/refs/MAP-NOTES.md', '- detect: `lib/init.js:14-170`\n- inject: `lib/init.js:172-260`\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.doesNotMatch(cli.stdout, /kept the new atris\/refs\/MAP-NOTES\.md/);
+    assert.match(fs.readFileSync(path.join(checkout, 'atris/refs/MAP-NOTES.md'), 'utf8'), /finds the project/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a clashing map edit with new words is still handed back', () => {
   const { base, seed, checkout } = createRepo();
   try {
