@@ -3602,7 +3602,10 @@ test('card contract: every kind of card is whole: a way forward, options that an
   assert.deepEqual(lock.wire.options.map(o => o.label), ['yes', 'no', 'not now']);
   // the reply that asks its own question shows only its answers, the box, and a way back
   const asks = cards.find(c => c.name === 'reply that asks');
-  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the first question']);
+  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the question']);
+  // on an idea, the same kind of reply goes back to the idea, the card it really returns to
+  const onIdea = gmCard.reply({ id: 'b1~r1', base: gmCard.idea({ id: 'b1', title: 'write the getting started page', body: 'installs last week were 1,400.' }), text: 'which page do you mean, the phone one or the readme?', suggestions: ['the phone one'] });
+  assert.equal(onIdea.options.find(o => o.action === 'back').label, 'back to the idea');
   assert.ok(asks.wire.input);
   assert.equal(asks.wire.title, 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?');
   assert.notEqual(asks.wire.id, cards.find(c => c.name === 'question with something else').wire.id, 'a reply is a new card');
