@@ -244,6 +244,8 @@ const RECORDER = `(function () {
       // every row of the card under the title, in order: the options and the box
       rows: Array.prototype.map.call(box.querySelectorAll('.act > *, .act .links > button, .sayline'), function (n) { return { r: r(n), o: op(n), spot: Boolean(spot && (n === spot || n.contains(spot) || spot.contains(n))) }; }),
       revealMs: document.body.getAttribute('data-reveal-ms'),
+      revealPlan: document.body.getAttribute('data-reveal-plan'),
+      revealWaited: document.body.getAttribute('data-reveal-waited-ms'),
     });
     requestAnimationFrame(rec);
   })();
@@ -257,6 +259,35 @@ const size = (a, b) => (a && b ? Math.max(Math.abs(a.w - b.w), Math.abs(a.h - b.
 const center = a => ({ x: a.x + a.w / 2, y: a.y + a.h / 2 });
 const round = n => (Number.isFinite(n) ? Math.round(n * 10) / 10 : null);
 const most = list => list.reduce((m, n) => Math.max(m, n), 0);
+const num = v => (v == null ? null : Number(v));
+
+// The page's own account of a reveal: the clock from the tap to the card
+// fully in, and the motion's steps with the length each is set to take
+// ("hold 150, glide 260, ..."). What the clock reads past the motion is the
+// wait on the desk's answer and then late timers and frames, which a busy
+// machine stretches; slowest_frame_ms is the longest gap between two frames
+// on the way, so a stretched clock can be read against the machine's pace.
+function reveal(frames, sent) {
+  const last = frames[frames.length - 1];
+  const motion = last.revealPlan == null ? null : last.revealPlan.split(', ').filter(Boolean).map(s => {
+    const at = s.lastIndexOf(' ');
+    return [s.slice(0, at), Number(s.slice(at + 1))];
+  });
+  const clock = num(last.revealMs), waited = num(last.revealWaited);
+  const motionMs = motion ? motion.reduce((n, [, ms]) => n + ms, 0) : null;
+  const endAt = frames.findIndex(f => f.t >= sent && f.revealMs != null);
+  const times = [sent, ...frames.slice(0, endAt < 0 ? frames.length : endAt + 1).filter(f => f.t > sent).map(f => f.t)];
+  let slowest = 0;
+  for (let i = 1; i < times.length; i++) slowest = Math.max(slowest, times[i] - times[i - 1]);
+  return {
+    reveal_ms: clock,
+    motion,
+    motion_ms: motionMs,
+    waited_ms: waited,
+    late_ms: clock == null || motionMs == null ? null : clock - motionMs - (waited || 0),
+    slowest_frame_ms: Math.round(slowest),
+  };
+}
 
 // One stretch, from the owner's first act (a tap that opens a field, or the
 // tap that answers) to the next card at rest. marks: the page times of the
@@ -291,7 +322,7 @@ function summarize(frames, marks, before) {
     title_rest_px: round(dist(last.title, before.title)),
     largest_frame_step_px: round(step),
     next_title: last.titleText,
-    reveal_ms: last.revealMs == null ? null : Number(last.revealMs),
+    ...reveal(frames, sent),
   };
 }
 

@@ -1211,8 +1211,18 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
     assert.ok(s.title_max_px <= 5, show(s));
     assert.equal(s.title_rest_px, 0, show(s));
     assert.ok(s.largest_frame_step_px <= 5, show(s));
-    // tap to the next card fully in: about a second
-    assert.ok(s.reveal_ms >= 800 && s.reveal_ms <= 1500, show(s));
+    // tap to the next card fully in: about a second, step by step as the page
+    // sets its motion, so a busy machine's late frames never count against it
+    assert.deepEqual(s.motion.map(([step]) => step), ['hold', 'glide', 'beat', 'spiral', 'bloom', 'fade'], show(s));
+    assert.ok(s.motion_ms >= 900 && s.motion_ms <= 1250, show(s));
+    // the clock is the motion plus the wait on the stub desk (its own speed,
+    // left out) plus late timers and frames. it never beats the motion by
+    // more than the one frame the spiral can start into, and what a slow
+    // machine adds stays within a dozen of its slowest frames: about that many
+    // times the motion waits on a timer or a frame
+    assert.ok(Number.isFinite(s.reveal_ms) && Number.isFinite(s.waited_ms), show(s));
+    assert.ok(s.late_ms >= -s.slowest_frame_ms, show(s));
+    assert.ok(s.late_ms <= 12 * s.slowest_frame_ms, show(s));
   }
   for (const s of [answered, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
   // a reply instead of a card takes the title's spot; it only explains, so the
