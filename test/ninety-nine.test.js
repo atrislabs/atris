@@ -59,6 +59,200 @@ function event(type, session, at, extra = {}) {
   return { v: 1, type, id: session.id, at: at.toISOString(), source: 'mac', ...extra };
 }
 
+const overviewHint = 'Start: atris 99 50   Again: atris 99 again   Help: atris 99 help';
+
+test('no arguments show an empty timer and today with one quiet hint', (t) => {
+  const f = fixture(t);
+  assert.deepEqual(f.run(), {
+    code: 0, output: `Nothing running.\nToday: 0 focus, 0 meditate, 0 min\n${overviewHint}`,
+  });
+  assert.equal(f.text(), '');
+  const result = f.cli();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, `Nothing running.\nToday: 0 focus, 0 meditate, 0 min\n${overviewHint}\n`);
+});
+
+test('no arguments show the live countdown or paused state without changing the log', (t) => {
+  for (const [kind, length, label, remaining] of [
+    ['focus', 50, 'Focus', '32:18'], ['meditate', 20, 'Meditate', '2:18'],
+  ]) {
+    const f = fixture(t);
+    f.run(kind, String(length));
+    f.advance(17.7);
+    const before = f.text();
+    assert.deepEqual(f.run(), {
+      code: 0, output: `${label} · ${remaining} left\nToday: 0 focus, 0 meditate, 0 min\n${overviewHint}`,
+    });
+    assert.equal(f.text(), before);
+    f.run('pause');
+    f.advance(1);
+    const paused = f.text();
+    assert.deepEqual(f.run(), {
+      code: 0, output: `${label} · paused\nToday: 0 focus, 0 meditate, 0 min\n${overviewHint}`,
+    });
+    assert.equal(f.text(), paused);
+  }
+});
+
+test('the overview completes overdue sessions once and counts only finished sessions today', (t) => {
+  const f = fixture(t);
+  f.run('50');
+  f.advance(50);
+  assert.deepEqual(f.run(), {
+    code: 0, output: `Nothing running.\nToday: 1 focus, 0 meditate, 50 min\n${overviewHint}`,
+  });
+  assert.equal(f.records().at(-1).status, 'done');
+  assert.equal(f.records().at(-1).inferred, true);
+  const before = f.text();
+  f.run();
+  assert.equal(f.text(), before);
+  f.run('20');
+  f.advance(20);
+  assert.equal(f.run('stop').output, 'meditate done: 20 finished minutes\nToday: 1 focus, 1 meditate, 70 min');
+  f.run('25');
+  assert.equal(f.run('stop').output, 'focus partial: 0 finished minutes\nToday: 1 focus, 1 meditate, 70 min');
+  assert.equal(f.run().output, `Nothing running.\nToday: 1 focus, 1 meditate, 70 min\n${overviewHint}`);
+  f.advance(24 * 60);
+  assert.equal(f.run().output, `Nothing running.\nToday: 0 focus, 0 meditate, 0 min\n${overviewHint}`);
+});
+
+test('numeric, letter, and start shortcuts persist the same session contract', (t) => {
+  for (const [kind, lengths, alias] of [['focus', [25, 50, 90], 'f'], ['meditate', [10, 20, 30], 'm']]) {
+    for (const length of lengths) {
+      for (const args of [[String(length)], [alias, String(length)], ['start', kind, String(length)]]) {
+        const f = fixture(t);
+        assert.equal(f.run(...args).code, 0, args.join(' '));
+        const record = f.records()[0];
+        assert.deepEqual(record, {
+          v: 1, type: 'start', id: record.id, kind, planned_min: length, at: f.now().toISOString(), source: 'cli',
+        });
+        const before = f.text();
+        assert.equal(f.run(...args).code, 1);
+        assert.equal(f.text(), before);
+      }
+    }
+  }
+});
+
+test('shortcut errors name the allowed lengths and never write a session', (t) => {
+  const f = fixture(t);
+  for (const [kind, alias, lengths, invalid] of [
+    ['focus', 'f', '25 | 50 | 90', '20'], ['meditate', 'm', '10 | 20 | 30', '50'],
+  ]) {
+    for (const args of [[alias], ['start', kind]]) {
+      assert.deepEqual(f.run(...args), { code: 1, output: `Pick a length: atris 99 ${kind} ${lengths}` });
+      assert.deepEqual(f.run(...args, invalid), {
+        code: 1, output: `Allowed ${kind} lengths: ${lengths.replaceAll(' | ', ', ')} minutes.`,
+      });
+    }
+  }
+  for (const action of ['wat', '15', '025', '50.0', 'start']) {
+    assert.deepEqual(f.run(action), { code: 1, output: `Unknown: ${action}. Try: atris 99 help` });
+  }
+  assert.equal(f.text(), '');
+  assert.ok(!fs.existsSync(path.dirname(f.logPath)));
+});
+
+test('again repeats the most recently finished kind and planned length from any day', (t) => {
+  for (const [kind, length] of [['focus', 90], ['meditate', 20]]) {
+    const f = fixture(t);
+    const older = start(new Date(2026, 9, 20, 10), { id: 'older' });
+    const latest = start(new Date(2026, 9, 21, 10), { id: 'latest', kind, minutes: length, source: 'ios' });
+    const partial = start(new Date(2026, 9, 22, 10), { id: 'partial', kind: 'focus', minutes: 50 });
+    // Appended order differs from completion order, as it can after sync.
+    f.seed([
+      latest, event('end', latest, new Date(2026, 9, 21, 12), { status: 'done' }),
+      older, event('end', older, new Date(2026, 9, 20, 11), { status: 'done' }),
+      partial, event('end', partial, new Date(2026, 9, 22, 10, 1), { status: 'partial' }),
+    ], false);
+    const before = f.text();
+    assert.equal(f.run('again').code, 0);
+    const record = f.records().at(-1);
+    assert.deepEqual(record, {
+      v: 1, type: 'start', id: record.id, kind, planned_min: length, at: f.now().toISOString(), source: 'cli',
+    });
+    assert.notEqual(record.id, latest.id);
+    assert.ok(f.text().startsWith(before + '\n'));
+    assert.equal(JSON.parse(f.run('today', '--json').output).finished_minutes, 0);
+  }
+});
+
+test('again gives a helpful message when there are no finished sessions', (t) => {
+  const f = fixture(t);
+  const expected = { code: 1, output: 'No finished session yet. Try: atris 99 50' };
+  assert.deepEqual(f.run('again'), expected);
+  assert.equal(f.text(), '');
+  f.run('50');
+  f.run('stop');
+  const before = f.text();
+  assert.deepEqual(f.run('again'), expected);
+  assert.equal(f.text(), before);
+});
+
+test('again observes overdue completion and refuses to replace running or paused sessions', (t) => {
+  const f = fixture(t);
+  f.run('50');
+  f.advance(50);
+  assert.equal(f.run('again').code, 0);
+  assert.deepEqual(f.records().map((record) => record.type), ['start', 'end', 'start']);
+  assert.equal(f.records()[1].status, 'done');
+  assert.equal(f.records()[1].inferred, true);
+  assert.equal(f.records()[2].planned_min, 50);
+  for (const paused of [false, true]) {
+    if (paused) f.run('pause');
+    const before = f.text();
+    assert.deepEqual(f.run('again'), { code: 1, output: 'a session is already running; use atris 99 stop first' });
+    assert.equal(f.text(), before);
+  }
+  assert.deepEqual(f.run('again', 'extra'), { code: 2, output: 'usage: atris 99 again' });
+});
+
+test('start output shows the local end time in the evening and across midnight', (t) => {
+  const f = fixture(t);
+  f.setTime(new Date(2026, 9, 23, 20, 52));
+  assert.deepEqual(f.run('50'), { code: 0, output: 'Focus 50 started. Ends at 9:42 PM.' });
+  f.run('stop');
+  f.setTime(new Date(2026, 9, 23, 23, 55));
+  assert.deepEqual(f.run('m', '10'), { code: 0, output: 'Meditate 10 started. Ends at 12:05 AM.' });
+});
+
+test('help lists every shortcut and returns success without touching the log', (t) => {
+  const f = fixture(t);
+  for (const args of [['help'], ['--help']]) {
+    const result = f.run(...args);
+    assert.equal(result.code, 0);
+    for (const entry of [
+      'atris 99 <25|50|90>', 'atris 99 <10|20|30>', 'atris 99 f <25|50|90>', 'atris 99 m <10|20|30>',
+      'atris 99 start <focus|meditate> <minutes>', 'atris 99 again', 'atris 99 help | --help',
+    ]) assert.ok(result.output.includes(entry), entry);
+  }
+  assert.equal(f.text(), '');
+  assert.ok(!fs.existsSync(path.dirname(f.logPath)));
+});
+
+test('the real dispatcher accepts shortcuts and reports useful errors with real exit codes', (t) => {
+  const f = fixture(t);
+  for (const args of [['25'], ['50'], ['90'], ['10'], ['20'], ['30'], ['f', '50'], ['m', '20'], ['start', 'focus', '50']]) {
+    const result = f.cli(...args);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /^(Focus|Meditate) \d+ started\. Ends at \d{1,2}:\d{2} [AP]M\.\n$/);
+    const length = Number(args.at(-1));
+    assert.equal(f.records().at(-1).planned_min, length);
+    assert.equal(f.records().at(-1).kind, [25, 50, 90].includes(length) ? 'focus' : 'meditate');
+    assert.equal(f.cli('stop').status, 0);
+  }
+  const previous = start(new Date(Date.now() - 2 * 24 * 60 * minute), { kind: 'meditate', minutes: 30 });
+  f.seed([previous, event('end', previous, new Date(Date.parse(previous.at) + 30 * minute), { status: 'done' })]);
+  assert.equal(f.cli('again').status, 0);
+  assert.equal(f.records().at(-1).kind, 'meditate');
+  assert.equal(f.records().at(-1).planned_min, 30);
+  assert.equal(f.cli('focus').status, 1);
+  assert.equal(f.cli('meditate').status, 1);
+  assert.equal(f.cli('wat').status, 1);
+  assert.equal(f.cli('wat').stdout, 'Unknown: wat. Try: atris 99 help\n');
+  for (const arg of ['help', '--help']) assert.equal(f.cli(arg).status, 0);
+});
+
 test('every allowed length writes the exact start and end contract with a unique uuid', (t) => {
   const f = fixture(t);
   const ids = new Set();
@@ -66,7 +260,11 @@ test('every allowed length writes the exact start and end contract with a unique
     for (const length of lengths) {
       const began = f.now().toISOString();
       const previous = f.text();
-      assert.deepEqual(f.run(kind, String(length)), { code: 0, output: `${kind} started for ${length} minutes` });
+      const endsAt = new Date(f.now().getTime() + length * minute)
+        .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      assert.deepEqual(f.run(kind, String(length)), {
+        code: 0, output: `${kind === 'focus' ? 'Focus' : 'Meditate'} ${length} started. Ends at ${endsAt}.`,
+      });
       const record = f.records().at(-1);
       assert.deepEqual(record, { v: 1, type: 'start', id: record.id, kind, planned_min: length, at: began, source: 'cli' });
       assert.match(record.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -87,13 +285,15 @@ test('unsupported lengths and extra arguments fail on one line without writing',
     invalid.push(...(kind === 'focus' ? ['10', '20', '30'] : ['25', '50', '90']));
     for (const length of invalid) {
       const result = f.run(kind, length);
-      assert.equal(result.code, 2, `${kind} ${length}`);
+      assert.equal(result.code, 1, `${kind} ${length}`);
       assert.equal(result.output.split('\n').length, 1);
-      assert.match(result.output, /choose/);
+      assert.equal(result.output, `Allowed ${kind} lengths: ${kind === 'focus' ? '25, 50, 90' : '10, 20, 30'} minutes.`);
       assert.equal(f.text(), '');
     }
-    assert.equal(f.run(kind).code, 2);
-    assert.equal(f.run(kind, kind === 'focus' ? '25' : '10', '--json').code, 2);
+    assert.deepEqual(f.run(kind), {
+      code: 1, output: `Pick a length: atris 99 ${kind} ${kind === 'focus' ? '25 | 50 | 90' : '10 | 20 | 30'}`,
+    });
+    assert.equal(f.run(kind, kind === 'focus' ? '25' : '10', '--json').code, 1);
   }
 });
 
@@ -119,7 +319,9 @@ test('stop just before the planned end is partial, earns nothing, and normalizes
   f.advance(25);
   f.setTime(f.now().getTime() - 1);
   const before = f.text();
-  assert.deepEqual(f.run('stop', 'phone\n rang', '  back\r\nlater  '), { code: 0, output: 'focus partial: 0 finished minutes' });
+  assert.deepEqual(f.run('stop', 'phone\n rang', '  back\r\nlater  '), {
+    code: 0, output: 'focus partial: 0 finished minutes\nToday: 0 focus, 0 meditate, 0 min',
+  });
   assert.deepEqual(f.records()[1], { v: 1, type: 'end', id, status: 'partial', at: f.now().toISOString(), source: 'cli', note: 'phone rang back later' });
   assert.ok(f.text().startsWith(before));
   assert.equal(JSON.parse(f.run('today', '--json').output).finished_minutes, 0);
@@ -131,7 +333,9 @@ test('stop at or after the planned end is done at the planned timestamp and keep
     f.run('meditate', '20');
     const expected = new Date(f.now().getTime() + 20 * minute).toISOString();
     f.advance(20 + delay);
-    assert.deepEqual(f.run('stop', 'felt', 'calm'), { code: 0, output: 'meditate done: 20 finished minutes' });
+    assert.deepEqual(f.run('stop', 'felt', 'calm'), {
+      code: 0, output: 'meditate done: 20 finished minutes\nToday: 0 focus, 1 meditate, 20 min',
+    });
     assert.deepEqual(f.records()[1], { v: 1, type: 'end', id: f.records()[0].id, status: 'done', at: expected, source: 'cli', note: 'felt calm' });
     assert.equal(JSON.parse(f.run('today', '--json').output).finished_minutes, 20);
   }
@@ -327,7 +531,8 @@ test('new log directories and records are private and an override leaves its exi
 
 test('help and invalid commands do not create or change a session log', (t) => {
   const f = fixture(t);
-  for (const args of [[], ['break', '5'], ['status', '--wat'], ['today', 'extra'], ['status', '--json', '--json']]) {
+  assert.deepEqual(f.run('break', '5'), { code: 1, output: 'Unknown: break. Try: atris 99 help' });
+  for (const args of [['status', '--wat'], ['today', 'extra'], ['status', '--json', '--json']]) {
     assert.equal(f.run(...args).code, 2);
     assert.equal(f.text(), '');
   }
@@ -395,7 +600,7 @@ test('the actual dispatcher uses the environment override and persists across sh
   assert.equal(f.cli('status').stdout, 'nothing running\n');
   assert.equal(f.cli('pause').status, 1);
   assert.equal(f.cli('resume').status, 1);
-  assert.equal(f.cli('focus', '15').status, 2);
+  assert.equal(f.cli('focus', '15').status, 1);
   assert.match(f.cli('--help').stdout, /usage: atris 99 focus/);
   assert.ok(!fs.existsSync(path.join(f.dir, '.atris', '99', 'sessions.jsonl')));
 });
@@ -622,7 +827,9 @@ test('stop while paused is a real partial at the stop time, even past the origin
       v: 1, type: 'end', id: session.id, status: 'partial', at: f.now().toISOString(), source: 'cli', note: 'back later',
     };
     assert.deepEqual(endRecord(session, f.now(), 'back later'), expected);
-    assert.deepEqual(f.run('stop', 'back later'), { code: 0, output: 'meditate partial: 0 finished minutes' });
+    assert.deepEqual(f.run('stop', 'back later'), {
+      code: 0, output: 'meditate partial: 0 finished minutes\nToday: 0 focus, 0 meditate, 0 min',
+    });
     assert.deepEqual(f.records().at(-1), expected);
     assert.ok(f.text().startsWith(before));
     assert.equal(activeMilliseconds(foldSessions(f.records())[0], f.now()), 2 * minute);

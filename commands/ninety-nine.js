@@ -27,12 +27,20 @@ function usage() {
   return [
     'usage: atris 99 focus <25|50|90>',
     '       atris 99 meditate <10|20|30>',
+    '       atris 99                         show the timer and today',
+    '       atris 99 <25|50|90>              start focus',
+    '       atris 99 <10|20|30>              start meditation',
+    '       atris 99 f <25|50|90>',
+    '       atris 99 m <10|20|30>',
+    '       atris 99 start <focus|meditate> <minutes>',
+    '       atris 99 again                   repeat the last finished session',
     '       atris 99 stop [note words]',
     '       atris 99 pause',
     '       atris 99 resume',
     '       atris 99 status [--json]',
     '       atris 99 today [--json]',
     '       atris 99 sync [--dry-run]',
+    '       atris 99 help | --help',
     '',
     'sync is off without a sync block in ~/.atris/99/config.json (ATRIS_99_CONFIG overrides it).',
     'personal: {"sync":{"target":"personal","app_slug":"project-99"}}',
@@ -152,6 +160,14 @@ function appendRecord(logPath, previousText, record) {
   return previousText + line;
 }
 
+function todayLine(result) {
+  return `Today: ${result.counts.focus} focus, ${result.counts.meditate} meditate, ${result.finished_minutes} min`;
+}
+
+function kindName(kind) {
+  return kind === 'focus' ? 'Focus' : 'Meditate';
+}
+
 function ninetyNineAtris(args = process.argv.slice(3), {
   log = console.log,
   now = () => new Date(),
@@ -161,32 +177,48 @@ function ninetyNineAtris(args = process.argv.slice(3), {
   request,
   credentials,
 } = {}) {
-  const [action, ...rest] = args;
+  let [action, ...rest] = args;
+  const overview = args.length === 0;
   // Words after stop belong to its note, including the word "help".
   if ((action !== 'stop' && argsWantHelp(args)) || (action === 'stop' && ['--help', '-h'].includes(rest[0]))) {
     log(usage());
     return 0;
   }
   if (action === 'sync') return syncNinetyNine(rest, { log, logPath, configPath, statePath, request, credentials });
+  if (action === 'start' && ['focus', 'meditate', 'f', 'm'].includes(rest[0])) [action, ...rest] = rest;
+  if (action === 'f') action = 'focus';
+  if (action === 'm') action = 'meditate';
+  for (const kind of ['focus', 'meditate']) {
+    if (validLength(kind, Number(action)) && String(Number(action)) === action) {
+      rest.unshift(action);
+      action = kind;
+      break;
+    }
+  }
   const json = rest.includes('--json');
   if (action === 'focus' || action === 'meditate') {
+    const lengths = action === 'focus' ? '25 | 50 | 90' : '10 | 20 | 30';
+    if (rest.length === 0) {
+      log(`Pick a length: atris 99 ${action} ${lengths}`);
+      return 1;
+    }
     if (rest.length !== 1 || !validLength(action, Number(rest[0])) || String(Number(rest[0])) !== rest[0]) {
-      log(action === 'focus' ? 'choose focus 25, 50, or 90 minutes' : 'choose meditate 10, 20, or 30 minutes');
-      return 2;
+      log(`Allowed ${action} lengths: ${lengths.replaceAll(' | ', ', ')} minutes.`);
+      return 1;
     }
   } else if (action === 'status' || action === 'today') {
     if (rest.length > 1 || (rest.length === 1 && !json)) {
       log(`usage: atris 99 ${action} [--json]`);
       return 2;
     }
-  } else if (action === 'pause' || action === 'resume') {
+  } else if (action === 'pause' || action === 'resume' || action === 'again') {
     if (rest.length) {
       log(`usage: atris 99 ${action}`);
       return 2;
     }
-  } else if (action !== 'stop') {
-    log(usage());
-    return 2;
+  } else if (action !== 'stop' && !overview) {
+    log(`Unknown: ${action}. Try: atris 99 help`);
+    return 1;
   }
 
   let lock;
@@ -227,19 +259,42 @@ function ninetyNineAtris(args = process.argv.slice(3), {
       }
       const end = endRecord(stopTarget, time, rest.join(' '));
       appendRecord(file, text, end);
+      records.push(end);
       log(`${stopTarget.kind} ${end.status}: ${end.status === 'done' ? stopTarget.planned_min : 0} finished minutes`);
+      log(todayLine(sessionsToday(foldSessions(records), time)));
       return 0;
     }
 
     sessions = foldSessions(records);
     active = runningSession(sessions, time);
-    if (action === 'focus' || action === 'meditate') {
+    if (action === 'again') {
+      const previous = sessions.filter((session) => session.status === 'done')
+        .sort((a, b) => Date.parse(b.ended_at) - Date.parse(a.ended_at))[0];
+      if (!previous) {
+        log('No finished session yet. Try: atris 99 50');
+        return 1;
+      }
+      action = previous.kind;
+      rest = [String(previous.planned_min)];
+    }
+    if (overview) {
+      if (!active) log('Nothing running.');
+      else if (active.status === 'paused') log(`${kindName(active.kind)} · paused`);
+      else {
+        const seconds = sessionStatus(active, time).running.remaining_seconds;
+        log(`${kindName(active.kind)} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`);
+      }
+      log(todayLine(sessionsToday(sessions, time)));
+      log('Start: atris 99 50   Again: atris 99 again   Help: atris 99 help');
+    } else if (action === 'focus' || action === 'meditate') {
       if (active) {
         log('a session is already running; use atris 99 stop first');
         return 1;
       }
       appendRecord(file, text, startRecord(action, Number(rest[0]), time, randomUUID()));
-      log(`${action} started for ${rest[0]} minutes`);
+      const end = new Date(time.getTime() + Number(rest[0]) * 60000);
+      const endsAt = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      log(`${kindName(action)} ${rest[0]} started. Ends at ${endsAt}.`);
     } else if (action === 'pause' || action === 'resume') {
       let record;
       try {
@@ -268,7 +323,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
           log(`${session.kind} ${session.planned_min} minutes: ${session.status}`);
         }
         log(`${result.finished_minutes} finished minutes today`);
-        log(`Today: ${result.counts.focus} focus, ${result.counts.meditate} meditate, ${result.finished_minutes} min`);
+        log(todayLine(result));
         if (health) log(healthSummary(health));
       }
     }
