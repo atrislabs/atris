@@ -70,6 +70,13 @@ inside TMPDIR). Real ones, fixed:
   real home, where agy lives.
 - The idea login test only passed when HOME was the real home.
 
+A full suite run at UTC+14 (where the local date is a day ahead of UTC)
+found 11 more failures in 8 files: tests that computed expected dates in
+UTC while the product uses the local day. The same mismatch hits any zone
+east of UTC in the morning, Australia and New Zealand included. Fixed in
+the tests; 502 tests across those files pass in UTC+14, UTC-11, UTC, and
+Los Angeles.
+
 The task board test failed about one run in five: the server drops idle
 connections after five seconds and fetch reused a closing socket. Each
 request now asks for a fresh connection; 15 of 15 runs pass.

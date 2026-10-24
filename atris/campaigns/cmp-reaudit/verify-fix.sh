@@ -7,12 +7,15 @@
 # for any path it cannot see (a require built at run time, for example).
 set -u
 . "$(cd "$(dirname "$0")" && pwd)/group-timeout.sh"
+# throwaway homes live outside TMPDIR: some tests shorten paths and expect home and temp apart
+HOME_BASE=${HOME_BASE:-/var/tmp}
 N="$1"
 H="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$H/../../.." && pwd)"
 W="$REPO/../reaudit-fix-$N"
 B="reaudit-fix-$N"
-base=$(git -C "$W" merge-base HEAD origin/master)
+# VERIFY_BASE replays a fix against a chosen starting point; default is where it left master
+base=${VERIFY_BASE:-$(git -C "$W" merge-base HEAD origin/master)}
 [ "$(git -C "$W" rev-list --count "$base..HEAD")" -ge 1 ] || { echo "REJECTED $N: no commit"; exit 1; }
 [ -z "$(git -C "$W" status --porcelain)" ] || { echo "REJECTED $N: uncommitted changes left"; exit 1; }
 tests=$(git -C "$W" diff --name-only "$base" HEAD -- 'test/*.test.js')
@@ -22,7 +25,7 @@ code=$(git -C "$W" diff --name-only "$base" HEAD -- lib commands bin scripts)
 git -C "$W" log -1 --format=%B | grep -q "Co-authored-by: Atris" || { echo "REJECTED $N: missing Atris credit"; exit 1; }
 
 run() { # dir file tz -> exit code; output kept in $RUN_OUT
-  local T; T=$(mktemp -d) || return 99
+  local T; T=$(mktemp -d "$HOME_BASE/verify-home-XXXX") || return 99
   RUN_OUT=$(cd "$1" && group_timeout 300 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$3" ATRIS_SKIP_UPDATE_CHECK=1 \
     node --test "$2" 2>&1); local c=$?; rm -rf "$T"; return $c
 }
@@ -69,7 +72,7 @@ related="$tests $(cd "$W" && node -e '
 related=$(echo $related | tr ' ' '\n' | sort -u)
 # one runner call per time zone; node runs the files side by side
 for tz in Pacific/Kiritimati Pacific/Pago_Pago; do
-  T=$(mktemp -d) || { echo "REJECTED $N: no temp folder"; exit 1; }
+  T=$(mktemp -d "$HOME_BASE/verify-home-XXXX") || { echo "REJECTED $N: no temp folder"; exit 1; }
   out=$(cd "$W" && group_timeout 2400 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$tz" ATRIS_SKIP_UPDATE_CHECK=1 \
     node --test $related 2>&1); c=$?; rm -rf "$T"
   if [ $c -ne 0 ]; then
