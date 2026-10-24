@@ -190,32 +190,35 @@ test('browser: a Mac that errs or is starting again never reads as a dead link, 
 
 test('browser: when the Mac stops answering, a quiet line in the card says so within about ten seconds, the page asks less often, and the line goes once the Mac answers', { skip, timeout: 90000 }, async () => {
   const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-  const read = desk.card;
-  const looks = [];
-  desk.card = () => { looks.push(Date.now()); return read(); };
   const net = (send, offline) => send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   const QUIET = 'the mac is not answering. still trying.';
   const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    // every look the page makes, on its own clock
+    await p.run("(function () { var real = window.fetch; window.__looks = []; window.fetch = function (url, opts) { if (String(url).indexOf('/card') >= 0) window.__looks.push(Date.now()); return real(url, opts); }; })()");
     await send('Network.enable');
     await net(send, true);
     const t0 = Date.now();
     await p.until(`document.querySelector('#bet .act .note').textContent === ${JSON.stringify(QUIET)}`, 'the quiet line', 13000).catch(() => {});
     const down = { after_ms: Date.now() - t0, ...(await look(p)) };
-    await wait(1000);
-    await net(send, false);
+    // sixteen seconds more without the Mac: at every five seconds that would be three looks
     const t1 = Date.now();
-    // while down it asks every fifteen seconds, so the line clears on the next of those
+    await wait(16000);
+    const downLooks = (await p.run('window.__looks')).filter(t => t > t1).length;
+    await net(send, false);
+    const t2 = Date.now();
     await p.until("document.querySelector('#bet .act .note').textContent === ''", 'the line gone', 17000).catch(() => {});
-    return { down, cleared_ms: Date.now() - t1, up: await look(p), looks_after: looks.filter(t => t >= t1).length };
+    return { down, downLooks, cleared_ms: Date.now() - t2, up: await look(p) };
   });
   const show = JSON.stringify(out, null, 1);
   assert.equal(out.down.note, QUIET, show);
   assert.ok(out.down.after_ms <= 12000, show);
   // the card is still the one on screen, and still takes taps
   assert.deepEqual([out.down.title, out.down.busy], [CARDS.b1.title, false], show);
+  // while down it asks every fifteen seconds, not every five
+  assert.ok(out.downLooks >= 1 && out.downLooks <= 2, show);
+  // back online, it looks at once and the line goes
   assert.equal(out.up.note, '', show);
-  // the slow ask: not every five seconds while it was down
-  assert.ok(out.cleared_ms > 5500 && out.cleared_ms <= 16500, show);
+  assert.ok(out.cleared_ms < 2000, show);
 });
 
 // the phone's own back button: one step back in the browser's history
