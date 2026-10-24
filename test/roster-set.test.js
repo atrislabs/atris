@@ -314,7 +314,8 @@ test('orb swap: one tap on the swap card, through the token-checked route, swaps
     assert.equal(section(text(), 'build')[0], '- claude code, model: opus 5.5, max: 45 min', 'a refused tap writes nothing');
     const out = await h.act({ card_id: card.id, option_id: sol.id });
     assert.equal(out.status, 200, out.text);
-    assert.equal(out.json.ack, 'build now runs on codex gpt-6.1-sol. claude opus 5.5 is the backup.');
+    // the line is said once, on the team that comes back, so the answer carries no line of its own
+    assert.equal(out.json.ack, undefined);
     // the team comes back with the line and the new engine in builder's row
     assert.deepEqual([out.json.card.kind, out.json.card.line], ['team', 'build now runs on codex gpt-6.1-sol. claude opus 5.5 is the backup.']);
     const col = out.json.card.table.columns.indexOf('engine');
@@ -329,7 +330,8 @@ test('orb swap: one tap on the swap card, through the token-checked route, swaps
     assert.equal(opus.binds.scope, 'member');
     const one = await h.act({ card_id: forOne.id, option_id: opus.id });
     assert.equal(one.status, 200, one.text);
-    assert.match(one.json.ack, /^researcher now runs on claude opus 5\.5\./);
+    assert.equal(one.json.ack, undefined);
+    assert.match(one.json.card.line, /^researcher now runs on claude opus 5\.5\./);
     assert.equal(one.json.card.table.rows.find((r) => r[0] === 'researcher')[col], 'claude opus 5.5');
     // a tool that cannot do the member's kind of work is not on its card, so it cannot be tapped
     const again = await h.fullList(await h.swapCard('researcher'));
