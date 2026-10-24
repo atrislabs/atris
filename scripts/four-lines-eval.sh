@@ -86,6 +86,8 @@ else
 fi
 
 cp -R "$CAMP/fixture/." "$W/"
+# the fixture keeps its test under a name the repo's own test run skips; it becomes test/ here
+mkdir -p "$W/test" && mv "$W/stats.test.js.txt" "$W/test/stats.test.js"
 git add -A
 git -c user.name=four-lines-eval -c user.email=eval@localhost commit -qm "fresh project with fixture" --no-gpg-sign
 PROMPT="${FOUR_LINES_PROMPT:-$(cat "$CAMP/fixture/TASK.md")}"
