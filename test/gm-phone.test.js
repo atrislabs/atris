@@ -1512,7 +1512,8 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
     const desk = gmBet.createBetDesk({
       workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false,
       readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
-      generate: () => new Promise(resolve => writing.push(resolve)),
+      // like the real writer, a drafting the desk stops ends at once
+      generate: opts => new Promise((resolve) => { writing.push(resolve); if (opts.signal) opts.signal.addEventListener('abort', () => resolve({ ok: false, stopped: true })); }),
       generateQuestion: () => new Promise(() => {}),
       readSaid: async (p) => { said.push(p); return { ok: true, kind: 'instruction', reply: '' }; },
       runCli: async () => ({ code: 0, stdout: '{}' }),
@@ -1521,6 +1522,9 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
     desk.next();
     desk.answer({ choice: 'money' });
     assert.equal(desk.next().kind, 'wait');
+    // the drafting that began before the answer stopped, and a fresh one knows it
+    await new Promise(r => setImmediate(r));
+    assert.equal(writing.length, 2);
     runs.push(await trace.onPhone(desk, CHROME, async (p) => {
       const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null }; })()");
       const calm = await look();
@@ -1528,7 +1532,7 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
       await new Promise(r => setTimeout(r, 250));
       await p.type(WORDS);
       // the idea is written while the owner types
-      writing.shift()({ ok: true, bet: IDEA });
+      writing[writing.length - 1]({ ok: true, bet: IDEA });
       await new Promise(r => setTimeout(r, 3500));
       const typing = await look();
       if (end === 'send') await p.enter();

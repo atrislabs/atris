@@ -327,7 +327,7 @@ test('skeptic: a named blocker becomes the next bet, not a patch on the blocked 
   });
   const events = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? goodBet() : release) }; },
@@ -373,14 +373,18 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
     { verdict: 'fail', missing_first: 'a public build that has the phone page', moves_metric: false, reason: 'the page shows a feature nobody can install.' },
   ];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(answers[prompts.length - 1]) }; },
       runSkeptic: async () => ({ ok: true, text: JSON.stringify(verdicts.shift()) }),
     },
   });
-  assert.equal(out.ok, false);
+  // no draft passed both checks: the one that met the rules is the card, with the worry on it
+  assert.equal(out.ok, true);
+  assert.equal(out.checked, false);
+  assert.equal(out.bet.title, goodBet().title);
+  assert.equal(out.bet.concern, 'one worry: the page shows a feature nobody can install.');
   // try 2 patches the code reject with the last answer
   assert.match(prompts[1], /Your last answer was:\n\{/);
   assert.match(prompts[1], /Your last answer was rejected: check_in_days must be a whole number from 7 to 14, got 3/);
@@ -392,7 +396,7 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
   // a skeptic fail that names nothing missing is a patch with its reason
   const plain = [];
   const again = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { plain.push(prompt); return { ok: true, text: JSON.stringify(goodBet()) }; },
@@ -416,7 +420,7 @@ test('trim: a format-only reject gets one free repair turn in the same try, then
   let judged = 0;
   const events = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? long : short) }; },
@@ -452,7 +456,7 @@ test('trim: a trim that changes more than the long fields, or a mixed reject, is
   const sneaky = goodBet({ target: { metric: 'installs', baseline: 1400, goal: 1600 }, steps: [{ text: 'draft the page', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
   const prompts = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 2 ? sneaky : (prompts.length === 1 ? long : goodBet())) }; } },
   });
   assert.equal(out.ok, true, out.reason);
@@ -463,31 +467,40 @@ test('trim: a trim that changes more than the long fields, or a mixed reject, is
   // a reject with a real problem besides a length gets no trim turn
   const mixed = [];
   await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { mixed.push(prompt); return { ok: true, text: JSON.stringify(mixed.length === 1 ? { ...long, check_in_days: 3 } : goodBet()) }; } },
   });
   assert.doesNotMatch(mixed[1], /broke only these length or sentence limits/);
   assert.match(mixed[1], /Your last answer was rejected: .*check_in_days must be a whole number from 7 to 14, got 3/);
 });
 
-test('skeptic: two fails end honestly; pass without moving the number is a fail; a broken skeptic stops the bet', async () => {
+test('skeptic: when nothing passes, the best draft is the card with the worry; a pass that does not move the number is a fail; a broken skeptic leaves it not double-checked', async () => {
   const root = workspace();
-  const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
-  const twice = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'fail', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new.' }) }));
-  assert.equal(twice.ok, false);
-  assert.match(twice.reason, /turned down 3 times \(a skeptic turned it down: a page alone reaches nobody new\. if the missing piece/);
+  const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1, deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
+  // three fails: never an error, the draft is shown with the skeptic's own worry for the owner
+  const thrice = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'fail', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new. add a post.', concern: 'a page alone reaches nobody new' }) }));
+  assert.deepEqual([thrice.ok, thrice.checked, thrice.bet.title], [true, false, goodBet().title]);
+  assert.equal(thrice.bet.concern, 'one worry: a page alone reaches nobody new.');
+  assert.match(thrice.reason, /a skeptic turned it down: a page alone reaches nobody new/);
   let calls = 0;
-  const contradicts = await run(async () => { calls += 1; return { ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: '', moves_metric: false, reason: 'fine, though it reaches nobody.' }) }; });
-  assert.equal(contradicts.ok, false, 'a pass that does not move the number does not ship');
+  const contradicts = await run(async () => { calls += 1; return { ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: '', moves_metric: false, reason: 'fine, though the bet reaches nobody.' }) }; });
+  assert.equal(contradicts.checked, false, 'a pass that does not move the number does not pass');
   assert.equal(calls, 3, 'three writer answers, each judged');
+  // the skeptic's reason uses a word the owner never reads: the line says the kind of worry instead
+  assert.equal(contradicts.bet.concern, 'one worry: it may not move your number much this week.');
+  const steps = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, doable: false, reason: 'the mission waits on strangers to reply.' }) }));
+  assert.equal(steps.checked, false, 'a team step the team cannot do and check on its own is a fail');
+  assert.equal(steps.bet.concern, 'one worry: one step depends on people outside the team.');
   const down = await run(async () => ({ ok: false, reason: 'the model took longer than 120 seconds and was stopped' }));
-  assert.deepEqual([down.ok, down.reason], [false, 'the skeptic could not check the bet: the model took longer than 120 seconds and was stopped']);
+  assert.deepEqual([down.ok, down.checked, down.bet.concern], [true, false, 'not double-checked: the second look did not finish.']);
+  assert.equal(down.reason, 'the skeptic could not check the bet: the model took longer than 120 seconds and was stopped');
   const garbled = await run(async () => ({ ok: true, text: '{"verdict": "maybe"}' }));
-  assert.deepEqual([garbled.ok, garbled.reason], [false, 'the skeptic could not check the bet: the skeptic gave no pass or fail verdict']);
+  assert.deepEqual([garbled.ok, garbled.checked, garbled.reason], [true, false, 'the skeptic could not check the bet: the skeptic gave no pass or fail verdict']);
   assert.deepEqual(gmBet.parseVerdict('nope'), { error: "the skeptic's answer: the answer was not JSON" });
-  // the real skeptic is its own claude -p call on the subscription path
+  // the real skeptic is its own claude -p call on the subscription path, thinking briefly
   const args = gmBet.skepticCommand().args('judge this');
   assert.deepEqual(args.slice(0, 4), ['-p', 'judge this', '--model', 'opus']);
+  assert.deepEqual(args.slice(-2), ['--effort', 'low']);
   assert.equal(gmBet.skepticCommand().bin, 'claude');
 });
 
@@ -728,15 +741,17 @@ test('generate: a turned-down answer is retried once with the reasons, then fail
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     emit: e => events.push(e),
+    writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: bad }; } },
   });
+  // no draft met the plain rules, so there is no card to show: the one honest failure left
   assert.equal(out.ok, false);
   assert.equal(prompts.length, 3);
   assert.doesNotMatch(prompts[0], /was rejected/);
   assert.match(prompts[1], /Your last answer was rejected: .*vague verb "optimize"/);
   assert.match(out.reason, /turned down 3 times/);
   assert.match(prompts[2], /Your last answer was rejected: .*vague verb "optimize"/);
-  assert.deepEqual(events.slice(SOURCE_KEYS.length).map(e => e.kind), ['model', 'reject', 'model', 'reject', 'model', 'reject']);
+  assert.deepEqual(events.slice(SOURCE_KEYS.length).map(e => e.kind), ['swarm', 'model', 'reject', 'model', 'reject', 'model', 'reject', 'none']);
 });
 
 test('generate: a second good answer passes, and the order of events is sources, model, check', async () => {
@@ -748,6 +763,7 @@ test('generate: a second good answer passes, and the order of events is sources,
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     emit: e => events.push(e),
+    writers: 1,
     deps: {
       ...fixtureDeps,
       now: () => (n += 5000),
@@ -762,10 +778,12 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(out.ok, true, out.reason);
   assert.equal(out.attempts, 2);
   assert.equal(out.bet.title, goodBet().title);
-  assert.deepEqual(events.map(e => e.kind), [...SOURCE_KEYS.map(() => 'source'), 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'skeptic', 'check']);
-  assert.equal(events[SOURCE_KEYS.length].line, 'asking the model for one bet');
-  assert.equal(events[SOURCE_KEYS.length + 1].line, 'thinking...');
-  assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking... 4 words written');
+  assert.deepEqual(events.map(e => e.kind), [...SOURCE_KEYS.map(() => 'source'), 'swarm', 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'skeptic', 'check']);
+  assert.equal(events[SOURCE_KEYS.length + 1].line, 'asking the model for one bet');
+  assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking...');
+  assert.equal(events[SOURCE_KEYS.length + 3].line, 'thinking... 4 words written');
+  // the lines the waiting card shows, in the owner's words
+  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft missed a rule. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
   assert.ok(events.every(e => !/token|character/.test(e.line)));
   // the date is worked out from the owner's today, in calendar days
   assert.equal(out.bet.check_in_days, 9);
@@ -1301,7 +1319,7 @@ test('owner words: the writer is told the words, and a card that uses one gets o
   const plain = goodBet({ title: 'Write a getting started page for the phone this week' });
   const prompts = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile: path.join(root, 'a.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile: path.join(root, 'a.jsonl'), writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? worded : plain) }; } },
   });
   assert.equal(out.ok, true, out.reason);
@@ -1404,13 +1422,20 @@ test('passed vs skipped: a re-tap passes the bet over, not now skips it, sharper
   assert.equal(cRow.note, 'asked for a sharper idea');
 });
 
-test('desk: a failed writer never reaches the screen', async () => {
+test('desk: a failed writer never reaches the screen; a wait it ends is a card to try again, never the error', async () => {
   const gen = stubGenerator({ fail: () => true });
   const h = desk(workspace(), { gen, answered: true });
   h.d.next();
   await gen.releaseOne();
   const v = h.d.view();
-  assert.deepEqual([v.status, v.kind, v.error, v.events], ['ready', 'wait', null, []]);
+  assert.deepEqual([v.status, v.kind, v.error, v.events, v.job], ['ready', 'missed', null, [], { what: 'no idea came together this time.' }]);
+  const card = h.d.card().card;
+  assert.deepEqual([card.kind, card.title, card.options.map(o => [o.label, o.action])], ['missed', 'no idea came together this time.', [['try again', 'next']]]);
+  assert.ok(card.input, 'the owner can say what he wants instead');
+  assert.doesNotMatch(JSON.stringify(card), /empty answer|model/);
+  // try again: the drafting that started behind it is what the wait shows
+  const again = await h.d.act({ card_id: card.id, option_id: 'again' });
+  assert.equal(again.body.card.kind, 'wait');
 });
 
 test('choice: with 2 or more ideas ready a tap shows up to 3 to pick from; one tap opens it, the rest are passed', async () => {
@@ -2905,6 +2930,7 @@ test('attempts log: every model answer is saved with its raw text, parse result,
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     attemptsFile,
+    writers: 1,
     deps: {
       ...fixtureDeps,
       now: () => (n += 1000),
@@ -2918,7 +2944,7 @@ test('attempts log: every model answer is saved with its raw text, parse result,
   assert.equal(rows[0].raw, 'sure, here is a bet');
   assert.match(rows[1].raw, /"check_in_days":40/);
   assert.deepEqual(rows[1].reasons, ['check_in_days must be a whole number from 7 to 14, got 40']);
-  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true && r.kind === 'writer'));
+  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true && r.kind === 'writer' && r.lane === 1));
 });
 
 test('attempts log: a model that fails outright is saved too', async () => {
@@ -2928,9 +2954,11 @@ test('attempts log: a model that fails outright is saved too', async () => {
     workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
     deps: { ...fixtureDeps, runModel: async () => ({ ok: false, reason: 'the model gave an empty answer' }) },
   });
-  const row = JSON.parse(fs.readFileSync(attemptsFile, 'utf8').trim());
-  assert.equal(row.model_ok, false);
-  assert.deepEqual(row.reasons, ['the model gave an empty answer']);
+  // one row for each of the three writers, each with its own lane and angle
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.map(r => [r.model_ok, r.lane]).sort((a, b) => a[1] - b[1]), [[false, 1], [false, 2], [false, 3]]);
+  assert.deepEqual(rows[0].reasons, ['the model gave an empty answer']);
+  assert.deepEqual(new Set(rows.map(r => r.angle)), new Set(gmBet.WRITER_ANGLES.map(a => a.key)));
 });
 
 test('merged changes: one per first-parent commit, merges named by their pull request title', () => {
@@ -3077,7 +3105,8 @@ test('two held commands on one step are two cards; the yes on the first releases
 function threeAsks(root) {
   const file = path.join(root, 'gm-bets.jsonl');
   doingRow(file, root, 'b-a', 'm-a', 'Write the launch thread for the phone page');
-  doingRow(file, root, 'b-b', 'm-b', 'Record the demo video of the front office');
+  // titles unlike the ideas the stub writes: one too close to a started job is never shown
+  doingRow(file, root, 'b-b', 'm-b', 'Film the welcome clip for the pricing page');
   doingRow(file, root, 'b-c', 'm-c', 'Write the getting started page');
   const ask = (id, owner, mins, text) => ({ id, owner, status: 'blocked', created_at: new Date(NOW - mins * 60000).toISOString(), human_asks: [text] });
   return {
@@ -3340,6 +3369,18 @@ async function everyCard() {
   const calm = desk(workspace(), { answered: true });
   calm.d.next();
   keep('wait', await served(calm.d));
+  // a wait that ended with nothing usable
+  const miss = desk(workspace(), { answered: true, gen: stubGenerator({ fail: () => true }) });
+  miss.d.next();
+  await miss.gen.releaseOne();
+  keep('missed', await served(miss.d));
+  // the best draft when none passed in time, with the worry on it
+  let worries = 0;
+  const worried = desk(workspace(), { answered: true, generate: async () => ({ ok: true, checked: false, bet: { ...goodBet({ title: TITLES[worries++ % TITLES.length] }), check_date: '2026-10-30', concern: 'one worry: a page alone reaches nobody new.' } }) });
+  worried.d.next();
+  await tick();
+  worried.d.next();
+  keep('idea with a worry', await served(worried.d));
   // a yes on a plain ask, and a yes on a held command
   const root = workspace();
   const jobs = jobDesk(root, threeAsks(root), TEAM_DEPS);
@@ -3391,7 +3432,7 @@ test('card contract: every kind of card is whole: a way forward, options that an
     const show = `${c.name}: ${JSON.stringify(c.wire)}`;
     assert.deepEqual(gmCard.cardProblems(c.card), [], show);
     // the page gets the contract and nothing the desk keeps to itself
-    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch'].includes(k)), [], show);
+    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch', 'progress', 'started_at', 'waited_ms'].includes(k)), [], show);
     for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell', 'group'].includes(k)), [], show);
     assert.ok(c.wire.options.length > 0 || c.wire.input, show);
     // every card served has its own id
@@ -3424,6 +3465,13 @@ test('card contract: every kind of card is whole: a way forward, options that an
   assert.notEqual(all.wire.id, sw.wire.id, 'more models is a new card');
   assert.deepEqual(all.wire.options.filter(o => o.style === 'choice').map(o => o.label), ['atris fast', 'm-one', 'm-two']);
   assert.ok(!all.wire.options.some(o => o.label === 'more models'));
+  // the best draft no other beat: go with it, sharpen it, or something else, and the worry in its line
+  const worry = cards.find(c => c.name === 'idea with a worry');
+  assert.deepEqual(worry.wire.options.map(o => [o.label, o.action]), [['go with it', 'do'], ['sharpen it', 'sharper'], ['something else', 'next']]);
+  assert.equal(worry.wire.line, 'one worry: a page alone reaches nobody new.');
+  // the waiting card says how far along it is, under the same id while that changes
+  const w = cards.find(c => c.name === 'wait');
+  assert.ok(Array.isArray(w.wire.progress) && Number.isFinite(w.wire.started_at) && Number.isFinite(w.wire.waited_ms), JSON.stringify(w.wire));
 });
 
 test('card contract: the checks catch a card with no way out, options for other words, a command in the words, and a yes that binds nothing', () => {
@@ -3606,4 +3654,419 @@ test('card contract: more models is a new card with option ids of its own, so a 
   const lost = await h.d.act({ card_id: short.id, option_id: pick(short)[0].id });
   assert.deepEqual([lost.status, lost.body.reason], [409, 'gone']);
   assert.deepEqual(swaps, []);
+});
+
+// ---- the swarm: three writers at once, the first that passes wins -------------------------
+
+// A writer stub whose calls wait until the test answers them, and end at
+// once when the swarm stops them, the way the real model call does.
+function heldWriters() {
+  const calls = [];
+  const run = (prompt, opts) => new Promise((resolve) => {
+    const c = { prompt, opts, stopped: false, answer: text => resolve({ ok: true, text }) };
+    calls.push(c);
+    opts.signal.addEventListener('abort', () => { c.stopped = true; resolve({ ok: false, reason: 'stopped: another idea was picked first', stopped: true }); });
+  });
+  return { calls, run };
+}
+
+const until = async (cond, n = 50) => { for (let i = 0; i < n && !cond(); i += 1) await tick(); };
+
+test('swarm: three writers start at once, each judged as it lands; the first that passes wins and every other call is stopped', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const writers = heldWriters();
+  const skeptics = heldWriters();
+  const events = [];
+  const started = Date.now();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), deps: { ...fixtureDeps, runModel: writers.run, runSkeptic: skeptics.run } });
+  await until(() => writers.calls.length === 3);
+  assert.equal(writers.calls.length, 3, 'three writers at once, none waiting on another');
+  // each leans a different way, so the drafts differ
+  for (const a of gmBet.WRITER_ANGLES) assert.equal(writers.calls.filter(c => c.prompt.includes(a.text)).length, 1, a.key);
+  // the first draft lands and goes to its own skeptic while the others keep writing
+  writers.calls[0].answer(JSON.stringify(goodBet({ title: TITLES[0] })));
+  await until(() => skeptics.calls.length === 1);
+  assert.equal(skeptics.calls.length, 1);
+  assert.equal(writers.calls.length, 3);
+  // the third lands and its skeptic passes it before the first skeptic answers: it is the idea
+  writers.calls[2].answer(JSON.stringify(goodBet({ title: TITLES[3] })));
+  await until(() => skeptics.calls.length === 2);
+  skeptics.calls[1].answer(PASS);
+  const out = await pending;
+  assert.deepEqual([out.ok, out.checked, out.lane, out.bet.title], [true, true, 3, TITLES[3]]);
+  assert.deepEqual(out.bet.skeptic, JSON.parse(PASS));
+  // the second writer and the first skeptic were still running: both were stopped, and nothing new started
+  assert.deepEqual(writers.calls.map(c => c.stopped), [false, true, false]);
+  assert.deepEqual(skeptics.calls.map(c => c.stopped), [true, false]);
+  assert.equal(writers.calls.length + skeptics.calls.length, 5);
+  assert.ok(Date.now() - started < 5000);
+  // the judge is never the writer: the skeptic prompt never went to a writer
+  assert.ok(writers.calls.every(c => /^You are the strategist/.test(c.prompt) && !/skeptical cofounder/.test(c.prompt)));
+  assert.ok(skeptics.calls.every(c => /^You are a skeptical cofounder/.test(c.prompt)));
+  // what the waiting card says, in plain words with none of our own
+  const said = events.filter(e => e.say).map(e => e.say);
+  assert.deepEqual(said, ['drafting three ideas at once', 'the first draft is in. checking it', 'the second draft is in. checking it', 'found one that holds up']);
+  for (const line of said) assert.doesNotMatch(line, gmBet.OWNER_BANNED);
+  // every call is in the attempts log with its lane, the stopped ones too
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.filter(r => r.stopped).map(r => [r.kind, r.lane]).sort(), [['skeptic', 1], ['writer', 2]]);
+  assert.deepEqual(rows.filter(r => r.kind === 'skeptic' && r.passed).map(r => r.lane), [3]);
+});
+
+test('swarm: a stop from the desk ends every call at once and gives no idea', async () => {
+  const root = workspace();
+  const writers = heldWriters();
+  const stop = new AbortController();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), signal: stop.signal, deps: { ...fixtureDeps, runModel: writers.run } });
+  await until(() => writers.calls.length === 3);
+  stop.abort();
+  const out = await pending;
+  assert.deepEqual([out.ok, out.stopped], [false, true]);
+  assert.deepEqual(writers.calls.map(c => c.stopped), [true, true, true]);
+});
+
+test('swarm: nothing passes inside the budget: the best draft so far is the card with the worry in one plain line, and every call is stopped', async () => {
+  const root = workspace();
+  const writers = heldWriters();
+  const fail = { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'nothing', reason: 'two posts may reach few people. add a third channel.', concern: 'two posts may reach few people' };
+  const started = Date.now();
+  const events = [];
+  const pending = gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 1500, emit: e => events.push(e),
+    deps: { ...fixtureDeps, runModel: writers.run, runSkeptic: async () => ({ ok: true, text: JSON.stringify(fail) }) },
+  });
+  await until(() => writers.calls.length === 3);
+  // one draft lands at once and is turned down; its writer tries again, and the other two never answer
+  writers.calls[0].answer(JSON.stringify(goodBet()));
+  const out = await pending;
+  const took = Date.now() - started;
+  assert.ok(took >= 1400 && took < 4000, `ended on the budget, ${took} ms`);
+  assert.deepEqual([out.ok, out.checked, out.bet.title], [true, false, goodBet().title]);
+  assert.equal(out.bet.concern, 'one worry: two posts may reach few people.');
+  assert.deepEqual(out.bet.skeptic, fail);
+  assert.ok(writers.calls.length >= 4, 'the turned-down writer tried again in the time left');
+  assert.ok(writers.calls.filter((c, i) => i !== 0).every(c => c.stopped), 'every writer still going was stopped');
+  assert.equal(events.filter(e => e.say).pop().say, 'out of time. bringing the best one so far');
+  // a draft whose second look is still out when time runs out is shown not double-checked
+  const late = heldWriters();
+  const looks = heldWriters();
+  const lateRun = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 400, deps: { ...fixtureDeps, runModel: late.run, runSkeptic: looks.run } });
+  await until(() => late.calls.length === 3);
+  late.calls[1].answer(JSON.stringify(goodBet()));
+  const unchecked = await lateRun;
+  assert.deepEqual([unchecked.ok, unchecked.checked, unchecked.bet.concern, unchecked.bet.skeptic], [true, false, 'not double-checked yet: it came in as time ran out.', null]);
+  assert.deepEqual(looks.calls.map(c => c.stopped), [true], 'the look still out was stopped');
+});
+
+test('swarm: when every lane is turned down, the draft with the smallest worry is the card', async () => {
+  const root = workspace();
+  // lane 1 does not move the number, lane 2 only has a small doubt, lane 3 is blocked
+  const verdicts = {
+    reach: { verdict: 'fail', doable: true, moves_metric: false, missing_first: 'nothing', reason: 'nobody outside sees it.' },
+    first_hour: { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'nothing', reason: 'it is a small step for a week.', concern: 'it is a small step for a week' },
+    proof: { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'a public build', reason: 'the demo shows what nobody can install.' },
+  };
+  const angleOf = p => gmBet.WRITER_ANGLES.find(a => p.includes(a.text)).key;
+  const titles = { reach: TITLES[0], first_hour: TITLES[3], proof: TITLES[5] };
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    deps: {
+      ...fixtureDeps,
+      runModel: async p => ({ ok: true, text: JSON.stringify(goodBet({ title: titles[angleOf(p)] })) }),
+      runSkeptic: async p => ({ ok: true, text: JSON.stringify(verdicts[Object.keys(titles).find(k => p.includes(titles[k]))]) }),
+    },
+  });
+  assert.deepEqual([out.ok, out.checked, out.bet.title, out.bet.concern], [true, false, TITLES[3], 'one worry: it is a small step for a week.']);
+});
+
+test('skeptic bar: the team is judged on what it controls and can check; the idea must push the number the right way, not reach the goal', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const bet = { ...goodBet(), check_date: '2026-10-30' };
+  const p = gmBet.buildSkepticPrompt(bet, bundle, { today: TODAY });
+  assert.match(p, /The team is judged only on what it controls and can check\./);
+  assert.match(p, /- doable: is every team step work the team can do on its own this week, and check once it is done/);
+  assert.match(p, /would it plausibly push the target number the right way this week/);
+  assert.match(p, /it does not have to reach target\.goal; the goal is the hope, not the bar, so never fail it only because the goal is ambitious\./);
+  assert.match(p, /verdict is "pass" when doable and moves_metric are both true/);
+  // the old bar, from the baseline all the way to the goal, is gone
+  assert.doesNotMatch(p, /from the baseline to the goal/);
+  // the worry the owner reads is asked for in plain words, without our own
+  assert.match(p, /concern: when it fails, the worry in one plain everyday line under 120 characters for the owner/);
+  assert.ok(p.includes(`never these words: ${['bet', 'bets', 'check date'].join(', ')}`));
+  // a pass needs a yes on moving the number and never a no on doable; doable left out still counts
+  const v = o => gmBet.parseVerdict(JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'fine.', ...o })).verdict;
+  assert.deepEqual(v({ doable: false, concern: 'one step waits on strangers' }), { verdict: 'pass', moves_metric: true, missing_first: 'nothing', reason: 'fine.', doable: false, concern: 'one step waits on strangers' });
+  assert.equal(v({}).doable, undefined);
+  // the writer and the skeptic are separate calls, each thinking briefly
+  assert.deepEqual(gmBet.writerCommand().args('w').slice(0, 4), ['-p', 'w', '--model', 'opus']);
+  assert.deepEqual(gmBet.writerCommand().args('w').slice(-2), ['--effort', 'low']);
+  assert.notEqual(gmBet.writerCommand().args, gmBet.skepticCommand().args);
+});
+
+test('model: a stop ends the whole process group at once, so no child of the model is left running', { skip: process.platform === 'win32' }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-stop-'));
+  const pidFile = path.join(dir, 'child.pid');
+  const bin = stubScript(dir, 'busy', `
+const { spawn } = require('child_process');
+const kid = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(kid.pid));
+setInterval(() => {}, 1000);
+`);
+  const stop = new AbortController();
+  const started = Date.now();
+  const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
+  for (let i = 0; i < 100 && !fs.existsSync(pidFile); i += 1) await new Promise(r => setTimeout(r, 50));
+  const kid = Number(fs.readFileSync(pidFile, 'utf8'));
+  stop.abort();
+  const res = await pending;
+  assert.deepEqual(res, { ok: false, reason: 'stopped: another idea was picked first', stopped: true });
+  assert.ok(Date.now() - started < 10000);
+  let alive = true;
+  for (let i = 0; i < 40 && alive; i += 1) {
+    try { process.kill(kid, 0); await new Promise(r => setTimeout(r, 50)); } catch { alive = false; }
+  }
+  assert.equal(alive, false, 'the grandchild in the same group is gone');
+  // past the grace the group's SIGKILL has gone out, and it is no longer counted
+  await new Promise(r => setTimeout(r, 1700));
+  assert.equal(gmBet.stopWriters(), 0, 'and it is no longer counted as running');
+  // a signal already stopped never starts the model
+  let spawned = 0;
+  const early = new AbortController();
+  early.abort();
+  assert.equal((await gmBet.runModel('x', { signal: early.signal, spawnFn: () => { spawned += 1; } })).stopped, true);
+  assert.equal(spawned, 0);
+});
+
+// ---- the desk: one idea prepared ahead, and the waiting card ---------------------------
+
+test('prepared ahead: the next idea is drafted while the owner reads a card, never moves the screen, and the next tap shows it at once', async () => {
+  const h = desk(workspace(), { answered: true });
+  h.d.warm();
+  await h.gen.releaseOne();
+  const first = h.d.next();
+  assert.deepEqual([first.kind, first.bet.title], ['bet', TITLES[0]]);
+  // one drafting runs behind the card, never two
+  assert.equal(h.d.state.inFlight, 1);
+  await h.gen.releaseOne();
+  // it landed behind the card: the screen did not change
+  assert.deepEqual([h.d.view().id, h.d.view().bet.title, h.d.view().queue], [first.id, TITLES[0], 1]);
+  assert.equal(h.gen.maxActive, 1);
+  // the next tap is instant: the prepared idea, not a wait
+  const second = h.d.next();
+  assert.deepEqual([second.kind, second.bet.title], ['bet', TITLES[1]]);
+});
+
+test('prepared ahead: one written before the owner\'s newest answer, or too close to one he already saw, is never shown, and the drafting under way starts over', async () => {
+  const root = workspace();
+  const h = await filled(root, { answered: true });
+  assert.equal(h.d.next().bet.title, TITLES[0]);
+  // the next one is being drafted behind the card
+  const running = h.gen.calls[3];
+  assert.equal(running.signal.aborted, false);
+  // he answers a question: what is ready was written without that answer
+  fs.appendFileSync(gmBet.focusPath(path.dirname(h.ledgerFile)), `${JSON.stringify({ workspace: root, key: 'who', answer: 'own', label: 'small schools', ask: 'who is it for?', at: new Date(NOW).toISOString() })}\n`);
+  const tap = h.d.next();
+  assert.equal(tap.kind, 'wait', 'nothing ready knows his answer');
+  assert.deepEqual(h.ledger().filter(r => r.status === 'stale').map(r => r.stale_reason), Array(2).fill('written before the owner\'s newest answer'));
+  assert.equal(running.signal.aborted, true, 'the drafting that began before the answer was stopped');
+  // a fresh idea too close to one he already turned down is dropped too
+  const root2 = workspace();
+  const h2 = await filled(root2, { answered: true });
+  ledgerRow(h2.ledgerFile, root2, 'seen-before', { status: 'passed', bet: goodBet({ title: 'Record a two minute demo video of the phone front office for the website' }) });
+  const shown = h2.d.next();
+  assert.equal(shown.bet.title, TITLES[0]);
+  assert.deepEqual(h2.d.state.queue.map(i => i.bet.title), [TITLES[2]]);
+  assert.match(h2.ledger().find(r => r.bet && r.bet.title === TITLES[1]).stale_reason, /^too close to one already shown: Record a two minute demo video/);
+});
+
+test('waiting card: it carries the drafting\'s plain lines and when it began, and keeps its id while they change', async () => {
+  let gate;
+  let emit;
+  const h = desk(workspace(), { answered: true, generate: (opts) => { emit = opts.emit; emit({ kind: 'swarm', line: '3 writers at once', say: 'drafting three ideas at once' }); return new Promise((r) => { gate = r; }); } });
+  const tap = h.d.next();
+  assert.equal(tap.kind, 'wait');
+  const one = h.d.card().card;
+  assert.equal(one.kind, 'wait');
+  assert.deepEqual(one.progress, [{ at: NOW, line: 'drafting three ideas at once' }]);
+  assert.deepEqual([one.started_at, one.waited_ms, one.watch], [NOW, 0, true]);
+  h.tick(6000);
+  emit({ kind: 'skeptic', line: 'a second model is checking that it makes sense', say: 'the first draft is in. checking it' });
+  const two = h.d.card().card;
+  assert.equal(two.id, one.id, 'new lines, same card');
+  assert.deepEqual(two.progress.map(p => p.line), ['drafting three ideas at once', 'the first draft is in. checking it']);
+  assert.deepEqual([two.started_at, two.waited_ms], [NOW, 6000]);
+  // the lines the swarm writes are plain words, with none of our own
+  for (const p of two.progress) assert.deepEqual(gmCard.cardProblems({ ...two, progress: [p] }), []);
+  // the idea lands: it waits for the page to ask, the way it always did
+  gate({ ok: true, bet: { ...goodBet(), check_date: '2026-10-30' } });
+  await tick();
+  assert.deepEqual([h.d.view().kind, h.d.view().queue], ['wait', 1]);
+});
+
+test('waiting card: words said on it start a drafting with them at once, stopping the one under way', async () => {
+  const h = desk(workspace(), { answered: true });
+  h.d.next();
+  assert.equal(h.gen.calls.length, 1);
+  const out = await h.d.say({ text: 'make it about small schools' });
+  assert.equal(out.ok, true);
+  assert.equal(h.gen.calls[0].signal.aborted, true, 'the background drafting was stopped');
+  await h.gen.releaseOne();
+  // its idea is dropped, and the drafting with his words is the one running now
+  assert.equal(h.d.view().queue, 0);
+  assert.equal(h.gen.calls.length, 2);
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about small schools');
+  await h.gen.releaseOne();
+  assert.equal(h.d.next().bet.title, TITLES[1]);
+});
+
+test('prepared ahead: a rework of the idea the owner wrote a note on may stay close to it, and it is the next card', async () => {
+  let n = 0;
+  const REWORK = 'Write a getting started page for atris gm phone with a 30 second screen recording for schools';
+  const h = desk(workspace(), { answered: true, generate: async opts => ({ ok: true, bet: { ...goodBet({ title: opts.ownerNote ? REWORK : TITLES[n++ % TITLES.length] }), check_date: '2026-10-30' } }) });
+  h.d.next();
+  for (let i = 0; i < 10; i += 1) await tick();
+  const first = h.d.next();
+  assert.equal(first.bet.title, TITLES[0]);
+  const said = await h.d.say({ text: 'make it for schools' });
+  assert.equal(said.ok, true);
+  for (let i = 0; i < 10; i += 1) await tick();
+  const next = h.d.next();
+  assert.equal(next.bet.title, REWORK, 'close to the idea it reworks, and still shown');
+  assert.equal(h.ledger().filter(r => r.status === 'stale').length, 0);
+});
+
+// ---- review fixes: a child that ignores SIGTERM, words typed as a wait ends, slow facts ----
+
+test('model: a child that ignores SIGTERM and has its own stdio is still killed after the grace, though the model already exited', { skip: process.platform === 'win32', timeout: 20000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-stubborn-'));
+  const pidFile = path.join(dir, 'kid.pid');
+  // the kid ignores SIGTERM, keeps no pipe to the model, and says it is ready only once it does
+  const kidCode = `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const bin = stubScript(dir, 'parent', `
+const { spawn } = require('child_process');
+spawn(process.execPath, ['-e', ${JSON.stringify(kidCode)}], { stdio: 'ignore' });
+setInterval(() => {}, 1000);
+`);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const readKid = () => { try { return Number(fs.readFileSync(pidFile, 'utf8')) || null; } catch { return null; } };
+  const stop = new AbortController();
+  const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
+  let kid = null;
+  try {
+    for (let i = 0; i < 200 && !readKid(); i += 1) await new Promise(r => setTimeout(r, 25));
+    kid = readKid();
+    assert.ok(kid, 'the kid started');
+    stop.abort();
+    const res = await pending;
+    assert.equal(res.stopped, true);
+    // the model is gone and the call is over, and the kid that ignored SIGTERM is still up
+    assert.equal(alive(kid), true, 'the kid outlived the SIGTERM');
+    // until the group's SIGKILL after the grace
+    let gone = false;
+    for (let i = 0; i < 80 && !gone; i += 1) { await new Promise(r => setTimeout(r, 50)); gone = !alive(kid); }
+    assert.equal(gone, true, 'the kid is gone after the grace');
+  } finally {
+    // a failed check never leaves the model or the kid behind
+    stop.abort();
+    await pending;
+    kid = kid || readKid();
+    if (kid && alive(kid)) process.kill(kid, 'SIGKILL');
+  }
+});
+
+test('waiting card: words typed while the wait ends with nothing are never dropped; the next drafting is written with them', async () => {
+  // the drafting fails while his words are still being read
+  const gen = stubGenerator({ fail: n => n === 0 });
+  let answerRead;
+  const h = desk(workspace(), { gen, answered: true, readSaid: () => new Promise((r) => { answerRead = r; }) });
+  const wait = (await h.d.act({ orb: true })).body.card;
+  assert.equal(wait.kind, 'wait');
+  const sent = h.d.act({ card_id: wait.id, text: 'make it about small schools' });
+  await tick();
+  await gen.releaseOne();
+  assert.equal(h.d.view().kind, 'missed', 'the wait ended in the try-again card');
+  answerRead({ ok: true, kind: 'instruction', reply: '' });
+  const out = await sent;
+  assert.deepEqual([out.status, out.body.ok, out.body.card.kind], [200, true, 'wait'], JSON.stringify(out.body));
+  // the drafting started behind the try-again card gives way to his words
+  await gen.releaseOne();
+  assert.equal(gen.calls[gen.calls.length - 1].ownerNote, 'make it about small schools');
+  // the wait ended before he sent, and the page had looked again: the words still count
+  const gen2 = stubGenerator({ fail: n => n === 0 });
+  const h2 = desk(workspace(), { gen: gen2, answered: true });
+  const wait2 = (await h2.d.act({ orb: true })).body.card;
+  await gen2.releaseOne();
+  assert.equal(h2.d.card().card.kind, 'missed');
+  // a tap on an option named by the old card is still refused: only words carry over
+  assert.equal((await h2.d.act({ card_id: wait2.id, option_id: 'again' })).body.reason, 'gone');
+  const late = await h2.d.act({ card_id: wait2.id, text: 'something for teachers' });
+  assert.deepEqual([late.status, late.body.ok], [200, true], JSON.stringify(late.body));
+  await gen2.releaseOne();
+  assert.equal(gen2.calls[gen2.calls.length - 1].ownerNote, 'something for teachers');
+});
+
+test('swarm: the budget covers reading the facts: slow scoring and a slow npm read are left out, and the writers still get their time', async () => {
+  const root = workspace();
+  const started = Date.now();
+  let wroteAt = null;
+  const events = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 2000, writers: 1, emit: e => events.push(e),
+    deps: {
+      ...fixtureDeps,
+      // four overdue bets at ten seconds each, never done inside the budget
+      scoreBets: () => new Promise(r => setTimeout(r, 40000).unref()),
+      fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? new Promise(() => {}) : npmBody()),
+      runModel: async () => { wroteAt = Date.now() - started; return { ok: true, text: JSON.stringify(goodBet()) }; },
+    },
+  });
+  const took = Date.now() - started;
+  assert.deepEqual([out.ok, out.checked], [true, true], out.reason);
+  // the facts get the first quarter of the budget, 500 ms here, and the writer starts right after
+  assert.ok(wroteAt >= 450 && wroteAt < 1200, `the writer started at ${wroteAt} ms`);
+  assert.ok(took < 2000, `done inside the budget, ${took} ms`);
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'score'));
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'release'));
+  // a stop while the facts are read ends it at once, and no writer starts
+  let wrote = 0;
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), signal: stop.signal, deps: { ...fixtureDeps, scoreBets: () => new Promise(() => {}), runModel: async () => { wrote += 1; return { ok: false, reason: 'x' }; } } });
+  setTimeout(() => stop.abort(), 50);
+  const stopped = await pending;
+  assert.deepEqual([stopped.ok, stopped.stopped, wrote], [false, true, 0]);
+  assert.ok(Date.now() - t0 < 1000, 'it did not wait for the facts');
+  // the budget is spent while the facts are read (the read blocks): no writer starts
+  let late = 0;
+  const spent = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 300,
+    deps: { ...fixtureDeps, gitLanded: () => { const end = Date.now() + 450; while (Date.now() < end) { /* a slow git read */ } return ['x']; }, runModel: async () => { late += 1; return { ok: true, text: JSON.stringify(goodBet()) }; } },
+  });
+  assert.equal(spent.ok, false);
+  assert.equal(late, 0, 'no writer starts once the budget is spent');
+  assert.match(spent.reason, /no time was left to draft inside 0 seconds|nothing usable came back/);
+});
+
+test('swarm: a stop while the facts are read leaves no timer behind, so the process exits at once', { timeout: 20000 }, async () => {
+  const root = workspace();
+  const script = `
+    const gmBet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'gm-bet.js'))});
+    const stop = new AbortController();
+    const t0 = Date.now();
+    gmBet.generateBet({
+      workspaceRoot: ${JSON.stringify(root)}, today: '2026-10-21', ledgerFile: ${JSON.stringify(path.join(root, 'bets.jsonl'))}, signal: stop.signal,
+      deps: { readNow: () => null, seasonFacts: () => null, gitLanded: () => null, packageName: null, readBriefs: () => null, scoreBets: () => new Promise(() => {}), runModel: async () => ({ ok: false, reason: 'never asked' }) },
+    }).then((out) => { process.stdout.write(JSON.stringify({ stopped: out.stopped, returned: Date.now() - t0 })); });
+    setTimeout(() => stop.abort(), 50);
+  `;
+  const started = Date.now();
+  const res = require('node:child_process').spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 15000, env: { ...process.env, HOME } });
+  const lived = Date.now() - started;
+  assert.equal(res.status, 0, res.stderr);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.stopped, true);
+  assert.ok(out.returned < 1000, `returned after ${out.returned} ms`);
+  // the source deadline is 7.5 seconds into a 30 second budget; nothing waits for it
+  assert.ok(lived < 4000, `the process lived ${lived} ms after a stop at 50 ms`);
 });
