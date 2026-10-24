@@ -1388,6 +1388,12 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
     // the models already shown stay exactly where they were; the new ones come in under them
     assert.ok(out.kept_moved_px <= 0.5, `${at}: shown models moved ${out.kept_moved_px}px`);
+    // who the swap is for: the one set now reads in full color over an amber line, the other stays quiet, and a tap moves it
+    for (const [now, set, other] of [[out.scopes.short, 'scope:member', 'scope:job'], [out.scopes.scoped, 'scope:job', 'scope:member']]) {
+      assert.deepEqual([now[set].chosen, now[set].line, now[other].chosen], [true, 'rgb(255, 140, 66)', false], `${at}: ${JSON.stringify(now)}`);
+      assert.notEqual(now[set].color, now[other].color, at);
+      assert.notEqual(now[other].line, 'rgb(255, 140, 66)', at);
+    }
     assert.ok(!out.full.options.includes('more'), at);
     // one tap, no yes card: the swap goes to the desk with who it is for, and the team comes back with one line
     assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'two', model: 'm-two', scope: 'job' }], at);

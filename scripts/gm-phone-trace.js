@@ -986,6 +986,9 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     // where each model sits on the page, by its option id
     const MODELS_AT = "(function () { var out = {}; Array.prototype.forEach.call(document.querySelectorAll('#bet button.choice'), function (b) { var r = b.getBoundingClientRect(); out[b.getAttribute('data-option')] = { x: Math.round(r.left), y: Math.round((r.top + window.scrollY) * 10) / 10 }; }); return out; })()";
     const shortAt = await p.run(MODELS_AT);
+    // how each "who it is for" choice reads: its color and its underline's color
+    const SCOPES = "(function () { var out = {}; ['scope:member', 'scope:job'].forEach(function (id) { var b = document.querySelector('#bet [data-option=\"' + id + '\"]'); if (!b) return; var cs = getComputedStyle(b); out[id] = { chosen: b.classList.contains('chosen'), color: cs.color, line: cs.textDecorationColor }; }); return out; })()";
+    const scopesShort = await p.run(SCOPES);
     const id = short.card;
     await tapLabel(p, send, 'more models');
     await p.until(`${SETTLED} && Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent.indexOf('m-two') === 0; })`, 'the full list', 8000);
@@ -1001,6 +1004,7 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await tapLabel(p, send, 'everyone doing builder\'s kind of work');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet [data-option="scope:job"].chosen'))`, 'who the swap is for', 8000);
     const scoped = await look(p);
+    const scopesScoped = await p.run(SCOPES);
     await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); b.scrollIntoView({ block: 'center' }); })()");
     const two = await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); return b.getAttribute('data-option'); })()");
     await p.tap(`#bet [data-option="${two}"]`);
@@ -1014,7 +1018,7 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     // where the line about the swap sits: under the title, above the table, on screen
     const news = await p.run("(function () { var n = document.querySelector('#bet .mission'), h = document.querySelector('#bet h1'), g = document.querySelector('#bet .grid'); var r = n.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), under_title: r.top >= h.getBoundingClientRect().bottom, above_table: r.bottom <= g.getBoundingClientRect().top, screen: window.innerHeight }; })()");
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
-    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news, kept_moved_px };
+    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news, kept_moved_px, scopes: { short: scopesShort, scoped: scopesScoped } };
   }, viewport);
 }
 
