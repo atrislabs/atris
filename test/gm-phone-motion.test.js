@@ -63,3 +63,15 @@ test('trace: a cut in the frames reads as a cut, and a fade as a fade', () => {
   assert.equal(popped.line_fade, 1, show(popped));
   assert.deepEqual(popped.lines_while_moving, ['tap to think']);
 });
+
+test('browser: on a phone six times slower the sphere re-forms in about the same time as at full speed', { skip, timeout: 120000 }, async () => {
+  const only = ['small orb home'];
+  const fast = byName(await paths.pathsTrace({ chromePath: CHROME, only }))['small orb home'];
+  const slow = byName(await paths.pathsTrace({ chromePath: CHROME, only, cpu: 6 }))['small orb home'];
+  const both = show({ fast, slow });
+  assert.ok(fast.reform_clock_ms > 200 && fast.reform_clock_ms < 900, both);
+  // the springs run on time, not per frame: read on the dots' own clock, so a
+  // stall the machine makes is left out, a slow phone took 1.5 times as long
+  // before; now the same within a quarter
+  assert.ok(slow.reform_clock_ms <= 1.25 * fast.reform_clock_ms, both);
+});

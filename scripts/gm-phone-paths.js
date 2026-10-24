@@ -194,10 +194,23 @@ function summarizePath(frames, from) {
     if (b.busy && b.line && b.line.o > 0.05 && !lines.includes(b.line.text)) lines.push(b.line.text);
   }
   for (const k of Object.keys(out)) out[k] = round(out[k]);
+  // the sphere re-forming out of the point: from the frame it is seen until
+  // its dots slow under half a pixel per 60fps frame for good (the spring
+  // swings back once), on the wall clock and on the dots' own clock (a stall
+  // the machine makes is not the motion's)
+  const born = span.findIndex((f, i) => i > 0 && f.sphere > 0.05 && span[i - 1].sphere <= 0.05);
+  let formed = -1;
+  for (let i = born + 1; born > 0 && i < span.length && span[i].t - span[born].t < 1500; i++) {
+    if (span[i].orb.frame > span[i - 1].orb.frame && span[i].orb.mean * 16.7 / Math.max(8, span[i].orb.ms || 0) >= 0.5) formed = Math.min(span.length - 1, i + 1);
+  }
+  let clock = 0;
+  for (let i = born + 1; formed > 0 && i <= formed; i++) if (span[i].orb.frame > span[i - 1].orb.frame) clock += span[i].orb.ms || 0;
   return {
     ms: span.length ? Math.round(span[span.length - 1].t - from) : null,
     pace_frame_ms: Math.round(pace),
     longest_still_moving_ms: Math.round(still),
+    reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
+    reform_clock_ms: formed < 0 ? null : Math.round(clock),
     ...out,
     cuts: cuts.slice(0, 12),
     // the words the line under the orb showed while something was on its way
