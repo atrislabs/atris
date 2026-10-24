@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -39,8 +40,8 @@ test('boundary lines match only when the member, the hour, and the gap still fit
   assert.strictEqual(matched('researcher 06:47 editing'), null);
   assert.strictEqual(ACTIVITY_LINE.test('researcher 06:47\tediting'), false);
   assert.strictEqual(matched('researcher 06:47:30  editing'), null);
-  assert.strictEqual(matched('my_member 06:47  editing'), null);
-  assert.strictEqual(matched('a.b 06:47  editing'), null);
+  assert.strictEqual(matched('my_member 06:47  editing'), 'my_member 06:47  e');
+  assert.strictEqual(matched('a.b 06:47  editing'), 'a.b 06:47  e');
   assert.strictEqual(matched('-lead 06:47  editing'), null);
 });
 

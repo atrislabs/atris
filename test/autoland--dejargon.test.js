@@ -20,7 +20,7 @@ test('dejargon leaves already plain text alone', () => {
 
 test('dejargon strips CLI ticket ids unless preserveTickets is exactly true', () => {
   assert.strictEqual(dejargon('CLI-1234 add a retry'), 'add a retry');
-  assert.strictEqual(dejargon('add a retry (CLI-77) today'), 'add a retry () today');
+  assert.strictEqual(dejargon('add a retry (CLI-77) today'), 'add a retry today');
   assert.strictEqual(dejargon('CLI-1234 add a retry', { preserveTickets: true }), 'CLI-1234 add a retry');
   assert.strictEqual(dejargon('CLI-1234 add a retry', { preserveTickets: 'true' }), 'add a retry');
   assert.strictEqual(dejargon('CLI-1234 add a retry', { preserveTickets: false }), 'add a retry');

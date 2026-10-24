@@ -1226,7 +1226,8 @@ async function calendarSearch(args = []) {
 }
 
 async function calendarToday() {
-  await calendarRange("Today's events", { days: 1 });
+  const { start, end } = localDayBounds();
+  await calendarRange("Today's events", { timeMin: start.toISOString(), timeMax: end.toISOString() });
 }
 
 async function calendarYesterday() {

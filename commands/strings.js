@@ -292,7 +292,7 @@ function stringsCommand(argv) {
   Pairs with 'atris slop' (how copy reads), strings governs what words you ship.
   The registry lives in .atris/strings.json. Wire 'check --staged' into the pre-commit gate.
 `);
-  return 0;
+  return !sub || ['help', '--help', '-h'].includes(sub) ? 0 : 2;
 }
 
 module.exports = {

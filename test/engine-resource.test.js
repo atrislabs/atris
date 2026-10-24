@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { localDay } = require('../lib/local-day');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -2478,7 +2479,7 @@ test('the youtube digest records paired readings and names the cause of a SIGKIL
   try {
     fs.mkdirSync(bin);
     fs.mkdirSync(path.join(root, 'atris', 'wiki', 'briefs'), { recursive: true });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDay();
     fs.writeFileSync(path.join(root, 'atris', 'wiki', 'briefs', 'youtube-abc.md'), `source: https://www.youtube.com/watch?v=abc\ndate: ${today}\n\n# sleds and dogs\n\nthe dog sets the pace.\n`);
     engine('echo "# what this week\'s videos changed"; echo "- the dog sets the pace (atris/wiki/briefs/youtube-abc.md)"');
     const ok = digest();
@@ -2582,6 +2583,8 @@ test('youtube notes in auto mode show a killed writer\'s cause on screen before 
       'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
       'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
     ]);
+    // node alone, not its folder: real engines can sit beside it
+    fs.symlinkSync(process.execPath, path.join(bin, 'node'));
     exec('claude', ['#!/bin/sh', 'kill -KILL $$']);
     exec('codex', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
     // Only the stand-in writers are on the path, so no real writer is launched.
@@ -2589,7 +2592,7 @@ test('youtube notes in auto mode show a killed writer\'s cause on screen before 
       cwd: root,
       encoding: 'utf8',
       timeout: 30000,
-      env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+      env: { ...process.env, HOME: root, ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:/usr/bin:/bin` },
     });
     assert.equal(ran.status, 0, ran.stderr);
     const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);

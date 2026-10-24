@@ -14,10 +14,15 @@ const TOKEN = `sk-ant-oat01-${'a1B2_c3-'.repeat(8)}`;
 function withStateDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'idea-login-'));
   const before = process.env.ATRIS_TEST_STATE_DIR;
+  const homeBefore = process.env.HOME;
+  // the login lands in the same folder whether HOME is real (fenced) or already a throwaway
   process.env.ATRIS_TEST_STATE_DIR = dir;
+  process.env.HOME = dir;
   t.after(() => {
     if (before === undefined) delete process.env.ATRIS_TEST_STATE_DIR;
     else process.env.ATRIS_TEST_STATE_DIR = before;
+    if (homeBefore === undefined) delete process.env.HOME;
+    else process.env.HOME = homeBefore;
     fs.rmSync(dir, { recursive: true, force: true });
   });
   return dir;

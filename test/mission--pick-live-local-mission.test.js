@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 const fs = require('node:fs');
 const os = require('node:os');

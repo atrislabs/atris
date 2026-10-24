@@ -549,6 +549,11 @@ function skillFix(name) {
   const skillsDir = path.join(process.cwd(), 'atris', 'skills');
   const allSkills = findAllSkills(skillsDir);
 
+  if (allSkills.length === 0) {
+    console.error('No skills found in atris/skills/.');
+    process.exit(1);
+  }
+
   const targets = name === '--all'
     ? allSkills
     : allSkills.filter(s => s.folder === name || s.leafFolder === name);

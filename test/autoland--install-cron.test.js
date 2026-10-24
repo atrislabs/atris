@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { installCron } = require('../lib/autoland');
 
@@ -75,6 +76,8 @@ function fixture(t) {
 
 test('installCron writes one labeled hourly line into an empty crontab', (t) => {
   const { root, home, readTable } = fixture(t);
+  fs.mkdirSync(path.join(root, 'bin'));
+  fs.writeFileSync(path.join(root, 'bin', 'atris.js'), 'console.log(process.cwd());\n');
 
   assert.equal(installCron(root), true);
 
@@ -84,8 +87,11 @@ test('installCron writes one labeled hourly line into an empty crontab', (t) => 
   assert.match(lines[0], /^14 \* \* \* \* /);
   assert.match(lines[0], /autoland tick/);
   assert.match(lines[0], /# ATRIS_AUTOLAND_MY_PROJECT$/);
-  assert.ok(lines[0].includes(`cd ${root}`));
+  assert.ok(lines[0].includes(`cd '${root}'`));
   assert.ok(fs.statSync(path.join(home, '.atris', 'overnight')).isDirectory());
+  const run = spawnSync('/bin/sh', ['-c', lines[0].replace(/^14 \* \* \* \* /, '')], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(fs.readFileSync(path.join(home, '.atris', 'overnight', 'autoland-my project.log'), 'utf8'), `${fs.realpathSync(root)}\n`);
 });
 
 test('installCron keeps foreign entries and replaces its own line exactly once', (t) => {

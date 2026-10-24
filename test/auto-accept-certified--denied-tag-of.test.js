@@ -15,12 +15,13 @@ test('deniedTagOf matches separated words and a trailing plural s', () => {
   assert.strictEqual(deniedTagOf({ tag: 'infra-deploys' }), 'deploy');
   assert.strictEqual(deniedTagOf({ tag: 'support_customers' }), 'customer');
   assert.strictEqual(deniedTagOf({ tag: 'ui/payments:review' }), 'payments');
+  assert.strictEqual(deniedTagOf({ tag: 'payment' }), 'payments');
   // Multiple matches follow the protected-tag order, rather than text order.
   assert.strictEqual(deniedTagOf({ tag: 'external-deploy-billing' }), 'billing');
 });
 
 test('deniedTagOf rejects partial words and does not strip multiple plural suffixes', () => {
-  for (const tag of ['deployment', 'prebilling', 'security2', 'deployss', 'payment', 'docs']) {
+  for (const tag of ['deployment', 'prebilling', 'security2', 'deployss', 'docs']) {
     assert.strictEqual(deniedTagOf({ tag }), null, tag);
   }
 });

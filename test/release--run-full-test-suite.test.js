@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 // runFullTestSuite spawns `npm test` in a given directory. These tests point it
 // at throwaway package.json fixtures inside fresh temp dirs so the real suite

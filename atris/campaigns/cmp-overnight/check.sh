@@ -21,13 +21,17 @@ grep -v "require(" "$file" | grep -qE "$dir/$mod" && { echo "reads the source fi
 grep -qE "assert\.ok\(true\)|assert\(true\)" "$file" && { echo "empty assert"; exit 1; }
 
 run_clean() { # tz -> exit code of the new test in an empty environment
-  local T; T=$(mktemp -d)
-  env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$1" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ATRIS_SKIP_UPDATE_CHECK=1 \
+  local T; T=$(mktemp -d); TMP_SEEN=$(mktemp -d)
+  env -i PATH="$PATH" HOME="$T" TMPDIR="$TMP_SEEN" TZ="$1" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ATRIS_SKIP_UPDATE_CHECK=1 \
     perl -e 'alarm shift; exec @ARGV' 90 node --test "$file" >/dev/null 2>&1
-  local c=$?; rm -rf "$T" 2>/dev/null; return $c
+  local c=$?; rm -rf "$T" 2>/dev/null
+  # anything left in the private temp folder, besides Node's own cache, is a mess the test made
+  LEFT=$(find "$TMP_SEEN" -mindepth 1 -maxdepth 1 ! -name node-compile-cache | wc -l | tr -d ' ')
+  rm -rf "$TMP_SEEN" 2>/dev/null; return $c
 }
 for tz in Pacific/Kiritimati Pacific/Pago_Pago; do
   run_clean "$tz" || { echo "fails on the real code (TZ=$tz)"; exit 1; }
+  [ "$LEFT" = 0 ] || { echo "leaves $LEFT temp folder(s) behind; delete what the test makes"; exit 1; }
 done
 
 # break the line, run the new test, put the line back no matter what

@@ -101,12 +101,19 @@ test('workspace with nothing live says set up and points at the first step', (t)
   assert.match(lines[1], /next: atris "help me choose the first useful step for this project"$/);
 });
 
-test('json flag is ignored when the folder is not fresh', (t) => {
+test('json mode on a set-up folder reports its next action', (t) => {
   const { base, home, room } = makeRoom();
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const { lines, log } = captureLog();
   const code = withCleanEnv(home, () => speakFirstMinute({ root: room, fresh: false, asJson: true, log }));
   assert.equal(code, 0);
-  assert.equal(lines[0], '');
-  assert.match(lines[1], /my-room is set up\./);
+  assert.equal(lines.length, 1);
+  assert.deepEqual(JSON.parse(lines[0]), {
+    schema: 'atris.one_lap.v1',
+    ok: true,
+    status: 'started',
+    reason: 'my-room is set up',
+    next_action: 'atris "help me choose the first useful step for this project"',
+    task: null,
+  });
 });

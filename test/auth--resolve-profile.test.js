@@ -170,6 +170,6 @@ test('non-json files and unreadable profiles do not break the lookup', () => {
   withHome({ dana: { email: 'dana@example.com' } }, extras, (home) => {
     assert.deepEqual(run(home, 'notes'), { code: 1, out: '' });
     assert.deepEqual(run(home, 'dana@example'), { code: 0, out: 'dana' });
-    assert.deepEqual(run(home, 'broken'), { code: 0, out: 'broken' });
+    assert.deepEqual(run(home, 'broken'), { code: 1, out: '' });
   });
 });

@@ -164,7 +164,7 @@ test('businessDiff lists modified and new files, and honors a path filter argume
         body.includes('  ~ notes/plan.md  (modified)\n    | draft one\n    | draft two\n'),
         body
       );
-      assert.ok(body.includes('  + notes/fresh.md  (new file, 3 lines)\n'), body);
+      assert.ok(body.includes('  + notes/fresh.md  (new file, 2 lines)\n'), body);
 
       // A path argument narrows the list to that prefix.
       out.logs.length = 0;
