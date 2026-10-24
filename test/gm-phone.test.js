@@ -1167,7 +1167,7 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   assert.match(script, /var vx = rect\.left \+ rect\.width \/ 2, vy = rect\.top \+ rect\.height \/ 2;/);
   assert.match(script, /if \(contained\) \{ rise\(growMs, settleMs, sMin, sMax, rest\); return; \}/);
   assert.match(script, /var s = u < k \? sMin \+ \(sMax - sMin\) \* \(0\.5 - 0\.5 \* Math\.cos\(Math\.PI \* u \/ k\)\) : sMax \+ \(rest - sMax\) \* ease\(\(u - k\) \/ \(1 - k\)\);/);
-  assert.match(script, /var m = ease\(u\);\n\s+place\(s, origin\.x \+ \(p\.x - origin\.x\) \* m, origin\.y \+ \(p\.y - origin\.y\) \* m\);/);
+  assert.match(script, /var m = ease\(u\);\n\s+place\(s, origin\.x \+ \(p\.x - origin\.x\) \* m, origin\.y \+ \(p\.y - origin\.y\) \* m, now\);/);
   // the lava is at the point before it can be seen
   assert.match(script, /lava\.style\.opacity = '0';\n\s+place\(sMin, origin\.x, origin\.y\);\n\s+lava\.style\.visibility = 'visible';/);
   assert.match(script, /dim\.style\.opacity = contained \? '0'/);
@@ -1683,7 +1683,8 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   // the only still moment is the beat the chosen answer holds; while the owner waits, never
   assert.ok(r.longest_still_ms <= 250, show);
   assert.ok(r.longest_still_waiting_ms <= 150, show);
-  assert.ok(r.dot_frames > 200, show);
+  // the dots move through the wait: 200 frames at 60fps, as time, so a slower machine reads the same
+  assert.ok(r.dots_moving_ms > 200 * 16.7, show);
   // the got it line under the moving sphere, then the calm line's live words, its open box, the note
   assert.ok(r.lines.includes('got it: paying schools.'), show);
   assert.equal(r.calm_box_open, true, show);
@@ -1691,7 +1692,8 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
   // the note is a post on the calm line's own id, and the idea comes when asked for from it
   assert.deepEqual(r.posts.map(x => [x.action, x.card]), [['say', 'question:focus'], ['say', 'wait:7'], ['orb', 'wait:7']], show);
-  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels)
+  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels,
+  // read on the clock each part moves by, so a slower machine reads the same)
   assert.ok(r.lava_max_step_px <= 45, show);
   assert.ok(r.lava_max_size_step_px <= 45, show);
   assert.ok(r.lava_max_speed_change_px <= 15, show);
