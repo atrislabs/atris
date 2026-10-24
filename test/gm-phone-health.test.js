@@ -353,9 +353,10 @@ test('browser: 100 cards in a row through every kind of move, and nothing on the
   assert.ok(out.cards >= 100, show);
   for (const k of ['listeners', 'dom_nodes', 'documents', 'intervals', 'timeouts', 'frames', 'canvases_made', 'canvases', 'nodes', 'copies']) assert.equal(out.grew_after_first_round[k], 0, `${k} ${show}`);
   assert.ok(out.grew_after_first_round.heap_kb < 1024, show);
-  // at rest after each round: the one footer look, no motion waiting, the one sphere
+  // at rest after each round: the one footer look (a timer the page sets again after
+  // each look, so it can ask less often while the Mac is away), no motion waiting, the one sphere
   const last = out.samples[out.samples.length - 1];
-  assert.equal(last.intervals, 1, show);
+  assert.deepEqual([last.intervals, last.timeouts], [0, 1], show);
   assert.equal(last.frames, 0, show);
   assert.equal(last.canvases, 1, show);
   assert.deepEqual(out.console, [], show);
