@@ -1016,6 +1016,9 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   // and none names a command to run: a dead link says what to do in plain words
   for (const t of copy) assert.doesNotMatch(t, /\bgm (phone|walk)\b|\batris (gm|engine|member)\b|\bnpm\b/i, t);
   assert.ok(copy.includes('this link stopped working. open a new one from the mac.'));
+  // after not now on an idea, the line under the orb says another what
+  assert.ok(copy.includes('tap when you want another idea'));
+  assert.ok(!copy.some(t => /^not now\. /.test(t)), 'the orb line never repeats not now after the got-it line');
 });
 
 test('page: an act holds the chosen spot, then one motion: the card fades into the sphere, the dots spiral in once the answer is in, and the next card blooms', () => {

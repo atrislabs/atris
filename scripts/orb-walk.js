@@ -300,7 +300,7 @@ function legacyAdapter(http) {
       options: [
         opt('do', 'do it', { path: '/bet/do', body: { confirm: true } }, async () => { await post('/bet/do', { confirm: true }); return think(false); }, { confirm: true }),
         opt('sharper', 'sharpen it', { path: '/bet/think', body: { sharper: true } }, () => think(true)),
-        opt('skip', 'not now', { path: '/bet/skip', body: {} }, async () => { await post('/bet/skip', {}); main = null; homeLine = 'not now. tap when you want another'; return current(); }),
+        opt('skip', 'not now', { path: '/bet/skip', body: {} }, async () => { await post('/bet/skip', {}); main = null; homeLine = 'tap when you want another idea'; return current(); }),
       ],
       input: sayBox(s),
     };
@@ -439,7 +439,7 @@ function legacyAdapter(http) {
       if (r.status !== 200) throw new Error(`the page found no orb desk (${r.status})`);
       main = isCard(r.json) ? r.json : null;
       if (main) remember(main);
-      if (r.json.status === 'skipped') homeLine = 'not now. tap when you want another';
+      if (r.json.status === 'skipped') homeLine = 'tap when you want another idea';
       return current();
     },
     orb: () => { layer = null; return think(false); },

@@ -1409,7 +1409,10 @@ test('owner words: no fixed page string, card template, or question uses our int
   said.push(done.job.what, done.job.why, j.d.nice().ack);
   const f = await filled(workspace());
   f.d.next();
-  said.push(f.d.skip().ack, f.d.skip().message);
+  const skipped = f.d.skip();
+  // not now on an idea: the got-it line says what happened, and the line under the orb says what to do, never not now twice
+  assert.equal(skipped.ack, 'set aside.');
+  said.push(skipped.ack, f.d.skip().message);
   f.d.next();
   said.push((await f.d.doIt()).ack);
   for (const t of said) {
