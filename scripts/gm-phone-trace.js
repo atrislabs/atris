@@ -265,8 +265,10 @@ const num = v => (v == null ? null : Number(v));
 // fully in, and the motion's steps with the length each is set to take
 // ("hold 150, glide 260, ..."). What the clock reads past the motion is the
 // wait on the desk's answer and then late timers and frames, which a busy
-// machine stretches; slowest_frame_ms is the longest gap between two frames
-// on the way, so a stretched clock can be read against the machine's pace.
+// machine stretches. slowest_frame_ms is the longest gap between two frames
+// on the way, and pace_frame_ms the fourth longest: a slow machine slows the
+// eight or so frames that draw the dots together, while a page that freezes
+// makes one long frame or a few, which cannot move the fourth.
 function reveal(frames, sent) {
   const last = frames[frames.length - 1];
   const motion = last.revealPlan == null ? null : last.revealPlan.split(', ').filter(Boolean).map(s => {
@@ -277,15 +279,15 @@ function reveal(frames, sent) {
   const motionMs = motion ? motion.reduce((n, [, ms]) => n + ms, 0) : null;
   const endAt = frames.findIndex(f => f.t >= sent && f.revealMs != null);
   const times = [sent, ...frames.slice(0, endAt < 0 ? frames.length : endAt + 1).filter(f => f.t > sent).map(f => f.t)];
-  let slowest = 0;
-  for (let i = 1; i < times.length; i++) slowest = Math.max(slowest, times[i] - times[i - 1]);
+  const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => b - a);
   return {
     reveal_ms: clock,
     motion,
     motion_ms: motionMs,
     waited_ms: waited,
     late_ms: clock == null || motionMs == null ? null : clock - motionMs - (waited || 0),
-    slowest_frame_ms: Math.round(slowest),
+    slowest_frame_ms: Math.round(gaps[0] || 0),
+    pace_frame_ms: Math.round(gaps[Math.min(3, gaps.length - 1)] || 0),
   };
 }
 
