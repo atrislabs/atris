@@ -318,7 +318,9 @@ test('browser: zoom the big orb to 200% and back and the sphere is redrawn sharp
       assert.ok(s.off_center_px <= 3, `${at} ${JSON.stringify(out)}`);
       assert.ok(Math.abs(s.radius_of_width - 0.42) <= 0.02, `${at} ${JSON.stringify(out)}`);
     }
-    assert.deepEqual(out.zoomed.css, [288, 288]);
+    // at 200% the laptop is 640x400: the sphere is the smaller of 72vmin (288) and the
+    // height less the room its line and the footer need (400 - 200), so they never meet
+    assert.deepEqual(out.zoomed.css, [200, 200]);
     assert.deepEqual(out.console, []);
   }
 });
