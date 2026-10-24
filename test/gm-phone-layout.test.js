@@ -71,3 +71,17 @@ test('layout: on the calm line the footer never lands on the card, with the phon
   // upright phones and the laptop keep the footer at the bottom of the screen
   for (const r of rows.filter(x => x.case === 'wait' && x.viewport !== 'side')) assert.ok(Math.abs(r.probe.foot.bottom - (r.vh - Math.max(20, (r.safe_area && r.safe_area.bottom) || 0))) <= 1, show);
 });
+
+test('layout: with a notched phone on its side the wide cards start past the notch, and upright phones keep 24px sides', { skip, timeout: 90000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, cases: only('team', 'deck', 'idea'), viewports: ['side', 'phone', 'small'] });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, inset: r.safe_area, card: r.card })), null, 1);
+  for (const r of rows) {
+    const inset = r.safe_area || {};
+    const side = Math.max(24, inset.left || 0, inset.right || 0);
+    assert.ok(r.card.left >= Math.max(24, inset.left || 0) - 0.5, show);
+    assert.ok(r.vw - r.card.right >= Math.max(24, inset.right || 0) - 0.5, show);
+    if (r.viewport !== 'side') assert.equal(r.card.left, 24, show);
+    else if (r.case !== 'idea') assert.ok(Math.abs(r.card.left - side) <= 0.5, show);
+    assert.equal(r.scroll_w, r.vw, show);
+  }
+});
