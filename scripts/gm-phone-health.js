@@ -11,6 +11,7 @@
 //
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
 //   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
+//   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, and a refused tap
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
@@ -250,6 +251,41 @@ async function headTrace(opts = {}) {
   }, opts);
 }
 
+// ---- a screen reader --------------------------------------------------------------------
+
+// Four cards in a row, each reached by a tap: a question, an idea, a choice,
+// the picked idea; then a tap the Mac refuses. heard: what the page's live
+// region holds once each card is at rest, against the card's own words.
+// refused: the one line why under the options, and how it is marked.
+async function readerTrace(opts = {}) {
+  const { q1, b1, c1, b2 } = trace.CARDS;
+  const desk = trace.cardDesk(q1, async (action) => {
+    if (action === 'answer') return { card: b1 };
+    if (action === 'sharper') return { card: c1 };
+    if (action === 'pick') return { card: b2 };
+    return { ok: false, reason: 'gone', message: 'that did not go through. try again.' };
+  });
+  return openPage(desk, async (p, send, said) => {
+    const heard = [];
+    const hear = async (card) => {
+      await p.until(titled(card.title), card.title, 10000);
+      await wait(250);
+      heard.push({ title: card.title, body: card.body || null, heard: await p.run("document.getElementById('said').textContent"), region: await p.run("(function () { var n = document.getElementById('said'); return [n.getAttribute('aria-live'), n.getAttribute('aria-atomic')]; })()") });
+    };
+    await hear(q1);
+    await p.tapButton('making money from it');
+    await hear(b1);
+    await p.tapButton('sharper idea');
+    await hear(c1);
+    await p.tap("document.querySelector('#bet .option')", 'the first idea');
+    await hear(b2);
+    await p.tapButton('not now');
+    await p.until("Boolean(document.querySelector('#bet .act .note')) && document.querySelector('#bet .act .note').textContent.length > 0", 'the line why', 10000);
+    const refused = await p.run("(function () { var n = document.querySelector('#bet .act .note'); return { text: n.textContent, role: n.getAttribute('role'), live: n.getAttribute('aria-live') }; })()");
+    return { heard, refused, console: said.slice() };
+  }, opts);
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -289,7 +325,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -302,9 +338,11 @@ if (require.main === module) {
     })().catch(fail);
   } else if (process.argv.includes('--head')) {
     headTrace().then(print, fail);
+  } else if (process.argv.includes('--reader')) {
+    readerTrace().then(print, fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --asleep\n');
   }
 }

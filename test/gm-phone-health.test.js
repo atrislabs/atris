@@ -151,3 +151,29 @@ test('browser: the live page has the home screen tags and both icons decode, and
   assert.equal(out.lang, 'en');
   assert.deepEqual(out.console, [], JSON.stringify(out.console));
 });
+
+// ---- a screen reader ------------------------------------------------------------------
+
+// a refusal is a 409 by design; chrome notes any 4xx answer in the console
+const refusedAct = line => line.kind === 'error' && /status of 409/.test(line.text) && /\/act$/.test(line.url || '');
+
+test('page: one hidden polite region reads each new card as it lands, its title and its why', () => {
+  const html = phonePage('NONCE');
+  assert.match(html, /<p class="sr" id="said" aria-live="polite" aria-atomic="true"><\/p>/);
+  assert.match(html, /\.sr \{ position: absolute; width: 1px; height: 1px;/);
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const draw = script.slice(script.indexOf('function draw(card)'), script.indexOf('function drawTable'));
+  assert.match(draw, /announce\(card\);\n {2}\}/, 'draw ends by announcing the card it drew');
+});
+
+test('browser: a screen reader hears every card as it lands: the question, the idea, the choice, the picked idea', browser, async () => {
+  const out = await health.readerTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out);
+  assert.equal(out.heard.length, 4, show);
+  for (const h of out.heard) {
+    assert.ok(h.heard.startsWith(h.title), show);
+    if (h.body) assert.ok(h.heard.endsWith(h.body), show);
+    assert.deepEqual(h.region, ['polite', 'true'], show);
+  }
+  assert.deepEqual(out.console.filter(l => !refusedAct(l)), [], show);
+});
