@@ -299,9 +299,10 @@ test('layout: a word longer than the screen, like an email address, breaks insid
 
 test('layout: the footer sits at the bottom of the screen on every card that fits, where it sits on the big orb, and 28px under a taller card', { skip, timeout: 180000 }, async () => {
   const probe = `(function () {
-    var f = document.getElementById('working').getBoundingClientRect(), b = document.getElementById('bet');
+    // the footer's own box, so the check holds on the team card too, where its team link steps out
+    var foot = document.getElementById('foot'), f = foot.getBoundingClientRect(), b = document.getElementById('bet');
     var c = b.hidden ? null : b.getBoundingClientRect();
-    return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY, card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
+    return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY + parseFloat(getComputedStyle(foot).paddingTop), card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
   })()`;
   const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'big', 'small', 'laptop'], probe });
   const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
@@ -333,4 +334,10 @@ test('layout: when the team table scrolls sideways on a phone the name column ke
     assert.ok(r.probe.head_over_names <= 0.5, show);
     assert.equal(r.probe.head_on_top, true, show);
   }
+});
+
+test('layout: on the team card the footer does not offer the team again; on every other card it does', { skip, timeout: 90000 }, async () => {
+  const probe = `getComputedStyle(document.getElementById('working')).display !== 'none'`;
+  const rows = await layout({ chromePath: CHROME, cases: only('home', 'idea', 'team', 'member', 'deck', 'swap', 'wait'), viewports: ['phone'], probe });
+  assert.deepEqual(rows.map(r => [r.case, r.probe]), [['home', true], ['idea', true], ['team', false], ['member', true], ['deck', true], ['swap', true], ['wait', true]]);
 });
