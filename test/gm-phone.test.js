@@ -1371,6 +1371,8 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.equal(look.name_header_moved_px, 0, `${at}: its header stays over it`);
     // a model brought into view lands beside the held names, never under them (all five did at 320)
     assert.deepEqual(look.models_under_names, [], at);
+    // the ovr header lines up with the ratings under it, on their right edge
+    assert.ok(look.ovr_head_off_px <= 0.5, `${at}: the ovr header sits ${look.ovr_head_off_px}px off its ratings`);
     // on a phone the right edge fades while more of the table is off to the right, and not once scrolled there; a laptop has none
     const phone = at !== '1280x800';
     assert.deepEqual(look.fade, { at_rest: phone, at_end: false, back: phone }, at);

@@ -926,6 +926,10 @@ const TABLE_LOOK = `(function () {
   var headAfter = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 0;
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  // the ovr header's words against the ratings under it: how far apart their right edges sit
+  var textRight = function (n) { var r = document.createRange(); r.selectNodeContents(n); var b = r.getBoundingClientRect(); return b.right; };
+  var ovrHead = table.querySelector('thead th.ovr');
+  var ovrOff = ovrHead ? Math.max.apply(null, Array.prototype.map.call(table.querySelectorAll('tbody td.ovr'), function (td) { return Math.round(Math.abs(textRight(td) - textRight(ovrHead)) * 10) / 10; })) : null;
   // each model brought into view the way focus or a scroll does: is its middle on screen, or under the held names?
   var covered = [];
   Array.prototype.forEach.call(table.querySelectorAll('tbody td.engine button'), function (b) {
@@ -951,6 +955,7 @@ const TABLE_LOOK = `(function () {
     name_column_moved_px: Math.round(Math.abs(after - before)),
     name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
     models_under_names: covered,
+    ovr_head_off_px: ovrOff,
     fade: fade,
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),
