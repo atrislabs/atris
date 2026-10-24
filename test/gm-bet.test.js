@@ -2488,7 +2488,7 @@ test('job deck: a card that needs you carries its yes in plain words, and a yes 
   const [needs, working] = h.d.jobDeck().cards;
   assert.deepEqual([needs.member, needs.label, working.member, working.label], ['navigator', 'needs you', 'builder', 'working']);
   // the yes card's own two lines, and the key the page sends back with the yes
-  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting on your yes for this.' });
+  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting for your yes.' });
   assert.equal(working.yes, undefined, 'only a card that needs you has a yes');
   // plain words in every cell: the path and the command are gone, the meaning stays
   assert.equal(needs.rows[0].work, 'Fix a file so the run passes');
@@ -2699,7 +2699,9 @@ test('deck: a yes comes first, then a finished job, then the next bet; nothing i
   for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
   const first = h.d.next();
   assert.equal(first.kind, 'yes');
-  assert.deepEqual(first.job, { what: 'post the thread on x now?', why: 'launcher is waiting on your yes for this. 300 more npm installs in the week before nov 1.' });
+  // the same words the team page uses for this status: waiting for your yes
+  assert.match(first.job.why, /^launcher is waiting for your yes\. /);
+  assert.deepEqual(first.job, { what: 'post the thread on x now?', why: 'launcher is waiting for your yes. 300 more npm installs in the week before nov 1.' });
   assert.equal(first.bet, null);
   // the card on screen stays until the owner moves on, even as jobs change
   h.d.pollJobs();

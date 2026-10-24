@@ -769,7 +769,7 @@ test('page: a yes card is drawn from its options: yes takes a second tap, no and
   assert.match(script, /armed = true; btn\.textContent = o\.confirm; btn\.classList\.add\('armed'\);/);
   assert.match(script, /send\(btn, \{ option_id: o\.id, confirm: true \}, o\);/);
   // the yes card's options come from the Mac: yes is the pill, no and not now quiet links on one line
-  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting on your yes for this.', request: { job: 'm1', key: 'm1:0', hash: null } });
+  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting for your yes.', request: { job: 'm1', key: 'm1:0', hash: null } });
   assert.deepEqual(y.options.map(o => [o.label, o.style]), [['yes', 'primary'], ['no', 'quiet'], ['not now', 'quiet']]);
   assert.equal(y.options[0].confirm, 'tap again to say yes');
   // quiet options next to each other share one line, and a group of them is headed by its words
@@ -795,7 +795,7 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   // a flip turns the card in place; it is the same deck moving, not an answer
   assert.match(script, /var IN_PLACE = \['flip', 'more', 'scope'\];/);
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
-  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'asked 5 minutes ago', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
+  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'asked 5 minutes ago', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting for your yes.' } } });
   assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
   assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'back to the team', 'next']);
   // the deck's way back has the same words as the talk and swap cards' way back

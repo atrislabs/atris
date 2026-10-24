@@ -1007,8 +1007,8 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
 // the deck card is about the job: the rating and the model live on the team table
 const DECK_COLUMNS = ['work', 'member', 'role', 'status'];
 const DECK_JOBS = [
-  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'asked 2 hours ago', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
-  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'asked 20 minutes ago', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
+  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'asked 2 hours ago', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting for your yes.' } },
+  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'asked 20 minutes ago', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting for your yes.' } },
   { job_id: 'm-b2', mission_id: 'm-b2', member: 'builder', label: 'working', time: 'about 4 hours left', rows: [{ done: 'not yet', work: 'split the big test file', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working' }] },
 ];
 
