@@ -79,3 +79,17 @@ test('lastTouched returns zero for clean, deleted-only, and non-repository input
   assert.strictEqual(lastTouched(root), 0);
   assert.strictEqual(lastTouched(path.join(root, 'missing')), 0);
 });
+
+test('lastTouched ignores a TODO.md rewritten from the task database', (t) => {
+  const { renderTodoMarkdown } = require('../lib/task-db');
+  const { repo, git, write } = fixture(t);
+  write('code.js', '2001-01-01T00:00:00Z');
+  write('atris/TODO.md', '2001-01-01T00:00:00Z', '# TODO.md\n');
+  git('add', '.');
+  git('commit', '--quiet', '-m', 'baseline');
+  const work = write('code.js', '2002-01-01T00:00:00Z', 'changed');
+  write('atris/TODO.md', '2030-01-01T00:00:00Z', renderTodoMarkdown([]));
+  assert.strictEqual(lastTouched(repo), work);
+  const edited = write('atris/TODO.md', '2003-01-01T00:00:00Z', '# TODO.md\n\n- a note someone wrote\n');
+  assert.strictEqual(lastTouched(repo), edited);
+});
