@@ -102,3 +102,59 @@ test('card, reel, and the gm phone trace launch chrome with the keychain flags a
   assert.equal(traceLaunches.length, 1);
   assertSafeLaunch(traceLaunches[0], 'gm phone trace');
 });
+
+// ---- quitting the gm phone trace's chrome ----------------------------------------------
+
+const { execFileSync } = require('node:child_process');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const pipesOpen = () => process.getActiveResourcesInfo().filter(r => r === 'PipeWrap').length;
+// the processes still alive in a process group, by pid; a finished one waiting to be reaped is not alive
+const alive = () => execFileSync('ps', ['-axo', 'pid=,pgid=,stat='], { encoding: 'utf8' }).split('\n')
+  .map(l => l.trim().split(/\s+/)).filter(([, , stat]) => stat && !stat.startsWith('Z')).map(([pid, pgid]) => ({ pid: Number(pid), pgid: Number(pgid) }));
+function aliveInGroup(group) {
+  return alive().filter(p => p.pgid === group).map(p => p.pid);
+}
+async function untilGone(group, ms = 5000) {
+  const end = Date.now() + ms;
+  while (aliveInGroup(group).length && Date.now() < end) await wait(50);
+  return aliveInGroup(group);
+}
+// a pipe let go closes on a later turn of the loop
+async function pipesAfter(most, ms = 2000) {
+  const end = Date.now() + ms;
+  while (pipesOpen() > most && Date.now() < end) await wait(20);
+  return pipesOpen();
+}
+const posix = { skip: process.platform === 'win32' && 'process groups are posix' };
+
+test('the gm phone trace quits its chrome with every process it started, so one left behind cannot hold its pipe and keep the run open', posix, async (t) => {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-quit-test-'));
+  // a chrome whose helper outlives it: the helper keeps the same stderr, then the chrome exits
+  const bin = path.join(work, 'fake-chrome');
+  fs.writeFileSync(bin, ['#!/bin/sh', 'sleep 30 &', `echo $! > "${work}/helper"`, `echo $$ > "${work}/chrome"`, 'exit 1', ''].join('\n'), { mode: 0o755 });
+  const helper = () => Number(fs.readFileSync(path.join(work, 'helper'), 'utf8'));
+  t.after(() => { try { process.kill(helper(), 'SIGKILL'); } catch { /* gone */ } fs.rmSync(work, { recursive: true, force: true }); });
+  const pipes = pipesOpen();
+  await assert.rejects(() => gmTrace.launch(bin), /chrome exited 1/);
+  const chrome = Number(fs.readFileSync(path.join(work, 'chrome'), 'utf8'));
+  assert.deepEqual(await untilGone(chrome), [], 'the chrome ran as its own group, and nothing in it is left');
+  assert.equal(alive().some(p => p.pid === helper()), false, 'the helper is gone too');
+  const open = await pipesAfter(pipes);
+  assert.ok(open <= pipes, `its stderr is let go: ${open} pipes open, ${pipes} before`);
+});
+
+const REAL_CHROME = gmTrace.findChrome();
+test('the gm phone trace\'s real chrome quits whole: nothing left in its process group and its stderr closed', { skip: (!REAL_CHROME && 'no chrome on this machine') || posix.skip, timeout: 120000 }, async () => {
+  const pipes = pipesOpen();
+  const chrome = await gmTrace.launch(REAL_CHROME);
+  try {
+    await chrome.send('Page.navigate', { url: 'about:blank' });
+    assert.ok(aliveInGroup(chrome.pid).length > 1, 'chrome and its helpers run in their own group');
+  } finally {
+    chrome.close();
+  }
+  assert.deepEqual(await untilGone(chrome.pid), [], 'nothing in the group is left');
+  assert.equal(chrome.stderr.destroyed, true);
+  const open = await pipesAfter(pipes);
+  assert.ok(open <= pipes, `its stderr is let go: ${open} pipes open, ${pipes} before`);
+});
