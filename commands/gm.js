@@ -797,19 +797,20 @@ function tail(text, used, width) {
   return clip(text, Math.max(10, width - used));
 }
 
-// Last guard on width: a long line breaks after a comma onto an indented
-// line; anything still too long ends in "...".
+// Last guard on width, in terminal columns: a long line breaks after a
+// comma onto an indented line; anything still too long ends in "...".
 function fitLines(lines, width) {
+  const { displayWidth, sliceColumns } = require('../lib/text-table');
   const out = [];
   for (const line of lines) {
     let rest = line;
-    while (rest.length > width) {
-      const cut = rest.lastIndexOf(', ', width - 1);
+    while (displayWidth(rest) > width) {
+      const cut = rest.lastIndexOf(', ', sliceColumns(rest, width).length - 1);
       if (cut <= 0) break;
       out.push(rest.slice(0, cut + 1));
       rest = `  ${rest.slice(cut + 2)}`;
     }
-    out.push(rest.length > width ? `${rest.slice(0, width - 3)}...` : rest);
+    out.push(displayWidth(rest) > width ? `${sliceColumns(rest, width - 3)}...` : rest);
   }
   return out;
 }

@@ -1421,6 +1421,16 @@ test('board roster wraps to fit an 80 column terminal and keeps the plain column
   }
 });
 
+test('board roster box stays 80 columns at 80 with CJK and a joined emoji, and the width guard never cuts it', () => {
+  const { displayWidth } = require('../lib/text-table');
+  const cells = new Map([['builder', { role: '界面を作る 👩‍💻 writes code, 🧑🏽‍🔬 runs the lab, cafe\u0301 and plain words', ovr: '80', engine: 'claude opus 5.5' }]]);
+  const lines = renderBoardLines(fixtureBoard(), { width: 80, bordered: true, cells });
+  const box = lines.filter(l => /^ {2}[┌│├└]/.test(l));
+  assert.ok(box.length > 6, 'the box draws');
+  for (const line of box) assert.equal(displayWidth(line), 80, line);
+  assert.ok(box.every(l => !l.endsWith('...')), 'no box line was cut');
+});
+
 test('team cells: role words from MEMBER.md, the engine the runner would pick, two dots for a stranger', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-team-cells-'));
   try {
