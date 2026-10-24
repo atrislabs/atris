@@ -28,7 +28,7 @@ function readFile(filePath) {
 }
 
 function countFiles(dir) {
-  try { return fs.readdirSync(dir, { recursive: true }).filter(f => !f.startsWith('.')).length; } catch { return 0; }
+  try { return fs.readdirSync(dir, { recursive: true }).filter(f => !f.startsWith('.') && fs.statSync(path.join(dir, f)).isFile()).length; } catch { return 0; }
 }
 
 // ── Soul snapshot ──────────────────────────────────────

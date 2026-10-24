@@ -101,7 +101,7 @@ test('snapshotSoul reads a full project tree into identity, knowledge, learned, 
     knowledge: {
       features: ['ship'],
       feature_count: 1,
-      research_files: 3,
+      research_files: 2,
       refs: ['MAP-NOTES.md', 'readme.md'],
     },
     learned: {
@@ -112,7 +112,7 @@ test('snapshotSoul reads a full project tree into identity, knowledge, learned, 
     stats: {
       open_tasks: 2,
       identity_files: 3,
-      knowledge_items: 4,
+      knowledge_items: 3,
       learned_items: 4,
     },
   });
