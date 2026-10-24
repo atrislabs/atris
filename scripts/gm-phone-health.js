@@ -402,6 +402,52 @@ async function zoomTrace({ sizes = Object.keys(ZOOMED), ...opts } = {}) {
   return out;
 }
 
+// The big orb drawn: its canvas's css size, its backing store against css
+// size times the pixel ratio the page draws at (capped at 2), and where the
+// lit dots actually sit: their box's middle against the canvas's middle,
+// and their radius against the canvas's width, in css px.
+const SPHERE = `(function () {
+  var c = document.getElementById('orb');
+  var ratio = Math.min(window.devicePixelRatio || 1, 2);
+  // read from a copy, so the page's own canvas is never read back
+  var copy = document.createElement('canvas');
+  copy.width = c.width; copy.height = c.height;
+  var cx = copy.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(c, 0, 0);
+  var data = cx.getImageData(0, 0, c.width, c.height).data;
+  var minX = Infinity, maxX = -1, minY = Infinity, maxY = -1;
+  for (var y = 0; y < c.height; y += 2) for (var x = 0; x < c.width; x += 2) {
+    if (data[(y * c.width + x) * 4 + 3] > 6) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  }
+  var k = c.clientWidth / (c.width || 1);
+  return {
+    css: [c.clientWidth, c.clientHeight],
+    store: [c.width, c.height],
+    want: [Math.round(c.clientWidth * ratio), Math.round(c.clientHeight * ratio)],
+    off_center_px: maxX < 0 ? null : Math.round(Math.max(Math.abs((minX + maxX) / 2 * k - c.clientWidth / 2), Math.abs((minY + maxY) / 2 * k - c.clientHeight / 2)) * 10) / 10,
+    radius_of_width: maxX < 0 ? null : Math.round((maxX - minX) / 2 / (c.width || 1) * 1000) / 1000,
+  };
+})()`;
+
+// The big orb on a laptop, then the page zoomed to 200% (half the width,
+// twice the pixels), then back.
+async function sphereZoomTrace(opts = {}) {
+  const out = {};
+  await openPage(trace.cardDesk(null, async () => ({ card: trace.CARDS.b1 })), async (p, send, said) => {
+    await p.until("document.getElementById('orb').__orb.frame > 0", 'the big orb', 10000);
+    await wait(1500);
+    out.before = await p.run(SPHERE);
+    await send('Emulation.setDeviceMetricsOverride', ZOOMED.laptop);
+    await wait(1500);
+    out.zoomed = await p.run(SPHERE);
+    await send('Emulation.setDeviceMetricsOverride', trace.LAPTOP);
+    await wait(1500);
+    out.back = await p.run(SPHERE);
+    out.console = said.slice();
+  }, { viewport: trace.LAPTOP, ...opts });
+  return out;
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -441,7 +487,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, ZOOMED, zoomTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -459,7 +505,7 @@ if (require.main === module) {
   } else if (process.argv.includes('--focus')) {
     focusTrace().then(print, fail);
   } else if (process.argv.includes('--zoom')) {
-    zoomTrace().then(print, fail);
+    (async () => print({ pages: await zoomTrace(), sphere: await sphereZoomTrace() }))().catch(fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {

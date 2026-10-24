@@ -226,3 +226,17 @@ test('browser: at 200% zoom on a 320 phone and on a laptop the amber button and 
     assert.deepEqual(r.past_edges, [], JSON.stringify(r));
   }
 });
+
+test('browser: zoom the big orb to 200% and back and the sphere is redrawn sharp at each size, centered and round, with and without motion', browser, async () => {
+  for (const reduced of [false, true]) {
+    const out = await health.sphereZoomTrace({ chromePath: CHROME, reduced });
+    for (const at of ['before', 'zoomed', 'back']) {
+      const s = out[at];
+      assert.deepEqual(s.store, s.want, `${at} ${JSON.stringify(out)}`);
+      assert.ok(s.off_center_px <= 3, `${at} ${JSON.stringify(out)}`);
+      assert.ok(Math.abs(s.radius_of_width - 0.42) <= 0.02, `${at} ${JSON.stringify(out)}`);
+    }
+    assert.deepEqual(out.zoomed.css, [288, 288]);
+    assert.deepEqual(out.console, []);
+  }
+});
