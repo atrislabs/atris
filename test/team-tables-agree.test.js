@@ -12,11 +12,16 @@ const os = require('node:os');
 const path = require('node:path');
 
 const gmBet = require('../lib/gm-bet');
+const trace = require('../scripts/gm-phone-trace');
 const taskDb = require('../lib/task-db');
 const { boardCells, loadSeasonBoard, renderBoardLines } = require('../commands/gm');
 const { memberStandupLines, standupTableData } = require('../commands/member');
 
+const CHROME = trace.findChrome();
 const HOUR = 60 * 60 * 1000;
+const SCRIBE_ROLE = 'Ships & <b>bold</b> "fast" work';
+// the role cell keeps every character: only the first word is lowercased
+const SCRIBE_CELL = 'ships & <b>bold</b> "fast" work';
 const ROSTER = '# roster\n\n## search\n- claude code, model: haiku 5.5\n\n## build\n- claude code, model: opus 5.5\n\n## review\n- codex, model: gpt-6.1-sol\n\n## team\n- launcher: codex, model: gpt-6.1-sol\n';
 
 function card(root, name, head) {
@@ -33,6 +38,8 @@ function workspace() {
   card(dir, 'launcher', 'role: Launcher\ndescription: Writes posts, pages, and launch copy');
   card(dir, 'researcher', 'role: Deep Researcher');
   card(dir, 'designer', 'type: human\nrole: Designer\ndescription: Draws the screens by hand');
+  // a role with markup characters: plain words everywhere, never markup
+  card(dir, 'scribe', `role: ${SCRIBE_ROLE}`);
   fs.writeFileSync(path.join(dir, 'atris', 'ROSTER.md'), ROSTER);
   const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
   const checked = new Date().toISOString();
@@ -73,6 +80,7 @@ function workspace() {
   for (const end of ['landed', 'landed', 'landed', 'sent_back']) job('validator', end);
   for (const end of ['landed', 'landed']) job('launcher', end);
   job('researcher', null);
+  job('scribe', 'landed');
   db.close();
   return { dir, ws, dbPath };
 }
@@ -107,8 +115,9 @@ test('the orb team table, the board roster, and the standup read the same rating
     });
     const orb = Object.fromEntries(desk.teamTable().rows.map(r => [r.member, [r.role, r.ovr, r.engine]]));
     assert.deepEqual(Object.fromEntries(Object.entries(orb).map(([name, cells]) => [name, cells[1]])), {
-      builder: '91', designer: '··', launcher: 'new', researcher: '··', validator: '89',
+      builder: '91', designer: '··', launcher: 'new', researcher: '··', scribe: 'new', validator: '89',
     });
+    assert.equal(orb.scribe[0], SCRIBE_CELL);
 
     // the board: the CLI's loader gives the one memberRatings Map
     const { board, ratings } = loadSeasonBoard(ws);
@@ -116,21 +125,58 @@ test('the orb team table, the board roster, and the standup read the same rating
     assert.deepEqual(ratings.get('builder'), { ovr: 91, finished: 5 });
     const boardLines = renderBoardLines(board, { bordered: true, width: 160, cells: boardCells(board, ws, ratings) });
     const onBoard = boxCells(boardLines);
-    assert.deepEqual(Object.keys(onBoard).sort(), ['builder', 'launcher', 'researcher', 'validator']);
+    assert.deepEqual(Object.keys(onBoard).sort(), ['builder', 'launcher', 'researcher', 'scribe', 'validator']);
     for (const [name, cells] of Object.entries(onBoard)) assert.deepEqual(cells, orb[name], `${name} on the board`);
 
     // the standup: the same cells for every member it lists
-    const standup = ['builder', 'designer', 'launcher', 'researcher', 'validator'].map(member => ({
+    const standup = ['builder', 'designer', 'launcher', 'researcher', 'scribe', 'validator'].map(member => ({
       member, role: 'Team Member', status: 'idle', engine: 'auto', latest_update: 'x', next_push: 'y',
     }));
     const standupLines = memberStandupLines(standup, { ...standupTableData(standup, ws), width: 160 });
     const onStandup = boxCells(standupLines);
     assert.deepEqual(Object.keys(onStandup).sort(), Object.keys(orb).sort());
     for (const [name, cells] of Object.entries(onStandup)) assert.deepEqual(cells, orb[name], `${name} on the standup`);
+
+    // a terminal prints the role as plain words: no entity ever reaches it
+    for (const [where, lines] of [['board', boardLines], ['standup', standupLines]]) {
+      assert.ok(lines.some(line => line.includes(`│ ${SCRIBE_CELL} `)), `${where} prints the role plainly`);
+      assert.ok(lines.every(line => !/&(?:amp|lt|gt|quot|#\d+);/.test(line)), `${where} has no html entity`);
+    }
   } finally {
     if (saved.db === undefined) delete process.env.ATRIS_TASKS_DB;
     else process.env.ATRIS_TASKS_DB = saved.db;
     process.stdout.isTTY = saved.tty;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('browser: the orb team page shows a role with markup characters as words, never as markup', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const { dir, ws } = workspace();
+  try {
+    const desk = gmBet.createBetDesk({
+      workspaceRoot: ws,
+      ledgerFile: path.join(dir, 'gm-bets.jsonl'),
+      now: () => Date.now(),
+      generate: () => new Promise(() => {}),
+      readMissions: () => new Map(),
+      readHandoffs: () => [],
+      loadSeason: () => ({ outcomes: [], error: null }),
+      driverAlive: () => false,
+      warmOnCreate: false,
+    });
+    const rows = desk.teamTable().rows;
+    const scribe = rows.find(r => r.member === 'scribe');
+    assert.equal(scribe.role, SCRIBE_CELL, 'the desk hands the page plain words');
+    // the trace taps the second row and waits for builder's talk card
+    const ordered = [scribe, rows.find(r => r.member === 'builder'), ...rows.filter(r => r.member !== 'scribe' && r.member !== 'builder')];
+    const out = await trace.teamTableTrace({ chromePath: CHROME, viewport: trace.LAPTOP, rows: ordered });
+    const role = out.cells[0][1];
+    // the page shows exactly the words, and its markup holds them escaped
+    assert.equal(role.text, SCRIBE_CELL);
+    assert.equal(role.html, 'ships &amp; &lt;b&gt;bold&lt;/b&gt; "fast" work');
+    for (const row of out.cells) for (const cell of row) assert.equal(cell.elements, 0, `no markup inside a cell: ${cell.html}`);
+    assert.equal(out.talk.title, 'builder', 'the table still works after it');
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -789,6 +789,14 @@ const TABLE_ROWS = [
   { member: 'validator', role: 'reviewer', ovr: '89', engine: 'tool two m-two', status: 'idle', sentence: 'idle: no work in the last day' },
 ];
 
+// every body cell as the page holds it: the words shown, the markup behind
+// them, and how many elements it holds besides a tap target
+const TABLE_CELLS = `[].map.call(document.querySelectorAll('#bet tbody tr'), function (tr) {
+  return [].map.call(tr.cells, function (td) {
+    return { text: td.textContent, html: td.innerHTML, elements: td.querySelectorAll(':not(button):not(span)').length };
+  });
+})`;
+
 // what the table looks like on screen: the column names, whether any cell's
 // words spill out of it, every inner line, the side scroll, where the name
 // column sits once scrolled, and whether anything on it moves
@@ -861,6 +869,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team card', 8000);
     await wait(100);
     const tableLook = await p.run(TABLE_LOOK);
+    const cells = await p.run(TABLE_CELLS);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
@@ -875,7 +884,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await esc(send);
     await p.until(titled(CARDS.b1.title), 'the first card again', 8000);
     const closed = await where();
-    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, talk, back, closed };
+    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed };
   }, viewport);
 }
 
