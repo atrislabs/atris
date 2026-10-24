@@ -134,6 +134,6 @@ test('--out drops a .png suffix and writes the html beside it; brand and version
 test('an unknown theme falls back to the default theme instead of crashing', () => {
   const r = runCard(['Fallback', '--theme', 'no-such-theme', '--html-only', '--out', outBase('fallback')]);
   assert.strictEqual(r.code, 0);
-  assert.match(r.out, /theme no-such-theme/);
+  assert.match(r.out, /theme atris/);
   assert.match(readHtml('fallback'), /<h1 class="headline">Fallback<\/h1>/);
 });
