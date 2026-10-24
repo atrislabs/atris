@@ -1732,6 +1732,8 @@ test('scoreboard: with none saved, the first card asks what number says it is go
   const ownRoot = workspace();
   const own = desk(ownRoot, { scoreboard: true });
   own.d.next();
+  // an empty name asks for a name, not a value
+  assert.deepEqual(own.d.answer({ choice: 'other', text: '  ' }), { ok: false, reason: 'empty', message: 'name the number in a few words.' });
   assert.equal(own.d.answer({ choice: 'other', text: 'fewer support emails' }).ack, 'got it: fewer support emails.');
   const ownBoard = gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(own.ledgerFile)), ownRoot);
   assert.deepEqual([ownBoard.name, ownBoard.up, ownBoard.source], ['fewer support emails', false, 'reported']);
