@@ -3722,6 +3722,8 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
+  // the line is on the team card, so the answer carries no line of its own to show under the orb first
+  assert.equal(done.body.ack, undefined);
 });
 
 test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {
@@ -3732,7 +3734,9 @@ test('card contract: a swap list with no picks opens short too, the model in use
   const four = gmCard.swap({ id: 'swap~2', name: 'builder', choices: { scopes: [], options: list.slice(0, 4) } });
   assert.ok(!four.options.some(o => o.label === 'more models'));
   const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
-  assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
+  // the three already shown keep their places, so nothing on the card moves; the rest come in under them
+  assert.deepEqual(all.options.map(o => o.label), ['m-e', 'm-a', 'm-b', 'm-c', 'm-d', 'm-f', 'back to the team']);
+  assert.deepEqual(all.options.slice(0, 3).map(o => o.id), short.options.slice(0, 3).map(o => o.id));
   for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
 });
 
