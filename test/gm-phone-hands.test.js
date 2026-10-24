@@ -349,3 +349,27 @@ test('browser: a tap anywhere in the model cell of a team row opens that model\'
   assert.notEqual(out.engine, out.member, show);
   assert.deepEqual(out.taps, [out.engine], show);
 });
+
+test('browser: dragging to select words in a team row selects them and opens nothing; a plain tap on the row still opens it', { skip, timeout: 90000 }, async () => {
+  const taps = [];
+  const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(action); return { card: teamOf(taps.length + 1) }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const r = await p.rect('#bet td.status');
+    const y = r.y + 14;
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x + 10, y, button: 'left', clickCount: 1 });
+    for (const dx of [60, 120, 180]) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x + dx, y, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x + 180, y, button: 'left', clickCount: 1 });
+    await wait(1200);
+    const selected = await p.run('String(window.getSelection())');
+    const afterDrag = [...taps];
+    // a plain tap on the row, away from the words picked
+    const role = await middle(p, '#bet td.role');
+    await tapAt(send, role.x, role.y);
+    await wait(1500);
+    return { selected, afterDrag, taps };
+  }, trace.LAPTOP);
+  const show = JSON.stringify(out, null, 1);
+  assert.ok(out.selected.length > 3, show);
+  assert.deepEqual(out.afterDrag, [], show);
+  assert.deepEqual(out.taps, ['member'], show);
+});
