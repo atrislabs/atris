@@ -14,6 +14,7 @@
 //   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, a refused tap, the landmarks
 //   node scripts/gm-phone-health.js --focus     each Tab stop on a card and the big orb, and its ring on screen
 //   node scripts/gm-phone-health.js --zoom      the big orb and five cards at 200% zoom on two phones and a laptop
+//   node scripts/gm-phone-health.js --long 100  100 cards in a row through every kind of move, and what the page holds after each round
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
@@ -24,6 +25,7 @@ const http = require('node:http');
 const phone = require('../lib/gm-phone');
 const { phonePage } = require('../lib/gm-phone-page');
 const trace = require('./gm-phone-trace');
+const gmCard = require('../lib/gm-card');
 
 const TOKEN = 'h'.repeat(43);
 
@@ -55,6 +57,25 @@ const PROBE = `(function () {
       });
     }).observe({ type: 'layout-shift', buffered: true });
   } catch (e) { /* no layout shift timing */ }
+  // every timer, interval, and frame the page has waiting, and every canvas it makes
+  var timers = { intervals: new Set(), timeouts: new Set(), frames: new Set(), canvases: 0 };
+  var si = window.setInterval, ci = window.clearInterval, st = window.setTimeout, ct = window.clearTimeout, ra = window.requestAnimationFrame, ca = window.cancelAnimationFrame;
+  window.setInterval = function () { var id = si.apply(window, arguments); timers.intervals.add(id); return id; };
+  window.clearInterval = function (id) { timers.intervals.delete(id); return ci.call(window, id); };
+  window.setTimeout = function (fn, ms) {
+    var rest = Array.prototype.slice.call(arguments, 2);
+    var id = st.call(window, function () { timers.timeouts.delete(id); if (typeof fn === 'function') fn.apply(window, rest); }, ms);
+    timers.timeouts.add(id);
+    return id;
+  };
+  window.clearTimeout = function (id) { timers.timeouts.delete(id); return ct.call(window, id); };
+  window.requestAnimationFrame = function (fn) { var id = ra.call(window, function (t) { timers.frames.delete(id); fn(t); }); timers.frames.add(id); return id; };
+  window.cancelAnimationFrame = function (id) { timers.frames.delete(id); return ca.call(window, id); };
+  var make = document.createElement;
+  document.createElement = function (tag) { if (String(tag).toLowerCase() === 'canvas') timers.canvases += 1; return make.apply(document, arguments); };
+  P.counts = function () {
+    return { intervals: timers.intervals.size, timeouts: timers.timeouts.size, frames: timers.frames.size, canvases_made: timers.canvases, canvases: document.querySelectorAll('canvas').length, nodes: document.getElementsByTagName('*').length, copies: document.querySelectorAll('.bet.ghost').length };
+  };
   // from the page's own first frame on, read after the page has drawn it:
   // the page asks for its frames first, so these come after them in each frame
   var n = 0;
@@ -472,6 +493,97 @@ async function sphereZoomTrace(opts = {}) {
   return out;
 }
 
+// ---- a long session ------------------------------------------------------------------
+
+const TEAM_ROWS = [
+  { member: 'builder', role: 'writes and tests the code', ovr: '81', engine: 'm-one', sentence: 'working: the getting started page.', status: 'working' },
+  { member: 'navigator', role: 'finds where things are', ovr: '77', engine: 'm-two', sentence: 'waiting for your yes: the weekly note.', status: 'waiting for your yes' },
+  { member: 'validator', role: 'checks the work', ovr: '74', engine: 'm-one', sentence: 'idle.', status: 'idle' },
+];
+const deckJob = i => ({
+  job_id: `job-${i}`, member: TEAM_ROWS[i].member, label: TEAM_ROWS[i].status, time: 'about an hour left', yes: null, said: null,
+  rows: [{ member: TEAM_ROWS[i].member, role: TEAM_ROWS[i].role, work: `job ${i + 1}: the getting started page`, status: TEAM_ROWS[i].status, done: 'not yet' }],
+});
+
+// One round of the owner's moves, each ending on a new card at rest: an
+// answer through the sphere (sharper, a choice, a picked idea), words said
+// and the reply to them, the team table, the job deck turned in place, back
+// to the team, then home to the big orb, the calm line, and the idea that
+// grows out of its dots. A round lands 11 cards.
+const ROUND = 11;
+
+// What the page holds after each round, every count read after two forced
+// collections: chrome's own counts of listeners, nodes, and documents, the
+// js heap, and the probe's timers, intervals, frames, and canvases.
+async function sessionTrace({ cards = 100, ...opts } = {}) {
+  let n = 0, at = 0, deck = false;
+  const id = k => `${k}-${++n}`;
+  const idea = () => gmCard.idea({ id: id('bet'), title: `idea ${n} for the phone page`, body: `installs last week were ${1400 + n}. more people try it by nov 1.` });
+  const team = () => gmCard.team({ id: id('team'), rows: TEAM_ROWS, deck: true });
+  const deckCard = () => gmCard.deck({ id: id('deck'), at, total: TEAM_ROWS.length, card: deckJob(at), columns: ['member', 'role', 'work', 'status', 'done'], job: { member: TEAM_ROWS[at].member, role: TEAM_ROWS[at].role } });
+  let desk = null;
+  desk = trace.cardDesk(idea(), async (action, { card, option }) => {
+    if (action === 'sharper') return { card: gmCard.question({ id: id('question'), title: `what matters most this month, ${n}?`, body: 'installs dropped last week.', choices: [{ id: 'money', label: 'making money from it' }, { id: 'users', label: 'more people using it' }] }) };
+    if (action === 'answer') return { card: gmCard.choice({ id: id('choice'), items: [{ id: `o${n}`, title: `Record demo video ${n}`, why: 'people trust what they can watch.' }, { id: `p${n}`, title: `Send note ${n} to the schools`, why: 'they asked for it.' }] }) };
+    if (action === 'say') return { card: gmCard.reply({ id: id('reply'), base: card, text: 'a short page that walks a new person to their first card.', suggestions: ['sounds good'] }) };
+    if (action === 'open:team' || (action === 'back' && deck)) { deck = false; return { card: team() }; }
+    if (action === 'deck') { deck = true; at = 0; return { card: deckCard() }; }
+    if (action === 'flip') { at = (at + option.binds.step + TEAM_ROWS.length) % TEAM_ROWS.length; return { card: deckCard() }; }
+    if (action === 'orb') {
+      // the next idea is written while the calm line shows, then it is up on the Mac
+      setTimeout(() => { desk.current = idea(); }, 1200);
+      return { card: gmCard.wait({ id: id('wait'), progress: [{ at: Date.now(), line: 'drafting three ideas at once' }], started_at: Date.now() }) };
+    }
+    return { card: idea() };
+  });
+  return openPage(desk, async (p, send, said) => {
+    const kind = k => `${AT_REST} && document.getElementById('bet').getAttribute('data-kind') === ${JSON.stringify(k)}`;
+    const ready = k => p.until(k === 'wait' ? "document.body.classList.contains('waiting') && Boolean(document.querySelector('#bet .sayline .field')) && !document.body.hasAttribute('data-busy')" : kind(k), `a ${k} card`, 15000);
+    const sample = async (landed) => {
+      await wait(1200);
+      await send('HeapProfiler.collectGarbage');
+      await wait(100);
+      await send('HeapProfiler.collectGarbage');
+      const dom = await send('Memory.getDOMCounters');
+      const heap = await send('Runtime.getHeapUsage');
+      return { cards: landed, heap_kb: Math.round(heap.usedSize / 1024), listeners: dom.jsEventListeners, dom_nodes: dom.nodes, documents: dom.documents, ...(await p.run('window.__health.counts()')) };
+    };
+    const started = Date.now();
+    await ready('idea');
+    let landed = 0;
+    const rows = [];
+    const land = async (k, move) => { await move(); await ready(k); landed += 1; };
+    while (landed < cards) {
+      await land('question', () => p.tapButton('sharper idea'));
+      await land('choice', () => p.tapButton('making money from it'));
+      await land('idea', () => p.tap("document.querySelector('#bet .option')", 'the first idea'));
+      await land('reply', async () => {
+        await p.tapButton('or say something');
+        await p.until("Boolean(document.querySelector('#bet .field input')) && document.activeElement === document.querySelector('#bet .field input')", 'the box', 5000);
+        await send('Input.insertText', { text: 'what do you mean' });
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      });
+      await land('idea', () => p.tapButton('not now'));
+      await land('team', () => p.tapButton('the team'));
+      await land('deck', () => p.tapButton('the jobs, one at a time'));
+      await land('deck', () => p.tapButton('next'));
+      await land('team', () => p.tapButton('the whole team'));
+      await land('wait', async () => {
+        await p.tap("document.getElementById('lava')", 'the small orb');
+        await p.until("!document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy')", 'the big orb', 10000);
+        await p.tap("document.getElementById('orb')", 'the big orb');
+      });
+      await land('idea', async () => {});
+      rows.push(await sample(landed));
+    }
+    const first = rows[0], last = rows[rows.length - 1];
+    const grew = {};
+    for (const k of ['heap_kb', 'listeners', 'dom_nodes', 'documents', 'intervals', 'timeouts', 'frames', 'canvases_made', 'canvases', 'nodes', 'copies']) grew[k] = last[k] - first[k];
+    return { cards: landed, seconds: Math.round((Date.now() - started) / 1000), samples: rows, grew_after_first_round: grew, console: said.filter(l => !(l.kind === 'error' && /status of 409/.test(l.text))) };
+  }, opts);
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -511,7 +623,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -530,9 +642,12 @@ if (require.main === module) {
     focusTrace().then(print, fail);
   } else if (process.argv.includes('--zoom')) {
     (async () => print({ pages: await zoomTrace(), sphere: await sphereZoomTrace() }))().catch(fail);
+  } else if (process.argv.includes('--long')) {
+    const at = process.argv.indexOf('--long');
+    sessionTrace({ cards: Number(process.argv[at + 1]) || 100 }).then(print, fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --zoom | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --zoom | --long [cards] | --asleep\n');
   }
 }
