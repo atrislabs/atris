@@ -115,3 +115,28 @@ test('browser: a tap whose answer never comes gives up, and the card comes back 
   assert.equal(out.after.title, CARDS.b2.title, show);
   assert.deepEqual(out.did, ['skip', 'skip'], show);
 });
+
+// the card on screen reads this title, at rest
+const titled = t => `!document.body.hasAttribute('data-busy') && document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && document.querySelector('#bet h1').textContent === ${JSON.stringify(t)}`;
+
+test('browser: a tap on a card the Mac no longer has, with nothing up there, goes quietly to the big orb instead of looping on the old card', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    // the Mac started again and has nothing on screen
+    desk.current = null;
+    await tapText(p, send, 'not now');
+    await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000).catch(() => {});
+    await wait(700);
+    const home = await look(p);
+    // a tap on the big orb brings the card the Mac has now
+    await p.tap('#orb');
+    await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
+    return { home, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.home.has_card, out.home.busy, out.home.line], [false, false, 'tap to think'], show);
+  assert.equal(out.after.title, CARDS.b2.title, show);
+  // the refused tap did nothing; only the big orb asked for a card
+  assert.deepEqual(out.did, ['orb'], show);
+});
