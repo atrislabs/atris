@@ -1,6 +1,8 @@
 // Part 8 of 8 of the commands suite, split so node --test runs them in parallel.
 // Shared imports and fixture helpers live in test/helpers/commands-fixtures.js.
 const test = require('node:test');
+// business files are named by the local calendar day (commands/business.js localDay)
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const {
   assert,
   fs,
@@ -785,8 +787,8 @@ test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse i
     const briefPath = path.join(dir, 'atris', 'wiki', 'briefs', 'cashmere-ai-starter-brief.md');
     const personPath = path.join(dir, 'atris', 'wiki', 'people', 'farbod-nowzad.md');
     const conceptPath = path.join(dir, 'atris', 'wiki', 'concepts', 'cashmere-ai-first-loop.md');
-    const cheatSheetPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-cashmere-ai-onboarding-cheat-sheet.md`);
-    const onePagerPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-cashmere-ai-operator-one-pager.md`);
+    const cheatSheetPath = path.join(dir, 'atris', 'reports', `${localDay()}-cashmere-ai-onboarding-cheat-sheet.md`);
+    const onePagerPath = path.join(dir, 'atris', 'reports', `${localDay()}-cashmere-ai-operator-one-pager.md`);
 
     assert.ok(fs.existsSync(briefPath));
     assert.ok(fs.existsSync(personPath));
@@ -856,7 +858,7 @@ test('business onboard can infer signals from sloppy input and local files', asy
     }
 
     const briefPath = path.join(dir, 'atris', 'wiki', 'briefs', 'northstar-ops-starter-brief.md');
-    const onePagerPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-northstar-ops-operator-one-pager.md`);
+    const onePagerPath = path.join(dir, 'atris', 'reports', `${localDay()}-northstar-ops-operator-one-pager.md`);
     const sourcesRoot = path.join(dir, 'atris', 'context', '_ingest');
     const pack = fs.readdirSync(sourcesRoot)[0];
     const sourcesTxt = fs.readFileSync(path.join(sourcesRoot, pack, 'sources.txt'), 'utf8');
@@ -937,7 +939,7 @@ test('business share prints and writes a collaborator handoff from workspace sta
       process.chdir(prevCwd);
     }
 
-    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    const handoffPath = path.join(dir, 'atris', 'reports', `${localDay()}-share-operator.md`);
     assert.ok(fs.existsSync(handoffPath));
     const body = fs.readFileSync(handoffPath, 'utf8');
     assert.match(body, /Share Co Share Handoff/);
@@ -1176,7 +1178,7 @@ test('business collaborator handoff loop connects tasks missions goals proof and
     assert.match(share.stdout, /atris mission start "Run the first useful loop for Loop Co"/);
     assert.match(share.stdout, /atris member goal-from-mission operator/);
 
-    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    const handoffPath = path.join(dir, 'atris', 'reports', `${localDay()}-share-operator.md`);
     const handoff = fs.readFileSync(handoffPath, 'utf8');
     assert.match(handoff, /For: Liv Loop <liv@loop\.co>/);
     assert.match(handoff, /atris business record atris\/reports\/<recap>\.md/);
@@ -1311,7 +1313,7 @@ test('business share is honest for local-only workspaces without cloud ids', asy
     }
 
     assert.equal(state.remoteReady, false);
-    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    const handoffPath = path.join(dir, 'atris', 'reports', `${localDay()}-share-operator.md`);
     const body = fs.readFileSync(handoffPath, 'utf8');
     assert.match(body, /Remote pull: local-only/);
     assert.match(body, /Remote pull is not available yet/);
