@@ -112,7 +112,9 @@ test('evaluateKeepRule: superset keeps, regression and verify failure revert', (
 test('same-day gate no-ops and --force overrides', () => {
   const { base, repo } = makeTempRepo();
   try {
-    daily.writeDailyState(repo, { last_run_date: new Date().toISOString().slice(0, 10), history: [] });
+    const now = new Date(); // the gate compares against the local calendar day
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    daily.writeDailyState(repo, { last_run_date: today, history: [] });
     const gated = runCli(['experiments', 'daily', '--json'], repo);
     assert.equal(gated.status, 0, gated.stderr || gated.stdout);
     const gatedPayload = JSON.parse(gated.stdout);

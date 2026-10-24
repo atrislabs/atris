@@ -182,7 +182,8 @@ test('auto-improver scan dates undated logs by when they were last written', () 
     assert.ok(!patterns.some((pattern) => /review_lane_run_unparseable/.test(pattern)), `two-month-old log counted: ${JSON.stringify(patterns)}`);
     const fresh = failures.find((failure) => /engine_exit_nonzero/.test(failure.pattern));
     assert.ok(fresh, `fresh undated log was dropped: ${JSON.stringify(patterns)}`);
-    assert.equal(fresh.evidence[0].date, new Date().toISOString().slice(0, 10));
+    const now = new Date(); // the scan dates logs by the local calendar day
+    assert.equal(fresh.evidence[0].date, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
