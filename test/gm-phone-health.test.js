@@ -122,11 +122,13 @@ test('over http: the page goes over the link packed when the phone takes it, abo
   }
 });
 
-test('browser: on a weak wifi the page comes over packed, under 45KB for its 107KB, and stays dark until it can show the dots or the card whole', browser, async () => {
+test('browser: on a weak wifi the page comes over packed, under 55KB for its 140KB, and stays dark until it can show the dots or the card whole', browser, async () => {
   for (const card of [trace.CARDS.b1, null]) {
     const out = await health.firstPaintTrace({ chromePath: CHROME, card, latency: 60, kbps: 1000 });
     const show = JSON.stringify(out);
-    assert.ok(out.page_bytes_sent < 45000, show);
+    // the six areas together grew the page from about 107KB to 140KB (47KB packed); the cap
+    // keeps the same room above it, so a page that grows past that fails here
+    assert.ok(out.page_bytes_sent < 55000, show);
     assert.ok(out.page_bytes > 90000, show);
     assert.equal(out.words_before_script, 0, show);
     assert.equal(out.first_frame.card, Boolean(card), show);
