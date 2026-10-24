@@ -187,7 +187,7 @@ test('browser: flipping a deck the Mac has moved past turns to the Mac\'s card w
   const show = JSON.stringify(runs, null, 1);
   const [moved, empty] = runs;
   assert.deepEqual([moved.title, moved.busy, moved.has_card], [CARDS.b2.title, false, true], show);
-  assert.equal(moved.note, 'that card changed, so nothing was done. here is the one on screen now', show);
+  assert.equal(moved.note, 'that card changed, so nothing was done. here is the one on screen now.', show);
   assert.deepEqual([empty.has_card, empty.busy, empty.line], [false, false, 'tap to think'], show);
   // the refused flips did nothing on the Mac
   assert.deepEqual([moved.did, empty.did], [[], []], show);
