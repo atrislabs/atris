@@ -9,6 +9,8 @@ test('logAtris reports that a terminal is needed when piped input has no notes',
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'log-empty-pipe-'));
   try {
     fs.mkdirSync(path.join(root, 'atris'));
+    const inputFile = path.join(root, 'stdin.txt');
+    fs.writeFileSync(inputFile, '  \n\t\r\n ExIt \n');
     // Use a real closed stdin pipe, and a fixed local day in every time zone.
     const result = spawnSync(process.execPath, ['-e', `
       const { logAtris } = require('../commands/log');
@@ -25,7 +27,9 @@ test('logAtris reports that a terminal is needed when piped input has no notes',
     `, root], {
       cwd: __dirname,
       env: { HOME: root },
-      input: '  \n\t\r\n ExIt \n',
+      // stdin from a file, not a live pipe: still not a terminal, and the
+      // child exiting early can never break the write (EPIPE under load)
+      stdio: [fs.openSync(inputFile, 'r'), 'pipe', 'pipe'],
       encoding: 'utf8',
     });
     assert.equal(result.error, undefined);
