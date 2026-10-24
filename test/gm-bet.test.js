@@ -3764,7 +3764,7 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
 });
 
-test('card contract: every served card speaks lowercase: an idea or job title written with a capital starts lowercase, and API stays API', () => {
+test('card contract: every served card speaks lowercase: an idea or job title written with a plain capital starts lowercase, and names stay as written', () => {
   const idea = gmCard.enforce(gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400.' }));
   assert.equal(idea.title, 'write the getting started page');
   const api = gmCard.enforce(gmCard.idea({ id: 'b2', title: 'API docs for the phone page', body: 'installs last week were 1,400.' }));
@@ -3774,6 +3774,23 @@ test('card contract: every served card speaks lowercase: an idea or job title wr
   assert.equal(deck.table.rows[0][0], 'write the getting started page');
   const choice = gmCard.enforce(gmCard.choice({ id: 'c1', items: [{ id: 'b1', title: 'Record a demo video', why: 'more people try it.' }] }));
   assert.equal(choice.options[0].label, 'record a demo video');
+  // a proper name as the first word stays as written: any capital after the first letter, all caps, or a lowercase start
+  const titleOf = t => gmCard.enforce(gmCard.idea({ id: 'b3', title: t, body: 'installs last week were 1,400.' })).title;
+  for (const t of ['OpenAI integration for new users', 'GitHub app for the phone page', 'YouTube demo of the orb', 'iPhone home screen icon', 'McKinsey style one pager', 'API docs for the phone page', 'CRM import for small teams']) assert.equal(titleOf(t), t);
+  assert.equal(titleOf('Email ten recent installers'), 'email ten recent installers');
+  // a name in a choice keeps its capitals too
+  const named = gmCard.enforce(gmCard.choice({ id: 'c2', items: [{ id: 'b1', title: 'GitHub app for the phone page', why: 'more people try it.' }, { id: 'b2', title: 'Write the readme', why: 'more people try it.' }] }));
+  assert.deepEqual(named.options.filter(o => o.style === 'option').map(o => o.label), ['GitHub app for the phone page', 'write the readme']);
+  // member and model names are never changed: in the team table's cells, its buttons, and the cards titled with a name
+  const team = gmCard.enforce(gmCard.team({ id: 'team~1', rows: [{ member: 'Sam', role: 'Owner of the roadmap', ovr: '91', engine: 'Claude Opus 5.5', status: 'working', sentence: 'working: the try page' }] }));
+  assert.deepEqual(team.table.rows[0].slice(0, 4), ['Sam', 'Owner of the roadmap', '91', 'Claude Opus 5.5']);
+  assert.deepEqual(team.options.filter(o => o.cell).map(o => o.label), ['Sam', 'Claude Opus 5.5']);
+  assert.equal(gmCard.enforce(gmCard.member({ id: 'member~1', name: 'Sam', sentence: 'idle.' })).title, 'Sam');
+  const swap = gmCard.enforce(gmCard.swap({ id: 'swap~9', name: 'Sam', choices: { scopes: [], options: [{ engine: 'one', tool: 'Claude Code', model: 'm', label: 'Opus 5.5', current: false, record: null }] } }));
+  assert.deepEqual([swap.title, swap.options[0].label, swap.options[0].detail], ['Sam', 'Opus 5.5', 'Claude Code']);
+  // in the deck only the work cell is the job's words; the member cell is a name
+  const job = gmCard.enforce(gmCard.deck({ id: 'deck~2', at: 0, total: 1, columns: ['work', 'member', 'role', 'status'], card: { job_id: 'm2', mission_id: 'm2', member: 'Sam', label: 'working', time: 'about 3 hours left', rows: [{ work: 'OpenAI integration for new users', member: 'Sam', role: 'Owner of the roadmap', status: 'working' }] } }));
+  assert.deepEqual(job.table.rows[0].slice(0, 2), ['OpenAI integration for new users', 'Sam']);
 });
 
 test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {
