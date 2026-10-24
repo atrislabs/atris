@@ -43,9 +43,15 @@ related="$tests $(cd "$W" && node -e '
   const fs = require("fs"), path = require("path");
   const changed = process.argv.slice(1).map((f) => f.replace(/\.js$/, ""));
   const src = (dir) => fs.readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => path.join(dir, f));
-  const files = [...src("lib"), ...src("commands"), ...src("test/helpers"), ...src("test").filter((f) => f.endsWith(".test.js"))];
-  const deps = (file) => [...fs.readFileSync(file, "utf8").matchAll(/require\(["\x27](\.{1,2}\/[^"\x27]+)["\x27]\)/g)]
-    .map((m) => path.normalize(path.join(path.dirname(file), m[1])).replace(/\.js$/, ""));
+  const files = [...src("bin"), ...src("lib"), ...src("commands"), ...src("test/helpers"), ...src("test").filter((f) => f.endsWith(".test.js"))];
+  // a test that runs the CLI as a program depends on bin/atris.js, which loads every command
+  const deps = (file) => {
+    const text = fs.readFileSync(file, "utf8");
+    const found = [...text.matchAll(/require\(["\x27](\.{1,2}\/[^"\x27]+)["\x27]\)/g)]
+      .map((m) => path.normalize(path.join(path.dirname(file), m[1])).replace(/\.js$/, ""));
+    if (file.startsWith("test") && /bin["\x27]?\s*,\s*["\x27]atris\.js|bin\/atris(\.js)?\b/.test(text)) found.push("bin/atris");
+    return found;
+  };
   const graph = new Map(files.map((f) => [f, deps(f)]));
   const reach = new Set(changed); let grew = true;
   while (grew) { grew = false; for (const [f, d] of graph) { const k = f.replace(/\.js$/, ""); if (!reach.has(k) && d.some((x) => reach.has(x))) { reach.add(k); grew = true; } } }
