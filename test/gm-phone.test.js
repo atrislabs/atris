@@ -1705,6 +1705,32 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   assert.ok(r.bloom_from_dots_px <= 3, show);
 });
 
+test('trace: a few stalls cannot hide a jump in the wait, and a slow machine reads the same as a fast one', () => {
+  // 120 frames of the lava gliding 2px per 60fps frame; the last one is the idea at rest
+  const lavaRun = (gap, stalls = [], jump = -1) => {
+    const frames = [];
+    let ft = 0, x = 0;
+    for (let i = 0; i < 120; i++) {
+      const ms = stalls.includes(i) ? 300 : gap;
+      ft += ms;
+      x += i === jump ? 180 : 2 * ms / 16.7;
+      frames.push({ t: ft, ft, orb: null, pix: null, sphere: false, stage: null, lava: { r: { x, y: 300, w: 56, h: 56 }, o: 1, at: ft }, box: { o: 1, kind: 'wait', card: 'wait:7', title: { x: 20, y: 100, w: 300, h: 40 }, titleText: i === 119 ? 'the idea' : 'the calm line' }, waiting: true, field: true, fieldRect: null, step: '', notes: [], line: '', lineO: 1, foot: { r: { x: 0, y: 800, w: 390, h: 20 }, o: 1 }, busy: false });
+    }
+    return trace.summarizeWait(frames, 0, 'the idea');
+  };
+  // four 300ms stalls in a 60fps run leave its pace alone, so a 180px jump in one is a jump
+  const stalled = lavaRun(16.7, [20, 40, 60, 80], 60);
+  assert.equal(stalled.pace_frame_ms, 17);
+  assert.equal(stalled.stall_frame_ms, 50);
+  assert.ok(stalled.lava_max_step_px > 45, JSON.stringify(stalled));
+  // a machine whose every frame takes 120ms reads the same glide as a 60fps one
+  const slow = lavaRun(120);
+  assert.equal(slow.stall_frame_ms, 240);
+  assert.ok(Math.abs(slow.lava_max_step_px - 2) < 0.1 && slow.lava_max_speed_change_px < 0.1, JSON.stringify(slow));
+  // and no stall is ever longer than a quarter second, however slow the machine
+  assert.equal(lavaRun(200).stall_frame_ms, 250);
+});
+
 test('browser: the calm line fits every screen: its box is inside the edges with send whole, and its words are centered under the sphere with the team, at 390, 430, and laptop width', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
   const runs = await trace.calmLayoutTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);

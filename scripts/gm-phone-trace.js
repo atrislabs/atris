@@ -266,9 +266,9 @@ const num = v => (v == null ? null : Number(v));
 // ("hold 150, glide 260, ..."). What the clock reads past the motion is the
 // wait on the desk's answer and then late timers and frames, which a busy
 // machine stretches. slowest_frame_ms is the longest gap between two frames
-// on the way, and pace_frame_ms the fourth longest: a slow machine slows the
-// eight or so frames that draw the dots together, while a page that freezes
-// makes one long frame or a few, which cannot move the fourth.
+// on the way, and pace_frame_ms the 75th percentile of the frames that draw
+// the dots: those are the frames a slow machine slows (the rest stay near
+// 60fps even 16 times slower), and a few stalls cannot move it.
 function reveal(frames, sent) {
   const last = frames[frames.length - 1];
   const motion = last.revealPlan == null ? null : last.revealPlan.split(', ').filter(Boolean).map(s => {
@@ -278,16 +278,19 @@ function reveal(frames, sent) {
   const clock = num(last.revealMs), waited = num(last.revealWaited);
   const motionMs = motion ? motion.reduce((n, [, ms]) => n + ms, 0) : null;
   const endAt = frames.findIndex(f => f.t >= sent && f.revealMs != null);
-  const times = [sent, ...frames.slice(0, endAt < 0 ? frames.length : endAt + 1).filter(f => f.t > sent).map(f => f.t)];
-  const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => b - a);
+  const seen = frames.slice(0, endAt < 0 ? frames.length : endAt + 1).filter(f => f.t > sent);
+  const gaps = seen.map((f, i) => ({ ms: f.t - (i ? seen[i - 1].t : sent), dots: f.sphere }));
+  const slowest = Math.max(0, ...gaps.map(g => g.ms));
+  const drawing = gaps.filter(g => g.dots).map(g => g.ms).sort((a, b) => a - b);
+  const bulk = drawing.length ? drawing : gaps.map(g => g.ms).sort((a, b) => a - b);
   return {
     reveal_ms: clock,
     motion,
     motion_ms: motionMs,
     waited_ms: waited,
     late_ms: clock == null || motionMs == null ? null : clock - motionMs - (waited || 0),
-    slowest_frame_ms: Math.round(gaps[0] || 0),
-    pace_frame_ms: Math.round(gaps[Math.min(3, gaps.length - 1)] || 0),
+    slowest_frame_ms: Math.round(slowest),
+    pace_frame_ms: Math.round(bulk.length ? bulk[Math.floor(0.75 * (bulk.length - 1))] : 0),
   };
 }
 
@@ -1257,17 +1260,18 @@ function movedBetween(a, b) {
 // biggest change of speed (a snap), and what each part showed. Steps and
 // changes of speed are per 60fps frame, read on the clock each part moves by,
 // so a slower machine reads the same: the dots and the lava on their own
-// clocks, everything else on the frame's own time. A frame far longer than
-// the machine's own slow frames is a stall, and what jumps in it counts: it
-// reads as at most 50ms, or the machine's pace (its fourth slowest frame)
-// when that is longer.
+// clocks, everything else on the frame's own time. The machine's pace is its
+// 75th percentile frame: a slow machine slows most frames, while a few stalls
+// cannot move it. A frame over twice that pace (never under 50ms, never over
+// 250ms) is a stall, and what moves in it counts at its full distance.
 function summarizeWait(frames, from, idea) {
   const run = frames.filter(f => f.t >= from);
   const end = run.findIndex(f => f.box && f.box.titleText === idea && !f.busy && f.box.o > 0.99);
   const span = end < 0 ? run : run.slice(0, end + 1);
-  const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => y - x);
-  const longest = Math.max(50, gaps[Math.min(3, gaps.length - 1)] || 0);
-  const per = ms => 16.7 / Math.min(longest, Math.max(8, ms));
+  const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
+  const pace = gaps.length ? gaps[Math.floor(0.75 * (gaps.length - 1))] : 16.7;
+  const stall = Math.min(250, Math.max(50, 2 * pace));
+  const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
   let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0, stillWaiting = 0;
   let lavaStep = 0, lavaGrow = 0, lavaJerk = 0, stageStep = 0, dotsStep = 0, dotsJerk = 0, titleStep = 0, footJump = 0;
   let prevLava = null, prevDots = null;
@@ -1276,7 +1280,7 @@ function summarizeWait(frames, from, idea) {
     const a = span[i - 1], b = span[i];
     const ms = b.ft - a.ft, k = per(ms);
     const m = movedBetween(a, b);
-    if (m.dots) { dotFrames += 1; dotsMs += ms; }
+    if (m.dots) { dotFrames += 1; dotsMs += Math.min(ms, stall); }
     if (m.any) runStart = b.t;
     else if (b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
     if (!m.any && (b.waiting || (b.sphere && !b.box)) && b.t - runStart > stillWaiting) stillWaiting = b.t - runStart;
@@ -1321,6 +1325,9 @@ function summarizeWait(frames, from, idea) {
     dot_frames: dotFrames,
     // how much of the wait the dots were moving through, however many frames that took
     dots_moving_ms: Math.round(dotsMs),
+    // the machine's pace, and the frame length past which a frame is a stall
+    pace_frame_ms: Math.round(pace),
+    stall_frame_ms: Math.round(stall),
     // one-frame steps and changes of speed, in css pixels
     lava_max_step_px: round(lavaStep),
     lava_max_size_step_px: round(lavaGrow),
