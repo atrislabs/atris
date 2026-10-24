@@ -75,6 +75,9 @@ test('browser: a card already up on the Mac is the first thing painted, with no 
     assert.equal(none.first_frame && none.first_frame.dots, true, JSON.stringify(none));
     assert.equal(none.first_frame.card, false, JSON.stringify(none));
     assert.deepEqual(none.console, [], JSON.stringify(none));
+    // the page's own work from its last byte to its first paint, on a slowed cpu too
+    // (measured 50 to 140ms at 1x and 170 to 350ms at 4x; the room is for a busy machine)
+    for (const run of [withCard, none]) assert.ok(run.paint_after_bytes_ms != null && run.paint_after_bytes_ms < 400 * cpu, JSON.stringify(run));
   }
 });
 

@@ -228,8 +228,10 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, 
   return openPage(desk, async (p, send, said) => {
     const ready = card ? "document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy')" : "document.getElementById('orb').__orb.frame > 2";
     await p.until(ready, 'the first look', 15000);
-    await wait(600);
+    // long enough for the probe's frames to run out, so the frame pace reads a full second and more
+    await wait(card ? 600 : 2200);
     const h = await p.run('window.__health');
+    const bytesAt = await p.run("performance.getEntriesByType('navigation')[0].responseEnd");
     const fcp = h.paints.find(x => x.name === 'first-contentful-paint');
     const shown = h.frames;
     const first = shown[0] || null;
@@ -238,8 +240,12 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, 
       latency_ms: latency,
       cpu,
       first_paint_ms: fcp ? Math.round(fcp.t) : null,
+      // from the page's last byte to its first paint: the page's own work, with the link taken out
+      paint_after_bytes_ms: fcp ? Math.round(fcp.t - bytesAt) : null,
       first_frame: first ? { card: first.card, title: first.title, dots: first.dots, line: first.line } : null,
       orb_frames_before_card: card ? (cardAt < 0 ? shown.length : cardAt) : null,
+      // the big orb's pace once it is up: the middle gap between its frames (16.7 is every frame at 60 a second)
+      orb_frame_ms: card ? null : (() => { const g = shown.slice(1).map((f, i) => f.t - shown[i].t).sort((a, b) => a - b); return g.length ? Math.round(g[Math.floor(g.length / 2)] * 10) / 10 : null; })(),
       layout_shift: Math.round(h.shifts.reduce((n, s) => n + s.value, 0) * 10000) / 10000,
       console: said,
     };
