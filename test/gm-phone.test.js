@@ -1042,8 +1042,8 @@ test('page: an act holds the chosen spot, then one motion: the card fades into t
   assert.match(script, /var AFTER_MS = 1500;/);
   // the next card blooms where the dots land, as the sphere settles to the small orb
   assert.match(script, /if \(phase === 'cover'\) \{ showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
-  // reduced motion: no spiral, the card fades in where it goes
-  assert.match(script, /if \(reduced\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); return; \}/);
+  // reduced motion: no spiral; a sphere on screen fades out first, then the card fades in where it goes
+  assert.match(script, /if \(reduced\) \{\n\s+var show = function \(\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \};\n\s+if \(fadeSphere\(\)\) setTimeout\(show, 200\); else show\(\);/);
   // the card fades all the way before it leaves the page, and the sphere comes back swarming, not idle
   assert.match(html, /\.bet\.leave\.fast \{ transition: opacity 0\.2s ease-in-out; \}/);
   assert.match(script, /var ACT_LEAVE_MS = 220,/);
@@ -1065,7 +1065,9 @@ test('page: while the next card is on its way the dots keep moving; on the calm 
   // no glow loop and no keyframes of its own: motion of the dots, drawn frame by frame
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   // a spiral starts from the dots' own speed, so they turn inward without a stop
-  assert.match(script, /d\.kx \+= d\.vx; d\.ky \+= d\.vy; d\.vx \*= CARRY; d\.vy \*= CARRY;/);
+  // the carry runs on the frame's own time, so a slow phone turns inward the same way
+  assert.match(script, /d\.kx \+= d\.vx \* k; d\.ky \+= d\.vy \* k; d\.vx \*= carry; d\.vy \*= carry;/);
+  assert.match(script, /var k = dt \* 60, carry = Math\.pow\(CARRY, k\);/);
   // the calm line: the sphere stays on the page with its dots swarming, and the card under it takes no room
   assert.match(script, /function enterWait\(card, atOnce\) \{[\s\S]*?orb\.swarm\(\);[\s\S]*?document\.body\.classList\.add\('has-card', 'waiting'\);/);
   assert.match(html, /body\.has-card\.waiting \.stage \{ display: block; transform: translateY\(var\(--wait-dy, 0px\)\) scale\(var\(--wait-k, 1\)\); \}/);
@@ -1120,9 +1122,10 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   // the push only in the resting sphere (idle, or swarming while a card is on its way), never under reduced motion
   assert.match(script, /if \(mode === 'idle' \|\| mode === 'swarm'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
   assert.match(script, /if \(pointer\.inside && !reduced\) \{/);
-  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2;/);
+  // per 60fps frame of the frame's own time, so the push and the light feel the same on any screen
+  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2 \* k;/);
   // the light eases toward the pointer anywhere on the page (trackWindow), as on the landing page
-  assert.match(script, /light\.x \+= \(light\.tx - light\.x\) \* 0\.06;/);
+  assert.match(script, /var follow = 1 - Math\.pow\(0\.94, k\);\n\s+light\.x \+= \(light\.tx - light\.x\) \* follow;/);
   assert.match(script, /var reach = Math\.max\(280, window\.innerWidth \* 0\.4\);/);
   assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
   // the ripple starts where the pointer enters the orb
@@ -1165,8 +1168,8 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.match(script, /ghost\.style\.top = \(r\.top - p\.top\) \+ 'px';/);
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
-  // reduced motion: the new card simply takes the old one's place
-  assert.match(script, /if \(reduced\) \{ b\.style\.minHeight = ''; paint\(\); after\(\); return; \}/);
+  // reduced motion: the card fades out, changes, and fades back in, with the footer aside while it moves
+  assert.match(script, /if \(reduced\) \{[\s\S]*?document\.body\.removeAttribute\('data-in-place'\);[\s\S]*?b\.classList\.remove\('up'\);[\s\S]*?setTimeout\(function \(\) \{ paint\(\); void b\.offsetWidth; b\.classList\.add\('up'\); setTimeout\(after, 200\); \}, 200\);/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+b\.style\.minHeight = '';/);
 });
