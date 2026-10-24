@@ -394,3 +394,39 @@ test('browser: a short quiet link like no on a yes card answers a tap 44px wide,
   assert.deepEqual(out.hits, [true, true, true, true], show);
   assert.deepEqual(out.taps, ['no'], show);
 });
+
+async function press(send, key, code, text) {
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, ...(text ? { text } : {}) });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code });
+}
+
+test('browser: with the keyboard alone, the next card takes the focus on its first action, and going home puts it on the big orb', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.q1, async (action) => { did.push(action); return { card: action === 'orb' ? CARDS.b2 : CARDS.b1 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    // Tab to the first answer and press Enter
+    let tabs = 0;
+    while ((await look(p)).active !== 'BUTTON:money' && tabs++ < 10) await press(send, 'Tab', 9);
+    await press(send, 'Enter', 13, '\r');
+    await p.until(titled(CARDS.b1.title), 'the next card', 8000);
+    await wait(300);
+    const next = await look(p);
+    // on to the small orb, and Enter goes home
+    tabs = 0;
+    while ((await look(p)).active !== 'DIV#lava' && tabs++ < 12) await press(send, 'Tab', 9);
+    await press(send, 'Enter', 13, '\r');
+    await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000);
+    await wait(300);
+    const home = await look(p);
+    // Enter on the big orb brings the next card, and the focus goes with it
+    await press(send, 'Enter', 13, '\r');
+    await p.until(titled(CARDS.b2.title), 'the card after', 8000).catch(() => {});
+    await wait(300);
+    return { next, home, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.next.active, 'BUTTON:do', show);
+  assert.equal(out.home.active, 'CANVAS#orb', show);
+  assert.equal(out.after.active, 'BUTTON:do', show);
+  assert.deepEqual(out.did, ['answer', 'orb'], show);
+});
