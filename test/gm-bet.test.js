@@ -783,7 +783,9 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking...');
   assert.equal(events[SOURCE_KEYS.length + 3].line, 'thinking... 4 words written');
   // the lines the waiting card shows, in the owner's words
-  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft missed a rule. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
+  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft did not fit. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
+  // the waiting lines say what is happening to the idea, never how the work is checked
+  for (const t of events.filter(e => e.say).map(e => e.say)) assert.doesNotMatch(t, /\brules?\b|\bcheck(s|ed)? (date|rule)|\bskeptic|\bjudge/, t);
   assert.ok(events.every(e => !/token|character/.test(e.line)));
   // the date is worked out from the owner's today, in calendar days
   assert.equal(out.bet.check_in_days, 9);
