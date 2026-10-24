@@ -1343,7 +1343,7 @@ test('over http: an answer and a say name the card on screen; a page that missed
 });
 
 test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+  for (const viewport of [trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP]) {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     const look = out.look;
@@ -1360,9 +1360,11 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.ok(look.narrowest.role >= 140, `${at}: the role column keeps its width (${look.narrowest.role}px)`);
     // the page itself never scrolls sideways; only the table box does, and only on the phone
     assert.equal(look.page_scrolls_sideways, false, at);
-    assert.equal(look.scrolls_sideways, at === '390x844', at);
+    assert.equal(look.scrolls_sideways, at !== '1280x800', at);
     assert.equal(look.name_column_moved_px, 0, `${at}: the name column stays put`);
     assert.equal(look.name_header_moved_px, 0, `${at}: its header stays over it`);
+    // a model brought into view lands beside the held names, never under them (all five did at 320)
+    assert.deepEqual(look.models_under_names, [], at);
     assert.ok(look.smallest_font_px >= 17, at);
     assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
     assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);
@@ -1372,7 +1374,7 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.equal(out.closed.kind, 'idea', at);
     // on a phone every move around the team pages is one turn in place, not the spiral;
     // on a laptop a move between a wide table card and a plain card still goes through the sphere
-    const turn = at === '390x844';
+    const turn = at !== '1280x800';
     for (const m of [out.talk.moved, out.back.moved, out.closed.moved]) assert.equal(m.plan === 'hold 150, turn 420', turn, `${at}: ${m.plan}`);
   }
 });

@@ -45,6 +45,8 @@ const findChrome = () => CHROMES.find(p => p && fs.existsSync(p)) || null;
 
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 3, mobile: true };
 const LAPTOP = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
+// the narrowest phone still in use
+const SMALL_PHONE = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
 const TOKEN = 't'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -870,6 +872,16 @@ const TABLE_LOOK = `(function () {
   var headAfter = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 0;
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  // each model brought into view the way focus or a scroll does: is its middle on screen, or under the held names?
+  var covered = [];
+  Array.prototype.forEach.call(table.querySelectorAll('tbody td.engine button'), function (b) {
+    b.scrollIntoView({ block: 'nearest', inline: 'center' });
+    var br = b.getBoundingClientRect();
+    var hit = document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2);
+    if (hit !== b && !b.contains(hit)) covered.push(b.closest('tr').querySelector('td.member').textContent);
+  });
+  grid.scrollLeft = 0;
+  window.scrollTo(0, 0);
   return {
     heads: heads,
     rows: rows.length,
@@ -884,6 +896,7 @@ const TABLE_LOOK = `(function () {
     scrolled_by: Math.round(scrolled),
     name_column_moved_px: Math.round(Math.abs(after - before)),
     name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
+    models_under_names: covered,
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),
     statuses: Array.prototype.map.call(table.querySelectorAll('tbody td.status'), function (n) { return n.textContent; }),
@@ -1530,7 +1543,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
