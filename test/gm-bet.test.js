@@ -3065,7 +3065,8 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.match(html, /\(SETTLE_MS \* pace\)/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
-  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null \}\)/);
+  // the big orb's tap names the card on screen and carries its own id, kept while it is unanswered
+  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null, send: tap \}\)/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
   // no eyebrow labels and no small lines: the card is the title, then why it matters in the same big body type
