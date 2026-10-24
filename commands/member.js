@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
-const { loadCredentials } = require('../utils/auth');
+const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
@@ -4942,11 +4942,12 @@ async function memberPush(name) {
     process.exit(1);
   }
 
-  const creds = loadCredentials();
-  if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error) {
+    console.error(ensured.error === 'not_logged_in' ? 'Not logged in. Run: atris login' : 'Session expired. Run: atris login');
     process.exit(1);
   }
+  const creds = ensured.credentials;
 
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const memberFile = path.join(teamDir, name, 'MEMBER.md');
@@ -5007,11 +5008,12 @@ async function memberPush(name) {
 // --- PULL subcommand ---
 
 async function memberPull(nameOrAgentId) {
-  const creds = loadCredentials();
-  if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error) {
+    console.error(ensured.error === 'not_logged_in' ? 'Not logged in. Run: atris login' : 'Session expired. Run: atris login');
     process.exit(1);
   }
+  const creds = ensured.credentials;
 
   let agentId = nameOrAgentId;
 

@@ -823,6 +823,11 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
 
   const selectedExpiry = expiryTimeMs(credentials.expires_at);
   if (selectedExpiry !== null && selectedExpiry <= Date.now()) {
+    if (credentials.refresh_token) {
+      const refreshed = await performTokenRefresh(credentials, apiRequestJson);
+      if (refreshed.ok) return refreshed.payload;
+      return { error: 'refresh_failed', detail: refreshed.error };
+    }
     return { error: 'token_invalid', detail: AGENT_TOKEN_EXPIRED_DETAIL };
   }
 

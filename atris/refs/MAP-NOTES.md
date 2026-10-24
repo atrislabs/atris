@@ -1833,6 +1833,8 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Pattern:** JWT with auto-refresh, 5-min buffer (`TOKEN_REFRESH_BUFFER_SECONDS = 300`). Credentials stored as JSON at `~/.atris/credentials.json` with `chmod 0o600`. Refresh token rotation: if API returns a new refresh_token, it replaces the old one; otherwise keeps existing.
 
+Sync login renewal (2026-10-24): `commands/pull.js:161` (journal), `commands/pull.js:210` (business), `commands/push.js:460`, `commands/member.js:4945` (push), and `commands/member.js:5011` (pull) call `ensureValidCredentials`. Its saved-expiry guard at `utils/auth.js:824` tries an available refresh token before refusing an expired session. `performTokenRefresh` at `utils/auth.js:723` persists renewal to the selected profile. `node --test test/sync-auth-refresh.test.js` covers all five entry points using local HTTP, temporary profiles, and generated fake credentials, including server rejection, failed renewal, expired timestamps with and without refresh, and unchanged valid profiles.
+
 **Known issue:** `bin/atris.js` contains a full copy of auth logic (JWT decode, credential CRUD, token refresh, API helpers) that diverges slightly from `utils/auth.js`: inline version lacks `chmod 0o600` on save, no timeout on HTTP requests.
 
 **Search:** `rg "ensureValidCredentials|refreshAccessToken" utils/auth.js`

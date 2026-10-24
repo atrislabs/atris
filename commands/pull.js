@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadCredentials, abortOnAuthFailure } = require('../utils/auth');
+const { ensureValidCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
@@ -158,11 +158,12 @@ async function pullAtris() {
     process.exit(1);
   }
 
-  const creds = loadCredentials();
-  if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error) {
+    console.error(ensured.error === 'not_logged_in' ? 'Not logged in. Run: atris login' : 'Session expired. Run: atris login');
     process.exit(1);
   }
+  const creds = ensured.credentials;
 
   console.log('');
   console.log('Pulling from cloud...');
@@ -206,11 +207,12 @@ async function pullAtris() {
 
 async function pullBusiness(slug) {
   const elapsedMs = startTimer();
-  const creds = loadCredentials();
-  if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error) {
+    console.error(ensured.error === 'not_logged_in' ? 'Not logged in. Run: atris login' : 'Session expired. Run: atris login');
     process.exit(1);
   }
+  const creds = ensured.credentials;
 
   // Pull is force-overwrite by default (cloud = source of truth).
   // --keep-local opts back into the legacy three-way merge with .remote conflict files.
