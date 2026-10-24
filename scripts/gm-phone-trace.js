@@ -926,6 +926,19 @@ const TABLE_LOOK = `(function () {
   var headAfter = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 0;
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  // each name as it shows, line by line, to see where a long one breaks
+  var nameLines = {};
+  Array.prototype.forEach.call(table.querySelectorAll('tbody td.member button'), function (b) {
+    var t = b.firstChild, lines = [], top = null;
+    if (!t || t.nodeType !== 3) return;
+    for (var i = 0; i < t.length; i++) {
+      var cr = document.createRange(); cr.setStart(t, i); cr.setEnd(t, i + 1);
+      var y = Math.round(cr.getBoundingClientRect().top);
+      if (y !== top) { lines.push(''); top = y; }
+      lines[lines.length - 1] += t.data[i];
+    }
+    nameLines[b.textContent] = lines;
+  });
   // the ovr header's words against the ratings under it: how far apart their right edges sit
   var textRight = function (n) { var r = document.createRange(); r.selectNodeContents(n); var b = r.getBoundingClientRect(); return b.right; };
   var ovrHead = table.querySelector('thead th.ovr');
@@ -956,6 +969,7 @@ const TABLE_LOOK = `(function () {
     name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
     models_under_names: covered,
     ovr_head_off_px: ovrOff,
+    name_lines: nameLines,
     fade: fade,
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),

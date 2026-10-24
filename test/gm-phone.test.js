@@ -1392,6 +1392,26 @@ test('browser: the team table at phone and laptop size: five divided columns, no
   }
 });
 
+test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const rows = [
+    { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+    { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page, about 4 hours left' },
+    { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+  ];
+  for (const viewport of [trace.SMALL_PHONE, trace.PHONE]) {
+    const out = await trace.teamTableTrace({ chromePath: CHROME, viewport, rows });
+    const at = out.viewport;
+    const lines = out.look.name_lines;
+    // the long name wraps (it held 222px of the box on one line), and only after a hyphen
+    assert.ok(out.look.narrowest.member <= 185, `${at}: the held column is ${out.look.narrowest.member}px`);
+    assert.ok(lines['customer-success-lead'].length > 1, `${at}: ${JSON.stringify(lines)}`);
+    for (const line of lines['customer-success-lead'].slice(0, -1)) assert.match(line, /-$/, `${at}: ${JSON.stringify(lines)}`);
+    // a name that fits stays on one line
+    assert.deepEqual([lines.builder, lines['auto-improver']], [['builder'], ['auto-improver']], at);
+    assert.equal(out.talk.kind, 'member', at);
+  }
+});
+
 test('browser: a tap on an engine cell opens the swap card: the short list, more models on the same card, who it is for, and one tap swaps and brings the team back', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
   for (const viewport of [trace.PHONE, trace.LAPTOP]) {
     const out = await trace.engineCardTrace({ chromePath: CHROME, viewport });
