@@ -296,3 +296,22 @@ test('layout: a word longer than the screen, like an email address, breaks insid
     assert.ok(r.probe <= 0.5, show);
   }
 });
+
+test('layout: the footer sits at the bottom of the screen on every card that fits, where it sits on the big orb, and 28px under a taller card', { skip, timeout: 180000 }, async () => {
+  const probe = `(function () {
+    var f = document.getElementById('working').getBoundingClientRect(), b = document.getElementById('bet');
+    var c = b.hidden ? null : b.getBoundingClientRect();
+    return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY, card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
+  })()`;
+  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'big', 'small', 'laptop'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
+  for (const v of ['phone', 'big', 'small', 'laptop']) {
+    const at = rows.filter(r => r.viewport === v && !r.probe.waiting);
+    const home = at.find(r => r.case === 'home');
+    let fit = 0;
+    for (const r of at.filter(x => x.case !== 'home')) {
+      if (r.probe.card_bottom + 28 + 44 <= home.probe.foot_bottom) { fit += 1; assert.equal(r.probe.foot_bottom, home.probe.foot_bottom, show); } else assert.ok(r.probe.foot_top >= r.probe.card_bottom + 28 - 0.5, show);
+    }
+    assert.ok(fit >= 8, show);
+  }
+});
