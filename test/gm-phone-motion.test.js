@@ -201,7 +201,12 @@ test('browser: a first look for the card that stalls never leaves the page blank
   assert.ok(card.opened_ms !== null && card.opened_ms < 1000 && card.card_at_end === 1 && card.footer_at_end === 1, show(card));
   const orb = await paths.openTrace({ chromePath: CHROME, first: null, stall: 'first', latency: 0 });
   assert.ok(orb.opened_ms !== null && orb.opened_ms < 1000 && orb.dots_drawn > 20 && orb.line_at_end === 1, show(orb));
-  // every look hangs: the big orb opens after a short wait; before, the page stayed blank
-  const none = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'all', latency: 0 });
+  // every look hangs, and the page came without its card (the desk could not read one):
+  // the big orb opens after a short wait; before, the page stayed blank
+  const { phonePage } = require('../lib/gm-phone-page');
+  const none = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'all', latency: 0, page: nonce => phonePage(nonce, null) });
   assert.ok(none.opened_ms !== null && none.opened_ms < 4000 && none.dots_drawn > 20 && none.footer_at_end === 1, show(none));
+  // every look hangs, but the card came in the page: it is there at once, whole
+  const held = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'all', latency: 0 });
+  assert.ok(held.opened_ms !== null && held.opened_ms < 1000 && held.card_at_end === 1 && held.footer_at_end === 1 && held.sphere_frames_before_card === 0, show(held));
 });
