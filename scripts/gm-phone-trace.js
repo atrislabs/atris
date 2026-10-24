@@ -887,6 +887,10 @@ const TABLE_LOOK = `(function () {
   };
 })()`;
 
+// how the last move went, from the page's own marks: its steps with the
+// length each is set to take ("hold 150, turn 420") and the clock from the tap
+const MOVED = "({ plan: document.body.getAttribute('data-reveal-plan'), ms: Number(document.body.getAttribute('data-reveal-ms')) })";
+
 // Opens the team card at one viewport, reads TABLE_LOOK, then taps a
 // member's role cell (the part of a row that is always on screen), reads
 // the talk card, and presses Esc twice: back to the team, then the first card.
@@ -900,7 +904,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     return { card };
   });
   return onPhone(desk, chromePath, async (p, send) => {
-    const where = () => p.run("({ kind: document.getElementById('bet').getAttribute('data-kind'), title: document.querySelector('#bet h1').textContent, table: Boolean(document.querySelector('#bet table')) })");
+    const where = () => p.run(`({ kind: document.getElementById('bet').getAttribute('data-kind'), title: document.querySelector('#bet h1').textContent, table: Boolean(document.querySelector('#bet table')), moved: ${MOVED} })`);
     await p.tap('#working');
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team card', 8000);
     await wait(100);
@@ -977,6 +981,7 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await p.tap(cell);
     await p.until(`${titled('builder')} && document.getElementById('bet').getAttribute('data-kind') === 'swap'`, 'the swap card', 8000);
     const short = await look(p);
+    const opened = await p.run(MOVED);
     const id = short.card;
     await tapLabel(p, send, 'more models');
     await p.until(`${SETTLED} && Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent.indexOf('m-two') === 0; })`, 'the full list', 8000);
@@ -994,8 +999,9 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await p.tap(`#bet [data-option="${two}"]`);
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .mission'))`, 'the team after the swap', 8000);
     const after = await look(p);
+    const swapped = await p.run(MOVED);
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
-    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps };
+    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped };
   }, viewport);
 }
 

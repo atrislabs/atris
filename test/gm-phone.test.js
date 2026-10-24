@@ -1121,7 +1121,9 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   // only the same card moving turns in place (a deck flip, more models, who a swap is
   // for); an answer is the one motion through the sphere, and the calm line's idea
   // grows out of its dots
-  assert.match(script, /if \(option && IN_PLACE\.indexOf\(option\.action\) >= 0\) \{/);
+  assert.match(script, /if \(option && \(IN_PLACE\.indexOf\(option\.action\) >= 0 \|\| around\)\) \{/);
+  // moving around the team pages is a place to go, not an answer: it turns in place too
+  assert.match(script, /var AROUND = \['member', 'swap', 'deck', 'back', 'swap_to'\];/);
   assert.match(script, /if \(r\.ok && r\.card && !sameCard\(r\.card, bet\.shown\)\) \{ arrive\(r\.card\); return; \}/);
   assert.match(script, /function arrive\(card\) \{\n\s+if \(waiting\(\)\) \{ landFromWait\(card\); return; \}/);
   // the box holds its height while the old card leaves, then eases to the new one
@@ -1367,6 +1369,10 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.deepEqual([out.talk.kind, out.talk.title, out.talk.table], ['member', 'builder', false], at);
     assert.deepEqual([out.back.kind, out.back.table], ['team', true], at);
     assert.equal(out.closed.kind, 'idea', at);
+    // on a phone every move around the team pages is one turn in place, not the spiral;
+    // on a laptop a move between a wide table card and a plain card still goes through the sphere
+    const turn = at === '390x844';
+    for (const m of [out.talk.moved, out.back.moved, out.closed.moved]) assert.equal(m.plan === 'hold 150, turn 420', turn, `${at}: ${m.plan}`);
   }
 });
 
@@ -1385,6 +1391,8 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'two', model: 'm-two', scope: 'job' }], at);
     assert.deepEqual([out.after.kind, out.after.said], ['team', 'builder now runs on two m-two.'], at);
     assert.equal(out.engine, 'two m-two', at);
+    // on a phone the swap card opens, and the team comes back after a swap, in one turn in place
+    if (at === '390x844') assert.deepEqual([out.opened.plan, out.swapped.plan], ['hold 150, turn 420', 'hold 150, turn 420'], at);
   }
 });
 
