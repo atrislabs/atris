@@ -30,3 +30,12 @@ test('layout: on the swap card every model\'s note sits on its own line under it
     }
   }
 });
+
+test('layout: on a phone with a notch the small orb rests below it, as far above the card as on a phone without one', { skip, timeout: 90000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, cases: only('idea', 'deck'), viewports: ['phone', 'big', 'small'] });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.viewport}`, inset: r.safe_area, lava: r.lava, card: r.card && r.card.top })), null, 1);
+  const gaps = rows.map(r => r.card.top - r.lava.bottom);
+  for (const r of rows) assert.ok(r.lava.top >= ((r.safe_area && r.safe_area.top) || 0) + 8, show);
+  // the notched phones (47px and 59px) keep the gap of the 320px phone with none
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1, show);
+});
