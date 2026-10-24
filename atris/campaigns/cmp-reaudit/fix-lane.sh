@@ -42,8 +42,12 @@ Reply last with one line: FIXED <subject> or NOT A BUG <reason> or NO REPRO <rea
 group_timeout() { perl -e '
   my $secs = shift; my $pid = fork();
   if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
-  local $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 5; kill "KILL", -$pid; waitpid($pid, 0); exit 124; };
-  alarm $secs; waitpid($pid, 0); my $code = $? >> 8; alarm 0; kill "TERM", -$pid; exit $code;
+  my $stop = sub { my $code = shift; kill "TERM", -$pid; sleep 5; kill "KILL", -$pid; waitpid($pid, 0); exit $code; };
+  local $SIG{ALRM} = sub { $stop->(124) };          # timed out
+  local $SIG{TERM} = sub { $stop->(143) };          # the wrapper was cancelled
+  local $SIG{INT}  = sub { $stop->(130) };
+  alarm $secs; waitpid($pid, 0); my $st = $?; alarm 0; kill "TERM", -$pid;
+  exit(($st & 127) ? 128 + ($st & 127) : $st >> 8);  # a signal death is a failure, never 0
 ' "$@"; }
 unset ANTHROPIC_API_KEY # subscription only, never the API
 cd "$W" && group_timeout 1500 codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox "$PROMPT" </dev/null > "$H/fix-out/$N.txt" 2>&1
