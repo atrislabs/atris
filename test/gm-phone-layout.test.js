@@ -7,6 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const trace = require('../scripts/gm-phone-trace');
+const gmCard = require('../lib/gm-card');
 const { layout, CASES } = require('../scripts/gm-phone-layout');
 
 const CHROME = trace.findChrome();
@@ -147,7 +148,17 @@ const LAST_LINES = `Array.prototype.map.call(document.querySelectorAll('#bet h1,
   words.forEach(function (x) { if (tops.indexOf(x.top) < 0) tops.push(x.top); });
   var lastWords = words.filter(function (x) { return x.top === tops[tops.length - 1]; });
   var last = lastWords.map(function (x) { return x.w; });
-  return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' '), broken: lastWords.some(function (x) { return x.broken; }) };
+  // a word alone on the last line could share it only with the word before it: how wide the two are together, and the line
+  var pair = null, room = null;
+  if (last.length === 1 && words.length > 1) {
+    var s = getComputedStyle(n), two = n.appendChild(document.createElement('span'));
+    two.style.whiteSpace = 'nowrap';
+    two.textContent = words[words.length - 2].w + ' ' + last[0];
+    pair = Math.round(two.getBoundingClientRect().width * 10) / 10;
+    n.removeChild(two);
+    room = n.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+  }
+  return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' '), broken: lastWords.some(function (x) { return x.broken; }), pair_px: pair, room_px: room };
 })`;
 
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
@@ -157,10 +168,24 @@ test('layout: no title, body, or label leaves one word alone on its last line, o
   for (const r of rows) for (const p of r.probe) {
     if (p.lines < 2 || p.broken) continue;
     wrapped += 1;
-    if (p.last.split(' ').length < 2) alone.push(`${r.case} ${r.size} ${p.what}: ${p.last}`);
+    // a last word that, with the word before it, is wider than the line can never share its line
+    if (p.last.split(' ').length < 2 && !(p.pair_px > p.room_px + 0.5)) alone.push(`${r.case} ${r.size} ${p.what}: ${p.last} (${p.pair_px}px with the word before, ${p.room_px}px line)`);
   }
   assert.deepEqual(alone, []);
   assert.ok(wrapped >= 40, String(wrapped));
+});
+
+test('layout: a title ending in a long word keeps it beside the word before whenever the two fit on one line', { skip, timeout: 90000 }, async () => {
+  // even lines alone leave the address by itself here, in the fonts of a Mac and of Linux
+  const card = gmCard.yes({ id: 'yes:m1:step-4:pair', title: 'builder wants to email principals@schools.org', body: 'it goes out from the team inbox, so it waits for your yes.', request: { job: 'm1', key: 'm1:step-4:pair', hash: 'pair' } });
+  const rows = await layout({ chromePath: CHROME, cases: [{ name: 'yes-pair', card }], viewports: ['side', 'laptop'], probe: LAST_LINES });
+  const titles = rows.map(r => ({ at: r.size, ...r.probe.find(p => p.what.startsWith('h1')) }));
+  const show = JSON.stringify(titles, null, 1);
+  assert.equal(titles.length, 2, show);
+  for (const t of titles) {
+    assert.ok(t.lines >= 2, show);
+    assert.deepEqual(t.last.split(' ').slice(-2), ['email', 'principals@schools.org'], show);
+  }
 });
 
 test('layout: the calm line\'s open box shows its whole hint on every phone, centered where there is room and from the left on narrow ones', { skip, timeout: 90000 }, async () => {
