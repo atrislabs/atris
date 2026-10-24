@@ -2912,7 +2912,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
     const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
     assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
     assert.match(jsonStop.stdout, /ready to claim/);
-    assert.match(jsonStop.stdout, /^next: atris task claim /m);
+    assert.equal(JSON.parse(jsonStop.stdout).next_action, nextLine(stopped.stdout));
     assert.doesNotMatch(jsonStop.stdout + jsonStop.stderr, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
 
