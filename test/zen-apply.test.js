@@ -432,6 +432,49 @@ test('a new note only staged does not stop zen when the same note arrives upstre
   }
 });
 
+test('a clashing map edit that only moved line numbers is not handed back, since the map links are redone', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'lib/a.js', 'one\n', 'code');
+    commit(seed, 'atris/MAP.md', '| a | `lib/a.js:10` |\n| b | `lib/a.js:20` |\n', 'map');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    commit(seed, 'atris/MAP.md', '| a | `lib/a.js:12` |\n| b | `lib/a.js:20` the b helper |\n', 'map words');
+    git(seed, 'push', '-q');
+    // The last zen run fixed this link itself; the person never wrote it.
+    write(checkout, 'atris/MAP.md', '| a | `lib/a.js:11` |\n| b | `lib/a.js:21` |\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.doesNotMatch(cli.stdout, /kept the new atris\/MAP\.md/);
+    assert.match(fs.readFileSync(path.join(checkout, 'atris/MAP.md'), 'utf8'), /the b helper/);
+    // The copy is still saved, it is just not news.
+    const saved = fs.readdirSync(path.join(checkout, '.git', 'atris-zen'));
+    assert.ok(saved.some((tag) => fs.existsSync(path.join(checkout, '.git', 'atris-zen', tag, 'mine', 'atris', 'MAP.md'))));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a clashing map edit with new words is still handed back', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/MAP.md', '| a | `lib/a.js:10` |\n', 'map');
+    git(seed, 'push', '-q');
+    git(checkout, 'pull', '-q');
+    commit(seed, 'atris/MAP.md', '| a | `lib/a.js:12` theirs |\n', 'map words');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/MAP.md', '| a | `lib/a.js:11` mine |\n');
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /kept the new atris\/MAP\.md; your copy is in /);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('an edited note that moved upstream does not stop zen, and the edit follows it', () => {
   const { base, seed, checkout } = createRepo();
   try {
