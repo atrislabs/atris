@@ -371,7 +371,7 @@ function legacyAdapter(http) {
           }, { cell: { row: i, column: 'engine' }, action: 'swap' }));
         }
       });
-      if (rows.some(r => ['waiting for your yes', 'working', 'waiting to start'].includes(r.status))) options.push(nav('deck', 'the jobs, one at a time', () => openDeck()));
+      if (rows.some(r => ['waiting for your yes', 'working', 'waiting to start'].includes(r.status))) options.push(nav('deck', 'go through the jobs', () => openDeck()));
       options.push(nav('close', 'close', async () => { layer = null; return current(); }, { back: true }));
       return { id: null, kind: 'team', layer: 'team', title: 'the team', body: rows.length ? null : 'nobody is on the team yet.', line: layer.note, options, input: null, table: rows.length ? { columns: TEAM_COLUMNS, rows: rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]) } : null, thread: [] };
     }
@@ -858,7 +858,7 @@ async function walkHttp(a, world) {
 
   await a.close();
   await stage('the job deck', async (st) => {
-    st.did = 'opened the jobs, one at a time';
+    st.did = 'tapped "go through the jobs"';
     st.card = await a.openDeck();
     if (st.card.layer !== 'deck' && live) return skip(st, 'no job is running in this copy');
     st.extra.push(check('one job on screen', st.card.layer === 'deck', 'the deck did not open'));
@@ -1110,7 +1110,7 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on the job deck', async (st) => {
       await toCard();
       await openTeam();
-      await click(byText('#bet', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
+      await click(byText('#bet', '/^go through the jobs$/i'), 'go through the jobs');
       await until(kindIs(['deck']), 'the job deck', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened the job deck, pressed Esc';

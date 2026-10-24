@@ -544,6 +544,9 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   assert.deepEqual(team.table.columns, ['member', 'role', 'ovr', 'engine', 'status']);
   assert.deepEqual(team.options.map(o => [o.id, o.cell ? o.cell.column : null]), [['talk:builder', 'member'], ['swap:builder', 'engine'], ['talk:sam', 'member'], ['back', null]]);
   assert.deepEqual(gmCard.cardProblems(team), []);
+  // with jobs running, the way into the job deck says what it does
+  const busy = gmCard.team({ id: 'team~2', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }], deck: true });
+  assert.equal(busy.options.find(o => o.action === 'deck').label, 'go through the jobs');
 });
 
 test('page: the team table is divided, keeps its columns apart at phone width, and scrolls sideways instead of squashing', () => {
