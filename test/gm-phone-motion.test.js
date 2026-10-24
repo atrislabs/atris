@@ -193,3 +193,15 @@ test('browser: with the pointer at any corner, the brightest dots are still draw
   // a phone draws 5500 dots; before, a corner lit past the last brightness level and about 170 were left out
   for (const s of out) assert.ok(s.frames > 5 && s.per_frame === 5500, show(out));
 });
+
+test('browser: a first look for the card that stalls never leaves the page blank', { skip, timeout: 90000 }, async () => {
+  const { CARDS } = require('../scripts/gm-phone-trace');
+  // the first look hangs: the next look that comes back opens the page, with its card or the big orb
+  const card = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'first', latency: 0 });
+  assert.ok(card.opened_ms !== null && card.opened_ms < 1000 && card.card_at_end === 1 && card.footer_at_end === 1, show(card));
+  const orb = await paths.openTrace({ chromePath: CHROME, first: null, stall: 'first', latency: 0 });
+  assert.ok(orb.opened_ms !== null && orb.opened_ms < 1000 && orb.dots_drawn > 20 && orb.line_at_end === 1, show(orb));
+  // every look hangs: the big orb opens after a short wait; before, the page stayed blank
+  const none = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'all', latency: 0 });
+  assert.ok(none.opened_ms !== null && none.opened_ms < 4000 && none.dots_drawn > 20 && none.footer_at_end === 1, show(none));
+});

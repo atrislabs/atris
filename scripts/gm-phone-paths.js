@@ -328,14 +328,24 @@ const OPEN_RECORDER = `(function () {
     if (canvas && canvas.__orb && box && foot) {
       var stage = getComputedStyle(document.getElementById('stage')), ln = getComputedStyle(line), fb = foot.getBoundingClientRect();
       var ghost = document.querySelector('.bet.ghost');
-      T.push({ t: performance.now(), ghost: ghost ? Number(getComputedStyle(ghost).opacity) : 0, dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
+      T.push({ t: performance.now(), opening: document.body.classList.contains('opening'), ghost: ghost ? Number(getComputedStyle(ghost).opacity) : 0, dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
     }
     requestAnimationFrame(rec);
   })();
 })();`;
 
-// flipAt: ms after the card first shows, the arrow that flips a deck card
-async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency = 250, reduced = false, flipAt = null, page = phonePage } = {}) {
+// flipAt: ms after the card first shows, the arrow that flips a deck card.
+// stall: 'first' holds the page's first look for the card forever, 'all'
+// holds every look, as a link that drops a request does
+const STALL = `(function (which) {
+  var real = window.fetch, seen = 0;
+  window.fetch = function (url, opts) {
+    var look = String(url).indexOf('/card') >= 0 && !(opts && opts.method === 'POST');
+    if (look && (which === 'all' || seen++ === 0)) return new Promise(function () {});
+    return real.apply(this, arguments);
+  };
+})`;
+async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency = 250, reduced = false, flipAt = null, stall = null, page = phonePage } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   let n = 1;
   const flip = PATHS.find(s => s.name === 'deck flip');
@@ -350,7 +360,9 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
     await send('Network.enable');
     await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: -1, uploadThroughput: -1 });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: OPEN_RECORDER });
+    if (stall) await send('Page.addScriptToEvaluateOnNewDocument', { source: `${STALL}(${JSON.stringify(stall)});` });
     await send('Page.navigate', { url: server.url });
+    if (stall) await p.until("document.readyState === 'complete' && !document.body.classList.contains('opening')", 'the page to open', 6000).catch(() => {});
     if (flipAt != null) {
       await p.until("document.body.classList.contains('has-card') && Number(getComputedStyle(document.getElementById('bet')).opacity) > 0", 'the card showing', 15000);
       await wait(flipAt);
@@ -382,6 +394,10 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
       // a flip soon after: how strong the new card is the first frame its old copy covers it
       new_card_at_turn: frames.find(f => f.ghost > 0.5) ? Math.round(frames.find(f => f.ghost > 0.5).card * 100) / 100 : null,
       crossfade_min: frames.some(f => f.ghost > 0.01) ? Math.round(Math.min(...frames.filter(f => f.ghost > 0.01).map(f => f.ghost + f.card)) * 100) / 100 : null,
+      // when the page opened (the line and the footer may show), from its first frame; null: never
+      opened_ms: frames.length && frames.some(f => !f.opening) ? Math.round(frames.find(f => !f.opening).t - frames[0].t) : null,
+      card_at_end: frames.length ? frames[frames.length - 1].card : 0,
+      footer_at_end: frames.length ? frames[frames.length - 1].foot.o : 0,
     };
   } finally {
     chrome.close();
