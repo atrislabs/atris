@@ -176,14 +176,18 @@ async function launch(chromePath) {
     await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error('devtools socket failed')); });
     let id = 0;
     const waiting = new Map();
+    // what chrome says on its own (a console line, an error, a log entry): send.on(fn) hears each
+    const heard = new Set();
     ws.onmessage = m => {
       const msg = JSON.parse(m.data);
+      if (msg.method) { for (const fn of heard) fn(msg); return; }
       const w = msg.id && waiting.get(msg.id);
       if (!w) return;
       waiting.delete(msg.id);
       if (msg.error) w.reject(new Error(msg.error.message)); else w.resolve(msg.result);
     };
     const send = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); ws.send(JSON.stringify({ id: n, method, params })); });
+    send.on = fn => { heard.add(fn); return () => heard.delete(fn); };
     return { send, close: () => { try { ws.close(); } catch { /* closed */ } quit(); } };
   } catch (err) {
     quit();

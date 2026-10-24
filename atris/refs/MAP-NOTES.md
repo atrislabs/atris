@@ -2502,7 +2502,7 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 
 ### Local HTTP server security
 
-- Phone request parsing and credentials: `lib/gm-phone.js:304`; bounded body reader: `lib/gm-phone.js:331`; handler: `lib/gm-phone.js:367`; listener rejection fallback: `commands/gm.js:1536`. Wifi pairing stays available on the selected network interface plus loopback.
+- Phone request parsing and credentials: `lib/gm-phone.js:305`; bounded body reader: `lib/gm-phone.js:332`; handler: `lib/gm-phone.js:368`; listener rejection fallback: `commands/gm.js:1536`. Wifi pairing stays available on the selected network interface plus loopback.
 - Static preview: `lib/site.js:104`, GET/HEAD only, loopback Host checks and binding, rejects malformed URLs and request bodies.
 - Credential gateway: `lib/secret-gateway.js:240`, unchanged read-only grant, placeholder credential, local Host checks, body rejection and loopback binding.
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
