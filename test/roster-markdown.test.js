@@ -22,7 +22,7 @@ const {
 } = require('../lib/engine-registry');
 const { autoJobForMember, resolveEngineForMember } = require('../lib/member-engine');
 
-const NOW = new Date('2026-09-24T12:00:00.000Z');
+const NOW = new Date('2026-09-24T12:00:00.000');
 const RUNNER_ENV = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE'];
 
 const EXAMPLE = `# roster
@@ -404,7 +404,7 @@ test('the first assign writes ROSTER.md with the JSON picks carried over and lea
 test('roster confirm renews only lines that carry an until date', () => withRoom((root) => {
   ready(root, 'codex', 'claude');
   writeRoster(root, '# roster\n> keep me\nbuild: codex, until 2026-09-25\nreview: claude\n');
-  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00').exit, 0);
   assert.equal(readRoster(root), '# roster\n> keep me\nbuild: codex, until 2026-10-27\nreview: claude\n');
 }));
 

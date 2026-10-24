@@ -22,7 +22,8 @@ const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
 
 const pythonCmd = findPython();
 
-const NOW = '2026-08-15T15:00:00.000Z';
+// no zone suffix: read as local noon, and its date part is the 15th in every time zone
+const NOW = '2026-08-15T12:00:00';
 const TODAY = '2026-08-15';
 const STUB_DIGEST = [
   '# what this week\'s videos changed',

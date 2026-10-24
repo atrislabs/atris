@@ -144,9 +144,9 @@ test('a pin verified over 30 days ago is flagged with its age; a recent landed r
   assert.match(flagged.text, /^hard problem: codex on gpt-6\.1-sol was last verified 46 days ago \(roster line\)\. smoke one prompt, then add "verified 2026-09-30" on line 15 of ~\/\.atris\/ROSTER\.md$/);
 
   const runs = [
-    { at: '2026-09-28T10:00:00.000Z', engine: 'codex', model: 'gpt-6.1-sol', outcome: 'landed' },
-    { at: '2026-09-29T10:00:00.000Z', engine: 'codex', model: 'gpt-6.1-sol', outcome: 'failed' },
-    { at: '2026-09-29T10:00:00.000Z', engine: 'claude', model: 'claude-opus-5-5', outcome: 'landed' },
+    { at: '2026-09-28T10:00:00.000', engine: 'codex', model: 'gpt-6.1-sol', outcome: 'landed' },
+    { at: '2026-09-29T10:00:00.000', engine: 'codex', model: 'gpt-6.1-sol', outcome: 'failed' },
+    { at: '2026-09-29T10:00:00.000', engine: 'claude', model: 'claude-opus-5-5', outcome: 'landed' },
   ];
   const fresh = attachStaleModels(report(), { catalog: CATALOG, runs, now: NOW });
   const hardFresh = fresh.jobs.find((row) => row.job === 'hard problem');

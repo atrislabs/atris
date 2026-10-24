@@ -16,6 +16,7 @@ const {
   IMPROVE_VITALS_SCHEMA,
 } = require('../commands/improve');
 const { knownCommands } = require('../lib/known-commands');
+const { localDay } = require('../lib/local-day');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-vitals-'));
@@ -55,7 +56,7 @@ function writeVitalsFixtures(dir) {
   ]);
 
   writeJson(path.join(dir, '.atris', 'state', 'experiments-daily.json'), {
-    last_run_date: '2026-07-08',
+    last_run_date: localDay('2026-07-08T12:00:00.000Z'),
     history: [{ reward: 1 }, { reward: 2 }],
   });
 
