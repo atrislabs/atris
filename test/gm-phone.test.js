@@ -1013,6 +1013,9 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
   assert.ok(copy.length > 10);
   for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
+  // and none names a command to run: a dead link says what to do in plain words
+  for (const t of copy) assert.doesNotMatch(t, /\bgm (phone|walk)\b|\batris (gm|engine|member)\b|\bnpm\b/i, t);
+  assert.ok(copy.includes('this link stopped working. open a new one from the mac.'));
 });
 
 test('page: an act holds the chosen spot, then one motion: the card fades into the sphere, the dots spiral in once the answer is in, and the next card blooms', () => {
