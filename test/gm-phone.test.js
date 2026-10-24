@@ -1431,7 +1431,7 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.equal(out.fresh_a[0], 'yes', show);
   // the yes sends the job and the hash its card binds, once
   assert.deepEqual(out.yes_sent, [{ job: 'm-nav', key: 'm-nav:step-2:abc', hash: 'abc' }], show);
-  assert.equal(out.yes_line, 'navigator: got your yes');
+  assert.equal(out.yes_line, 'told navigator yes.');
   assert.deepEqual(out.moving, []);
   assert.equal(out.back.kind, 'team', show);
 });

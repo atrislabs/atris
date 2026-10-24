@@ -2525,7 +2525,8 @@ test('job deck: a card that needs you carries its yes in plain words, and a yes 
   const before = h.d.view().status;
   // a yes names its job and its key, both
   assert.equal((await h.d.answerYes({ key: 'm-ask:0' })).reason, 'gone');
-  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'navigator: got your yes' });
+  // the same shape as a no: told navigator no. it goes on without it.
+  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'told navigator yes.' });
   assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
   assert.equal(h.d.view().status, before);
   // said once: the card stops asking, and the same yes again, or a made-up one, goes nowhere
@@ -2784,7 +2785,7 @@ test('yes and send back: a yes answers the right ask through atris decide; a hal
   h.cli.length = 0;
   assert.equal(h.d.next().kind, 'yes');
   const yes = await h.d.answerYes();
-  assert.deepEqual([yes.ok, yes.ack], [true, 'launcher: got your yes']);
+  assert.deepEqual([yes.ok, yes.ack], [true, 'told launcher yes.']);
   assert.deepEqual(h.cli.slice(0, 2), [['decide', '--json'], ['decide', '2', 'yes', '--json']], 'matched by mission and ask, not by place');
   assert.equal(h.d.view().status, 'cleared');
   assert.notEqual(h.d.next().kind, 'done', 'the halted job never shows');
@@ -2908,7 +2909,7 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   const card = h.d.next();
   assert.deepEqual([card.kind, card.job.what], ['yes', 'publish the page and post the recording on x']);
   const yes = await h.d.answerYes();
-  assert.deepEqual([yes.ok, yes.ack], [true, 'builder: got your yes']);
+  assert.deepEqual([yes.ok, yes.ack], [true, 'told builder yes.']);
   const ping = h.cli.find(a => a[1] === 'ping');
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
   assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
@@ -3696,7 +3697,7 @@ test('card contract: an action names the card on screen and an option on it, or 
   // the page sends no key: the yes is the one the card showed, by its hash, and only it
   const said = await h.d.act({ card_id: first.id, option_id: 'yes', confirm: true, key: 'anything', job: 'else' });
   assert.equal(said.status, 200);
-  assert.equal(said.body.ack, 'the handed-off job: got your yes');
+  assert.equal(said.body.ack, 'told the handed-off job yes.');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   // the old card is gone now: acting on it again does nothing

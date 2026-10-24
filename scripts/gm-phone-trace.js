@@ -1032,7 +1032,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
   const desk = cardDesk(CARDS.b1, async (action, { option }) => {
     if (action === 'open:deck') { at = 0; return { card: deckCard() }; }
     if (action === 'flip') { at = (at + option.binds.step + DECK_JOBS.length) % DECK_JOBS.length; return { card: deckCard() }; }
-    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `${DECK_JOBS[at].member}: got your yes`; return { card: deckCard() }; }
+    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `told ${DECK_JOBS[at].member} yes.`; return { card: deckCard() }; }
     if (action === 'back') { n += 1; return { card: teamCard(TABLE_ROWS, n) }; }
     if (action === 'talk') return { card: deckCard() };
     return { card: deckCard() };
