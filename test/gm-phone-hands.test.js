@@ -339,17 +339,24 @@ test('browser: on the job deck a finger dragging the wide table sideways scrolls
       for (let i = 1; i <= 6; i++) await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 6, y: y0 }] });
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     };
+    const scrollsNow = "(function () { var g = document.querySelector('#bet .grid'); return g.scrollWidth > g.clientWidth; })()";
+    // on a phone the job's row is drawn stacked, one line per column, so it does not scroll sideways
+    const drawn = await p.run(scrollsNow);
+    // the rule is for any table that scrolls: the row is drawn divided and wider than the screen here
+    // (through the page's own sheet, since its content policy refuses a new style tag)
+    await p.run("(function () { var sh = document.styleSheets[0]; ['.bet table.k-deck { min-width: 56rem !important; }', '.bet table.k-deck thead { display: table-header-group !important; }', '.bet table.k-deck tbody { display: table-row-group !important; }', '.bet table.k-deck tr { display: table-row !important; }', '.bet table.k-deck td { display: table-cell !important; }', '.bet table.k-deck td::before { content: none !important; }'].forEach(function (r) { sh.insertRule(r, sh.cssRules.length); }); })()");
     const g = await p.rect('#bet .grid');
-    const scrolls = await p.run("(function () { var g = document.querySelector('#bet .grid'); return g.scrollWidth > g.clientWidth; })()");
+    const scrolls = await p.run(scrollsNow);
     await drag(g.x + g.w - 30, g.y + g.h / 2, g.x + 30);
     await wait(1200);
     const inTable = flips.length;
     const h = await p.rect('#bet h1');
     await drag(h.x + 250, h.y + h.h / 2, h.x + 50);
     await p.until(`${titled('split the big test file')} && document.getElementById('bet').getAttribute('data-card') === 'deck~2'`, 'the flip', 8000).catch(() => {});
-    return { scrolls, inTable, flips };
+    return { drawn, scrolls, inTable, flips };
   });
   const show = JSON.stringify(out, null, 1);
+  assert.equal(out.drawn, false, show);
   assert.equal(out.scrolls, true, show);
   assert.equal(out.inTable, 0, show);
   assert.deepEqual(out.flips, ['flip'], show);
