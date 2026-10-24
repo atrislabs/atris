@@ -485,3 +485,26 @@ test('browser: Enter while a word is still being composed on a Japanese or Chine
   // the Enter after the word is picked sends it
   assert.equal(out.said.length, 1, show);
 });
+
+test('browser: Esc on an armed do it steps back to do it at once, and the next tap arms it again rather than starting it', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await tapText(p, send, 'do it');
+    await wait(150);
+    const armed = await look(p);
+    await press(send, 'Escape', 27);
+    await wait(150);
+    const esc = await look(p);
+    const label = await p.run("document.querySelector('#bet .pill').textContent");
+    // a tap after Esc arms it again rather than starting it
+    await wait(500);
+    await tapText(p, send, 'do it');
+    await wait(300);
+    return { armed: armed.armed, esc: esc.armed, label, again: (await look(p)).armed, did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual(out.armed, ['tap again to start'], show);
+  assert.deepEqual([out.esc, out.label], [[], 'do it'], show);
+  assert.deepEqual([out.again, out.did], [['tap again to start'], []], show);
+});
