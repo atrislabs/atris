@@ -136,10 +136,17 @@ async function serveDesk(desk, page = phonePage) {
     writeTarget: () => true, snapshotTarget: () => () => true, logPath: path.join(dir, 'gm-phone-actions.jsonl'), page, makeBetDesk: () => desk,
   });
   const answer = (q, s) => { handler(q, s).catch(() => { s.writeHead(500); s.end(); }); };
-  let asleep = false;
+  let asleep = false, loseCards = 0;
   const held = [];
   const seen = [];
-  const server = http.createServer((q, s) => { seen.push(`${q.method} ${q.url.replace(/\?.*/, '')}`); if (asleep) { held.push([q, s]); return; } answer(q, s); });
+  const server = http.createServer((q, s) => {
+    seen.push(`${q.method} ${q.url.replace(/\?.*/, '')}`);
+    // a look lost to the Mac's sleep: taken, never answered, not even on waking
+    if (loseCards > 0 && q.method === 'GET' && q.url.startsWith('/card')) { loseCards -= 1; lost.push(s); return; }
+    if (asleep) { held.push([q, s]); return; }
+    answer(q, s);
+  });
+  const lost = [];
   const listen = port => new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
   await listen(0);
   const port = server.address().port;
@@ -150,6 +157,8 @@ async function serveDesk(desk, page = phonePage) {
     url: `http://127.0.0.1:${port}/?t=${TOKEN}`,
     seen,
     held,
+    lost,
+    loseNextCardLook: () => { loseCards += 1; },
     sleep: () => { asleep = true; },
     wake: () => { asleep = false; for (const [q, s] of held.splice(0)) answer(q, s); },
     stop,
@@ -657,6 +666,30 @@ async function sessionTrace({ cards = 100, ...opts } = {}) {
   }, opts);
 }
 
+// A look for the card that is lost (the Mac took it as it went to sleep and
+// never answers), then the Mac's card changes and every look after that is
+// answered at once. how: 'wait' lets the page's own deadline call the lost
+// look off; 'online' and 'visible' tell the page the wifi is back or the
+// phone was unlocked. Returns how long the new card took to show, in ms.
+async function lostLookTrace({ how = 'wait', ...opts } = {}) {
+  const { b1, b2 } = trace.CARDS;
+  const desk = trace.cardDesk(b1, async () => ({ card: b1 }));
+  return openPage(desk, async (p, send, said, server) => {
+    await p.until(titled(b1.title), 'the first card', 10000);
+    server.loseNextCardLook();
+    const end = Date.now() + 8000;
+    while (!server.lost.length && Date.now() < end) await wait(20);
+    if (!server.lost.length) throw new Error('the page never looked for the card');
+    desk.current = b2;
+    const t0 = Date.now();
+    if (how === 'online') await p.run("window.dispatchEvent(new Event('online'))");
+    if (how === 'visible') await p.run("(function () { Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'visible'; } }); document.dispatchEvent(new Event('visibilitychange')); })()");
+    let shown_ms = null;
+    try { await p.until(titled(b2.title), 'the new card', 15000); shown_ms = Date.now() - t0; } catch { /* stale */ }
+    return { how, shown_ms, card_looks: server.seen.filter(x => x === 'GET /card').length, console: said.slice() };
+  }, opts);
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -696,7 +729,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, tableNamesTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, tableNamesTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, lostLookTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };

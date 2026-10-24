@@ -87,7 +87,8 @@ test('browser: a card already up on the Mac is the first thing painted, with no 
 test('browser: while the Mac sleeps the page has one ask for the card out at a time, under a card and on the calm line; a tap still reaches it, and on waking the page goes on', browser, async () => {
   const out = await health.asleepTrace({ chromePath: CHROME, asleepMs: 16000, calmMs: 6000 });
   const show = JSON.stringify(out);
-  assert.equal(out.card_asks_out, 1, show);
+  // one at most: a look with no answer is called off after a few seconds
+  assert.ok(out.card_asks_out <= 1, show);
   assert.equal(out.calm_card_asks_most, 1, show);
   assert.equal(out.tap_reached_mac, true, show);
   assert.equal(out.next_card, trace.CARDS.b2.title, show);
@@ -139,6 +140,16 @@ test('page: nothing on the screen shows until the page\'s script has run, and th
   assert.match(html, /body:not\(\.on\) \.screen, body:not\(\.on\) nav \{ visibility: hidden; \}/);
   const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
   assert.ok(script.indexOf("document.body.classList.add('on');") < script.indexOf('function el('), 'before any of its work');
+});
+
+test('browser: a look the Mac lost to its sleep is called off: the new card shows within seconds, and at once when the wifi is back or the phone is unlocked', browser, async () => {
+  const waited = await health.lostLookTrace({ chromePath: CHROME, how: 'wait' });
+  assert.ok(waited.shown_ms != null && waited.shown_ms < 10000, JSON.stringify(waited));
+  for (const how of ['online', 'visible']) {
+    const out = await health.lostLookTrace({ chromePath: CHROME, how });
+    assert.ok(out.shown_ms != null && out.shown_ms < 2500, JSON.stringify(out));
+    assert.deepEqual(out.console, [], JSON.stringify(out));
+  }
 });
 
 // ---- the home screen ------------------------------------------------------------------
