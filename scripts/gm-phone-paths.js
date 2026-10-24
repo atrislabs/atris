@@ -254,7 +254,7 @@ const PATHS = [
   { name: 'tapped answer', first: CARDS.q1, on: () => ({ card: CARDS.b1 }), act: p => p.tap('#bet .choice'), rest: restOn(CARDS.b1.title), lands: true },
   { name: 'typed answer', first: CARDS.q1, on: () => ({ card: CARDS.b1 }), act: async (p) => { await p.tap('#bet .choice.other'); await wait(250); await p.type('paying schools'); await p.key('Enter', 13, '\r'); }, rest: restOn(CARDS.b1.title), lands: true },
   { name: 'a late answer', first: CARDS.q1, on: async () => { await wait(1200); return { card: CARDS.b1 }; }, act: p => p.tap('#bet .choice'), rest: restOn(CARDS.b1.title), lands: true },
-  { name: 'yes', first: CARDS.yes, on: () => ({ card: CARDS.b2, ack: ACK }), act: async (p) => { await p.tap('#bet button', 'yes'); await wait(200); await p.tap('#bet button', 'tap again to say yes'); }, rest: restOn(CARDS.b2.title), lands: true },
+  { name: 'yes', first: CARDS.yes, on: () => ({ card: CARDS.b2, ack: ACK }), act: async (p) => { await p.tap('#bet button', 'yes'); await wait(500); await p.tap('#bet button', 'tap again to say yes'); }, rest: restOn(CARDS.b2.title), lands: true },
   { name: 'no', first: CARDS.yes, on: () => ({ card: CARDS.b2 }), act: p => p.tap('#bet button', 'no'), rest: restOn(CARDS.b2.title), lands: true },
   { name: 'not now', first: CARDS.b1, on: () => ({ card: null, home: true }), act: p => p.tap('#bet button', 'not now'), rest: HOME, tail: 1200 },
   { name: 'small orb home', first: CARDS.b1, on: (a, n, { card }) => ({ card }), act: p => p.tap('#lava'), rest: HOME, tail: 600 },
