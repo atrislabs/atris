@@ -165,3 +165,11 @@ test('browser: in the background the page sends no looks and draws nothing, and 
     assert.ok(r.frames_after > 10, show(r));
   }
 });
+
+test('browser: a flip the moment the page opens still fades the new card in from nothing, under the old one fading out', { skip, timeout: 90000 }, async () => {
+  const first = paths.PATHS.find(s => s.name === 'deck flip').first;
+  const r = await paths.openTrace({ chromePath: CHROME, first, latency: 0, flipAt: 0 });
+  // before: the page-open fade held the new card at full strength under the old card's copy
+  assert.equal(r.new_card_at_turn, 0, show(r));
+  assert.ok(r.crossfade_min >= 0.9, show(r));
+});

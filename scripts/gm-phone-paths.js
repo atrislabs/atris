@@ -327,15 +327,19 @@ const OPEN_RECORDER = `(function () {
     var canvas = document.getElementById('orb'), box = document.getElementById('bet'), foot = document.getElementById('foot'), line = document.getElementById('line');
     if (canvas && canvas.__orb && box && foot) {
       var stage = getComputedStyle(document.getElementById('stage')), ln = getComputedStyle(line), fb = foot.getBoundingClientRect();
-      T.push({ t: performance.now(), dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
+      var ghost = document.querySelector('.bet.ghost');
+      T.push({ t: performance.now(), ghost: ghost ? Number(getComputedStyle(ghost).opacity) : 0, dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
     }
     requestAnimationFrame(rec);
   })();
 })();`;
 
-async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency = 250, reduced = false, page = phonePage } = {}) {
+// flipAt: ms after the card first shows, the arrow that flips a deck card
+async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency = 250, reduced = false, flipAt = null, page = phonePage } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
-  const server = await serve(cardDesk(first, async (a, { card }) => ({ card })), page);
+  let n = 1;
+  const flip = PATHS.find(s => s.name === 'deck flip');
+  const server = await serve(cardDesk(first, async (a, ctx) => { n += 1; return flipAt == null ? { card: ctx.card } : flip.on(a, n, ctx); }), page);
   const chrome = await launch(chromePath);
   try {
     const { send } = chrome;
@@ -347,6 +351,12 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
     await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: -1, uploadThroughput: -1 });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: OPEN_RECORDER });
     await send('Page.navigate', { url: server.url });
+    if (flipAt != null) {
+      await p.until("document.body.classList.contains('has-card') && Number(getComputedStyle(document.getElementById('bet')).opacity) > 0", 'the card showing', 15000);
+      await wait(flipAt);
+      await p.key('ArrowRight', 39);
+      await p.until("!document.body.hasAttribute('data-busy') && !document.querySelector('.bet.ghost')", 'the flip', 8000);
+    }
     await p.until(`document.readyState === 'complete' && (${READY})`, 'the page open', 15000);
     await wait(1000);
     const frames = await p.run('window.__open');
@@ -369,6 +379,9 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
       footer_seen_jump: Math.round(footJump * 10) / 10,
       dots_drawn: shown.length ? frames[frames.length - 1].dots : 0,
       line_at_end: frames.length ? frames[frames.length - 1].line : 0,
+      // a flip soon after: how strong the new card is the first frame its old copy covers it
+      new_card_at_turn: frames.find(f => f.ghost > 0.5) ? Math.round(frames.find(f => f.ghost > 0.5).card * 100) / 100 : null,
+      crossfade_min: frames.some(f => f.ghost > 0.01) ? Math.round(Math.min(...frames.filter(f => f.ghost > 0.01).map(f => f.ghost + f.card)) * 100) / 100 : null,
     };
   } finally {
     chrome.close();
