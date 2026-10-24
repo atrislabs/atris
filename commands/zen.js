@@ -58,14 +58,15 @@ function makeOut(calm) {
 }
 
 // Name the three biggest places so a large count reads as "mostly agent
-// notes in atris/" rather than an unexplained total.
+// notes in atris/" rather than an unexplained total. A lone fourth place is
+// named too, since "and 1 more place" takes as much room and says less.
 function teamLine(n, places = []) {
   if (!n) return 'no unsaved team notes.';
   const head = n === 1 ? '1 unsaved team note left in place' : `${n} unsaved team notes left in place`;
   if (!places.length) return `${head}.`;
-  const named = places.slice(0, 3).map((p) => `${p.place} ${p.count}`);
+  const named = places.slice(0, places.length === 4 ? 4 : 3).map((p) => `${p.place} ${p.count}`);
   const rest = places.length - named.length;
-  if (rest) named.push(`and ${rest} more ${rest === 1 ? 'place' : 'places'}`);
+  if (rest) named.push(`and ${rest} more places`);
   return `${head}: ${named.join(', ')}.`;
 }
 
