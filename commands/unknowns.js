@@ -377,7 +377,7 @@ function normalizeQuestions(payload, problem) {
 }
 
 function fallbackQuestions(problem) {
-  const subject = (clipLine(problem, 90) || 'this problem').replace(/[?!.]+$/, '');
+  const subject = clipLine((String(problem || '').trim() || 'this problem').replace(/[?!.]+$/, ''), 90);
   return [
     {
       question: `What existing code path already owns "${subject}"?`,
