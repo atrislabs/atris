@@ -764,3 +764,37 @@ test('browser: the small orb\'s keyboard ring reads as a real 2px ring, like eve
   // as seen on screen: a 2px ring 4px out from the orb, the width of every focus ring
   assert.ok(Math.abs(out.width - 2) < 0.1 && Math.abs(out.gap - 4) < 0.3, show);
 });
+
+// The calm line's ask that brings a queued idea in, the first one hung for
+// good, as a post on a dead link never answers; every reveal is recorded with
+// the id it carries.
+const HANG_FIRST_REVEAL = `(function () {
+  var real = window.fetch;
+  window.__reveals = [];
+  window.fetch = function (url, opts) {
+    var b = null;
+    try { b = opts && opts.method === 'POST' && opts.body ? JSON.parse(opts.body) : null; } catch (e) { b = null; }
+    if (String(url).indexOf('/act') >= 0 && b && b.orb) {
+      window.__reveals.push(b.send || null);
+      if (window.__reveals.length === 1) return new Promise(function () {});
+    }
+    return real.apply(this, arguments);
+  };
+})()`;
+
+test('browser: on the calm line a reveal that never answers is given up on, the next one goes with the same id, and the queued idea lands', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  let desk = null;
+  desk = trace.cardDesk(CARDS.calm, async (action) => { did.push(action); return { card: CARDS.b1 }; }, { queue: () => (desk.current && desk.current.kind === 'wait' ? 1 : 0) });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: HANG_FIRST_REVEAL });
+    await quickClock(p, send);
+    await p.until(titled(CARDS.b1.title), 'the idea', 15000).catch(() => {});
+    return { reveals: await p.run('window.__reveals'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.after.has_card, out.after.title], [true, CARDS.b1.title], show);
+  // a second reveal went out, with the id of the one the page gave up on, so the Mac answers it once
+  assert.ok(out.reveals.length >= 2 && out.reveals[0] && out.reveals[1] === out.reveals[0], show);
+  assert.deepEqual(out.did, ['orb'], show);
+});
