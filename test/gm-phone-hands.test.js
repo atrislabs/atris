@@ -41,6 +41,12 @@ async function tapAt(send, x, y, clickCount = 1) {
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount });
 }
+// a tap on the button that reads label, wherever it is on the card
+async function tapText(p, send, label) {
+  const r = await p.run(`(function () { var n = Array.prototype.find.call(document.querySelectorAll('#bet button, .foot button'), function (b) { return b.textContent === ${JSON.stringify(label)} && b.offsetParent; }); if (!n) return null; var b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  assert.ok(r, `no button reads ${label}`);
+  await tapAt(send, r.x, r.y);
+}
 async function middle(p, sel) {
   const r = await p.rect(sel);
   assert.ok(r, `nothing at ${sel}`);
@@ -68,4 +74,44 @@ test('browser: a fumbled double tap on do it only arms it; a real second tap sta
   assert.deepEqual(out.doubled.armed, ['tap again to start'], show);
   assert.equal(out.doubled.title, CARDS.b1.title, show);
   assert.deepEqual(out.did, ['do'], show);
+});
+
+// The page again with its long waits cut a hundredfold (anything set for 15
+// seconds or more), so a give-up the page makes after a minute and a half
+// shows in about a second. Only timers that long are touched.
+async function quickClock(p, send) {
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: '(function () { var st = window.setTimeout; window.setTimeout = function (f, ms) { var rest = Array.prototype.slice.call(arguments, 2); return st.apply(window, [f, ms >= 15000 ? ms / 100 : ms].concat(rest)); }; })()' });
+  await send('Page.reload', {});
+  await wait(300);
+  await p.until("document.readyState === 'complete' && Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')", 'the page again', 8000);
+}
+
+test('browser: a tap whose answer never comes gives up, and the card comes back ready to try again', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  let answer = false;
+  const desk = trace.cardDesk(CARDS.b1, async (action) => {
+    did.push(action);
+    if (!answer) await new Promise(() => {});
+    return { card: CARDS.b2 };
+  });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await quickClock(p, send);
+    await tapText(p, send, 'not now');
+    await wait(400);
+    const waiting = await look(p);
+    await p.until(`document.querySelector('#bet h1') && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)} && !document.body.hasAttribute('data-busy') && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back', 8000).catch(() => {});
+    const gaveUp = await look(p);
+    answer = true;
+    await tapText(p, send, 'not now');
+    await p.until(`document.querySelector('#bet h1') && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b2.title)}`, 'the next card', 8000).catch(() => {});
+    return { waiting, gaveUp, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  // while it waits the page is busy, and then it is not
+  assert.equal(out.waiting.busy, true, show);
+  assert.deepEqual([out.gaveUp.busy, out.gaveUp.has_card, out.gaveUp.title], [false, true, CARDS.b1.title], show);
+  assert.equal(out.gaveUp.note, 'that did not reach the mac. try again.', show);
+  // the try again goes through
+  assert.equal(out.after.title, CARDS.b2.title, show);
+  assert.deepEqual(out.did, ['skip', 'skip'], show);
 });
