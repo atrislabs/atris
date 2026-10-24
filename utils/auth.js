@@ -318,6 +318,7 @@ function setSessionProfile(profileName) {
     // No terminal session ID — fall back to global switch
     return false;
   }
+  assertSafeLoginWrite(sessionPath);
   fs.writeFileSync(sessionPath, JSON.stringify({
     profile: profileName,
     set_at: new Date().toISOString(),
@@ -370,8 +371,31 @@ function profileNameFromEmail(email) {
   return name || null; // Guard against emails like "@domain.com"
 }
 
+function runningUnderTest() {
+  if (process.env.NODE_TEST_CONTEXT) return true;
+  if ((process.execArgv || []).includes('--test')) return true;
+  return /\.test\.[cm]?js$/.test(path.basename(process.argv[1] || ''));
+}
+
+function realDir(dir) {
+  try { return fs.realpathSync(dir); } catch { return path.resolve(dir); }
+}
+
+// A test that forgets to point HOME at a scratch dir would overwrite the
+// real login (2026-10-23: a mutant test minted a fake token into
+// ~/.atris/credentials.json and logged the owner out). Under a test runner,
+// login files may only be written inside the OS temp dir.
+function assertSafeLoginWrite(targetPath) {
+  if (!runningUnderTest()) return;
+  const target = realDir(path.dirname(targetPath));
+  const tmp = realDir(os.tmpdir());
+  if (target === tmp || target.startsWith(tmp + path.sep)) return;
+  throw new Error(`Refusing to write ${targetPath} during a test: set HOME to a temp dir first`);
+}
+
 function saveProfile(name, credentials) {
   const profilePath = path.join(getProfilesDir(), `${name}.json`);
+  assertSafeLoginWrite(profilePath);
   fs.writeFileSync(profilePath, JSON.stringify(credentials, null, 2));
   restrictToOwner(profilePath);
 }
@@ -452,6 +476,7 @@ function saveCredentials(token, refreshToken, email, userId, provider, extras = 
   }
   preserveAgentClientLogin();
   const credentialsPath = getCredentialsPath();
+  assertSafeLoginWrite(credentialsPath);
   const credentials = {
     ...extras,
     token,
@@ -937,6 +962,7 @@ async function displayAccountSummary(apiRequestJson) {
 }
 
 module.exports = {
+  assertSafeLoginWrite,
   AGENT_TOKEN_EXPIRED_DETAIL,
   decodeJwtClaims,
   getTokenExpiryEpochSeconds,
