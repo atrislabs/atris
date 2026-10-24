@@ -1612,6 +1612,18 @@ test('browser: the same words to two members are two sends, and each member hear
   assert.deepEqual(out.took, [{ member: 'builder', text: 'pause this' }, { member: 'launcher', text: 'pause this' }], JSON.stringify(out));
 });
 
+test('browser: the team opened from the big orb closes back to the big orb, and opened from a card closes back to the card', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.teamFromHomeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.team.kind, out.team.title], ['team', 'the team'], show);
+  // Esc on the team: the big orb, where the owner was, and nothing is asked of the Mac yet
+  assert.deepEqual([out.closed.has_card, out.closed.line, out.closed.asked], [false, 'tap to think', 0], show);
+  // the big orb brings the next card as it always does
+  assert.deepEqual([out.tapped.has_card, out.tapped.asked], [true, 1], show);
+  // opened from a card, Esc goes back to a card
+  assert.deepEqual([out.fromCard.has_card, out.fromCard.kind], [true, 'idea'], show);
+});
+
 test('browser: the small orb on any card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);

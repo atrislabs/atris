@@ -741,6 +741,51 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
   return runs;
 }
 
+// ---- the team opened from the big orb closes back to it ------------------------------------------
+
+// The small orb goes home, the owner opens the team from the footer, then
+// presses Esc. The desk, like the real one, answers back with the card it
+// has. The page lands on the big orb, not that card, and nothing is asked
+// of the desk until the big orb is tapped. From a card, the team still
+// closes back to that card.
+async function teamFromHomeTrace({ chromePath = findChrome() } = {}) {
+  let asked = 0;
+  let n = 1;
+  const desk = cardDesk(CARDS.b1, async (action) => {
+    n += 1;
+    if (action === 'orb') { asked += 1; return { card: CARDS.b2 }; }
+    if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
+    if (action === 'back') return { card: CARDS.b1 };
+    return { card: CARDS.b1 };
+  });
+  return onPhone(desk, chromePath, async (p, send) => {
+    const place = async () => ({ ...(await p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), kind: document.body.classList.contains('has-card') ? document.getElementById('bet').getAttribute('data-kind') : null, line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()")), asked });
+    const rest = "!document.body.hasAttribute('data-busy')";
+    await p.tap('#lava');
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb', 6000);
+    await wait(500);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team', 8000);
+    const team = await place();
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb again', 6000).catch(() => {});
+    await wait(600);
+    const closed = await place();
+    await p.tap('#orb');
+    await p.until(SETTLED, 'the next card', 8000).catch(() => {});
+    const tapped = await place();
+    // from a card, the team closes back to that card
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team from a card', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') !== 'team'`, 'the card again', 8000).catch(() => {});
+    const fromCard = await place();
+    return { team, closed, tapped, fromCard };
+  });
+}
+
 // ---- a start that did not get going comes back to do it --------------------------------------
 
 // The owner asks what an idea means, then taps do it twice. The first start
@@ -1563,7 +1608,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
