@@ -137,14 +137,16 @@ const LAST_LINES = `Array.prototype.map.call(document.querySelectorAll('#bet h1,
     var re = /\\S+/g, m;
     while ((m = re.exec(t.textContent))) {
       var r = document.createRange(); r.setStart(t, m.index); r.setEnd(t, m.index + m[0].length);
-      var rect = r.getClientRects()[0];
-      if (rect) words.push({ w: m[0], top: Math.round(rect.top) });
+      var rects = Array.prototype.filter.call(r.getClientRects(), function (x) { return x.width > 0; });
+      // a word too long for a line (an email address) breaks across lines; it counts where it ends
+      if (rects.length) words.push({ w: m[0], top: Math.round(rects[rects.length - 1].top), broken: Math.round(rects[0].top) !== Math.round(rects[rects.length - 1].top) });
     }
   }
   var tops = [];
   words.forEach(function (x) { if (tops.indexOf(x.top) < 0) tops.push(x.top); });
-  var last = words.filter(function (x) { return x.top === tops[tops.length - 1]; }).map(function (x) { return x.w; });
-  return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' ') };
+  var lastWords = words.filter(function (x) { return x.top === tops[tops.length - 1]; });
+  var last = lastWords.map(function (x) { return x.w; });
+  return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' '), broken: lastWords.some(function (x) { return x.broken; }) };
 })`;
 
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
@@ -152,7 +154,7 @@ test('layout: no title, body, or label leaves one word alone on its last line, o
   const alone = [];
   let wrapped = 0;
   for (const r of rows) for (const p of r.probe) {
-    if (p.lines < 2) continue;
+    if (p.lines < 2 || p.broken) continue;
     wrapped += 1;
     if (p.last.split(' ').length < 2) alone.push(`${r.case} ${r.size} ${p.what}: ${p.last}`);
   }
@@ -275,5 +277,22 @@ test('layout: in the team and job tables every cell of a row starts its words on
       const ys = row.filter(y => y != null);
       assert.ok(Math.max(...ys) - Math.min(...ys) <= 1, show);
     }
+  }
+});
+
+test('layout: a word longer than the screen, like an email address, breaks inside the card instead of pushing the page sideways', { skip, timeout: 90000 }, async () => {
+  const probe = `(function () {
+    var card = document.getElementById('bet').getBoundingClientRect(), out = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('#bet h1, #bet .why'), function (n) {
+      var r = document.createRange(); r.selectNodeContents(n);
+      Array.prototype.forEach.call(r.getClientRects(), function (x) { out = Math.max(out, x.right - card.right); });
+    });
+    return Math.round(out * 10) / 10;
+  })()`;
+  const rows = await layout({ chromePath: CHROME, cases: only('yes-long-words'), viewports: ['small', 'phone', 'side', 'laptop'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, scroll_w: r.scroll_w, vw: r.vw, past_card_px: r.probe })), null, 1);
+  for (const r of rows) {
+    assert.equal(r.scroll_w, r.vw, show);
+    assert.ok(r.probe <= 0.5, show);
   }
 });
