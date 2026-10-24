@@ -302,7 +302,68 @@ async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1,
   }
 }
 
-module.exports = { pathsTrace, summarizePath, PATHS, PATH_RECORDER };
+// ---- the page opening -------------------------------------------------------------------
+
+// From the first frame the page draws to a second after it has settled, on
+// a link this slow (ms each way): the frames the sphere or its line showed
+// before the card, how far the footer moved while seen, and how many frames
+// the card took to fade in. first: the card on screen, or null for the big orb.
+const OPEN_RECORDER = `(function () {
+  var T = window.__open = [];
+  (function rec() {
+    var canvas = document.getElementById('orb'), box = document.getElementById('bet'), foot = document.getElementById('foot'), line = document.getElementById('line');
+    if (canvas && canvas.__orb && box && foot) {
+      var stage = getComputedStyle(document.getElementById('stage')), ln = getComputedStyle(line), fb = foot.getBoundingClientRect();
+      T.push({ t: performance.now(), dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
+    }
+    requestAnimationFrame(rec);
+  })();
+})();`;
+
+async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency = 250, reduced = false, page = phonePage } = {}) {
+  if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
+  const server = await serve(cardDesk(first, async (a, { card }) => ({ card })), page);
+  const chrome = await launch(chromePath);
+  try {
+    const { send } = chrome;
+    const p = driver(send);
+    await send('Emulation.setDeviceMetricsOverride', PHONE);
+    if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await send('Page.enable');
+    await send('Network.enable');
+    await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: -1, uploadThroughput: -1 });
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: OPEN_RECORDER });
+    await send('Page.navigate', { url: server.url });
+    await p.until(`document.readyState === 'complete' && (${READY})`, 'the page open', 15000);
+    await wait(1000);
+    const frames = await p.run('window.__open');
+    const at = frames.findIndex(f => f.card > 0);
+    const before = at < 0 ? frames : frames.slice(0, at);
+    let footJump = 0, cardFade = 0;
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1], b = frames[i];
+      if (Math.abs(a.foot.y - b.foot.y) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, Math.abs(a.foot.y - b.foot.y));
+      cardFade = Math.max(cardFade, Math.abs(a.card - b.card));
+    }
+    const shown = frames.filter(f => f.dots > 0 || f.sphere);
+    return {
+      first: first ? first.kind : 'big orb',
+      frames: frames.length,
+      sphere_frames_before_card: at < 0 ? null : before.filter(f => f.sphere && f.dots > 0).length,
+      line_frames_before_card: at < 0 ? null : before.filter(f => f.line > 0.05).length,
+      card_frames_fading: frames.filter(f => f.card > 0.02 && f.card < 0.98).length,
+      card_fade: Math.round(cardFade * 100) / 100,
+      footer_seen_jump: Math.round(footJump * 10) / 10,
+      dots_drawn: shown.length ? frames[frames.length - 1].dots : 0,
+      line_at_end: frames.length ? frames[frames.length - 1].line : 0,
+    };
+  } finally {
+    chrome.close();
+    await server.close();
+  }
+}
+
+module.exports = { pathsTrace, summarizePath, openTrace, PATHS, PATH_RECORDER };
 
 if (require.main === module) {
   const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };

@@ -93,3 +93,19 @@ test('browser: the big orb sets its fill color once a brightness level, not once
   assert.ok(out.arcs > 4000, said);
   assert.ok(out.styles <= 130, said);
 });
+
+test('browser: a page that opens on a card shows the card fading in, never the big orb or its line first, and the footer never jumps', { skip, timeout: 90000 }, async () => {
+  const { CARDS } = require('../scripts/gm-phone-trace');
+  // a link with 250ms each way, as a phone on wifi can be
+  const card = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, latency: 250 });
+  const said = show(card);
+  // before: 14 frames of the sphere bursting and 15 of "tap to think", then the card cut in and the footer jumped 370px
+  assert.equal(card.sphere_frames_before_card, 0, said);
+  assert.equal(card.line_frames_before_card, 0, said);
+  assert.equal(card.footer_seen_jump, 0, said);
+  assert.ok(card.card_frames_fading >= 6 && card.card_fade <= 0.15, said);
+  assert.equal(card.dots_drawn, 0, said);
+  // with no card the big orb starts and its line fades in
+  const orb = await paths.openTrace({ chromePath: CHROME, first: null, latency: 250 });
+  assert.ok(orb.dots_drawn > 20 && orb.line_at_end === 1 && orb.footer_seen_jump === 0, show(orb));
+});
