@@ -573,3 +573,29 @@ test('browser: while the sphere waits on a slow answer its line never says tap t
     assert.equal(r.after.title, CARDS.b2.title, show);
   }
 });
+
+test('browser: a note on the calm line that takes a while reads sending in place of send until the Mac has it', { skip, timeout: 90000 }, async () => {
+  const calm = gmCard.wait({ id: 'wait:7' });
+  const notes = [];
+  const desk = trace.cardDesk(calm, async (a, { card, text }) => { notes.push(text); await wait(2200); return { card }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.until("document.body.classList.contains('waiting') && Boolean(document.querySelector('#bet .sayline .field.stay input'))", 'the calm line', 8000);
+    await wait(900);
+    await p.tap('#bet .sayline .field.stay input');
+    await p.type('make it about schools');
+    await press(send, 'Enter', 13, '\r');
+    const spot = () => p.run("(function () { var g = document.querySelector('#bet .sayline .field .send'); return { text: g.textContent, shown: getComputedStyle(g).visibility === 'visible', words: document.querySelector('#bet .sayline .field input').value }; })()");
+    await wait(250);
+    const quick = await spot();
+    await wait(800);
+    const slow = await spot();
+    await p.until("document.querySelector('#bet .sayline .field input').value === ''", 'the box cleared', 6000).catch(() => {});
+    return { quick, slow, done: await spot(), notes };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  // a quick answer never flickers a word: the first moment is the plain held look
+  assert.equal(out.quick.shown, false, show);
+  assert.deepEqual([out.slow.text, out.slow.shown, out.slow.words], ['sending', true, 'make it about schools'], show);
+  assert.deepEqual([out.done.text, out.done.words], ['send', ''], show);
+  assert.deepEqual(out.notes, ['make it about schools'], show);
+});
