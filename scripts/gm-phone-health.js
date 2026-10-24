@@ -332,7 +332,7 @@ async function readerTrace(opts = {}) {
     await hear(q1);
     await p.tapButton('making money from it');
     await hear(b1);
-    await p.tapButton('sharper idea');
+    await p.tapButton('sharpen it');
     await hear(c1);
     await p.tap("document.querySelector('#bet .option')", 'the first idea');
     await hear(b2);
@@ -624,7 +624,7 @@ async function sessionTrace({ cards = 100, ...opts } = {}) {
     await p.until(titled(fresh.title), 'the card the Mac changed', 15000);
     landed += 1;
     while (landed < cards) {
-      await land('question', () => p.tapButton('sharper idea'));
+      await land('question', () => p.tapButton('sharpen it'));
       await land('choice', () => p.tapButton('making money from it'));
       await land('idea', () => p.tap("document.querySelector('#bet .option')", 'the first idea'));
       await land('reply', async () => {
@@ -636,9 +636,9 @@ async function sessionTrace({ cards = 100, ...opts } = {}) {
       });
       await land('idea', () => p.tapButton('not now'));
       await land('team', () => p.tapButton('the team'));
-      await land('deck', () => p.tapButton('the jobs, one at a time'));
+      await land('deck', () => p.tapButton('go through the jobs'));
       await land('deck', () => p.tapButton('next'));
-      await land('team', () => p.tapButton('the whole team'));
+      await land('team', () => p.tapButton('back to the team'));
       await land('wait', async () => {
         await p.tap("document.getElementById('lava')", 'the small orb');
         await p.until("!document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy')", 'the big orb', 10000);
@@ -693,7 +693,7 @@ async function lostLookTrace({ how = 'wait', ...opts } = {}) {
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
-// none. After asleepMs the owner taps "sharper idea"; then the Mac wakes and
+// none. After asleepMs the owner taps "sharpen it"; then the Mac wakes and
 // answers what it held. Then the same on the calm line, which looks more
 // often. card_asks_out: asks for the card still waiting when the owner
 // tapped; tap_reached_mac: the tap's post got to the Mac while it slept, not
@@ -708,7 +708,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
     await wait(asleepMs);
     out.card_asks_out = await p.run("window.__health.asks.out['GET /card'] || 0");
     const before = server.held.length;
-    await p.tapButton('sharper idea');
+    await p.tapButton('sharpen it');
     await wait(2500);
     out.tap_reached_mac = server.held.slice(before).some(([q]) => q.method === 'POST');
     out.asks_held_by_mac = server.held.length;
