@@ -1239,7 +1239,7 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
   // a reply instead of a card takes the title's spot; it only explains, so the
   // idea's own options are on it once, with the answers it adds and its box
   assert.equal(said.next_title, trace.REPLY);
-  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharper idea', 'not now', 'or say something']);
+  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharpen it', 'not now', 'or say something']);
 });
 
 test('page: an act to the next card is one motion of about a second when the answer is in', () => {

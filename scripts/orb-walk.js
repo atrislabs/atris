@@ -299,7 +299,7 @@ function legacyAdapter(http) {
       ...base, title: b.title, body,
       options: [
         opt('do', 'do it', { path: '/bet/do', body: { confirm: true } }, async () => { await post('/bet/do', { confirm: true }); return think(false); }, { confirm: true }),
-        opt('sharper', 'sharper idea', { path: '/bet/think', body: { sharper: true } }, () => think(true)),
+        opt('sharper', 'sharpen it', { path: '/bet/think', body: { sharper: true } }, () => think(true)),
         opt('skip', 'not now', { path: '/bet/skip', body: {} }, async () => { await post('/bet/skip', {}); main = null; homeLine = 'not now. tap when you want another'; return current(); }),
       ],
       input: sayBox(s),
@@ -781,7 +781,7 @@ async function walkHttp(a, world) {
   await stage('tap an option, then the next card', async (st) => {
     const before = a.current();
     if (world.scoreboardOn) world.scoreboardOn();
-    const o = findOption(before, /^sharper idea$/i) || (before.options || []).find(x => !x.disabled && !x.confirm && !x.typed && !x.nav);
+    const o = findOption(before, /^sharpen it$/i) || (before.options || []).find(x => !x.disabled && !x.confirm && !x.typed && !x.nav);
     if (!o && live && !isIdea(before)) return skip(st, 'no idea came in time to tap');
     if (!o) throw new Error('this card has no option to tap');
     st.did = `tapped "${o.label}"`;

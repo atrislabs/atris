@@ -3015,7 +3015,10 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.doesNotMatch(html, /things only you can do|id="sheet"|id="team"/);
   // the idea card's words come from the Mac
   const idea = gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400. more people try it by nov 1.' });
-  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharper idea', null], ['not now', null]]);
+  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharpen it', null], ['not now', null]]);
+  // the worry version of the card names the same tap the same way
+  const worried = gmCard.idea({ id: 'b2', title: 'Write the getting started page', body: 'installs last week were 1,400.', concern: 'one worry: it may not move your number much this week.' });
+  assert.equal(worried.options.find(o => o.action === 'sharper').label, idea.options.find(o => o.action === 'sharper').label);
   // no process text ever reaches the page: no skeptic, no rejects, no word counts, no thinking screen
   assert.doesNotMatch(html, /tokens|second look|words written|turned down|skeptic|sayEvent|progressOf|'thinking'|'failed'/);
   // one script scope: a function declared twice silently replaces the first
