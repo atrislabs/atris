@@ -1364,7 +1364,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
 - **Token refresh:** `utils/auth.js:723` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `utils/auth.js:690` (`refreshAccessToken`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
-- **Credential guard:** `utils/auth.js:810` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
+- **Credential guard:** `utils/auth.js:840` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
 - **Wake auth abort:** `utils/auth.js:705` (`isAuthFailure`) and `utils/auth.js:715` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
@@ -2504,7 +2504,7 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 
 ### Local HTTP server security
 
-- Phone request parsing and credentials: `lib/gm-phone.js:304`; bounded body reader: `lib/gm-phone.js:331`; handler: `lib/gm-phone.js:367`; listener rejection fallback: `commands/gm.js:1536`. Wifi pairing stays available on the selected network interface plus loopback.
+- Phone request parsing and credentials: `lib/gm-phone.js:305`; bounded body reader: `lib/gm-phone.js:332`; handler: `lib/gm-phone.js:368`; listener rejection fallback: `commands/gm.js:1536`. Wifi pairing stays available on the selected network interface plus loopback.
 - Static preview: `lib/site.js:104`, GET/HEAD only, loopback Host checks and binding, rejects malformed URLs and request bodies.
 - Credential gateway: `lib/secret-gateway.js:240`, unchanged read-only grant, placeholder credential, local Host checks, body rejection and loopback binding.
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.

@@ -783,7 +783,9 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking...');
   assert.equal(events[SOURCE_KEYS.length + 3].line, 'thinking... 4 words written');
   // the lines the waiting card shows, in the owner's words
-  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft missed a rule. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
+  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft did not fit. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
+  // the waiting lines say what is happening to the idea, never how the work is checked
+  for (const t of events.filter(e => e.say).map(e => e.say)) assert.doesNotMatch(t, /\brules?\b|\bcheck(s|ed)? (date|rule)|\bskeptic|\bjudge/, t);
   assert.ok(events.every(e => !/token|character/.test(e.line)));
   // the date is worked out from the owner's today, in calendar days
   assert.equal(out.bet.check_in_days, 9);
@@ -891,6 +893,8 @@ const TITLES = [
   'Draft a changelog digest of merged pull requests for the weekly newsletter',
   'Build a sample workspace template that new users can clone in one command',
 ];
+// a title as the owner reads it: every card speaks lowercase
+const shown = t => t[0].toLowerCase() + t.slice(1);
 
 // A generator stub that hands out the titles in order. Each call waits on a
 // gate the test opens, so in-flight work can be counted.
@@ -1113,7 +1117,7 @@ test('calm line: words typed while the idea is written are a note for it: the sa
   await h.gen.releaseOne();
   assert.ok(h.d.card().queue > 0);
   const landed = await h.d.act({ orb: true, card_id: calm.id });
-  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[3]]);
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', shown(TITLES[3])]);
   assert.equal(h.d.view().queue, 2, 'the ideas written without the newest note are kept for later');
 });
 
@@ -1136,7 +1140,7 @@ test('calm line: an older calm line is stale, the same one under a new stamp is 
   h.tick(1001);
   assert.equal(h.d.card().queue, 1);
   const ready = await h.d.act({ orb: true, card_id: calm.id });
-  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', TITLES[0], 'your note is still being folded in. that version comes next.']);
+  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', shown(TITLES[0]), 'your note is still being folded in. that version comes next.']);
   // the noted one lands while that idea is up: nothing swaps under him
   await h.gen.releaseOne();
   assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
@@ -1146,7 +1150,7 @@ test('calm line: an older calm line is stale, the same one under a new stamp is 
   assert.equal(h.d.card().card.id, ready.body.card.id, 'the card on screen stays');
   // and it is the next card, on its own, not one of a choice
   const next = await h.d.act({ orb: true, card_id: ready.body.card.id });
-  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', TITLES[2], null]);
+  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', shown(TITLES[2]), null]);
 });
 
 test('calm line: a note on a wait that ends with nothing is kept, and try again drafts with it', async () => {
@@ -1190,7 +1194,7 @@ test('calm line: try again after a failed noted drafting joins the one already w
   assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'one drafting carries the note');
   // and that idea is the one that comes in
   const landed = await h.d.act({ orb: true, card_id: again.body.card.id });
-  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[2]]);
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', shown(TITLES[2])]);
   await h.gen.release();
   assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'and never a second one later');
 });
@@ -1409,7 +1413,10 @@ test('owner words: no fixed page string, card template, or question uses our int
   said.push(done.job.what, done.job.why, j.d.nice().ack);
   const f = await filled(workspace());
   f.d.next();
-  said.push(f.d.skip().ack, f.d.skip().message);
+  const skipped = f.d.skip();
+  // not now on an idea: the got-it line says what happened, and the line under the orb says what to do, never not now twice
+  assert.equal(skipped.ack, 'set aside.');
+  said.push(skipped.ack, f.d.skip().message);
   f.d.next();
   said.push((await f.d.doIt()).ack);
   for (const t of said) {
@@ -1425,6 +1432,21 @@ test('owner words: no fixed page string, card template, or question uses our int
   const labels = [...html.matchAll(/aria-label="([^"]+)"/g)].map(m => m[1]);
   assert.ok(copy.length > 10 && labels.length >= 2);
   for (const t of [...copy, ...labels]) assert.doesNotMatch(t, banned, t);
+});
+
+test('owner words: every refusal the desk or the page can show ends like a sentence, with no semicolons', () => {
+  // the line under the options and the line under the orb read the same way on every card
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'gm-bet.js'), 'utf8');
+  const said = [...src.matchAll(/(?:message: |refuse\('[a-z_]+', |out\.message \|\| )(['`])((?:(?!\1)[^\n])*)\1/g)].map(m => m[2]);
+  assert.ok(said.length > 25, `found ${said.length}`);
+  for (const t of said) {
+    assert.match(t, /[.?!]$/, t);
+    assert.doesNotMatch(t, /;/, t);
+  }
+  const html = phonePage('NONCE');
+  const errors = [...html.matchAll(/'((?:that|this|it) [^'\n]*(?:try again|stopped working)[^'\n]*)'/g)].map(m => m[1]);
+  assert.ok(errors.length >= 4, errors.join(' | '));
+  for (const t of errors) assert.match(t, /\.$/, t);
 });
 
 test('owner words: the writer is told the words, and a card that uses one gets one free rewrite before it is kept', async () => {
@@ -1453,10 +1475,14 @@ test('owner words: the writer is told the words, and a card that uses one gets o
 test('question: the answer is saved next to the ledger, only for this workspace, and a wrong one is refused', async () => {
   const root = workspace();
   const h = desk(root, { questions: false });
-  h.d.next();
-  assert.deepEqual(h.d.answer({ choice: 'nope' }), { ok: false, reason: 'bad_choice', message: 'that is not one of the answers' });
+  const q = h.d.next();
+  // an answer from a page that missed the next card is saved against nothing, and the words say the new card is already there
+  const stale = h.d.answer({ choice: 'money', card: 'question:old' });
+  assert.deepEqual(stale, { ok: false, reason: 'gone', message: 'that card changed, so nothing was saved. here is the one on screen now.' });
+  assert.ok(q && q.id !== 'question:old');
+  assert.deepEqual(h.d.answer({ choice: 'nope' }), { ok: false, reason: 'bad_choice', message: 'that is not one of the answers.' });
   assert.equal(h.d.answer({ choice: 'money' }).ok, true);
-  assert.deepEqual(h.d.answer({ choice: 'money' }), { ok: false, reason: 'gone', message: 'there is no question on screen' });
+  assert.deepEqual(h.d.answer({ choice: 'money' }), { ok: false, reason: 'gone', message: 'there is no question on screen.' });
   const file = path.join(path.dirname(h.ledgerFile), 'gm-focus.jsonl');
   assert.equal(gmBet.focusPath(path.dirname(h.ledgerFile)), file);
   const focus = gmBet.readFocus(file, root);
@@ -1580,7 +1606,7 @@ test('choice: with 2 or more ideas ready a tap shows up to 3 to pick from; one t
   assert.deepEqual([rows[c.choice.options[2].id].status, rows[c.choice.options[1].id].status], ['passed', 'proposed']);
   assert.equal((await h.d.doIt()).ok, true);
   // a pick with nothing on screen, or an id not on the card, does nothing
-  assert.deepEqual(h.d.pick({ id: 'nope' }), { ok: false, reason: 'gone', message: 'there is nothing to pick on screen' });
+  assert.deepEqual(h.d.pick({ id: 'nope' }), { ok: false, reason: 'gone', message: 'there is nothing to pick on screen.' });
   // one idea ready: the single card, as before
   const one = desk(workspace(), { choices: true });
   one.d.warm();
@@ -1706,6 +1732,8 @@ test('scoreboard: with none saved, the first card asks what number says it is go
   const ownRoot = workspace();
   const own = desk(ownRoot, { scoreboard: true });
   own.d.next();
+  // an empty name asks for a name, not a value
+  assert.deepEqual(own.d.answer({ choice: 'other', text: '  ' }), { ok: false, reason: 'empty', message: 'name the number in a few words.' });
   assert.equal(own.d.answer({ choice: 'other', text: 'fewer support emails' }).ack, 'got it: fewer support emails.');
   const ownBoard = gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(own.ledgerFile)), ownRoot);
   assert.deepEqual([ownBoard.name, ownBoard.up, ownBoard.source], ['fewer support emails', false, 'reported']);
@@ -1951,7 +1979,7 @@ test('steer from the phone: it can only reach a live run; one that is not runnin
   assert.deepEqual(await h.d.steer({ member: 'builder', text: 'readme first' }), { ok: true, ack: 'sent to builder.' });
   assert.deepEqual(h.cli[h.cli.length - 1], ['member', 'steer', 'builder', '--no-ignite', '--json', '--', 'the owner says: readme first']);
   // launcher is not running: the steer that cannot start anyone finds nothing, and the page asks
-  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this' });
+  assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread' }), { ok: false, reason: 'needs_confirm', message: 'tap again to start launcher on this.' });
   assert.ok(h.cli.every(a => !a.includes('--detach')), 'nothing was started');
   // the second tap starts them in the background, and says so from the start result
   assert.deepEqual(await h.d.steer({ member: 'launcher', text: 'draft the thread', confirm: true }), { ok: true, ack: 'launcher is starting on it.' });
@@ -1994,7 +2022,8 @@ test('free text: a reply that comes back after the card changed is dropped, and 
   // the owner taps do it while the read is still out
   assert.equal((await h.d.doIt()).ok, true);
   release();
-  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done' });
+  // the refusal comes back with the card on screen now, so it says where the new card is
+  assert.deepEqual(await pending, { ok: false, reason: 'gone', message: 'that card changed, so nothing was done. here is the one on screen now.' });
   const row = h.ledger().find(r => r.id === idea.id);
   assert.equal(row.status, 'doing', 'the started job is still tracked');
 });
@@ -2312,17 +2341,19 @@ test('team table: one honest status per member; working only with a live process
   const h = jobDesk(root, missions, { handoffs, driverAlive: m => m.id === 'm1' });
   const rows = h.d.teamTable().rows;
   assert.deepEqual(rows.map(({ member, on, status, time }) => ({ member, on, status, time })), [
-    { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'waiting 2 hours' },
+    { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'asked 2 hours ago' },
     { member: 'builder', on: 'Launch a try page for any public repo', status: 'working', time: 'about 4 hours left' },
     { member: 'launcher', on: 'Write the launch thread', status: 'working', time: 'at it for 1 hour' },
-    { member: 'executor', on: 'Split the big test file', status: 'waiting to start', time: 'waiting 10 minutes' },
-    { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'waiting 15 minutes' },
+    { member: 'executor', on: 'Split the big test file', status: 'waiting to start', time: 'added 10 minutes ago' },
+    { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'added 15 minutes ago' },
     { member: 'researcher', on: 'Survey ten agent teams about pricing', status: 'stopped', time: 'stopped 30 minutes ago' },
     { member: 'validator', on: 'Check the two reports', status: 'done', time: 'finished 1 hour ago' },
     // nothing in the last day: still on the team, idle, with no work to name
     { member: 'scout', on: '', status: 'idle', time: '' },
   ]);
-  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, waiting 2 hours');
+  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, asked 2 hours ago');
+  // the time words never say waiting a second time after the status
+  for (const r of rows) assert.ok((r.sentence.match(/\bwaiting\b/g) || []).length <= 1, r.sentence);
   // the footer counts only what is really working
   assert.equal(h.d.view().team_working, 2);
   for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
@@ -2486,7 +2517,7 @@ test('job deck: a card that needs you carries its yes in plain words, and a yes 
   const [needs, working] = h.d.jobDeck().cards;
   assert.deepEqual([needs.member, needs.label, working.member, working.label], ['navigator', 'needs you', 'builder', 'working']);
   // the yes card's own two lines, and the key the page sends back with the yes
-  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting on your yes for this.' });
+  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting for your yes.' });
   assert.equal(working.yes, undefined, 'only a card that needs you has a yes');
   // plain words in every cell: the path and the command are gone, the meaning stays
   assert.equal(needs.rows[0].work, 'Fix a file so the run passes');
@@ -2496,7 +2527,8 @@ test('job deck: a card that needs you carries its yes in plain words, and a yes 
   const before = h.d.view().status;
   // a yes names its job and its key, both
   assert.equal((await h.d.answerYes({ key: 'm-ask:0' })).reason, 'gone');
-  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'navigator: got your yes' });
+  // the same shape as a no: told navigator no. it goes on without it.
+  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'told navigator yes.' });
   assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
   assert.equal(h.d.view().status, before);
   // said once: the card stops asking, and the same yes again, or a made-up one, goes nowhere
@@ -2697,7 +2729,9 @@ test('deck: a yes comes first, then a finished job, then the next bet; nothing i
   for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
   const first = h.d.next();
   assert.equal(first.kind, 'yes');
-  assert.deepEqual(first.job, { what: 'post the thread on x now?', why: 'launcher is waiting on your yes for this. 300 more npm installs in the week before nov 1.' });
+  // the same words the team page uses for this status: waiting for your yes
+  assert.match(first.job.why, /^launcher is waiting for your yes\. /);
+  assert.deepEqual(first.job, { what: 'post the thread on x now?', why: 'launcher is waiting for your yes. 300 more npm installs in the week before nov 1.' });
   assert.equal(first.bet, null);
   // the card on screen stays until the owner moves on, even as jobs change
   h.d.pollJobs();
@@ -2753,7 +2787,7 @@ test('yes and send back: a yes answers the right ask through atris decide; a hal
   h.cli.length = 0;
   assert.equal(h.d.next().kind, 'yes');
   const yes = await h.d.answerYes();
-  assert.deepEqual([yes.ok, yes.ack], [true, 'launcher: got your yes']);
+  assert.deepEqual([yes.ok, yes.ack], [true, 'told launcher yes.']);
   assert.deepEqual(h.cli.slice(0, 2), [['decide', '--json'], ['decide', '2', 'yes', '--json']], 'matched by mission and ask, not by place');
   assert.equal(h.d.view().status, 'cleared');
   assert.notEqual(h.d.next().kind, 'done', 'the halted job never shows');
@@ -2877,7 +2911,7 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   const card = h.d.next();
   assert.deepEqual([card.kind, card.job.what], ['yes', 'publish the page and post the recording on x']);
   const yes = await h.d.answerYes();
-  assert.deepEqual([yes.ok, yes.ack], [true, 'builder: got your yes']);
+  assert.deepEqual([yes.ok, yes.ack], [true, 'told builder yes.']);
   const ping = h.cli.find(a => a[1] === 'ping');
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
   assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
@@ -3013,7 +3047,10 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.doesNotMatch(html, /things only you can do|id="sheet"|id="team"/);
   // the idea card's words come from the Mac
   const idea = gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400. more people try it by nov 1.' });
-  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharper idea', null], ['not now', null]]);
+  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharpen it', null], ['not now', null]]);
+  // the worry version of the card names the same tap the same way
+  const worried = gmCard.idea({ id: 'b2', title: 'Write the getting started page', body: 'installs last week were 1,400.', concern: 'one worry: it may not move your number much this week.' });
+  assert.equal(worried.options.find(o => o.action === 'sharper').label, idea.options.find(o => o.action === 'sharper').label);
   // no process text ever reaches the page: no skeptic, no rejects, no word counts, no thinking screen
   assert.doesNotMatch(html, /tokens|second look|words written|turned down|skeptic|sayEvent|progressOf|'thinking'|'failed'/);
   // one script scope: a function declared twice silently replaces the first
@@ -3028,7 +3065,8 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   assert.match(html, /\(SETTLE_MS \* pace\)/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
-  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null \}\)/);
+  // the big orb's tap names the card on screen and carries its own id, kept while it is unanswered
+  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null, send: tap \}\)/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
   // no eyebrow labels and no small lines: the card is the title, then why it matters in the same big body type
@@ -3433,10 +3471,10 @@ const SWAP_CHOICES = {
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
     { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
-    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 finished this week' },
     { more: true, label: 'more models', options: [
       { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
-      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 finished this week' },
       { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: null },
     ] },
   ],
@@ -3570,7 +3608,10 @@ test('card contract: every kind of card is whole: a way forward, options that an
   assert.deepEqual(lock.wire.options.map(o => o.label), ['yes', 'no', 'not now']);
   // the reply that asks its own question shows only its answers, the box, and a way back
   const asks = cards.find(c => c.name === 'reply that asks');
-  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the first question']);
+  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the question']);
+  // on an idea, the same kind of reply goes back to the idea, the card it really returns to
+  const onIdea = gmCard.reply({ id: 'b1~r1', base: gmCard.idea({ id: 'b1', title: 'write the getting started page', body: 'installs last week were 1,400.' }), text: 'which page do you mean, the phone one or the readme?', suggestions: ['the phone one'] });
+  assert.equal(onIdea.options.find(o => o.action === 'back').label, 'back to the idea');
   assert.ok(asks.wire.input);
   assert.equal(asks.wire.title, 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?');
   assert.notEqual(asks.wire.id, cards.find(c => c.name === 'question with something else').wire.id, 'a reply is a new card');
@@ -3659,7 +3700,7 @@ test('card contract: an action names the card on screen and an option on it, or 
   // the page sends no key: the yes is the one the card showed, by its hash, and only it
   const said = await h.d.act({ card_id: first.id, option_id: 'yes', confirm: true, key: 'anything', job: 'else' });
   assert.equal(said.status, 200);
-  assert.equal(said.body.ack, 'the handed-off job: got your yes');
+  assert.equal(said.body.ack, 'told the handed-off job yes.');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   // the old card is gone now: acting on it again does nothing
@@ -3722,6 +3763,37 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
+  // the line is on the team card, so the answer carries no line of its own to show under the orb first
+  assert.equal(done.body.ack, undefined);
+});
+
+test('card contract: every served card speaks lowercase: an idea or job title written with a plain capital starts lowercase, and names stay as written', () => {
+  const idea = gmCard.enforce(gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400.' }));
+  assert.equal(idea.title, 'write the getting started page');
+  const api = gmCard.enforce(gmCard.idea({ id: 'b2', title: 'API docs for the phone page', body: 'installs last week were 1,400.' }));
+  assert.equal(api.title, 'API docs for the phone page');
+  const deck = gmCard.enforce(gmCard.deck({ id: 'deck~1', at: 0, total: 1, columns: ['work', 'member', 'role', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'working', time: 'about 3 hours left', rows: [{ work: 'Write the getting started page', member: 'builder', role: 'writes and tests the code', status: 'working' }] } }));
+  assert.equal(deck.title, 'write the getting started page');
+  assert.equal(deck.table.rows[0][0], 'write the getting started page');
+  const choice = gmCard.enforce(gmCard.choice({ id: 'c1', items: [{ id: 'b1', title: 'Record a demo video', why: 'more people try it.' }] }));
+  assert.equal(choice.options[0].label, 'record a demo video');
+  // a proper name as the first word stays as written: any capital after the first letter, all caps, or a lowercase start
+  const titleOf = t => gmCard.enforce(gmCard.idea({ id: 'b3', title: t, body: 'installs last week were 1,400.' })).title;
+  for (const t of ['OpenAI integration for new users', 'GitHub app for the phone page', 'YouTube demo of the orb', 'iPhone home screen icon', 'McKinsey style one pager', 'API docs for the phone page', 'CRM import for small teams']) assert.equal(titleOf(t), t);
+  assert.equal(titleOf('Email ten recent installers'), 'email ten recent installers');
+  // a name in a choice keeps its capitals too
+  const named = gmCard.enforce(gmCard.choice({ id: 'c2', items: [{ id: 'b1', title: 'GitHub app for the phone page', why: 'more people try it.' }, { id: 'b2', title: 'Write the readme', why: 'more people try it.' }] }));
+  assert.deepEqual(named.options.filter(o => o.style === 'option').map(o => o.label), ['GitHub app for the phone page', 'write the readme']);
+  // member and model names are never changed: in the team table's cells, its buttons, and the cards titled with a name
+  const team = gmCard.enforce(gmCard.team({ id: 'team~1', rows: [{ member: 'Sam', role: 'Owner of the roadmap', ovr: '91', engine: 'Claude Opus 5.5', status: 'working', sentence: 'working: the try page' }] }));
+  assert.deepEqual(team.table.rows[0].slice(0, 4), ['Sam', 'Owner of the roadmap', '91', 'Claude Opus 5.5']);
+  assert.deepEqual(team.options.filter(o => o.cell).map(o => o.label), ['Sam', 'Claude Opus 5.5']);
+  assert.equal(gmCard.enforce(gmCard.member({ id: 'member~1', name: 'Sam', sentence: 'idle.' })).title, 'Sam');
+  const swap = gmCard.enforce(gmCard.swap({ id: 'swap~9', name: 'Sam', choices: { scopes: [], options: [{ engine: 'one', tool: 'Claude Code', model: 'm', label: 'Opus 5.5', current: false, record: null }] } }));
+  assert.deepEqual([swap.title, swap.options[0].label, swap.options[0].detail], ['Sam', 'Opus 5.5', 'Claude Code']);
+  // in the deck only the work cell is the job's words; the member cell is a name
+  const job = gmCard.enforce(gmCard.deck({ id: 'deck~2', at: 0, total: 1, columns: ['work', 'member', 'role', 'status'], card: { job_id: 'm2', mission_id: 'm2', member: 'Sam', label: 'working', time: 'about 3 hours left', rows: [{ work: 'OpenAI integration for new users', member: 'Sam', role: 'Owner of the roadmap', status: 'working' }] } }));
+  assert.deepEqual(job.table.rows[0].slice(0, 2), ['OpenAI integration for new users', 'Sam']);
 });
 
 test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {
@@ -3732,8 +3804,13 @@ test('card contract: a swap list with no picks opens short too, the model in use
   const four = gmCard.swap({ id: 'swap~2', name: 'builder', choices: { scopes: [], options: list.slice(0, 4) } });
   assert.ok(!four.options.some(o => o.label === 'more models'));
   const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
-  assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
+  // the three already shown keep their places, so nothing on the card moves; the rest come in under them
+  assert.deepEqual(all.options.map(o => o.label), ['m-e', 'm-a', 'm-b', 'm-c', 'm-d', 'm-f', 'back to the team']);
+  assert.deepEqual(all.options.slice(0, 3).map(o => o.id), short.options.slice(0, 3).map(o => o.id));
   for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
+  // a model named for its own tool says it once: codex, not codex over codex
+  const own = gmCard.swap({ id: 'swap~3', name: 'builder', choices: { scopes: [], options: [{ engine: 'codex', tool: 'codex', model: '', label: 'codex', current: false, record: null }, { engine: 'codex', tool: 'codex', model: '', label: 'Codex', current: false, record: '1 of 2 finished this week' }, { engine: 'one', tool: 'tool one', model: 'm-a', label: 'm-a', current: false, record: null }] } });
+  assert.deepEqual(own.options.slice(0, 3).map(o => o.detail || null), [null, '1 of 2 finished this week', 'tool one']);
 });
 
 test('card contract: a card\'s options never change under one id: when the job in the deck changes, the card id changes and a yes on the old id approves nothing', async () => {

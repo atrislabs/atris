@@ -45,8 +45,12 @@ const findChrome = () => CHROMES.find(p => p && fs.existsSync(p)) || null;
 
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 3, mobile: true };
 const LAPTOP = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
+// the narrowest phone still in use
+const SMALL_PHONE = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
 const TOKEN = 't'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// a deliberate second tap on a button that asks for one; a quicker one is a fumbled double tap the page ignores
+const SECOND_TAP_MS = 450;
 
 // ---- a desk with the real desk's card rules -------------------------------------------
 
@@ -76,9 +80,9 @@ function cardDesk(first, on, extra = {}) {
         return apply(await on('orb', { body, card: current }));
       }
       if (body.open) return apply(await on(`open:${body.open}`, { body, card: current }));
-      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now');
+      if (!current || !body.card_id || body.card_id !== current.id) return refuse('gone', 'that card changed, so nothing was done. here is the one on screen now.');
       const option = body.option_id ? current.options.find(o => o.id === body.option_id) : null;
-      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card');
+      if (body.option_id && !option) return refuse('bad_option', 'that is not on this card.');
       if (option && option.confirm && body.confirm !== true) return refuse('needs_confirm', option.confirm);
       const action = option ? option.action : current.input && current.input.action;
       const text = body.text || (option && option.binds && option.binds.text) || '';
@@ -146,6 +150,28 @@ async function serve(desk, page = phonePage) {
 // The first chrome in a busy CI shard can take well over 15s to come up cold.
 const CHROME_START_MS = 45000;
 
+// Each chrome runs as its own process group, so quitting kills every process
+// it started; one left over would hold its stderr open and keep the tests
+// from ever ending. A run that is stopped or ends with chromes still up
+// quits them first. live: the quit of each chrome still up.
+const live = new Set();
+const ENDS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+let watching = false;
+function quitAll() { for (const quit of [...live]) quit(); }
+function quitOnSignal(signal) {
+  quitAll();
+  watchForEnd(false);
+  // with no one else listening, the signal ends the run as it would have
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+}
+function watchForEnd(on) {
+  if (on === watching) return;
+  watching = on;
+  if (on) { process.once('exit', quitAll); for (const signal of ENDS) process.once(signal, quitOnSignal); return; }
+  process.removeListener('exit', quitAll);
+  for (const signal of ENDS) process.removeListener(signal, quitOnSignal);
+}
+
 async function launch(chromePath) {
   const profile = makeProfileDir('gm-trace-chrome-');
   const args = headlessArgs(profile, ['--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank']);
@@ -153,8 +179,17 @@ async function launch(chromePath) {
   if (process.platform === 'linux') args.push('--no-sandbox');
   // mac: a fresh profile asks the login keychain for chrome's storage key and pops a dialog; use a throwaway key instead
   if (process.platform === 'darwin') args.push('--use-mock-keychain', '--password-store=basic');
-  const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const quit = () => { try { proc.kill('SIGKILL'); } catch { /* gone */ } removeProfileDir(profile); };
+  const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  const quit = () => {
+    try { process.kill(-proc.pid, 'SIGKILL'); } catch { try { proc.kill('SIGKILL'); } catch { /* gone */ } }
+    proc.stderr.removeAllListeners('data');
+    proc.stderr.destroy();
+    removeProfileDir(profile);
+    live.delete(quit);
+    if (!live.size) watchForEnd(false);
+  };
+  live.add(quit);
+  watchForEnd(true);
   try {
     const port = await new Promise((resolve, reject) => {
       let err = '';
@@ -172,15 +207,20 @@ async function launch(chromePath) {
     await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error('devtools socket failed')); });
     let id = 0;
     const waiting = new Map();
+    // what chrome says on its own (a console line, an error, a log entry): send.on(fn) hears each
+    const heard = new Set();
     ws.onmessage = m => {
       const msg = JSON.parse(m.data);
+      if (msg.method) { for (const fn of heard) fn(msg); return; }
       const w = msg.id && waiting.get(msg.id);
       if (!w) return;
       waiting.delete(msg.id);
       if (msg.error) w.reject(new Error(msg.error.message)); else w.resolve(msg.result);
     };
     const send = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); ws.send(JSON.stringify({ id: n, method, params })); });
-    return { send, close: () => { try { ws.close(); } catch { /* closed */ } quit(); } };
+    send.on = fn => { heard.add(fn); return () => heard.delete(fn); };
+    // pid: the chrome's own process group; stderr: its pipe, let go once it quits
+    return { send, close: () => { try { ws.close(); } catch { /* closed */ } quit(); }, pid: proc.pid, stderr: proc.stderr };
   } catch (err) {
     quit();
     throw err;
@@ -514,7 +554,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     n += 1;
     if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
     if (action === 'member') return { card: memberCard(option.binds.member, n) };
-    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this', confirm: { text } }) };
+    if (action === 'talk') return { card: gmCard.reply({ id: `${card.id}~r${n}`, base: card, text: 'tap again to start builder on this.', confirm: { text } }) };
     if (action === 'back') {
       if (card.kind === 'reply') return { card: memberCard('builder', n) };
       if (card.kind === 'member') return { card: teamCard(TEAM_ROWS, n) };
@@ -544,7 +584,7 @@ async function escapeTrace({ chromePath = findChrome() } = {}) {
     await wait(200);
     await p.type('take the readme first');
     await p.enter();
-    await p.until(titled('tap again to start builder on this'), 'the second tap it asks for');
+    await p.until(titled('tap again to start builder on this.'), 'the second tap it asks for');
     await at('sent to builder');
     for (let i = 1; i <= 4; i++) { await esc(send); await wait(200); await rest().catch(() => {}); await at(`esc ${i}`); }
     return { viewport: `${PHONE.width}x${PHONE.height}`, steps };
@@ -636,7 +676,7 @@ async function talkFailTrace({ chromePath = findChrome() } = {}) {
   const took = [];
   let n = 1;
   const desk = cardDesk(memberCard('builder', 1), async (action, { text }) => {
-    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here' };
+    if (action !== 'talk') return { ok: false, reason: 'bad_option', message: 'that does nothing here.' };
     took.push(text);
     n += 1;
     return { card: memberCard('builder', n, 'builder has it.') };
@@ -694,6 +734,7 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
       try {
         await tapLabel(p, send, label);
         await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === ${JSON.stringify(armed)}; })`, 'the armed tap', 2000);
+        await wait(SECOND_TAP_MS);
         await tapLabel(p, send, armed);
         const end = Date.now() + 3000;
         while (!did.length && Date.now() < end) await wait(16);
@@ -739,6 +780,164 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
   return runs;
 }
 
+// ---- the team opened from the big orb closes back to it ------------------------------------------
+
+// The small orb goes home, the owner opens the team from the footer, then
+// presses Esc. The desk, like the real one, answers back with the card it
+// has. The page lands on the big orb, not that card, and nothing is asked
+// of the desk until the big orb is tapped. From a card, the team still
+// closes back to that card.
+async function teamFromHomeTrace({ chromePath = findChrome() } = {}) {
+  let asked = 0;
+  let n = 1;
+  const desk = cardDesk(CARDS.b1, async (action, { option }) => {
+    n += 1;
+    if (action === 'orb') { asked += 1; return { card: CARDS.b2 }; }
+    if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
+    if (action === 'member') return { card: memberCard(option.binds.member, n) };
+    if (action === 'back') return { card: CARDS.b1 };
+    return { card: CARDS.b1 };
+  });
+  return onPhone(desk, chromePath, async (p, send) => {
+    const place = async () => ({ ...(await p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), kind: document.body.classList.contains('has-card') ? document.getElementById('bet').getAttribute('data-kind') : null, line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()")), asked });
+    const rest = "!document.body.hasAttribute('data-busy')";
+    await p.tap('#lava');
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb', 6000);
+    await wait(500);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team', 8000);
+    const team = await place();
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb again', 6000).catch(() => {});
+    await wait(600);
+    const closed = await place();
+    await p.tap('#orb');
+    await p.until(SETTLED, 'the next card', 8000).catch(() => {});
+    const tapped = await place();
+    // from a card, the team closes back to that card
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team from a card', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') !== 'team'`, 'the card again', 8000).catch(() => {});
+    const fromCard = await place();
+    // from the big orb again: the team, a member's talk card, back through the footer, then Esc
+    await p.tap('#lava');
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb, once more', 6000);
+    await wait(500);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team, once more', 8000);
+    await p.tap('#bet tbody td.member button');
+    await p.until(titled('builder'), 'the talk card', 8000);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team through the footer', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb after the talk card', 6000).catch(() => {});
+    await wait(600);
+    const viaTalk = await place();
+    return { team, closed, tapped, fromCard, viaTalk };
+  });
+}
+
+// ---- the team closed over the calm line goes back into the calm line ----------------------------
+
+// While an idea is being written, the owner opens the team and closes it.
+// The desk answers back with the calm line, and the page goes into it the
+// way the orb does: the sphere's dots, the box open for a note. A note sent
+// there folds in and its box clears, and the idea, once ready, grows out
+// of the dots on its own.
+async function teamOverWaitTrace({ chromePath = findChrome(), reduced = false } = {}) {
+  let notes = [];
+  let ready = false;
+  let n = 1;
+  const calm = () => gmCard.wait({ id: 'wait:9', thread: notes.length ? [...notes.map(text => ({ who: 'owner', text })), { who: 'orb', text: FOLDED }] : [] });
+  const desk = cardDesk(calm(), async (action, { card, text }) => {
+    n += 1;
+    if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
+    if (action === 'back') return { card: calm() };
+    if (action === 'say' && card.kind === 'wait') { notes = [...notes, text]; return { card: calm(), ack: FOLDED }; }
+    if (action === 'orb') return { card: ready ? CARDS.b1 : calm() };
+    return { card };
+  }, { queue: () => (ready ? 1 : 0) });
+  return onPhone(desk, chromePath, async (p, send) => {
+    const rest = "!document.body.hasAttribute('data-busy')";
+    await p.until(`${rest} && document.body.classList.contains('waiting')`, 'the calm line', 8000);
+    await wait(300);
+    const state = () => p.run("(function () { var i = document.querySelector('#bet .sayline .field input'); return { kind: document.getElementById('bet').getAttribute('data-kind'), waiting: document.body.classList.contains('waiting'), sphere: getComputedStyle(document.querySelector('.stage')).display !== 'none', box_open: Boolean(i), words: i ? i.value : null, notes: Array.prototype.map.call(document.querySelectorAll('#bet .waitnotes .turn'), function (t) { return t.textContent; }) }; })()");
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team over the calm line', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && document.getElementById('bet').getAttribute('data-kind') === 'wait'`, 'the calm line again', 8000).catch(() => {});
+    await wait(500);
+    const back = await state();
+    await p.tap('#bet .sayline .field input');
+    await wait(150);
+    await p.type('make it about schools');
+    await p.enter();
+    await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet .waitnotes .turn'), function (t) { return t.textContent === ${JSON.stringify(FOLDED)}; })`, 'the note folded in', 6000).catch(() => {});
+    await wait(400);
+    const noted = await state();
+    ready = true;
+    await p.until(titled(CARDS.b1.title), 'the idea out of the dots', 10000).catch(() => {});
+    const landed = await look(p);
+    return { reduced, back, noted, landed };
+  }, PHONE, { firstCard: false, reduced });
+}
+
+// ---- a swap whose answer was lost ----------------------------------------------------------------
+
+// The owner swaps builder's model; the desk makes the swap, but the answer
+// never reaches the phone, so the swap card stays with a line why. The
+// owner taps a model again: the desk refuses it (that card is gone) and
+// sends the team it has now, and the page draws that team at once, with
+// one line why, instead of the old swap card.
+async function swapLostTrace({ chromePath = findChrome() } = {}) {
+  const posts = [];
+  let n = 1;
+  let lose = true;
+  const swapCard = () => gmCard.swap({ id: `swap~${n}`, name: 'builder', choices: SWAP, scope: 'member', all: true });
+  const desk = cardDesk(CARDS.b1, async (action, { card, option }) => {
+    n += 1;
+    if (action === 'open:team') return { card: teamCard(TABLE_ROWS, n) };
+    if (action === 'swap') return { card: swapCard() };
+    if (action === 'swap_to') {
+      desk.current = teamCard(TABLE_ROWS, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`);
+      if (lose) { lose = false; throw new Error('the answer was lost'); }
+      return { card: desk.current };
+    }
+    if (action === 'back') return { card: card.kind === 'swap' ? teamCard(TABLE_ROWS, n) : CARDS.b1 };
+    return { card };
+  });
+  const act = desk.act;
+  desk.act = (body) => { if (body.option_id) posts.push({ card: body.card_id, option: body.option_id }); return act(body); };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const model = label => `Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (b) { var t = b.querySelector('.t'); return t && t.textContent === ${JSON.stringify(label)}; })`;
+    const tapModel = async (label) => {
+      const id = await p.run(`(function () { var b = ${model(label)}; b.scrollIntoView({ block: 'center' }); return b.getAttribute('data-option'); })()`);
+      await p.tap(`#bet [data-option="${id}"]`);
+    };
+    await p.tap('#working');
+    await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team', 8000);
+    const cell = '#bet tbody tr:nth-child(2) td.engine button';
+    await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+    await wait(60);
+    await p.tap(cell);
+    await p.until(`${titled('builder')} && document.getElementById('bet').getAttribute('data-kind') === 'swap'`, 'the swap card', 8000);
+    await tapModel('m-two');
+    await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the lost answer', 8000);
+    const lost = await look(p);
+    const tappedAt = Date.now();
+    await tapModel('atris fast');
+    // well inside the page's own look every 5 seconds, so only the refusal's card can bring the team
+    await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the team the desk has', 3000).catch(() => {});
+    const after = { ...(await look(p)), ms: Date.now() - tappedAt };
+    return { lost, after, posts };
+  });
+}
+
 // ---- a start that did not get going comes back to do it --------------------------------------
 
 // The owner asks what an idea means, then taps do it twice. The first start
@@ -761,7 +960,7 @@ async function startFailTrace({ chromePath = findChrome() } = {}) {
     await p.until(titled(REPLY), 'the reply', 8000);
     await wait(150);
     await tapLabel(p, send, 'do it');
-    await wait(100);
+    await wait(SECOND_TAP_MS);
     await tapLabel(p, send, 'tap again to start');
     await p.until(`${titled(REPLY)} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back with why', 8000);
     const failed = await look(p);
@@ -769,7 +968,7 @@ async function startFailTrace({ chromePath = findChrome() } = {}) {
     let under = null;
     try {
       await tapLabel(p, send, 'do it');
-      await wait(100);
+      await wait(SECOND_TAP_MS);
       await tapLabel(p, send, 'tap again to start');
       // who has it shows under the sphere before the next card
       await p.until("document.getElementById('line').textContent === 'builder has it and is starting now.'", 'who has it', 4000);
@@ -818,7 +1017,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
 
 // a real-sized team: long roles and statuses, a rookie, and no rating or model
 const TABLE_ROWS = [
-  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours' },
+  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, asked 2 hours ago' },
   { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left' },
   { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'stopped', sentence: 'stopped: split the big test file so each part runs alone, stopped 30 minutes ago' },
   { member: 'linguist', role: 'linguist, operator language and understanding', ovr: '··', engine: '··', status: 'idle', sentence: 'idle: no work in the last day' },
@@ -841,7 +1040,9 @@ const TABLE_LOOK = `(function () {
   var grid = box.querySelector('.grid');
   var table = box.querySelector('table');
   if (!grid || !table) return null;
-  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
+  // each column by its key (the class on its header), and the words the owner reads over it
+  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.className; });
+  var words = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
   var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
   var spills = [], lines = { inner_right: 0, missing_right: 0, inner_bottom: 0, missing_bottom: 0 }, oneLine = [], moving = [];
   var widths = {};
@@ -863,13 +1064,52 @@ const TABLE_LOOK = `(function () {
   });
   var g = grid.getBoundingClientRect();
   var before = table.querySelector('tbody td.member').getBoundingClientRect().left;
+  var headBefore = table.querySelector('thead th').getBoundingClientRect().left;
+  // the right edge's fade: at rest, then scrolled all the way, then back
+  var faded = function () { return grid.classList.contains('more-right') && getComputedStyle(grid).maskImage !== 'none'; };
+  var fade = { at_rest: faded() };
+  grid.scrollLeft = grid.scrollWidth;
+  grid.dispatchEvent(new Event('scroll'));
+  fade.at_end = faded();
+  grid.scrollLeft = 0;
+  grid.dispatchEvent(new Event('scroll'));
+  fade.back = faded();
   grid.scrollLeft = 200;
   var scrolled = grid.scrollLeft;
   var after = table.querySelector('tbody td.member').getBoundingClientRect().left;
+  var headAfter = table.querySelector('thead th').getBoundingClientRect().left;
   grid.scrollLeft = 0;
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
+  // each name as it shows, line by line, to see where a long one breaks
+  var nameLines = {};
+  Array.prototype.forEach.call(table.querySelectorAll('tbody td.member button'), function (b) {
+    var t = b.firstChild, lines = [], top = null;
+    if (!t || t.nodeType !== 3) return;
+    for (var i = 0; i < t.length; i++) {
+      var cr = document.createRange(); cr.setStart(t, i); cr.setEnd(t, i + 1);
+      var y = Math.round(cr.getBoundingClientRect().top);
+      if (y !== top) { lines.push(''); top = y; }
+      lines[lines.length - 1] += t.data[i];
+    }
+    nameLines[b.textContent] = lines;
+  });
+  // the ovr header's words against the ratings under it: how far apart their right edges sit
+  var textRight = function (n) { var r = document.createRange(); r.selectNodeContents(n); var b = r.getBoundingClientRect(); return b.right; };
+  var ovrHead = table.querySelector('thead th.ovr');
+  var ovrOff = ovrHead ? Math.max.apply(null, Array.prototype.map.call(table.querySelectorAll('tbody td.ovr'), function (td) { return Math.round(Math.abs(textRight(td) - textRight(ovrHead)) * 10) / 10; })) : null;
+  // each model brought into view the way focus or a scroll does: is its middle on screen, or under the held names?
+  var covered = [];
+  Array.prototype.forEach.call(table.querySelectorAll('tbody td.engine button'), function (b) {
+    b.scrollIntoView({ block: 'nearest', inline: 'center' });
+    var br = b.getBoundingClientRect();
+    var hit = document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2);
+    if (hit !== b && !b.contains(hit)) covered.push(b.closest('tr').querySelector('td.member').textContent);
+  });
+  grid.scrollLeft = 0;
+  window.scrollTo(0, 0);
   return {
     heads: heads,
+    head_words: words,
     rows: rows.length,
     spills: spills,
     lines: lines,
@@ -881,11 +1121,23 @@ const TABLE_LOOK = `(function () {
     scrolls_sideways: grid.scrollWidth > grid.clientWidth + 1,
     scrolled_by: Math.round(scrolled),
     name_column_moved_px: Math.round(Math.abs(after - before)),
+    name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
+    models_under_names: covered,
+    ovr_head_off_px: ovrOff,
+    name_lines: nameLines,
+    fade: fade,
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),
     statuses: Array.prototype.map.call(table.querySelectorAll('tbody td.status'), function (n) { return n.textContent; }),
   };
 })()`;
+
+// the footer links the owner can see and tap
+const FOOTER = "Array.prototype.filter.call(document.querySelectorAll('#foot button'), function (b) { return b.offsetParent && b.getBoundingClientRect().width > 0; }).map(function (b) { return b.textContent; })";
+
+// how the last move went, from the page's own marks: its steps with the
+// length each is set to take ("hold 150, turn 420") and the clock from the tap
+const MOVED = "({ plan: document.body.getAttribute('data-reveal-plan'), ms: Number(document.body.getAttribute('data-reveal-ms')) })";
 
 // Opens the team card at one viewport, reads TABLE_LOOK, then taps a
 // member's role cell (the part of a row that is always on screen), reads
@@ -900,11 +1152,12 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     return { card };
   });
   return onPhone(desk, chromePath, async (p, send) => {
-    const where = () => p.run("({ kind: document.getElementById('bet').getAttribute('data-kind'), title: document.querySelector('#bet h1').textContent, table: Boolean(document.querySelector('#bet table')) })");
+    const where = () => p.run(`({ kind: document.getElementById('bet').getAttribute('data-kind'), title: document.querySelector('#bet h1').textContent, table: Boolean(document.querySelector('#bet table')), moved: ${MOVED} })`);
     await p.tap('#working');
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team card', 8000);
     await wait(100);
     const tableLook = await p.run(TABLE_LOOK);
+    const footer = await p.run(FOOTER);
     const cells = await p.run(TABLE_CELLS);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
@@ -917,10 +1170,17 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await esc(send);
     await p.until(titled('the team'), 'the team again', 8000);
     const back = await where();
+    // the footer's team link from a talk card: the same place as its way back
+    await p.tap('#bet tbody tr:nth-child(2) td.role');
+    await p.until(titled('builder'), 'the talk card again', 8000);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team from the footer', 8000);
+    const footerTeam = await where();
     await esc(send);
     await p.until(titled(CARDS.b1.title), 'the first card again', 8000);
     const closed = await where();
-    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed };
+    const footerAfter = await p.run(FOOTER);
+    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed, footerTeam, footer: { team: footer, card: footerAfter } };
   }, viewport);
 }
 
@@ -934,11 +1194,11 @@ const SWAP = {
   scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
   options: [
     { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
-    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 finished this week' },
     { more: true, label: 'more models', options: [
       { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
-      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
-      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: '2 of 2 landed' },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 finished this week' },
+      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: '2 of 2 finished this week' },
     ] },
   ],
 };
@@ -962,7 +1222,8 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
       swaps.push({ member: 'builder', ...option.binds });
       rows.find(r => r.member === 'builder').engine = `${option.binds.engine} ${option.binds.model}`;
       n += 1;
-      return { card: teamCard(rows, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`), ack: 'swapped.' };
+      // as the desk does: the team comes back with the line on it, and no line of its own under the orb
+      return { card: teamCard(rows, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`) };
     }
     if (action === 'back') { n += 1; return { card: card.kind === 'swap' ? teamCard(rows, n) : CARDS.b1 }; }
     return { card };
@@ -977,10 +1238,20 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await p.tap(cell);
     await p.until(`${titled('builder')} && document.getElementById('bet').getAttribute('data-kind') === 'swap'`, 'the swap card', 8000);
     const short = await look(p);
+    const opened = await p.run(MOVED);
+    // where each model sits on the page, by its option id
+    const MODELS_AT = "(function () { var out = {}; Array.prototype.forEach.call(document.querySelectorAll('#bet button.choice'), function (b) { var r = b.getBoundingClientRect(); out[b.getAttribute('data-option')] = { x: Math.round(r.left), y: Math.round((r.top + window.scrollY) * 10) / 10 }; }); return out; })()";
+    const shortAt = await p.run(MODELS_AT);
+    // how each "who it is for" choice reads: its color and its underline's color
+    const SCOPES = "(function () { var out = {}; ['scope:member', 'scope:job'].forEach(function (id) { var b = document.querySelector('#bet [data-option=\"' + id + '\"]'); if (!b) return; var cs = getComputedStyle(b); out[id] = { chosen: b.classList.contains('chosen'), color: cs.color, line: cs.textDecorationColor }; }); return out; })()";
+    const scopesShort = await p.run(SCOPES);
     const id = short.card;
     await tapLabel(p, send, 'more models');
     await p.until(`${SETTLED} && Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent.indexOf('m-two') === 0; })`, 'the full list', 8000);
     const full = await look(p);
+    const fullAt = await p.run(MODELS_AT);
+    // how far each model already shown moved when the full list came in
+    const kept_moved_px = Math.max(0, ...Object.keys(shortAt).map(k => (fullAt[k] ? Math.max(Math.abs(fullAt[k].x - shortAt[k].x), Math.abs(fullAt[k].y - shortAt[k].y)) : Infinity)));
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
@@ -989,23 +1260,31 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
     await tapLabel(p, send, 'everyone doing builder\'s kind of work');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet [data-option="scope:job"].chosen'))`, 'who the swap is for', 8000);
     const scoped = await look(p);
+    const scopesScoped = await p.run(SCOPES);
     await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); b.scrollIntoView({ block: 'center' }); })()");
     const two = await p.run("(function () { var b = Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (n) { var t = n.querySelector('.t'); return t && t.textContent === 'm-two'; }); return b.getAttribute('data-option'); })()");
     await p.tap(`#bet [data-option="${two}"]`);
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .mission'))`, 'the team after the swap', 8000);
     const after = await look(p);
+    const swapped = await p.run(MOVED);
+    if (shots) {
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(shots, `swap-after-${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    // where the line about the swap sits: under the title, above the table, on screen
+    const news = await p.run("(function () { var n = document.querySelector('#bet .mission'), h = document.querySelector('#bet h1'), g = document.querySelector('#bet .grid'); var r = n.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), under_title: r.top >= h.getBoundingClientRect().bottom, above_table: r.bottom <= g.getBoundingClientRect().top, screen: window.innerHeight }; })()");
     const engine = await p.run("document.querySelector('#bet tbody tr:nth-child(2) td.engine').textContent");
-    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps };
+    return { viewport: `${viewport.width}x${viewport.height}`, short, id, full, scoped, after, engine, swaps, opened, swapped, news, kept_moved_px, scopes: { short: scopesShort, scoped: scopesScoped } };
   }, viewport);
 }
 
 // ---- the job deck -------------------------------------------------------------------------------
 
 // the deck card is about the job: the rating and the model live on the team table
-const DECK_COLUMNS = ['done', 'work', 'member', 'role', 'status'];
+const DECK_COLUMNS = ['work', 'member', 'role', 'status'];
 const DECK_JOBS = [
-  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
-  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'waiting 20 minutes', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
+  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'asked 2 hours ago', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting for your yes.' } },
+  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'asked 20 minutes ago', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting for your yes.' } },
   { job_id: 'm-b2', mission_id: 'm-b2', member: 'builder', label: 'working', time: 'about 4 hours left', rows: [{ done: 'not yet', work: 'split the big test file', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working' }] },
 ];
 
@@ -1029,7 +1308,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
   const desk = cardDesk(CARDS.b1, async (action, { option }) => {
     if (action === 'open:deck') { at = 0; return { card: deckCard() }; }
     if (action === 'flip') { at = (at + option.binds.step + DECK_JOBS.length) % DECK_JOBS.length; return { card: deckCard() }; }
-    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `${DECK_JOBS[at].member}: got your yes`; return { card: deckCard() }; }
+    if (action === 'yes') { yesSent.push(option.binds); said[DECK_JOBS[at].job_id] = `told ${DECK_JOBS[at].member} yes.`; return { card: deckCard() }; }
     if (action === 'back') { n += 1; return { card: teamCard(TABLE_ROWS, n) }; }
     if (action === 'talk') return { card: deckCard() };
     return { card: deckCard() };
@@ -1051,6 +1330,9 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') === 'deck'`, 'the deck', 8000);
     const first = await look(p);
     const firstAt = await spot();
+    const footer = await p.run(FOOTER);
+    // the job's row in its box: does the box scroll sideways, and is every value inside it
+    const row = await p.run("(function () { var g = document.querySelector('#bet .grid'); if (!g) return null; var gr = g.getBoundingClientRect(); return { scrolls_sideways: g.scrollWidth > g.clientWidth + 1, cells: Array.prototype.map.call(g.querySelectorAll('tbody td'), function (td) { var r = td.getBoundingClientRect(); return { col: td.getAttribute('data-col'), text: td.textContent, inside: r.left >= gr.left - 1 && r.right <= gr.right + 1, spills: td.scrollWidth > td.clientWidth + 1, color: getComputedStyle(td).color }; }) }; })()");
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png' });
@@ -1066,11 +1348,15 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await settle();
     const freshA = await look(p);
     const counts = [];
+    // where previous and next sit on the page on every card, so a thumb on next never chases it
+    const pagerAt = () => p.run("(function () { return ['prev', 'next'].map(function (id) { var n = document.querySelector('#bet [data-option=\"' + id + '\"]'); if (!n) return null; var r = n.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round((r.top + window.scrollY) * 10) / 10 }; }); })()");
+    const pager = [await pagerAt()];
     let moved = 0;
     for (const k of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
       await press(k);
       await settle();
       counts.push(await count());
+      pager.push(await pagerAt());
       const s = await spot();
       moved = Math.max(moved, Math.abs(s.x - firstAt.x), Math.abs(s.y - firstAt.y));
     }
@@ -1094,8 +1380,9 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await esc(send);
     await wait(150);
     // back to the first card, then its yes: armed, then sent with what the card binds
-    while ((await count()) !== '1 of 3') { await press('ArrowLeft'); await settle(); }
+    while ((await count()) !== 'job 1 of 3') { await press('ArrowLeft'); await settle(); }
     await tapLabel(p, send, 'yes');
+    await wait(SECOND_TAP_MS);
     await tapLabel(p, send, 'tap again to say yes');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .mission'))`, 'the line after the yes', 8000);
     const yesLine = await p.run("document.querySelector('#bet .mission').textContent");
@@ -1109,6 +1396,9 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       fresh_b: freshB.buttons,
       fresh_a: freshA.buttons,
       counts,
+      pager,
+      row,
+      footer,
       moved_px: Math.round(moved * 10) / 10,
       ghost_seen: await p.run('window.__ghost'),
       swiped,
@@ -1182,7 +1472,7 @@ async function walkTrace({ chromePath = findChrome(), cards } = {}) {
       if (o) {
         await p.run(`document.querySelector('#bet [data-option="${o.id}"]').scrollIntoView({ block: 'center' })`);
         await p.tap(`#bet [data-option="${o.id}"]`);
-        if (o.confirm) { await wait(100); await p.tap(`#bet [data-option="${o.id}"]`); }
+        if (o.confirm) { await wait(SECOND_TAP_MS); await p.tap(`#bet [data-option="${o.id}"]`); }
         if (o.type) { await wait(200); await p.type('a few words'); await p.enter(); }
       } else {
         // the calm line's box is open already; any other box opens on a tap
@@ -1499,7 +1789,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

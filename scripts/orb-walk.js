@@ -84,6 +84,15 @@ function cardWords(card) {
 
 const check = (name, ok, why = '') => ({ name, ok: Boolean(ok), why: ok ? '' : why });
 
+// What the page put in the console during a stage (lines from
+// scripts/gm-phone-health.js consoleLine): any error, warning, or uncaught
+// error fails it. A 409 from /act is the Mac refusing a stale tap on
+// purpose, which the page shows as a line on the card, so it is not one.
+function consoleCheck(lines) {
+  const own = (lines || []).filter(l => !(l.kind === 'error' && /status of 409/.test(l.text) && /\/act$/.test(l.url || '')));
+  return check('nothing in the console', own.length === 0, own.slice(0, 2).map(l => `${l.kind}: ${String(l.text).slice(0, 120)}`).join('; '));
+}
+
 // What a tap on this option or a send in this box would post names the card.
 function namesCard(post, id) {
   if (!post || !post.body) return false;
@@ -299,8 +308,8 @@ function legacyAdapter(http) {
       ...base, title: b.title, body,
       options: [
         opt('do', 'do it', { path: '/bet/do', body: { confirm: true } }, async () => { await post('/bet/do', { confirm: true }); return think(false); }, { confirm: true }),
-        opt('sharper', 'sharper idea', { path: '/bet/think', body: { sharper: true } }, () => think(true)),
-        opt('skip', 'not now', { path: '/bet/skip', body: {} }, async () => { await post('/bet/skip', {}); main = null; homeLine = 'not now. tap when you want another'; return current(); }),
+        opt('sharper', 'sharpen it', { path: '/bet/think', body: { sharper: true } }, () => think(true)),
+        opt('skip', 'not now', { path: '/bet/skip', body: {} }, async () => { await post('/bet/skip', {}); main = null; homeLine = 'tap when you want another idea'; return current(); }),
       ],
       input: sayBox(s),
     };
@@ -371,7 +380,7 @@ function legacyAdapter(http) {
           }, { cell: { row: i, column: 'engine' }, action: 'swap' }));
         }
       });
-      if (rows.some(r => ['waiting for your yes', 'working', 'waiting to start'].includes(r.status))) options.push(nav('deck', 'the jobs, one at a time', () => openDeck()));
+      if (rows.some(r => ['waiting for your yes', 'working', 'waiting to start'].includes(r.status))) options.push(nav('deck', 'go through the jobs', () => openDeck()));
       options.push(nav('close', 'close', async () => { layer = null; return current(); }, { back: true }));
       return { id: null, kind: 'team', layer: 'team', title: 'the team', body: rows.length ? null : 'nobody is on the team yet.', line: layer.note, options, input: null, table: rows.length ? { columns: TEAM_COLUMNS, rows: rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]) } : null, thread: [] };
     }
@@ -409,7 +418,7 @@ function legacyAdapter(http) {
     options.push(...parts.options);
     const flip = step => async () => { layer.at = (layer.at + step + n) % n; return current(); };
     if (n > 1) options.push(nav('prev', 'previous', flip(-1)));
-    options.push(nav('team', 'the whole team', () => openTeam(), { back: true }));
+    options.push(nav('team', 'back to the team', () => openTeam(), { back: true }));
     if (n > 1) options.push(nav('next', 'next', flip(1)));
     return {
       id: null, kind: 'deck', layer: 'deck',
@@ -439,7 +448,7 @@ function legacyAdapter(http) {
       if (r.status !== 200) throw new Error(`the page found no orb desk (${r.status})`);
       main = isCard(r.json) ? r.json : null;
       if (main) remember(main);
-      if (r.json.status === 'skipped') homeLine = 'not now. tap when you want another';
+      if (r.json.status === 'skipped') homeLine = 'tap when you want another idea';
       return current();
     },
     orb: () => { layer = null; return think(false); },
@@ -781,7 +790,7 @@ async function walkHttp(a, world) {
   await stage('tap an option, then the next card', async (st) => {
     const before = a.current();
     if (world.scoreboardOn) world.scoreboardOn();
-    const o = findOption(before, /^sharper idea$/i) || (before.options || []).find(x => !x.disabled && !x.confirm && !x.typed && !x.nav);
+    const o = findOption(before, /^sharpen it$/i) || (before.options || []).find(x => !x.disabled && !x.confirm && !x.typed && !x.nav);
     if (!o && live && !isIdea(before)) return skip(st, 'no idea came in time to tap');
     if (!o) throw new Error('this card has no option to tap');
     st.did = `tapped "${o.label}"`;
@@ -858,7 +867,7 @@ async function walkHttp(a, world) {
 
   await a.close();
   await stage('the job deck', async (st) => {
-    st.did = 'opened the jobs, one at a time';
+    st.did = 'tapped "go through the jobs"';
     st.card = await a.openDeck();
     if (st.card.layer !== 'deck' && live) return skip(st, 'no job is running in this copy');
     st.extra.push(check('one job on screen', st.card.layer === 'deck', 'the deck did not open'));
@@ -980,6 +989,9 @@ async function walkBrowser(url, { chromePath, launch }) {
   const stages = [];
   const chrome = await launch(chromePath);
   const { send } = chrome;
+  // every console line chrome reports, so each stage can fail on its own
+  const said = [];
+  if (send.on) { const { consoleLine } = require('./gm-phone-health'); send.on((m) => { const line = consoleLine(m); if (line) said.push(line); }); }
   const run = async (expr) => {
     const out = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
     if (out.exceptionDetails) throw new Error(`the page threw: ${out.exceptionDetails.exception ? out.exceptionDetails.exception.description : out.exceptionDetails.text}`);
@@ -1016,12 +1028,14 @@ async function walkBrowser(url, { chromePath, launch }) {
   async function stage(name, fn, ask = ['next', 'plain']) {
     const st = { name, card: null, extra: [], ask, did: null, skipped: false };
     let mark = 0;
+    const heardAt = said.length;
     try {
       mark = (await run('window.__walk.posts.length')) || 0;
       await fn(st);
     } catch (err) {
       st.extra.push(check('the step worked', false, String((err && err.message) || err)));
     }
+    if (send.on) st.extra.push(consoleCheck(said.slice(heardAt)));
     try {
       const posts = (await postsSince(mark)).filter(p => !p.home);
       const unnamed = posts.filter(p => !(p.body && p.onCard && (p.body.card_id === p.onCard || p.body.card === p.onCard)));
@@ -1056,6 +1070,7 @@ async function walkBrowser(url, { chromePath, launch }) {
   try {
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
     await send('Page.enable');
+    if (send.on) { await send('Runtime.enable'); await send('Log.enable'); }
     await send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER });
     await send('Page.navigate', { url });
     await until("document.readyState === 'complete'", 'the page', 10000);
@@ -1110,7 +1125,7 @@ async function walkBrowser(url, { chromePath, launch }) {
     await stage('Esc on the job deck', async (st) => {
       await toCard();
       await openTeam();
-      await click(byText('#bet', '/^the jobs, one at a time$/i'), 'the jobs, one at a time');
+      await click(byText('#bet', '/^go through the jobs$/i'), 'go through the jobs');
       await until(kindIs(['deck']), 'the job deck', 6000);
       st.card = snapCard(await snap());
       st.did = 'opened the job deck, pressed Esc';
@@ -1407,6 +1422,7 @@ async function main(argv = [], { env = process.env, stdout = process.stdout, std
 }
 
 module.exports = {
+  consoleCheck,
   CONTRACT,
   QUESTIONS,
   cardChecks,

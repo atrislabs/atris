@@ -489,10 +489,12 @@ test('over http: a choice card picks through /act with the same checks', async (
     await new Promise(r => setTimeout(r, 30));
     const c = (await post({ orb: true })).json.card;
     assert.equal(c.kind, 'choice');
-    assert.deepEqual(c.options.map(o => o.label), titles);
+    // the owner reads every idea lowercase, like the cards around it
+    const shown = titles.map(x => x[0].toLowerCase() + x.slice(1));
+    assert.deepEqual(c.options.map(o => o.label), shown);
     assert.equal((await post({ card_id: c.id, option_id: c.options[0].id }, { token: 'nope' })).status, 403);
     const picked = await post({ card_id: c.id, option_id: c.options[0].id });
-    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', titles[0]]);
+    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', shown[0]]);
     assert.equal((await post({ card_id: c.id, option_id: c.options[1].id })).status, 409, 'the choice is gone once one is picked');
   } finally {
     await h.close();
@@ -511,7 +513,9 @@ test('page: one renderer: draw(card) is the only place a card is drawn, and ever
   // a draw starts from nothing, so nothing from the card before survives it
   assert.match(script, /function draw\(card\) \{\n\s+var b = box\(\);\n\s+b\.textContent = '';/);
   // the buttons come only from the card's options and its box
-  assert.match(script, /var rest = card\.options\.filter\(function \(o\) \{ return !o\.cell; \}\);\n\s+var quiet = function \(o\) \{ return !o\.style \|\| o\.style === 'quiet'; \};/);
+  assert.match(script, /var rest = card\.options\.filter\(function \(o\) \{ return !o\.cell && flips\.indexOf\(o\) < 0; \}\);\n\s+var quiet = function \(o\) \{ return !o\.style \|\| o\.style === 'quiet'; \};/);
+  // a deck card's previous and next are the card's own options too, drawn at the top beside its place
+  assert.match(script, /var flips = card\.count \? card\.options\.filter\(function \(o\) \{ return o\.action === 'flip' && !o\.cell; \}\) : \[\];/);
   assert.match(script, /if \(card\.input\) b\.appendChild\(inputLine\(card\.input\)\);/);
   // an idea in a choice: a big title and one plain line of why
   assert.match(script, /btn\.appendChild\(el\('span', 't', o\.label\)\);\n\s+if \(o\.detail\) btn\.appendChild\(el\('span', 'w', o\.detail\)\);/);
@@ -537,13 +541,20 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   assert.match(script, /\} else td\.textContent = cell;/);
   // an option with a cell is drawn in that cell; a tap anywhere on its row is the row's first option
   assert.match(script, /var o = mine\.filter\(function \(x\) \{ return x\.cell\.column === col; \}\)\[0\];/);
-  assert.match(script, /tr\.addEventListener\('click', function \(\) \{ var first = tr\.querySelector\('button'\); if \(first\) first\.click\(\); \}\);/);
+  // a tap on a row opens the button in the cell tapped, else the row's first, and never ends a text selection
+  assert.match(script, /tr\.addEventListener\('click', function \(e\) \{ rowTap\(tr, e\); \}\);/);
+  assert.match(script, /var b = \(cell && cell\.querySelector\('button'\)\) \|\| tr\.querySelector\('button'\);/);
   // the team card itself: five columns, a member button and an engine button per row
   // (a person has no engine to swap), and a way back
   const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }, { member: 'sam', role: 'owner', ovr: '..', engine: 'person', status: 'idle', sentence: 'idle' }] });
   assert.deepEqual(team.table.columns, ['member', 'role', 'ovr', 'engine', 'status']);
   assert.deepEqual(team.options.map(o => [o.id, o.cell ? o.cell.column : null]), [['talk:builder', 'member'], ['swap:builder', 'engine'], ['talk:sam', 'member'], ['back', null]]);
   assert.deepEqual(gmCard.cardProblems(team), []);
+  // the hint names the two things to tap in plain words
+  assert.equal(team.body, 'tap a name to talk to them, or their engine to change it.');
+  // with jobs running, the way into the job deck says what it does
+  const busy = gmCard.team({ id: 'team~2', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }], deck: true });
+  assert.equal(busy.options.find(o => o.action === 'deck').label, 'go through the jobs');
 });
 
 test('page: the team table is divided, keeps its columns apart at phone width, and scrolls sideways instead of squashing', () => {
@@ -632,10 +643,16 @@ test('over http: the job deck is a card through the same token check, one card p
     const deck = (await post({ open: 'deck' })).json.card;
     assert.equal(deck.kind, 'deck');
     // the deck card is about the job; the rating and the model live on the team table
-    assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
+    // and no done column: every job in the deck is open, so it would say "not yet" on every card
+    assert.deepEqual(deck.table.columns, ['work', 'member', 'role', 'status']);
+    // its status goes with it, so the page colors the cell the way the team page does
+    assert.deepEqual(deck.table.status, ['working']);
     const row = deck.table.rows[0];
-    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['1 of 1', 'working', 'builder', 'working']);
-    assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
+    assert.deepEqual([deck.count, deck.label, row[1], row[3]], ['job 1 of 1', 'working', 'builder', 'working']);
+    assert.ok(!row.includes('not yet'), row.join(' | '));
+    assert.equal(deck.body, 'builder is working on it. nothing needs you here.');
+    // the time is said once, on its own line under the table
+    assert.ok(deck.time && !deck.body.includes(deck.time), `${deck.body} | ${deck.time}`);
     assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
     const odd = await post({ card_id: deck.id, option_id: 'yes', confirm: true });
@@ -757,7 +774,7 @@ test('page: a yes card is drawn from its options: yes takes a second tap, no and
   assert.match(script, /armed = true; btn\.textContent = o\.confirm; btn\.classList\.add\('armed'\);/);
   assert.match(script, /send\(btn, \{ option_id: o\.id, confirm: true \}, o\);/);
   // the yes card's options come from the Mac: yes is the pill, no and not now quiet links on one line
-  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting on your yes for this.', request: { job: 'm1', key: 'm1:0', hash: null } });
+  const y = gmCard.yes({ id: 'yes:m1:0', title: 'ok to publish the page?', body: 'builder is waiting for your yes.', request: { job: 'm1', key: 'm1:0', hash: null } });
   assert.deepEqual(y.options.map(o => [o.label, o.style]), [['yes', 'primary'], ['no', 'quiet'], ['not now', 'quiet']]);
   assert.equal(y.options[0].confirm, 'tap again to say yes');
   // quiet options next to each other share one line, and a group of them is headed by its words
@@ -783,10 +800,12 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   // a flip turns the card in place; it is the same deck moving, not an answer
   assert.match(script, /var IN_PLACE = \['flip', 'more', 'scope'\];/);
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
-  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 5 minutes', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
-  assert.deepEqual([d.count, d.label], ['1 of 2', 'needs you']);
-  assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'the whole team', 'next']);
-  assert.deepEqual(d.options[0].binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
+  const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'asked 5 minutes ago', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting for your yes.' } } });
+  assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
+  assert.deepEqual(d.options.map(o => o.label), ['previous', 'next', 'yes', 'no', 'not now', 'back to the team']);
+  // the deck's way back has the same words as the talk and swap cards' way back
+  assert.equal(d.options.find(o => o.action === 'back').label, gmCard.member({ id: 'member~1', name: 'builder', sentence: 'idle.' }).options.find(o => o.action === 'back').label);
+  assert.deepEqual(d.options.find(o => o.id === 'yes').binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
   assert.deepEqual(gmCard.cardProblems(d), []);
   // no pulsing or looping anywhere
@@ -999,6 +1018,14 @@ test('page: only the orb, its cards, and the working count; big type and no plum
   const copy = [...script.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map(m => m[1]).filter(t => / /.test(t) && !/[();]/.test(t));
   assert.ok(copy.length > 10);
   for (const t of copy) assert.doesNotMatch(t, /\bcheck|\btest/i, t);
+  // and none names a command to run: a dead link says what to do in plain words
+  for (const t of copy) assert.doesNotMatch(t, /\bgm (phone|walk)\b|\batris (gm|engine|member)\b|\bnpm\b/i, t);
+  assert.ok(copy.includes('this link stopped working. open a new one from the mac.'));
+  // after not now on an idea, the line under the orb says another what
+  assert.ok(copy.includes('tap when you want another idea'));
+  // a talk card's title is the name, so the line under it never says the name again
+  assert.match(script, /el\('p', 'jobline', \[card\.job\.member !== card\.title && card\.job\.member, card\.job\.role\]\.filter\(Boolean\)\.join\(' · '\)\)/);
+  assert.ok(!copy.some(t => /^not now\. /.test(t)), 'the orb line never repeats not now after the got-it line');
 });
 
 test('page: an act holds the chosen spot, then one motion: the card fades into the sphere, the dots spiral in once the answer is in, and the next card blooms', () => {
@@ -1015,8 +1042,8 @@ test('page: an act holds the chosen spot, then one motion: the card fades into t
   assert.match(script, /var AFTER_MS = 1500;/);
   // the next card blooms where the dots land, as the sphere settles to the small orb
   assert.match(script, /if \(phase === 'cover'\) \{ showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
-  // reduced motion: no spiral, the card fades in where it goes
-  assert.match(script, /if \(reduced\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); return; \}/);
+  // reduced motion: no spiral; a sphere on screen fades out first, then the card fades in where it goes
+  assert.match(script, /if \(reduced\) \{\n\s+var show = function \(\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \};\n\s+if \(fadeSphere\(\)\) setTimeout\(show, 200\); else show\(\);/);
   // the card fades all the way before it leaves the page, and the sphere comes back swarming, not idle
   assert.match(html, /\.bet\.leave\.fast \{ transition: opacity 0\.2s ease-in-out; \}/);
   assert.match(script, /var ACT_LEAVE_MS = 220,/);
@@ -1038,7 +1065,9 @@ test('page: while the next card is on its way the dots keep moving; on the calm 
   // no glow loop and no keyframes of its own: motion of the dots, drawn frame by frame
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   // a spiral starts from the dots' own speed, so they turn inward without a stop
-  assert.match(script, /d\.kx \+= d\.vx; d\.ky \+= d\.vy; d\.vx \*= CARRY; d\.vy \*= CARRY;/);
+  // the carry runs on the frame's own time, so a slow phone turns inward the same way
+  assert.match(script, /d\.kx \+= d\.vx \* k; d\.ky \+= d\.vy \* k; d\.vx \*= carry; d\.vy \*= carry;/);
+  assert.match(script, /var k = dt \* 60, carry = Math\.pow\(CARRY, k\);/);
   // the calm line: the sphere stays on the page with its dots swarming, and the card under it takes no room
   assert.match(script, /function enterWait\(card, atOnce\) \{[\s\S]*?orb\.swarm\(\);[\s\S]*?document\.body\.classList\.add\('has-card', 'waiting'\);/);
   assert.match(html, /body\.has-card\.waiting \.stage \{ display: block; transform: translateY\(var\(--wait-dy, 0px\)\) scale\(var\(--wait-k, 1\)\); \}/);
@@ -1060,7 +1089,7 @@ test('page: while the next card is on its way the dots keep moving; on the calm 
   // the idea lands: the calm line's words fade while the dots spiral in, and it grows out of the point
   assert.match(script, /function landFromWait\(card, after\) \{[\s\S]*?orb\.play\(function \(phase\) \{\n\s+if \(phase === 'cover'\) \{ off\(\); showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
   // the idea waits while the owner types there or a note is on its way
-  assert.match(script, /var quiet = function \(\) \{ return !bet\.busy && !bet\.noting && document\.body\.classList\.contains\('has-card'\) && !typingOnCard\(\); \};/);
+  assert.match(script, /var quiet = function \(\) \{ return !bet\.busy && !bet\.noting && document\.body\.classList\.contains\('has-card'\) && !typingOnCard\(\) && !pressing\(\); \};/);
   // the footer steps aside while a card moves, so it never jumps between places
   assert.match(html, /body\[data-busy\]:not\(\[data-in-place\]\) \.foot \{ opacity: 0; transition: opacity 0\.15s ease-in; \}/);
 });
@@ -1093,9 +1122,10 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   // the push only in the resting sphere (idle, or swarming while a card is on its way), never under reduced motion
   assert.match(script, /if \(mode === 'idle' \|\| mode === 'swarm'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
   assert.match(script, /if \(pointer\.inside && !reduced\) \{/);
-  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2;/);
+  // per 60fps frame of the frame's own time, so the push and the light feel the same on any screen
+  assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2 \* k;/);
   // the light eases toward the pointer anywhere on the page (trackWindow), as on the landing page
-  assert.match(script, /light\.x \+= \(light\.tx - light\.x\) \* 0\.06;/);
+  assert.match(script, /var follow = 1 - Math\.pow\(0\.94, k\);\n\s+light\.x \+= \(light\.tx - light\.x\) \* follow;/);
   assert.match(script, /var reach = Math\.max\(280, window\.innerWidth \* 0\.4\);/);
   assert.match(script, /window\.addEventListener\('pointermove', lightFrom\);/);
   // the ripple starts where the pointer enters the orb
@@ -1121,7 +1151,11 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   // only the same card moving turns in place (a deck flip, more models, who a swap is
   // for); an answer is the one motion through the sphere, and the calm line's idea
   // grows out of its dots
-  assert.match(script, /if \(option && IN_PLACE\.indexOf\(option\.action\) >= 0\) \{/);
+  assert.match(script, /if \(option && \(IN_PLACE\.indexOf\(option\.action\) >= 0 \|\| around\)\) \{/);
+  // moving around the team pages is a place to go, not an answer: it turns in place too
+  assert.match(script, /var AROUND = \['member', 'swap', 'deck', 'back', 'swap_to'\];/);
+  // a card's fade-in closes the marks of the tap that brought it, never those of a tap made since
+  assert.match(script, /var startedAt = bet\.tapAt;\n\s+var done = function \(e\) \{ if \(e\.propertyName === 'opacity'\) \{ b\.removeEventListener\('transitionend', done\); if \(bet\.tapAt === startedAt\) measured\(\); \} \};/);
   assert.match(script, /if \(r\.ok && r\.card && !sameCard\(r\.card, bet\.shown\)\) \{ arrive\(r\.card\); return; \}/);
   assert.match(script, /function arrive\(card\) \{\n\s+if \(waiting\(\)\) \{ landFromWait\(card\); return; \}/);
   // the box holds its height while the old card leaves, then eases to the new one
@@ -1134,8 +1168,8 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.match(script, /ghost\.style\.top = \(r\.top - p\.top\) \+ 'px';/);
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
-  // reduced motion: the new card simply takes the old one's place
-  assert.match(script, /if \(reduced\) \{ b\.style\.minHeight = ''; paint\(\); after\(\); return; \}/);
+  // reduced motion: the card fades out, changes, and fades back in, with the footer aside while it moves
+  assert.match(script, /if \(reduced\) \{[\s\S]*?document\.body\.removeAttribute\('data-in-place'\);[\s\S]*?b\.classList\.remove\('up'\);[\s\S]*?setTimeout\(function \(\) \{ paint\(\); void b\.offsetWidth; b\.classList\.add\('up'\); setTimeout\(after, 200\); \}, 200\);/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+b\.style\.minHeight = '';/);
 });
@@ -1234,7 +1268,7 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
   // a reply instead of a card takes the title's spot; it only explains, so the
   // idea's own options are on it once, with the answers it adds and its box
   assert.equal(said.next_title, trace.REPLY);
-  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharper idea', 'not now', 'or say something']);
+  assert.deepEqual(said.reply.buttons, ['do it', 'sounds good', 'make it shorter', 'sharpen it', 'not now', 'or say something']);
 });
 
 test('page: an act to the next card is one motion of about a second when the answer is in', () => {
@@ -1341,12 +1375,14 @@ test('over http: an answer and a say name the card on screen; a page that missed
 });
 
 test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+  for (const viewport of [trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP]) {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     const look = out.look;
     assert.ok(look, `${at}: the table shows`);
     assert.deepEqual(look.heads, ['member', 'role', 'ovr', 'engine', 'status'], at);
+    // the headers the owner reads are ovr and engine, the same as the terminal's team tables
+    assert.deepEqual(look.head_words, ['member', 'role', 'ovr', 'engine', 'status'], at);
     assert.equal(look.rows, 5, at);
     // a line between every pair of columns and every pair of rows
     assert.deepEqual([look.lines.missing_right, look.lines.missing_bottom], [0, 0], at);
@@ -1358,8 +1394,18 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.ok(look.narrowest.role >= 140, `${at}: the role column keeps its width (${look.narrowest.role}px)`);
     // the page itself never scrolls sideways; only the table box does, and only on the phone
     assert.equal(look.page_scrolls_sideways, false, at);
-    assert.equal(look.scrolls_sideways, at === '390x844', at);
+    assert.equal(look.scrolls_sideways, at !== '1280x800', at);
     assert.equal(look.name_column_moved_px, 0, `${at}: the name column stays put`);
+    assert.equal(look.name_header_moved_px, 0, `${at}: its header stays over it`);
+    // a model brought into view lands beside the held names, never under them (all five did at 320)
+    assert.deepEqual(look.models_under_names, [], at);
+    // the ovr header lines up with the ratings under it, on their right edge
+    assert.ok(look.ovr_head_off_px <= 0.5, `${at}: the ovr header sits ${look.ovr_head_off_px}px off its ratings`);
+    // on a phone the right edge fades while more of the table is off to the right, and not once scrolled there; a laptop has none
+    const phone = at !== '1280x800';
+    assert.deepEqual(look.fade, { at_rest: phone, at_end: false, back: phone }, at);
+    // the footer never offers the page already open; back on the first card, the team link is there again
+    assert.deepEqual([out.footer.team, out.footer.card], [[], ['the team']], at);
     assert.ok(look.smallest_font_px >= 17, at);
     assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
     assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);
@@ -1367,6 +1413,33 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     assert.deepEqual([out.talk.kind, out.talk.title, out.talk.table], ['member', 'builder', false], at);
     assert.deepEqual([out.back.kind, out.back.table], ['team', true], at);
     assert.equal(out.closed.kind, 'idea', at);
+    // on a phone every move around the team pages is one turn in place, not the spiral;
+    // on a laptop a move between a wide table card and a plain card still goes through the sphere
+    const turn = at !== '1280x800';
+    for (const m of [out.talk.moved, out.back.moved, out.closed.moved]) assert.equal(m.plan === 'hold 150, turn 420', turn, `${at}: ${m.plan}`);
+    // the footer's team link from a talk card goes to the same place the same way
+    assert.equal(out.footerTeam.kind, 'team', at);
+    assert.equal(out.footerTeam.moved.plan === 'turn 420', turn, `${at}: ${out.footerTeam.moved.plan}`);
+  }
+});
+
+test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const rows = [
+    { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+    { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page, about 4 hours left' },
+    { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+  ];
+  for (const viewport of [trace.SMALL_PHONE, trace.PHONE]) {
+    const out = await trace.teamTableTrace({ chromePath: CHROME, viewport, rows });
+    const at = out.viewport;
+    const lines = out.look.name_lines;
+    // the long name wraps (it held 222px of the box on one line), and only after a hyphen
+    assert.ok(out.look.narrowest.member <= 185, `${at}: the held column is ${out.look.narrowest.member}px`);
+    assert.ok(lines['customer-success-lead'].length > 1, `${at}: ${JSON.stringify(lines)}`);
+    for (const line of lines['customer-success-lead'].slice(0, -1)) assert.match(line, /-$/, `${at}: ${JSON.stringify(lines)}`);
+    // a name that fits stays on one line
+    assert.deepEqual([lines.builder, lines['auto-improver']], [['builder'], ['auto-improver']], at);
+    assert.equal(out.talk.kind, 'member', at);
   }
 });
 
@@ -1378,13 +1451,26 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     assert.deepEqual(out.short.buttons, ['atris fastatris', 'm-onenow', 'more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team'], at);
     // more models: a new card with every model, and each model keeps its own option id
     assert.notEqual(out.full.card, out.id, at);
-    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 landed'], at);
+    assert.deepEqual(out.full.buttons.slice(0, 3), ['atris fastatris', 'm-onenow', 'm-twotool two, 2 of 2 finished this week'], at);
     assert.deepEqual(out.full.options.slice(0, 2), out.short.options.slice(0, 2), at);
+    // the models already shown stay exactly where they were; the new ones come in under them
+    assert.ok(out.kept_moved_px <= 0.5, `${at}: shown models moved ${out.kept_moved_px}px`);
+    // who the swap is for: the one set now reads in full color over an amber line, the other stays quiet, and a tap moves it
+    for (const [now, set, other] of [[out.scopes.short, 'scope:member', 'scope:job'], [out.scopes.scoped, 'scope:job', 'scope:member']]) {
+      assert.deepEqual([now[set].chosen, now[set].line, now[other].chosen], [true, 'rgb(255, 140, 66)', false], `${at}: ${JSON.stringify(now)}`);
+      assert.notEqual(now[set].color, now[other].color, at);
+      assert.notEqual(now[other].line, 'rgb(255, 140, 66)', at);
+    }
     assert.ok(!out.full.options.includes('more'), at);
     // one tap, no yes card: the swap goes to the desk with who it is for, and the team comes back with one line
     assert.deepEqual(out.swaps, [{ member: 'builder', engine: 'two', model: 'm-two', scope: 'job' }], at);
     assert.deepEqual([out.after.kind, out.after.said], ['team', 'builder now runs on two m-two.'], at);
     assert.equal(out.engine, 'two m-two', at);
+    // on a phone the swap card opens, and the team comes back after a swap, in one turn in place
+    if (at === '390x844') assert.deepEqual([out.opened.plan, out.swapped.plan], ['hold 150, turn 420', 'hold 150, turn 420'], at);
+    // the line about the swap is the first thing under the title, above the table, on screen, and said once
+    assert.deepEqual([out.news.under_title, out.news.above_table, out.news.bottom <= out.news.screen], [true, true, true], `${at}: ${JSON.stringify(out.news)}`);
+    assert.ok(!/\bline\b/.test(out.swapped.plan), `${at}: no line under the orb first (${out.swapped.plan})`);
   }
 });
 
@@ -1392,20 +1478,33 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const out = await trace.deckTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
-  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to navigator'], show);
-  assert.deepEqual(out.counts, ['2 of 3', '3 of 3', '1 of 3', '3 of 3'], show);
+  // previous and next sit at the top beside the count, the answers and the way back below
+  assert.deepEqual(out.first.buttons, ['previous', 'next', 'yes', 'no', 'not now', 'back to the team', 'talk to navigator'], show);
+  assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3'], show);
+  // on every card, with or without a yes, previous and next are in the same spot, so a thumb never chases them
+  for (const at of out.pager) assert.deepEqual(at, out.pager[0], `previous and next stay put: ${JSON.stringify(out.pager)}`);
+  assert.equal(out.pager[0][0].y, out.pager[0][1].y, 'previous and next share one line');
+  // on a phone the job's one row stacks, one line per column: nothing scrolls sideways and every value is in view
+  assert.equal(out.row.scrolls_sideways, false, show);
+  assert.deepEqual(out.row.cells.map(c => c.col), ['work', 'member', 'role', 'status'], show);
+  assert.ok(out.row.cells.every(c => c.inside && !c.spills), show);
+  // a job that needs the owner says so in amber in its row too, as on the team page and above the title
+  assert.equal(out.row.cells.find(c => c.col === 'status').color, 'rgb(255, 140, 66)', show);
+  // on the deck the footer offers the team, not the deck again
+  assert.deepEqual(out.footer, ['the team'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
-  assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
-  assert.equal(out.scrolled, '1 of 3', 'an up and down swipe does not flip');
-  assert.equal(out.typing_arrow, '1 of 3', 'the arrows type while the box has the cursor');
+  assert.equal(out.swiped, 'job 1 of 3', 'a sideways swipe flips');
+  assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
+  assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
   // one tap arms only this card's yes; a flip draws a fresh card, so nothing is left armed
-  assert.equal(out.armed_a[0], 'tap again to say yes', show);
-  assert.equal(out.fresh_b[0], 'yes', show);
-  assert.equal(out.fresh_a[0], 'yes', show);
+  const yesOf = buttons => buttons.find(t => t === 'yes' || t === 'tap again to say yes');
+  assert.equal(yesOf(out.armed_a), 'tap again to say yes', show);
+  assert.equal(yesOf(out.fresh_b), 'yes', show);
+  assert.equal(yesOf(out.fresh_a), 'yes', show);
   // the yes sends the job and the hash its card binds, once
   assert.deepEqual(out.yes_sent, [{ job: 'm-nav', key: 'm-nav:step-2:abc', hash: 'abc' }], show);
-  assert.equal(out.yes_line, 'navigator: got your yes');
+  assert.equal(out.yes_line, 'told navigator yes.');
   assert.deepEqual(out.moving, []);
   assert.equal(out.back.kind, 'team', show);
 });
@@ -1422,7 +1521,7 @@ test('browser: after a lost answer, a tap on the old card does nothing and the p
   assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
   // the second tap is refused, and the page lands on the card the Mac has, saying so
   assert.equal(out.at_end.title, 'what would make a small team pay?', show);
-  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now', show);
+  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
 });
 
 // ---- words that did not send stay in the box ----------------------------------------
@@ -1566,6 +1665,45 @@ test('browser: the same words to two members are two sends, and each member hear
   assert.deepEqual(out.took, [{ member: 'builder', text: 'pause this' }, { member: 'launcher', text: 'pause this' }], JSON.stringify(out));
 });
 
+test('browser: the team opened from the big orb closes back to the big orb, and opened from a card closes back to the card', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.teamFromHomeTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.team.kind, out.team.title], ['team', 'the team'], show);
+  // Esc on the team: the big orb, where the owner was, and nothing is asked of the Mac yet
+  assert.deepEqual([out.closed.has_card, out.closed.line, out.closed.asked], [false, 'tap to think', 0], show);
+  // the big orb brings the next card as it always does
+  assert.deepEqual([out.tapped.has_card, out.tapped.asked], [true, 1], show);
+  // opened from a card, Esc goes back to a card
+  assert.deepEqual([out.fromCard.has_card, out.fromCard.kind], [true, 'idea'], show);
+  // from the big orb, to a talk card and back through the footer: Esc still goes to the big orb
+  assert.deepEqual([out.viaTalk.has_card, out.viaTalk.line], [false, 'tap to think'], show);
+});
+
+test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  for (const reduced of [false, true]) {
+    const out = await trace.teamOverWaitTrace({ chromePath: CHROME, reduced });
+    const show = JSON.stringify(out, null, 1);
+    // back on the calm line: its sphere and its open box, not a plain card
+    assert.deepEqual([out.back.kind, out.back.waiting, out.back.sphere, out.back.box_open], ['wait', true, true, true], show);
+    // a note sent there folds in, and its box clears
+    assert.deepEqual([out.noted.words, out.noted.notes], ['', ['make it about schools', "got it, i'll fold that in."]], show);
+    // once the idea is ready it shows on its own
+    assert.deepEqual([out.landed.kind, out.landed.title], ['idea', trace.CARDS.b1.title], show);
+  }
+});
+
+test('browser: a swap whose answer was lost: the next tap draws the team the Mac has at once, with one line why, and never posts the old swap card again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.swapLostTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the answer never came: the swap card stays, with a line why
+  assert.deepEqual([out.lost.kind, out.lost.line], ['swap', 'that did not go through. try again.'], show);
+  // the next tap is refused with the team the desk has, and that team is drawn right away, with the swap on it and the line why
+  assert.deepEqual([out.after.kind, out.after.said, out.after.line], ['team', 'builder now runs on two m-two.', 'that card changed, so nothing was done. here is the one on screen now.'], show);
+  assert.ok(out.after.ms < 2000, `the team came at once, not on the page's next look (${out.after.ms}ms)`);
+  // the old swap card is posted once on the retry, and never again
+  assert.equal(out.posts.filter(x => /^swap~/.test(x.card)).length, 2, show);
+});
+
 test('browser: the small orb on any card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);
@@ -1594,8 +1732,8 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
     check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
     steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
   });
-  const IDEA = idea('Write a getting started page for atris gm phone with a 30 second screen recording');
-  const NOTED = idea('Write a getting started page for schools that try atris gm phone in class');
+  const IDEA = idea('write a getting started page for atris gm phone with a 30 second screen recording');
+  const NOTED = idea('write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
   const FOLDED = 'got it, i\'ll fold that in.';
   const runs = [];
