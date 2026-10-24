@@ -301,3 +301,29 @@ test('browser: a card the Mac changed never swaps in under a held finger; the pr
   assert.equal(out.after.title, CARDS.b2.title, show);
   assert.deepEqual(out.did, [], show);
 });
+
+test('browser: on the job deck a finger dragging the wide table sideways scrolls it and never flips; a swipe on the card still flips', { skip, timeout: 90000 }, async () => {
+  const flips = [];
+  const desk = trace.cardDesk(deckCard(), async (action) => { flips.push(action); return { card: deckCard(flips.length + 1) }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    const drag = async (x0, y0, x1) => {
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+      for (let i = 1; i <= 6; i++) await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 6, y: y0 }] });
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    const g = await p.rect('#bet .grid');
+    const scrolls = await p.run("(function () { var g = document.querySelector('#bet .grid'); return g.scrollWidth > g.clientWidth; })()");
+    await drag(g.x + g.w - 30, g.y + g.h / 2, g.x + 30);
+    await wait(1200);
+    const inTable = flips.length;
+    const h = await p.rect('#bet h1');
+    await drag(h.x + 250, h.y + h.h / 2, h.x + 50);
+    await p.until(`${titled('split the big test file')} && document.getElementById('bet').getAttribute('data-card') === 'deck~2'`, 'the flip', 8000).catch(() => {});
+    return { scrolls, inTable, flips };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.scrolls, true, show);
+  assert.equal(out.inTable, 0, show);
+  assert.deepEqual(out.flips, ['flip'], show);
+});
