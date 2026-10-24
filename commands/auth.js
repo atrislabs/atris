@@ -1168,7 +1168,7 @@ function resolveProfile() {
       const profile = loadProfile(p);
       return profile?.email?.toLowerCase().includes(q);
     });
-  if (match) {
+  if (match && loadProfile(match)) {
     process.stdout.write(match);
     process.exit(0);
   }
