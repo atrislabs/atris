@@ -1,0 +1,54 @@
+'use strict';
+// makeModule(agentDir, module): stands in for the agent's module inside the
+// held-out test. Each call runs the agent's code in a sealed child process, so
+// agent code never shares a process with the held-out tests. Changes the call
+// made to its array or object arguments are copied back, so a test that checks
+// its input was left alone still sees a mutation.
+const path = require('path');
+const { spawnSync } = require('child_process');
+const { enc, dec } = require('./codec');
+
+function profile(agentDir, sealedDir) {
+  // the sandbox matches real paths (/private/var, not /var), so resolve links first
+  const real = (p) => { try { return require('fs').realpathSync(p); } catch { return p; } };
+  const q = (p) => JSON.stringify(real(p));
+  return [
+    '(version 1)', '(allow default)', '(deny network*)',
+    // contents and listings under home are denied; node may still stat the folders on its path
+    `(deny file-read-data (subpath ${q(process.env.HOME_REAL || require('os').homedir())}))`,
+    `(allow file-read-data (subpath ${q(agentDir)}) (subpath ${q(sealedDir)}))`,
+    `(deny file-read* (subpath ${q(process.env.HELD_DIR || '/nonexistent')}))`,
+    '(deny file-write*)', '(allow file-write* (literal "/dev/null"))',
+  ].join('');
+}
+
+function copyBack(into, from) {
+  if (Array.isArray(into) && Array.isArray(from)) { into.length = 0; into.push(...from); return; }
+  if (into && typeof into === 'object' && from && typeof from === 'object') {
+    for (const k of Object.keys(into)) if (!(k in from)) delete into[k];
+    Object.assign(into, from);
+  }
+}
+
+function makeModule(agentDir, mod) {
+  const sealedDir = __dirname;
+  const call = (fn, args) => {
+    const r = spawnSync('/usr/bin/sandbox-exec', ['-p', profile(agentDir, sealedDir), process.execPath, path.join(sealedDir, 'runner.js'), agentDir, mod, fn], {
+      input: enc(args), encoding: 'utf8', timeout: 20000, cwd: agentDir, env: { PATH: '/usr/bin:/bin' },
+    });
+    if (r.status !== 0 || !r.stdout) throw new Error(`sealed call failed: ${(r.stderr || r.error || '').toString().slice(0, 200)}`);
+    const out = dec(r.stdout);
+    args.forEach((a, i) => copyBack(a, out.args[i]));
+    if (out.error) {
+      // rebuild the same built-in error type, so a test checking for TypeError still can
+      const C = globalThis[out.error.name];
+      const e = typeof C === 'function' && (C === Error || C.prototype instanceof Error) ? new C(out.error.message) : new Error(out.error.message);
+      if (e.name !== out.error.name) e.name = out.error.name;
+      throw e;
+    }
+    return out.value;
+  };
+  return new Proxy({}, { get: (_, fn) => (typeof fn === 'string' ? (...args) => call(fn, args) : undefined) });
+}
+
+module.exports = { makeModule };
