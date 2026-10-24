@@ -848,6 +848,57 @@ async function teamOverWaitTrace({ chromePath = findChrome(), reduced = false } 
   }, PHONE, { firstCard: false, reduced });
 }
 
+// ---- a swap whose answer was lost ----------------------------------------------------------------
+
+// The owner swaps builder's model; the desk makes the swap, but the answer
+// never reaches the phone, so the swap card stays with a line why. The
+// owner taps a model again: the desk refuses it (that card is gone) and
+// sends the team it has now, and the page draws that team at once, with
+// one line why, instead of the old swap card.
+async function swapLostTrace({ chromePath = findChrome() } = {}) {
+  const posts = [];
+  let n = 1;
+  let lose = true;
+  const swapCard = () => gmCard.swap({ id: `swap~${n}`, name: 'builder', choices: SWAP, scope: 'member', all: true });
+  const desk = cardDesk(CARDS.b1, async (action, { card, option }) => {
+    n += 1;
+    if (action === 'open:team') return { card: teamCard(TABLE_ROWS, n) };
+    if (action === 'swap') return { card: swapCard() };
+    if (action === 'swap_to') {
+      desk.current = teamCard(TABLE_ROWS, n, `builder now runs on ${option.binds.engine} ${option.binds.model}.`);
+      if (lose) { lose = false; throw new Error('the answer was lost'); }
+      return { card: desk.current };
+    }
+    if (action === 'back') return { card: card.kind === 'swap' ? teamCard(TABLE_ROWS, n) : CARDS.b1 };
+    return { card };
+  });
+  const act = desk.act;
+  desk.act = (body) => { if (body.option_id) posts.push({ card: body.card_id, option: body.option_id }); return act(body); };
+  return onPhone(desk, chromePath, async (p, send) => {
+    const model = label => `Array.prototype.find.call(document.querySelectorAll('#bet button.choice'), function (b) { var t = b.querySelector('.t'); return t && t.textContent === ${JSON.stringify(label)}; })`;
+    const tapModel = async (label) => {
+      const id = await p.run(`(function () { var b = ${model(label)}; b.scrollIntoView({ block: 'center' }); return b.getAttribute('data-option'); })()`);
+      await p.tap(`#bet [data-option="${id}"]`);
+    };
+    await p.tap('#working');
+    await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team', 8000);
+    const cell = '#bet tbody tr:nth-child(2) td.engine button';
+    await p.run(`document.querySelector(${JSON.stringify(cell)}).scrollIntoView({ block: 'center', inline: 'center' })`);
+    await wait(60);
+    await p.tap(cell);
+    await p.until(`${titled('builder')} && document.getElementById('bet').getAttribute('data-kind') === 'swap'`, 'the swap card', 8000);
+    await tapModel('m-two');
+    await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the lost answer', 8000);
+    const lost = await look(p);
+    const tappedAt = Date.now();
+    await tapModel('atris fast');
+    // well inside the page's own look every 5 seconds, so only the refusal's card can bring the team
+    await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the team the desk has', 3000).catch(() => {});
+    const after = { ...(await look(p)), ms: Date.now() - tappedAt };
+    return { lost, after, posts };
+  });
+}
+
 // ---- a start that did not get going comes back to do it --------------------------------------
 
 // The owner asks what an idea means, then taps do it twice. The first start
@@ -1695,7 +1746,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

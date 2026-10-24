@@ -1664,6 +1664,18 @@ test('browser: the team closed over the calm line goes back into it the way the 
   }
 });
 
+test('browser: a swap whose answer was lost: the next tap draws the team the Mac has at once, with one line why, and never posts the old swap card again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.swapLostTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out, null, 1);
+  // the answer never came: the swap card stays, with a line why
+  assert.deepEqual([out.lost.kind, out.lost.line], ['swap', 'that did not go through. try again.'], show);
+  // the next tap is refused with the team the desk has, and that team is drawn right away, with the swap on it and the line why
+  assert.deepEqual([out.after.kind, out.after.said, out.after.line], ['team', 'builder now runs on two m-two.', 'that card changed, so nothing was done. here is the one on screen now'], show);
+  assert.ok(out.after.ms < 2000, `the team came at once, not on the page's next look (${out.after.ms}ms)`);
+  // the old swap card is posted once on the retry, and never again
+  assert.equal(out.posts.filter(x => /^swap~/.test(x.card)).length, 2, show);
+});
+
 test('browser: the small orb on any card goes back to the big dotted orb; the big one brings the next, and an idea that landed meanwhile waits for that tap', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const runs = await trace.orbHomeTrace({ chromePath: CHROME });
   const show = JSON.stringify(runs, null, 1);
