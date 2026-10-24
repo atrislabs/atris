@@ -1693,7 +1693,7 @@ test('browser: a swap whose answer was lost: the next tap draws the team the Mac
   // the answer never came: the swap card stays, with a line why
   assert.deepEqual([out.lost.kind, out.lost.line], ['swap', 'that did not go through. try again.'], show);
   // the next tap is refused with the team the desk has, and that team is drawn right away, with the swap on it and the line why
-  assert.deepEqual([out.after.kind, out.after.said, out.after.line], ['team', 'builder now runs on two m-two.', 'that card changed, so nothing was done. here is the one on screen now'], show);
+  assert.deepEqual([out.after.kind, out.after.said, out.after.line], ['team', 'builder now runs on two m-two.', 'that card changed, so nothing was done. here is the one on screen now.'], show);
   assert.ok(out.after.ms < 2000, `the team came at once, not on the page's next look (${out.after.ms}ms)`);
   // the old swap card is posted once on the retry, and never again
   assert.equal(out.posts.filter(x => /^swap~/.test(x.card)).length, 2, show);
