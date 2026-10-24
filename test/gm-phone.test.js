@@ -634,7 +634,7 @@ test('over http: the job deck is a card through the same token check, one card p
     // the deck card is about the job; the rating and the model live on the team table
     assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
     const row = deck.table.rows[0];
-    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['1 of 1', 'working', 'builder', 'working']);
+    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['job 1 of 1', 'working', 'builder', 'working']);
     assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
     assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
@@ -784,7 +784,7 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   assert.match(script, /var IN_PLACE = \['flip', 'more', 'scope'\];/);
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
   const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 5 minutes', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
-  assert.deepEqual([d.count, d.label], ['1 of 2', 'needs you']);
+  assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
   assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'the whole team', 'next']);
   assert.deepEqual(d.options[0].binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
@@ -1393,12 +1393,12 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
   assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to navigator'], show);
-  assert.deepEqual(out.counts, ['2 of 3', '3 of 3', '1 of 3', '3 of 3'], show);
+  assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
-  assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
-  assert.equal(out.scrolled, '1 of 3', 'an up and down swipe does not flip');
-  assert.equal(out.typing_arrow, '1 of 3', 'the arrows type while the box has the cursor');
+  assert.equal(out.swiped, 'job 1 of 3', 'a sideways swipe flips');
+  assert.equal(out.scrolled, 'job 1 of 3', 'an up and down swipe does not flip');
+  assert.equal(out.typing_arrow, 'job 1 of 3', 'the arrows type while the box has the cursor');
   // one tap arms only this card's yes; a flip draws a fresh card, so nothing is left armed
   assert.equal(out.armed_a[0], 'tap again to say yes', show);
   assert.equal(out.fresh_b[0], 'yes', show);

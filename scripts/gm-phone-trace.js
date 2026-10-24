@@ -1094,7 +1094,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await esc(send);
     await wait(150);
     // back to the first card, then its yes: armed, then sent with what the card binds
-    while ((await count()) !== '1 of 3') { await press('ArrowLeft'); await settle(); }
+    while ((await count()) !== 'job 1 of 3') { await press('ArrowLeft'); await settle(); }
     await tapLabel(p, send, 'yes');
     await tapLabel(p, send, 'tap again to say yes');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .mission'))`, 'the line after the yes', 8000);
