@@ -221,7 +221,7 @@ async function layout({ chromePath = trace.findChrome(), cases = CASES, viewport
   return out;
 }
 
-module.exports = { layout, CASES, VIEWPORTS, MEASURE, LONG };
+module.exports = { layout, CASES, VIEWPORTS, MEASURE };
 
 if (require.main === module) {
   const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
