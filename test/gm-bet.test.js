@@ -3741,6 +3741,9 @@ test('card contract: a swap list with no picks opens short too, the model in use
   const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
   assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
   for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
+  // a model named for its own tool says it once: codex, not codex over codex
+  const own = gmCard.swap({ id: 'swap~3', name: 'builder', choices: { scopes: [], options: [{ engine: 'codex', tool: 'codex', model: '', label: 'codex', current: false, record: null }, { engine: 'codex', tool: 'codex', model: '', label: 'Codex', current: false, record: '1 of 2 finished this week' }, { engine: 'one', tool: 'tool one', model: 'm-a', label: 'm-a', current: false, record: null }] } });
+  assert.deepEqual(own.options.slice(0, 3).map(o => o.detail || null), [null, '1 of 2 finished this week', 'tool one']);
 });
 
 test('card contract: a card\'s options never change under one id: when the job in the deck changes, the card id changes and a yes on the old id approves nothing', async () => {
