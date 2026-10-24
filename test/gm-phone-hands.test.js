@@ -430,3 +430,35 @@ test('browser: with the keyboard alone, the next card takes the focus on its fir
   assert.equal(out.after.active, 'BUTTON:do', show);
   assert.deepEqual(out.did, ['answer', 'orb'], show);
 });
+
+test('browser: Tab from an open box goes to its send, and Esc in the box puts the focus back on the button it came from', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const where = () => p.run("(function () { var a = document.activeElement; return { tag: a.tagName, cls: a.className, text: a.textContent, field: Boolean(document.querySelector('#bet .field')) }; })()");
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    const open = await where();
+    await press(send, 'Tab', 9);
+    await wait(150);
+    const tabbed = await where();
+    await press(send, 'Tab', 9);
+    await wait(150);
+    const away = await where();
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    await p.type('take the readme first');
+    await press(send, 'Escape', 27);
+    await wait(150);
+    const escaped = await where();
+    return { open, tabbed, away, escaped };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.open.tag, out.open.field], ['INPUT', true], show);
+  // Tab moves to send, and the box stays open
+  assert.deepEqual([out.tabbed.tag, out.tabbed.cls, out.tabbed.field], ['BUTTON', 'send', true], show);
+  // Tab again leaves the empty box, which turns back into its button; the focus goes on
+  assert.equal(out.away.field, false, show);
+  assert.notEqual(out.away.tag, 'BODY', show);
+  // Esc: the words go, the box closes, and its button has the focus
+  assert.deepEqual([out.escaped.tag, out.escaped.text, out.escaped.field], ['BUTTON', 'or say something', false], show);
+});
