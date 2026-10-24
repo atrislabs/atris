@@ -30,6 +30,8 @@ test('browser: every orb path glides, with no jump, no cut, and no frozen moment
     // per 60fps frame, css pixels, on each part's own clock
     assert.ok(p.lava_step <= 45 && p.lava_size_step <= 45 && p.lava_speed_change <= 15, show(p));
     assert.ok(p.sphere_step <= 10 && p.dots_speed_change <= 10 && p.title_step <= 5, show(p));
+    // a turn in place is a crossfade with no blink: before, the two cards dipped to 0.41 together
+    if (IN_PLACE.has(p.name)) assert.ok(p.crossfade_min >= 0.9, show(p));
     // the footer moves only while it cannot be seen, or glides with a turn in place
     assert.ok(IN_PLACE.has(p.name) ? p.footer_seen_jump <= 20 : p.footer_seen_jump === 0, show(p));
     // after an act on a card the sphere comes back with no stale words under it

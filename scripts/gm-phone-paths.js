@@ -221,6 +221,8 @@ function summarizePath(frames, from) {
     reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
     reform_clock_ms: formed < 0 ? null : Math.round(clock),
     card_in_ms: cardIn < 0 ? null : Math.round(span[cardIn].t - from),
+    // during a turn in place: the lowest the old card's copy and the new card add up to (1 is a whole card)
+    crossfade_min: span.some(f => f.ghost > 0.01) ? round(Math.min(...span.filter(f => f.ghost > 0.01).map(f => f.ghost + seen(f)))) : null,
     lava_still_ms: lavaLast < 0 ? null : Math.round(span[lavaLast].t - from),
     ...out,
     cuts: cuts.slice(0, 12),
