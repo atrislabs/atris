@@ -487,8 +487,7 @@ function judgeScreen(stage) {
     options: (c.options || []).filter(o => !o.disabled).map(o => (o.detail ? `${o.label} (${o.detail})` : o.label)),
     input: c.input ? (c.input.label || c.input.placeholder || 'a box to type in') : null,
   };
-  // the judge reads the words over each column, as the owner does
-  if (c.table) screen.table = { columns: c.table.heads || c.table.columns, rows: c.table.rows.slice(0, 6) };
+  if (c.table) screen.table = { columns: c.table.columns, rows: c.table.rows.slice(0, 6) };
   if (c.thread && c.thread.length) screen.thread = c.thread.map(t => `${t.who === 'owner' ? 'founder' : 'app'}: ${t.text}`);
   if (c.kind === 'home') screen.picture = HOME_PICTURE;
   if (c.layer === 'team' || c.layer === 'swap') screen.wanted = MODEL_NAMES_WANTED;
