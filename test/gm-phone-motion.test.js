@@ -133,11 +133,8 @@ test('browser: on a phone with a notch in full screen the small orb rests below 
 
 test('browser: under reduced motion every path is plain fades: nothing travels, and the sphere and the footer are never gone or moved in a frame', { skip, timeout: 240000 }, async () => {
   const out = await paths.pathsTrace({ chromePath: CHROME, reduced: true });
-  // still to come: leaving the calm line
-  const later = new Set(['calm line home']);
   for (const p of out.paths) {
     assert.equal(p.error, undefined, show(p));
-    if (later.has(p.name)) continue;
     // no travel: not the lava, not the sphere, not the dots
     assert.deepEqual([p.lava_step, p.sphere_step, p.title_step], [0, 0, 0], show(p));
     // before, a card that came while the sphere showed took it away in one frame, and the footer jumped 370px in sight
