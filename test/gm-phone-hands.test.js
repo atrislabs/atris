@@ -619,3 +619,21 @@ test('browser: when the phone keyboard leaves only a strip of screen, the box be
   assert.ok(out.after.top >= 0 && out.after.bottom <= out.after.shows, show);
   assert.equal(out.after.typing, true, show);
 });
+
+test('browser: a paste longer than the box holds says so under the card, and the line goes once there is room', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    await send('Input.insertText', { text: 'a long note about the twelve schools. '.repeat(11) });
+    await wait(100);
+    const full = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
+    for (let i = 0; i < 5; i++) await press(send, 'Backspace', 8);
+    await wait(100);
+    const room = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
+    return { full, room };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual(out.full, { length: 280, note: 'that is as much as fits in the box.' }, show);
+  assert.deepEqual(out.room, { length: 275, note: '' }, show);
+});
