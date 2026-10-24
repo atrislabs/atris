@@ -250,3 +250,30 @@ test('layout: outside the team table the cards use three type sizes: 17 for quie
   const reply = rows.find(r => r.case === 'reply-thread');
   assert.deepEqual(reply.probe, ['17', '20'], show);
 });
+
+
+test('layout: in the team and job tables every cell of a row starts its words on one shared line', { skip, timeout: 90000 }, async () => {
+  // a zero-size mark before each cell's first words sits on that line's baseline
+  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet tbody tr'), function (tr) {
+  return Array.prototype.map.call(tr.cells, function (td) {
+    var walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT), t = walker.nextNode();
+    while (t && !String(t.textContent).trim()) t = walker.nextNode();
+    if (!t) return null;
+    var mark = document.createElement('span');
+    mark.style.cssText = 'display:inline-block;width:0;height:0;';
+    t.parentNode.insertBefore(mark, t);
+    var y = mark.getBoundingClientRect().top;
+    mark.remove();
+    return Math.round(y * 10) / 10;
+  });
+})`;
+  const rows = await layout({ chromePath: CHROME, cases: only('team', 'deck'), viewports: ['phone', 'laptop'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, baselines: r.probe })), null, 1);
+  for (const r of rows) {
+    assert.ok(r.probe.length >= 1, show);
+    for (const row of r.probe) {
+      const ys = row.filter(y => y != null);
+      assert.ok(Math.max(...ys) - Math.min(...ys) <= 1, show);
+    }
+  }
+});
