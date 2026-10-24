@@ -1015,8 +1015,8 @@ test('page: an act holds the chosen spot, then one motion: the card fades into t
   assert.match(script, /var AFTER_MS = 1500;/);
   // the next card blooms where the dots land, as the sphere settles to the small orb
   assert.match(script, /if \(phase === 'cover'\) \{ showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
-  // reduced motion: no spiral, the card fades in where it goes
-  assert.match(script, /if \(reduced\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); return; \}/);
+  // reduced motion: no spiral; a sphere on screen fades out first, then the card fades in where it goes
+  assert.match(script, /if \(reduced\) \{\n\s+var show = function \(\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \};\n\s+if \(fadeSphere\(\)\) setTimeout\(show, 200\); else show\(\);/);
   // the card fades all the way before it leaves the page, and the sphere comes back swarming, not idle
   assert.match(html, /\.bet\.leave\.fast \{ transition: opacity 0\.2s ease-in-out; \}/);
   assert.match(script, /var ACT_LEAVE_MS = 220,/);

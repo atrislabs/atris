@@ -130,3 +130,19 @@ test('browser: on a phone with a notch in full screen the small orb rests below 
   assert.ok(notch.orb_top >= 59, said);
   assert.equal(notch.card_top - notch.orb_bottom, plain.card_top - plain.orb_bottom, said);
 });
+
+test('browser: under reduced motion every path is plain fades: nothing travels, and the sphere and the footer are never gone or moved in a frame', { skip, timeout: 240000 }, async () => {
+  const out = await paths.pathsTrace({ chromePath: CHROME, reduced: true });
+  // still to come: the deck flip and leaving the calm line
+  const later = new Set(['deck flip', 'calm line home']);
+  for (const p of out.paths) {
+    assert.equal(p.error, undefined, show(p));
+    if (later.has(p.name)) continue;
+    // no travel: not the lava, not the sphere, not the dots
+    assert.deepEqual([p.lava_step, p.sphere_step, p.title_step], [0, 0, 0], show(p));
+    // before, a card that came while the sphere showed took it away in one frame, and the footer jumped 370px in sight
+    assert.ok(p.card_fade <= 0.15 && p.sphere_drop <= 0.15, show(p));
+    assert.equal(p.footer_seen_jump, 0, show(p));
+    if (p.lands) assert.deepEqual([p.after.orb_frames, p.after.running], [0, []], show(p));
+  }
+});
