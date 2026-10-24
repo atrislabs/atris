@@ -913,6 +913,9 @@ const TABLE_LOOK = `(function () {
   };
 })()`;
 
+// the footer links the owner can see and tap
+const FOOTER = "Array.prototype.filter.call(document.querySelectorAll('#foot button'), function (b) { return b.offsetParent && b.getBoundingClientRect().width > 0; }).map(function (b) { return b.textContent; })";
+
 // how the last move went, from the page's own marks: its steps with the
 // length each is set to take ("hold 150, turn 420") and the clock from the tap
 const MOVED = "({ plan: document.body.getAttribute('data-reveal-plan'), ms: Number(document.body.getAttribute('data-reveal-ms')) })";
@@ -935,6 +938,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team card', 8000);
     await wait(100);
     const tableLook = await p.run(TABLE_LOOK);
+    const footer = await p.run(FOOTER);
     const cells = await p.run(TABLE_CELLS);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
@@ -950,7 +954,8 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await esc(send);
     await p.until(titled(CARDS.b1.title), 'the first card again', 8000);
     const closed = await where();
-    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed };
+    const footerAfter = await p.run(FOOTER);
+    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed, footer: { team: footer, card: footerAfter } };
   }, viewport);
 }
 
@@ -1100,6 +1105,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') === 'deck'`, 'the deck', 8000);
     const first = await look(p);
     const firstAt = await spot();
+    const footer = await p.run(FOOTER);
     // the job's row in its box: does the box scroll sideways, and is every value inside it
     const row = await p.run("(function () { var g = document.querySelector('#bet .grid'); if (!g) return null; var gr = g.getBoundingClientRect(); return { scrolls_sideways: g.scrollWidth > g.clientWidth + 1, cells: Array.prototype.map.call(g.querySelectorAll('tbody td'), function (td) { var r = td.getBoundingClientRect(); return { col: td.getAttribute('data-col'), text: td.textContent, inside: r.left >= gr.left - 1 && r.right <= gr.right + 1, spills: td.scrollWidth > td.clientWidth + 1, color: getComputedStyle(td).color }; }) }; })()");
     if (shots) {
@@ -1166,6 +1172,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       counts,
       pager,
       row,
+      footer,
       moved_px: Math.round(moved * 10) / 10,
       ghost_seen: await p.run('window.__ghost'),
       swiped,

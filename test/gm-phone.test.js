@@ -1374,6 +1374,8 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     // on a phone the right edge fades while more of the table is off to the right, and not once scrolled there; a laptop has none
     const phone = at !== '1280x800';
     assert.deepEqual(look.fade, { at_rest: phone, at_end: false, back: phone }, at);
+    // the footer never offers the page already open; back on the first card, the team link is there again
+    assert.deepEqual([out.footer.team, out.footer.card], [[], ['the team']], at);
     assert.ok(look.smallest_font_px >= 17, at);
     assert.deepEqual(look.moving, [], `${at}: nothing on the table moves or glows`);
     assert.ok(look.statuses.every(t => t === t.toLowerCase()), at);
@@ -1435,6 +1437,8 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.ok(out.row.cells.every(c => c.inside && !c.spills), show);
   // a job that needs the owner says so in amber in its row too, as on the team page and above the title
   assert.equal(out.row.cells.find(c => c.col === 'status').color, 'rgb(255, 140, 66)', show);
+  // on the deck the footer offers the team, not the deck again
+  assert.deepEqual(out.footer, ['the team'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
   assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');
