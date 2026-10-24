@@ -661,3 +661,24 @@ test('browser: a button looks pressed the moment it is pressed, and comes back w
   const show = JSON.stringify(out, null, 1);
   for (const r of out) assert.deepEqual([r.before, r.down, r.up], [1, 0.7, 1], show);
 });
+
+test('browser: pushing the big orb\'s dots around with a held mouse and letting go thinks of nothing; a plain click still thinks', { skip, timeout: 90000 }, async () => {
+  let asked = 0;
+  const desk = trace.cardDesk(null, async () => { asked += 1; return { card: CARDS.b1 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.until("document.getElementById('line').textContent === 'tap to think'", 'the big orb', 8000);
+    const c = await middle(p, '#orb');
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c.x, y: c.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.x, y: c.y, button: 'left', clickCount: 1 });
+    for (let i = 1; i <= 8; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c.x + i * 12, y: c.y + i * 6, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.x + 96, y: c.y + 48, button: 'left', clickCount: 1 });
+    await wait(1500);
+    const dragged = { asked, ...(await look(p)) };
+    await tapAt(send, c.x, c.y);
+    await p.until(titled(CARDS.b1.title), 'the card', 8000).catch(() => {});
+    return { dragged, asked };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.dragged.asked, out.dragged.has_card, out.dragged.busy], [0, false, false], show);
+  assert.equal(out.asked, 1, show);
+});
