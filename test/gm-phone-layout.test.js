@@ -173,3 +173,17 @@ test('layout: the calm line\'s open box shows its whole hint on every phone, cen
   for (const r of rows) assert.ok(r.probe.room_px >= r.probe.hint_px, show);
   assert.deepEqual(rows.map(r => r.probe.align), ['left', 'left', 'center', 'center', 'center'], show);
 });
+
+test('layout: an open box\'s edge is at least 3:1 against the page and every line of words at least 4.5:1, on every card', { skip, timeout: 120000 }, async () => {
+  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet .field'), function (f) {
+    function lum(c) { var v = String(c).match(/[\\d.]+/g).slice(0, 3).map(function (x) { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; }
+    var a = lum(getComputedStyle(f).borderTopColor), b = lum(getComputedStyle(document.body).backgroundColor);
+    return Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100;
+  })`;
+  const rows = await layout({ chromePath: CHROME, viewports: ['phone'], probe });
+  const boxes = rows.filter(r => r.probe.length);
+  const show = JSON.stringify(rows.map(r => ({ at: r.case, edges: r.probe, low: r.words_low })), null, 1);
+  assert.ok(boxes.length >= 1, show);
+  for (const r of boxes) for (const edge of r.probe) assert.ok(edge >= 3, show);
+  for (const r of rows) assert.deepEqual(r.words_low, [], show);
+});
