@@ -121,3 +121,12 @@ test('browser: turning the phone keeps the small orb centred over the card, and 
   assert.ok(smaller.before.canvas_sharp && smaller.after.canvas_sharp, show(smaller));
   assert.notDeepEqual(smaller.after.canvas_shown, smaller.before.canvas_shown, show(smaller));
 });
+
+test('browser: on a phone with a notch in full screen the small orb rests below the notch, as far above the card as anywhere', { skip, timeout: 90000 }, async () => {
+  const plain = (await paths.resizeTrace({ chromePath: CHROME })).before;
+  const notch = (await paths.resizeTrace({ chromePath: CHROME, insets: { top: 59, bottom: 34 } })).before;
+  const said = show({ plain, notch });
+  // before, the orb sat at 24px, under a 59px notch, while the card moved down below it
+  assert.ok(notch.orb_top >= 59, said);
+  assert.equal(notch.card_top - notch.orb_bottom, plain.card_top - plain.orb_bottom, said);
+});

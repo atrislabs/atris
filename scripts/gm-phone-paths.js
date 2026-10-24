@@ -370,10 +370,12 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
 // canvas holds as many pixels as it is shown at with no card.
 const AT_REST = `(function () {
   var l = document.getElementById('lava').getBoundingClientRect(), c = document.getElementById('orb'), dpr = Math.min(window.devicePixelRatio || 1, 2);
-  return { vw: document.documentElement.clientWidth, orb_off_center_px: Math.round(Math.abs(l.left + l.width / 2 - document.documentElement.clientWidth / 2) * 10) / 10, canvas_shown: [c.clientWidth, c.clientHeight], canvas_pixels: [c.width, c.height], canvas_sharp: Math.abs(c.width - c.clientWidth * dpr) <= 1 && Math.abs(c.height - c.clientHeight * dpr) <= 1 };
+  var box = document.getElementById('bet'), first = box.hidden ? null : box.firstElementChild;
+  return { orb_top: Math.round(l.top), orb_bottom: Math.round(l.bottom), card_top: first ? Math.round(first.getBoundingClientRect().top) : null, vw: document.documentElement.clientWidth, orb_off_center_px: Math.round(Math.abs(l.left + l.width / 2 - document.documentElement.clientWidth / 2) * 10) / 10, canvas_shown: [c.clientWidth, c.clientHeight], canvas_pixels: [c.width, c.height], canvas_sharp: Math.abs(c.width - c.clientWidth * dpr) <= 1 && Math.abs(c.height - c.clientHeight * dpr) <= 1 };
 })()`;
 
-async function resizeTrace({ chromePath = findChrome(), first = CARDS.b1, from = PHONE, to = { ...PHONE, width: PHONE.height, height: PHONE.width }, page = phonePage } = {}) {
+// insets: the phone's safe area ({ top, bottom }), as on a phone with a notch in full screen
+async function resizeTrace({ chromePath = findChrome(), first = CARDS.b1, from = PHONE, to = { ...PHONE, width: PHONE.height, height: PHONE.width }, insets = null, page = phonePage } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const server = await serve(cardDesk(first, async (a, { card }) => ({ card })), page);
   const chrome = await launch(chromePath);
@@ -381,6 +383,7 @@ async function resizeTrace({ chromePath = findChrome(), first = CARDS.b1, from =
     const { send } = chrome;
     const p = driver(send);
     await send('Emulation.setDeviceMetricsOverride', from);
+    if (insets) await send('Emulation.setSafeAreaInsetsOverride', { insets: { top: insets.top || 0, topMax: insets.top || 0, bottom: insets.bottom || 0, bottomMax: insets.bottom || 0 } });
     await send('Page.enable');
     await send('Page.navigate', { url: server.url });
     await p.until(`document.readyState === 'complete' && (${READY})`, 'the page at rest');
