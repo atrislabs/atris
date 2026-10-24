@@ -27,7 +27,7 @@ const {
 } = require('../lib/engine-registry');
 const { auditWish, inferBudgetTier } = require('../lib/wish-audit');
 
-const NOW = new Date('2026-09-24T12:00:00.000Z');
+const NOW = new Date('2026-09-24T12:00:00.000');
 
 // Every room gets its own scratch home, so the all-projects roster file is
 // never the real ~/.atris/roster.json.
@@ -168,13 +168,13 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   const json = command(root, ['roster', '--json']);
   assert.equal(json.exit, 0, json.err);
   assert.equal(JSON.parse(json.out).jobs.length, 3);
-  const confirmed = command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z');
+  const confirmed = command(root, ['roster', 'confirm'], '2026-09-27T12:00:00');
   assert.equal(confirmed.exit, 0, confirmed.err);
   assert.equal(projectPicks(root).executor.until, '2026-10-27');
   assert.equal(projectPicks(root).validator.until, '2026-10-27');
   const bare = command(root, []);
   assert.ok(bare.out.indexOf('search') < bare.out.indexOf('engines:'));
-  confirmRoster(root, '2026-10-01T12:00:00Z');
+  confirmRoster(root, '2026-10-01T12:00:00');
   assert.equal(projectPicks(root).executor.until, '2026-10-31');
 }));
 
@@ -302,7 +302,7 @@ test('roster confirm renews this project and the all-projects picks', () => with
   ready(root, 'codex', 'claude', 'haiku');
   setRosterPick('build', 'claude', { days: 1, now: NOW }, root);
   setRosterPick('review', 'haiku', { days: 1, now: NOW, everywhere: true }, root);
-  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00').exit, 0);
   assert.equal(projectPicks(root).executor.until, '2026-10-27');
   assert.equal(machinePicks(root).validator.until, '2026-10-27');
 }));
@@ -590,7 +590,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(json.find((entry) => entry.job === 'build').like, undefined);
 
   // Confirm renews dated lines only; a line with no until never expires.
-  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00').exit, 0);
   assert.equal(machinePicks(root)['small-build'].until, '2026-10-27');
   assert.equal(projectPicks(root)['quick-fixes'].until, '');
 
@@ -713,7 +713,7 @@ test('a roster saved before custom jobs reads, routes, and renders the same', ()
   assert.match(view.out, /^build +claude · opus 5\.5 +codex · own default +- +2026-10-24 +-$/m);
   // A normal build and a low-stakes build with no small build pick match.
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true }).engine.id, 'claude');
-  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);
+  assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00').exit, 0);
   const renewed = readEngineRegistry(root).roster;
   assert.equal(renewed.executor.until, '2026-10-27');
   assert.equal(renewed.notes, 'kept by hand');
