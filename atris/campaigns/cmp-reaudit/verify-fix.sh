@@ -3,6 +3,8 @@
 # test changes alone, on master's code, must fail (the bug is real); the lane's
 # full change must pass that test and every test loading a changed module, in
 # two time zones a day apart. Prints one line: VERIFIED / REJECTED <why>.
+# This is a fast per-fix check; the full suite before merge is the final net
+# for any path it cannot see (a require built at run time, for example).
 set -u
 N="$1"
 H="$(cd "$(dirname "$0")" && pwd)"
@@ -25,7 +27,7 @@ run() { # dir file tz -> exit code; output kept in $RUN_OUT
 }
 # a real assertion failure: exit 1, a failed test, an assertion error, and no load error
 failed_for_real() {
-  [ "$1" = 1 ] && echo "$RUN_OUT" | grep -qE '^ℹ fail [1-9]' && echo "$RUN_OUT" | grep -q 'ERR_ASSERTION' \
+  [ "$1" = 1 ] && echo "$RUN_OUT" | grep -qE '^(ℹ|#) fail [1-9]' && echo "$RUN_OUT" | grep -q 'ERR_ASSERTION' \
     && ! echo "$RUN_OUT" | grep -qE '(SyntaxError|ReferenceError|Cannot find module)'
 }
 
@@ -50,6 +52,12 @@ related="$tests $(cd "$W" && node -e '
     const found = [...text.matchAll(/require\(["\x27](\.{1,2}\/[^"\x27]+)["\x27]\)/g)]
       .map((m) => path.normalize(path.join(path.dirname(file), m[1])).replace(/\.js$/, ""));
     if (file.startsWith("test") && /bin["\x27]?\s*,\s*["\x27]atris\.js|bin\/atris(\.js)?\b/.test(text)) found.push("bin/atris");
+    // a path built in pieces: path.join(root, "commands", "soul.js") or ROOT + "/commands/soul"
+    if (file.startsWith("test")) for (const k of changed) {
+      const [dir, base] = k.split("/");
+      if (new RegExp(`["\x27]${dir}["\x27]\\s*,\\s*["\x27]${base}(\\.js)?["\x27]`).test(text)
+        || new RegExp(`["\x27][^"\x27\\n]*\\/${dir}\\/${base}(\\.js)?["\x27]`).test(text)) found.push(k);
+    }
     return found;
   };
   const graph = new Map(files.map((f) => [f, deps(f)]));
