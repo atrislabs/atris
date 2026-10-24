@@ -637,3 +637,27 @@ test('browser: a paste longer than the box holds says so under the card, and the
   assert.deepEqual(out.full, { length: 280, note: 'that is as much as fits in the box.' }, show);
   assert.deepEqual(out.room, { length: 275, note: '' }, show);
 });
+
+test('browser: a button looks pressed the moment it is pressed, and comes back when the press lifts away', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const runs = [];
+    for (const sel of ["#bet [data-option='skip']", '#bet .pill']) {
+      const at = await middle(p, sel);
+      const op = () => p.run(`Number(getComputedStyle(document.querySelector(${JSON.stringify(sel)})).opacity)`);
+      const before = await op();
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await wait(60);
+      const down = await op();
+      // the press slides off the button and lifts there, so nothing is tapped
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10, button: 'left', buttons: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 10, y: 10, button: 'left', clickCount: 1 });
+      await wait(60);
+      runs.push({ sel, before, down, up: await op() });
+    }
+    return runs;
+  });
+  const show = JSON.stringify(out, null, 1);
+  for (const r of out) assert.deepEqual([r.before, r.down, r.up], [1, 0.7, 1], show);
+});
