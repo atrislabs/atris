@@ -373,3 +373,21 @@ test('browser: dragging to select words in a team row selects them and opens not
   assert.deepEqual(out.afterDrag, [], show);
   assert.deepEqual(out.taps, ['member'], show);
 });
+
+test('browser: a short quiet link like no on a yes card answers a tap 44px wide, and its words stay where they were', { skip, timeout: 90000 }, async () => {
+  const taps = [];
+  const desk = trace.cardDesk(CARDS.yes, async (action) => { taps.push(action); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const r = await p.rect("#bet [data-option='no']");
+    const hits = await p.run(`(function () { var y = ${r.y + r.h / 2}, c = ${r.x + r.w / 2}; return [-21, -16, 16, 21].map(function (dx) { var n = document.elementFromPoint(c + dx, y); return Boolean(n && n.closest && n.closest("[data-option='no']")); }); })()`);
+    // a tap 20px left of the middle of the words, outside them
+    await tapAt(send, r.x + r.w / 2 - 20, r.y + r.h / 2);
+    await wait(1500);
+    return { w: r.w, h: r.h, hits, taps };
+  });
+  const show = JSON.stringify(out, null, 1);
+  // the words themselves are narrower than a finger: the button box did not grow
+  assert.ok(out.w < 44 && out.h >= 44, show);
+  assert.deepEqual(out.hits, [true, true, true, true], show);
+  assert.deepEqual(out.taps, ['no'], show);
+});
