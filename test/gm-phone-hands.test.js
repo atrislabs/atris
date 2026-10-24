@@ -462,3 +462,26 @@ test('browser: Tab from an open box goes to its send, and Esc in the box puts th
   // Esc: the words go, the box closes, and its button has the focus
   assert.deepEqual([out.escaped.tag, out.escaped.text, out.escaped.field], ['BUTTON', 'or say something', false], show);
 });
+
+test('browser: Enter while a word is still being composed on a Japanese or Chinese keyboard is left to the keyboard and sends nothing', { skip, timeout: 90000 }, async () => {
+  const said = [];
+  const desk = trace.cardDesk(CARDS.b1, async (a, { text, card }) => { said.push(text); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    await send('Input.imeSetComposition', { text: 'にほん', selectionStart: 3, selectionEnd: 3 });
+    // the Enter that picks the word, while it is still being composed
+    await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }))");
+    await wait(600);
+    const composing = { said: [...said], ...(await look(p)) };
+    await send('Input.insertText', { text: 'にほん' });
+    await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))");
+    await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
+    return { composing, said };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual(out.composing.said, [], show);
+  assert.deepEqual([out.composing.field, out.composing.title], [true, CARDS.b1.title], show);
+  // the Enter after the word is picked sends it
+  assert.equal(out.said.length, 1, show);
+});
