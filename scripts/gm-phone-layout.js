@@ -75,6 +75,7 @@ const CASES = [
   { name: 'deck', card: gmCard.deck({ id: 'deck~1', at: 0, total: 3, card: DECK_JOB, columns: ['done', 'work', 'member', 'role', 'status'], job: { member: 'navigator', role: 'system navigator' } }) },
   { name: 'swap', card: gmCard.swap({ id: 'swap~1', name: 'builder', choices: SWAP }) },
   { name: 'wait', card: gmCard.wait({ id: 'wait:1', progress: [{ at: Date.now() - 14000, line: 'drafting three ideas at once' }], waited_ms: 14000 }) },
+  { name: 'wait-notes', card: gmCard.wait({ id: 'wait:2', progress: [{ at: Date.now() - 14000, line: 'drafting three ideas at once' }], waited_ms: 14000, thread: [{ who: 'owner', text: 'make it about schools' }, { who: 'orb', text: 'got it, i\'ll fold that in.' }] }) },
 ];
 
 // What the page drew, in css pixels, read in the page.

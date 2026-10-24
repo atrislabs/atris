@@ -51,3 +51,23 @@ test('layout: the big orb\'s line ends above the footer at every size, a phone o
   // an upright phone and the laptop keep their orb: 72% of the short side, at most 520px
   for (const r of rows.filter(x => x.viewport !== 'side')) assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
 });
+
+test('layout: on the calm line the footer never lands on the card, with the phone on its side or a note open, and the sphere stays put', { skip, timeout: 120000 }, async () => {
+  const probe = `(function () {
+    function R(n) { var b = n.getBoundingClientRect(); return { top: b.top + scrollY, bottom: b.bottom + scrollY }; }
+    var b = document.getElementById('bet');
+    return { field: R(b.querySelector('.field')), time: R(b.querySelector('.waittime')), foot: R(document.getElementById('foot')), stage: R(document.getElementById('stage')), card_top: R(b).top };
+  })()`;
+  const rows = await layout({ chromePath: CHROME, cases: only('wait', 'wait-notes'), probe });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
+  for (const r of rows) {
+    const p = r.probe;
+    // the box and every line of words end above the footer, and the sphere above the card
+    assert.ok(p.field.bottom <= p.foot.top, show);
+    assert.ok(p.time.bottom <= p.foot.top, show);
+    assert.ok(p.stage.bottom <= p.card_top, show);
+    assert.equal(r.scroll_w, r.vw, show);
+  }
+  // upright phones and the laptop keep the footer at the bottom of the screen
+  for (const r of rows.filter(x => x.case === 'wait' && x.viewport !== 'side')) assert.ok(Math.abs(r.probe.foot.bottom - (r.vh - Math.max(20, (r.safe_area && r.safe_area.bottom) || 0))) <= 1, show);
+});
