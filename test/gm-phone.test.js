@@ -640,9 +640,11 @@ test('over http: the job deck is a card through the same token check, one card p
     const deck = (await post({ open: 'deck' })).json.card;
     assert.equal(deck.kind, 'deck');
     // the deck card is about the job; the rating and the model live on the team table
-    assert.deepEqual(deck.table.columns, ['done', 'work', 'member', 'role', 'status']);
+    // and no done column: every job in the deck is open, so it would say "not yet" on every card
+    assert.deepEqual(deck.table.columns, ['work', 'member', 'role', 'status']);
     const row = deck.table.rows[0];
-    assert.deepEqual([deck.count, deck.label, row[2], row[4]], ['job 1 of 1', 'working', 'builder', 'working']);
+    assert.deepEqual([deck.count, deck.label, row[1], row[3]], ['job 1 of 1', 'working', 'builder', 'working']);
+    assert.ok(!row.includes('not yet'), row.join(' | '));
     assert.match(deck.body, /^builder is working on it, .*\. nothing needs you here\.$/);
     assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
