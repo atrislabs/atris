@@ -3827,6 +3827,8 @@ setInterval(() => {}, 1000);
     try { process.kill(kid, 0); await new Promise(r => setTimeout(r, 50)); } catch { alive = false; }
   }
   assert.equal(alive, false, 'the grandchild in the same group is gone');
+  // past the grace the group's SIGKILL has gone out, and it is no longer counted
+  await new Promise(r => setTimeout(r, 1700));
   assert.equal(gmBet.stopWriters(), 0, 'and it is no longer counted as running');
   // a signal already stopped never starts the model
   let spawned = 0;
@@ -3947,12 +3949,14 @@ spawn(process.execPath, ['-e', ${JSON.stringify(kidCode)}], { stdio: 'ignore' })
 setInterval(() => {}, 1000);
 `);
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const readKid = () => { try { return Number(fs.readFileSync(pidFile, 'utf8')) || null; } catch { return null; } };
+  const stop = new AbortController();
+  const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
   let kid = null;
   try {
-    const stop = new AbortController();
-    const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
-    for (let i = 0; i < 200 && !fs.existsSync(pidFile); i += 1) await new Promise(r => setTimeout(r, 25));
-    kid = Number(fs.readFileSync(pidFile, 'utf8'));
+    for (let i = 0; i < 200 && !readKid(); i += 1) await new Promise(r => setTimeout(r, 25));
+    kid = readKid();
+    assert.ok(kid, 'the kid started');
     stop.abort();
     const res = await pending;
     assert.equal(res.stopped, true);
@@ -3963,6 +3967,10 @@ setInterval(() => {}, 1000);
     for (let i = 0; i < 80 && !gone; i += 1) { await new Promise(r => setTimeout(r, 50)); gone = !alive(kid); }
     assert.equal(gone, true, 'the kid is gone after the grace');
   } finally {
+    // a failed check never leaves the model or the kid behind
+    stop.abort();
+    await pending;
+    kid = kid || readKid();
     if (kid && alive(kid)) process.kill(kid, 'SIGKILL');
   }
 });
@@ -4038,4 +4046,27 @@ test('swarm: the budget covers reading the facts: slow scoring and a slow npm re
   assert.equal(spent.ok, false);
   assert.equal(late, 0, 'no writer starts once the budget is spent');
   assert.match(spent.reason, /no time was left to draft inside 0 seconds|nothing usable came back/);
+});
+
+test('swarm: a stop while the facts are read leaves no timer behind, so the process exits at once', { timeout: 20000 }, async () => {
+  const root = workspace();
+  const script = `
+    const gmBet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'gm-bet.js'))});
+    const stop = new AbortController();
+    const t0 = Date.now();
+    gmBet.generateBet({
+      workspaceRoot: ${JSON.stringify(root)}, today: '2026-10-21', ledgerFile: ${JSON.stringify(path.join(root, 'bets.jsonl'))}, signal: stop.signal,
+      deps: { readNow: () => null, seasonFacts: () => null, gitLanded: () => null, packageName: null, readBriefs: () => null, scoreBets: () => new Promise(() => {}), runModel: async () => ({ ok: false, reason: 'never asked' }) },
+    }).then((out) => { process.stdout.write(JSON.stringify({ stopped: out.stopped, returned: Date.now() - t0 })); });
+    setTimeout(() => stop.abort(), 50);
+  `;
+  const started = Date.now();
+  const res = require('node:child_process').spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 15000, env: { ...process.env, HOME } });
+  const lived = Date.now() - started;
+  assert.equal(res.status, 0, res.stderr);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.stopped, true);
+  assert.ok(out.returned < 1000, `returned after ${out.returned} ms`);
+  // the source deadline is 7.5 seconds into a 30 second budget; nothing waits for it
+  assert.ok(lived < 4000, `the process lived ${lived} ms after a stop at 50 ms`);
 });
