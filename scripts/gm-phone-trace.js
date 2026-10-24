@@ -150,6 +150,28 @@ async function serve(desk, page = phonePage) {
 // The first chrome in a busy CI shard can take well over 15s to come up cold.
 const CHROME_START_MS = 45000;
 
+// Each chrome runs as its own process group, so quitting kills every process
+// it started; one left over would hold its stderr open and keep the tests
+// from ever ending. A run that is stopped or ends with chromes still up
+// quits them first. live: the quit of each chrome still up.
+const live = new Set();
+const ENDS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+let watching = false;
+function quitAll() { for (const quit of [...live]) quit(); }
+function quitOnSignal(signal) {
+  quitAll();
+  watchForEnd(false);
+  // with no one else listening, the signal ends the run as it would have
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+}
+function watchForEnd(on) {
+  if (on === watching) return;
+  watching = on;
+  if (on) { process.once('exit', quitAll); for (const signal of ENDS) process.once(signal, quitOnSignal); return; }
+  process.removeListener('exit', quitAll);
+  for (const signal of ENDS) process.removeListener(signal, quitOnSignal);
+}
+
 async function launch(chromePath) {
   const profile = makeProfileDir('gm-trace-chrome-');
   const args = headlessArgs(profile, ['--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', `--window-size=${PHONE.width},${PHONE.height}`, 'about:blank']);
@@ -157,8 +179,17 @@ async function launch(chromePath) {
   if (process.platform === 'linux') args.push('--no-sandbox');
   // mac: a fresh profile asks the login keychain for chrome's storage key and pops a dialog; use a throwaway key instead
   if (process.platform === 'darwin') args.push('--use-mock-keychain', '--password-store=basic');
-  const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const quit = () => { try { proc.kill('SIGKILL'); } catch { /* gone */ } removeProfileDir(profile); };
+  const proc = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  const quit = () => {
+    try { process.kill(-proc.pid, 'SIGKILL'); } catch { try { proc.kill('SIGKILL'); } catch { /* gone */ } }
+    proc.stderr.removeAllListeners('data');
+    proc.stderr.destroy();
+    removeProfileDir(profile);
+    live.delete(quit);
+    if (!live.size) watchForEnd(false);
+  };
+  live.add(quit);
+  watchForEnd(true);
   try {
     const port = await new Promise((resolve, reject) => {
       let err = '';
@@ -188,7 +219,8 @@ async function launch(chromePath) {
     };
     const send = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); ws.send(JSON.stringify({ id: n, method, params })); });
     send.on = fn => { heard.add(fn); return () => heard.delete(fn); };
-    return { send, close: () => { try { ws.close(); } catch { /* closed */ } quit(); } };
+    // pid: the chrome's own process group; stderr: its pipe, let go once it quits
+    return { send, close: () => { try { ws.close(); } catch { /* closed */ } quit(); }, pid: proc.pid, stderr: proc.stderr };
   } catch (err) {
     quit();
     throw err;
