@@ -866,6 +866,15 @@ const TABLE_LOOK = `(function () {
   var g = grid.getBoundingClientRect();
   var before = table.querySelector('tbody td.member').getBoundingClientRect().left;
   var headBefore = table.querySelector('thead th').getBoundingClientRect().left;
+  // the right edge's fade: at rest, then scrolled all the way, then back
+  var faded = function () { return grid.classList.contains('more-right') && getComputedStyle(grid).maskImage !== 'none'; };
+  var fade = { at_rest: faded() };
+  grid.scrollLeft = grid.scrollWidth;
+  grid.dispatchEvent(new Event('scroll'));
+  fade.at_end = faded();
+  grid.scrollLeft = 0;
+  grid.dispatchEvent(new Event('scroll'));
+  fade.back = faded();
   grid.scrollLeft = 200;
   var scrolled = grid.scrollLeft;
   var after = table.querySelector('tbody td.member').getBoundingClientRect().left;
@@ -897,6 +906,7 @@ const TABLE_LOOK = `(function () {
     name_column_moved_px: Math.round(Math.abs(after - before)),
     name_header_moved_px: Math.round(Math.abs(headAfter - headBefore)),
     models_under_names: covered,
+    fade: fade,
     page_scrolls_sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
     smallest_font_px: Math.min.apply(null, sizes),
     statuses: Array.prototype.map.call(table.querySelectorAll('tbody td.status'), function (n) { return n.textContent; }),
