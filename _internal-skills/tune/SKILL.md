@@ -10,7 +10,7 @@ tags:
   - self-improvement
 ---
 
-# Tune — Live Skill RL
+# Tune: Live Skill RL
 
 Turn the user's reaction into a targeted SKILL.md overlay edit. Human-in-the-loop reinforcement learning for skills.
 
@@ -24,8 +24,8 @@ Overlay.md (mutable, per-workspace)
 Effective skill at invocation time
 
 Path A (cron):  /api/improve ticks weekly, objective reward harvester
-Path B (live):  THIS SKILL — user reaction = reward, edits overlay in-session
-                Same overlay.md, same scorecard — both paths compound.
+Path B (live):  THIS SKILL: user reaction = reward, edits overlay in-session
+                Same overlay.md, same scorecard: both paths compound.
 ```
 
 ## The reward schema (non-negotiable)
@@ -90,7 +90,7 @@ Path B (live):  THIS SKILL — user reaction = reward, edits overlay in-session
 4. **Size cap.** A single tick may add at most 5 lines to overlay.md. Larger changes require the user to re-invoke with a bigger scope confirmed.
 5. **Overlay size cap.** If overlay.md exceeds 100 lines, refuse new edits and suggest consolidation (point the user at `/api/improve` or ask them to manually prune).
 6. **No ALL CAPS, no em dashes, no "AI" buzzword** in overlay content (matches outbound copy rules).
-7. **Log every tick** to scorecards.jsonl — approved, rejected, and neutral. Every tick.
+7. **Log every tick** to scorecards.jsonl: approved, rejected, and neutral. Every tick.
 
 ## Reward harvester (Path B side)
 
@@ -107,7 +107,7 @@ Weekly: /api/improve cron tick reads the last 7 days of scorecards.jsonl
 
 ## Examples
 
-### Example 1 — explicit negative on aeo
+### Example 1: explicit negative on aeo
 
 ```
 User: [runs aeo draft, gets output]
@@ -135,7 +135,7 @@ User: "yes"
 [writes overlay.md + logs scorecard, reward=−1, applied=true]
 ```
 
-### Example 2 — explicit positive on cold-email
+### Example 2: explicit positive on cold-email
 
 ```
 User: "damn that cold email hook is sharp, keep doing that"
@@ -154,7 +154,7 @@ User: "yes"
 [writes overlay.md + logs scorecard, reward=+1, applied=true]
 ```
 
-### Example 3 — neutral
+### Example 3: neutral
 
 ```
 User: [gets output, says nothing, moves on]
@@ -204,6 +204,6 @@ The architect member owns these proposals and must keep them advisory until expl
 2. Always show the diff before applying.
 3. Require explicit user approval.
 4. Cap a single tick at 5 lines of change.
-5. Log every tick — approved, rejected, neutral.
+5. Log every tick: approved, rejected, neutral.
 6. Do not propose on neutral reactions.
 7. Strip PII before any cross-customer record (use `skill_extractor`).

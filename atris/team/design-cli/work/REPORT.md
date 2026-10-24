@@ -12,35 +12,35 @@ login` token.
 
 Created:
 
-- `lib/design-api.js` — shared client. Key resolution, `designRequest` (JSON
+- `lib/design-api.js`: shared client. Key resolution, `designRequest` (JSON
   over `utils/api.js` `httpRequest`, honors `ATRIS_API_URL`/`ATRIS_BACKEND_URL`),
   `pollDesignJob` (3s interval, 3m cap), and the credits/balance line.
-- `commands/design.js` — `extract`, `check`, `search`. Readable card by default
+- `commands/design.js`: `extract`, `check`, `search`. Readable card by default
   (brand name, primary hex colors, heading and body fonts, credits charged,
   balance left). `--json` prints the raw API object. Polls with a one-line TTY
   spinner; silent when piped.
-- `mcp/atris-mcp/index.mjs` — stdio MCP server on `@modelcontextprotocol/sdk`.
+- `mcp/atris-mcp/index.mjs`: stdio MCP server on `@modelcontextprotocol/sdk`.
   Tools: `design_extract`, `design_check`, `design_search`. Returns the JSON
   result plus `credits_charged` and `balance_remaining_usd`.
-- `test/design.test.js` — mocked HTTP, covers all three commands, the polling
+- `test/design.test.js`: mocked HTTP, covers all three commands, the polling
   loop, `--json`, `--sections`, `--limit`, the no-key error, and help.
-- `test/mcp.test.js` — offline test: spawns `atris mcp` and runs a real
+- `test/mcp.test.js`: offline test: spawns `atris mcp` and runs a real
   `initialize` + `tools/list` handshake over stdio.
-- `docs/MCP.md` — Claude Desktop and Cursor config snippets.
-- `atris/team/design-cli/work/REPORT.md` — this file.
+- `docs/MCP.md`: Claude Desktop and Cursor config snippets.
+- `atris/team/design-cli/work/REPORT.md`: this file.
 
 Edited:
 
-- `bin/atris.js` — dispatch for `design` and `mcp` (mcp spawns the server with
+- `bin/atris.js`: dispatch for `design` and `mcp` (mcp spawns the server with
   inherited stdio), two help lines, and `mcp` added to the update-check skip
   list so a stray notice cannot corrupt the JSON-RPC stream.
-- `lib/known-commands.js` — registered `design` and `mcp`.
-- `package.json` — added dependency `@modelcontextprotocol/sdk@^1.30.0`,
+- `lib/known-commands.js`: registered `design` and `mcp`.
+- `package.json`: added dependency `@modelcontextprotocol/sdk@^1.30.0`,
   `atris-mcp` bin entry, `mcp/` in `files`.
-- `package-lock.json` — lockfile for the new dependency.
-- `test/fast-tests.txt` — registered `test/design.test.js` and
+- `package-lock.json`: lockfile for the new dependency.
+- `test/fast-tests.txt`: registered `test/design.test.js` and
   `test/mcp.test.js` in the fast tier.
-- `atris/MAP.md` — feature entry for design + mcp.
+- `atris/MAP.md`: feature entry for design + mcp.
 
 ## Tests
 
@@ -55,7 +55,7 @@ node --test test/design.test.js test/mcp.test.js
 # pass 8, fail 0
 ```
 
-`atris slop detect docs/MCP.md` — clean, no slop tells.
+`atris slop detect docs/MCP.md`: clean, no slop tells.
 
 ## Live transcript
 

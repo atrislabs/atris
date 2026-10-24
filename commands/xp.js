@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 const { treeHashFor } = require('../lib/tree-hash');
+const { careerXpRoot, careerXpLinkedRoots } = require('../lib/career-xp-root');
+const { withCareerXpLock } = require('../lib/career-xp-lock');
+const { normalizeActor, taskBuilder } = require('../lib/review-integrity');
 
 const DEFAULT_GRAPH_DAYS = 365;
 const MAX_SYNC_GRAPH_DAYS = 370;
@@ -22,15 +25,15 @@ const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
 
 // Default single-workspace XP root. Local XP reads task_episodes.jsonl (written
-// by task-db at the resolved workspace root) and writes its projection beside
-// it, so the `--workspace` default must resolve the same shared root, otherwise
+// by task-db at the main checkout's workspace root) and writes its projection
+// beside it, so reads must resolve the same shared root, otherwise
 // `xp --local` from a subdir (e.g. backend/) read the wrong/empty episodes and
-// split the projection into a nested .atris. Explicit --workspace still wins;
-// the multi-root roster path (discoverCareerXpWorkspaces) is untouched. Falls
+// split the projection into a nested .atris. Explicit --workspace selects the
+// repository and nested workspace, then also resolves its shared ledger. Falls
 // back to raw cwd if the resolver can't load.
 function defaultXpWorkspace() {
   try {
-    return require('../lib/mission-root').resolveWorkspaceRoot(process.cwd());
+    return careerXpRoot(require('../lib/mission-root').resolveWorkspaceRoot(process.cwd()));
   } catch {
     return process.cwd();
   }
@@ -921,7 +924,7 @@ function receiptFromTaskEpisode(episode, treeHash) {
   );
   const proof = String(episode?.proof || '').trim();
   const reward = asNumber(episode?.career_xp?.reward ?? episode?.reward?.value, 0);
-  if (!episodeId || (!rejected && (!eligible || !proof || reward <= 0))) return null;
+  if (!episodeId || (!rejected && (!eligible || !proof || reward <= 0 || !hasIndependentXpReview(episode)))) return null;
 
   return {
     schema: 'atris.career_xp_receipt.v1',
@@ -1047,8 +1050,55 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   };
 }
 
-function collectLocalXpProjectionState(args = [], { write = true } = {}) {
-  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+// The eligible flag records acceptance intent, not reviewer independence.
+// Apply the same actor evidence to new episodes and historical recovery.
+function hasIndependentXpReview(episode) {
+  const builder = taskBuilder(episode?.state);
+  if (!builder) return false;
+  const reviewer = normalizeActor(episode.action?.actor);
+  if (reviewer && reviewer !== builder) return true;
+  const metadata = episode.state.metadata || {};
+  const verifier = normalizeActor(metadata.certified_verified_by);
+  const reviewActors = Array.isArray(metadata.agent_review_actors) ? metadata.agent_review_actors.map(normalizeActor) : [];
+  return metadata.agent_certified === true && metadata.machine_verified === true
+    && Boolean(verifier) && verifier !== builder
+    && verifier === normalizeActor(metadata.independent_review_by)
+    && reviewActors.includes(verifier);
+}
+
+function readLinkedXpFile(filePath, options = {}) {
+  try {
+    return readJsonl(filePath, options);
+  } catch {
+    console.error(`warning: skipped unreadable linked xp file at ${filePath}`);
+    return [];
+  }
+}
+
+// Historical linked ledgers predate the shared writer. Require explicit
+// eligibility here; receipt conversion also enforces independent review.
+function recoverLinkedTaskEpisodes(workspace) {
+  return careerXpLinkedRoots(workspace).flatMap(root => readLinkedXpFile(path.join(root, TASK_EPISODES_FILE), { allowPartialTail: true }))
+    .filter(episode => episode?.state?.status === 'done' && episode?.career_xp?.eligible === true
+      && String(episode.proof || '').trim()
+      && asNumber(episode.career_xp.reward ?? episode.reward?.value) > 0
+      && hasIndependentXpReview(episode));
+}
+
+function recoverLinkedReceipts(workspace) {
+  return careerXpLinkedRoots(workspace).flatMap(root => {
+    const chain = normalizeReceiptChain(readLinkedXpFile(path.join(root, CAREER_XP_RECEIPTS_FILE)), { allowLegacyUpgrade: false });
+    return chain.integrity.status === 'verified' ? chain.receipts : [];
+  });
+}
+
+function collectLocalXpProjectionState(args = [], { write = true, resolveSharedRoot = true } = {}) {
+  const selected = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+  const workspace = resolveSharedRoot ? careerXpRoot(selected) : selected;
+  return withCareerXpLock(workspace, () => collectLockedXpProjectionState(workspace, { write, resolveSharedRoot }));
+}
+
+function collectLockedXpProjectionState(workspace, { write, resolveSharedRoot }) {
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const projectionPath = path.join(workspace, CAREER_XP_PROJECTION_FILE);
@@ -1075,12 +1125,13 @@ function collectLocalXpProjectionState(args = [], { write = true } = {}) {
     && fileSize(episodePath) > 0
     && fileSize(receiptsPath) === 0;
   const tail = readTaskEpisodeTail(episodePath, cursorPath, { forceReset: replayFromStart });
-  const treeHash = write && tail.episodes.length ? treeHashFor(workspace) : null;
+  const recovered = resolveSharedRoot ? recoverLinkedTaskEpisodes(workspace) : [];
+  const episodes = [...tail.episodes, ...recovered];
+  const treeHash = write && episodes.length ? treeHashFor(workspace) : null;
   const seen = new Set(existingChain.receipts.map(receipt => receipt.receipt_id).filter(Boolean));
   let previousHash = existingChain.integrity.head_hash || null;
-  const newReceipts = tail.episodes
-    .map((episode) => receiptFromTaskEpisode(episode, treeHash))
-    .filter(Boolean)
+  const recoveredReceipts = resolveSharedRoot ? recoverLinkedReceipts(workspace) : [];
+  const newReceipts = [...recoveredReceipts, ...episodes.map(episode => receiptFromTaskEpisode(episode, treeHash)).filter(Boolean)]
     .filter((receipt) => {
       if (seen.has(receipt.receipt_id)) return false;
       seen.add(receipt.receipt_id);
@@ -1381,12 +1432,14 @@ function collectAllLocalXpProjection(args = []) {
   const searchRoots = defaultAllSearchRoots(args).filter(root => fs.existsSync(root));
   const explicitWorkspaces = readFlagValues(args, '--workspace');
   const discovered = searchRoots.flatMap(root => discoverCareerXpWorkspaces(root));
-  const workspaces = uniquePaths([...explicitWorkspaces, ...discovered]);
+  // Local recovery folds old checkout episodes into the durable main ledger.
+  // Canonicalize before aggregation so copies can never earn twice.
+  const workspaces = uniquePaths([...explicitWorkspaces, ...discovered].map(careerXpRoot));
   const projections = workspaces.map((workspace) => {
     try {
       return {
         workspace_root: workspace,
-        projection: collectLocalXpProjection(['--workspace', workspace]),
+        projection: collectLocalXpProjectionState(['--workspace', workspace]).projection,
       };
     } catch (error) {
       return {
@@ -1641,7 +1694,7 @@ LIMIT 25
 }
 
 function buildCareerXpSessionCapsule(args = []) {
-  const workspace = path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace()));
+  const workspace = careerXpRoot(path.resolve(readInlineFirstFlag(args, '--workspace', defaultXpWorkspace())));
   const sinceInput = readInlineFirstFlag(args, '--since', 'today');
   const untilInput = readInlineFirstFlag(args, '--until', null);
   const since = parseSessionBoundary(sinceInput, startOfToday());

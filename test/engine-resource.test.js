@@ -1092,6 +1092,7 @@ test('every launch of an engine program by name records its run or is named as e
   const EXEMPT = new Map([
     ['commands/console.js', 'interactive codex session'],
     ['commands/interview.js', 'interactive claude session'],
+    ['lib/engine-login.js', 'one-word login check, not a work run'],
   ]);
   // Comments are blanked with their line breaks kept, so a mention there
   // never counts and line numbers still match the file.

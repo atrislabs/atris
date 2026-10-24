@@ -1,6 +1,6 @@
-# Project Endstate — Level 1 Contract
+# Project Endstate: Level 1 Contract
 
-> **Status:** v2 — rehearsal-ready 2026-04-08
+> **Status:** v2, rehearsal-ready 2026-04-08
 > **Created:** 2026-04-08
 > **Last Updated:** 2026-04-08
 
@@ -14,13 +14,13 @@ Compare one pinned single-model baseline against one coordinated stack run on th
 
 ## Tracks
 
-### Track A — `atris-cli`
+### Track A: `atris-cli`
 
 - **Task:** `capabilities.md generator`
 - **Intent:** make the CLI capability surface legible so composition gaps become visible
 - **Source context:** `atris/wiki/systems/atris-cli.md`, `atris/wiki/concepts/intent-capability-composition.md`
 
-### Track B — `../atrisos-backend`
+### Track B: `../atrisos-backend`
 
 - **Task:** `Task 8: Hourly validator loop`
 - **Intent:** align `scripts/evolve.py` with the self-improving core in one bounded backend slice

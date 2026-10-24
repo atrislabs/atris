@@ -170,11 +170,30 @@ test('atris zen on a zen repo says so and changes nothing', () => {
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.match(cli.stdout, /already zen\./);
-    assert.match(cli.stdout, /1 unsaved team note left in place\./);
+    assert.match(cli.stdout, /1 unsaved team note left in place: atris\/ 1\./);
     assert.doesNotMatch(cli.stdout, /kept as it is/);
     assert.doesNotMatch(cli.stdout, /nothing was thrown away/);
     assert.equal(git(checkout, 'for-each-ref'), refs);
     assert.match(fs.readFileSync(path.join(checkout, 'atris/TODO.md'), 'utf8'), /a note/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen names where the unsaved team notes are, biggest first', () => {
+  const { base, checkout } = createRepo();
+  try {
+    write(checkout, 'atris/TODO.md', NOTES + 'a note\n');
+    write(checkout, 'atris/logs/a.md', 'a\n');
+    write(checkout, 'atris/logs/b.md', 'b\n');
+    write(checkout, 'crm.db', 'rows\n');
+    write(checkout, 'events.jsonl', '{}\n');
+    write(checkout, '.codex/notes.md', 'n\n');
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    // Three biggest places by name, the rest as a count, so a big number
+    // reads as "mostly agent notes" instead of an unexplained total.
+    assert.match(cli.stdout, /6 unsaved team notes left in place: atris\/ 3, \.codex\/ 1, crm\.db 1, and 1 more place\./);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -262,6 +281,56 @@ test('atris zen saves a side copy nobody touched in days, then puts it away', ()
     assert.ok(kept, branches(checkout, '*').join(','));
     assert.equal(git(checkout, 'show', `${kept}:wip.js`), 'forgotten');
     assert.equal(git(checkout, 'show', `${kept}:app.js`), 'half done');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('atris zen says how long until a side copy with unsaved work gets saved', () => {
+  const { base, checkout } = createRepo();
+  try {
+    const old = path.join(base, 'old');
+    git(checkout, 'worktree', 'add', '-q', old, '-b', 'old-branch');
+    write(old, 'wip.js', 'half done\n');
+    const when = new Date(Date.now() - 2.5 * 86400000);
+    fs.utimesSync(path.join(old, 'wip.js'), when, when);
+    ageHistory(old, when);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner/);
+    assert.match(cli.stdout, /that is due in 12 hours/);
+    assert.ok(fs.existsSync(old));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a side copy whose only change is a node_modules link is put away like a clean one', () => {
+  const { base, checkout } = createRepo();
+  try {
+    fs.appendFileSync(path.join(checkout, '.git', 'info', 'exclude'), 'node_modules/\n');
+    const packages = path.join(base, 'packages');
+    fs.mkdirSync(packages);
+    fs.writeFileSync(path.join(packages, 'keep.js'), 'shared\n');
+    const linked = path.join(base, 'linked');
+    const working = path.join(base, 'working');
+    const hourAgo = new Date(Date.now() - 3600000);
+    for (const [copy, branch] of [[linked, 'linked-branch'], [working, 'working-branch']]) {
+      git(checkout, 'worktree', 'add', '-q', copy, '-b', branch);
+      fs.symlinkSync(packages, path.join(copy, 'node_modules'));
+      ageHistory(copy, hourAgo);
+    }
+    write(working, 'wip.js', 'half done\n');
+
+    const check = zen(checkout, 30, '--check');
+    assert.match(check.stdout, /1 side copy has unsaved work/);
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.ok(!fs.existsSync(linked), cli.stdout);
+    assert.ok(fs.existsSync(path.join(working, 'node_modules')));
+    assert.match(cli.stdout, /1 side copy has unsaved work, left for its owner/);
+    assert.equal(fs.readFileSync(path.join(packages, 'keep.js'), 'utf8'), 'shared\n');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -417,6 +486,31 @@ test('a branch with nothing new is not called kept and then cleared', () => {
     assert.match(cli.stdout, /cleared 1 finished branch/);
     assert.doesNotMatch(cli.stdout, /side is kept/);
     assert.deepEqual(branches(checkout, 'side'), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a branch made in the last 30 minutes is not cleared or counted as merged', () => {
+  const { base, checkout } = createRepo();
+  try {
+    // A running job makes its branch a moment before it checks it out, so the
+    // branch has no commits yet and git calls it merged.
+    git(checkout, 'branch', 'job-about-to-start');
+    git(checkout, 'branch', 'old-finished');
+    const log = path.join(checkout, '.git', 'logs', 'refs', 'heads', 'old-finished');
+    const epoch = Math.floor((Date.now() - 2 * 3600 * 1000) / 1000);
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/> \d+ ([+-]\d{4})\t/g, `> ${epoch} $1\t`));
+
+    const check = checkZen({ cwd: checkout, fetch: false, freshMinutes: 30 });
+    const merged = check.problems.find((p) => p.kind === 'merged_branches');
+    assert.deepEqual(merged && merged.branches, ['old-finished']);
+
+    const cli = zen(checkout, 30);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    assert.match(cli.stdout, /cleared 1 finished branch/);
+    assert.deepEqual(branches(checkout, 'job-about-to-start'), ['job-about-to-start']);
+    assert.deepEqual(branches(checkout, 'old-finished'), []);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -11,7 +11,7 @@ tags:
 
 # Ramp
 
-Corporate spend management via Ramp API. No OAuth needed — API key auth.
+Corporate spend management via Ramp API. No OAuth needed: API key auth.
 
 ## Setup
 
@@ -48,12 +48,12 @@ curl -s "https://api.ramp.com/developer/v1/transactions?page_size=50" \
 ```
 
 Filter params:
-- `from_date` / `to_date` — ISO 8601 (e.g. `2026-03-01`)
-- `department_id` — filter by department
-- `merchant_id` — filter by merchant
-- `user_id` — filter by cardholder
-- `min_amount` / `max_amount` — in cents
-- `state` — PENDING, CLEARED, DECLINED
+- `from_date` / `to_date`: ISO 8601 (e.g. `2026-03-01`)
+- `department_id`: filter by department
+- `merchant_id`: filter by merchant
+- `user_id`: filter by cardholder
+- `min_amount` / `max_amount`: in cents
+- `state`: PENDING, CLEARED, DECLINED
 
 ### Get Transaction
 ```bash

@@ -39,7 +39,7 @@ Flag and cut:
 Read the entire piece aloud. Mark:
 - Where you stumble (awkward phrasing)
 - Where you get bored (cut or punch up)
-- Where you speed up (the good stuff — keep this energy)
+- Where you speed up (the good stuff: keep this energy)
 
 ## Sanity Pass
 

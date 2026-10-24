@@ -327,7 +327,7 @@ test('skeptic: a named blocker becomes the next bet, not a patch on the blocked 
   });
   const events = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? goodBet() : release) }; },
@@ -373,14 +373,18 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
     { verdict: 'fail', missing_first: 'a public build that has the phone page', moves_metric: false, reason: 'the page shows a feature nobody can install.' },
   ];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(answers[prompts.length - 1]) }; },
       runSkeptic: async () => ({ ok: true, text: JSON.stringify(verdicts.shift()) }),
     },
   });
-  assert.equal(out.ok, false);
+  // no draft passed both checks: the one that met the rules is the card, with the worry on it
+  assert.equal(out.ok, true);
+  assert.equal(out.checked, false);
+  assert.equal(out.bet.title, goodBet().title);
+  assert.equal(out.bet.concern, 'one worry: the page shows a feature nobody can install.');
   // try 2 patches the code reject with the last answer
   assert.match(prompts[1], /Your last answer was:\n\{/);
   assert.match(prompts[1], /Your last answer was rejected: check_in_days must be a whole number from 7 to 14, got 3/);
@@ -392,7 +396,7 @@ test('retry paths: code rejects and a skeptic fail with no blocker patch the las
   // a skeptic fail that names nothing missing is a patch with its reason
   const plain = [];
   const again = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { plain.push(prompt); return { ok: true, text: JSON.stringify(goodBet()) }; },
@@ -416,7 +420,7 @@ test('trim: a format-only reject gets one free repair turn in the same try, then
   let judged = 0;
   const events = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), writers: 1,
     deps: {
       ...fixtureDeps,
       runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? long : short) }; },
@@ -452,7 +456,7 @@ test('trim: a trim that changes more than the long fields, or a mixed reject, is
   const sneaky = goodBet({ target: { metric: 'installs', baseline: 1400, goal: 1600 }, steps: [{ text: 'draft the page', who: 'team', member: 'builder', public: false }, goodBet().steps[2]] });
   const prompts = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 2 ? sneaky : (prompts.length === 1 ? long : goodBet())) }; } },
   });
   assert.equal(out.ok, true, out.reason);
@@ -463,31 +467,40 @@ test('trim: a trim that changes more than the long fields, or a mixed reject, is
   // a reject with a real problem besides a length gets no trim turn
   const mixed = [];
   await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { mixed.push(prompt); return { ok: true, text: JSON.stringify(mixed.length === 1 ? { ...long, check_in_days: 3 } : goodBet()) }; } },
   });
   assert.doesNotMatch(mixed[1], /broke only these length or sentence limits/);
   assert.match(mixed[1], /Your last answer was rejected: .*check_in_days must be a whole number from 7 to 14, got 3/);
 });
 
-test('skeptic: two fails end honestly; pass without moving the number is a fail; a broken skeptic stops the bet', async () => {
+test('skeptic: when nothing passes, the best draft is the card with the worry; a pass that does not move the number is a fail; a broken skeptic leaves it not double-checked', async () => {
   const root = workspace();
-  const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
-  const twice = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'fail', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new.' }) }));
-  assert.equal(twice.ok, false);
-  assert.match(twice.reason, /turned down 3 times \(a skeptic turned it down: a page alone reaches nobody new\. if the missing piece/);
+  const run = runSkeptic => gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), writers: 1, deps: { ...fixtureDeps, runModel: async () => ({ ok: true, text: JSON.stringify(goodBet()) }), runSkeptic } });
+  // three fails: never an error, the draft is shown with the skeptic's own worry for the owner
+  const thrice = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'fail', missing_first: 'nothing', moves_metric: true, reason: 'a page alone reaches nobody new. add a post.', concern: 'a page alone reaches nobody new' }) }));
+  assert.deepEqual([thrice.ok, thrice.checked, thrice.bet.title], [true, false, goodBet().title]);
+  assert.equal(thrice.bet.concern, 'one worry: a page alone reaches nobody new.');
+  assert.match(thrice.reason, /a skeptic turned it down: a page alone reaches nobody new/);
   let calls = 0;
-  const contradicts = await run(async () => { calls += 1; return { ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: '', moves_metric: false, reason: 'fine, though it reaches nobody.' }) }; });
-  assert.equal(contradicts.ok, false, 'a pass that does not move the number does not ship');
+  const contradicts = await run(async () => { calls += 1; return { ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: '', moves_metric: false, reason: 'fine, though the bet reaches nobody.' }) }; });
+  assert.equal(contradicts.checked, false, 'a pass that does not move the number does not pass');
   assert.equal(calls, 3, 'three writer answers, each judged');
+  // the skeptic's reason uses a word the owner never reads: the line says the kind of worry instead
+  assert.equal(contradicts.bet.concern, 'one worry: it may not move your number much this week.');
+  const steps = await run(async () => ({ ok: true, text: JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, doable: false, reason: 'the mission waits on strangers to reply.' }) }));
+  assert.equal(steps.checked, false, 'a team step the team cannot do and check on its own is a fail');
+  assert.equal(steps.bet.concern, 'one worry: one step depends on people outside the team.');
   const down = await run(async () => ({ ok: false, reason: 'the model took longer than 120 seconds and was stopped' }));
-  assert.deepEqual([down.ok, down.reason], [false, 'the skeptic could not check the bet: the model took longer than 120 seconds and was stopped']);
+  assert.deepEqual([down.ok, down.checked, down.bet.concern], [true, false, 'not double-checked: the second look did not finish.']);
+  assert.equal(down.reason, 'the skeptic could not check the bet: the model took longer than 120 seconds and was stopped');
   const garbled = await run(async () => ({ ok: true, text: '{"verdict": "maybe"}' }));
-  assert.deepEqual([garbled.ok, garbled.reason], [false, 'the skeptic could not check the bet: the skeptic gave no pass or fail verdict']);
+  assert.deepEqual([garbled.ok, garbled.checked, garbled.reason], [true, false, 'the skeptic could not check the bet: the skeptic gave no pass or fail verdict']);
   assert.deepEqual(gmBet.parseVerdict('nope'), { error: "the skeptic's answer: the answer was not JSON" });
-  // the real skeptic is its own claude -p call on the subscription path
+  // the real skeptic is its own claude -p call on the subscription path, thinking briefly
   const args = gmBet.skepticCommand().args('judge this');
   assert.deepEqual(args.slice(0, 4), ['-p', 'judge this', '--model', 'opus']);
+  assert.deepEqual(args.slice(-2), ['--effort', 'low']);
   assert.equal(gmBet.skepticCommand().bin, 'claude');
 });
 
@@ -728,15 +741,17 @@ test('generate: a turned-down answer is retried once with the reasons, then fail
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     emit: e => events.push(e),
+    writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: bad }; } },
   });
+  // no draft met the plain rules, so there is no card to show: the one honest failure left
   assert.equal(out.ok, false);
   assert.equal(prompts.length, 3);
   assert.doesNotMatch(prompts[0], /was rejected/);
   assert.match(prompts[1], /Your last answer was rejected: .*vague verb "optimize"/);
   assert.match(out.reason, /turned down 3 times/);
   assert.match(prompts[2], /Your last answer was rejected: .*vague verb "optimize"/);
-  assert.deepEqual(events.slice(SOURCE_KEYS.length).map(e => e.kind), ['model', 'reject', 'model', 'reject', 'model', 'reject']);
+  assert.deepEqual(events.slice(SOURCE_KEYS.length).map(e => e.kind), ['swarm', 'model', 'reject', 'model', 'reject', 'model', 'reject', 'none']);
 });
 
 test('generate: a second good answer passes, and the order of events is sources, model, check', async () => {
@@ -748,6 +763,7 @@ test('generate: a second good answer passes, and the order of events is sources,
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     emit: e => events.push(e),
+    writers: 1,
     deps: {
       ...fixtureDeps,
       now: () => (n += 5000),
@@ -762,10 +778,12 @@ test('generate: a second good answer passes, and the order of events is sources,
   assert.equal(out.ok, true, out.reason);
   assert.equal(out.attempts, 2);
   assert.equal(out.bet.title, goodBet().title);
-  assert.deepEqual(events.map(e => e.kind), [...SOURCE_KEYS.map(() => 'source'), 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'skeptic', 'check']);
-  assert.equal(events[SOURCE_KEYS.length].line, 'asking the model for one bet');
-  assert.equal(events[SOURCE_KEYS.length + 1].line, 'thinking...');
-  assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking... 4 words written');
+  assert.deepEqual(events.map(e => e.kind), [...SOURCE_KEYS.map(() => 'source'), 'swarm', 'model', 'thinking', 'thinking', 'reject', 'model', 'thinking', 'thinking', 'skeptic', 'check']);
+  assert.equal(events[SOURCE_KEYS.length + 1].line, 'asking the model for one bet');
+  assert.equal(events[SOURCE_KEYS.length + 2].line, 'thinking...');
+  assert.equal(events[SOURCE_KEYS.length + 3].line, 'thinking... 4 words written');
+  // the lines the waiting card shows, in the owner's words
+  assert.deepEqual(events.filter(e => e.say).map(e => e.say), ['drafting an idea', 'one draft missed a rule. redrafting it', 'the first draft is in. checking it', 'found one that holds up']);
   assert.ok(events.every(e => !/token|character/.test(e.line)));
   // the date is worked out from the owner's today, in calendar days
   assert.equal(out.bet.check_in_days, 9);
@@ -1056,6 +1074,127 @@ test('queue: with every question answered and nothing ready, a tap shows a plain
   assert.deepEqual([h.d.next().kind, h.d.view().bet.title], ['bet', TITLES[0]]);
 });
 
+test('calm line: words typed while the idea is written are a note for it: the same card takes them, read by no model, and the idea that comes in is the one written with them', async () => {
+  const reads = [];
+  const h = desk(workspace(), { answered: true, readSaid: async (p) => { reads.push(p); return { ok: true, kind: 'instruction', reply: '' }; } });
+  h.d.next();
+  const calm = h.d.card().card;
+  // the calm line keeps its box open, as a note for the idea being written
+  assert.deepEqual([calm.kind, calm.watch, calm.input.action, calm.input.placeholder], ['wait', true, 'say', 'add a note for this idea']);
+  assert.equal(h.gen.calls.length, 1, 'an idea is being written');
+  // one lands while the owner types, and the next starts behind it
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls.length, 2);
+
+  // a typed post names the calm line and is taken, not refused as stale
+  const said = await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  assert.equal(said.status, 200, JSON.stringify(said.body));
+  assert.deepEqual([said.body.ok, said.body.ack, said.body.card.kind, said.body.card.id], [true, 'got it, i\'ll fold that in.', 'wait', calm.id]);
+  assert.deepEqual(said.body.card.thread, [{ who: 'owner', text: 'make it about schools' }, { who: 'orb', text: 'got it, i\'ll fold that in.' }]);
+  assert.ok(said.body.card.input, 'the box stays open');
+  assert.equal(reads.length, 0, 'a note is read by no model');
+  assert.ok(h.logs.some(r => r.choice === 'wait_note' && r.kind === 'wait'), 'the note is recorded');
+  // the drafting no one asked for is stopped for it; the idea written before it waits
+  assert.equal(h.gen.calls[1].signal.aborted, true);
+  assert.equal(h.d.card().queue, 0, 'nothing is ready for this card yet');
+  const early = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([early.body.card.kind, early.body.card.id], ['wait', calm.id], 'the big orb waits for the noted idea too');
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
+
+  // a second note joins the first under the same card; the drafting with the first goes on
+  const more = await h.d.act({ card_id: calm.id, text: 'and keep it cheap' });
+  assert.deepEqual([more.status, more.body.card.id], [200, calm.id]);
+  assert.deepEqual(more.body.card.thread.map(t => t.text), ['make it about schools', 'and keep it cheap', 'got it, i\'ll fold that in.']);
+  assert.equal(h.gen.calls[2].signal.aborted, false);
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[3].ownerNote, 'make it about schools; and keep it cheap');
+  assert.equal(h.d.card().queue, 0, 'the first note alone is not the newest note');
+  await h.gen.releaseOne();
+  assert.ok(h.d.card().queue > 0);
+  const landed = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[3]]);
+  assert.equal(h.d.view().queue, 2, 'the ideas written without the newest note are kept for later');
+});
+
+test('calm line: an older calm line is stale, the same one under a new stamp is not, and the wait for a noted idea lasts one drafting budget: then the ready idea comes alone, saying the note is still being folded in, and the noted one is the next card', async () => {
+  const h = desk(workspace(), { answered: true, choices: true });
+  h.d.next();
+  const calm = h.d.card().card;
+  const [base] = calm.id.split('#');
+  await h.gen.releaseOne();
+  // the same calm line served under another stamp (its words changed) still takes words
+  const restamped = await h.d.act({ card_id: `${base}#00000000`, text: 'make it about schools' });
+  assert.deepEqual([restamped.status, restamped.body.card.id], [200, calm.id]);
+  // a calm line from before is another card
+  const old = await h.d.act({ card_id: 'wait:1#00000000', text: 'hello' });
+  assert.deepEqual([old.status, old.body.reason], [409, 'gone']);
+  // the hold is one drafting budget, the same 30 seconds the writers get
+  assert.equal(h.d.card().queue, 0);
+  h.tick(29000);
+  assert.equal(h.d.card().queue, 0);
+  h.tick(1001);
+  assert.equal(h.d.card().queue, 1);
+  const ready = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', TITLES[0], 'your note is still being folded in. that version comes next.']);
+  // the noted one lands while that idea is up: nothing swaps under him
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
+  await h.gen.releaseOne();
+  await h.gen.releaseOne();
+  assert.ok(h.d.view().queue >= 2, 'two ideas ready, enough for a choice');
+  assert.equal(h.d.card().card.id, ready.body.card.id, 'the card on screen stays');
+  // and it is the next card, on its own, not one of a choice
+  const next = await h.d.act({ orb: true, card_id: ready.body.card.id });
+  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', TITLES[2], null]);
+});
+
+test('calm line: a note on a wait that ends with nothing is kept, and try again drafts with it', async () => {
+  const h = desk(workspace(), { answered: true, gen: stubGenerator({ fail: n => n === 1 }) });
+  h.d.next();
+  const calm = h.d.card().card;
+  await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about schools');
+  // the drafting with the note fails: the wait ends in a card he can act on
+  await h.gen.releaseOne();
+  const missed = h.d.card().card;
+  assert.equal(missed.kind, 'missed');
+  const again = await h.d.act({ card_id: missed.id, option_id: 'again' });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[h.gen.calls.length - 1].ownerNote, 'make it about schools');
+});
+
+test('calm line: try again after a failed noted drafting joins the one already writing the combined note, never a second', async () => {
+  const h = desk(workspace(), { answered: true, gen: stubGenerator({ fail: n => n === 1 }) });
+  const joined = 'make it about schools; and keep it cheap';
+  h.d.next();
+  const calm = h.d.card().card;
+  await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about schools');
+  // a second note while the first is being written
+  await h.d.act({ card_id: calm.id, text: 'and keep it cheap' });
+  // that drafting fails: the wait ends, and the combined note starts drafting on its own
+  await h.gen.releaseOne();
+  const missed = h.d.card().card;
+  assert.equal(missed.kind, 'missed');
+  assert.equal(h.gen.calls[2].ownerNote, joined);
+  // try again joins it: the calm line shows the notes and starts nothing new
+  const again = await h.d.act({ card_id: missed.id, option_id: 'again' });
+  assert.deepEqual([again.status, again.body.card.kind], [200, 'wait'], JSON.stringify(again.body));
+  assert.deepEqual(again.body.card.thread.map(x => x.text), ['make it about schools', 'and keep it cheap', 'got it, i\'ll fold that in.']);
+  assert.equal(h.d.card().queue, 0, 'the calm line waits for the idea with the note');
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'one drafting carries the note');
+  // and that idea is the one that comes in
+  const landed = await h.d.act({ orb: true, card_id: again.body.card.id });
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[2]]);
+  await h.gen.release();
+  assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'and never a second one later');
+});
+
 test('queue: a tap while a background bet is being made shows a card now, and starts no second call', async () => {
   const h = desk(workspace(), { answered: true });
   h.d.warm();
@@ -1301,7 +1440,7 @@ test('owner words: the writer is told the words, and a card that uses one gets o
   const plain = goodBet({ title: 'Write a getting started page for the phone this week' });
   const prompts = [];
   const out = await gmBet.generateBet({
-    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile: path.join(root, 'a.jsonl'),
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile: path.join(root, 'a.jsonl'), writers: 1,
     deps: { ...fixtureDeps, runModel: async (prompt) => { prompts.push(prompt); return { ok: true, text: JSON.stringify(prompts.length === 1 ? worded : plain) }; } },
   });
   assert.equal(out.ok, true, out.reason);
@@ -1404,13 +1543,20 @@ test('passed vs skipped: a re-tap passes the bet over, not now skips it, sharper
   assert.equal(cRow.note, 'asked for a sharper idea');
 });
 
-test('desk: a failed writer never reaches the screen', async () => {
+test('desk: a failed writer never reaches the screen; a wait it ends is a card to try again, never the error', async () => {
   const gen = stubGenerator({ fail: () => true });
   const h = desk(workspace(), { gen, answered: true });
   h.d.next();
   await gen.releaseOne();
   const v = h.d.view();
-  assert.deepEqual([v.status, v.kind, v.error, v.events], ['ready', 'wait', null, []]);
+  assert.deepEqual([v.status, v.kind, v.error, v.events, v.job], ['ready', 'missed', null, [], { what: 'no idea came together this time.' }]);
+  const card = h.d.card().card;
+  assert.deepEqual([card.kind, card.title, card.options.map(o => [o.label, o.action])], ['missed', 'no idea came together this time.', [['try again', 'next']]]);
+  assert.ok(card.input, 'the owner can say what he wants instead');
+  assert.doesNotMatch(JSON.stringify(card), /empty answer|model/);
+  // try again: the drafting that started behind it is what the wait shows
+  const again = await h.d.act({ card_id: card.id, option_id: 'again' });
+  assert.equal(again.body.card.kind, 'wait');
 });
 
 test('choice: with 2 or more ideas ready a tap shows up to 3 to pick from; one tap opens it, the rest are passed', async () => {
@@ -1475,9 +1621,10 @@ test('say something: on any card free text does the plain thing, capped and logg
   q.d.next();
   assert.deepEqual(await q.d.say({ text: 'paying customers in schools' }), { ok: true, ack: 'got it: paying customers in schools.' });
   assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(q.ledgerFile)), qroot).focus.label, 'paying customers in schools');
-  // on the plain card: the next idea fits it
+  // on the calm line: a note for the idea being written, and the card stays
   assert.equal(q.d.next().kind, 'wait');
-  assert.deepEqual(await q.d.say({ text: 'something for schools' }), { ok: true, ack: 'got it. the next idea will fit that.' });
+  assert.deepEqual(await q.d.say({ text: 'something for schools' }), { ok: true, noted: true, ack: 'got it, i\'ll fold that in.' });
+  assert.equal(q.d.view().kind, 'wait');
   // one writer at a time: the note goes to the next one, right after the one running now
   await q.gen.releaseOne();
   assert.equal(q.gen.calls[q.gen.calls.length - 1].ownerNote, 'something for schools');
@@ -2144,7 +2291,7 @@ function addMember(root, name, role) {
   fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${role}\n---\n`);
 }
 
-test('team table: one honest row per member with recent work; working only with a live process or a move in the last few minutes', async () => {
+test('team table: one honest status per member; working only with a live process or a move in the last few minutes', async () => {
   const root = workspace();
   for (const [n, r] of [['executor', 'Executor'], ['navigator', 'Navigator'], ['validator', 'Validator'], ['linguist', 'Linguist'], ['scout', 'Scout']]) addMember(root, n, r);
   const file = path.join(root, 'gm-bets.jsonl');
@@ -2164,7 +2311,7 @@ test('team table: one honest row per member with recent work; working only with 
   ];
   const h = jobDesk(root, missions, { handoffs, driverAlive: m => m.id === 'm1' });
   const rows = h.d.teamTable().rows;
-  assert.deepEqual(rows, [
+  assert.deepEqual(rows.map(({ member, on, status, time }) => ({ member, on, status, time })), [
     { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'waiting 2 hours' },
     { member: 'builder', on: 'Launch a try page for any public repo', status: 'working', time: 'about 4 hours left' },
     { member: 'launcher', on: 'Write the launch thread', status: 'working', time: 'at it for 1 hour' },
@@ -2172,10 +2319,292 @@ test('team table: one honest row per member with recent work; working only with 
     { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'waiting 15 minutes' },
     { member: 'researcher', on: 'Survey ten agent teams about pricing', status: 'stopped', time: 'stopped 30 minutes ago' },
     { member: 'validator', on: 'Check the two reports', status: 'done', time: 'finished 1 hour ago' },
+    // nothing in the last day: still on the team, idle, with no work to name
+    { member: 'scout', on: '', status: 'idle', time: '' },
   ]);
+  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, waiting 2 hours');
   // the footer counts only what is really working
   assert.equal(h.d.view().team_working, 2);
   for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
+});
+
+// one play for the season stub: the same shape gm-season reads from the task list
+function play(member, kind, i) {
+  return { event_id: `${member}-${kind}-${i}`, task_id: `T-${member}-${i}`, member, title: `job ${i}`, kind, at: NOW - (i + 1) * 3600000, claimed_at: NOW - (i + 2) * 3600000 };
+}
+
+function seasonOf(counts) {
+  const outcomes = [];
+  for (const [member, kinds] of Object.entries(counts)) {
+    let i = 0;
+    for (const [kind, n] of Object.entries(kinds)) for (let k = 0; k < n; k += 1) outcomes.push(play(member, kind, i++));
+  }
+  return { outcomes, claims: [], missions: [], asleep: [], error: null };
+}
+
+// Which tools count as installed comes from the workspace's own registry
+// file, as it does for a real run, so no probe of this machine's PATH decides
+// what the table shows: the named tools are ready, every other one is missing
+// and was just checked.
+function readyEngines(root, ...ready) {
+  const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
+  const checked = new Date().toISOString();
+  const engines = ids.map(id => (ready.includes(id) ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: checked } }));
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+}
+
+const PROJECT_ROSTER = '# roster\n\n## search\n- claude code, model: haiku 5.5\n\n## build\n- claude code, model: opus 5.5\n\n## review\n- codex, model: gpt-6.1-sol\n\n## team\n- launcher: codex, model: gpt-6.1-sol\n';
+
+test('team table: every member with a few words of role, the board rating, the exact model, and one status sentence', async () => {
+  const root = workspace();
+  addMember(root, 'validator', 'Reviewer');
+  addMember(root, 'linguist', 'Linguist - operator language and understanding');
+  // a parked member keeps its folder but the table leaves it out
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'coordinator'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'coordinator', 'MEMBER.md'), '---\nname: coordinator\nstatus: parked\nrole: Coordinator\n---\n');
+  // a person on the team: the runner never runs people, so no model shows
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'designer'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'designer', 'MEMBER.md'), '---\nname: designer\ntype: human\nrole: Designer\ndescription: Draws the screens by hand\n---\n');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(10), last_tick_at: NAGO(1), human_asks: [] } };
+  // builder: 4 landed, 1 dropped is round(60 + 39 * 4 / 5) = 91. validator:
+  // 3 landed, 1 sent back is 89. launcher has 2 finished, a rookie. linguist
+  // only claimed a job and finished none, so it has no rating yet.
+  // researcher has no plays at all.
+  const season = seasonOf({
+    builder: { landed: 4, dropped: 1 },
+    validator: { landed: 3, sent_back: 1 },
+    launcher: { landed: 2 },
+    linguist: { took: 1 },
+  });
+  const h = jobDesk(root, missions, { driverAlive: () => true, loadSeason: () => season });
+  const rows = h.d.teamTable().rows;
+  // a role that only repeats the member's name gives its description instead
+  assert.deepEqual(rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]), [
+    ['builder', 'writes and tests the code', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
+    ['designer', 'draws the screens by hand', '··', 'person', 'idle: no work in the last day'],
+    ['launcher', 'writes posts, pages, and launch copy', 'new', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+    ['linguist', 'linguist, operator language and understanding', '··', 'claude opus 5.5', 'idle: no work in the last day'],
+    ['researcher', 'deep researcher', '··', 'claude haiku 5.5', 'idle: no work in the last day'],
+    ['validator', 'reviewer', '89', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+  ]);
+  // the board says the same numbers for the same plays
+  const board = require('../lib/gm-season').rosterRows({ outcomes: season.outcomes, now: NOW });
+  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, [r.ovr, r.finished]])), { builder: [91, 5], validator: [89, 4], launcher: [null, 2], linguist: [null, 0] });
+  // the working count and the talk card still read the same status
+  assert.equal(h.d.view().team_working, 1);
+  assert.deepEqual(rows[0].status, 'working');
+  for (const r of rows) assert.doesNotMatch(r.sentence, /[A-Z]/, 'the status sentence is lowercase');
+});
+
+test('team table: no rating shows two dots, never a made-up number, and an unpinned model shows two dots too', async () => {
+  const root = workspace();
+  readyEngines(root, 'claude', 'codex');
+  // no roster file: the router picks a tool with no model pinned, so no exact model is known
+  const h = jobDesk(root, {}, { loadSeason: () => ({ outcomes: [], error: 'could not open the task list' }) });
+  const rows = h.d.teamTable().rows;
+  assert.deepEqual(rows.map(r => [r.member, r.ovr, r.engine]), [
+    ['builder', '··', '··'],
+    ['launcher', '··', '··'],
+    ['researcher', '··', '··'],
+  ]);
+  // a season loader that throws reads the same way
+  const broken = jobDesk(root, {}, { loadSeason: () => { throw new Error('locked'); }, resolveEngine: () => { throw new Error('bad roster'); } });
+  assert.deepEqual(broken.d.teamTable().rows.map(r => [r.ovr, r.engine]), [['··', '··'], ['··', '··'], ['··', '··']]);
+  // a pick with an engine but no model is not an exact model
+  const bare = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => ({ engine: { id: 'claude' }, model: '' }) });
+  assert.ok(bare.d.teamTable().rows.every(r => r.engine === '··'));
+  // a model label that already starts with the tool name is not said twice
+  const grok = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => ({ engine: { id: 'grok' }, model: 'grok-4.7-build-fast' }) });
+  assert.match(grok.d.teamTable().rows[0].engine, /^grok 4\.7 fast$/);
+});
+
+test('team table: a card with no frontmatter still gives its role, from a role line or its first paragraph', () => {
+  const root = workspace();
+  const card = (name, text) => {
+    fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), text);
+  };
+  card('alpha-judge', '# alpha judge\n\nrole: feature alchemist and gatekeeper. Activated in any chat.\n\n## what it is\n');
+  card('engine-manager', '# engine-manager\n\nOwns the engine fleet: which terminal agents Atris can dispatch to.\n\n## job\n');
+  card('blank', '# blank\n\n## job\n');
+  const h = jobDesk(root, {}, { loadSeason: () => seasonOf({}), resolveEngine: () => null });
+  const roles = Object.fromEntries(h.d.teamTable().rows.map(r => [r.member, r.role]));
+  assert.equal(roles['alpha-judge'], 'feature alchemist and gatekeeper');
+  assert.equal(roles['engine-manager'], 'owns the engine fleet');
+  assert.equal(roles.blank, '\u00b7\u00b7');
+});
+
+test('job deck: one card per running job, needs you first, with a divided row of done, work, member, role, ovr, engine, status', () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  addMember(root, 'scout', 'Scout');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), PROJECT_ROSTER);
+  readyEngines(root, 'claude', 'codex');
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b1', 'm1', 'Launch a try page for any public repo');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'x', created_at: NAGO(40), last_tick_at: NAGO(2), human_asks: [] },
+    m5: { id: 'm5', owner: 'navigator', status: 'blocked', objective: 'Plan the pricing page.', created_at: NAGO(150), updated_at: NAGO(120), human_asks: ['ship the pricing page now?'] },
+    m6: { id: 'm6', owner: 'scout', status: 'complete', objective: 'Old scouting.', created_at: NAGO(200), updated_at: NAGO(60), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { loadSeason: () => seasonOf({ builder: { landed: 4, dropped: 1 } }) });
+  const deck = h.d.jobDeck();
+  assert.equal(deck.cards.length, 2, 'finished jobs are not on the deck');
+  assert.deepEqual(deck.columns, ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status']);
+  assert.deepEqual(deck.cards.map(c => [c.mission_id, c.label, c.member]), [['m5', 'needs you', 'navigator'], ['m1', 'working', 'builder']]);
+  // role, ovr, and engine are the team table's own cells
+  const table = new Map(h.d.teamTable().rows.map(r => [r.member, r]));
+  for (const c of deck.cards) {
+    const t = table.get(c.member);
+    assert.deepEqual([c.rows[0].role, c.rows[0].ovr, c.rows[0].engine], [t.role, t.ovr, t.engine]);
+  }
+  assert.deepEqual(deck.cards[0].rows[0].ovr, '\u00b7\u00b7', 'no rating is two dots');
+  assert.deepEqual(deck.cards[1].rows[0].ovr, '91');
+  assert.deepEqual(deck.cards[1].rows[0].engine, 'claude opus 5.5');
+  assert.deepEqual(deck.cards[1].rows[0].work, 'Launch a try page for any public repo');
+  for (const c of deck.cards) assert.doesNotMatch(JSON.stringify(c.rows), gmBet.OWNER_BANNED);
+});
+
+// a command, a flag, a path, or a file name: never in a cell the owner reads
+const CODE_TELL = /`|(^|\s)--?[a-z]|\/|\.(js|md|json)\b|\bnpm (publish|test)\b/i;
+
+test('job deck: a card that needs you carries its yes in plain words, and a yes from the deck answers that job alone', async () => {
+  const root = workspace();
+  addMember(root, 'navigator', 'Navigator');
+  const NAGO = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    // the work and the ask both name a command, a flag, and a path
+    'm-ask': { id: 'm-ask', owner: 'navigator', status: 'blocked', objective: 'Fix lib/gm-bet.js so the `npm test` run passes.', created_at: NAGO(30), updated_at: NAGO(20), human_asks: ['ok to run `npm publish --tag next` from lib/release.js?'] },
+    m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(40), last_tick_at: NAGO(1), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { driverAlive: () => true });
+  const [needs, working] = h.d.jobDeck().cards;
+  assert.deepEqual([needs.member, needs.label, working.member, working.label], ['navigator', 'needs you', 'builder', 'working']);
+  // the yes card's own two lines, and the key the page sends back with the yes
+  assert.deepEqual(needs.yes, { key: 'm-ask:0', what: 'ok to publish this package to npm under the next tag?', why: 'navigator is waiting on your yes for this.' });
+  assert.equal(working.yes, undefined, 'only a card that needs you has a yes');
+  // plain words in every cell: the path and the command are gone, the meaning stays
+  assert.equal(needs.rows[0].work, 'Fix a file so the run passes');
+  assert.deepEqual([needs.rows[0].done, working.rows[0].done], ['not yet', 'not yet']);
+  for (const c of h.d.jobDeck().cards) assert.doesNotMatch(JSON.stringify([c.rows, c.yes || null]), CODE_TELL);
+  // the main screen shows something else: a yes from the deck leaves it alone
+  const before = h.d.view().status;
+  // a yes names its job and its key, both
+  assert.equal((await h.d.answerYes({ key: 'm-ask:0' })).reason, 'gone');
+  assert.deepEqual(await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' }), { ok: true, ack: 'navigator: got your yes' });
+  assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
+  assert.equal(h.d.view().status, before);
+  // said once: the card stops asking, and the same yes again, or a made-up one, goes nowhere
+  assert.equal(h.d.jobDeck().cards[0].yes, undefined);
+  const calls = h.cli.length;
+  assert.equal((await h.d.answerYes({ key: 'm-ask:0', job: 'm-ask' })).reason, 'gone');
+  assert.equal((await h.d.answerYes({ key: 'nobody:0', job: 'nobody' })).reason, 'gone');
+  assert.equal(h.cli.length, calls, 'nothing runs for a yes that is not asked');
+});
+
+test('job deck: the yes on a card is the desk yes card for that job, in plain words, and a yes on the deck clears it on the main screen', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-ask', 'm-ask', 'Write the launch thread for the phone page');
+  const h = jobDesk(root, { 'm-ask': { id: 'm-ask', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['run `git push --tags` now?'] } });
+  const shown = h.d.next();
+  assert.equal(shown.kind, 'yes');
+  // the main yes card reads in plain words too
+  assert.equal(shown.job.what, 'ok to push every tag to the default remote?');
+  const card = h.d.jobDeck().cards[0];
+  assert.deepEqual(card.yes, { key: 'm-ask:0', ...shown.job });
+  assert.equal((await h.d.answerYes({ key: card.yes.key, job: card.job_id })).ok, true);
+  assert.equal(h.d.view().status, 'cleared', 'the same yes on the main screen is answered too');
+});
+
+// Codex review on #1563: a yes card keeps the verb and the target. A held
+// release delete once read "wants to make a release", so a yes to what
+// looked like a new release would have deleted one.
+test('yes words: a held command keeps its verb and its target, and one that cannot be said exactly shows where it goes and what it names', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: null });
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'gh', args: ['release', 'delete', 'v1.2.3', '--yes'] }).hold, true);
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to delete the GitHub release v1.2.3 in this repo']);
+  const said = [
+    ['a handed-off job wants to gh release delete v1.2.3 --yes', 'a handed-off job wants to delete the GitHub release v1.2.3 in this repo'],
+    ['a handed-off job wants to gh release delete v1.2.3 --cleanup-tag -R atrislabs/atris', 'a handed-off job wants to delete the GitHub release v1.2.3 and its tag in atrislabs/atris'],
+    ['a handed-off job wants to gh release create v1.2.3 --draft', 'a handed-off job wants to create the GitHub release v1.2.3 as a draft in this repo'],
+    ['a handed-off job wants to gh pr merge 5', 'a handed-off job wants to merge pull request 5 in this repo'],
+    ['a handed-off job wants to gh pr merge 5 --squash --delete-branch -R atrislabs/atris', 'a handed-off job wants to squash and merge pull request 5 and delete its branch in atrislabs/atris'],
+    ['a handed-off job wants to gh pr close 7', 'a handed-off job wants to close pull request 7 in this repo'],
+    ['a handed-off job wants to git push origin main', 'a handed-off job wants to push main to origin'],
+    ['a handed-off job wants to git push origin feature:master', 'a handed-off job wants to push feature to master on origin'],
+    ['a handed-off job wants to git push --force origin main', 'a handed-off job wants to force push main to origin, replacing what is there'],
+    ['a handed-off job wants to git push origin --delete v1.2.3', 'a handed-off job wants to delete v1.2.3 on origin'],
+    ['a handed-off job wants to git push origin :v1.2.3', 'a handed-off job wants to delete v1.2.3 on origin'],
+    ['a handed-off job wants to npm publish', 'a handed-off job wants to publish this package to npm'],
+    ['a handed-off job wants to npm publish ./a', 'a handed-off job wants to publish the package in "./a" to npm'],
+    ['a handed-off job wants to npm publish --tag next --access public', 'a handed-off job wants to publish this package to npm under the next tag, public'],
+    // nothing that cannot be said exactly gets a friendlier verb
+    ['a handed-off job wants to gh release edit v1.2.3 --draft=false', 'a handed-off job wants to run a command that changes GitHub: "release edit v1.2.3 --draft=false"'],
+    ['a handed-off job wants to gh pr merge 5 --admin', 'a handed-off job wants to run a command that changes GitHub: "pr merge 5 --admin"'],
+    ['a handed-off job wants to npm unpublish atris@3.0.0', 'a handed-off job wants to run a command that changes npm: "unpublish atris@3.0.0"'],
+    ['a handed-off job wants to git push --mirror backup', 'a handed-off job wants to run a command that changes the git remote: "push --mirror backup"'],
+    ['a handed-off job wants to gh release create v2 --notes big release', 'a handed-off job wants to run a command that changes GitHub: "release create v2 --notes big release"'],
+    // a command in a written ask, between backticks
+    ['ok to run `npm publish --tag next` from lib/release.js?', 'ok to publish this package to npm under the next tag?'],
+    ['run `git push --tags` now?', 'ok to push every tag to the default remote?'],
+    // plain asks, and asks with no command to read, stay as written
+    ['ship the pricing page now?', 'ship the pricing page now?'],
+    ['ok to change lib/x.js?', 'ok to change lib/x.js?'],
+  ];
+  for (const [ask, plain] of said) assert.equal(gmBet.plainAsk(ask), plain, ask);
+  // the guard's own words for a held command: a delete says delete, a force push says so, a tag is named
+  const away = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-held-'));
+  const held = (tool, args) => yesLock.plainWhat(JSON.stringify({ tool, args, cwd: away }));
+  assert.equal(held('gh', ['release', 'delete', 'v1.2.3', '--yes']), 'delete the GitHub release v1.2.3 in this repo');
+  assert.equal(held('gh', ['release', 'edit', 'v1.2.3', '--draft=false']), 'run a command that changes GitHub: "release edit v1.2.3 --draft=false"');
+  assert.equal(held('git', ['push', 'origin', '--delete', 'v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', ':v1.2.3']), 'delete v1.2.3 on its remote');
+  assert.equal(held('git', ['push', 'origin', 'v1.2.3']), 'push the tag v1.2.3 to its remote');
+  assert.equal(held('git', ['push', '--force', 'origin', 'pricing-page']), 'force push its pricing page branch to its remote, replacing what is there');
+  assert.equal(held('git', ['push', 'origin', '+HEAD:master']), 'force push to master on its remote, replacing what is there');
+  for (const [ask, plain] of said) {
+    if (/\bdelete\b/.test(ask)) assert.doesNotMatch(plain, /\b(create|make|publish)\b/, `a delete never reads as a create: ${ask}`);
+  }
+});
+
+// Codex review on #1563: two jobs from one member are two cards, and the
+// yes on each is bound to the job its own table shows, never to the member.
+test('job deck: two jobs from one member are two cards, and each yes answers the job its card shows', async () => {
+  const root = workspace();
+  const ago = m => new Date(NOW - m * 60000).toISOString();
+  const missions = {
+    old: { id: 'old', owner: 'builder', status: 'blocked', objective: 'Put the public site live', created_at: ago(20), updated_at: ago(10), human_asks: ['put it live now?'] },
+    new: { id: 'new', owner: 'builder', status: 'blocked', objective: 'Put the billing service live', created_at: ago(5), updated_at: ago(1), human_asks: ['put it live now?'] },
+  };
+  const h = jobDesk(root, missions, { decisions: [{ number: 1, mission_id: 'old', ask_index: 0 }, { number: 2, mission_id: 'new', ask_index: 0 }] });
+  // the newer yes was passed over on the main screen
+  h.d.state.seenYes.add('new:0');
+  const cards = h.d.jobDeck().cards;
+  assert.deepEqual(cards.map(c => [c.job_id, c.rows[0].work, c.yes && c.yes.key]), [
+    ['new', 'Put the billing service live', 'new:0'],
+    ['old', 'Put the public site live', 'old:0'],
+  ]);
+  // a yes names its job too: sent with the other job's id, it goes nowhere
+  const calls = h.cli.length;
+  assert.equal((await h.d.answerYes({ key: 'old:0', job: 'new' })).reason, 'gone');
+  assert.equal(h.cli.length, calls, 'nothing runs');
+  // the yes on the billing card answers the billing job, and only it
+  assert.equal((await h.d.answerYes({ key: 'new:0', job: 'new' })).ok, true);
+  assert.deepEqual(h.cli.slice(-2), [['decide', '--json'], ['decide', '2', 'yes', '--json']]);
+  // answered, the billing job is back with builder, so the job still waiting on the owner comes first
+  assert.deepEqual(h.d.jobDeck().cards.map(c => [c.job_id, c.yes && c.yes.key, c.label]), [['old', 'old:0', 'needs you'], ['new', undefined, 'you answered']]);
 });
 
 test('team table: a talk card steers a member through atris member steer, capped and checked', async () => {
@@ -2205,6 +2634,10 @@ function jobDesk(root, missions, over = {}) {
     readMissions: () => new Map(Object.entries(missions)),
     readReceipt: m => (m.receipt_path ? RECEIPT : null),
     readHandoffs: () => over.handoffs || [],
+    ...(over.engineChoices ? { engineChoices: over.engineChoices } : {}),
+    ...(over.swapFromCard ? { swapFromCard: over.swapFromCard } : {}),
+    loadSeason: over.loadSeason || (() => ({ outcomes: [], error: null })),
+    ...(over.resolveEngine ? { resolveEngine: over.resolveEngine } : {}),
     reviewer: () => (over.reviewer === undefined ? 'codex' : over.reviewer),
     warmOnCreate: false,
     choices: Boolean(over.choices),
@@ -2223,7 +2656,7 @@ function jobDesk(root, missions, over = {}) {
         if (review.code) return { code: review.code, stdout: '', stderr: 'codex is out of credits' };
         return { code: 0, stdout: JSON.stringify({ schema: 'atris.engine_ask.v1', answers: [{ engine: 'codex', ok: true, stdout: JSON.stringify(review) }] }) };
       }
-      if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
+      if (args[0] === 'decide' && args[1] === '--json') return { code: 0, stdout: JSON.stringify({ ok: true, decisions: over.decisions || [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-ask', ask_index: 0 }] }) };
       if (args[0] === 'decide') return { code: 0, stdout: '{"ok":true}' };
       if (args[1] === 'start') return { code: 0, stdout: JSON.stringify({ mission: { id: 'm-new', owner: 'builder' } }) };
       return { code: 0, stdout: JSON.stringify({ action: 'mission_run_detached', mission_id: 'm-new' }) };
@@ -2457,23 +2890,22 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
   const html = phonePage('NONCE');
-  assert.match(html, /<button type="button" class="quiet" id="working" aria-haspopup="dialog">the team<\/button>/);
+  assert.match(html, /<button type="button" class="quiet" id="working">the team<\/button>/);
   assert.match(html, /btn\.textContent = n \? n \+ ' working' : 'the team';/);
   // no pulse or loop on the new pieces
-  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.team .row'));
+  const css = html.slice(html.indexOf('.quiet {'), html.indexOf('.bet tr.row'));
   assert.ok(css.length > 40);
   assert.doesNotMatch(css, /animation|transition/);
-  // after do it, the ack holds 1.5 s and the orb plays into the next card the re-tap way
+  // after do it, who has it shows under the sphere for 1.5 s, then the orb plays into the next card
   assert.match(html, /var AFTER_MS = 1500;/);
-  // a start that did not get going returns first, so only a real start moves on
-  assert.match(html, /if \(!r \|\| !r\.ok\) \{/);
-  assert.match(html, /loadBet\(\); refresh\(\);\n\s+setTimeout\(function \(\) \{ tapOrb\(false\); \}, AFTER_MS\);/);
-  // job cards: two big sentences from the server; a yes button or a nice, never a send back
-  // job cards: the why shows when there is one; the calm line has none
-  assert.match(html, /box\.appendChild\(el\('h1', null, j\.what\)\);\n {4}if \(j\.why\) box\.appendChild\(el\('p', 'why', j\.why\)\);/);
-  assert.match(html, /var ok = el\('button', 'pill', 'nice'\);/);
+  // a start that did not get going comes back on its card with do it and one line why
+  assert.match(html, /if \(!r\.ok\) \{ spiralTo\(then, function \(\) \{ unsent\(then, r,/);
+  // a finished job: two big sentences from the Mac and a nice, never a send back
+  const gmCard = require('../lib/gm-card');
+  const done = gmCard.done({ id: 'done:b1', title: 'Write the getting started page', body: 'this is done.' });
+  assert.deepEqual(done.options.map(o => [o.label, o.style]), [['nice', 'primary']]);
   assert.doesNotMatch(html, /sendback|send back/);
-  assert.match(html, /if \(\(s\.bet \|\| s\.job \|\| s\.question \|\| s\.choice \|\| s\.report\) && \(s\.status === 'ready'/);
+  assert.match(html, /if \(card\.body\) b\.appendChild\(el\('p', 'why', card\.body\)\);/);
 });
 
 // ---- over http: the routes and the deck ----------------------------------------------------
@@ -2522,26 +2954,25 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
     return { status: res.status, json: await res.json().catch(() => null) };
   };
   try {
-    const opened = await call('GET', '/bet');
+    const opened = await call('GET', '/card');
     assert.equal(opened.json.status, 'idle');
     assert.equal(gen.calls.length, 1, 'opening the page starts the prefetch');
     for (let i = 0; i < 3; i += 1) await gen.releaseOne();
-    const tapped = await call('POST', '/bet/think', {});
+    const tapped = await call('POST', '/act', { orb: true });
     assert.equal(tapped.status, 200);
     assert.equal(tapped.json.status, 'ready');
-    assert.equal(tapped.json.bet.steps.length, 3);
-    const once = await call('POST', '/bet/do', {});
+    const idea = tapped.json.card;
+    assert.equal(idea.kind, 'idea');
+    const once = await call('POST', '/act', { card_id: idea.id, option_id: 'do' });
     assert.equal(once.status, 409);
     assert.equal(once.json.reason, 'needs_confirm');
-    // a yes and a send back also start or unblock agents, so they need a second tap too
-    assert.equal((await call('POST', '/bet/yes', {})).json.reason, 'needs_confirm');
-    assert.equal((await call('POST', '/bet/sendback', { confirm: true })).status, 404, 'the team sends work back on its own');
-    assert.equal((await call('POST', '/bet/nice', {})).json.reason, 'gone', 'nice with no finished job on screen does nothing');
-    const twice = await call('POST', '/bet/do', { confirm: true });
+    // the idea card has no yes, no send back (the team sends work back on its own), and no nice
+    for (const option of ['yes', 'sendback', 'nice']) assert.equal((await call('POST', '/act', { card_id: idea.id, option_id: option, confirm: true })).json.reason, 'bad_option', option);
+    const twice = await call('POST', '/act', { card_id: idea.id, option_id: 'do', confirm: true });
     assert.equal(twice.status, 200);
-    assert.equal(twice.json.mission.line, 'launcher has it and is starting now.');
+    assert.equal(twice.json.ack, 'launcher has it and is starting now.');
+    assert.notEqual(twice.json.card.id, idea.id, 'the next card comes with it');
     const state = await call('GET', '/state');
-    assert.equal(state.json.bet.status, 'started');
     assert.equal(state.json.card.id, 'yes-0-2');
     assert.match(state.json.card.choices[0].commands[0], /^atris mission ping mission-x /);
     const tapOnce = await call('POST', '/action', { card: 'yes-0-2', choice: 'yes' });
@@ -2555,7 +2986,8 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
     const rows = gmBet.readLedger(path.join(dir, 'bets.jsonl'), root);
     assert.ok(rows.find(r => r.yes && r.yes[2]));
     const log = fs.readFileSync(path.join(dir, 'gm-phone-actions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
-    assert.deepEqual(log.map(l => `${l.card}:${l.choice}`), ['bet:generate', 'bet:generate', 'bet:generate', 'bet:think', 'bet:show', 'bet:do', 'bet:lock', 'bet:do', 'yes-0-2:yes']);
+    // the act, then do it as before, then the next card served with the answer
+    assert.deepEqual(log.map(l => `${l.card}:${l.choice}`), ['bet:generate', 'bet:generate', 'bet:generate', 'bet:think', 'bet:show', 'bet:act', 'bet:do', 'bet:lock', 'bet:do', 'bet:think', 'bet:show', 'yes-0-2:yes']);
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
@@ -2565,6 +2997,7 @@ test('over http: tap, do it needs a second tap, and your-yes cards lead the deck
 
 test('page: one dark theme, the orb is the button, the lava stops once the card is up', () => {
   const html = phonePage('NONCE');
+  const gmCard = require('../lib/gm-card');
   // the orb in the middle is the button, with a keyboard path and a label
   assert.match(html, /<canvas id="orb" tabindex="0" role="button" aria-label="the atris orb\. tap to think of one new idea for the business"><\/canvas>/);
   assert.match(html, /e\.key === 'Enter' \|\| e\.key === ' '/);
@@ -2576,38 +3009,30 @@ test('page: one dark theme, the orb is the button, the lava stops once the card 
   for (const v of ['--bg: #141110', '--text: #eae3d9', '--text-2: #a39b92', '--text-3: #9a9187', '--line: #3d332d', '--amber: rgb(255, 140, 66)']) assert.ok(html.includes(v), v);
   assert.match(html, /--serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;/);
   assert.doesNotMatch(html, /#fff\b|#ffffff|#f6f5f2|background: white/i);
-  // no decision sheet on the phone, and the team row is gone
-  assert.doesNotMatch(html, /things only you can do|id="sheet"/);
-  // the old row of team circles is gone; the team is the table behind the footer link
-  assert.equal((html.match(/id="team"/g) || []).length, 1);
-  assert.match(html, /<section class="team" id="team" hidden role="dialog"/);
-  assert.match(html, /tap again to start/);
-  assert.match(html, /sharper idea/);
-  assert.match(html, /not now/);
+  // no decision sheet on the phone, and no overlay of its own: the team is a card
+  assert.doesNotMatch(html, /things only you can do|id="sheet"|id="team"/);
+  // the idea card's words come from the Mac
+  const idea = gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400. more people try it by nov 1.' });
+  assert.deepEqual(idea.options.map(o => [o.label, o.confirm || null]), [['do it', 'tap again to start'], ['sharper idea', null], ['not now', null]]);
   // no process text ever reaches the page: no skeptic, no rejects, no word counts, no thinking screen
   assert.doesNotMatch(html, /tokens|second look|words written|turned down|skeptic|sayEvent|progressOf|'thinking'|'failed'/);
   // one script scope: a function declared twice silently replaces the first
   const names = [...html.matchAll(/function ([A-Za-z]\w*)\(/g)].map(m => m[1]);
   assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
   assert.match(html, /navigator\.vibrate\(10\)/);
-  // two speeds by truth: a queued bet plays the landing curves at two fifths of
-  // their length, a bet being made plays them at full length
+  // two speeds by truth: from the big orb a queued card plays the landing curves at
+  // two fifths of their length; an act on a card is the short motion
   assert.match(html, /var FAST = 0\.4;/);
   assert.match(html, /var GROW_MS = 1050, MAX_SCALE = 3\.2;/);
   assert.match(html, /\(GROW_MS \* pace\)/);
   assert.match(html, /\(SETTLE_MS \* pace\)/);
-  assert.match(html, /reveal\(s, true\);/);
-  assert.match(html, /wait: function \(\) \{\n {8}pace = 1;/);
   assert.match(html, /\.lava\.still \.tx, \.lava\.still \.ty, \.lava\.still \.blob \{ animation-play-state: paused; \}/);
   assert.match(html, /prefers-reduced-motion: reduce/);
-  assert.match(html, /\/bet\/think/);
-  assert.match(html, /\/bet\/do/);
+  assert.match(html, /api\('\/act', \{ orb: true, card_id: bet\.shown \? bet\.shown\.id : null \}\)/);
   // the bright point does not breathe
   assert.doesNotMatch(html, /Math\.sin\(boom/);
-  // no eyebrow labels and no small lines: the bet card is the title, then why
-  // it matters in the same big body type
+  // no eyebrow labels and no small lines: the card is the title, then why it matters in the same big body type
   assert.doesNotMatch(html, /'why now'|el\('span', 'k'|\['expect', |\['cost', |'needs your yes'|class="terms"|\.terms |'when'|'steps'/);
-  assert.match(html, /box\.appendChild\(el\('p', 'why', \[b\.why_now, b\.expect\]\.map\(sentence\)\.join\(' '\)\)\);/);
   assert.match(html, /\.why \{ margin: 14px 0 0; color: var\(--text\); font-size: 20px; line-height: 1\.4; \}/);
 });
 
@@ -2627,6 +3052,7 @@ test('attempts log: every model answer is saved with its raw text, parse result,
     today: TODAY,
     ledgerFile: path.join(root, 'bets.jsonl'),
     attemptsFile,
+    writers: 1,
     deps: {
       ...fixtureDeps,
       now: () => (n += 1000),
@@ -2640,7 +3066,7 @@ test('attempts log: every model answer is saved with its raw text, parse result,
   assert.equal(rows[0].raw, 'sure, here is a bet');
   assert.match(rows[1].raw, /"check_in_days":40/);
   assert.deepEqual(rows[1].reasons, ['check_in_days must be a whole number from 7 to 14, got 40']);
-  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true && r.kind === 'writer'));
+  assert.ok(rows.every(r => r.ms > 0 && r.today === TODAY && r.workspace === root && r.model_ok === true && r.kind === 'writer' && r.lane === 1));
 });
 
 test('attempts log: a model that fails outright is saved too', async () => {
@@ -2650,9 +3076,11 @@ test('attempts log: a model that fails outright is saved too', async () => {
     workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile,
     deps: { ...fixtureDeps, runModel: async () => ({ ok: false, reason: 'the model gave an empty answer' }) },
   });
-  const row = JSON.parse(fs.readFileSync(attemptsFile, 'utf8').trim());
-  assert.equal(row.model_ok, false);
-  assert.deepEqual(row.reasons, ['the model gave an empty answer']);
+  // one row for each of the three writers, each with its own lane and angle
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.map(r => [r.model_ok, r.lane]).sort((a, b) => a[1] - b[1]), [[false, 1], [false, 2], [false, 3]]);
+  assert.deepEqual(rows[0].reasons, ['the model gave an empty answer']);
+  assert.deepEqual(new Set(rows.map(r => r.angle)), new Set(gmBet.WRITER_ANGLES.map(a => a.key)));
 });
 
 test('merged changes: one per first-parent commit, merges named by their pull request title', () => {
@@ -2687,7 +3115,7 @@ test('a held handed-off command is a yes card on its own when it has no parent',
   const h = jobDesk(root, {});
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to gh pr merge 5']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to merge pull request 5 in this repo'], 'plain words that keep the verb and the target');
   const own = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([own.title, own.bet_id, own.command], ['a handed-off job', null, 'gh pr merge 5'], 'no parent: its own card');
   const yes = await h.d.answerYes();
@@ -2707,11 +3135,11 @@ test('a held handed-off command shows on its parent job when there is one', asyn
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal, parentMissionId: 'm-parent' });
-  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'] });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish'], cwd: root });
   const h = jobDesk(root, { 'm-parent': { id: 'm-parent', owner: 'builder', status: 'running', human_asks: [] } });
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to npm publish']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'a handed-off job wants to publish a package to npm']);
   const onParent = h.d.state.jobs.yes.find(y => y.mission_id === 'm-child');
   assert.deepEqual([onParent.title, onParent.bet_id], ['Launch the try page', 'b1'], 'the card sits on the parent job');
   await h.d.answerYes();
@@ -2773,6 +3201,10 @@ test('two held commands on one step are two cards; the yes on the first releases
   const yesLock = require('../lib/yes-lock');
   const seal = yesLock.handoffSeal();
   yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
   yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
   const h = jobDesk(root, {});
@@ -2780,13 +3212,115 @@ test('two held commands on one step are two cards; the yes on the first releases
   const keys = h.d.state.jobs.yes.filter(y => y.mission_id === 'm-child').map(y => y.key);
   assert.equal(new Set(keys).size, 2, 'each card has its own key');
   const card = h.d.next();
-  assert.equal(card.job.what, 'a handed-off job wants to npm publish ./a');
+  assert.equal(card.job.what, 'a handed-off job wants to publish alpha to npm');
   await h.d.answerYes();
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
   assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
   h.d.pollJobs();
+  // one yes in a row at most: a normal card comes between, then the later request
+  assert.notEqual(h.d.next().kind, 'yes');
   const next = h.d.next();
-  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to npm publish ./b'], 'the answer did not hide the later request');
+  assert.deepEqual([next.kind, next.job.what], ['yes', 'a handed-off job wants to publish beta to npm'], 'the answer did not hide the later request');
+});
+
+// three jobs, each waiting on one yes; m-a moved last, so it leads the job deck
+function threeAsks(root) {
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-a', 'm-a', 'Write the launch thread for the phone page');
+  // titles unlike the ideas the stub writes: one too close to a started job is never shown
+  doingRow(file, root, 'b-b', 'm-b', 'Film the welcome clip for the pricing page');
+  doingRow(file, root, 'b-c', 'm-c', 'Write the getting started page');
+  const ask = (id, owner, mins, text) => ({ id, owner, status: 'blocked', created_at: new Date(NOW - mins * 60000).toISOString(), human_asks: [text] });
+  return {
+    'm-a': ask('m-a', 'launcher', 1, 'post the thread on x now?'),
+    'm-b': ask('m-b', 'launcher', 5, 'post the video on x now?'),
+    'm-c': ask('m-c', 'builder', 9, 'publish the page now?'),
+  };
+}
+
+test('yes cards never take over: at most one in a row, not now sends it to the back, and the next card is an idea', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const first = h.d.next();
+  assert.deepEqual([first.kind, first.job.what], ['yes', 'post the thread on x now?']);
+  assert.equal(first.needs_you, 2, 'the other two wait behind the small line');
+  // not now: the card is skipped, and the next card is an idea, not another yes
+  const after = h.d.next({ later: true });
+  assert.equal(after.kind, 'bet');
+  assert.equal(after.needs_you, 3, 'a skipped yes is still owed');
+  assert.ok(h.logs.some(l => l.choice === 'later' && l.kind === 'yes'));
+  // after an idea, a different yes not seen yet may show; the skipped one does not come back on its own
+  const second = h.d.next();
+  assert.equal(second.kind, 'yes');
+  assert.notEqual(second.id, first.id);
+  // a plain pass on a yes serves a normal card too
+  assert.equal(h.d.next().kind, 'bet');
+  const third = h.d.next();
+  assert.equal(third.kind, 'yes');
+  assert.ok(![first.id, second.id].includes(third.id));
+  assert.equal(h.d.next().kind, 'bet');
+  assert.notEqual(h.d.next().kind, 'yes', 'every yes was seen once; the rest wait in the deck');
+  // the skipped one is at the back of the job deck
+  const needs = h.d.jobDeck().cards.filter(c => c.label === 'needs you');
+  assert.equal(needs.length, 3);
+  assert.equal(needs[needs.length - 1].yes.what, 'post the thread on x now?');
+});
+
+test('yes cards never take over: with no idea ready, the card after a yes is a question', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  assert.equal(h.d.next().kind, 'yes');
+  const after = h.d.next({ later: true });
+  assert.equal(after.kind, 'question');
+  assert.equal(h.d.next().kind, 'yes', 'after the question, a yes not seen yet');
+});
+
+test('no on a yes card: that one request is told no, the job is pinged to move on, and the card does not come back', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const card = h.d.next();
+  assert.equal(card.job.what, 'a handed-off job wants to publish alpha to npm');
+  const denied = h.d.state.jobs.yes[0];
+  const no = await h.d.answerNo();
+  assert.equal(no.ok, true);
+  assert.match(no.ack, /no/);
+  assert.equal(h.d.view().status, 'cleared');
+  const ping = h.cli.find(a => a[1] === 'ping');
+  assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-child']);
+  assert.match(ping[3], /the owner said no/);
+  assert.match(ping[3], /do not run it/);
+  // A stays held, and asking again says the owner said no; B is still waiting for its own answer
+  const again = yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  assert.equal(again.hold, true);
+  assert.match(again.message, /the owner said no/);
+  assert.deepEqual(yesLock.askedYesLocks(root, 'm-child').map(l => l.held_command), ['npm publish ./b']);
+  h.d.pollJobs();
+  assert.equal(h.d.view().needs_you, 1);
+  // a request told no cannot be approved later
+  assert.equal(yesLock.approveYesLock(root, 'm-child', denied.lock_step, null, new Date(NOW).toISOString(), { hash: denied.lock_hash }), null);
+  // a plain ask is answered no through atris decide, matched by mission and ask
+  const root2 = workspace();
+  const asks = threeAsks(root2);
+  const h2 = jobDesk(root2, asks, { decisions: [{ number: 1, mission_id: 'other', ask_index: 0 }, { number: 2, mission_id: 'm-a', ask_index: 0 }] });
+  assert.equal(h2.d.next().kind, 'yes');
+  const no2 = await h2.d.answerNo();
+  assert.equal(no2.ok, true);
+  assert.deepEqual(h2.cli.slice(0, 2), [['decide', '--json'], ['decide', '2', 'no', '--json']]);
+  assert.ok(h2.ledger().find(r => r.id === 'b-a').no_answered);
+  // nothing on screen: no answers nothing
+  assert.equal((await jobDesk(workspace(), {}).d.answerNo()).reason, 'gone');
 });
 
 test('queue: showing an idea starts the next at once; with none ready the card is one calm line, with the idea ready behind it when written', async () => {
@@ -2884,4 +3418,774 @@ test('owner words: the prompts that write choices and replies talk to the owner 
   await gmBet.generateScoreboardChoices({ workspaceRoot: root, bundle: { facts: [], sources: {} }, deps: { runModel, readContext: () => '' }, ledgerFile: path.join(root, 'bets.jsonl') });
   assert.equal(prompts.length, 2);
   for (const p of prompts) assert.match(p, /talk to him as "you"/, p.slice(0, 200));
+});
+
+// ---- the card contract: one card at a time, every kind, every invariant ---------------
+
+const gmCard = require('../lib/gm-card');
+
+// a swap list as lib/roster-swap.js gives it: the Atris model, the owner's
+// pick, then more models with the full list
+const SWAP_CHOICES = {
+  member: 'builder',
+  job: 'build',
+  line: 'builder runs on tool one m-one.',
+  scopes: [{ id: 'member', label: 'just builder' }, { id: 'job', label: 'for every build job' }],
+  options: [
+    { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', atris: true, current: false, record: null },
+    { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', pick: true, current: true, record: '3 of 4 landed' },
+    { more: true, label: 'more models', options: [
+      { engine: 'atris', tool: 'atris', model: 'fast', label: 'atris fast', current: false, record: null },
+      { engine: 'one', tool: 'tool one', model: 'm-one', label: 'm-one', current: true, record: '3 of 4 landed' },
+      { engine: 'two', tool: 'tool two', model: 'm-two', label: 'm-two', current: false, record: null },
+    ] },
+  ],
+};
+const TEAM_DEPS = { loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }), engineChoices: () => SWAP_CHOICES };
+const ASKS_BACK = async () => ({ ok: true, kind: 'question', reply: 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?', suggestions: ['it is still hard to tell', 'it is helping', 'show me last night\'s changes'] });
+const EXPLAINS = async () => ({ ok: true, kind: 'question', reply: 'it is the one number you check each week to see if this is going well.' });
+
+// what the desk serves now, as it keeps it (with what it checks) and as the page gets it
+async function served(d) {
+  const out = d.card();
+  return { card: d.state.served, wire: out.card, out };
+}
+async function acted(d, body) {
+  const out = await d.act(body);
+  return { card: d.state.served, wire: out.body.card, out };
+}
+
+// Every kind of card, each reached the way the owner reaches it.
+async function everyCard() {
+  const cards = [];
+  const keep = (name, got) => { cards.push({ name, ...got }); return got; };
+  // an idea, a choice, a started idea
+  const ideas = await filled(workspace());
+  ideas.d.next();
+  keep('idea', await served(ideas.d));
+  await ideas.d.doIt();
+  keep('started', await served(ideas.d));
+  const picks = await filled(workspace(), { choices: true });
+  picks.d.next();
+  keep('choice', await served(picks.d));
+  // a question with its own answers, then the scoreboard question with something else
+  const asked = desk(workspace());
+  asked.d.next();
+  keep('question', await served(asked.d));
+  const board = desk(workspace(), { scoreboard: true, questions: false, answered: true, readSaid: ASKS_BACK });
+  board.d.next();
+  const scoreQ = keep('question with something else', await served(board.d));
+  // a reply that asks its own question, then a reply that only explains
+  keep('reply that asks', await acted(board.d, { card_id: scoreQ.card.id, option_id: 'other', text: 'the overnight run' }));
+  const board2 = desk(workspace(), { scoreboard: true, questions: false, answered: true, readSaid: EXPLAINS });
+  board2.d.next();
+  const q2 = await served(board2.d);
+  keep('reply that explains', await acted(board2.d, { card_id: q2.card.id, option_id: 'other', text: 'what do you mean?' }));
+  // the weekly number
+  const weekly = desk(workspace(), { scoreboard: true, questions: false, answered: true });
+  weekly.d.next();
+  weekly.d.answer({ choice: 'other', text: 'paying schools' });
+  weekly.d.next();
+  keep('report', await served(weekly.d));
+  // the calm line
+  const calm = desk(workspace(), { answered: true });
+  calm.d.next();
+  keep('wait', await served(calm.d));
+  // a wait that ended with nothing usable
+  const miss = desk(workspace(), { answered: true, gen: stubGenerator({ fail: () => true }) });
+  miss.d.next();
+  await miss.gen.releaseOne();
+  keep('missed', await served(miss.d));
+  // the best draft when none passed in time, with the worry on it
+  let worries = 0;
+  const worried = desk(workspace(), { answered: true, generate: async () => ({ ok: true, checked: false, bet: { ...goodBet({ title: TITLES[worries++ % TITLES.length] }), check_date: '2026-10-30', concern: 'one worry: a page alone reaches nobody new.' } }) });
+  worried.d.next();
+  await tick();
+  worried.d.next();
+  keep('idea with a worry', await served(worried.d));
+  // a yes on a plain ask, and a yes on a held command
+  const root = workspace();
+  const jobs = jobDesk(root, threeAsks(root), TEAM_DEPS);
+  jobs.d.next();
+  const ask = keep('yes', await served(jobs.d));
+  keep('reply that needs a second tap', await acted(jobs.d, { card_id: ask.card.id, text: 'hold off until monday' }));
+  const lockRoot = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(lockRoot, 'm-child', { seal });
+  fs.mkdirSync(path.join(lockRoot, 'a'), { recursive: true });
+  fs.writeFileSync(path.join(lockRoot, 'a', 'package.json'), JSON.stringify({ name: 'alpha' }));
+  yesLock.check({ stateDir: lockRoot, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: lockRoot });
+  const held = jobDesk(lockRoot, {});
+  held.d.pollJobs();
+  held.d.next();
+  keep('yes on a held command', await served(held.d));
+  // a finished job
+  const doneRoot = workspace();
+  doingRow(path.join(doneRoot, 'gm-bets.jsonl'), doneRoot, 'b-ok', 'm-ok', 'Write the getting started page');
+  const fin = jobDesk(doneRoot, { 'm-ok': { id: 'm-ok', owner: 'builder', status: 'complete', receipt_path: 'r', human_asks: [] } });
+  await fin.d.settle();
+  fin.d.next();
+  keep('done', await served(fin.d));
+  // the team, a member, a swap card and its full list, the job deck
+  const teamRoot = workspace();
+  const crew = jobDesk(teamRoot, threeAsks(teamRoot), TEAM_DEPS);
+  crew.d.next();
+  const under = await served(crew.d);
+  const t = keep('team', await acted(crew.d, { card_id: under.card.id, open: 'team' }));
+  const m = keep('member', await acted(crew.d, { card_id: t.card.id, option_id: 'talk:builder' }));
+  const back = await acted(crew.d, { card_id: m.card.id, option_id: 'back' });
+  const sw = keep('swap', await acted(crew.d, { card_id: back.card.id, option_id: 'swap:builder' }));
+  keep('swap with more models', await acted(crew.d, { card_id: sw.card.id, option_id: 'more' }));
+  const d1 = keep('deck with a yes', await acted(crew.d, { card_id: crew.d.state.served.id, open: 'deck' }));
+  assert.equal(d1.card.kind, 'deck');
+  const runRoot = workspace();
+  const running = jobDesk(runRoot, { 'm1': { id: 'm1', owner: 'builder', status: 'running', created_at: new Date(NOW - 60000).toISOString(), last_tick_at: new Date(NOW - 30000).toISOString(), objective: 'Write the try page.', human_asks: [] } }, { ...TEAM_DEPS, driverAlive: () => true });
+  keep('deck with no yes', await acted(running.d, { card_id: null, open: 'deck' }));
+  return cards;
+}
+
+test('card contract: every kind of card is whole: a way forward, options that answer its words, plain words, and a yes with yes, no, and not now bound to its request', async () => {
+  const cards = await everyCard();
+  const kinds = new Set(cards.map(c => c.card.kind));
+  for (const k of gmCard.KINDS) assert.ok(kinds.has(k), `no fixture reaches a ${k} card`);
+  const ids = new Set();
+  for (const c of cards) {
+    const show = `${c.name}: ${JSON.stringify(c.wire)}`;
+    assert.deepEqual(gmCard.cardProblems(c.card), [], show);
+    // the page gets the contract and nothing the desk keeps to itself
+    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch', 'progress', 'started_at', 'waited_ms'].includes(k)), [], show);
+    for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell', 'group'].includes(k)), [], show);
+    assert.ok(c.wire.options.length > 0 || c.wire.input, show);
+    // every card served has its own id
+    assert.ok(!ids.has(c.wire.id), `${c.name} reuses the id ${c.wire.id}`);
+    ids.add(c.wire.id);
+  }
+  // the yes cards: yes binds the exact request it shows
+  const lock = cards.find(c => c.name === 'yes on a held command');
+  const yes = lock.wire.options.find(o => o.id === 'yes');
+  assert.equal(yes.binds.job, 'm-child');
+  assert.match(yes.binds.hash, /^[0-9a-f]{16}$/);
+  assert.equal(yes.confirm, 'tap again to say yes');
+  assert.deepEqual(lock.wire.options.map(o => o.label), ['yes', 'no', 'not now']);
+  // the reply that asks its own question shows only its answers, the box, and a way back
+  const asks = cards.find(c => c.name === 'reply that asks');
+  assert.deepEqual(asks.wire.options.map(o => o.label), ['it is still hard to tell', 'it is helping', 'show me last night\'s changes', 'back to the first question']);
+  assert.ok(asks.wire.input);
+  assert.equal(asks.wire.title, 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?');
+  assert.notEqual(asks.wire.id, cards.find(c => c.name === 'question with something else').wire.id, 'a reply is a new card');
+  // the reply that only explains keeps the question's own choices, once
+  const explains = cards.find(c => c.name === 'reply that explains');
+  const first = cards.find(c => c.name === 'question with something else').wire.options.map(o => o.label);
+  assert.deepEqual(explains.wire.options.map(o => o.label), first);
+  // the swap card: the list as it comes, picks first, more models last, and more is the same card with the full list
+  const sw = cards.find(c => c.name === 'swap');
+  const models = sw.wire.options.filter(o => o.action === 'swap_to' || o.chosen && o.style === 'choice');
+  assert.deepEqual(models.map(o => o.label), ['atris fast', 'm-one']);
+  assert.deepEqual(sw.wire.options.slice(2).map(o => o.label), ['more models', 'only builder', 'everyone doing builder\'s kind of work', 'back to the team']);
+  const all = cards.find(c => c.name === 'swap with more models');
+  assert.notEqual(all.wire.id, sw.wire.id, 'more models is a new card');
+  assert.deepEqual(all.wire.options.filter(o => o.style === 'choice').map(o => o.label), ['atris fast', 'm-one', 'm-two']);
+  assert.ok(!all.wire.options.some(o => o.label === 'more models'));
+  // the best draft no other beat: go with it, sharpen it, or something else, and the worry in its line
+  const worry = cards.find(c => c.name === 'idea with a worry');
+  assert.deepEqual(worry.wire.options.map(o => [o.label, o.action]), [['go with it', 'do'], ['sharpen it', 'sharper'], ['something else', 'next']]);
+  assert.equal(worry.wire.line, 'one worry: a page alone reaches nobody new.');
+  // the waiting card says how far along it is, under the same id while that changes
+  const w = cards.find(c => c.name === 'wait');
+  assert.ok(Array.isArray(w.wire.progress) && Number.isFinite(w.wire.started_at) && Number.isFinite(w.wire.waited_ms), JSON.stringify(w.wire));
+});
+
+test('card contract: the checks catch a card with no way out, options for other words, a command in the words, and a yes that binds nothing', () => {
+  const base = gmCard.question({ id: 'q1', title: 'which number?', choices: [{ id: 'a1', label: 'installs' }] });
+  assert.deepEqual(gmCard.cardProblems(base), []);
+  assert.match(gmCard.cardProblems({ ...base, options: [], input: null }).join('\n'), /no way forward/);
+  const mixed = gmCard.reply({ id: 'q1~r1', base, text: 'does it help?', suggestions: ['yes'] });
+  assert.deepEqual(gmCard.cardProblems(mixed), []);
+  assert.match(gmCard.cardProblems({ ...mixed, options: [...mixed.options, ...base.options] }).join('\n'), /answers other words/);
+  assert.match(gmCard.cardProblems({ ...base, title: 'run npm publish --tag next' }).join('\n'), /command, flag, or path/);
+  const y = gmCard.yes({ id: 'y1', title: 'ok to publish?', body: 'builder is waiting.', request: { job: 'm1', key: 'm1:0', hash: null } });
+  assert.deepEqual(gmCard.cardProblems(y), []);
+  assert.match(gmCard.cardProblems({ ...y, options: y.options.map(o => (o.id === 'yes' ? { ...o, binds: { job: 'm2', key: 'm1:0' } } : o)) }).join('\n'), /does not bind/);
+  assert.match(gmCard.cardProblems({ ...y, options: y.options.filter(o => o.id !== 'no') }).join('\n'), /has no no/);
+  // a card that slips through is made safe before it is served
+  const fixed = gmCard.enforce({ ...base, title: 'edit lib/gm-bet.js', options: [], input: null });
+  assert.deepEqual(gmCard.cardProblems(fixed), []);
+  assert.deepEqual(gmCard.sequenceProblems([{ kind: 'yes' }, { kind: 'idea' }, { kind: 'yes' }]), []);
+  assert.equal(gmCard.sequenceProblems([{ kind: 'yes' }, { kind: 'yes' }]).length, 1);
+});
+
+test('card contract: at most one yes in a row over a run of taps, and the rest wait behind the need-you count', async () => {
+  const root = workspace();
+  const h = jobDesk(root, threeAsks(root));
+  h.d.warm();
+  for (let i = 0; i < 3; i += 1) await h.gen.releaseOne();
+  const run = [];
+  let card = null;
+  for (let i = 0; i < 8; i += 1) {
+    const out = await h.d.act({ card_id: card ? card.id : null, orb: true });
+    card = out.body.card;
+    run.push({ kind: card.kind, needs: out.body.needs_you });
+  }
+  assert.deepEqual(gmCard.sequenceProblems(run), [], JSON.stringify(run));
+  assert.equal(run[0].kind, 'yes');
+  assert.equal(run[0].needs, 2);
+  assert.equal(run[1].kind, 'idea');
+});
+
+test('card contract: an action names the card on screen and an option on it, or nothing is done', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = yesLock.handoffSeal();
+  yesLock.writeYesLocks(root, 'm-child', { seal });
+  for (const [dir, name] of [['a', 'alpha'], ['b', 'beta']]) {
+    fs.mkdirSync(path.join(root, dir), { recursive: true });
+    fs.writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name }));
+  }
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root });
+  yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root });
+  const h = jobDesk(root, {});
+  h.d.pollJobs();
+  const first = (await h.d.act({ orb: true })).body.card;
+  assert.equal(first.title, 'a handed-off job wants to publish alpha to npm');
+  // an old card id, an option not on the card, and a yes without its second tap all do nothing
+  const old = await h.d.act({ card_id: 'question:focus', option_id: 'yes', confirm: true });
+  assert.deepEqual([old.status, old.body.reason, old.body.card.id], [409, 'gone', first.id]);
+  const odd = await h.d.act({ card_id: first.id, option_id: 'do', confirm: true });
+  assert.deepEqual([odd.status, odd.body.reason], [409, 'bad_option']);
+  const once = await h.d.act({ card_id: first.id, option_id: 'yes' });
+  assert.deepEqual([once.status, once.body.reason], [409, 'needs_confirm']);
+  assert.equal(yesLock.askedYesLocks(root, 'm-child').length, 2, 'nothing approved yet');
+  // the page sends no key: the yes is the one the card showed, by its hash, and only it
+  const said = await h.d.act({ card_id: first.id, option_id: 'yes', confirm: true, key: 'anything', job: 'else' });
+  assert.equal(said.status, 200);
+  assert.equal(said.body.ack, 'the handed-off job: got your yes');
+  assert.ok(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './a'], cwd: root }).consume, 'A runs');
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-child', seal, tool: 'npm', args: ['publish', './b'], cwd: root }).hold, true, 'B is still held');
+  // the old card is gone now: acting on it again does nothing
+  assert.equal((await h.d.act({ card_id: first.id, option_id: 'no' })).body.reason, 'gone');
+});
+
+test('card contract: a reply is its own card, back brings the first question again, and a tapped answer on the reply is said', async () => {
+  const said = [];
+  const root = workspace();
+  const h = desk(root, { scoreboard: true, questions: false, answered: true, readSaid: async (o) => { said.push(o.text); return o.text === 'the overnight run' ? ASKS_BACK() : { ok: true, kind: 'answer', reply: '' }; } });
+  const q = (await h.d.act({ orb: true })).body.card;
+  assert.match(q.id, /^question:scoreboard#[0-9a-f]{8}$/);
+  const r = (await h.d.act({ card_id: q.id, option_id: 'other', text: 'the overnight run' })).body.card;
+  assert.equal(r.kind, 'reply');
+  assert.ok(!r.options.some(o => q.options.some(x => x.label === o.label)), 'none of the first question\'s choices');
+  assert.deepEqual(r.thread, [{ who: 'owner', text: 'the overnight run' }]);
+  const again = (await h.d.act({ card_id: r.id, option_id: 'back' })).body.card;
+  assert.deepEqual([again.id, again.options.map(o => o.label)], [q.id, q.options.map(o => o.label)]);
+  // the reply's own answer is said on the first question, and saved as its answer
+  const r2 = (await h.d.act({ card_id: again.id, option_id: 'other', text: 'the overnight run' }));
+  assert.equal(r2.body.card.kind, 'reply');
+  const tapped = await h.d.act({ card_id: r2.body.card.id, option_id: 'r2' });
+  assert.equal(tapped.status, 200);
+  assert.equal(said[said.length - 1], 'it is helping');
+  assert.equal(gmBet.readScoreboard(gmBet.scoreboardPath(path.dirname(h.ledgerFile)), root).name, 'it is helping');
+});
+
+const walk = require('../scripts/gm-phone-trace');
+const WALK_CHROME = walk.findChrome();
+
+test('browser: every kind of card, one after another, as the desk served it: the page draws exactly that card\'s options and its box, and nothing from the card before', { skip: !WALK_CHROME && 'no chrome on this machine', timeout: 240000 }, async () => {
+  const ids = new Set();
+  const cards = (await everyCard()).map(c => c.card).filter(c => !ids.has(c.id) && ids.add(c.id));
+  const seen = await walk.walkTrace({ chromePath: WALK_CHROME, cards });
+  const show = JSON.stringify(seen, null, 1);
+  assert.equal(seen.length, cards.length, show);
+  for (const s of seen) {
+    assert.deepEqual(s.shown.options, s.want.options, `${s.kind}: ${show}`);
+    assert.equal(s.shown.box, s.want.box, `${s.kind}: ${show}`);
+    assert.equal(s.shown.title, s.want.title, `${s.kind}: ${show}`);
+  }
+  for (const k of gmCard.KINDS) assert.ok(seen.some(s => s.kind === k), `the walk never showed a ${k} card`);
+});
+
+test('card contract: a swap from a swap card no longer on screen does nothing, and the one on screen swaps the member it shows', async () => {
+  const root = workspace();
+  const swaps = [];
+  const h = jobDesk(root, {}, { ...TEAM_DEPS, swapFromCard: (r, name, engine, model, scope) => { swaps.push([name, engine, model, scope]); return { line: `${name} now runs on ${engine} ${model}.`, command: 'roster set', changed: true }; } });
+  const team = (await h.d.act({ open: 'team' })).body.card;
+  const forBuilder = (await h.d.act({ card_id: team.id, option_id: 'swap:builder' })).body.card;
+  const back = (await h.d.act({ card_id: forBuilder.id, option_id: 'back' })).body.card;
+  const forLauncher = (await h.d.act({ card_id: back.id, option_id: 'swap:launcher' })).body.card;
+  assert.equal(forLauncher.title, 'launcher');
+  // builder's card answers late: nothing is swapped
+  const fast = c => c.options.find(o => o.label === 'atris fast').id;
+  const late = await h.d.act({ card_id: forBuilder.id, option_id: fast(forBuilder) });
+  assert.deepEqual([late.status, late.body.reason, late.body.card.id], [409, 'gone', forLauncher.id]);
+  assert.deepEqual(swaps, []);
+  // the card on screen swaps launcher, and the team comes back with one line
+  const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
+  assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
+  assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
+});
+
+test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {
+  const list = ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f'].map((m, i) => ({ engine: 'one', tool: 'tool one', model: m, label: m, current: i === 4, record: null }));
+  const short = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list } });
+  assert.deepEqual(short.options.map(o => o.label), ['m-e', 'm-a', 'm-b', 'more models', 'back to the team']);
+  // a list that would hide only one model shows them all
+  const four = gmCard.swap({ id: 'swap~2', name: 'builder', choices: { scopes: [], options: list.slice(0, 4) } });
+  assert.ok(!four.options.some(o => o.label === 'more models'));
+  const all = gmCard.swap({ id: 'swap~1', name: 'builder', choices: { line: 'builder runs on tool one m-e.', scopes: [], options: list }, all: true });
+  assert.deepEqual(all.options.map(o => o.label), ['m-a', 'm-b', 'm-c', 'm-d', 'm-e', 'm-f', 'back to the team']);
+  for (const c of [short, all]) assert.deepEqual(gmCard.cardProblems(c), []);
+});
+
+test('card contract: a card\'s options never change under one id: when the job in the deck changes, the card id changes and a yes on the old id approves nothing', async () => {
+  const root = workspace();
+  const file = path.join(root, 'gm-bets.jsonl');
+  doingRow(file, root, 'b-a', 'm-a', 'Write the launch thread for the phone page');
+  doingRow(file, root, 'b-b', 'm-b', 'Record the demo video of the front office');
+  const missions = {
+    'm-a': { id: 'm-a', owner: 'launcher', status: 'blocked', created_at: new Date(NOW - 60000).toISOString(), human_asks: ['post the thread on x now?'] },
+    'm-b': { id: 'm-b', owner: 'builder', status: 'running', created_at: new Date(NOW - 120000).toISOString(), last_tick_at: new Date(NOW - 60000).toISOString(), human_asks: [] },
+  };
+  const h = jobDesk(root, missions, { ...TEAM_DEPS, decisions: [{ number: 1, mission_id: 'm-a', ask_index: 0 }, { number: 2, mission_id: 'm-b', ask_index: 0 }] });
+  h.d.pollJobs();
+  const a = (await h.d.act({ open: 'deck' })).body.card;
+  assert.equal(a.title, 'post the thread on x now?');
+  // job B asks for a yes too and moves ahead of A while the phone shows A
+  missions['m-b'] = { ...missions['m-b'], status: 'blocked', updated_at: new Date(NOW).toISOString(), human_asks: ['publish the video now?'] };
+  h.d.pollJobs();
+  const refreshed = h.d.card().card;
+  assert.equal(refreshed.title, 'publish the video now?');
+  assert.notEqual(refreshed.id, a.id, 'new options, new card id');
+  const old = await h.d.act({ card_id: a.id, option_id: 'yes', confirm: true });
+  assert.deepEqual([old.status, old.body.reason], [409, 'gone']);
+  assert.equal(h.cli.filter(c => c[0] === 'decide' && c[2] === 'yes').length, 0, 'nothing was approved');
+});
+
+test('card contract: more models is a new card with option ids of its own, so a pick from the short list after a lost answer picks nothing', async () => {
+  const root = workspace();
+  const swaps = [];
+  const h = jobDesk(root, {}, { ...TEAM_DEPS, swapFromCard: (r, name, engine, model, scope) => { swaps.push([name, engine, model, scope]); return { line: `${name} now runs on ${engine} ${model}.`, command: 'roster set', changed: true }; } });
+  const team = (await h.d.act({ open: 'team' })).body.card;
+  const short = (await h.d.act({ card_id: team.id, option_id: 'swap:builder' })).body.card;
+  const full = (await h.d.act({ card_id: short.id, option_id: 'more' })).body.card;
+  assert.notEqual(full.id, short.id, 'more models is a new card');
+  // the same model keeps the same option id on both lists, and no id is reused for another model
+  const target = o => `${o.binds.engine}/${o.binds.model}`;
+  const pick = c => c.options.filter(o => o.action === 'swap_to' || (o.binds && o.binds.engine));
+  for (const o of pick(short)) assert.equal(target(full.options.find(x => x.id === o.id)), target(o));
+  // the page lost the answer and still shows the short list: its pick names the old card and does nothing
+  const lost = await h.d.act({ card_id: short.id, option_id: pick(short)[0].id });
+  assert.deepEqual([lost.status, lost.body.reason], [409, 'gone']);
+  assert.deepEqual(swaps, []);
+});
+
+// ---- the swarm: three writers at once, the first that passes wins -------------------------
+
+// A writer stub whose calls wait until the test answers them, and end at
+// once when the swarm stops them, the way the real model call does.
+function heldWriters() {
+  const calls = [];
+  const run = (prompt, opts) => new Promise((resolve) => {
+    const c = { prompt, opts, stopped: false, answer: text => resolve({ ok: true, text }) };
+    calls.push(c);
+    opts.signal.addEventListener('abort', () => { c.stopped = true; resolve({ ok: false, reason: 'stopped: another idea was picked first', stopped: true }); });
+  });
+  return { calls, run };
+}
+
+const until = async (cond, n = 50) => { for (let i = 0; i < n && !cond(); i += 1) await tick(); };
+
+test('swarm: three writers start at once, each judged as it lands; the first that passes wins and every other call is stopped', async () => {
+  const root = workspace();
+  const attemptsFile = path.join(root, 'attempts.jsonl');
+  const writers = heldWriters();
+  const skeptics = heldWriters();
+  const events = [];
+  const started = Date.now();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), attemptsFile, emit: e => events.push(e), deps: { ...fixtureDeps, runModel: writers.run, runSkeptic: skeptics.run } });
+  await until(() => writers.calls.length === 3);
+  assert.equal(writers.calls.length, 3, 'three writers at once, none waiting on another');
+  // each leans a different way, so the drafts differ
+  for (const a of gmBet.WRITER_ANGLES) assert.equal(writers.calls.filter(c => c.prompt.includes(a.text)).length, 1, a.key);
+  // the first draft lands and goes to its own skeptic while the others keep writing
+  writers.calls[0].answer(JSON.stringify(goodBet({ title: TITLES[0] })));
+  await until(() => skeptics.calls.length === 1);
+  assert.equal(skeptics.calls.length, 1);
+  assert.equal(writers.calls.length, 3);
+  // the third lands and its skeptic passes it before the first skeptic answers: it is the idea
+  writers.calls[2].answer(JSON.stringify(goodBet({ title: TITLES[3] })));
+  await until(() => skeptics.calls.length === 2);
+  skeptics.calls[1].answer(PASS);
+  const out = await pending;
+  assert.deepEqual([out.ok, out.checked, out.lane, out.bet.title], [true, true, 3, TITLES[3]]);
+  assert.deepEqual(out.bet.skeptic, JSON.parse(PASS));
+  // the second writer and the first skeptic were still running: both were stopped, and nothing new started
+  assert.deepEqual(writers.calls.map(c => c.stopped), [false, true, false]);
+  assert.deepEqual(skeptics.calls.map(c => c.stopped), [true, false]);
+  assert.equal(writers.calls.length + skeptics.calls.length, 5);
+  assert.ok(Date.now() - started < 5000);
+  // the judge is never the writer: the skeptic prompt never went to a writer
+  assert.ok(writers.calls.every(c => /^You are the strategist/.test(c.prompt) && !/skeptical cofounder/.test(c.prompt)));
+  assert.ok(skeptics.calls.every(c => /^You are a skeptical cofounder/.test(c.prompt)));
+  // what the waiting card says, in plain words with none of our own
+  const said = events.filter(e => e.say).map(e => e.say);
+  assert.deepEqual(said, ['drafting three ideas at once', 'the first draft is in. checking it', 'the second draft is in. checking it', 'found one that holds up']);
+  for (const line of said) assert.doesNotMatch(line, gmBet.OWNER_BANNED);
+  // every call is in the attempts log with its lane, the stopped ones too
+  const rows = fs.readFileSync(attemptsFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.filter(r => r.stopped).map(r => [r.kind, r.lane]).sort(), [['skeptic', 1], ['writer', 2]]);
+  assert.deepEqual(rows.filter(r => r.kind === 'skeptic' && r.passed).map(r => r.lane), [3]);
+});
+
+test('swarm: a stop from the desk ends every call at once and gives no idea', async () => {
+  const root = workspace();
+  const writers = heldWriters();
+  const stop = new AbortController();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), signal: stop.signal, deps: { ...fixtureDeps, runModel: writers.run } });
+  await until(() => writers.calls.length === 3);
+  stop.abort();
+  const out = await pending;
+  assert.deepEqual([out.ok, out.stopped], [false, true]);
+  assert.deepEqual(writers.calls.map(c => c.stopped), [true, true, true]);
+});
+
+test('swarm: nothing passes inside the budget: the best draft so far is the card with the worry in one plain line, and every call is stopped', async () => {
+  const root = workspace();
+  const writers = heldWriters();
+  const fail = { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'nothing', reason: 'two posts may reach few people. add a third channel.', concern: 'two posts may reach few people' };
+  const started = Date.now();
+  const events = [];
+  const pending = gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 1500, emit: e => events.push(e),
+    deps: { ...fixtureDeps, runModel: writers.run, runSkeptic: async () => ({ ok: true, text: JSON.stringify(fail) }) },
+  });
+  await until(() => writers.calls.length === 3);
+  // one draft lands at once and is turned down; its writer tries again, and the other two never answer
+  writers.calls[0].answer(JSON.stringify(goodBet()));
+  const out = await pending;
+  const took = Date.now() - started;
+  assert.ok(took >= 1400 && took < 4000, `ended on the budget, ${took} ms`);
+  assert.deepEqual([out.ok, out.checked, out.bet.title], [true, false, goodBet().title]);
+  assert.equal(out.bet.concern, 'one worry: two posts may reach few people.');
+  assert.deepEqual(out.bet.skeptic, fail);
+  assert.ok(writers.calls.length >= 4, 'the turned-down writer tried again in the time left');
+  assert.ok(writers.calls.filter((c, i) => i !== 0).every(c => c.stopped), 'every writer still going was stopped');
+  assert.equal(events.filter(e => e.say).pop().say, 'out of time. bringing the best one so far');
+  // a draft whose second look is still out when time runs out is shown not double-checked
+  const late = heldWriters();
+  const looks = heldWriters();
+  const lateRun = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 400, deps: { ...fixtureDeps, runModel: late.run, runSkeptic: looks.run } });
+  await until(() => late.calls.length === 3);
+  late.calls[1].answer(JSON.stringify(goodBet()));
+  const unchecked = await lateRun;
+  assert.deepEqual([unchecked.ok, unchecked.checked, unchecked.bet.concern, unchecked.bet.skeptic], [true, false, 'not double-checked yet: it came in as time ran out.', null]);
+  assert.deepEqual(looks.calls.map(c => c.stopped), [true], 'the look still out was stopped');
+});
+
+test('swarm: when every lane is turned down, the draft with the smallest worry is the card', async () => {
+  const root = workspace();
+  // lane 1 does not move the number, lane 2 only has a small doubt, lane 3 is blocked
+  const verdicts = {
+    reach: { verdict: 'fail', doable: true, moves_metric: false, missing_first: 'nothing', reason: 'nobody outside sees it.' },
+    first_hour: { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'nothing', reason: 'it is a small step for a week.', concern: 'it is a small step for a week' },
+    proof: { verdict: 'fail', doable: true, moves_metric: true, missing_first: 'a public build', reason: 'the demo shows what nobody can install.' },
+  };
+  const angleOf = p => gmBet.WRITER_ANGLES.find(a => p.includes(a.text)).key;
+  const titles = { reach: TITLES[0], first_hour: TITLES[3], proof: TITLES[5] };
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'),
+    deps: {
+      ...fixtureDeps,
+      runModel: async p => ({ ok: true, text: JSON.stringify(goodBet({ title: titles[angleOf(p)] })) }),
+      runSkeptic: async p => ({ ok: true, text: JSON.stringify(verdicts[Object.keys(titles).find(k => p.includes(titles[k]))]) }),
+    },
+  });
+  assert.deepEqual([out.ok, out.checked, out.bet.title, out.bet.concern], [true, false, TITLES[3], 'one worry: it is a small step for a week.']);
+});
+
+test('skeptic bar: the team is judged on what it controls and can check; the idea must push the number the right way, not reach the goal', async () => {
+  const { bundle } = await bundleFor(workspace());
+  const bet = { ...goodBet(), check_date: '2026-10-30' };
+  const p = gmBet.buildSkepticPrompt(bet, bundle, { today: TODAY });
+  assert.match(p, /The team is judged only on what it controls and can check\./);
+  assert.match(p, /- doable: is every team step work the team can do on its own this week, and check once it is done/);
+  assert.match(p, /would it plausibly push the target number the right way this week/);
+  assert.match(p, /it does not have to reach target\.goal; the goal is the hope, not the bar, so never fail it only because the goal is ambitious\./);
+  assert.match(p, /verdict is "pass" when doable and moves_metric are both true/);
+  // the old bar, from the baseline all the way to the goal, is gone
+  assert.doesNotMatch(p, /from the baseline to the goal/);
+  // the worry the owner reads is asked for in plain words, without our own
+  assert.match(p, /concern: when it fails, the worry in one plain everyday line under 120 characters for the owner/);
+  assert.ok(p.includes(`never these words: ${['bet', 'bets', 'check date'].join(', ')}`));
+  // a pass needs a yes on moving the number and never a no on doable; doable left out still counts
+  const v = o => gmBet.parseVerdict(JSON.stringify({ verdict: 'pass', missing_first: 'nothing', moves_metric: true, reason: 'fine.', ...o })).verdict;
+  assert.deepEqual(v({ doable: false, concern: 'one step waits on strangers' }), { verdict: 'pass', moves_metric: true, missing_first: 'nothing', reason: 'fine.', doable: false, concern: 'one step waits on strangers' });
+  assert.equal(v({}).doable, undefined);
+  // the writer and the skeptic are separate calls, each thinking briefly
+  assert.deepEqual(gmBet.writerCommand().args('w').slice(0, 4), ['-p', 'w', '--model', 'opus']);
+  assert.deepEqual(gmBet.writerCommand().args('w').slice(-2), ['--effort', 'low']);
+  assert.notEqual(gmBet.writerCommand().args, gmBet.skepticCommand().args);
+});
+
+test('model: a stop ends the whole process group at once, so no child of the model is left running', { skip: process.platform === 'win32' }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-stop-'));
+  const pidFile = path.join(dir, 'child.pid');
+  const bin = stubScript(dir, 'busy', `
+const { spawn } = require('child_process');
+const kid = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(kid.pid));
+setInterval(() => {}, 1000);
+`);
+  const stop = new AbortController();
+  const started = Date.now();
+  const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
+  for (let i = 0; i < 100 && !fs.existsSync(pidFile); i += 1) await new Promise(r => setTimeout(r, 50));
+  const kid = Number(fs.readFileSync(pidFile, 'utf8'));
+  stop.abort();
+  const res = await pending;
+  assert.deepEqual(res, { ok: false, reason: 'stopped: another idea was picked first', stopped: true });
+  assert.ok(Date.now() - started < 10000);
+  let alive = true;
+  for (let i = 0; i < 40 && alive; i += 1) {
+    try { process.kill(kid, 0); await new Promise(r => setTimeout(r, 50)); } catch { alive = false; }
+  }
+  assert.equal(alive, false, 'the grandchild in the same group is gone');
+  // past the grace the group's SIGKILL has gone out, and it is no longer counted
+  await new Promise(r => setTimeout(r, 1700));
+  assert.equal(gmBet.stopWriters(), 0, 'and it is no longer counted as running');
+  // a signal already stopped never starts the model
+  let spawned = 0;
+  const early = new AbortController();
+  early.abort();
+  assert.equal((await gmBet.runModel('x', { signal: early.signal, spawnFn: () => { spawned += 1; } })).stopped, true);
+  assert.equal(spawned, 0);
+});
+
+// ---- the desk: one idea prepared ahead, and the waiting card ---------------------------
+
+test('prepared ahead: the next idea is drafted while the owner reads a card, never moves the screen, and the next tap shows it at once', async () => {
+  const h = desk(workspace(), { answered: true });
+  h.d.warm();
+  await h.gen.releaseOne();
+  const first = h.d.next();
+  assert.deepEqual([first.kind, first.bet.title], ['bet', TITLES[0]]);
+  // one drafting runs behind the card, never two
+  assert.equal(h.d.state.inFlight, 1);
+  await h.gen.releaseOne();
+  // it landed behind the card: the screen did not change
+  assert.deepEqual([h.d.view().id, h.d.view().bet.title, h.d.view().queue], [first.id, TITLES[0], 1]);
+  assert.equal(h.gen.maxActive, 1);
+  // the next tap is instant: the prepared idea, not a wait
+  const second = h.d.next();
+  assert.deepEqual([second.kind, second.bet.title], ['bet', TITLES[1]]);
+});
+
+test('prepared ahead: one written before the owner\'s newest answer, or too close to one he already saw, is never shown, and the drafting under way starts over', async () => {
+  const root = workspace();
+  const h = await filled(root, { answered: true });
+  assert.equal(h.d.next().bet.title, TITLES[0]);
+  // the next one is being drafted behind the card
+  const running = h.gen.calls[3];
+  assert.equal(running.signal.aborted, false);
+  // he answers a question: what is ready was written without that answer
+  fs.appendFileSync(gmBet.focusPath(path.dirname(h.ledgerFile)), `${JSON.stringify({ workspace: root, key: 'who', answer: 'own', label: 'small schools', ask: 'who is it for?', at: new Date(NOW).toISOString() })}\n`);
+  const tap = h.d.next();
+  assert.equal(tap.kind, 'wait', 'nothing ready knows his answer');
+  assert.deepEqual(h.ledger().filter(r => r.status === 'stale').map(r => r.stale_reason), Array(2).fill('written before the owner\'s newest answer'));
+  assert.equal(running.signal.aborted, true, 'the drafting that began before the answer was stopped');
+  // a fresh idea too close to one he already turned down is dropped too
+  const root2 = workspace();
+  const h2 = await filled(root2, { answered: true });
+  ledgerRow(h2.ledgerFile, root2, 'seen-before', { status: 'passed', bet: goodBet({ title: 'Record a two minute demo video of the phone front office for the website' }) });
+  const shown = h2.d.next();
+  assert.equal(shown.bet.title, TITLES[0]);
+  assert.deepEqual(h2.d.state.queue.map(i => i.bet.title), [TITLES[2]]);
+  assert.match(h2.ledger().find(r => r.bet && r.bet.title === TITLES[1]).stale_reason, /^too close to one already shown: Record a two minute demo video/);
+});
+
+test('waiting card: it carries the drafting\'s plain lines and when it began, and keeps its id while they change', async () => {
+  let gate;
+  let emit;
+  const h = desk(workspace(), { answered: true, generate: (opts) => { emit = opts.emit; emit({ kind: 'swarm', line: '3 writers at once', say: 'drafting three ideas at once' }); return new Promise((r) => { gate = r; }); } });
+  const tap = h.d.next();
+  assert.equal(tap.kind, 'wait');
+  const one = h.d.card().card;
+  assert.equal(one.kind, 'wait');
+  assert.deepEqual(one.progress, [{ at: NOW, line: 'drafting three ideas at once' }]);
+  assert.deepEqual([one.started_at, one.waited_ms, one.watch], [NOW, 0, true]);
+  h.tick(6000);
+  emit({ kind: 'skeptic', line: 'a second model is checking that it makes sense', say: 'the first draft is in. checking it' });
+  const two = h.d.card().card;
+  assert.equal(two.id, one.id, 'new lines, same card');
+  assert.deepEqual(two.progress.map(p => p.line), ['drafting three ideas at once', 'the first draft is in. checking it']);
+  assert.deepEqual([two.started_at, two.waited_ms], [NOW, 6000]);
+  // the lines the swarm writes are plain words, with none of our own
+  for (const p of two.progress) assert.deepEqual(gmCard.cardProblems({ ...two, progress: [p] }), []);
+  // the idea lands: it waits for the page to ask, the way it always did
+  gate({ ok: true, bet: { ...goodBet(), check_date: '2026-10-30' } });
+  await tick();
+  assert.deepEqual([h.d.view().kind, h.d.view().queue], ['wait', 1]);
+});
+
+test('waiting card: words said on it start a drafting with them at once, stopping the one under way', async () => {
+  const h = desk(workspace(), { answered: true });
+  h.d.next();
+  assert.equal(h.gen.calls.length, 1);
+  const out = await h.d.say({ text: 'make it about small schools' });
+  assert.equal(out.ok, true);
+  assert.equal(h.gen.calls[0].signal.aborted, true, 'the background drafting was stopped');
+  await h.gen.releaseOne();
+  // its idea is dropped, and the drafting with his words is the one running now
+  assert.equal(h.d.view().queue, 0);
+  assert.equal(h.gen.calls.length, 2);
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about small schools');
+  await h.gen.releaseOne();
+  assert.equal(h.d.next().bet.title, TITLES[1]);
+});
+
+test('prepared ahead: a rework of the idea the owner wrote a note on may stay close to it, and it is the next card', async () => {
+  let n = 0;
+  const REWORK = 'Write a getting started page for atris gm phone with a 30 second screen recording for schools';
+  const h = desk(workspace(), { answered: true, generate: async opts => ({ ok: true, bet: { ...goodBet({ title: opts.ownerNote ? REWORK : TITLES[n++ % TITLES.length] }), check_date: '2026-10-30' } }) });
+  h.d.next();
+  for (let i = 0; i < 10; i += 1) await tick();
+  const first = h.d.next();
+  assert.equal(first.bet.title, TITLES[0]);
+  const said = await h.d.say({ text: 'make it for schools' });
+  assert.equal(said.ok, true);
+  for (let i = 0; i < 10; i += 1) await tick();
+  const next = h.d.next();
+  assert.equal(next.bet.title, REWORK, 'close to the idea it reworks, and still shown');
+  assert.equal(h.ledger().filter(r => r.status === 'stale').length, 0);
+});
+
+// ---- review fixes: a child that ignores SIGTERM, words typed as a wait ends, slow facts ----
+
+test('model: a child that ignores SIGTERM and has its own stdio is still killed after the grace, though the model already exited', { skip: process.platform === 'win32', timeout: 20000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-stubborn-'));
+  const pidFile = path.join(dir, 'kid.pid');
+  // the kid ignores SIGTERM, keeps no pipe to the model, and says it is ready only once it does
+  const kidCode = `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const bin = stubScript(dir, 'parent', `
+const { spawn } = require('child_process');
+spawn(process.execPath, ['-e', ${JSON.stringify(kidCode)}], { stdio: 'ignore' });
+setInterval(() => {}, 1000);
+`);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const readKid = () => { try { return Number(fs.readFileSync(pidFile, 'utf8')) || null; } catch { return null; } };
+  const stop = new AbortController();
+  const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
+  let kid = null;
+  try {
+    for (let i = 0; i < 200 && !readKid(); i += 1) await new Promise(r => setTimeout(r, 25));
+    kid = readKid();
+    assert.ok(kid, 'the kid started');
+    stop.abort();
+    const res = await pending;
+    assert.equal(res.stopped, true);
+    // the model is gone and the call is over, and the kid that ignored SIGTERM is still up
+    assert.equal(alive(kid), true, 'the kid outlived the SIGTERM');
+    // until the group's SIGKILL after the grace
+    let gone = false;
+    for (let i = 0; i < 80 && !gone; i += 1) { await new Promise(r => setTimeout(r, 50)); gone = !alive(kid); }
+    assert.equal(gone, true, 'the kid is gone after the grace');
+  } finally {
+    // a failed check never leaves the model or the kid behind
+    stop.abort();
+    await pending;
+    kid = kid || readKid();
+    if (kid && alive(kid)) process.kill(kid, 'SIGKILL');
+  }
+});
+
+test('waiting card: words typed while the wait ends with nothing are never dropped; the next drafting is written with them', async () => {
+  // the drafting under way would fail; his words on the calm line are a note, taken at once
+  // with no read, and that drafting is stopped for them, so the wait never ends with nothing
+  const gen = stubGenerator({ fail: n => n === 0 });
+  const reads = [];
+  const h = desk(workspace(), { gen, answered: true, readSaid: async (p) => { reads.push(p); return { ok: true, kind: 'instruction', reply: '' }; } });
+  const wait = (await h.d.act({ orb: true })).body.card;
+  assert.equal(wait.kind, 'wait');
+  const out = await h.d.act({ card_id: wait.id, text: 'make it about small schools' });
+  assert.deepEqual([out.status, out.body.ok, out.body.card.kind], [200, true, 'wait'], JSON.stringify(out.body));
+  assert.equal(reads.length, 0);
+  await gen.releaseOne();
+  assert.equal(h.d.view().kind, 'wait', 'the stopped drafting ends as stopped, not as nothing');
+  assert.equal(gen.calls[gen.calls.length - 1].ownerNote, 'make it about small schools');
+  // the wait ended before he sent, and the page had looked again: the words still count
+  const gen2 = stubGenerator({ fail: n => n === 0 });
+  const h2 = desk(workspace(), { gen: gen2, answered: true });
+  const wait2 = (await h2.d.act({ orb: true })).body.card;
+  await gen2.releaseOne();
+  assert.equal(h2.d.card().card.kind, 'missed');
+  // a tap on an option named by the old card is still refused: only words carry over
+  assert.equal((await h2.d.act({ card_id: wait2.id, option_id: 'again' })).body.reason, 'gone');
+  const late = await h2.d.act({ card_id: wait2.id, text: 'something for teachers' });
+  assert.deepEqual([late.status, late.body.ok], [200, true], JSON.stringify(late.body));
+  await gen2.releaseOne();
+  assert.equal(gen2.calls[gen2.calls.length - 1].ownerNote, 'something for teachers');
+});
+
+test('swarm: the budget covers reading the facts: slow scoring and a slow npm read are left out, and the writers still get their time', async () => {
+  const root = workspace();
+  const started = Date.now();
+  let wroteAt = null;
+  const events = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 2000, writers: 1, emit: e => events.push(e),
+    deps: {
+      ...fixtureDeps,
+      // four overdue bets at ten seconds each, never done inside the budget
+      scoreBets: () => new Promise(r => setTimeout(r, 40000).unref()),
+      fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? new Promise(() => {}) : npmBody()),
+      runModel: async () => { wroteAt = Date.now() - started; return { ok: true, text: JSON.stringify(goodBet()) }; },
+    },
+  });
+  const took = Date.now() - started;
+  assert.deepEqual([out.ok, out.checked], [true, true], out.reason);
+  // the facts get the first quarter of the budget, 500 ms here, and the writer starts right after
+  assert.ok(wroteAt >= 450 && wroteAt < 1200, `the writer started at ${wroteAt} ms`);
+  assert.ok(took < 2000, `done inside the budget, ${took} ms`);
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'score'));
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'release'));
+  // a stop while the facts are read ends it at once, and no writer starts
+  let wrote = 0;
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), signal: stop.signal, deps: { ...fixtureDeps, scoreBets: () => new Promise(() => {}), runModel: async () => { wrote += 1; return { ok: false, reason: 'x' }; } } });
+  setTimeout(() => stop.abort(), 50);
+  const stopped = await pending;
+  assert.deepEqual([stopped.ok, stopped.stopped, wrote], [false, true, 0]);
+  assert.ok(Date.now() - t0 < 1000, 'it did not wait for the facts');
+  // the budget is spent while the facts are read (the read blocks): no writer starts
+  let late = 0;
+  const spent = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 300,
+    deps: { ...fixtureDeps, gitLanded: () => { const end = Date.now() + 450; while (Date.now() < end) { /* a slow git read */ } return ['x']; }, runModel: async () => { late += 1; return { ok: true, text: JSON.stringify(goodBet()) }; } },
+  });
+  assert.equal(spent.ok, false);
+  assert.equal(late, 0, 'no writer starts once the budget is spent');
+  assert.match(spent.reason, /no time was left to draft inside 0 seconds|nothing usable came back/);
+});
+
+test('swarm: a stop while the facts are read leaves no timer behind, so the process exits at once', { timeout: 20000 }, async () => {
+  const root = workspace();
+  const script = `
+    const gmBet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'gm-bet.js'))});
+    const stop = new AbortController();
+    const t0 = Date.now();
+    gmBet.generateBet({
+      workspaceRoot: ${JSON.stringify(root)}, today: '2026-10-21', ledgerFile: ${JSON.stringify(path.join(root, 'bets.jsonl'))}, signal: stop.signal,
+      deps: { readNow: () => null, seasonFacts: () => null, gitLanded: () => null, packageName: null, readBriefs: () => null, scoreBets: () => new Promise(() => {}), runModel: async () => ({ ok: false, reason: 'never asked' }) },
+    }).then((out) => { process.stdout.write(JSON.stringify({ stopped: out.stopped, returned: Date.now() - t0 })); });
+    setTimeout(() => stop.abort(), 50);
+  `;
+  const started = Date.now();
+  const res = require('node:child_process').spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 15000, env: { ...process.env, HOME } });
+  const lived = Date.now() - started;
+  assert.equal(res.status, 0, res.stderr);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.stopped, true);
+  assert.ok(out.returned < 1000, `returned after ${out.returned} ms`);
+  // the source deadline is 7.5 seconds into a 30 second budget; nothing waits for it
+  assert.ok(lived < 4000, `the process lived ${lived} ms after a stop at 50 ms`);
 });

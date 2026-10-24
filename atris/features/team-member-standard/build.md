@@ -16,7 +16,7 @@ sources:
   - atris/features/team-member-standard/idea.md
 ---
 
-# Team Member Standard — Build Spec
+# Team Member Standard: Build Spec
 
 > **Status:** implemented and re-verified (local-first member runtime)
 

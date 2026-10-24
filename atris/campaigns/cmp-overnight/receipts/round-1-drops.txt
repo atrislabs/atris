@@ -1,0 +1,38 @@
+DROP test/agent-today--mut-L214-9.test.js: compares the whole today summary object (date, git flag, empty lists), when the line only decides whether a session with no folder gets counted; adding any field would break it.
+DROP test/arg-parser--mut-L17-5.test.js: the change is harmless, since reading one past the end gives undefined and matches no flag; the test only fails by planting a fake array prototype.
+DROP test/brief-ledger--mut-L304-5.test.js: snapshots the whole rendered review to check one label, "1m" versus "under 1m".
+DROP test/brief-ledger--mut-L73-7.test.js: the change is harmless in practice; it only shows up through a made-up "missing/.." path that disappears when the path gets joined.
+DROP test/business-simulate--mut-L257-7.test.js: pins the full usage text inside the error, so adding a flag to the usage line would break it.
+DROP test/campaign-new--mut-L104-7.test.js: repeats the L103 test, which already checks that the draft reports the owner's engine (codex) and fails under this change too.
+DROP test/ci-runner--mut-L190-1.test.js: the change only reorders two results neither of which is a known one, which never happens in practice, and the test snapshots the whole summary text.
+DROP test/ci-runner--mut-L280-2.test.js: the change is harmless; the broken code still refuses the 300 response, just with a different error message, so nothing insecure gets downloaded.
+DROP test/cleanup-summary--mut-L29-9.test.js: nothing gets written either way, and the only caller (commands/autoland.js:1268) ignores the return value.
+DROP test/deck-compose--mut-L109-6.test.js: snapshots the whole deck (theme, brand accent, closing slide) to check which heading becomes the title.
+DROP test/default-runner--mut-L9-5.test.js: the extra loop step only reads one empty slot past the end of the list, and that slot never matches a flag. The test can only catch it by planting a fake value on the array's prototype, which no real caller does.
+DROP test/idea-tick--mut-L231-5.test.js: the break only matters when two failures land exactly 24 hours apart to the millisecond. That tie never happens in real runs, so nobody relies on which side of it wins.
+DROP test/accept-verify-gate--mut-L110-7.test.js: Duplicates the missing-directory reason checks in L111-0.
+DROP test/accept-verify-gate--mut-L111-7.test.js: Duplicates all three failure cases in L111-0.
+DROP test/accept-verify-gate--mut-L116-0.test.js: Duplicates the nonzero exit-code assertion in L111-0.
+DROP test/agent-today--mut-L181-6.test.js: Uses the real file modification time against a fixed date, making the result clock-dependent.
+DROP test/agent-today--mut-L46-5.test.js: Tests a zero-byte limit that no production caller supplies.
+DROP test/auto-lessons--mut-L52-6.test.js: Duplicates the single-occurrence threshold check in L52-4.
+DROP test/campaign-holdout--mut-L55-7.test.js: Enforces boxed-string object identity, which production text callers do not rely on.
+DROP test/campaign-new--mut-L106-6.test.js: Pins the entire output, including incidental command quoting and script formatting.
+DROP test/chat-log-scan--mut-L51-5.test.js: Enforces inclusion at one exact millisecond of the age cutoff, a harmless boundary difference.
+DROP test/cli-json--mut-L14-5.test.js: Pins exact JSON whitespace; the mutation is caught through nontermination rather than a focused write-boundary assertion.
+DROP test/design-api--mut-L62-7.test.js: Opens real TCP listeners and sends network requests.
+DROP test/dispatch-scout--mut-L131-7.test.js: Writes git configuration for the fixture repository.
+DROP test/journal--mut-L21-7.test.js: Only distinguishes a missing timestamp from the Unix epoch, which live journal synchronization does not use.
+DROP test/accept-verify-gate--mut-L110-7.test.js: Duplicates the missing-directory reason checks in L111-0.
+DROP test/accept-verify-gate--mut-L111-7.test.js: Duplicates all three failure cases in L111-0.
+DROP test/accept-verify-gate--mut-L116-0.test.js: Duplicates the nonzero exit-code assertion in L111-0.
+DROP test/agent-today--mut-L181-6.test.js: Uses the real file modification time against a fixed date, making the result clock-dependent.
+DROP test/agent-today--mut-L46-5.test.js: Tests a zero-byte limit that no production caller supplies.
+DROP test/auto-lessons--mut-L52-6.test.js: Duplicates the single-occurrence threshold check in L52-4.
+DROP test/campaign-holdout--mut-L55-7.test.js: Enforces boxed-string object identity, which production text callers do not rely on.
+DROP test/campaign-new--mut-L106-6.test.js: Pins the entire output, including incidental command quoting and script formatting.
+DROP test/chat-log-scan--mut-L51-5.test.js: Enforces inclusion at one exact millisecond of the age cutoff, a harmless boundary difference.
+DROP test/cli-json--mut-L14-5.test.js: Pins exact JSON whitespace; the mutation is caught through nontermination rather than a focused write-boundary assertion.
+DROP test/design-api--mut-L62-7.test.js: Opens real TCP listeners and sends network requests.
+DROP test/dispatch-scout--mut-L131-7.test.js: Writes git configuration for the fixture repository.
+DROP test/journal--mut-L21-7.test.js: Only distinguishes a missing timestamp from the Unix epoch, which live journal synchronization does not use.

@@ -1,0 +1,34 @@
+You are in the atris-cli repo: Node, zero dependencies, tests use node:test.
+
+The existing tests miss a bug. In {{target}} at line {{line}}, this line:
+    {{before}}
+can be changed to:
+    {{after}}
+and every existing test that loads the file ({{tests}}) still passes.
+
+Write ONE new test file at {{file}} that passes on the real code and fails when that line is changed.
+
+Rules:
+- Create only {{file}}. Do not change the code under test.
+- Load the module with require('../{{module}}') and test it through what it exports. Find the exported function that runs this line and build an input that reaches it.
+- Never read the source file's text. Its path may appear only inside require('../{{module}}'). Any other mention fails the check: a comment, a test name, require.resolve, a spawn or exec argument.
+- No network, not even a local server. No AI engines, no long-running commands, no timing deadlines, no dependence on today's date or a file's real modified time. Do not replace the global Date.
+- Write only inside fs.mkdtempSync(path.join(os.tmpdir(), ...)). The check runs your file with an empty environment, no git config, in two time zones a day apart. Never run git config. If the code reads HOME, set HOME to your temp folder; never delete it.
+- To confirm, you may change the line yourself, run node --test {{file}} and see it fail, then put the line back exactly with: git checkout -- {{target}}
+- Finish with the line restored and node --test {{file}} passing.
+- Do not commit.
+
+Reaching the line. Most lines are reachable, so try before giving up:
+- A > or < that gains or loses "=": use the exact boundary input, such as an empty list, zero items, or an argument that starts with "=".
+- && changed to || or the reverse: use the input where exactly one side is true.
+- "value || fallback" changed to "value && fallback": pass a real value and check it comes through.
+- === changed to !==, or true changed to false: use the input that takes the other branch and check what that branch produces.
+- Commands: call the exported function, capture console output, set HOME and the working folder to your temp folder, and swap process.exit for a function that throws, restoring all of it after.
+- Code behind a login or an API call: write fake saved state into your temp HOME, and replace the exported request function of the module that makes the call, then restore it. Never open a socket.
+
+What the reviewer drops:
+- Whole snapshots. Do not compare the full output, help text, HTML, object, or file. Assert only the piece this line decides, such as one field, or whether a line or word is present. No exact spacing, padding, or color codes.
+- Breaks caught by accident. If the changed line crashes, also assert on the value or text the line controls, not just the crash or missing output.
+- Fakes no real caller makes: getters that change between reads, values planted on prototypes, mocks that depend on the order or count of internal file or process calls.
+- Harmless breaks. If the difference shows up only at an input no real caller gives (an exact millisecond, an exact byte size, a status code no server sends, one slot past the end of a list), or nothing a user would notice changes, write nothing and stop.
+- Repeats. Read the tests that load this file. Test the case only this line decides, not one they already check.

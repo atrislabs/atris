@@ -1,0 +1,1 @@
+{"id":"test-commands-setup","kind":"test","target":"commands/setup.js","files":["test/setup-command.test.js"]}

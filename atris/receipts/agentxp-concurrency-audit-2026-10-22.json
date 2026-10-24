@@ -1,0 +1,162 @@
+{
+  "command": "node atris/receipts/agentxp-concurrency-audit-2026-10-22.cjs",
+  "observed_at": "2026-10-23T05:07:17.305Z",
+  "node": "v24.2.0",
+  "cli_command": "node bin/atris.js xp status --local --workspace <isolated-folder> --json",
+  "source": "tasks.db reviewed event 01M5KC5M7JY5FAQGHJS2Y5FAQG, accepted 2026-10-23T03:16:45.938Z (2026-10-22 local)",
+  "fixture_copies_per_round": 300,
+  "setup": "Five isolated ledgers, two concurrent actual CLI processes, then one actual CLI read. No runtime instrumentation or live awards.",
+  "failed_rounds": 0,
+  "rounds": [
+    {
+      "round": 0,
+      "expected_xp": 300,
+      "concurrent": [
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:15.989Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-0\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        },
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:15.989Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-0\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        }
+      ],
+      "final": {
+        "exit": 0,
+        "agent_xp": 300,
+        "integrity_status": "verified",
+        "errors": [],
+        "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.129Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-0\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+      },
+      "raw_receipts": 300,
+      "unique_receipts": 300,
+      "invariant_passed": true
+    },
+    {
+      "round": 1,
+      "expected_xp": 300,
+      "concurrent": [
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.266Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-1\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        },
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.266Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-1\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        }
+      ],
+      "final": {
+        "exit": 0,
+        "agent_xp": 300,
+        "integrity_status": "verified",
+        "errors": [],
+        "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.410Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-1\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+      },
+      "raw_receipts": 300,
+      "unique_receipts": 300,
+      "invariant_passed": true
+    },
+    {
+      "round": 2,
+      "expected_xp": 300,
+      "concurrent": [
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.552Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-2\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        },
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.551Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-2\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        }
+      ],
+      "final": {
+        "exit": 0,
+        "agent_xp": 300,
+        "integrity_status": "verified",
+        "errors": [],
+        "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.696Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-2\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+      },
+      "raw_receipts": 300,
+      "unique_receipts": 300,
+      "invariant_passed": true
+    },
+    {
+      "round": 3,
+      "expected_xp": 300,
+      "concurrent": [
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.837Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-3\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        },
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.837Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-3\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        }
+      ],
+      "final": {
+        "exit": 0,
+        "agent_xp": 300,
+        "integrity_status": "verified",
+        "errors": [],
+        "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:16.980Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-3\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+      },
+      "raw_receipts": 300,
+      "unique_receipts": 300,
+      "invariant_passed": true
+    },
+    {
+      "round": 4,
+      "expected_xp": 300,
+      "concurrent": [
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:17.118Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-4\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        },
+        {
+          "exit": 0,
+          "agent_xp": 300,
+          "integrity_status": "verified",
+          "errors": [],
+          "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:17.119Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-4\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+        }
+      ],
+      "final": {
+        "exit": 0,
+        "agent_xp": 300,
+        "integrity_status": "verified",
+        "errors": [],
+        "output_excerpt": "{\n  \"schema\": \"atris.career_xp_projection.v1\",\n  \"generated_at\": \"2026-10-23T05:07:17.260Z\",\n  \"workspace_root\": \"/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-xp-race-audit-ZJDlop/round-4\",\n  \"metric_label\": \"AgentXP\",\n  \"agent_xp\": 300,\n  \"total_agent_xp\": 300,\n  \"today_agent_xp\": 300,\n  \"career_xp\": 300,\n  \"total_xp\": 300,\n  \"today_xp\": 300,\n  \"level\": 1,\n  \"leaderboard_eligible\": false,\n  \"integrity_status\": \"verified\",\n  \"next_level_progress\": {\n    \"level\": 1,\n    \"next_le"
+      },
+      "raw_receipts": 300,
+      "unique_receipts": 300,
+      "invariant_passed": true
+    }
+  ]
+}

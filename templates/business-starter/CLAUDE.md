@@ -1,8 +1,8 @@
-# {{name}} — Atris Workspace
+# {{name}}: Atris Workspace
 
 You are the AI operating partner for **{{name}}**.
 
-## FIRST MESSAGE — MANDATORY
+## FIRST MESSAGE: MANDATORY
 
 Before responding to the user's first message:
 1. Read `atris/atris.md` (boot protocol)
@@ -43,13 +43,13 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - Prove: after one bounded step, run `atris mission tick <id> --verify --summary "<what changed>"`.
 - Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
 
-## Wiki Reads — REQUIRED for domain questions
+## Wiki Reads: REQUIRED for domain questions
 
 You have a compiled wiki at `atris/wiki/`:
-- `atris/wiki/people/` — humans (employees, contacts, stakeholders)
-- `atris/wiki/systems/` — tools, tables, dashboards, services, products
-- `atris/wiki/concepts/` — patterns, frameworks, recurring ideas
-- `atris/wiki/briefs/` — multi-page briefs and cross-cutting analyses
+- `atris/wiki/people/`: humans (employees, contacts, stakeholders)
+- `atris/wiki/systems/`: tools, tables, dashboards, services, products
+- `atris/wiki/concepts/`: patterns, frameworks, recurring ideas
+- `atris/wiki/briefs/`: multi-page briefs and cross-cutting analyses
 
 When asked anything domain-specific, **READ THE RELEVANT WIKI PAGE FIRST**. Cite the page in your answer. Do not answer from generic knowledge.
 

@@ -31,6 +31,7 @@ function showHelp() {
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
   console.log('       atris gm phone [--port 7777] [--send] [--new-link]  decision cards on your phone');
+  console.log('       atris gm walk [--real-copy <workspace>] [--votes 3] [--no-browser]  check every stage of the phone orb');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
   console.log('');
@@ -120,6 +121,13 @@ function showHelp() {
   console.log('  Anything that starts agents, frees claims, or lands work needs a second');
   console.log('  tap. Every tap is logged to ~/.atris/state/gm-phone-actions.jsonl.');
   console.log('  --send texts the link to the number saved with atris autoland on --to.');
+  console.log('');
+  console.log('  atris gm walk starts the phone page on a made-up workspace with a temp');
+  console.log('  home, walks every stage of the orb (the idea, an answer, the weekly');
+  console.log('  number, the team, a swap, the job deck, a yes card, Esc, the small and');
+  console.log('  big orb), and prints one row per stage: pass or fail, and why. Rules in');
+  console.log('  code and a fast judge model both have to agree. atris gm walk --help');
+  console.log('  says more. It runs from an atris checkout and never touches ~/.atris.');
   console.log('');
   console.log('  The league treats every real project folder with task events in the');
   console.log('  last 30 days as a club: team rating, landed this week and in 30 days,');
@@ -1647,6 +1655,22 @@ async function gmPhone(args = []) {
   return undefined;
 }
 
+// ---- walk ----------------------------------------------------------------------
+
+// gm walk: every stage of the phone orb, walked and judged on a made-up
+// workspace (scripts/orb-walk.js). The published package leaves the script
+// out, so an install says so instead of failing on a missing file.
+async function gmWalk(args = []) {
+  const script = path.join(__dirname, '..', 'scripts', 'orb-walk.js');
+  if (!fs.existsSync(script)) {
+    console.error('atris gm walk runs from an atris checkout. this install does not include the walk.');
+    process.exitCode = 2;
+    return undefined;
+  }
+  process.exitCode = await require(script).main(args);
+  return undefined;
+}
+
 // ---- player card ------------------------------------------------------------
 
 // One member's profile page as lines. Pure: card in, lines out.
@@ -1869,6 +1893,12 @@ function wakeableMember(args) {
 }
 
 async function gmCommand(...args) {
+  // the walk has its own help
+  if (positional(args)[0] === 'walk') {
+    const at = args.indexOf('walk');
+    return gmWalk([...args.slice(0, at), ...args.slice(at + 1)]);
+  }
+
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showHelp();
     return;

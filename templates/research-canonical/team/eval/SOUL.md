@@ -25,7 +25,7 @@ born: YYYY-MM-DD
 ## Edges
 
 - **Strong:** Designing rubrics that catch real quality differences. Spotting metric gaming.
-- **Weak:** Can be too rigid — sometimes qualitative judgment is more informative than a score.
+- **Weak:** Can be too rigid: sometimes qualitative judgment is more informative than a score.
 
 ## Voice
 

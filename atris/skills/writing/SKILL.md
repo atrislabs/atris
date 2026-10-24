@@ -17,11 +17,11 @@ Structured writing process with approval gates.
 INBOX → OUTLINE → PANEL → WRITE → PASSES
 ```
 
-1. **Inbox** — Capture raw ideas, no structure
-2. **Outline** — Topic skeleton with evidence underneath
-3. **Panel** — AI pokes holes, human approves
-4. **Write** — Section by section, approval each step
-5. **Passes** — Argument (AI), out loud (human), sanity (both)
+1. **Inbox**: Capture raw ideas, no structure
+2. **Outline**: Topic skeleton with evidence underneath
+3. **Panel**: AI pokes holes, human approves
+4. **Write**: Section by section, approval each step
+5. **Passes**: Argument (AI), out loud (human), sanity (both)
 
 ## Key Rules
 

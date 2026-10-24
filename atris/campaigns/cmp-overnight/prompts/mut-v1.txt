@@ -1,0 +1,21 @@
+You are in the atris-cli repo: Node, zero dependencies, tests use node:test.
+
+The existing tests miss a bug. In {{target}} at line {{line}}, this line:
+    {{before}}
+can be changed to:
+    {{after}}
+and every existing test that loads the file ({{tests}}) still passes.
+
+Write ONE new test file at {{file}} that passes on the real code and fails when that line is changed.
+
+Rules:
+- Create only {{file}}. Do not change the code under test.
+- Load the module with require('../{{module}}') and test it through what it exports. Find the exported function that runs this line and build an input that reaches it.
+- Assert on the exact output that differs between the real line and the changed line.
+- Never read the source file's text.
+- No network, no AI engines, no long-running commands, no timing deadlines, no dependence on today's date.
+- Write only inside fs.mkdtempSync(path.join(os.tmpdir(), ...)). The check runs your file with an empty environment, no git config, in two time zones a day apart.
+- To confirm, you may change the line yourself, run node --test {{file}} and see it fail, then put the line back exactly with: git checkout -- {{target}}
+- Finish with the line restored and node --test {{file}} passing.
+- If the change makes no observable difference through the exports, write nothing and stop.
+- Do not commit.

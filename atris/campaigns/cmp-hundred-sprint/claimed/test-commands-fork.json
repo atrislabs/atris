@@ -1,0 +1,1 @@
+{"id":"test-commands-fork","kind":"test","target":"commands/fork.js","files":["test/fork-command.test.js"]}

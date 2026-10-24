@@ -1,0 +1,9 @@
+DROP test/apps-cmd--mut-L84-8.test.js: it compares the whole manifest object, including the path and latest_output fields, when only `enabled === true` is under test, so adding any field to manifests would break it.
+DROP test/bench-cmd--mut-L250-7.test.js: it matches all ten help lines exactly, so any change to the usage wording breaks it, when it only needs to check that `--help` and `-h` show help.
+DROP test/browse-cmd--mut-L8-6.test.js: with no query word the broken line crashes before the login check, so the test only notices the crash and never checks that a missing query or a flag gives no query.
+DROP test/done-cmd--mut-L143-7.test.js: it matches the full JSON output, including the reason text and next_action, when the behavior is which task gets picked (T1 over T2).
+DROP test/feedback-cmd--mut-L173-7.test.js: the first assertion on the workspace already catches the break, and the second one pins the whole printed brief, including the verdict wording.
+DROP test/harvest-cmd--mut-L76-7.test.js: it matches the full JSON output and printed log, including the action title wording, when the behavior is that a null proof yields one repair action.
+DROP test/review-cmd--mut-L22-5.test.js: the break only makes the search look one folder higher for the review engine, which does no harm, and the test locks in an arbitrary depth limit nobody relies on.
+DROP test/search-cmd--mut-L174-4.test.js: Checks an unused result field; changing it has no effect on search output or behavior.
+DROP test/search-cmd--mut-L174-4.test.js: Checks an unused result field; changing it has no effect on search output or behavior.

@@ -1,0 +1,10 @@
+DROP test/done-cmd--mut-L147-7.test.js: the tasks are already written newest first, so the test would still pass if the sort were deleted. It only caught the break because the broken comparator happens to shuffle the list.
+DROP test/improve-cmd--mut-L395-4.test.js: it locks in which of two missions with the same timestamp wins. That tie-break is arbitrary, and nobody relies on the first row winning over the later-appended one.
+DROP test/scout-cmd--mut-L46-6.test.js: the broken line actually gives a friendlier "fast lane error: insufficient credits" message for an error reply that has no output field, and the test insists on raw JSON there, which nobody relies on.
+DROP test/spaceship-cmd--mut-L47-7.test.js: it repeats test/spaceship-cmd--mut-L47-3.test.js, which already checks that spokenHours('0') returns '4 hours'.
+DROP test/engine-watch-cmd--mut-L165-7.test.js: Pins the internal filesystem injection mechanism rather than user-facing roster behavior.
+DROP test/one-lap-cmd--mut-L365-0.test.js: Duplicates the proven-receipt resume behavior already covered by test/one-lap-runtime.test.js.
+DROP test/orb-cmd--mut-L292-2.test.js: Replaces spawn after importing code that already captured it, so dispatch can launch real AI engines.
+DROP test/engine-watch-cmd--mut-L165-7.test.js: Pins the internal filesystem injection mechanism rather than user-facing roster behavior.
+DROP test/one-lap-cmd--mut-L365-0.test.js: Duplicates the proven-receipt resume behavior already covered by test/one-lap-runtime.test.js.
+DROP test/orb-cmd--mut-L292-2.test.js: Replaces spawn after importing code that already captured it, so dispatch can launch real AI engines.

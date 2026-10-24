@@ -1,6 +1,6 @@
 # Wire the Loop
 
-> **Status:** shipped (partial — Step 6 still failing)
+> **Status:** shipped (partial: Step 6 still failing)
 > **Created:** 2026-02-09
 > **Last Updated:** 2026-02-09
 
@@ -56,4 +56,4 @@ features/README ✅           atris init ❌ (no lessons.md created)
 
 ## Lessons Applied
 
-From `lessons.md`: "Always check that templates are wired into the actual workflow, not just sitting in _templates/." — This is exactly that pattern again, one level up.
+From `lessons.md`: "Always check that templates are wired into the actual workflow, not just sitting in _templates/." This is exactly that pattern again, one level up.

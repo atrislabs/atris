@@ -54,8 +54,12 @@ function countGit(fn) {
   }
 }
 
+function cacheFile(repo) {
+  return path.join(repo, '.git', 'atris', 'cherry-cache.json');
+}
+
 function readCache(repo) {
-  return JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'cherry-cache.json'), 'utf8'));
+  return JSON.parse(fs.readFileSync(cacheFile(repo), 'utf8'));
 }
 
 test('cherry cache: miss computes, hit skips git cherry, results match', (t) => {
@@ -113,7 +117,8 @@ test('cherry cache: corrupt file recomputes and is rewritten', (t) => {
   const { base, repo } = makeRepo();
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   commitOnBranch(repo, 'feature-a', 'a.txt');
-  fs.writeFileSync(path.join(repo, '.atris', 'state', 'cherry-cache.json'), '{not json');
+  fs.mkdirSync(path.dirname(cacheFile(repo)), { recursive: true });
+  fs.writeFileSync(cacheFile(repo), '{not json');
   const run = countGit(() => land.collectBoard(repo, { light: true }));
   assert.equal(run.counts.cherry, 1);
   assert.equal(readCache(repo).version, 1);
@@ -139,6 +144,39 @@ test('cherry cache: repos without .atris get no cache file', (t) => {
   commitOnBranch(repo, 'feature-a', 'a.txt');
   land.collectBoard(repo, { light: true });
   assert.equal(fs.existsSync(path.join(repo, '.atris')), false);
+  assert.equal(fs.existsSync(cacheFile(repo)), false);
+});
+
+test('cherry cache: a fresh worktree reuses what the main checkout computed', (t) => {
+  // .atris is ignored, so a new worktree starts without one. The cache lives
+  // in the shared git dir so every worktree of the repo reads the same file.
+  const { base, repo } = makeRepo();
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(repo, 'atris'));
+  fs.writeFileSync(path.join(repo, 'atris', 'MAP.md'), '# map\n');
+  git(['add', '.'], repo);
+  git(['commit', '-q', '-m', 'atris folder'], repo);
+  commitOnBranch(repo, 'feature-a', 'a.txt');
+  commitOnBranch(repo, 'feature-b', 'b.txt');
+  land.collectBoard(repo, { light: true });
+
+  const fresh = path.join(base, 'fresh');
+  git(['worktree', 'add', '-q', '--detach', fresh, 'master'], repo);
+  assert.equal(fs.existsSync(path.join(fresh, '.atris')), false);
+  const run = countGit(() => land.collectBoard(fresh, { light: true }));
+  assert.equal(run.counts.cherry || 0, 0);
+  assert.equal(run.value.branches.filter((b) => b.uniqueChanges === 1).length, 2);
+});
+
+test('cherry cache: entries from the old .atris/state file still count', (t) => {
+  const { base, repo } = makeRepo();
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  commitOnBranch(repo, 'feature-a', 'a.txt');
+  land.collectBoard(repo, { light: true });
+  fs.renameSync(cacheFile(repo), path.join(repo, '.atris', 'state', 'cherry-cache.json'));
+  const run = countGit(() => land.collectBoard(repo, { light: true }));
+  assert.equal(run.counts.cherry || 0, 0);
+  assert.equal(Object.keys(readCache(repo).entries).length, 1);
 });
 
 test('landing board is computed once per process for stream snapshot plus events', (t) => {

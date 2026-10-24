@@ -12,6 +12,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
+const { scrubAgentEnv } = require('./helpers/agent-env');
+const acceptedReview = require('./fixtures/xp/accepted-review.json');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'xp.js'), 'utf8');
 
@@ -42,6 +44,531 @@ test('a spine root above a subdir pulls xp state up; a standalone .atris stays p
     const alone = path.join(base, 'alone');
     fs.mkdirSync(path.join(alone, '.atris', 'state'), { recursive: true });
     assert.equal(fs.realpathSync(resolveWorkspaceRoot(alone)), fs.realpathSync(alone));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+function git(cwd, ...args) {
+  const result = cp.spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+}
+
+test('a real second-actor accept updates the main ledger automatically and survives removal of its checkout', (t) => {
+  const taskDb = require('../lib/task-db');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-linked-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const dbPath = path.join(base, 'tasks.db');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (cwd, ...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    fs.writeFileSync(path.join(main, 'accepted.test.js'), "const assert = require('node:assert/strict');\nassert.equal(require('node:fs').readFileSync('result.txt', 'utf8'), 'accepted work');\n");
+    fs.writeFileSync(path.join(main, 'result.txt'), 'accepted work');
+    git(main, 'add', 'accepted.test.js', 'result.txt');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'accepted-work', linked);
+    const db = taskDb.open(dbPath);
+    const task = taskDb.addTask(db, {
+      title: acceptedReview.title, workspaceRoot: linked, status: 'review',
+      claimedBy: acceptedReview.claimed_by,
+      // The live job used a diff-only check, now refused by human accept.
+      // Keep its second-actor history and use a real artifact check in isolation.
+      metadata: {
+        ...acceptedReview.metadata, verify: 'node --test accepted.test.js', latest_agent_proof: acceptedReview.proof,
+      },
+    });
+    taskDb.close();
+    const before = run(main, 'xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const accepted = JSON.parse(run(linked, 'task', 'sweep', '--auto-accept', '--json'));
+    assert.equal(accepted.summary.accepted, 1);
+
+    // Read the file before invoking xp: accept itself must refresh the shared ledger.
+    const state = path.join(main, '.atris', 'state');
+    const projection = JSON.parse(fs.readFileSync(path.join(state, 'career_xp.projection.json'), 'utf8'));
+    assert.equal(projection.agent_xp, acceptedReview.reward);
+    assert.equal(projection.today_agent_xp, acceptedReview.reward);
+    const episodes = fs.readFileSync(path.join(state, 'task_episodes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(episodes.length, 1);
+    assert.equal(episodes[0].workspace_root, linked, 'keep the original job location as attribution');
+    assert.equal(episodes[0].career_xp.eligible, true);
+    const after = run(main, 'xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    t.diagnostic(`real xp --local before: ${before.split('\n')[1]}`);
+    t.diagnostic(`real xp --local after automatic acceptance: ${after.split('\n')[1]}`);
+    assert.match(run(linked, 'xp', '--local'), /AgentXP 1 \| Today 1/);
+    assert.equal(JSON.parse(run(linked, 'xp', 'status', '--local', '--workspace', linked, '--json')).agent_xp, 1);
+
+    // Existing checkout ledgers predate the shared writer and still belong in
+    // the account-wide total, without counting the shared main ledger twice.
+    const legacyState = path.join(linked, '.atris', 'state');
+    fs.mkdirSync(legacyState, { recursive: true });
+    fs.writeFileSync(path.join(legacyState, 'task_episodes.jsonl'), `${JSON.stringify({
+      ...episodes[0], episode_id: 'legacy-accepted', task_id: 'legacy-task',
+      reward: { value: 2 }, career_xp: { eligible: true, reward: 2 },
+    })}\n`);
+    assert.equal(JSON.parse(run(main, 'xp', 'status', '--all', '--root', base, '--json')).agent_xp, 3);
+
+    const otherDb = taskDb.open(dbPath);
+    for (const status of ['open', 'claimed', 'review']) {
+      const pending = taskDb.addTask(otherDb, {
+        title: `unfinished ${status}`, workspaceRoot: linked, status, claimedBy: 'builder',
+      });
+      taskDb.reviewTask(otherDb, {
+        id: pending.id, actor: 'second-reviewer', reward: 1, proof: acceptedReview.proof, careerXpEligible: true,
+      });
+    }
+    const selfReview = taskDb.addTask(otherDb, {
+      title: 'self review', workspaceRoot: linked, status: 'review', claimedBy: 'builder',
+    });
+    assert.equal(taskDb.reviewTask(otherDb, {
+      id: selfReview.id, actor: 'builder', reward: 1, proof: acceptedReview.proof, careerXpEligible: true,
+    }).reason, 'judge_equals_worker');
+    for (const [title, reward, careerXpEligible, proof] of [
+      ['rejected', -1, true, acceptedReview.proof],
+      ['unverified', 1, false, acceptedReview.proof],
+      ['missing proof', 1, true, ''],
+    ]) {
+      const denied = taskDb.addTask(otherDb, { title, workspaceRoot: linked, status: 'done' });
+      taskDb.reviewTask(otherDb, { id: denied.id, actor: 'second-reviewer', reward, proof, careerXpEligible });
+    }
+    const merged = taskDb.addTask(otherDb, { title: 'merge-only close', workspaceRoot: linked });
+    assert.equal(taskDb.doneTask(otherDb, { id: merged.id, actor: 'merger', autoAccepted: true }).updated, true);
+    taskDb.close();
+    assert.match(run(main, 'xp', '--local'), /AgentXP 3 \| Today 3/);
+    git(main, 'worktree', 'remove', '--force', linked);
+    assert.match(run(main, 'xp', '--local'), /AgentXP 3 \| Today 3/);
+    assert.equal(JSON.parse(run(main, 'xp', 'status', '--local', '--json')).agent_xp, 3);
+  } finally {
+    taskDb.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('shared XP roots preserve nested workspaces and never write into separate git storage', () => {
+  const { careerXpRoot } = require('../lib/career-xp-root');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-roots-'));
+  try {
+    const main = path.join(base, 'main');
+    const linked = path.join(base, 'linked');
+    const standalone = path.join(base, 'standalone');
+    fs.mkdirSync(main);
+    fs.mkdirSync(standalone);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'work', linked);
+    fs.mkdirSync(path.join(linked, 'customer'));
+    assert.equal(careerXpRoot(main), main);
+    assert.equal(careerXpRoot(linked), main);
+    assert.equal(careerXpRoot(path.join(linked, 'customer')), path.join(main, 'customer'));
+    assert.equal(careerXpRoot(standalone), standalone);
+    assert.equal(careerXpRoot(path.join(base, 'missing')), path.join(base, 'missing'));
+    git(standalone, 'init', `--separate-git-dir=${path.join(base, 'git-storage')}`);
+    assert.equal(careerXpRoot(standalone), standalone);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+
+test('local XP recovers a real stranded accept once, with independent review and workspace boundaries', (t) => {
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-recover-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: path.join(base, 'tasks.db'), ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd: main, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'legacy', linked);
+    const before = run('xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const episode = {
+      schema: 'atris.task_episode.v1', episode_id: '01M5KC5M7JY5FAQGHJS2Y5FAQG',
+      task_id: 'real-accepted-job', workspace_root: linked, created_at: new Date().toISOString(),
+      state: { status: 'done', title: acceptedReview.title, claimed_by: acceptedReview.claimed_by, metadata: acceptedReview.metadata },
+      action: { event_type: 'reviewed', actor: acceptedReview.actor },
+      reward: { value: acceptedReview.reward }, proof: acceptedReview.proof,
+      career_xp: { eligible: true, reward: acceptedReview.reward }, rl: { label: 'accepted' },
+    };
+    const denied = [
+      { state: { ...episode.state, status: 'open' } },
+      { state: { ...episode.state, status: 'claimed' } },
+      { state: { ...episode.state, status: 'review' } },
+      { proof: '' }, { career_xp: { eligible: false, reward: 1 } },
+      { reward: { value: -1 }, career_xp: { eligible: true, reward: -1 } },
+      { state: { ...episode.state, metadata: { built_by: acceptedReview.actor } } },
+      { state: { ...episode.state, metadata: { ...acceptedReview.metadata, machine_verified: false } } },
+      { state: { ...episode.state, metadata: { ...acceptedReview.metadata, certified_verified_by: 'unrecorded-reviewer' } } },
+      { state: { ...episode.state, claimed_by: null, metadata: {} } },
+    ].map((change, i) => ({ ...episode, ...change, episode_id: `denied-${i}` }));
+    const legacyState = path.join(linked, '.atris', 'state');
+    fs.mkdirSync(legacyState, { recursive: true });
+    const legacyFile = path.join(legacyState, 'task_episodes.jsonl');
+    fs.writeFileSync(legacyFile, [episode, episode, ...denied].map(JSON.stringify).join('\n') + '\n' + '{"episode_id":');
+    const nested = path.join(linked, 'customer', '.atris', 'state');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, 'task_episodes.jsonl'), JSON.stringify({ ...episode, episode_id: 'different-workspace' }) + '\n');
+    const original = fs.readFileSync(legacyFile, 'utf8');
+    const after = run('xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    t.diagnostic(`real xp before recovery: ${before.split('\n')[1]}`);
+    t.diagnostic(`real xp after recovery: ${after.split('\n')[1]}`);
+    for (let i = 0; i < 2; i++) {
+      assert.equal(JSON.parse(run('xp', 'status', '--local', '--json')).agent_xp, 1);
+      assert.equal(JSON.parse(run('xp', 'status', '--all', '--root', base, '--workspace', main, '--workspace', linked, '--json')).agent_xp, 2,
+        'one main receipt plus the separate nested customer workspace, with no duplicate linked credit');
+    }
+    const receipts = fs.readFileSync(path.join(main, '.atris', 'state', 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].receipt_id, `task_review:${episode.episode_id}`);
+    assert.equal(receipts[0].workspace_root, linked);
+    assert.equal(receipts[0].accepted_at, episode.created_at);
+    assert.equal(fs.readFileSync(legacyFile, 'utf8'), original, 'recovery never rewrites the source ledger');
+    git(main, 'worktree', 'remove', '--force', linked);
+    assert.match(run('xp', '--local'), /AgentXP 1 \| Today 1/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+
+test('new main-ledger reviews require a second actor even after completion', (t) => {
+  const taskDb = require('../lib/task-db');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-independent-'));
+  const main = path.join(base, 'main');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const dbPath = path.join(base, 'tasks.db');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd: main, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    const before = run('xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const db = taskDb.open(dbPath);
+    // Reproduce the real write path: done-row bookkeeping permits builder
+    // reviews, so the collector must still require independent evidence.
+    const variants = [
+      { built_by: acceptedReview.actor },
+      { ...acceptedReview.metadata, machine_verified: false },
+      { ...acceptedReview.metadata, certified_verified_by: 'unrecorded-reviewer' },
+      { ...acceptedReview.metadata, independent_review_by: acceptedReview.actor },
+      { ...acceptedReview.metadata, agent_review_actors: [acceptedReview.actor] },
+      { ...acceptedReview.metadata, agent_certified: false },
+      { built_by: ' OPERATOR ' },
+    ];
+    for (const metadata of variants) {
+      const task = taskDb.addTask(db, {
+        title: acceptedReview.title, workspaceRoot: main, status: 'done',
+        claimedBy: acceptedReview.claimed_by, metadata,
+      });
+      const review = taskDb.reviewTask(db, {
+        id: task.id, actor: acceptedReview.actor, reward: acceptedReview.reward,
+        proof: acceptedReview.proof, careerXpEligible: true,
+      });
+      assert.equal(review.reviewed, true);
+      assert.equal(review.episode.career_xp.eligible, true, 'upstream flag alone cannot prove independence');
+    }
+    const denied = run('xp', '--local');
+    assert.match(denied, /AgentXP 0 \| Today 0/, 'builder-only completed reviews earn no XP');
+    const task = taskDb.addTask(db, {
+      title: acceptedReview.title, workspaceRoot: main, status: 'done',
+      claimedBy: acceptedReview.claimed_by, metadata: acceptedReview.metadata,
+    });
+    const accepted = taskDb.reviewTask(db, {
+      id: task.id, actor: acceptedReview.actor, reward: acceptedReview.reward,
+      proof: acceptedReview.proof, careerXpEligible: true,
+    });
+    assert.equal(accepted.reviewed, true);
+    taskDb.close();
+    const after = run('xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    assert.equal(JSON.parse(run('xp', 'status', '--local', '--json')).agent_xp, 1);
+    assert.match(run('xp', '--local'), /AgentXP 1 \| Today 1/);
+    const receipts = fs.readFileSync(path.join(main, '.atris', 'state', 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].source_episode_id, accepted.episode.episode_id);
+    t.diagnostic(`unverified completed reviews: ${denied.split('\n')[1]}`);
+    t.diagnostic(`independently verified accepted review: ${after.split('\n')[1]}`);
+  } finally {
+    taskDb.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('group acceptance refreshes verified XP before any XP read and excludes unsampled rows', (t) => {
+  const taskDb = require('../lib/task-db');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-group-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const dbPath = path.join(base, 'tasks.db');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = {
+    ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_HOME: path.join(base, 'home', '.atris'),
+    ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1',
+  };
+  const run = (cwd, ...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'group-work', linked);
+    const db = taskDb.open(dbPath);
+    const rows = Array.from({ length: 2 }, () => taskDb.addTask(db, {
+      title: acceptedReview.title, workspaceRoot: linked, status: 'review', tag: 'xp-group',
+      claimedBy: acceptedReview.claimed_by,
+      metadata: { ...acceptedReview.metadata, latest_agent_proof: acceptedReview.proof },
+    }));
+    taskDb.close();
+    const before = run(main, 'xp', '--local');
+    assert.match(before, /AgentXP 0 \| Today 0/);
+    const result = JSON.parse(run(linked, 'task', 'accept-group', 'tag=xp-group', '--spot-check', '1',
+      '--confirm-human-accept', '--as', acceptedReview.actor, '--verified', rows[0].id, '--json'));
+    assert.equal(result.accepted, 2);
+    assert.equal(result.verified_career_xp, 1);
+    assert.equal(result.sampled_no_career_xp, 1);
+    // Acceptance must update the balance itself, before a read can repair it.
+    const state = path.join(main, '.atris', 'state');
+    const projection = JSON.parse(fs.readFileSync(path.join(state, 'career_xp.projection.json'), 'utf8'));
+    assert.equal(projection.agent_xp, acceptedReview.reward);
+    assert.equal(projection.today_agent_xp, acceptedReview.reward);
+    const receipts = fs.readFileSync(path.join(state, 'career_xp_receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(receipts.length, 1);
+    const episodes = fs.readFileSync(path.join(state, 'task_episodes.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(episodes.length, 2);
+    assert.equal(episodes.filter(episode => episode.career_xp.eligible).length, 1);
+    const after = run(main, 'xp', '--local');
+    assert.match(after, /AgentXP 1 \| Today 1/);
+    assert.match(run(linked, 'xp', '--local'), /AgentXP 1 \| Today 1/);
+    t.diagnostic(`group acceptance before: ${before.split('\n')[1]}`);
+    t.diagnostic(`group acceptance after: ${after.split('\n')[1]}`);
+  } finally {
+    taskDb.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+function reviewEpisode(id, workspace) {
+  return {
+    schema: 'atris.task_episode.v1', episode_id: id, task_id: id,
+    workspace_root: workspace, created_at: new Date().toISOString(),
+    state: { status: 'done', title: acceptedReview.title, claimed_by: acceptedReview.claimed_by, metadata: acceptedReview.metadata },
+    action: { event_type: 'reviewed', actor: acceptedReview.actor },
+    reward: { value: acceptedReview.reward }, proof: acceptedReview.proof,
+    career_xp: { eligible: true, reward: acceptedReview.reward }, rl: { label: 'accepted' },
+  };
+}
+
+test('verified linked receipts survive missing episodes and deduplicate recovered episodes', () => {
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-receipts-'));
+  const main = path.join(base, 'main');
+  const linked = path.join(base, 'linked');
+  const scratch = path.join(base, 'scratch');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = { ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const run = (cwd, ...args) => {
+    const result = cp.spawnSync(process.execPath, [cli, 'xp', ...args, '--json'], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-b', 'main');
+    git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+    git(main, 'worktree', 'add', '-b', 'legacy', linked);
+    const state = root => path.join(root, '.atris', 'state');
+    fs.mkdirSync(state(scratch), { recursive: true });
+    const episode = reviewEpisode('saved-review', linked);
+    fs.writeFileSync(path.join(state(scratch), 'task_episodes.jsonl'), JSON.stringify(episode) + '\n');
+    assert.equal(run(scratch, '--local').agent_xp, 1);
+    const saved = fs.readFileSync(path.join(state(scratch), 'career_xp_receipts.jsonl'), 'utf8');
+    fs.mkdirSync(state(linked), { recursive: true });
+    const source = path.join(state(linked), 'career_xp_receipts.jsonl');
+    fs.writeFileSync(source, saved);
+    fs.rmSync(scratch, { recursive: true });
+    const all = () => run(main, 'status', '--all', '--root', base, '--workspace', main, '--workspace', linked);
+    assert.equal(all().agent_xp, 1, 'saved verified receipt must count without its episode');
+    fs.writeFileSync(path.join(state(linked), 'task_episodes.jsonl'), JSON.stringify(episode) + '\n');
+    assert.equal(all().agent_xp, 1, 'receipt and episode earn once');
+    fs.writeFileSync(path.join(state(main), 'task_episodes.jsonl'), JSON.stringify(reviewEpisode('main-review', main)) + '\n');
+    const combined = all();
+    assert.equal(combined.agent_xp, 2, 'recovered receipt and later main receipt share one valid chain');
+    assert.equal(combined.integrity.status, 'verified');
+    assert.equal(fs.readFileSync(source, 'utf8'), saved);
+    git(main, 'worktree', 'remove', '--force', linked);
+    assert.equal(run(main, '--local').agent_xp, 2);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+for (const kind of ['receipts', 'episodes']) {
+  test(`corrupt linked ${kind} are skipped without losing valid XP`, (t) => {
+    const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-corrupt-'));
+    const main = path.join(base, 'main');
+    const good = path.join(base, 'good');
+    const bad = path.join(base, 'bad');
+    const scratch = path.join(base, 'scratch');
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const env = { ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+    const state = root => path.join(root, '.atris', 'state');
+    const run = cwd => cp.spawnSync(process.execPath, [cli, 'xp', '--local', '--json'], {
+      cwd, env, encoding: 'utf8', timeout: 30000,
+    });
+    const seed = (root, id) => {
+      fs.mkdirSync(state(root), { recursive: true });
+      fs.writeFileSync(path.join(state(root), 'task_episodes.jsonl'), JSON.stringify(reviewEpisode(id, root)) + '\n');
+      const result = run(root);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.equal(JSON.parse(result.stdout).agent_xp, 1);
+      return fs.readFileSync(path.join(state(root), 'career_xp_receipts.jsonl'), 'utf8');
+    };
+    try {
+      fs.mkdirSync(main);
+      git(main, 'init', '-b', 'main');
+      git(main, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+      seed(main, 'main-review');
+      const goodReceipt = seed(scratch, 'good-review');
+      fs.rmSync(scratch, { recursive: true });
+      const badReceipt = seed(scratch, 'bad-review');
+      fs.rmSync(scratch, { recursive: true });
+      git(main, 'worktree', 'add', '-b', 'good', good);
+      git(main, 'worktree', 'add', '-b', 'bad', bad);
+      fs.mkdirSync(state(good), { recursive: true });
+      fs.mkdirSync(state(bad), { recursive: true });
+      fs.writeFileSync(path.join(state(good), 'career_xp_receipts.jsonl'), goodReceipt);
+      const badFile = path.join(state(bad), kind === 'receipts' ? 'career_xp_receipts.jsonl' : 'task_episodes.jsonl');
+      const valid = kind === 'receipts' ? badReceipt : JSON.stringify(reviewEpisode('bad-review', bad)) + '\n';
+      const corrupt = valid + '{broken json}\n' + valid;
+      fs.writeFileSync(badFile, corrupt);
+      for (const cwd of [main, good]) {
+        const result = run(cwd);
+        assert.equal(result.status, 0, result.stderr || result.stdout);
+        const payload = JSON.parse(result.stdout);
+        assert.equal(payload.agent_xp, 2, 'main and good linked receipt count; entire corrupt file is skipped');
+        assert.equal(payload.integrity.status, 'verified');
+        const warnings = result.stderr.trim().split('\n');
+        assert.equal(warnings.length, 1, result.stderr);
+        assert.ok(warnings[0].startsWith('warning: skipped unreadable linked '), result.stderr);
+        assert.ok(warnings[0].includes(badFile), result.stderr);
+        t.diagnostic(`real xp --local --json: exit ${result.status}; ${JSON.stringify({ agent_xp: payload.agent_xp, integrity: payload.integrity.status })}; ${result.stderr.trim()}`);
+      }
+      assert.equal(fs.readFileSync(badFile, 'utf8'), corrupt, 'source file stays untouched');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
+test('overlapping real collectors cannot append against a stale receipt head', async (t) => {
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-race-'));
+  const state = path.join(base, '.atris', 'state');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const env = { ...scrubAgentEnv(), HOME: path.join(base, 'home'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const marker = path.join(base, 'read');
+  const release = path.join(base, 'release');
+  const preload = path.join(base, 'pause.cjs');
+  const children = [];
+  const launch = (paused = false) => {
+    const child = cp.spawn(process.execPath, [...(paused ? ['--require', preload] : []), cli, 'xp', '--local', '--json'], { cwd: base, env });
+    children.push(child);
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    return new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', code => resolve({ code, stdout, stderr }));
+    });
+  };
+  try {
+    fs.mkdirSync(state, { recursive: true });
+    const episodes = path.join(state, 'task_episodes.jsonl');
+    fs.writeFileSync(episodes, JSON.stringify(reviewEpisode('first', base)) + '\n');
+    fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), '');
+    // Pause after an actual disk read, preserving all real file operations.
+    fs.writeFileSync(preload, `const fs = require('fs'); const read = fs.readFileSync; let paused = false;
+fs.readFileSync = function(file, ...args) {
+  const result = read.call(this, file, ...args);
+  if (!paused && String(file).endsWith('career_xp_receipts.jsonl')) {
+    paused = true; fs.writeFileSync(${JSON.stringify(marker)}, 'ready');
+    const until = Date.now() + 10000;
+    while (!fs.existsSync(${JSON.stringify(release)})) {
+      if (Date.now() > until) throw new Error('test release timed out');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  return result;
+};`);
+    const first = launch(true);
+    const deadline = Date.now() + 10000;
+    while (!fs.existsSync(marker)) {
+      assert.ok(Date.now() < deadline, 'first collector reached actual receipt read');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const second = launch();
+    await Promise.race([second, new Promise(resolve => setTimeout(resolve, 1500))]);
+    fs.appendFileSync(episodes, JSON.stringify(reviewEpisode('second', base)) + '\n');
+    fs.writeFileSync(release, 'go');
+    for (const result of await Promise.all([first, second])) assert.equal(result.code, 0, result.stderr);
+    const final = await launch();
+    assert.equal(final.code, 0, final.stderr);
+    const payload = JSON.parse(final.stdout);
+    t.diagnostic(`real concurrent xp: ${JSON.stringify({ agent_xp: payload.agent_xp, integrity: payload.integrity.status })}`);
+    assert.equal(payload.integrity.status, 'verified');
+    assert.equal(payload.agent_xp, 2);
+  } finally {
+    for (const child of children) if (child.exitCode === null) child.kill();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('shared XP lock retries live owners, recovers dead owners and releases on failure', () => {
+  const { withCareerXpLock } = require('../lib/career-xp-lock');
+  const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-xp-lock-'));
+  const file = path.join(base, '.atris', 'state', 'career_xp.lock');
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ pid: process.pid, host: os.hostname() }));
+    assert.throws(() => withCareerXpLock(base, () => assert.fail('live owner was displaced'), { timeoutMs: 25 }), /busy; retry/);
+    assert.ok(fs.existsSync(file));
+    const dead = cp.spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+    assert.equal(dead.status, 0);
+    fs.writeFileSync(file, JSON.stringify({ pid: Number(dead.stdout), host: os.hostname() }));
+    assert.equal(withCareerXpLock(base, () => 42), 42);
+    assert.equal(fs.existsSync(file), false);
+    assert.throws(() => withCareerXpLock(base, () => { throw new Error('callback failed'); }), /callback failed/);
+    assert.equal(fs.existsSync(file), false);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

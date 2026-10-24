@@ -1,0 +1,14 @@
+DROP test/engine--engine-login-seat-error.test.js: The same seat-naming guidance is already asserted through the real login command in test/engine.test.js.
+kept 40 of 41
+DROP test/engine--engine-login-seat-error.test.js: The same seat-naming guidance is already asserted through the real login command in test/engine.test.js.
+kept 40 of 41
+DROP test/lifecycle--sleep-atris.test.js: Duplicates member sleep, loop sleep, help, and missing-login coverage in test/member-switches.test.js and test/lifecycle-command.test.js.
+DROP test/mission--acquire-mission-lock.test.js: The fresh pidless lock assertion requires execution within one second of file creation, so a CI scheduling delay can make it fail.
+kept 39 of 41
+DROP test/lifecycle--sleep-atris.test.js: Duplicates member sleep, loop sleep, help, and missing-login coverage in test/member-switches.test.js and test/lifecycle-command.test.js.
+DROP test/mission--acquire-mission-lock.test.js: The fresh pidless lock assertion requires execution within one second of file creation, so a CI scheduling delay can make it fail.
+kept 39 of 41
+DROP test/strings--code-exts.test.js: Only checks constant sets and JavaScript Set behavior; would pass if the scanner were broken.
+kept 38 of 39
+DROP test/strings--code-exts.test.js: Only checks constant sets and JavaScript Set behavior; would pass if the scanner were broken.
+kept 38 of 39

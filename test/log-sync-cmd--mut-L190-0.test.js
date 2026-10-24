@@ -1,0 +1,49 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const auth = require('../utils/auth');
+const api = require('../utils/api');
+
+test('shows a comparison before choosing the web journal during a conflict', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'journal-download-'));
+  const cwd = process.cwd();
+  const home = process.env.HOME;
+  const argv = process.argv;
+  const log = console.log;
+  const request = api.apiRequestJson;
+  const prompt = auth.promptUser;
+  auth.promptUser = async () => '1';
+  const exit = process.exit;
+  t.after(() => {
+    process.chdir(cwd);
+    if (home === undefined) delete process.env.HOME;
+    else process.env.HOME = home;
+    process.argv = argv;
+    console.log = log;
+    process.exit = exit;
+    api.apiRequestJson = request;
+    auth.promptUser = prompt;
+  });
+  process.env.HOME = root;
+  process.chdir(root);
+  process.argv = ['node', 'atris', 'log', 'sync', '2020-01-15'];
+  process.exit = (code) => { throw new Error(`exit ${code}`); };
+  const lines = [];
+  console.log = (...args) => lines.push(args.join(' '));
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', '.config'), JSON.stringify({ agent_id: 'journal-agent' }));
+  fs.writeFileSync(path.join(root, '.atris', 'credentials.json'), JSON.stringify({ token: 'test-token' }));
+  const local = path.join(root, 'atris', 'logs', '2020', '2020-01-15.md');
+  fs.mkdirSync(path.dirname(local), { recursive: true });
+  fs.writeFileSync(local, '## Notes\nLocal observation\n');
+  fs.utimesSync(local, new Date('2000-01-01T12:00:00Z'), new Date('2000-01-01T12:00:00Z'));
+  api.apiRequestJson = async (endpoint, options) => {
+    return { ok: true, status: 200, data: { valid: true, content: '## Notes\nRemote-only observation\n', updated_at: '2020-01-16T12:00:00Z' } };
+  };
+  const { logSyncAtris } = require('../commands/log-sync');
+  await logSyncAtris();
+  assert.ok(lines.some(line => /\bdiff\b/i.test(line)));
+});

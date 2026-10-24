@@ -1,6 +1,6 @@
 # Project Endstate
 
-> **Status:** v2 — harness verified 2026-04-08
+> **Status:** v2, harness verified 2026-04-08
 > **Created:** 2026-04-07
 > **Last Updated:** 2026-04-08
 

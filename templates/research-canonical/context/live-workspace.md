@@ -1,4 +1,4 @@
-# {{name}} — Live Research Workspace
+# {{name}}: Live Research Workspace
 
 ## Lab
 

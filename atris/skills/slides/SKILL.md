@@ -69,7 +69,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-slides/presentatio
 
 ## Updating Slides (batch-update)
 
-All slide mutations use the batch-update endpoint. This is the most powerful endpoint — it can add slides, insert text, add shapes, images, change formatting, and more.
+All slide mutations use the batch-update endpoint. This is the most powerful endpoint: it can add slides, insert text, add shapes, images, change formatting, and more.
 
 ```bash
 curl -s -X POST "https://api.atris.ai/api/integrations/google-slides/presentations/{id}/batch-update" \
@@ -308,12 +308,12 @@ Returns `{"pdf_base64": "...", "content_type": "application/pdf"}`.
 
 ## Important Notes
 
-- **Shares Drive OAuth** — no separate connection needed. If Drive is connected, Slides works
-- **Batch update is everything** — all slide mutations (add, edit, delete, style) go through batch-update
-- **Object IDs** — every slide, shape, text box, image has an ID. Get them from `GET /presentations/{id}`
-- **Slide size** — default is 10x5.63 inches (720x406.5 PT). Position elements accordingly
-- **Images** — must be publicly accessible URLs. For private images, upload to Drive first
-- **Templates** — use replaceAllText with `{{placeholder}}` patterns for template-based decks
+- **Shares Drive OAuth**: no separate connection needed. If Drive is connected, Slides works
+- **Batch update is everything**: all slide mutations (add, edit, delete, style) go through batch-update
+- **Object IDs**: every slide, shape, text box, image has an ID. Get them from `GET /presentations/{id}`
+- **Slide size**: default is 10x5.63 inches (720x406.5 PT). Position elements accordingly
+- **Images**: must be publicly accessible URLs. For private images, upload to Drive first
+- **Templates**: use replaceAllText with `{{placeholder}}` patterns for template-based decks
 
 ---
 

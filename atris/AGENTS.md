@@ -1,4 +1,4 @@
-# AGENTS.md — atris_team
+# AGENTS.md: atris_team
 
 Instructions for coding agents working inside this repository.
 
@@ -75,12 +75,12 @@ wiki, or `atris/atris.md`, then regenerate this adapter if needed.
 
 ## Repo Layout
 
-- `bin/atris.js` — CLI entrypoint + routing + natural-language entry.
-- `commands/` — most command implementations.
-- `lib/` — journal/task/file helpers (`journal`, `file-ops`, `state-detection`).
-- `utils/` — auth/API/config/update-check and cloud execution helpers.
-- `atris.md` — master spec template copied into user projects.
-- `atris/atris.md` — workspace protocol/backbone.
+- `bin/atris.js`: CLI entrypoint + routing + natural-language entry.
+- `commands/`: most command implementations.
+- `lib/`: journal/task/file helpers (`journal`, `file-ops`, `state-detection`).
+- `utils/`: auth/API/config/update-check and cloud execution helpers.
+- `atris.md`: master spec template copied into user projects.
+- `atris/atris.md`: workspace protocol/backbone.
 
 ## Notes
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const { abandonedDaysFromEnv, checkZen, sideCopyLines } = require('../lib/zen');
+const { abandonedDaysFromEnv, checkZen, nextSaveIn, sideCopyLines } = require('../lib/zen');
 const { applyZen } = require('../lib/zen-apply');
 const { workspaceZen } = require('../lib/zen-workspace');
 const { fleetFile, fleetRepos, fleetZen, printFleet } = require('../lib/zen-fleet');
@@ -57,9 +57,16 @@ function makeOut(calm) {
   return { dim, line, rake };
 }
 
-function teamLine(n) {
+// Name the three biggest places so a large count reads as "mostly agent
+// notes in atris/" rather than an unexplained total.
+function teamLine(n, places = []) {
   if (!n) return 'no unsaved team notes.';
-  return n === 1 ? '1 unsaved team note left in place.' : `${n} unsaved team notes left in place.`;
+  const head = n === 1 ? '1 unsaved team note left in place' : `${n} unsaved team notes left in place`;
+  if (!places.length) return `${head}.`;
+  const named = places.slice(0, 3).map((p) => `${p.place} ${p.count}`);
+  const rest = places.length - named.length;
+  if (rest) named.push(`and ${rest} more ${rest === 1 ? 'place' : 'places'}`);
+  return `${head}: ${named.join(', ')}.`;
 }
 
 function printYours(yours, line, dim) {
@@ -90,7 +97,9 @@ function printCheck(result, workspace) {
     console.log('  run atris zen to make it zen');
   }
   if (result.worktrees_with_work.length) {
-    for (const text of sideCopyLines(result.worktrees_with_work, abandonedDaysFromEnv())) console.log(`  ${text}`);
+    const days = abandonedDaysFromEnv();
+    const wait = nextSaveIn(result.worktrees_with_work, days);
+    for (const text of sideCopyLines(result.worktrees_with_work, days, wait)) console.log(`  ${text}`);
   }
   const held = result.worktrees_locked?.length || 0;
   if (held) {
@@ -141,7 +150,7 @@ function printApply(result, out) {
     line('  almost zen. still out of place:');
     for (const text of result.remaining) line(dim(`  - ${text}`));
   }
-  line(dim(`  ${teamLine(result.team_files)}`));
+  line(dim(`  ${teamLine(result.team_files, result.team_places)}`));
   if (result.saved.length) {
     line(dim('  nothing was thrown away. see what zen saved:   git for-each-ref refs/archive refs/heads/zen-backup'));
   }

@@ -1,0 +1,12 @@
+DROP test/analytics-cmd--mut-L92-4.test.js: it only checks which hour wins when two hours are exactly tied, which no one relies on, and its sample data is built from today's real date instead of a fixed one.
+DROP test/autopilot-front-cmd--mut-L80-0.test.js: it reads the member name from a fixed position (the fourth argument) in an internal child-process call, so any reorder of that command line breaks it even when the right member is picked.
+DROP test/loop-front-cmd--mut-L29-6.test.js: it requires a bare `--as` to claim the task under the owner name "true". That is a quirk nobody relies on, and the broken line actually behaves better here by falling back to the default owner.
+DROP test/idea-cmd--mut-L227-3.test.js: it duplicates "retry puts a failed build back in line" in test/idea-inbox.test.js. That test already runs `atris idea retry 1` and fails if the retry is not routed.
+DROP test/watch-cmd--mut-L75-5.test.js: the break only matters when a check's age is exactly zero milliseconds, and the test has to freeze the clock to make that happen; at any real age the display is the same either way.
+DROP test/zen-cmd--mut-L168-7.test.js: test/zen-apply.test.js:512 already checks that `zen --all` exits 0 when one repo is skipped for unsaved data, and it catches this same break.
+DROP test/activate-cmd--mut-L138-6.test.js: Uses the real clock to select today's journal; crossing midnight can invalidate the fixture.
+DROP test/brief-cmd--mut-L74-4.test.js: Pins an incidental truncation threshold; either boundary choice produces a reasonable shortened title.
+DROP test/fleet-report-cmd--mut-L45-8.test.js: Runs the real polling timer and clock, including a three-second sleep.
+DROP test/activate-cmd--mut-L138-6.test.js: Uses the real clock to select today's journal; crossing midnight can invalidate the fixture.
+DROP test/brief-cmd--mut-L74-4.test.js: Pins an incidental truncation threshold; either boundary choice produces a reasonable shortened title.
+DROP test/fleet-report-cmd--mut-L45-8.test.js: Runs the real polling timer and clock, including a three-second sleep.
