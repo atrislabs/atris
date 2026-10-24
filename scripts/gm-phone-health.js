@@ -11,7 +11,7 @@
 //
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
 //   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
-//   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, and a refused tap
+//   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, a refused tap, the landmarks
 //   node scripts/gm-phone-health.js --focus     each Tab stop on a card and the big orb, and its ring on screen
 //   node scripts/gm-phone-health.js --zoom      the big orb and five cards at 200% zoom on two phones and a laptop
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
@@ -288,6 +288,30 @@ async function readerTrace(opts = {}) {
   }, opts);
 }
 
+// The page as a screen reader's list of landmarks has it, on an idea card:
+// every landmark with its name, the card's own name, and every button that
+// sits outside all of them (a screen reader's jump list never reaches it).
+const LANDMARKS = new Set(['main', 'navigation', 'contentinfo', 'banner', 'complementary', 'region', 'form', 'search']);
+async function landmarkTrace(opts = {}) {
+  const card = trace.CARDS.b1;
+  return openPage(trace.cardDesk(card, async () => ({ card })), async (p, send, said) => {
+    await p.until(titled(card.title), 'the card', 10000);
+    await wait(300);
+    const { nodes } = await send('Accessibility.getFullAXTree');
+    const byId = new Map(nodes.map(n => [n.nodeId, n]));
+    const role = n => (n.role && n.role.value) || '';
+    const name = n => (n.name && n.name.value) || '';
+    const inside = (n) => { for (let m = byId.get(n.parentId); m; m = byId.get(m.parentId)) if (LANDMARKS.has(role(m))) return role(m); return null; };
+    const live = nodes.filter(n => !n.ignored);
+    return {
+      landmarks: live.filter(n => LANDMARKS.has(role(n))).map(n => [role(n), name(n)]),
+      card: live.filter(n => role(n) === 'article').map(name),
+      outside: live.filter(n => role(n) === 'button' && !inside(n)).map(name),
+      console: said.slice(),
+    };
+  }, opts);
+}
+
 // ---- the focus ring -----------------------------------------------------------------------
 
 // One stop per Tab press: what has the focus, and how wide its ring is on
@@ -487,7 +511,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -501,7 +525,7 @@ if (require.main === module) {
   } else if (process.argv.includes('--head')) {
     headTrace().then(print, fail);
   } else if (process.argv.includes('--reader')) {
-    readerTrace().then(print, fail);
+    (async () => print({ cards: await readerTrace(), landmarks: await landmarkTrace() }))().catch(fail);
   } else if (process.argv.includes('--focus')) {
     focusTrace().then(print, fail);
   } else if (process.argv.includes('--zoom')) {

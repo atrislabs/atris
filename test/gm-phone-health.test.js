@@ -184,6 +184,15 @@ test('browser: when a tap does not go through, its one line why is a status, so 
   assert.equal(out.refused.role, 'status', JSON.stringify(out.refused));
 });
 
+test('browser: in a screen reader\'s list of landmarks the small orb has its own, every button sits inside one, and the card is named by its title', browser, async () => {
+  const out = await health.landmarkTrace({ chromePath: CHROME });
+  const show = JSON.stringify(out);
+  assert.deepEqual(out.landmarks, [['main', ''], ['navigation', 'the orb']], show);
+  assert.deepEqual(out.outside, [], show);
+  assert.deepEqual(out.card, [trace.CARDS.b1.title], show);
+  assert.deepEqual(out.console, [], show);
+});
+
 // ---- the focus ring -------------------------------------------------------------------
 
 test('browser: the small orb on a card shows a focus ring of 2px on screen, though it is the big orb drawn at a fifth', browser, async () => {
