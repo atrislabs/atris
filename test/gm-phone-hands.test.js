@@ -187,3 +187,33 @@ test('browser: a Mac that errs or is starting again never reads as a dead link, 
   assert.equal(out.during.has_card, false, show);
   assert.deepEqual([out.after.has_card, out.after.title], [true, CARDS.b1.title], show);
 });
+
+test('browser: when the Mac stops answering, a quiet line in the card says so within about ten seconds, the page asks less often, and the line goes once the Mac answers', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const read = desk.card;
+  const looks = [];
+  desk.card = () => { looks.push(Date.now()); return read(); };
+  const net = (send, offline) => send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  const QUIET = 'the mac is not answering. still trying.';
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await send('Network.enable');
+    await net(send, true);
+    const t0 = Date.now();
+    await p.until(`document.querySelector('#bet .act .note').textContent === ${JSON.stringify(QUIET)}`, 'the quiet line', 13000).catch(() => {});
+    const down = { after_ms: Date.now() - t0, ...(await look(p)) };
+    await wait(1000);
+    await net(send, false);
+    const t1 = Date.now();
+    // while down it asks every fifteen seconds, so the line clears on the next of those
+    await p.until("document.querySelector('#bet .act .note').textContent === ''", 'the line gone', 17000).catch(() => {});
+    return { down, cleared_ms: Date.now() - t1, up: await look(p), looks_after: looks.filter(t => t >= t1).length };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.down.note, QUIET, show);
+  assert.ok(out.down.after_ms <= 12000, show);
+  // the card is still the one on screen, and still takes taps
+  assert.deepEqual([out.down.title, out.down.busy], [CARDS.b1.title, false], show);
+  assert.equal(out.up.note, '', show);
+  // the slow ask: not every five seconds while it was down
+  assert.ok(out.cleared_ms > 5500 && out.cleared_ms <= 16500, show);
+});
