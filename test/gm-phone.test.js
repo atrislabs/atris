@@ -785,7 +785,9 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
   const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'asked 5 minutes ago', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
   assert.deepEqual([d.count, d.label], ['job 1 of 2', 'needs you']);
-  assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'the whole team', 'next']);
+  assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'back to the team', 'next']);
+  // the deck's way back has the same words as the talk and swap cards' way back
+  assert.equal(d.options.find(o => o.action === 'back').label, gmCard.member({ id: 'member~1', name: 'builder', sentence: 'idle.' }).options.find(o => o.action === 'back').label);
   assert.deepEqual(d.options[0].binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
   assert.deepEqual(gmCard.cardProblems(d), []);
@@ -1392,7 +1394,7 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   const out = await trace.deckTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);
   assert.deepEqual([out.first.kind, out.first.title], ['deck', 'navigator wants to publish the pricing page'], show);
-  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'the whole team', 'next', 'talk to navigator'], show);
+  assert.deepEqual(out.first.buttons, ['yes', 'no', 'not now', 'previous', 'back to the team', 'next', 'talk to navigator'], show);
   assert.deepEqual(out.counts, ['job 2 of 3', 'job 3 of 3', 'job 1 of 3', 'job 3 of 3'], show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');

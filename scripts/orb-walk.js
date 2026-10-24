@@ -409,7 +409,7 @@ function legacyAdapter(http) {
     options.push(...parts.options);
     const flip = step => async () => { layer.at = (layer.at + step + n) % n; return current(); };
     if (n > 1) options.push(nav('prev', 'previous', flip(-1)));
-    options.push(nav('team', 'the whole team', () => openTeam(), { back: true }));
+    options.push(nav('team', 'back to the team', () => openTeam(), { back: true }));
     if (n > 1) options.push(nav('next', 'next', flip(1)));
     return {
       id: null, kind: 'deck', layer: 'deck',

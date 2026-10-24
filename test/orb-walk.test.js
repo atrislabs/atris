@@ -239,14 +239,14 @@ test('contract: every tap posts the card id and the option id, and a confirm opt
 });
 
 test('contract: a card id that comes back with other options fails the walk', async () => {
-  const deck = id => ({ id, kind: 'deck', title: 'post the thread on x now?', body: null, options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-a', key: 'm-a:0' } }, { id: 'back', label: 'the whole team', action: 'back' }], input: null, job: null, table: null });
+  const deck = id => ({ id, kind: 'deck', title: 'post the thread on x now?', body: null, options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-a', key: 'm-a:0' } }, { id: 'back', label: 'back to the team', action: 'back' }], input: null, job: null, table: null });
   let served = deck('deck~1');
   const http = { get: async () => ({ status: 200, json: { ok: true, card: served } }), post: async () => ({ status: 200, json: { ok: true, card: served } }) };
   const a = walk.contractAdapter(http);
   const first = await a.open();
   assert.deepEqual(failed(walk.cardChecks(first, { changed: a.changed })), []);
   // the same id with job B's yes under it
-  served = { ...deck('deck~1'), options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-b', key: 'm-b:0' } }, { id: 'back', label: 'the whole team', action: 'back' }] };
+  served = { ...deck('deck~1'), options: [{ id: 'yes', label: 'yes', action: 'yes', binds: { job: 'm-b', key: 'm-b:0' } }, { id: 'back', label: 'back to the team', action: 'back' }] };
   const again = await a.open();
   assert.deepEqual(failed(walk.cardChecks(again, { changed: a.changed })), ['a card keeps its options']);
   // a new id for new options is fine
