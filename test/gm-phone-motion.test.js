@@ -34,6 +34,8 @@ test('browser: every orb path glides, with no jump, no cut, and no frozen moment
     assert.ok(IN_PLACE.has(p.name) ? p.footer_seen_jump <= 20 : p.footer_seen_jump === 0, show(p));
     // after an act on a card the sphere comes back with no stale words under it
     if (p.starts !== 'big orb' && !['small orb home', 'calm line home'].includes(p.name)) assert.ok(!p.lines_while_moving.includes('tap to think'), show(p));
+    // the line under the orb fades in and out with the sphere, never there in one frame
+    assert.ok(p.line_fade <= 0.15, show(p));
     // the card and the sphere fade, never vanish in a frame
     assert.ok(p.card_fade <= 0.3 && p.sphere_drop <= 0.3, show(p));
     if (p.lands) {
