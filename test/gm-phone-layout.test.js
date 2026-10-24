@@ -109,7 +109,8 @@ const LINK_ROWS = `Array.prototype.filter.call(document.querySelectorAll('#bet .
     var a = s.previousElementSibling.getBoundingClientRect(), z = s.nextElementSibling.getBoundingClientRect();
     return { between: s.previousElementSibling.textContent + ' | ' + s.nextElementSibling.textContent, one_line: Math.abs(a.top - z.top) <= 1 };
   });
-  return { lines: Object.keys(lines).map(function (k) { var l = lines[k]; return { links: l.links, off_center: Math.round(((l.left + l.right) / 2 - (card.left + card.right) / 2) * 10) / 10 }; }), dots: dots };
+  // a job card's previous and next sit at the right of its head, beside the count, not centered
+  return { pager: Boolean(row.closest('.deckhead')), lines: Object.keys(lines).map(function (k) { var l = lines[k]; return { links: l.links, off_center: Math.round(((l.left + l.right) / 2 - (card.left + card.right) / 2) * 10) / 10 }; }), dots: dots };
 })`;
 
 test('layout: a row of small links that wraps keeps every dot between two links on one line, and every line is centered', { skip, timeout: 90000 }, async () => {
@@ -121,10 +122,10 @@ test('layout: a row of small links that wraps keeps every dot between two links 
       if (row.lines.length > 1) wrapped += 1;
       for (const d of row.dots) assert.ok(d.one_line, show);
       // the side of a link's own space (the dot and its gaps) is the only give
-      for (const l of row.lines) assert.ok(Math.abs(l.off_center) <= 8, show);
+      if (!row.pager) for (const l of row.lines) assert.ok(Math.abs(l.off_center) <= 8, show);
     }
   }
-  // the deck's five links wrap on the phones, so the case is really measured
+  // the swap card's two choices wrap on the phones, so the case is really measured
   assert.ok(wrapped >= 2, show);
 });
 
@@ -255,26 +256,54 @@ test('layout: outside the team table the cards use three type sizes: 17 for quie
 
 
 test('layout: in the team and job tables every cell of a row starts its words on one shared line', { skip, timeout: 90000 }, async () => {
-  // a zero-size mark before each cell's first words sits on that line's baseline
-  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet tbody tr'), function (tr) {
-  return Array.prototype.map.call(tr.cells, function (td) {
-    var walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT), t = walker.nextNode();
-    while (t && !String(t.textContent).trim()) t = walker.nextNode();
-    if (!t) return null;
-    var mark = document.createElement('span');
-    mark.style.cssText = 'display:inline-block;width:0;height:0;';
-    t.parentNode.insertBefore(mark, t);
-    var y = mark.getBoundingClientRect().top;
-    mark.remove();
-    return Math.round(y * 10) / 10;
+  // a zero-size mark before each cell's first words sits on that line's baseline;
+  // the words are wrapped first, so in a stacked cell (a flex line) the mark is
+  // in their line and not a flex item of its own. Where a job card's row is
+  // stacked on a phone, one line per column, each cell's column name (its
+  // ::before, stood in for by a real span) is the line its words share.
+  const probe = `(function () {
+  var st = document.createElement('style'); st.textContent = '.probe-nb::before { content: none !important; }';
+  document.head.appendChild(st);
+  var at = function (parent, before) {
+    var m = document.createElement('span'); m.style.cssText = 'display:inline-block;width:0;height:0;';
+    parent.insertBefore(m, before);
+    var y = Math.round(m.getBoundingClientRect().top * 10) / 10; m.remove(); return y;
+  };
+  var out = Array.prototype.map.call(document.querySelectorAll('#bet tbody tr'), function (tr) {
+    return Array.prototype.map.call(tr.cells, function (td) {
+      var walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT), t = walker.nextNode();
+      while (t && !String(t.textContent).trim()) t = walker.nextNode();
+      if (!t) return null;
+      var wrap = document.createElement('span'); t.parentNode.insertBefore(wrap, t); wrap.appendChild(t);
+      var cell = { stacked: getComputedStyle(td).display !== 'table-cell', y: at(wrap, t), label: null };
+      if (cell.stacked && td.getAttribute('data-col')) {
+        var b = getComputedStyle(td, '::before'), s = document.createElement('span');
+        s.style.cssText = 'flex:' + b.flex + ';width:' + b.width + ';';
+        s.textContent = td.getAttribute('data-col');
+        td.classList.add('probe-nb'); td.insertBefore(s, td.firstChild);
+        cell.label = at(s, s.firstChild); cell.y = at(wrap, t);
+        s.remove(); td.classList.remove('probe-nb');
+      }
+      wrap.parentNode.insertBefore(t, wrap); wrap.remove();
+      return cell;
+    });
   });
-})`;
+  st.remove();
+  return out;
+})()`;
   const rows = await layout({ chromePath: CHROME, cases: only('team', 'deck'), viewports: ['phone', 'laptop'], probe });
   const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, baselines: r.probe })), null, 1);
   for (const r of rows) {
     assert.ok(r.probe.length >= 1, show);
     for (const row of r.probe) {
-      const ys = row.filter(y => y != null);
+      const cells = row.filter(c => c != null);
+      if (cells.every(c => c.stacked)) {
+        // one line per column, top to bottom, each column's name level with its words
+        for (const c of cells) assert.ok(c.label != null && Math.abs(c.label - c.y) <= 1, show);
+        for (let i = 1; i < cells.length; i++) assert.ok(cells[i].y > cells[i - 1].y, show);
+        continue;
+      }
+      const ys = cells.map(c => c.y);
       assert.ok(Math.max(...ys) - Math.min(...ys) <= 1, show);
     }
   }
