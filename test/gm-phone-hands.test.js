@@ -327,3 +327,25 @@ test('browser: on the job deck a finger dragging the wide table sideways scrolls
   assert.equal(out.inTable, 0, show);
   assert.deepEqual(out.flips, ['flip'], show);
 });
+
+// a team table with one member
+const teamOf = (n = 1) => gmCard.team({ id: `team~${n}`, rows: [{ member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours' }], line: null, deck: false });
+
+test('browser: a tap anywhere in the model cell of a team row opens that model\'s swap, not the member\'s talk card', { skip, timeout: 90000 }, async () => {
+  const taps = [];
+  const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(option.id); return { card: teamOf(taps.length + 1) }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    const td = await p.rect('#bet td.engine');
+    const b = await p.rect('#bet td.engine button');
+    const engine = await p.run("document.querySelector('#bet td.engine button').getAttribute('data-option')");
+    const member = await p.run("document.querySelector('#bet td.member button').getAttribute('data-option')");
+    // in the cell, just under the model's words
+    await tapAt(send, b.x + b.w / 2, Math.min(td.y + td.h - 3, b.y + b.h + 6));
+    await wait(1500);
+    return { engine, member, taps, gap: Math.round(td.y + td.h - (b.y + b.h)) };
+  }, trace.LAPTOP);
+  const show = JSON.stringify(out, null, 1);
+  assert.ok(out.gap >= 6, show);
+  assert.notEqual(out.engine, out.member, show);
+  assert.deepEqual(out.taps, [out.engine], show);
+});
