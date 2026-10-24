@@ -9,7 +9,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { ninetyNineAtris } = require('../commands/ninety-nine');
 const {
   foldSessions, parseSessionLog, sessionsToday, runningSession, sessionStatus,
-  automaticEndRecord, pauseRecord, resumeRecord, activeMilliseconds, endRecord,
+  automaticEndRecord, pauseRecord, resumeRecord, activeMilliseconds, endRecord, healthSummary,
 } = require('../lib/ninety-nine');
 
 const cli = path.resolve(__dirname, '../bin/atris.js');
@@ -1052,6 +1052,7 @@ test('health days stay in json while plain today shows only session totals', (t)
   const latest = health(f.now(), { sleep_min: 412, steps: 8120, workout_min: 45, mindful_min: 20 });
   f.seed([latest, { ...latest, date: '2026-10-22', steps: 9999 }, older]);
   const before = f.text();
+  assert.equal(healthSummary(latest), 'Health: sleep 6h 52m, 8,120 steps, workout 45 min, mindful 20 min');
   assert.equal(f.run('today').output, 'Today: 0 focus, 0 meditate, 0 min');
   assert.deepEqual(JSON.parse(f.run('today', '--json').output).health_day, latest);
   assert.equal(f.text(), before);
@@ -1064,12 +1065,14 @@ test('missing health fields remain unknown rather than carrying older values or 
   const older = health(new Date(f.now().getTime() - minute), { sleep_min: 400, workout_min: 45, mindful_min: 20 });
   const latest = health(f.now(), { steps: 0 });
   f.seed([latest, older]);
+  assert.equal(healthSummary(latest), 'Health: 0 steps');
   assert.equal(f.run('today').output, 'Today: 0 focus, 0 meditate, 0 min');
   const result = JSON.parse(f.run('today', '--json').output).health_day;
   assert.deepEqual(result, latest);
   assert.ok(!Object.hasOwn(result, 'sleep_min'));
   const unknown = health(f.now());
   f.seed([unknown]);
+  assert.equal(healthSummary(unknown), 'Health: unknown');
   assert.equal(f.run('today').output, 'Today: 0 focus, 0 meditate, 0 min');
   assert.deepEqual(JSON.parse(f.run('today', '--json').output).health_day, unknown);
   for (const invalid of [{ date: '2026-02-30' }, { sleep_min: null }, { steps: -1 }, { workout_min: '45' }, { mindful_min: Infinity }]) {
