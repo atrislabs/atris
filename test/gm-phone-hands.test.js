@@ -689,3 +689,26 @@ test('browser: pulling down at the top of a card never reloads the page', { skip
   // contain: the phone's own pull-down reload is off, and the page edge still gives a little
   assert.equal(out, 'contain');
 });
+
+test('browser: the big orb\'s keyboard ring sits on the sphere, not around the square it is drawn in', { skip, timeout: 90000 }, async () => {
+  const fs = require('node:fs');
+  const desk = trace.cardDesk(null, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.until("document.getElementById('line').textContent === 'tap to think'", 'the big orb', 8000);
+    await press(send, 'Tab', 9);
+    await wait(200);
+    const ring = await p.run(`(function () {
+      var stage = document.getElementById('stage'), c = document.getElementById('orb'), a = getComputedStyle(stage, '::after');
+      return { focused: document.activeElement === c, canvas: getComputedStyle(c).outlineStyle, ring: a.content !== 'none' && a.outlineStyle, top: parseFloat(a.top), left: parseFloat(a.left), size: stage.getBoundingClientRect().width };
+    })()`);
+    if (process.env.GM_HANDS_SHOTS) {
+      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(process.env.GM_HANDS_SHOTS, Buffer.from(data, 'base64'));
+    }
+    return ring;
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.focused, out.canvas, out.ring], [true, 'none', 'solid'], show);
+  // 8% in from each side: where the dots' edge is
+  assert.ok(Math.abs(out.top - 0.08 * out.size) < 1 && Math.abs(out.left - 0.08 * out.size) < 1, show);
+});
