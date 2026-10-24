@@ -156,7 +156,7 @@ test.describe('streamCommand', { concurrency: false }, () => {
     const rows = flat(seen.logs).map((line) => JSON.parse(line));
     assert.strictEqual(rows.length, 4);
     assert.deepStrictEqual(rows.map((row) => row.summary), [
-      'stream: 0 active agents.',
+      'Team stream: 0 active agents.',
       'On now: no active work found on disk.',
       'Waiting on operator: nothing obvious.',
       'Watching missions, task events, scorecards, landings, and worktrees. Ctrl-C exits.',

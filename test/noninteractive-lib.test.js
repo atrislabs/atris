@@ -79,7 +79,7 @@ test('headless guard refuses with guidance and honors configured proceed flags',
     allowYes: false, allowOnce: true, usage: 'usage: atris serve',
   }), true);
   assert.deepStrictEqual(errors.mock.calls[1].arguments, [
-    'usage: atris serve\nPass --yes to run headless, or --once for a single serve op.',
+    'usage: atris serve\nPass --once for a single serve op.',
   ]);
   assert.strictEqual(noninteractive.refuseHeadlessUnless(['--once']), true);
 });

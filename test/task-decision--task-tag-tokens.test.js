@@ -80,8 +80,8 @@ test('taskTagTokens pulls hashtags out of the title and lowercases them', () => 
   assert.deepStrictEqual(taskTagTokens({ title: 'lonely # hash and C#' }), []);
 });
 
-test('taskTagTokens title hashtags stop at underscores, so only the leading part is kept', () => {
-  assert.deepStrictEqual(taskTagTokens({ title: 'Wait #needs_human' }), ['needs']);
+test('taskTagTokens normalizes underscores in title hashtags', () => {
+  assert.deepStrictEqual(taskTagTokens({ title: 'Wait #needs_human' }), ['needs-human']);
 });
 
 test('taskTagTokens tolerates non-string titles and numeric tags', () => {

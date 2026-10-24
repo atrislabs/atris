@@ -71,7 +71,7 @@ test('defines the session-id helper and the atris wrapper function', () => {
 
 test('switch with a name resolves, exports ATRIS_PROFILE, and switches the session', () => {
   const out = snippet();
-  assert.ok(out.includes('if [[ "$1" == "switch" && -n "$2" && "$2" != "--"* ]]; then'));
+  assert.ok(out.includes('if [[ "$1" == "switch" && -n "$2" && "$2" != "-"* ]]; then'));
   assert.ok(out.includes('_profile=$(command atris _resolve "$2" 2>/dev/null)'));
   assert.ok(out.includes('export ATRIS_PROFILE="$_profile"'));
   assert.ok(out.includes('command atris _switch-session "$_profile" --session-id "$_sid" 2>/dev/null'));

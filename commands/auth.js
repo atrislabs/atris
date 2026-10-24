@@ -1168,7 +1168,7 @@ function resolveProfile() {
       const profile = loadProfile(p);
       return profile?.email?.toLowerCase().includes(q);
     });
-  if (match) {
+  if (match && loadProfile(match)) {
     process.stdout.write(match);
     process.exit(0);
   }
@@ -1252,7 +1252,7 @@ function shellInit() {
     '  if [[ $? -eq 0 && "$_tty" == /dev/* ]]; then echo "$_tty"; return; fi',
     '}',
     'atris() {',
-    '  if [[ "$1" == "switch" && -n "$2" && "$2" != "--"* ]]; then',
+    '  if [[ "$1" == "switch" && -n "$2" && "$2" != "-"* ]]; then',
     '    local _profile',
     '    _profile=$(command atris _resolve "$2" 2>/dev/null)',
     '    if [[ $? -eq 0 && -n "$_profile" ]]; then',

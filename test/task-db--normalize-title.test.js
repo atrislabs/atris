@@ -24,6 +24,8 @@ test('a normal title folds to the same dedupe key', () => {
 
 test('messy titles keep digits and collapse spacing', () => {
   assert.strictEqual(normalizeTitle('Ping #42:\n\nnow'), 'ping 42 now');
+  // Saved task keys are built from this exact form, so a double space left by
+  // dropped punctuation stays: changing it would re-import existing tasks as new.
   assert.strictEqual(normalizeTitle('a - b'), 'a  b');
   assert.strictEqual(normalizeTitle('Reopen\tthe  DB!!'), 'reopen the db');
 });

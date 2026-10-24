@@ -1902,7 +1902,7 @@ async function executeAgentSDKFast(userInput) {
   } catch (error) {
     console.error(`✗ Error: ${error.message}`);
     console.log('');
-    console.log('💡 Hosted turns use https://api.atris.ai. For local development, set ATRIS_API_BASE to your own backend URL.');
+    console.log('💡 start your local backend at http://127.0.0.1:8000.');
     process.exit(1);
   }
 }

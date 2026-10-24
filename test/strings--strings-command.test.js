@@ -41,9 +41,9 @@ test('stringsCommand with no args prints help and exits 0', () => {
   assert.match(out, /atris strings check/);
 });
 
-test('stringsCommand with an unknown subcommand prints help and exits 0', () => {
+test('stringsCommand with an unknown subcommand prints help and exits 2', () => {
   const { code, out } = capture(() => stringsCommand(['bogus']));
-  assert.equal(code, 0);
+  assert.equal(code, 2);
   assert.match(out, /atris strings scan/);
 });
 

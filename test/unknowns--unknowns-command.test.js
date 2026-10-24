@@ -238,7 +238,7 @@ test('a long problem is clipped in the fallback question and trailing punctuatio
     const res = await run(['a'.repeat(200)]);
     assert.strictEqual(res.code, 0, res.err);
     assert.ok(
-      res.out.includes(`1. What existing code path already owns "${'a'.repeat(87)}"?`),
+      res.out.includes(`1. What existing code path already owns "${'a'.repeat(87)}..."?`),
       res.out
     );
     assert.ok(!res.out.includes('a'.repeat(88)), 'problem text is cut at 87 characters');

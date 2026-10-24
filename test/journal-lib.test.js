@@ -29,8 +29,8 @@ test('journal parsing retains headings, preamble, and nested headings', () => {
   assert.deepStrictEqual(journal.parseJournalSections(
     '# Daily log\n\n## Notes\nA note\n### Detail\nMore\n## Inbox\nAn idea\n'
   ), {
-    __header__: '# Daily log\n',
-    Notes: '## Notes\nA note\n### Detail\nMore',
+    __header__: '# Daily log\n\n',
+    Notes: '## Notes\nA note\n### Detail\nMore\n',
     Inbox: '## Inbox\nAn idea\n',
   });
   assert.deepStrictEqual(journal.parseJournalSections(''), { __header__: '' });

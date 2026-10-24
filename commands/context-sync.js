@@ -204,7 +204,8 @@ async function businessDiff(slug) {
     const localContent = fs.readFileSync(localPath, 'utf8');
 
     if (f.isNew) {
-      console.log(`  + ${f.path.replace(/^\//, '')}  (new file, ${localContent.split('\n').length} lines)`);
+      const lineCount = localContent.split('\n').length - (localContent.endsWith('\n') ? 1 : 0);
+      console.log(`  + ${f.path.replace(/^\//, '')}  (new file, ${lineCount} lines)`);
     } else {
       // Show a simple line-count diff
       console.log(`  ~ ${f.path.replace(/^\//, '')}  (modified)`);

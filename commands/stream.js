@@ -268,7 +268,8 @@ function makeEvent({ ts, agent, event, summary, raw, source, root }) {
   const ms = timestampMs(ts);
   if (!ms) return null;
   const cleanAgent = sanitizeAgent(agent);
-  const cleanSummary = sanitizeSummary(summary, cleanAgent);
+  // Snapshot headings are complete lines, not agent-prefixed activity.
+  const cleanSummary = sanitizeSummary(summary, event === 'snapshot' ? '' : cleanAgent);
   return {
     ts: new Date(ms).toISOString(),
     ms,
@@ -755,7 +756,7 @@ function renderJsonLine(record) {
     ts: record.ts,
     agent: sanitizeAgent(record.agent),
     event: record.event,
-    summary: sanitizeSummary(record.summary, record.agent),
+    summary: sanitizeSummary(record.summary, record.event === 'snapshot' ? '' : record.agent),
     raw: record.raw || null,
   });
 }
