@@ -187,3 +187,11 @@ test('layout: an open box\'s edge is at least 3:1 against the page and every lin
   for (const r of boxes) for (const edge of r.probe) assert.ok(edge >= 3, show);
   for (const r of rows) assert.deepEqual(r.words_low, [], show);
 });
+
+test('layout: the phone\'s own text enlarging is off, so the words keep their sizes when the phone turns', { skip, timeout: 90000 }, async () => {
+  const probe = `({ adjust: getComputedStyle(document.documentElement).textSizeAdjust, body: parseFloat(getComputedStyle(document.querySelector('#bet .why')).fontSize), quiet: parseFloat(getComputedStyle(document.querySelector('#bet .links button')).fontSize) })`;
+  const rows = await layout({ chromePath: CHROME, cases: only('idea'), viewports: ['phone', 'side'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);
+  for (const r of rows) assert.equal(r.probe.adjust, '100%', show);
+  assert.deepEqual(rows.map(r => [r.probe.body, r.probe.quiet]), [[20, 17], [20, 17]], show);
+});
