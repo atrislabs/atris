@@ -22,7 +22,7 @@ const {
 } = require('../lib/engine-registry');
 const { resolveEngineForMember } = require('../lib/member-engine');
 
-const NOW = new Date('2026-09-24T12:00:00.000Z');
+const NOW = new Date('2026-09-24T12:00:00.000');
 const ENV_KEYS = [
   'ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_ROSTER_SESSION',
   'ATRIS_ROSTER_SESSIONS_DIR', 'ATRIS_CODEX_MODELS_CACHE_PATH', 'ATRIS_CODEX_CONFIG_PATH',

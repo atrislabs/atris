@@ -674,7 +674,7 @@ test('fileBriefFromNotes writes a wiki brief and a claimable journal line', () =
     cwd,
     url,
     workDir,
-    now: new Date('2026-08-15T15:00:00.000Z'),
+    now: new Date(2026, 7, 15, 15), // local time, so the local day is the 15th everywhere
   });
 
   const brief = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-abc123xyz.md'), 'utf8');
@@ -729,7 +729,7 @@ test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', 
     cwd: bare,
     url: 'https://youtu.be/shortid99',
     workDir,
-    now: new Date('2026-08-15T15:00:00.000Z'),
+    now: new Date(2026, 7, 15, 15), // local time, so the local day is the 15th everywhere
   });
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'wiki')), false);
   assert.equal(fs.existsSync(path.join(bare, 'atris', 'logs')), false);

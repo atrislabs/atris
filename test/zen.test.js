@@ -96,6 +96,22 @@ test('side copies that share a folder are one line with the count', () => {
   assert.deepEqual(sideCopyLines(['/x/a', '/x/b'], 3).slice(1, 3), ['  /x/a', '  /x/b']);
 });
 
+test('a side copy path too long for the pane keeps its start and its own name', () => {
+  const { sideCopyLines } = require('../lib/zen');
+  const home = os.homedir();
+  const name = 'youtube-lead-score-youtube-lead-gate-20261021-155633';
+  const far = path.join(home, 'arena', 'empire', '.agent-worktrees', 'atris-cli', '.agent-worktrees',
+    'youtube-lead-youtube-lead-make-captioned-youtube-20261013-202157', name);
+  const [, line] = sideCopyLines([far], 3);
+  assert.equal(line, `  ~/arena/empire/.agent-worktrees/atris-cli/…/${name}`);
+  assert.ok(line.length <= 102, line);
+  // A path that fits is left whole, and so is one a cut would barely shorten.
+  assert.equal(sideCopyLines(['/x/a'], 3)[1], '  /x/a');
+  const near = path.join(home, 'arena', 'empire', '.agent-worktrees', 'atris-cli',
+    'youtube-lead-youtube-lead-make-captioned-youtube-20261013-202157');
+  assert.equal(sideCopyLines([near], 3)[1], `  ${near.replace(home, '~')}`);
+});
+
 test('a side copy made inside another one is named from it, right under it', () => {
   const { sideCopyLines } = require('../lib/zen');
   const outer = '/w/agent-worktrees/youtube-lead-make-captioned-20261013';

@@ -1936,7 +1936,7 @@ test('wiki sync alias normalizes --only wiki to atris/wiki', () => {
 test('agent-readable wiki contract requires sources, verification, dependencies, confidence, and actionability', () => {
   const dir = makeTempDir();
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDay(); // the wiki reads last_compiled as a local day
     fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'concepts'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'README.md'), '# Source\n', 'utf8');
     fs.writeFileSync(
