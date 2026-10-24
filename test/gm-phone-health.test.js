@@ -205,3 +205,15 @@ test('browser: every Tab stop on a card and on the big orb shows a 2px amber rin
   }
   assert.deepEqual(out.console, []);
 });
+
+// ---- zoom -----------------------------------------------------------------------------
+
+test('browser: at 200% zoom on a phone nothing scrolls sideways: the big orb, the calm line, and every kind of card fit the screen', browser, async () => {
+  const runs = await health.zoomTrace({ chromePath: CHROME, sizes: ['phone'] });
+  assert.equal(runs.length, 6);
+  for (const r of runs) {
+    assert.equal(r.wider_px, 0, JSON.stringify(r));
+    assert.deepEqual(r.past_edges, [], JSON.stringify(r));
+    assert.equal(r.console, 0, JSON.stringify(r));
+  }
+});

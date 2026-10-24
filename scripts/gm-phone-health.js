@@ -13,6 +13,7 @@
 //   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
 //   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, and a refused tap
 //   node scripts/gm-phone-health.js --focus     each Tab stop on a card and the big orb, and its ring on screen
+//   node scripts/gm-phone-health.js --zoom      the big orb and five cards at 200% zoom on two phones and a laptop
 //   node scripts/gm-phone-health.js --asleep    the Mac asleep under a card and the calm line
 //   require('./scripts/gm-phone-health')        the traces, for tests
 
@@ -359,6 +360,48 @@ async function focusTrace(opts = {}) {
   return out;
 }
 
+// ---- zoom -----------------------------------------------------------------------------
+
+// 200% zoom is the same page laid out at half the width: a 390 phone is 195
+// css px wide, a 320 phone 160, a 1280 laptop 640 by 400.
+const ZOOMED = {
+  phone: { width: 195, height: 422, deviceScaleFactor: 6, mobile: true },
+  small: { width: 160, height: 284, deviceScaleFactor: 4, mobile: true },
+  laptop: { width: 640, height: 400, deviceScaleFactor: 2, mobile: false },
+};
+
+// how much wider than the screen the page is, and what on it reaches past
+// either edge (a table's own sideways scroll is its own)
+const EDGES = `(function () {
+  var vw = document.documentElement.clientWidth;
+  var past = [];
+  document.querySelectorAll('#bet *, .foot *, #line, #stage').forEach(function (n) {
+    if (n.closest('.grid') && !n.classList.contains('grid')) return;
+    var r = n.getBoundingClientRect();
+    if (!r.width || getComputedStyle(n).visibility === 'hidden') return;
+    if (r.right > vw + 0.5 || r.left < -0.5) past.push(String(n.className || n.tagName).split(' ')[0] + ' ' + Math.round(r.left) + ' to ' + Math.round(r.right));
+  });
+  return { wider_px: document.documentElement.scrollWidth - vw, past_edges: past.slice(0, 8) };
+})()`;
+
+// The big orb and five kinds of card at each zoomed size.
+async function zoomTrace({ sizes = Object.keys(ZOOMED), ...opts } = {}) {
+  const { b1, q1, c1, yes, calm } = trace.CARDS;
+  const out = [];
+  for (const size of sizes) {
+    const viewport = ZOOMED[size];
+    for (const [name, card] of [['big orb', null], ['idea', b1], ['question', q1], ['choice', c1], ['yes', yes], ['calm line', calm]]) {
+      const ready = !card ? "document.getElementById('orb').__orb.frame > 2" : card.kind === 'wait' ? "document.body.classList.contains('waiting')" : titled(card.title);
+      out.push(await openPage(trace.cardDesk(card, async () => ({ card })), async (p, send, said) => {
+        await p.until(ready, `${name} at ${size}`, 10000);
+        await wait(400);
+        return { size, card: name, ...(await p.run(EDGES)), console: said.length };
+      }, { viewport, ...opts }));
+    }
+  }
+  return out;
+}
+
 // ---- the Mac asleep ---------------------------------------------------------------------
 
 // The Mac goes to sleep under a card: it takes every connection and answers
@@ -398,7 +441,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, focusTrace, ZOOMED, zoomTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -415,9 +458,11 @@ if (require.main === module) {
     readerTrace().then(print, fail);
   } else if (process.argv.includes('--focus')) {
     focusTrace().then(print, fail);
+  } else if (process.argv.includes('--zoom')) {
+    zoomTrace().then(print, fail);
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --zoom | --asleep\n');
   }
 }
