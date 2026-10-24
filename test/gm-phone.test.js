@@ -541,7 +541,9 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   assert.match(script, /\} else td\.textContent = cell;/);
   // an option with a cell is drawn in that cell; a tap anywhere on its row is the row's first option
   assert.match(script, /var o = mine\.filter\(function \(x\) \{ return x\.cell\.column === col; \}\)\[0\];/);
-  assert.match(script, /tr\.addEventListener\('click', function \(\) \{ var first = tr\.querySelector\('button'\); if \(first\) first\.click\(\); \}\);/);
+  // a tap on a row opens the button in the cell tapped, else the row's first, and never ends a text selection
+  assert.match(script, /tr\.addEventListener\('click', function \(e\) \{ rowTap\(tr, e\); \}\);/);
+  assert.match(script, /var b = \(cell && cell\.querySelector\('button'\)\) \|\| tr\.querySelector\('button'\);/);
   // the team card itself: five columns, a member button and an engine button per row
   // (a person has no engine to swap), and a way back
   const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }, { member: 'sam', role: 'owner', ovr: '..', engine: 'person', status: 'idle', sentence: 'idle' }] });
@@ -1085,7 +1087,7 @@ test('page: while the next card is on its way the dots keep moving; on the calm 
   // the idea lands: the calm line's words fade while the dots spiral in, and it grows out of the point
   assert.match(script, /function landFromWait\(card, after\) \{[\s\S]*?orb\.play\(function \(phase\) \{\n\s+if \(phase === 'cover'\) \{ off\(\); showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
   // the idea waits while the owner types there or a note is on its way
-  assert.match(script, /var quiet = function \(\) \{ return !bet\.busy && !bet\.noting && document\.body\.classList\.contains\('has-card'\) && !typingOnCard\(\); \};/);
+  assert.match(script, /var quiet = function \(\) \{ return !bet\.busy && !bet\.noting && document\.body\.classList\.contains\('has-card'\) && !typingOnCard\(\) && !pressing\(\); \};/);
   // the footer steps aside while a card moves, so it never jumps between places
   assert.match(html, /body\[data-busy\]:not\(\[data-in-place\]\) \.foot \{ opacity: 0; transition: opacity 0\.15s ease-in; \}/);
 });
