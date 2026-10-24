@@ -173,3 +173,23 @@ test('browser: a flip the moment the page opens still fades the new card in from
   assert.equal(r.new_card_at_turn, 0, show(r));
   assert.ok(r.crossfade_min >= 0.9, show(r));
 });
+
+test('browser: with the pointer at any corner, the brightest dots are still drawn: every dot, every frame', { skip, timeout: 90000 }, async () => {
+  const { onPhone, cardDesk, PHONE } = require('../scripts/gm-phone-trace');
+  const COUNT = "(function () { var P = CanvasRenderingContext2D.prototype, arc = P.arc; window.__arcs = 0; P.arc = function () { window.__arcs += 1; return arc.apply(this, arguments); }; })();";
+  const out = await onPhone(cardDesk(null, async () => ({ card: null })), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: COUNT });
+    await send('Page.reload');
+    await p.until("document.readyState === 'complete' && !document.body.classList.contains('opening')", 'the big orb');
+    const seen = [];
+    for (const [x, y] of [[0, 0], [PHONE.width - 1, 0], [0, PHONE.height - 1], [PHONE.width - 1, PHONE.height - 1]]) {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      // the light eases toward the pointer; once there, count what each frame draws
+      await new Promise(r => setTimeout(r, 1500));
+      seen.push(await p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ frames: o.frame - f0, per_frame: (window.__arcs - a0) / (o.frame - f0) }); }, 500); })"));
+    }
+    return seen;
+  }, undefined, { firstCard: false });
+  // a phone draws 5500 dots; before, a corner lit past the last brightness level and about 170 were left out
+  for (const s of out) assert.ok(s.frames > 5 && s.per_frame === 5500, show(out));
+});
