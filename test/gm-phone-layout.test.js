@@ -210,3 +210,18 @@ test('layout: an answer that wraps keeps its lines at 1.3, so one long answer re
   // a one-line answer still has its full tap height
   for (const a of all.filter(x => x.lines === 1)) assert.ok(a.height >= 52, show);
 });
+
+test('layout: the words inside every box start the same distance in: answers, idea choices, and open boxes', { skip, timeout: 90000 }, async () => {
+  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet button.choice, #bet button.option, #bet .field'), function (b) {
+    var i = b.querySelector('input');
+    var left;
+    if (i) left = i.getBoundingClientRect().left + parseFloat(getComputedStyle(i).paddingLeft);
+    else { var r = document.createRange(); r.selectNodeContents(b); left = r.getClientRects()[0].left; }
+    return { what: b.className, inset: Math.round((left - b.getBoundingClientRect().left) * 10) / 10 };
+  })`;
+  const rows = await layout({ chromePath: CHROME, cases: only('question', 'choice', 'swap', 'wait'), viewports: ['small'], probe });
+  const all = rows.flatMap(r => r.probe);
+  const show = JSON.stringify(all, null, 1);
+  assert.deepEqual([...new Set(all.map(b => b.what.split(' ')[0]))].sort(), ['choice', 'field', 'option'], show);
+  for (const b of all) assert.equal(b.inset, 17, show);
+});
