@@ -195,3 +195,18 @@ test('layout: the phone\'s own text enlarging is off, so the words keep their si
   for (const r of rows) assert.equal(r.probe.adjust, '100%', show);
   assert.deepEqual(rows.map(r => [r.probe.body, r.probe.quiet]), [[20, 17], [20, 17]], show);
 });
+
+test('layout: an answer that wraps keeps its lines at 1.3, so one long answer reads as one', { skip, timeout: 90000 }, async () => {
+  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet button.choice'), function (b) {
+    var s = getComputedStyle(b), r = document.createRange(); r.selectNodeContents(b);
+    var tops = {}; Array.prototype.forEach.call(r.getClientRects(), function (x) { tops[Math.round(x.top)] = 1; });
+    return { label: b.textContent, lines: Object.keys(tops).length, ratio: Math.round(parseFloat(s.lineHeight) / parseFloat(s.fontSize) * 100) / 100, height: b.getBoundingClientRect().height };
+  })`;
+  const rows = await layout({ chromePath: CHROME, cases: only('question-long', 'reply'), viewports: ['phone', 'small'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, answers: r.probe })), null, 1);
+  const all = rows.flatMap(r => r.probe);
+  assert.ok(all.some(a => a.lines >= 2), show);
+  for (const a of all) assert.equal(a.ratio, 1.3, show);
+  // a one-line answer still has its full tap height
+  for (const a of all.filter(x => x.lines === 1)) assert.ok(a.height >= 52, show);
+});
