@@ -384,27 +384,42 @@ test('browser: a tap anywhere in the model cell of a team row opens that model\'
   assert.deepEqual(out.taps, [out.engine], show);
 });
 
-test('browser: dragging to select words in a team row selects them and opens nothing; a plain tap on the row still opens it', { skip, timeout: 90000 }, async () => {
+test('browser: dragging to select words in a team row selects them and opens nothing, a drag that selects nothing opens nothing too; a plain tap on the row still opens it', { skip, timeout: 90000 }, async () => {
   const taps = [];
   const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(action); return { card: teamOf(taps.length + 1) }; });
   const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const r = await p.rect('#bet td.status');
-    const y = r.y + 14;
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x + 10, y, button: 'left', clickCount: 1 });
-    for (const dx of [60, 120, 180]) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x + dx, y, button: 'left', buttons: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x + 180, y, button: 'left', clickCount: 1 });
-    await wait(1200);
+    // the status cell's line of words, wherever this machine's font puts it
+    const line = await p.run("(function () { var g = document.createRange(); g.selectNodeContents(document.querySelector('#bet td.status')); var b = g.getClientRects()[0]; return { x: b.left, y: b.top + b.height / 2 }; })()");
+    // a mouse that rests on the first word, presses, and drags along the line
+    const drag = async () => {
+      const { x, y } = line;
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 4, y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: x + 4, y, button: 'left', buttons: 1, clickCount: 1 });
+      for (const dx of [60, 120, 180]) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx, y, button: 'left', buttons: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 180, y, button: 'left', buttons: 0, clickCount: 1 });
+      await wait(1200);
+    };
+    await drag();
     const selected = await p.run('String(window.getSelection())');
     const afterDrag = [...taps];
+    // the same drag where the browser selects nothing, as a drag over a
+    // cell's margin can: it moved, so it is still not a tap
+    await p.run("getSelection().removeAllRanges(); window.noSelect = function (e) { e.preventDefault(); }; document.addEventListener('selectstart', window.noSelect); true");
+    await drag();
+    const blank = await p.run('String(window.getSelection())');
+    const afterBlank = [...taps];
+    await p.run("document.removeEventListener('selectstart', window.noSelect); true");
     // a plain tap on the row, away from the words picked
     const role = await middle(p, '#bet td.role');
     await tapAt(send, role.x, role.y);
     await wait(1500);
-    return { selected, afterDrag, taps };
+    return { selected, afterDrag, blank, afterBlank, taps };
   }, trace.LAPTOP);
   const show = JSON.stringify(out, null, 1);
   assert.ok(out.selected.length > 3, show);
   assert.deepEqual(out.afterDrag, [], show);
+  assert.equal(out.blank, '', show);
+  assert.deepEqual(out.afterBlank, [], show);
   assert.deepEqual(out.taps, ['member'], show);
 });
 
