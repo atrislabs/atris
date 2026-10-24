@@ -20,7 +20,6 @@ const {
   sessionStatus,
   sessionsToday,
   healthToday,
-  healthSummary,
 } = require('../lib/ninety-nine');
 
 function usage() {
@@ -168,6 +167,15 @@ function kindName(kind) {
   return kind === 'focus' ? 'Focus' : 'Meditate';
 }
 
+function timeLeft(session, time) {
+  const seconds = sessionStatus(session, time).running.remaining_seconds;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function localEndTime(end) {
+  return end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
 function ninetyNineAtris(args = process.argv.slice(3), {
   log = console.log,
   now = () => new Date(),
@@ -254,13 +262,15 @@ function ninetyNineAtris(args = process.argv.slice(3), {
 
     if (action === 'stop') {
       if (!stopTarget) {
-        log('nothing running');
+        log('Nothing running. Start one: atris 99 50');
         return 1;
       }
       const end = endRecord(stopTarget, time, rest.join(' '));
       appendRecord(file, text, end);
       records.push(end);
-      log(`${stopTarget.kind} ${end.status}: ${end.status === 'done' ? stopTarget.planned_min : 0} finished minutes`);
+      log(end.status === 'done'
+        ? `${kindName(stopTarget.kind)} ${stopTarget.planned_min} done.`
+        : "Stopped early, so it doesn't count.");
       log(todayLine(sessionsToday(foldSessions(records), time)));
       return 0;
     }
@@ -279,11 +289,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     }
     if (overview) {
       if (!active) log('Nothing running.');
-      else if (active.status === 'paused') log(`${kindName(active.kind)} · paused`);
-      else {
-        const seconds = sessionStatus(active, time).running.remaining_seconds;
-        log(`${kindName(active.kind)} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`);
-      }
+      else log(`${kindName(active.kind)} · ${timeLeft(active, time)} left${active.status === 'paused' ? ' · paused' : ''}`);
       log(todayLine(sessionsToday(sessions, time)));
       log('Start: atris 99 50   Again: atris 99 again   Help: atris 99 help');
     } else if (action === 'focus' || action === 'meditate') {
@@ -293,39 +299,38 @@ function ninetyNineAtris(args = process.argv.slice(3), {
       }
       appendRecord(file, text, startRecord(action, Number(rest[0]), time, randomUUID()));
       const end = new Date(time.getTime() + Number(rest[0]) * 60000);
-      const endsAt = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      log(`${kindName(action)} ${rest[0]} started. Ends at ${endsAt}.`);
+      log(`${kindName(action)} ${rest[0]} started. Ends at ${localEndTime(end)}.`);
     } else if (action === 'pause' || action === 'resume') {
-      let record;
-      try {
-        record = action === 'pause' ? pauseRecord(active, time) : resumeRecord(active, time);
-      } catch (error) {
-        log(error.message);
+      if (!active) {
+        log('Nothing running. Start one: atris 99 50');
         return 1;
       }
+      if (action === 'pause' && active.status === 'paused') {
+        log('Already paused. Resume: atris 99 resume');
+        return 1;
+      }
+      if (action === 'resume' && active.status !== 'paused') {
+        log('Not paused.');
+        return 1;
+      }
+      const record = action === 'pause' ? pauseRecord(active, time) : resumeRecord(active, time);
       appendRecord(file, text, record);
-      log(`${active.kind} ${action === 'pause' ? 'paused' : 'resumed'}`);
+      if (action === 'pause') log(`Paused. ${timeLeft(active, time)} left.`);
+      else {
+        const end = new Date(Date.parse(active.planned_end_at) + time.getTime() - Date.parse(active.paused_at));
+        log(`Resumed. Ends at ${localEndTime(end)}.`);
+      }
     } else if (action === 'status') {
       const result = sessionStatus(active, time);
       if (json) log(JSON.stringify(result));
       else if (!active) log('nothing running');
-      else {
-        const seconds = result.running.remaining_seconds;
-        log(`${active.kind}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left${active.status === 'paused' ? ' (paused)' : ''}`);
-      }
+      else log(`${kindName(active.kind)} · ${timeLeft(active, time)} left${active.status === 'paused' ? ' · paused' : ''}`);
     } else {
       const result = sessionsToday(sessions, time);
       const health = healthToday(records, time);
       if (health) result.health_day = health;
       if (json) log(JSON.stringify(result));
-      else {
-        for (const session of result.sessions) {
-          log(`${session.kind} ${session.planned_min} minutes: ${session.status}`);
-        }
-        log(`${result.finished_minutes} finished minutes today`);
-        log(todayLine(result));
-        if (health) log(healthSummary(health));
-      }
+      else log(todayLine(result));
     }
     return 0;
   } catch (error) {
