@@ -3933,3 +3933,109 @@ test('prepared ahead: a rework of the idea the owner wrote a note on may stay cl
   assert.equal(next.bet.title, REWORK, 'close to the idea it reworks, and still shown');
   assert.equal(h.ledger().filter(r => r.status === 'stale').length, 0);
 });
+
+// ---- review fixes: a child that ignores SIGTERM, words typed as a wait ends, slow facts ----
+
+test('model: a child that ignores SIGTERM and has its own stdio is still killed after the grace, though the model already exited', { skip: process.platform === 'win32', timeout: 20000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-bet-stubborn-'));
+  const pidFile = path.join(dir, 'kid.pid');
+  // the kid ignores SIGTERM, keeps no pipe to the model, and says it is ready only once it does
+  const kidCode = `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const bin = stubScript(dir, 'parent', `
+const { spawn } = require('child_process');
+spawn(process.execPath, ['-e', ${JSON.stringify(kidCode)}], { stdio: 'ignore' });
+setInterval(() => {}, 1000);
+`);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  let kid = null;
+  try {
+    const stop = new AbortController();
+    const pending = gmBet.runModel('x', { command: { bin, args: [] }, timeoutMs: 60000, signal: stop.signal });
+    for (let i = 0; i < 200 && !fs.existsSync(pidFile); i += 1) await new Promise(r => setTimeout(r, 25));
+    kid = Number(fs.readFileSync(pidFile, 'utf8'));
+    stop.abort();
+    const res = await pending;
+    assert.equal(res.stopped, true);
+    // the model is gone and the call is over, and the kid that ignored SIGTERM is still up
+    assert.equal(alive(kid), true, 'the kid outlived the SIGTERM');
+    // until the group's SIGKILL after the grace
+    let gone = false;
+    for (let i = 0; i < 80 && !gone; i += 1) { await new Promise(r => setTimeout(r, 50)); gone = !alive(kid); }
+    assert.equal(gone, true, 'the kid is gone after the grace');
+  } finally {
+    if (kid && alive(kid)) process.kill(kid, 'SIGKILL');
+  }
+});
+
+test('waiting card: words typed while the wait ends with nothing are never dropped; the next drafting is written with them', async () => {
+  // the drafting fails while his words are still being read
+  const gen = stubGenerator({ fail: n => n === 0 });
+  let answerRead;
+  const h = desk(workspace(), { gen, answered: true, readSaid: () => new Promise((r) => { answerRead = r; }) });
+  const wait = (await h.d.act({ orb: true })).body.card;
+  assert.equal(wait.kind, 'wait');
+  const sent = h.d.act({ card_id: wait.id, text: 'make it about small schools' });
+  await tick();
+  await gen.releaseOne();
+  assert.equal(h.d.view().kind, 'missed', 'the wait ended in the try-again card');
+  answerRead({ ok: true, kind: 'instruction', reply: '' });
+  const out = await sent;
+  assert.deepEqual([out.status, out.body.ok, out.body.card.kind], [200, true, 'wait'], JSON.stringify(out.body));
+  // the drafting started behind the try-again card gives way to his words
+  await gen.releaseOne();
+  assert.equal(gen.calls[gen.calls.length - 1].ownerNote, 'make it about small schools');
+  // the wait ended before he sent, and the page had looked again: the words still count
+  const gen2 = stubGenerator({ fail: n => n === 0 });
+  const h2 = desk(workspace(), { gen: gen2, answered: true });
+  const wait2 = (await h2.d.act({ orb: true })).body.card;
+  await gen2.releaseOne();
+  assert.equal(h2.d.card().card.kind, 'missed');
+  // a tap on an option named by the old card is still refused: only words carry over
+  assert.equal((await h2.d.act({ card_id: wait2.id, option_id: 'again' })).body.reason, 'gone');
+  const late = await h2.d.act({ card_id: wait2.id, text: 'something for teachers' });
+  assert.deepEqual([late.status, late.body.ok], [200, true], JSON.stringify(late.body));
+  await gen2.releaseOne();
+  assert.equal(gen2.calls[gen2.calls.length - 1].ownerNote, 'something for teachers');
+});
+
+test('swarm: the budget covers reading the facts: slow scoring and a slow npm read are left out, and the writers still get their time', async () => {
+  const root = workspace();
+  const started = Date.now();
+  let wroteAt = null;
+  const events = [];
+  const out = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 2000, writers: 1, emit: e => events.push(e),
+    deps: {
+      ...fixtureDeps,
+      // four overdue bets at ten seconds each, never done inside the budget
+      scoreBets: () => new Promise(r => setTimeout(r, 40000).unref()),
+      fetchJson: async url => (url.startsWith('https://registry.npmjs.org/') ? new Promise(() => {}) : npmBody()),
+      runModel: async () => { wroteAt = Date.now() - started; return { ok: true, text: JSON.stringify(goodBet()) }; },
+    },
+  });
+  const took = Date.now() - started;
+  assert.deepEqual([out.ok, out.checked], [true, true], out.reason);
+  // the facts get the first quarter of the budget, 500 ms here, and the writer starts right after
+  assert.ok(wroteAt >= 450 && wroteAt < 1200, `the writer started at ${wroteAt} ms`);
+  assert.ok(took < 2000, `done inside the budget, ${took} ms`);
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'score'));
+  assert.ok(events.some(e => e.kind === 'skip' && e.key === 'release'));
+  // a stop while the facts are read ends it at once, and no writer starts
+  let wrote = 0;
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const pending = gmBet.generateBet({ workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), signal: stop.signal, deps: { ...fixtureDeps, scoreBets: () => new Promise(() => {}), runModel: async () => { wrote += 1; return { ok: false, reason: 'x' }; } } });
+  setTimeout(() => stop.abort(), 50);
+  const stopped = await pending;
+  assert.deepEqual([stopped.ok, stopped.stopped, wrote], [false, true, 0]);
+  assert.ok(Date.now() - t0 < 1000, 'it did not wait for the facts');
+  // the budget is spent while the facts are read (the read blocks): no writer starts
+  let late = 0;
+  const spent = await gmBet.generateBet({
+    workspaceRoot: root, today: TODAY, ledgerFile: path.join(root, 'bets.jsonl'), budgetMs: 300,
+    deps: { ...fixtureDeps, gitLanded: () => { const end = Date.now() + 450; while (Date.now() < end) { /* a slow git read */ } return ['x']; }, runModel: async () => { late += 1; return { ok: true, text: JSON.stringify(goodBet()) }; } },
+  });
+  assert.equal(spent.ok, false);
+  assert.equal(late, 0, 'no writer starts once the budget is spent');
+  assert.match(spent.reason, /no time was left to draft inside 0 seconds|nothing usable came back/);
+});
