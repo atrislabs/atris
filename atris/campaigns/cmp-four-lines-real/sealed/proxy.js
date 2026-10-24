@@ -6,7 +6,7 @@
 // its input was left alone still sees a mutation.
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { enc, dec } = require('./codec');
+const { enc, dec, same } = require('./codec');
 
 function profile(agentDir, sealedDir) {
   // the sandbox matches real paths (/private/var, not /var), so resolve links first
@@ -18,12 +18,15 @@ function profile(agentDir, sealedDir) {
     `(deny file-read-data (subpath ${q(process.env.HOME_REAL || require('os').homedir())}))`,
     `(allow file-read-data (subpath ${q(agentDir)}) (subpath ${q(sealedDir)}))`,
     `(deny file-read* (subpath ${q(process.env.HELD_DIR || '/nonexistent')}))`,
+    // the original held-out file too, wherever the campaign keeps it
+    `(deny file-read* (subpath ${q(require('path').dirname(process.env.HOLDOUT_SRC || '/nonexistent/x'))}))`,
     '(deny file-write*)', '(allow file-write* (literal "/dev/null"))',
   ].join('');
 }
 
 function copyBack(into, from) {
-  if (Array.isArray(into) && Array.isArray(from)) { into.length = 0; into.push(...from); return; }
+  if (same(into, from)) return; // unchanged: leave it, even if it is frozen
+  if (Array.isArray(into) && Array.isArray(from)) { into.length = 0; from.forEach((x, i) => { into[i] = x; }); into.length = from.length; return; }
   if (into && typeof into === 'object' && from && typeof from === 'object') {
     for (const k of Object.keys(into)) if (!(k in from)) delete into[k];
     Object.assign(into, from);
@@ -39,12 +42,13 @@ function makeModule(agentDir, mod) {
     if (r.status !== 0 || !r.stdout) throw new Error(`sealed call failed: ${(r.stderr || r.error || '').toString().slice(0, 200)}`);
     const out = dec(r.stdout);
     args.forEach((a, i) => copyBack(a, out.args[i]));
-    if (out.error) {
-      // rebuild the same built-in error type, so a test checking for TypeError still can
-      const C = globalThis[out.error.name];
-      const e = typeof C === 'function' && (C === Error || C.prototype instanceof Error) ? new C(out.error.message) : new Error(out.error.message);
-      if (e.name !== out.error.name) e.name = out.error.name;
-      throw e;
+    if (out.thrown) {
+      // rebuild a built-in error only when the child saw a real one; else rethrow the plain value
+      if (out.thrown.builtin) {
+        const C = globalThis[out.thrown.builtin];
+        throw typeof C === 'function' ? new C(out.thrown.message) : new Error(out.thrown.message);
+      }
+      throw out.thrown.value;
     }
     return out.value;
   };

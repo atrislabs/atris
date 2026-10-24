@@ -15,7 +15,7 @@ sha() { shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
 has_lines() { for w in $WORDS; do grep -q "\*\*$w\.\*\*" "$1" 2>/dev/null || return 1; done; }
 
 echo "part one: a fresh project carries the lines"
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+T="$(mktemp -d)"; X_ROOT="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$T" "$X_ROOT"' EXIT
 ( cd "$T" && git init -q && node "$REPO/bin/atris.js" init --yes --no-commit >/dev/null 2>&1 )
 for f in atris/atris.md AGENTS.md CLAUDE.md; do
   if has_lines "$T/$f"; then ok "fresh $f has the four lines"; else no "fresh $f is missing the four lines"; fi
@@ -39,7 +39,7 @@ held_run() { # run the held-out tests; the agent's code runs in a sealed child p
   for m in median mean; do
     printf 'module.exports = require(%s).makeModule(%s, %s);\n' "\"$HERE/sealed/proxy.js\"" "\"$1\"" "\"$m\"" > "$c/shim/$m.js"
   done
-  TARGET_SRC="$c/shim" HELD_DIR="$c" HOME_REAL="$HOME" env -u ATRIS_CAMPAIGN_HOLDOUT perl -e 'alarm shift; exec @ARGV' 60 node --test "$c/held.test.js" >/dev/null 2>&1; local rc=$?
+  TARGET_SRC="$c/shim" HELD_DIR="$c" HOLDOUT_SRC="$HELD" HOME_REAL="$HOME" env -u ATRIS_CAMPAIGN_HOLDOUT perl -e 'alarm shift; exec @ARGV' 60 node --test "$c/held.test.js" >/dev/null 2>&1; local rc=$?
   rm -rf "$c"; return $rc
 }
 sealed_npm_test() { # the agent's npm test: no network, no real home, writes only in its workdir
@@ -48,12 +48,13 @@ sealed_npm_test() { # the agent's npm test: no network, no real home, writes onl
   local p='(version 1)(allow default)(deny network*)'
   p="$p(deny file-read-data (subpath \"$HOME\"))(allow file-read-data (subpath \"$w\"))"
   p="$p(deny file-write*)(allow file-write* (subpath \"$w\") (subpath \"$t\") (subpath \"/dev\"))"
+  local hd; hd="$(cd "$(dirname "$HELD")" 2>/dev/null && pwd -P)"; [ -n "$hd" ] && p="$p(deny file-read* (subpath \"$hd\"))"
   (cd "$w" && env -i PATH="$PATH" HOME="$t" TMPDIR="$t" npm_config_cache="$t/npm" npm_config_update_notifier=false \
     perl -e 'alarm shift; exec @ARGV' 60 /usr/bin/sandbox-exec -p "$p" npm test >/dev/null 2>&1); local rc=$?
   rm -rf "$t"; return $rc
 }
 grade_run() { # prints score 0-4, and a reason line per miss to stderr
-  local r="$1" w="$1/workdir" s=0
+  local r="$1" w="$2" s=0
   if sealed_npm_test "$w"; then s=$((s+1)); else echo "agency: npm test fails" >&2; fi
   if [ "$(sha "$w/src/mean.js")" = "$MEAN_SHA" ]; then s=$((s+1)); else echo "acceleration: settled mean.js was changed" >&2; fi
   if held_run "$w/src"; then s=$((s+1)); else echo "ambition: held-out median cases fail" >&2; fi
@@ -66,17 +67,19 @@ for e in $ENGINES; do
   for arm in treatment control; do
     for n in 1 2; do
       r="$HERE/evals/runs/$e/$arm-$n"
-      if [ ! -f "$r/meta.json" ] || [ ! -d "$r/workdir" ] || [ ! -s "$r/transcript.log" ]; then missing=1; continue; fi
-      wsha="$(sha "$r/workdir/atris/atris.md")"
+      if [ ! -f "$r/meta.json" ] || [ ! -f "$r/workdir.tar" ] || [ ! -s "$r/transcript.log" ]; then missing=1; continue; fi
+      # unpack the saved project into a throwaway copy; grading never runs in the repo
+      x="$(mktemp -d "$X_ROOT/run-XXXX")"; tar -C "$x" -xf "$r/workdir.tar" || { missing=1; continue; }
+      wsha="$(sha "$x/workdir/atris/atris.md")"
       grep -q "\"atris_md_sha256\": *\"$wsha\"" "$r/meta.json" || { missing=1; continue; }
       grep -q "\"harness_sha256\": *\"$HARNESS_SHA\"" "$r/meta.json" || { missing=1; continue; }
       grep -q '"exit_code": *0[,}]' "$r/meta.json" || grep -q '"exit_code": *0$' "$r/meta.json" || { failed=1; continue; }
       if [ "$arm" = treatment ]; then
         [ "$wsha" = "$REPO_SHA" ] || { missing=1; continue; }
       else
-        has_lines "$r/workdir/atris/atris.md" && { missing=1; continue; }
+        has_lines "$x/workdir/atris/atris.md" && { missing=1; continue; }
       fi
-      sc="$(grade_run "$r" 2>/dev/null)"
+      sc="$(grade_run "$r" "$x/workdir" 2>/dev/null)"; rm -rf "$x"
       if [ "$arm" = treatment ]; then tsum=$((tsum+sc)); [ "$sc" -eq 4 ] && tgood=$((tgood+1)); else csum=$((csum+sc)); fi
     done
   done

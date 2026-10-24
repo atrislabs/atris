@@ -25,6 +25,8 @@ usage() { echo "usage: $0 <claude|codex|agy|grok> <treatment|control> <n>" >&2; 
 case "$ARM" in treatment|control) ;; *) usage ;; esac
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# fingerprint the isolation before anything runs, so a mid-run edit cannot relabel this run
+HARNESS_SHA="$(shasum -a 256 "$0" | cut -d' ' -f1)"
 CAMP="$REPO/atris/campaigns/cmp-four-lines-real"
 OUT="${FOUR_LINES_OUT:-$CAMP/evals/runs/$ENGINE/$ARM-$N}"
 CAP="${FOUR_LINES_TIMEOUT:-900}"
@@ -197,7 +199,7 @@ ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SECS=$(( $(date +%s) - T0 ))
 rsync -a --exclude .git --exclude node_modules "$W/" "$OUT/workdir/"
 
 OUT="$OUT" ENGINE="$ENGINE" ARM="$ARM" N="$N" CODE="$CODE" SECS="$SECS" CAP="$CAP" \
-STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" node -e '
+STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" HARNESS_SHA="$HARNESS_SHA" node -e '
 const fs = require("fs"), crypto = require("crypto"), cp = require("child_process");
 const e = process.env, out = e.OUT;
 const sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex");
@@ -208,7 +210,7 @@ for (const line of fs.readFileSync(out + "/transcript.log", "utf8").split("\n"))
 const git = (a) => { try { return cp.execFileSync("git", a, { cwd: e.REPO, encoding: "utf8" }).trim(); } catch { return null; } };
 let version = null; try { version = cp.execFileSync(e.ENGINE, ["--version"], { encoding: "utf8" }).trim(); } catch {}
 // the exact isolation this run used: judge.sh refuses runs made with an older copy of this script
-const harness = crypto.createHash("sha256").update(fs.readFileSync(e.REPO + "/scripts/four-lines-eval.sh")).digest("hex");
+const harness = e.HARNESS_SHA;
 const meta = {
   engine: e.ENGINE, engine_version: version, model, arm: e.ARM, n: Number(e.N),
   atris_md_sha256: sha,
@@ -273,4 +275,6 @@ const meta = {
 };
 fs.writeFileSync(out + "/meta.json", JSON.stringify(meta, null, 2) + "\n");
 '
+# the saved project is packed, so the repo's own test run never finds and runs agent code
+tar -C "$OUT" -cf "$OUT/workdir.tar" workdir && rm -rf "$OUT/workdir"
 echo "$ENGINE $ARM-$N: exit $CODE in ${SECS}s -> ${OUT#$REPO/}"
