@@ -818,7 +818,7 @@ async function lostReplyTrace({ chromePath = findChrome() } = {}) {
 
 // a real-sized team: long roles and statuses, a rookie, and no rating or model
 const TABLE_ROWS = [
-  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours' },
+  { member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, asked 2 hours ago' },
   { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left' },
   { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'stopped', sentence: 'stopped: split the big test file so each part runs alone, stopped 30 minutes ago' },
   { member: 'linguist', role: 'linguist, operator language and understanding', ovr: '··', engine: '··', status: 'idle', sentence: 'idle: no work in the last day' },
@@ -1004,8 +1004,8 @@ async function engineCardTrace({ chromePath = findChrome(), viewport = PHONE, sh
 // the deck card is about the job: the rating and the model live on the team table
 const DECK_COLUMNS = ['done', 'work', 'member', 'role', 'status'];
 const DECK_JOBS = [
-  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'waiting 2 hours', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
-  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'waiting 20 minutes', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
+  { job_id: 'm-nav', mission_id: 'm-nav', member: 'navigator', label: 'needs you', time: 'asked 2 hours ago', rows: [{ done: 'not yet', work: 'plan the pricing page', member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'needs you' }], yes: { key: 'm-nav:step-2:abc', hash: 'abc', what: 'navigator wants to publish the pricing page', why: 'navigator is waiting on your yes for this.' } },
+  { job_id: 'm-b1', mission_id: 'm-b1', member: 'builder', label: 'needs you', time: 'asked 20 minutes ago', rows: [{ done: 'not yet', work: 'launch a try page for any public repo', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm-b1:0', what: 'ok to post the try page on x?', why: 'builder is waiting on your yes for this.' } },
   { job_id: 'm-b2', mission_id: 'm-b2', member: 'builder', label: 'working', time: 'about 4 hours left', rows: [{ done: 'not yet', work: 'split the big test file', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working' }] },
 ];
 

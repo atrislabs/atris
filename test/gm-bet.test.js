@@ -2312,17 +2312,19 @@ test('team table: one honest status per member; working only with a live process
   const h = jobDesk(root, missions, { handoffs, driverAlive: m => m.id === 'm1' });
   const rows = h.d.teamTable().rows;
   assert.deepEqual(rows.map(({ member, on, status, time }) => ({ member, on, status, time })), [
-    { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'waiting 2 hours' },
+    { member: 'navigator', on: 'Plan the pricing page', status: 'waiting for your yes', time: 'asked 2 hours ago' },
     { member: 'builder', on: 'Launch a try page for any public repo', status: 'working', time: 'about 4 hours left' },
     { member: 'launcher', on: 'Write the launch thread', status: 'working', time: 'at it for 1 hour' },
-    { member: 'executor', on: 'Split the big test file', status: 'waiting to start', time: 'waiting 10 minutes' },
-    { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'waiting 15 minutes' },
+    { member: 'executor', on: 'Split the big test file', status: 'waiting to start', time: 'added 10 minutes ago' },
+    { member: 'linguist', on: 'Rewrite the page in plain words', status: 'waiting to start', time: 'added 15 minutes ago' },
     { member: 'researcher', on: 'Survey ten agent teams about pricing', status: 'stopped', time: 'stopped 30 minutes ago' },
     { member: 'validator', on: 'Check the two reports', status: 'done', time: 'finished 1 hour ago' },
     // nothing in the last day: still on the team, idle, with no work to name
     { member: 'scout', on: '', status: 'idle', time: '' },
   ]);
-  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, waiting 2 hours');
+  assert.equal(rows.find(r => r.member === 'navigator').sentence, 'waiting for your yes: plan the pricing page, asked 2 hours ago');
+  // the time words never say waiting a second time after the status
+  for (const r of rows) assert.ok((r.sentence.match(/\bwaiting\b/g) || []).length <= 1, r.sentence);
   // the footer counts only what is really working
   assert.equal(h.d.view().team_working, 2);
   for (const r of rows) assert.doesNotMatch(Object.values(r).join(' '), gmBet.OWNER_BANNED);
