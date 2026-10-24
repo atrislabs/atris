@@ -47,6 +47,8 @@ const PHONE = { width: 390, height: 844, deviceScaleFactor: 3, mobile: true };
 const LAPTOP = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false };
 const TOKEN = 't'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// a deliberate second tap on a button that asks for one; a quicker one is a fumbled double tap the page ignores
+const SECOND_TAP_MS = 450;
 
 // ---- a desk with the real desk's card rules -------------------------------------------
 
@@ -694,6 +696,7 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
       try {
         await tapLabel(p, send, label);
         await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet button'), function (b) { return b.textContent === ${JSON.stringify(armed)}; })`, 'the armed tap', 2000);
+        await wait(SECOND_TAP_MS);
         await tapLabel(p, send, armed);
         const end = Date.now() + 3000;
         while (!did.length && Date.now() < end) await wait(16);
@@ -761,7 +764,7 @@ async function startFailTrace({ chromePath = findChrome() } = {}) {
     await p.until(titled(REPLY), 'the reply', 8000);
     await wait(150);
     await tapLabel(p, send, 'do it');
-    await wait(100);
+    await wait(SECOND_TAP_MS);
     await tapLabel(p, send, 'tap again to start');
     await p.until(`${titled(REPLY)} && Boolean(document.querySelector('#bet .act .note').textContent)`, 'the card back with why', 8000);
     const failed = await look(p);
@@ -769,7 +772,7 @@ async function startFailTrace({ chromePath = findChrome() } = {}) {
     let under = null;
     try {
       await tapLabel(p, send, 'do it');
-      await wait(100);
+      await wait(SECOND_TAP_MS);
       await tapLabel(p, send, 'tap again to start');
       // who has it shows under the sphere before the next card
       await p.until("document.getElementById('line').textContent === 'builder has it and is starting now.'", 'who has it', 4000);
@@ -1096,6 +1099,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     // back to the first card, then its yes: armed, then sent with what the card binds
     while ((await count()) !== '1 of 3') { await press('ArrowLeft'); await settle(); }
     await tapLabel(p, send, 'yes');
+    await wait(SECOND_TAP_MS);
     await tapLabel(p, send, 'tap again to say yes');
     await p.until(`${SETTLED} && Boolean(document.querySelector('#bet .mission'))`, 'the line after the yes', 8000);
     const yesLine = await p.run("document.querySelector('#bet .mission').textContent");
@@ -1182,7 +1186,7 @@ async function walkTrace({ chromePath = findChrome(), cards } = {}) {
       if (o) {
         await p.run(`document.querySelector('#bet [data-option="${o.id}"]').scrollIntoView({ block: 'center' })`);
         await p.tap(`#bet [data-option="${o.id}"]`);
-        if (o.confirm) { await wait(100); await p.tap(`#bet [data-option="${o.id}"]`); }
+        if (o.confirm) { await wait(SECOND_TAP_MS); await p.tap(`#bet [data-option="${o.id}"]`); }
         if (o.type) { await wait(200); await p.type('a few words'); await p.enter(); }
       } else {
         // the calm line's box is open already; any other box opens on a tap
