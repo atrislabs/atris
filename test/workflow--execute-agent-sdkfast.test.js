@@ -20,7 +20,7 @@ for (const key of Object.keys(process.env)) {
 
 const { executeAgentSDKFast } = require('../commands/workflow');
 
-const HINT = '💡 Hosted turns use https://api.atris.ai. For local development, set ATRIS_API_BASE to your own backend URL.';
+const HINT = '💡 start your local backend at http://127.0.0.1:8000.';
 
 // scenario: { status, body, chunks, requestError, timeout }
 async function run(userInput, scenario) {
