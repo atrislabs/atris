@@ -1167,7 +1167,7 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   assert.match(script, /var vx = rect\.left \+ rect\.width \/ 2, vy = rect\.top \+ rect\.height \/ 2;/);
   assert.match(script, /if \(contained\) \{ rise\(growMs, settleMs, sMin, sMax, rest\); return; \}/);
   assert.match(script, /var s = u < k \? sMin \+ \(sMax - sMin\) \* \(0\.5 - 0\.5 \* Math\.cos\(Math\.PI \* u \/ k\)\) : sMax \+ \(rest - sMax\) \* ease\(\(u - k\) \/ \(1 - k\)\);/);
-  assert.match(script, /var m = ease\(u\);\n\s+place\(s, origin\.x \+ \(p\.x - origin\.x\) \* m, origin\.y \+ \(p\.y - origin\.y\) \* m\);/);
+  assert.match(script, /var m = ease\(u\);\n\s+place\(s, origin\.x \+ \(p\.x - origin\.x\) \* m, origin\.y \+ \(p\.y - origin\.y\) \* m, now\);/);
   // the lava is at the point before it can be seen
   assert.match(script, /lava\.style\.opacity = '0';\n\s+place\(sMin, origin\.x, origin\.y\);\n\s+lava\.style\.visibility = 'visible';/);
   assert.match(script, /dim\.style\.opacity = contained \? '0'/);
@@ -1211,8 +1211,24 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
     assert.ok(s.title_max_px <= 5, show(s));
     assert.equal(s.title_rest_px, 0, show(s));
     assert.ok(s.largest_frame_step_px <= 5, show(s));
-    // tap to the next card fully in: about a second
-    assert.ok(s.reveal_ms >= 800 && s.reveal_ms <= 1500, show(s));
+    // tap to the next card fully in: about a second, step by step as the page
+    // sets its motion, so a busy machine's late frames never count against it.
+    // each step runs for real, at least about half of what it is set to today,
+    // so a step cut to nothing fails even when the order and the total fit
+    const floors = { hold: 120, glide: 130, beat: 50, spiral: 150, bloom: 70, fade: 150 };
+    assert.deepEqual(s.motion.map(([step]) => step), Object.keys(floors), show(s));
+    for (const [step, ms] of s.motion) assert.ok(ms >= floors[step], `${step} ${ms}ms: ${show(s)}`);
+    assert.ok(s.motion_ms >= 900 && s.motion_ms <= 1250, show(s));
+    // the clock is the motion plus the wait on the stub desk (its own speed,
+    // left out) plus late timers and frames. it never beats the motion by
+    // more than the one frame the spiral can start into. what a slow machine
+    // adds stays within a dozen frames at its pace (about how many times the
+    // motion waits on a timer or a frame), and never past twice the motion
+    // whatever the frames, so a page that freezes fails. 16 times slower, the
+    // machine added at most 1.7 seconds
+    assert.ok(Number.isFinite(s.reveal_ms) && Number.isFinite(s.waited_ms), show(s));
+    assert.ok(s.late_ms >= -s.slowest_frame_ms, show(s));
+    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms, 2 * s.motion_ms), show(s));
   }
   for (const s of [answered, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
   // a reply instead of a card takes the title's spot; it only explains, so the
@@ -1667,7 +1683,8 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   // the only still moment is the beat the chosen answer holds; while the owner waits, never
   assert.ok(r.longest_still_ms <= 250, show);
   assert.ok(r.longest_still_waiting_ms <= 150, show);
-  assert.ok(r.dot_frames > 200, show);
+  // the dots move through the wait: 200 frames at 60fps, as time, so a slower machine reads the same
+  assert.ok(r.dots_moving_ms > 200 * 16.7, show);
   // the got it line under the moving sphere, then the calm line's live words, its open box, the note
   assert.ok(r.lines.includes('got it: paying schools.'), show);
   assert.equal(r.calm_box_open, true, show);
@@ -1675,7 +1692,8 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
   // the note is a post on the calm line's own id, and the idea comes when asked for from it
   assert.deepEqual(r.posts.map(x => [x.action, x.card]), [['say', 'question:focus'], ['say', 'wait:7'], ['orb', 'wait:7']], show);
-  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels)
+  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels,
+  // read on the clock each part moves by, so a slower machine reads the same)
   assert.ok(r.lava_max_step_px <= 45, show);
   assert.ok(r.lava_max_size_step_px <= 45, show);
   assert.ok(r.lava_max_speed_change_px <= 15, show);
@@ -1685,6 +1703,32 @@ test('browser: after a typed answer the dots never stop: got it, the calm line w
   assert.equal(r.footer_seen_jump_px, 0, show);
   // the idea is born where the dots were
   assert.ok(r.bloom_from_dots_px <= 3, show);
+});
+
+test('trace: a few stalls cannot hide a jump in the wait, and a slow machine reads the same as a fast one', () => {
+  // 120 frames of the lava gliding 2px per 60fps frame; the last one is the idea at rest
+  const lavaRun = (gap, stalls = [], jump = -1) => {
+    const frames = [];
+    let ft = 0, x = 0;
+    for (let i = 0; i < 120; i++) {
+      const ms = stalls.includes(i) ? 300 : gap;
+      ft += ms;
+      x += i === jump ? 180 : 2 * ms / 16.7;
+      frames.push({ t: ft, ft, orb: null, pix: null, sphere: false, stage: null, lava: { r: { x, y: 300, w: 56, h: 56 }, o: 1, at: ft }, box: { o: 1, kind: 'wait', card: 'wait:7', title: { x: 20, y: 100, w: 300, h: 40 }, titleText: i === 119 ? 'the idea' : 'the calm line' }, waiting: true, field: true, fieldRect: null, step: '', notes: [], line: '', lineO: 1, foot: { r: { x: 0, y: 800, w: 390, h: 20 }, o: 1 }, busy: false });
+    }
+    return trace.summarizeWait(frames, 0, 'the idea');
+  };
+  // four 300ms stalls in a 60fps run leave its pace alone, so a 180px jump in one is a jump
+  const stalled = lavaRun(16.7, [20, 40, 60, 80], 60);
+  assert.equal(stalled.pace_frame_ms, 17);
+  assert.equal(stalled.stall_frame_ms, 50);
+  assert.ok(stalled.lava_max_step_px > 45, JSON.stringify(stalled));
+  // a machine whose every frame takes 120ms reads the same glide as a 60fps one
+  const slow = lavaRun(120);
+  assert.equal(slow.stall_frame_ms, 240);
+  assert.ok(Math.abs(slow.lava_max_step_px - 2) < 0.1 && slow.lava_max_speed_change_px < 0.1, JSON.stringify(slow));
+  // and no stall is ever longer than a quarter second, however slow the machine
+  assert.equal(lavaRun(200).stall_frame_ms, 250);
 });
 
 test('browser: the calm line fits every screen: its box is inside the edges with send whole, and its words are centered under the sphere with the team, at 390, 430, and laptop width', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {

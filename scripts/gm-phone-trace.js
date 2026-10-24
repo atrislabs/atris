@@ -244,6 +244,8 @@ const RECORDER = `(function () {
       // every row of the card under the title, in order: the options and the box
       rows: Array.prototype.map.call(box.querySelectorAll('.act > *, .act .links > button, .sayline'), function (n) { return { r: r(n), o: op(n), spot: Boolean(spot && (n === spot || n.contains(spot) || spot.contains(n))) }; }),
       revealMs: document.body.getAttribute('data-reveal-ms'),
+      revealPlan: document.body.getAttribute('data-reveal-plan'),
+      revealWaited: document.body.getAttribute('data-reveal-waited-ms'),
     });
     requestAnimationFrame(rec);
   })();
@@ -257,6 +259,40 @@ const size = (a, b) => (a && b ? Math.max(Math.abs(a.w - b.w), Math.abs(a.h - b.
 const center = a => ({ x: a.x + a.w / 2, y: a.y + a.h / 2 });
 const round = n => (Number.isFinite(n) ? Math.round(n * 10) / 10 : null);
 const most = list => list.reduce((m, n) => Math.max(m, n), 0);
+const num = v => (v == null ? null : Number(v));
+
+// The page's own account of a reveal: the clock from the tap to the card
+// fully in, and the motion's steps with the length each is set to take
+// ("hold 150, glide 260, ..."). What the clock reads past the motion is the
+// wait on the desk's answer and then late timers and frames, which a busy
+// machine stretches. slowest_frame_ms is the longest gap between two frames
+// on the way, and pace_frame_ms the 75th percentile of the frames that draw
+// the dots: those are the frames a slow machine slows (the rest stay near
+// 60fps even 16 times slower), and a few stalls cannot move it.
+function reveal(frames, sent) {
+  const last = frames[frames.length - 1];
+  const motion = last.revealPlan == null ? null : last.revealPlan.split(', ').filter(Boolean).map(s => {
+    const at = s.lastIndexOf(' ');
+    return [s.slice(0, at), Number(s.slice(at + 1))];
+  });
+  const clock = num(last.revealMs), waited = num(last.revealWaited);
+  const motionMs = motion ? motion.reduce((n, [, ms]) => n + ms, 0) : null;
+  const endAt = frames.findIndex(f => f.t >= sent && f.revealMs != null);
+  const seen = frames.slice(0, endAt < 0 ? frames.length : endAt + 1).filter(f => f.t > sent);
+  const gaps = seen.map((f, i) => ({ ms: f.t - (i ? seen[i - 1].t : sent), dots: f.sphere }));
+  const slowest = Math.max(0, ...gaps.map(g => g.ms));
+  const drawing = gaps.filter(g => g.dots).map(g => g.ms).sort((a, b) => a - b);
+  const bulk = drawing.length ? drawing : gaps.map(g => g.ms).sort((a, b) => a - b);
+  return {
+    reveal_ms: clock,
+    motion,
+    motion_ms: motionMs,
+    waited_ms: waited,
+    late_ms: clock == null || motionMs == null ? null : clock - motionMs - (waited || 0),
+    slowest_frame_ms: Math.round(slowest),
+    pace_frame_ms: Math.round(bulk.length ? bulk[Math.floor(0.75 * (bulk.length - 1))] : 0),
+  };
+}
 
 // One stretch, from the owner's first act (a tap that opens a field, or the
 // tap that answers) to the next card at rest. marks: the page times of the
@@ -291,7 +327,7 @@ function summarize(frames, marks, before) {
     title_rest_px: round(dist(last.title, before.title)),
     largest_frame_step_px: round(step),
     next_title: last.titleText,
-    reveal_ms: last.revealMs == null ? null : Number(last.revealMs),
+    ...reveal(frames, sent),
   };
 }
 
@@ -789,6 +825,14 @@ const TABLE_ROWS = [
   { member: 'validator', role: 'reviewer', ovr: '89', engine: 'tool two m-two', status: 'idle', sentence: 'idle: no work in the last day' },
 ];
 
+// every body cell as the page holds it: the words shown, the markup behind
+// them, and how many elements it holds besides a tap target
+const TABLE_CELLS = `[].map.call(document.querySelectorAll('#bet tbody tr'), function (tr) {
+  return [].map.call(tr.cells, function (td) {
+    return { text: td.textContent, html: td.innerHTML, elements: td.querySelectorAll(':not(button):not(span)').length };
+  });
+})`;
+
 // what the table looks like on screen: the column names, whether any cell's
 // words spill out of it, every inner line, the side scroll, where the name
 // column sits once scrolled, and whether anything on it moves
@@ -861,6 +905,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await p.until(`${titled('the team')} && Boolean(document.querySelector('#bet tbody tr'))`, 'the team card', 8000);
     await wait(100);
     const tableLook = await p.run(TABLE_LOOK);
+    const cells = await p.run(TABLE_CELLS);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
@@ -875,7 +920,7 @@ async function teamTableTrace({ chromePath = findChrome(), viewport = PHONE, sho
     await esc(send);
     await p.until(titled(CARDS.b1.title), 'the first card again', 8000);
     const closed = await where();
-    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, talk, back, closed };
+    return { viewport: `${viewport.width}x${viewport.height}`, look: tableLook, cells, talk, back, closed };
   }, viewport);
 }
 
@@ -1157,9 +1202,11 @@ const CALM_LINES = ['drafting three ideas at once', 'the first draft is in. chec
 const FOLDED = 'got it, i\'ll fold that in.';
 
 // One row per frame of everything that can move while the owner waits: the
-// dots (the orb's own count of frames it drew and how far its dots went),
-// the sphere, the lava, the card and its title, the line under the sphere,
-// and the footer.
+// dots (the orb's own count of frames it drew, how far its dots went, and how
+// much of their own clock the frame was), the sphere, the lava, the card and
+// its title, the line under the sphere, and the footer. ft is the frame's own
+// time, the one the page's animations run on, and the lava's at is the frame
+// time its place was set for; t is when this row was read.
 const WAIT_RECORDER = `(function () {
   var T = window.__wait = { frames: [], marks: [], on: true };
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter') T.marks.push({ what: 'enter', t: performance.now() }); }, true);
@@ -1171,7 +1218,7 @@ const WAIT_RECORDER = `(function () {
     for (var i = 3; i < d.length; i += 4 * 97) sum += d[i];
     return sum;
   }
-  (function rec() {
+  (function rec(now) {
     if (!T.on) return;
     var canvas = document.getElementById('orb'), stage = document.getElementById('stage'), lava = document.getElementById('lava');
     var box = document.getElementById('bet'), foot = document.getElementById('foot'), line = document.getElementById('line');
@@ -1181,11 +1228,12 @@ const WAIT_RECORDER = `(function () {
     var field = box.querySelector('.sayline .field');
     T.frames.push({
       t: performance.now(),
-      orb: o ? { frame: o.frame, mode: o.mode, step: o.step, mean: o.mean } : null,
+      ft: typeof now === 'number' ? now : performance.now(),
+      orb: o ? { frame: o.frame, mode: o.mode, step: o.step, mean: o.mean, ms: o.ms } : null,
       pix: o ? null : pixels(canvas),
       sphere: shown && Number(getComputedStyle(stage).opacity) > 0.05,
       stage: shown && Number(getComputedStyle(stage).opacity) > 0.05 ? r(stage) : null,
-      lava: lv ? { r: r(lava), o: Number(getComputedStyle(lava).opacity) } : null,
+      lava: lv ? { r: r(lava), o: Number(getComputedStyle(lava).opacity), at: lava.__at } : null,
       box: box.hidden ? null : { o: Number(getComputedStyle(box).opacity), kind: box.getAttribute('data-kind'), card: box.getAttribute('data-card'), title: r(box.querySelector('h1')), titleText: box.querySelector('h1') ? box.querySelector('h1').textContent : '' },
       waiting: document.body.classList.contains('waiting'),
       field: Boolean(field),
@@ -1218,40 +1266,56 @@ function movedBetween(a, b) {
 
 // The stretch from the owner's Enter on their answer to the idea at rest,
 // as numbers: the longest still moment, the biggest one-frame steps and the
-// biggest change of speed (a snap), and what each part showed. Steps are
-// per 60fps frame, so a slower machine reads the same.
+// biggest change of speed (a snap), and what each part showed. Steps and
+// changes of speed are per 60fps frame, read on the clock each part moves by,
+// so a slower machine reads the same: the dots and the lava on their own
+// clocks, everything else on the frame's own time. The machine's pace is its
+// 75th percentile frame: a slow machine slows most frames, while a few stalls
+// cannot move it. A frame over twice that pace (never under 50ms, never over
+// 250ms) is a stall, and what moves in it counts at its full distance.
 function summarizeWait(frames, from, idea) {
   const run = frames.filter(f => f.t >= from);
   const end = run.findIndex(f => f.box && f.box.titleText === idea && !f.busy && f.box.o > 0.99);
   const span = end < 0 ? run : run.slice(0, end + 1);
+  const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
+  const pace = gaps.length ? gaps[Math.floor(0.75 * (gaps.length - 1))] : 16.7;
+  const stall = Math.min(250, Math.max(50, 2 * pace));
+  const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
   let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0, stillWaiting = 0;
   let lavaStep = 0, lavaGrow = 0, lavaJerk = 0, stageStep = 0, dotsStep = 0, dotsJerk = 0, titleStep = 0, footJump = 0;
-  let prevLavaStep = null, prevDots = null;
-  let dotFrames = 0;
+  let prevLava = null, prevDots = null;
+  let dotFrames = 0, dotsMs = 0;
   for (let i = 1; i < span.length; i++) {
     const a = span[i - 1], b = span[i];
-    const per = 16.7 / Math.min(50, Math.max(8, b.t - a.t));
+    const ms = b.ft - a.ft, k = per(ms);
     const m = movedBetween(a, b);
-    if (m.dots) dotFrames += 1;
+    if (m.dots) { dotFrames += 1; dotsMs += Math.min(ms, stall); }
     if (m.any) runStart = b.t;
     else if (b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
     if (!m.any && (b.waiting || (b.sphere && !b.box)) && b.t - runStart > stillWaiting) stillWaiting = b.t - runStart;
-    if (a.lava && b.lava) {
-      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * per;
+    if (a.lava && b.lava && a.lava.at === b.lava.at && near(a.lava.r, b.lava.r)) {
+      // not placed again since the last read: no new sample of its motion
+    } else if (a.lava && b.lava) {
+      // the lava is read where its last place put it, so its time is that place's
+      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms, kl = per(own);
+      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * kl;
       lavaStep = Math.max(lavaStep, st);
-      lavaGrow = Math.max(lavaGrow, Math.abs(a.lava.r.w - b.lava.r.w) * per);
-      if (prevLavaStep != null) lavaJerk = Math.max(lavaJerk, Math.abs(st - prevLavaStep));
-      prevLavaStep = st;
-    } else prevLavaStep = null;
-    if (a.stage && b.stage) stageStep = Math.max(stageStep, stepOf(a.stage, b.stage) * per, Math.abs(a.stage.w - b.stage.w) * per);
+      lavaGrow = Math.max(lavaGrow, Math.abs(a.lava.r.w - b.lava.r.w) * kl);
+      // a change of speed between two frames, per 60fps frame of the time between them
+      if (prevLava) lavaJerk = Math.max(lavaJerk, Math.abs(st - prevLava.st) * per((prevLava.own + own) / 2));
+      prevLava = { st, own };
+    } else prevLava = null;
+    if (a.stage && b.stage) stageStep = Math.max(stageStep, stepOf(a.stage, b.stage) * k, Math.abs(a.stage.w - b.stage.w) * k);
     if (b.orb && a.orb && b.orb.frame > a.orb.frame && a.sphere && b.sphere) {
-      // the orb counts its own frames: its step is for one of them
-      const drawn = b.orb.frame - a.orb.frame;
-      dotsStep = Math.max(dotsStep, b.orb.step);
-      if (prevDots != null && drawn === 1) dotsJerk = Math.max(dotsJerk, Math.abs(b.orb.mean - prevDots));
-      prevDots = drawn === 1 ? b.orb.mean : null;
+      // the orb counts its own frames and its own clock: its step is for one
+      // frame of that clock, which never runs more than 50ms a frame
+      const drawn = b.orb.frame - a.orb.frame, own = Math.max(8, b.orb.ms || 0);
+      dotsStep = Math.max(dotsStep, b.orb.step * 16.7 / own);
+      const speed = b.orb.mean * 16.7 / own;
+      if (prevDots && drawn === 1) dotsJerk = Math.max(dotsJerk, Math.abs(speed - prevDots.speed) * 16.7 / ((prevDots.own + own) / 2));
+      prevDots = drawn === 1 ? { speed, own } : null;
     } else prevDots = null;
-    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) titleStep = Math.max(titleStep, stepOf(a.box.title, b.box.title));
+    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) titleStep = Math.max(titleStep, stepOf(a.box.title, b.box.title) * k);
     // the footer may change places only while it cannot be seen
     if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, stepOf(a.foot.r, b.foot.r));
   }
@@ -1268,6 +1332,11 @@ function summarizeWait(frames, from, idea) {
     // and while the owner waited (the sphere up, or the calm line)
     longest_still_waiting_ms: Math.round(stillWaiting),
     dot_frames: dotFrames,
+    // how much of the wait the dots were moving through, however many frames that took
+    dots_moving_ms: Math.round(dotsMs),
+    // the machine's pace, and the frame length past which a frame is a stall
+    pace_frame_ms: Math.round(pace),
+    stall_frame_ms: Math.round(stall),
     // one-frame steps and changes of speed, in css pixels
     lava_max_step_px: round(lavaStep),
     lava_max_size_step_px: round(lavaGrow),

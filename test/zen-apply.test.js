@@ -833,7 +833,7 @@ test('a side copy left alone for being in use does not count as out of place', (
 
     const cli = zen(checkout, 30);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
-    assert.match(cli.stdout, /1 side copy was used in the last 30 minutes/);
+    assert.match(cli.stdout, /1 side copy was used in the last 30 minutes, so it stays/);
     assert.match(cli.stdout, /zen\./);
     assert.doesNotMatch(cli.stdout, /still out of place/);
     assert.ok(fs.existsSync(copy));

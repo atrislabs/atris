@@ -1365,3 +1365,93 @@ test('every board, league, card, and replay line fits the terminal width', () =>
   assert.ok(plain.every(l => widthOf(l) <= 90), plain.find(l => widthOf(l) > 90));
   assert.match(plain[0], /\.\.\. +sent back +a title/);
 });
+
+// ---- bordered roster ---------------------------------------------------------
+
+const { renderBorderedTable } = require('../lib/text-table');
+const { teamCells } = require('../lib/gm-bet');
+
+test('the table drawer draws a divided box, wraps its wrap columns to fit, and gives up when it cannot', () => {
+  const columns = [{ header: 'member' }, { header: 'ovr' }];
+  const text = renderBorderedTable(columns, [['builder', 80], ['scout', '··']], { width: 40 });
+  assert.equal(text, [
+    '┌─────────┬─────┐',
+    '│ member  │ ovr │',
+    '├─────────┼─────┤',
+    '│ builder │ 80  │',
+    '│ scout   │ ··  │',
+    '└─────────┴─────┘',
+  ].join('\n'));
+  assert.equal(renderBorderedTable(columns, [['a member with a long name', 80]], { width: 30 }), null);
+  const wrapped = renderBorderedTable([{ header: 'member' }, { header: 'role', wrap: true }], [['builder', 'writes and tests the code']], { width: 30 });
+  assert.equal(wrapped, [
+    '┌─────────┬──────────────────┐',
+    '│ member  │ role             │',
+    '├─────────┼──────────────────┤',
+    '│ builder │ writes and tests │',
+    '│         │ the code         │',
+    '└─────────┴──────────────────┘',
+  ].join('\n'));
+});
+
+const BOARD_CELLS = new Map([['builder', { role: 'ships features', ovr: '80', engine: 'claude opus 5.5' }]]);
+
+test('board roster is the team table in a terminal: member, role, ovr, engine, status', () => {
+  const text = renderBoardLines(fixtureBoard(), { width: 140, bordered: true, cells: BOARD_CELLS }).join('\n');
+  assert.match(text, /^ {2}│ member +│ role +│ ovr +│ engine +│ status +│$/m);
+  assert.match(text, /^ {2}│ builder +│ ships features +│ 80 +│ claude opus 5\.5 +│ on a job +│$/m);
+  // a member the cells do not know shows two dots, never a guess
+  assert.match(text, /^ {2}│ scout +│ ·· +│ ·· +│ ·· +│ asleep +│$/m);
+  assert.match(text, /^ {2}┌─+┬/m);
+  assert.match(text, /new under 3 finished/);
+  assert.doesNotMatch(text, /form: last 5/);
+});
+
+test('board roster wraps to fit an 80 column terminal and keeps the plain columns when piped or too narrow', () => {
+  const lines = renderBoardLines(fixtureBoard(), { width: 80, bordered: true, cells: BOARD_CELLS });
+  assert.ok(lines.some(l => /^ {2}│ builder +│/.test(l)), 'the box still draws at 80 columns');
+  assert.ok(lines.every(l => l.length <= 80), lines.find(l => l.length > 80));
+  const narrow = renderBoardLines(fixtureBoard(), { width: 30, bordered: true, cells: BOARD_CELLS }).join('\n');
+  const piped = renderBoardLines(fixtureBoard(), { width: 140, bordered: false, cells: BOARD_CELLS }).join('\n');
+  const noCells = renderBoardLines(fixtureBoard(), { width: 140, bordered: true }).join('\n');
+  for (const text of [narrow, piped, noCells]) assert.doesNotMatch(text, /│/);
+  for (const text of [piped, noCells]) {
+    assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
+    assert.match(text, /rookie under 3 finished/);
+  }
+});
+
+test('board roster box stays 80 columns at 80 with CJK and a joined emoji, and the width guard never cuts it', () => {
+  const { displayWidth } = require('../lib/text-table');
+  const cells = new Map([['builder', { role: '界面を作る 👩‍💻 writes code, 🧑🏽‍🔬 runs the lab, cafe\u0301 and plain words', ovr: '80', engine: 'claude opus 5.5' }]]);
+  const lines = renderBoardLines(fixtureBoard(), { width: 80, bordered: true, cells });
+  const box = lines.filter(l => /^ {2}[┌│├└]/.test(l));
+  assert.ok(box.length > 6, 'the box draws');
+  for (const line of box) assert.equal(displayWidth(line), 80, line);
+  assert.ok(box.every(l => !l.endsWith('...')), 'no box line was cut');
+});
+
+test('team cells: role words from MEMBER.md, the engine the runner would pick, two dots for a stranger', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-team-cells-'));
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: ships features\n---\n# Builder\n');
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'designer'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'designer', 'MEMBER.md'), '---\nname: designer\ntype: human\nrole: Designer\n---\n');
+    // the build lead has ended, so the runner picks its backup
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '## build\n- claude, model: opus 5.5, until 2026-10-01\n- codex, model: gpt-6.1-sol\n');
+    const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
+    const engines = ids.map(id => (['claude', 'codex'].includes(id) ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: new Date().toISOString() } }));
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+    const runner = require('../lib/member-engine').memberRosterEngine('builder', root);
+    assert.equal(runner.engine.id, 'codex');
+    const ratings = season.memberRatings(['landed', 'landed', 'dropped'].map((kind, i) => ({ member: 'builder', kind, at: NOW - i * HOUR })));
+    const cells = teamCells(root, ['builder', 'designer', 'ghost', '../escape'], { ratings });
+    assert.deepEqual(cells.get('builder'), { role: 'ships features', ovr: '86', engine: `codex ${runner.model}`, parked: false });
+    assert.equal(cells.get('designer').engine, 'person');
+    for (const name of ['ghost', '../escape']) assert.deepEqual(cells.get(name), { role: '··', ovr: '··', engine: '··', parked: false });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

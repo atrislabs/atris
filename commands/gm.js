@@ -797,19 +797,20 @@ function tail(text, used, width) {
   return clip(text, Math.max(10, width - used));
 }
 
-// Last guard on width: a long line breaks after a comma onto an indented
-// line; anything still too long ends in "...".
+// Last guard on width, in terminal columns: a long line breaks after a
+// comma onto an indented line; anything still too long ends in "...".
 function fitLines(lines, width) {
+  const { displayWidth, sliceColumns } = require('../lib/text-table');
   const out = [];
   for (const line of lines) {
     let rest = line;
-    while (rest.length > width) {
-      const cut = rest.lastIndexOf(', ', width - 1);
+    while (displayWidth(rest) > width) {
+      const cut = rest.lastIndexOf(', ', sliceColumns(rest, width).length - 1);
       if (cut <= 0) break;
       out.push(rest.slice(0, cut + 1));
       rest = `  ${rest.slice(cut + 2)}`;
     }
-    out.push(rest.length > width ? `${rest.slice(0, width - 3)}...` : rest);
+    out.push(displayWidth(rest) > width ? `${sliceColumns(rest, width - 3)}...` : rest);
   }
   return out;
 }
@@ -830,13 +831,30 @@ function boardWorkspaceRoot(args = []) {
   return taskDb.workspaceRoot(path.resolve(workspaceArg));
 }
 
+// The team page's cells (role, ovr, engine) for each roster member, read
+// only when the board draws its box in a terminal; null otherwise.
+function boardCells(board, workspaceRoot, ratings) {
+  if (!process.stdout.isTTY || !workspaceRoot) return null;
+  return require('../lib/gm-bet').teamCells(workspaceRoot, board.roster.map(r => r.name), { ratings });
+}
+
 function loadBoard(workspaceRoot, options = {}) {
+  return loadSeasonBoard(workspaceRoot, options).board;
+}
+
+// The board and every member's rating (gm-season memberRatings, the same
+// numbers the orb's team page reads) from one read of the season.
+function loadSeasonBoard(workspaceRoot, options = {}) {
   const season = require('../lib/gm-season');
-  return season.seasonBoard(season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen }), options);
+  const played = season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen });
+  return { board: season.seasonBoard(played, options), ratings: season.memberRatings(played.outcomes || []) };
 }
 
 // One screen, about 40 rows at most. Pure: board in, lines out.
-function renderBoardLines(board, { interactive = false, width = termWidth() } = {}) {
+// In a terminal, given the team page's cells, the roster is the orb's team
+// table as a divided box (member, role, ovr, engine, status); piped, or when
+// the box cannot fit the width, it keeps the plain columns.
+function renderBoardLines(board, { interactive = false, width = termWidth(), bordered = Boolean(process.stdout.isTTY), cells = null } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   const nameW = nameWidth([
@@ -856,7 +874,12 @@ function renderBoardLines(board, { interactive = false, width = termWidth() } = 
   lines.push('');
 
   lines.push('roster, last 30 days');
-  if (board.roster.length) {
+  const boxed = bordered && cells && board.roster.length
+    ? require('../lib/gm-bet').teamBox(board.roster.map(r => ({ member: r.name, status: r.status })), cells, { width: width - 2 })
+    : null;
+  if (boxed) {
+    lines.push(...boxed.split('\n').map(line => `  ${line}`));
+  } else if (board.roster.length) {
     lines.push(`  ${pad('name', nameW)}${pad('ovr', 8)}${pad('form', 7)}${pad('record', 18)}status`);
     for (const row of board.roster) {
       const record = `landed ${row.landed} of ${row.jobs}`;
@@ -913,9 +936,10 @@ function renderBoardLines(board, { interactive = false, width = termWidth() } = 
   }
   lines.push('');
 
-  lines.push('key: ovr 60 to 99 = share of finished jobs landed, rookie under 3 finished,');
+  lines.push(`key: ovr 60 to 99 = share of finished jobs landed, ${boxed ? 'new' : 'rookie'} under 3 finished,`);
   lines.push('     stricter than the website rating on purpose (drops and abandons count)');
-  lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
+  if (boxed) lines.push('     ·· = nothing to show yet: no finished job, no role, or no pinned model');
+  else lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
   lines.push('     hours: claim to result. on a job: moved in the last 6h. review: pending');
   if (interactive) for (const line of PLAY_KEYS) lines.push(line);
   else lines.push('     run atris gm in a terminal to play');
@@ -990,9 +1014,10 @@ function printLeague() {
 }
 
 function printBoard(args = []) {
-  const board = loadBoard(boardWorkspaceRoot(args));
+  const root = boardWorkspaceRoot(args);
+  const { board, ratings } = loadSeasonBoard(root);
   if (board.error) return failRead(board.error);
-  console.log(renderBoardLines(board).join('\n'));
+  console.log(renderBoardLines(board, { cells: boardCells(board, root, ratings) }).join('\n'));
   return undefined;
 }
 
@@ -1107,11 +1132,11 @@ async function gmPlay(args = []) {
         leagueRowsSeen = [...board.rows, ...(board.hidden_clubs || [])];
         write(renderLeagueLines(board, { interactive: true }).join('\n'));
       } else {
-        const board = loadBoard(workspaceRoot, { seen, lastSeen });
+        const { board, ratings } = loadSeasonBoard(workspaceRoot, { seen, lastSeen });
         lastBoard = board;
         seen = new Set(board.last_plays.map(play => play.id));
         stuck = board.stuck || [];
-        write(renderBoardLines(board, { interactive: true }).join('\n'));
+        write(renderBoardLines(board, { interactive: true, cells: boardCells(board, workspaceRoot, ratings) }).join('\n'));
         season.writeLastSeen(workspaceRoot, board.now);
       }
     } catch (err) {
@@ -1986,9 +2011,11 @@ async function gmCommand(...args) {
 }
 
 module.exports = {
+  boardCells,
   displayCommand,
   ensureStarterMission,
   gmCommand,
+  loadSeasonBoard,
   pickClub,
   playAction,
   renderBoardLines,
