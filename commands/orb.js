@@ -153,7 +153,7 @@ function unknownOrbFlags(args = []) {
 function tailLines(text, count = 60) {
   const lines = String(text || '').split(/\r?\n/);
   if (lines[lines.length - 1] === '') lines.pop();
-  return lines.slice(-count).join('\n');
+  return lines.slice(Math.max(0, lines.length - count)).join('\n');
 }
 
 async function runOrb(args = []) {

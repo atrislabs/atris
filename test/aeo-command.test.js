@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 const assert = require('node:assert');
 const fs = require('fs');

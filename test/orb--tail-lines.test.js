@@ -66,6 +66,6 @@ test('tailLines turns non-string input into text first', () => {
   assert.equal(tailLines(true), 'true');
 });
 
-test('tailLines with a count of zero returns every line (slice(-0) behaviour)', () => {
-  assert.equal(tailLines('a\nb\nc', 0), 'a\nb\nc');
+test('tailLines with a count of zero returns no lines', () => {
+  assert.equal(tailLines('a\nb\nc', 0), '');
 });

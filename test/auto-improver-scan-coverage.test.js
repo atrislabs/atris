@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { localDay } = require('../lib/local-day');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -182,7 +183,7 @@ test('auto-improver scan dates undated logs by when they were last written', () 
     assert.ok(!patterns.some((pattern) => /review_lane_run_unparseable/.test(pattern)), `two-month-old log counted: ${JSON.stringify(patterns)}`);
     const fresh = failures.find((failure) => /engine_exit_nonzero/.test(failure.pattern));
     assert.ok(fresh, `fresh undated log was dropped: ${JSON.stringify(patterns)}`);
-    assert.equal(fresh.evidence[0].date, new Date().toISOString().slice(0, 10));
+    assert.equal(fresh.evidence[0].date, localDay());
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

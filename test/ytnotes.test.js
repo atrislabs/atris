@@ -734,14 +734,16 @@ function runNoCaptionNotes(t, label, { withWhisper, whisperVtt, extraEnv = {}, a
   if (!withYtDlp) fs.rmSync(path.join(bin, 'yt-dlp'));
   for (const [name, body] of Object.entries(extraBins)) writeExec(path.join(bin, name), body);
 
-  // Keep the real ~/.local/bin (and any real mlx_whisper) off PATH.
+  // Keep the real ~/.local/bin (and any real mlx_whisper) off PATH, and node's
+  // own folder too: real engines (claude, codex, gemini) can sit beside it.
+  if (!fs.existsSync(path.join(bin, 'node'))) fs.symlinkSync(process.execPath, path.join(bin, 'node'));
   const result = spawnSync(YTNOTES, [`https://www.youtube.com/watch?v=${label}`], {
     encoding: 'utf8',
     timeout: 20000,
     env: {
       ...process.env,
       HOME: tmp,
-      PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
+      PATH: `${bin}:/usr/bin:/bin`,
       TMPDIR: work,
       // The real roster lookup is its own tests below; keep it out of the rest.
       ATRIS_YTNOTES_ROSTER: '0',
