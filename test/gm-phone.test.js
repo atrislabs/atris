@@ -1423,6 +1423,10 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   // on every card, with or without a yes, previous and next are in the same spot, so a thumb never chases them
   for (const at of out.pager) assert.deepEqual(at, out.pager[0], `previous and next stay put: ${JSON.stringify(out.pager)}`);
   assert.equal(out.pager[0][0].y, out.pager[0][1].y, 'previous and next share one line');
+  // on a phone the job's one row stacks, one line per column: nothing scrolls sideways and every value is in view
+  assert.equal(out.row.scrolls_sideways, false, show);
+  assert.deepEqual(out.row.cells.map(c => c.col), ['done', 'work', 'member', 'role', 'status'], show);
+  assert.ok(out.row.cells.every(c => c.inside && !c.spills), show);
   assert.ok(out.moved_px <= 1, `the card stays in one spot (${out.moved_px}px)`);
   assert.equal(out.ghost_seen, true, 'a flip is the turn in place');
   assert.equal(out.swiped, '1 of 3', 'a sideways swipe flips');

@@ -1100,6 +1100,8 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
     await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') === 'deck'`, 'the deck', 8000);
     const first = await look(p);
     const firstAt = await spot();
+    // the job's row in its box: does the box scroll sideways, and is every value inside it
+    const row = await p.run("(function () { var g = document.querySelector('#bet .grid'); if (!g) return null; var gr = g.getBoundingClientRect(); return { scrolls_sideways: g.scrollWidth > g.clientWidth + 1, cells: Array.prototype.map.call(g.querySelectorAll('tbody td'), function (td) { var r = td.getBoundingClientRect(); return { col: td.getAttribute('data-col'), text: td.textContent, inside: r.left >= gr.left - 1 && r.right <= gr.right + 1, spills: td.scrollWidth > td.clientWidth + 1 }; }) }; })()");
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       const shot = await send('Page.captureScreenshot', { format: 'png' });
@@ -1163,6 +1165,7 @@ async function deckTrace({ chromePath = findChrome(), shots = null } = {}) {
       fresh_a: freshA.buttons,
       counts,
       pager,
+      row,
       moved_px: Math.round(moved * 10) / 10,
       ghost_seen: await p.run('window.__ghost'),
       swiped,
