@@ -70,6 +70,7 @@ const CASES = [
   { name: 'report', card: gmCard.report({ id: 'report:installs', title: 'how many installs this week?', body: 'last week was 1,511.' }) },
   { name: 'started', card: gmCard.started({ id: 'started:1', title: 'Write a getting started page for the phone', body: 'installs last week were 1,400.', line: 'builder has it.' }) },
   { name: 'reply', card: gmCard.reply({ id: 'bet-1~r1', base: trace.CARDS.b1, text: 'a short page that walks a new person from install to their first card, with one example. want it shorter?', suggestions: ['sounds good', 'make it shorter'] }) },
+  { name: 'reply-thread', card: gmCard.reply({ id: 'member~1~r2', base: gmCard.member({ id: 'member~1', name: 'builder', sentence: 'working on the getting started page.' }), text: 'i will start with the install step and send you the first draft tonight. want the example to be a school?', thread: [{ who: 'owner', text: 'take the readme first' }, { who: 'orb', text: 'on it. the readme first, then the page.' }], suggestions: ['yes, a school', 'no example'] }) },
   { name: 'team', card: gmCard.team({ id: 'team~1', rows: TEAM_ROWS }) },
   { name: 'member', card: gmCard.member({ id: 'member~1', name: 'builder', sentence: 'stopped: the getting started page, stopped 2 hours ago.' }) },
   { name: 'deck', card: gmCard.deck({ id: 'deck~1', at: 0, total: 3, card: DECK_JOB, columns: ['done', 'work', 'member', 'role', 'status'], job: { member: 'navigator', role: 'system navigator' } }) },

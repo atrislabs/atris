@@ -225,3 +225,28 @@ test('layout: the words inside every box start the same distance in: answers, id
   assert.deepEqual([...new Set(all.map(b => b.what.split(' ')[0]))].sort(), ['choice', 'field', 'option'], show);
   for (const b of all) assert.equal(b.inset, 17, show);
 });
+
+test('layout: outside the team table the cards use three type sizes: 17 for quiet lines, 20 for what you read or answer, and the title', { skip, timeout: 120000 }, async () => {
+  const probe = `(function () {
+    var sizes = {};
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (var t = walker.nextNode(); t; t = walker.nextNode()) {
+      var p = t.parentElement;
+      if (!String(t.textContent).trim() || !p || p.closest('.grid') || p.closest('[aria-hidden="true"]') || !p.closest('#bet, #foot, #line')) continue;
+      var s = getComputedStyle(p);
+      if (s.display === 'none' || s.visibility === 'hidden' || !p.getBoundingClientRect().width) continue;
+      var h = p.closest('#bet h1');
+      var px = parseFloat(s.fontSize);
+      sizes[h && !h.classList.contains('said') ? 'title' : String(px)] = true;
+    }
+    var i = document.querySelector('#bet .field input');
+    if (i) sizes[String(parseFloat(getComputedStyle(i).fontSize))] = true;
+    return Object.keys(sizes).sort();
+  })()`;
+  const rows = await layout({ chromePath: CHROME, viewports: ['phone'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: r.case, sizes: r.probe })), null, 1);
+  for (const r of rows) for (const size of r.probe) assert.ok(['17', '20', 'title'].includes(size), show);
+  // the reply with its conversation really shows turns, answers, links, and its words
+  const reply = rows.find(r => r.case === 'reply-thread');
+  assert.deepEqual(reply.probe, ['17', '20'], show);
+});
