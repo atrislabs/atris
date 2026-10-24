@@ -26,8 +26,11 @@ git -C "$W" log -1 --format=%B | grep -q "Co-authored-by: Atris" || { echo "REJE
 
 run() { # dir file tz -> exit code; output kept in $RUN_OUT
   local T; T=$(mktemp -d "$HOME_BASE/verify-home-XXXX") || return 99
-  RUN_OUT=$(cd "$1" && group_timeout 300 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$3" ATRIS_SKIP_UPDATE_CHECK=1 \
-    node --test "$2" 2>&1); local c=$?; rm -rf "$T"; return $c
+  # no $(...) around the run: a cancel to this script must reach the test's group
+  local back=$PWD out="$T.out"; cd "$1" || return 99
+  group_timeout 300 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$3" ATRIS_SKIP_UPDATE_CHECK=1 \
+    node --test "$2" > "$out" 2>&1; local c=$?; cd "$back"
+  RUN_OUT=$(cat "$out"); rm -rf "$T" "$out"; return $c
 }
 # a real assertion failure: exit 1, a failed test, an assertion error, and no load error
 failed_for_real() {
@@ -73,8 +76,10 @@ related=$(echo $related | tr ' ' '\n' | sort -u)
 # one runner call per time zone; node runs the files side by side
 for tz in Pacific/Kiritimati Pacific/Pago_Pago; do
   T=$(mktemp -d "$HOME_BASE/verify-home-XXXX") || { echo "REJECTED $N: no temp folder"; exit 1; }
-  out=$(cd "$W" && group_timeout 2400 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$tz" ATRIS_SKIP_UPDATE_CHECK=1 \
-    node --test $related 2>&1); c=$?; rm -rf "$T"
+  back=$PWD; cd "$W" || { echo "REJECTED $N: no fix copy"; exit 1; }
+  group_timeout 2400 env -i PATH="$PATH" HOME="$T" TMPDIR="${TMPDIR:-/tmp}" TZ="$tz" ATRIS_SKIP_UPDATE_CHECK=1 \
+    node --test $related > "$T.out" 2>&1; c=$?; cd "$back"
+  out=$(cat "$T.out"); rm -rf "$T" "$T.out"
   if [ $c -ne 0 ]; then
     bad=$(echo "$out" | sed -nE 's/^test at (test\/[^:]+):.*/\1/p' | sort -u | head -5 | tr '\n' ' ')
     echo "REJECTED $N: fails with the fix (TZ=$tz, exit $c): ${bad:-see runner output}"; exit 1
