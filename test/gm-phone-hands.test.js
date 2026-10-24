@@ -744,7 +744,7 @@ test('browser: the big orb\'s keyboard ring sits on the sphere, not around the s
   assert.ok(Math.abs(out.top - 0.08 * out.size) < 1 && Math.abs(out.left - 0.08 * out.size) < 1, show);
 });
 
-test('browser: the small orb\'s keyboard ring reads as a real 1px ring, not a hairline shrunk with the orb', { skip, timeout: 90000 }, async () => {
+test('browser: the small orb\'s keyboard ring reads as a real 2px ring, like every ring on the page, not a hairline shrunk with the orb', { skip, timeout: 90000 }, async () => {
   const fs = require('node:fs');
   const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
   const out = await trace.onPhone(desk, CHROME, async (p, send) => {
@@ -761,6 +761,6 @@ test('browser: the small orb\'s keyboard ring reads as a real 1px ring, not a ha
   const show = JSON.stringify(out, null, 1);
   assert.equal(out.focused, true, show);
   assert.ok(out.scale < 0.5, show);
-  // as seen on screen: a 1px ring 4px out from the orb
-  assert.ok(Math.abs(out.width - 1) < 0.1 && Math.abs(out.gap - 4) < 0.3, show);
+  // as seen on screen: a 2px ring 4px out from the orb, the width of every focus ring
+  assert.ok(Math.abs(out.width - 2) < 0.1 && Math.abs(out.gap - 4) < 0.3, show);
 });
