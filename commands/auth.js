@@ -1,4 +1,4 @@
-const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, preserveAgentClientLogin, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { AGENT_TOKEN_EXPIRED_DETAIL, assertSafeLoginWrite, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, preserveAgentClientLogin, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, getApiBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
@@ -939,6 +939,7 @@ function activeProfileName(credentials) {
 function writeGlobalCredentials(profile) {
   const kept = preserveAgentClientLogin();
   const credentialsPath = getCredentialsPath();
+  assertSafeLoginWrite(credentialsPath);
   fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
   try { fs.chmodSync(credentialsPath, 0o600); } catch {}
   return kept;
