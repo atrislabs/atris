@@ -36,11 +36,14 @@ function copyBack(into, from) {
 function makeModule(agentDir, mod) {
   const sealedDir = __dirname;
   const call = (fn, args) => {
+    const nonce = require('crypto').randomBytes(16).toString('hex');
     const r = spawnSync('/usr/bin/sandbox-exec', ['-p', profile(agentDir, sealedDir), process.execPath, path.join(sealedDir, 'runner.js'), agentDir, mod, fn], {
-      input: enc(args), encoding: 'utf8', timeout: 20000, cwd: agentDir, env: { PATH: '/usr/bin:/bin' },
+      input: `${nonce}\n${enc(args)}`, encoding: 'utf8', timeout: 20000, cwd: agentDir, env: { PATH: '/usr/bin:/bin' },
     });
-    if (r.status !== 0 || !r.stdout) throw new Error(`sealed call failed: ${(r.stderr || r.error || '').toString().slice(0, 200)}`);
-    const out = dec(r.stdout);
+    // only the line the runner marked with this call's nonce counts as the result
+    const at = (r.stdout || '').lastIndexOf(`\n${nonce}`);
+    if (r.status !== 0 || at < 0) throw new Error(`sealed call failed: ${(r.stderr || r.error || '').toString().slice(0, 200)}`);
+    const out = dec(r.stdout.slice(at + nonce.length + 1));
     args.forEach((a, i) => copyBack(a, out.args[i]));
     if (out.thrown) {
       // rebuild a built-in error only when the child saw a real one; else rethrow the plain value

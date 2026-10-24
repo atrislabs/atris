@@ -197,12 +197,16 @@ set -e
 ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SECS=$(( $(date +%s) - T0 ))
 
 rsync -a --exclude .git --exclude node_modules "$W/" "$OUT/workdir/"
+# pack the saved project on any exit, so even a failed run never leaves agent code
+# where the repo's own test run would find and run it
+trap '[ -d "$OUT/workdir" ] && tar -C "$OUT" -cf "$OUT/workdir.tar" workdir && rm -rf "$OUT/workdir"; rm -rf "$ROOT"' EXIT
 
 OUT="$OUT" ENGINE="$ENGINE" ARM="$ARM" N="$N" CODE="$CODE" SECS="$SECS" CAP="$CAP" \
 STARTED="$STARTED" ENDED="$ENDED" REPO="$REPO" PROMPT="$PROMPT" HARNESS_SHA="$HARNESS_SHA" node -e '
 const fs = require("fs"), crypto = require("crypto"), cp = require("child_process");
 const e = process.env, out = e.OUT;
-const sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex");
+// an agent may delete the rulebook; record that instead of crashing before the project is packed
+let sha = "missing"; try { sha = crypto.createHash("sha256").update(fs.readFileSync(out + "/workdir/atris/atris.md")).digest("hex"); } catch {}
 let model = e.FOUR_LINES_MODEL || ({ codex: "gpt-6.1-sol", agy: "gemini-4-argon-high", grok: "grok-4.7-build-fast" }[e.ENGINE] || null);
 for (const line of fs.readFileSync(out + "/transcript.log", "utf8").split("\n")) {
   try { const j = JSON.parse(line); if (j.type === "system" && j.subtype === "init") { model = j.model; break; } } catch {}
@@ -275,6 +279,4 @@ const meta = {
 };
 fs.writeFileSync(out + "/meta.json", JSON.stringify(meta, null, 2) + "\n");
 '
-# the saved project is packed, so the repo's own test run never finds and runs agent code
-tar -C "$OUT" -cf "$OUT/workdir.tar" workdir && rm -rf "$OUT/workdir"
 echo "$ENGINE $ARM-$N: exit $CODE in ${SECS}s -> ${OUT#$REPO/}"

@@ -7,7 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const { enc, dec } = require('./codec');
 const [dir, mod, fn] = process.argv.slice(2);
-const args = dec(fs.readFileSync(0, 'utf8'));
+// stdin is one line of nonce, then the encoded args; the nonce marks the real
+// result, so agent code that prints its own output and exits cannot pass for it
+const input = fs.readFileSync(0, 'utf8');
+const nl = input.indexOf('\n');
+const nonce = input.slice(0, nl);
+const args = dec(input.slice(nl + 1));
+const writeOut = process.stdout.write.bind(process.stdout);
 let out;
 try {
   const value = require(path.join(dir, mod))[fn](...args);
@@ -20,4 +26,5 @@ try {
     && Object.getPrototypeOf(error) === C.prototype;
   out = { args, thrown: builtin ? { builtin: error.name, message: String(error.message) } : { value: error } };
 }
-process.stdout.write(enc(out));
+const result = enc(out);
+writeOut(`\n${nonce}${result}`);
