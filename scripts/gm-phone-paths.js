@@ -146,7 +146,7 @@ function summarizePath(frames, from) {
   const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
   const out = { lava_step: 0, lava_size_step: 0, lava_speed_change: 0, sphere_step: 0, dots_step: 0, dots_speed_change: 0, title_step: 0, footer_seen_jump: 0, card_fade: 0, sphere_fade: 0, sphere_drop: 0, lava_fade: 0, line_fade: 0 };
   let prevLava = null, prevDots = null;
-  let still = 0, runStart = span.length ? span[0].t : 0;
+  let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0;
   const cuts = [];
   const lines = [];
   for (let i = 1; i < span.length; i++) {
@@ -158,7 +158,7 @@ function summarizePath(frames, from) {
       || Math.abs(seen(a) - seen(b)) > 0.003 || Boolean(a.box && b.box && !near(a.box.title, b.box.title))
       || Math.abs(a.ghost - b.ghost) > 0.003 || Math.abs(lineO(a) - lineO(b)) > 0.003;
     if (moved) runStart = b.t;
-    else if (b.busy && b.t - runStart > still) still = b.t - runStart;
+    else if (b.busy && b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
     if (a.lava && b.lava && !(a.lava.at === b.lava.at && near(a.lava.r, b.lava.r))) {
       const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms, kl = per(own);
       const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * kl;
@@ -179,9 +179,11 @@ function summarizePath(frames, from) {
     if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) out.footer_seen_jump = Math.max(out.footer_seen_jump, stepOf(a.foot.r, b.foot.r));
     // a cut: what is seen changes all at once. The card under a still copy of
     // itself (a turn in place) is covered, and so is a sphere under the lava.
+    // A stalled frame cannot tell a fade from a cut (a 0.2s fade moves half
+    // its way in a 100ms frame), so it is not read for one.
     const at = Math.round(a.t - from);
     const fade = (what, x, y, covered) => {
-      const d = covered ? 0 : Math.abs(x - y) * k;
+      const d = covered || ms > stall ? 0 : Math.abs(x - y) * k;
       if (d > 0.3) cuts.push({ what, at_ms: at, from: round(x), to: round(y) });
       return d;
     };
@@ -203,14 +205,23 @@ function summarizePath(frames, from) {
   for (let i = born + 1; born > 0 && i < span.length && span[i].t - span[born].t < 1500; i++) {
     if (span[i].orb.frame > span[i - 1].orb.frame && span[i].orb.mean * 16.7 / Math.max(8, span[i].orb.ms || 0) >= 0.5) formed = Math.min(span.length - 1, i + 1);
   }
+  // when the next card first shows, and when the lava last moved: a card that
+  // comes in as the lava eases into its spot overlaps it
+  const before = span.length ? span[0].box && span[0].box.card : null;
+  const cardIn = span.findIndex(f => f.box && f.box.card !== before && f.box.o > 0.02);
+  let lavaLast = -1;
+  for (let i = 1; i < span.length; i++) if (span[i].lava && span[i - 1].lava && !near(span[i].lava.r, span[i - 1].lava.r)) lavaLast = i;
   let clock = 0;
   for (let i = born + 1; formed > 0 && i <= formed; i++) if (span[i].orb.frame > span[i - 1].orb.frame) clock += span[i].orb.ms || 0;
   return {
     ms: span.length ? Math.round(span[span.length - 1].t - from) : null,
     pace_frame_ms: Math.round(pace),
     longest_still_moving_ms: Math.round(still),
+    longest_still_at_ms: stillAt,
     reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
     reform_clock_ms: formed < 0 ? null : Math.round(clock),
+    card_in_ms: cardIn < 0 ? null : Math.round(span[cardIn].t - from),
+    lava_still_ms: lavaLast < 0 ? null : Math.round(span[lavaLast].t - from),
     ...out,
     cuts: cuts.slice(0, 12),
     // the words the line under the orb showed while something was on its way

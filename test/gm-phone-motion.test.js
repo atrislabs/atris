@@ -39,6 +39,9 @@ test('browser: every orb path glides, with no jump, no cut, and no frozen moment
     // the card and the sphere fade, never vanish in a frame
     assert.ok(p.card_fade <= 0.3 && p.sphere_drop <= 0.3, show(p));
     if (p.lands) {
+      // the card fades up while the lava eases into its spot, one motion, never after it stops
+      // (before, the big orb's card came 82ms after the lava had stopped)
+      if (p.lava_still_ms != null) assert.ok(p.card_in_ms < p.lava_still_ms, show(p));
       // a second after the card lands: no dots drawn, no animation running
       assert.equal(p.after.orb_frames, 0, show(p));
       assert.deepEqual(p.after.running, [], show(p));
