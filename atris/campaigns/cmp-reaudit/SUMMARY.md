@@ -30,6 +30,32 @@ run that made it.
   of tests risks losing the breaks they catch.
 - The overnight check now refuses a test that leaves temp folders behind.
 
+## Bug sweep: tests that lock in a bug
+
+The sample showed that a test can catch breaks and still lock in a bug, so
+all 579 earlier tests got one narrow question (`bug-pin-prompt.txt`): does any
+assertion lock in a result a user or caller would not want?
+
+| step | result |
+|---|---|
+| asked of every test, never by the engine that wrote it | 40 flagged of 579 |
+| a third grader tried to refute each flag (`skeptic-prompt.txt`) | 21 confirmed, 19 refuted |
+| one Codex worker per bug: corrected test first, then the smallest fix (`fix-lane.sh`) | 21 of 21 fixed |
+| `verify-fix.sh`: corrected test fails on master, every test loading the changed module passes with the fix in two time zones | 21 of 21 |
+| blind review of all 21 by Claude | ship, with two narrow issues |
+| every test loading a changed module, on this Mac, two time zones | 178 of 178 files pass |
+
+The two issues: the soul file count fell to 0 on one dead link (fixed), and
+the task-title change would have changed saved task keys, so re-running
+business onboarding could add a duplicate task (reverted; the test now says
+why). Net: 20 product bugs fixed, about 3.5 percent of the earlier tests.
+
+Ones that mattered: a singular `payment` tag slipped past the money lane
+denial; `#needs_human` in a title was cut to `needs`, skipping the human
+hold; the autoland cron line broke on a folder with a space; journal
+rebuilds glued a section onto the next heading; calendar "today" meant the
+next 24 hours.
+
 ## Found on the way, not from the swarm
 
 The full suite on this Mac in the evening had 31 failures in 16 files. Most
@@ -43,6 +69,17 @@ inside TMPDIR). Real ones, fixed:
   holds claude, codex, and gemini on this Mac) was on PATH, and one kept the
   real home, where agy lives.
 - The idea login test only passed when HOME was the real home.
+
+A full suite run at UTC+14 (where the local date is a day ahead of UTC)
+found 11 more failures in 8 files: tests that computed expected dates in
+UTC while the product uses the local day. The same mismatch hits any zone
+east of UTC in the morning, Australia and New Zealand included. Fixed in
+the tests; 502 tests across those files pass in UTC+14, UTC-11, UTC, and
+Los Angeles.
+
+The task board test failed about one run in five: the server drops idle
+connections after five seconds and fetch reused a closing socket. Each
+request now asks for a fresh connection; 15 of 15 runs pass.
 
 `test/one-lap-runtime.test.js` is slow on this Mac (directory scans), the
 same on untouched master, and passes in CI.
