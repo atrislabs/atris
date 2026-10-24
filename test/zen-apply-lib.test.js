@@ -281,7 +281,7 @@ test('applyZen puts away a clean idle side copy but keeps it when it was just us
 
   assert.strictEqual(busy.ok, true);
   assert.deepStrictEqual(busy.done, []);
-  assert.deepStrictEqual(busy.left, ['1 side copy was used in the last 60 minutes']);
+  assert.deepStrictEqual(busy.left, ['1 side copy was used in the last 60 minutes, so it stays']);
   assert.ok(fs.existsSync(side));
 
   const idle = zenApply.applyZen({ cwd: checkout, now: later(), freshMinutes: 1 });
