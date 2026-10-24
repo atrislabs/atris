@@ -11,7 +11,14 @@ JOB=$(sed -n "${N}p" "$H/fix-jobs.jsonl")
 W="$REPO/../reaudit-fix-$N"
 mkdir -p "$H/fix-out"
 git -C "$REPO" fetch -q origin
-git -C "$REPO" worktree add -q -b "reaudit-fix-$N" "$W" origin/master 2>/dev/null || true
+if [ -e "$W" ]; then
+  # reuse only our own clean copy on our own branch
+  [ "$(git -C "$W" branch --show-current 2>/dev/null)" = "reaudit-fix-$N" ] && [ -z "$(git -C "$W" status --porcelain)" ] \
+    || { echo "lane $N exit 1 :: BLOCKED $W exists and is not a clean reaudit-fix-$N copy"; exit 1; }
+else
+  git -C "$REPO" worktree add -q -b "reaudit-fix-$N" "$W" origin/master || { echo "lane $N exit 1 :: BLOCKED could not make a copy"; exit 1; }
+fi
+rm -f "$H/fix-out/$N.txt"
 FILE=$(node -p "JSON.parse(process.argv[1]).file" "$JOB")
 CLAIM=$(node -p "JSON.parse(process.argv[1]).claim" "$JOB")
 CHECK=$(node -p "JSON.parse(process.argv[1]).check" "$JOB")
@@ -32,4 +39,6 @@ Never use --no-verify. If the commit is blocked, stop and report why. Do not pus
 Reply last with one line: FIXED <subject> or NOT A BUG <reason> or NO REPRO <reason> or BLOCKED <reason>."
 cd "$W" && env -u ANTHROPIC_API_KEY perl -e 'alarm shift; exec @ARGV' 1500 \
   codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox "$PROMPT" </dev/null > "$H/fix-out/$N.txt" 2>&1
-echo "lane $N exit $? :: $(grep -E '^(FIXED|NOT A BUG|NO REPRO|BLOCKED)' "$H/fix-out/$N.txt" | tail -1)"
+code=$?
+echo "lane $N exit $code :: $(grep -E '^(FIXED|NOT A BUG|NO REPRO|BLOCKED)' "$H/fix-out/$N.txt" | tail -1)"
+exit $code
