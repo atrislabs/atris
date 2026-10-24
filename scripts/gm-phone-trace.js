@@ -841,7 +841,9 @@ const TABLE_LOOK = `(function () {
   var grid = box.querySelector('.grid');
   var table = box.querySelector('table');
   if (!grid || !table) return null;
-  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
+  // each column by its key (the class on its header), and the words the owner reads over it
+  var heads = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.className; });
+  var words = Array.prototype.map.call(table.querySelectorAll('thead th'), function (n) { return n.textContent; });
   var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
   var spills = [], lines = { inner_right: 0, missing_right: 0, inner_bottom: 0, missing_bottom: 0 }, oneLine = [], moving = [];
   var widths = {};
@@ -870,6 +872,7 @@ const TABLE_LOOK = `(function () {
   var sizes = Array.prototype.map.call(table.querySelectorAll('th, td, td button'), function (n) { return parseFloat(getComputedStyle(n).fontSize); });
   return {
     heads: heads,
+    head_words: words,
     rows: rows.length,
     spills: spills,
     lines: lines,

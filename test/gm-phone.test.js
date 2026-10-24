@@ -533,7 +533,8 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   assert.match(script, /api\('\/act', \{ open: which, card_id: bet\.shown \? bet\.shown\.id : null \}\)/);
   assert.doesNotMatch(html, /id="team"/);
   // the table: a header cell for each column the card names, each cell as text
-  assert.match(script, /t\.columns\.forEach\(function \(c\) \{ head\.appendChild\(el\('th', c, c\)\)\.scope = 'col'; \}\);/);
+  // the header reads the card's words for the column; its class stays the column's key
+  assert.match(script, /t\.columns\.forEach\(function \(c, i\) \{ head\.appendChild\(el\('th', c, \(t\.heads && t\.heads\[i\]\) \|\| c\)\)\.scope = 'col'; \}\);/);
   assert.match(script, /\} else td\.textContent = cell;/);
   // an option with a cell is drawn in that cell; a tap anywhere on its row is the row's first option
   assert.match(script, /var o = mine\.filter\(function \(x\) \{ return x\.cell\.column === col; \}\)\[0\];/);
@@ -542,6 +543,8 @@ test('page: the team is a card: the footer asks the Mac for it, its table comes 
   // (a person has no engine to swap), and a way back
   const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page' }, { member: 'sam', role: 'owner', ovr: '..', engine: 'person', status: 'idle', sentence: 'idle' }] });
   assert.deepEqual(team.table.columns, ['member', 'role', 'ovr', 'engine', 'status']);
+  // the owner reads rating and model, never a game abbreviation or a system noun
+  assert.deepEqual(team.table.heads, ['member', 'role', 'rating', 'model', 'status']);
   assert.deepEqual(team.options.map(o => [o.id, o.cell ? o.cell.column : null]), [['talk:builder', 'member'], ['swap:builder', 'engine'], ['talk:sam', 'member'], ['back', null]]);
   assert.deepEqual(gmCard.cardProblems(team), []);
   // the hint names the two things to tap in plain words
@@ -1354,6 +1357,8 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     const look = out.look;
     assert.ok(look, `${at}: the table shows`);
     assert.deepEqual(look.heads, ['member', 'role', 'ovr', 'engine', 'status'], at);
+    // over the rating and the model the owner reads plain words
+    assert.deepEqual(look.head_words, ['member', 'role', 'rating', 'model', 'status'], at);
     assert.equal(look.rows, 5, at);
     // a line between every pair of columns and every pair of rows
     assert.deepEqual([look.lines.missing_right, look.lines.missing_bottom], [0, 0], at);
