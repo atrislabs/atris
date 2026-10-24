@@ -217,3 +217,42 @@ test('browser: when the Mac stops answering, a quiet line in the card says so wi
   // the slow ask: not every five seconds while it was down
   assert.ok(out.cleared_ms > 5500 && out.cleared_ms <= 16500, show);
 });
+
+// the phone's own back button: one step back in the browser's history
+async function backButton(send) {
+  const h = await send('Page.getNavigationHistory');
+  if (h.currentIndex < 1) return false;
+  await send('Page.navigateToHistoryEntry', { entryId: h.entries[h.currentIndex - 1].id });
+  return true;
+}
+
+test('browser: the back button steps back a card, then to the big orb, and only then leaves the page', { skip, timeout: 90000 }, async () => {
+  const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the getting started page' }], line: null, deck: false });
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: action === 'open:team' ? team : CARDS.b1 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team', 8000);
+    await wait(300);
+    await backButton(send);
+    await p.until(titled(CARDS.b1.title), 'the first card', 8000).catch(() => {});
+    await wait(300);
+    const one = await look(p);
+    await backButton(send);
+    await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000).catch(() => {});
+    await wait(300);
+    const two = await look(p);
+    const url = await p.run('location.pathname');
+    await backButton(send);
+    await wait(800);
+    const three = await p.run('location.href').catch(() => 'gone');
+    return { one, two, url, three, did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  assert.deepEqual([out.one.has_card, out.one.title], [true, CARDS.b1.title], show);
+  assert.deepEqual([out.two.has_card, out.two.busy], [false, false], show);
+  assert.equal(out.url, '/', show);
+  assert.deepEqual(out.did, ['open:team', 'back'], show);
+  // from the big orb the back button leaves, as it always did
+  assert.doesNotMatch(out.three, /127\.0\.0\.1/, show);
+});
