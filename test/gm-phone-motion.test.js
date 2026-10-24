@@ -210,3 +210,34 @@ test('browser: a first look for the card that stalls never leaves the page blank
   const held = await paths.openTrace({ chromePath: CHROME, first: CARDS.b1, stall: 'all', latency: 0 });
   assert.ok(held.opened_ms !== null && held.opened_ms < 1000 && held.card_at_end === 1 && held.footer_at_end === 1 && held.sphere_frames_before_card === 0, show(held));
 });
+
+// The first look's answer starts (a 200) but its words never finish, as on a
+// link that drops mid-answer; the 4 second call-off lands while it is read.
+const STALL_FIRST_BODY = `(function () {
+  var real = window.fetch, looks = 0;
+  window.fetch = function (url, opts) {
+    if (String(url).indexOf('/card') < 0 || (opts && opts.method === 'POST') || looks++ > 0) return real.apply(this, arguments);
+    var signal = opts && opts.signal;
+    var body = new ReadableStream({ start: function (c) {
+      c.enqueue(new TextEncoder().encode('{"ok":true,'));
+      if (signal) signal.addEventListener('abort', function () { c.error(new DOMException('the look was called off', 'AbortError')); });
+    } });
+    return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+  };
+})()`;
+
+test('browser: a first look whose answer is cut off mid-read is no answer, so the next look\'s card still shows', { skip, timeout: 90000 }, async () => {
+  const { onPhone, cardDesk, CARDS, PHONE } = require('../scripts/gm-phone-trace');
+  const { phonePage } = require('../lib/gm-phone-page');
+  const desk = cardDesk(CARDS.b1, async () => ({ card: CARDS.b1 }));
+  // the page comes without its card, as when the desk could not read one
+  const out = await onPhone(desk, CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: STALL_FIRST_BODY });
+    await send('Page.reload', {});
+    const shown = `document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)}`;
+    // the cut-off look is called off at 4s; the next look, about 5s on, has the card
+    await p.until(shown, 'the card', 15000).catch(() => {});
+    return p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), title: h ? h.textContent : null, opening: document.body.classList.contains('opening'), line: document.getElementById('line').textContent }; })()");
+  }, PHONE, { firstCard: false, page: nonce => phonePage(nonce, null) });
+  assert.deepEqual([out.has_card, out.title, out.opening], [true, CARDS.b1.title, false], show(out));
+});
