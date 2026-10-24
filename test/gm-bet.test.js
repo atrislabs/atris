@@ -893,6 +893,8 @@ const TITLES = [
   'Draft a changelog digest of merged pull requests for the weekly newsletter',
   'Build a sample workspace template that new users can clone in one command',
 ];
+// a title as the owner reads it: every card speaks lowercase
+const shown = t => t[0].toLowerCase() + t.slice(1);
 
 // A generator stub that hands out the titles in order. Each call waits on a
 // gate the test opens, so in-flight work can be counted.
@@ -1115,7 +1117,7 @@ test('calm line: words typed while the idea is written are a note for it: the sa
   await h.gen.releaseOne();
   assert.ok(h.d.card().queue > 0);
   const landed = await h.d.act({ orb: true, card_id: calm.id });
-  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[3]]);
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', shown(TITLES[3])]);
   assert.equal(h.d.view().queue, 2, 'the ideas written without the newest note are kept for later');
 });
 
@@ -1138,7 +1140,7 @@ test('calm line: an older calm line is stale, the same one under a new stamp is 
   h.tick(1001);
   assert.equal(h.d.card().queue, 1);
   const ready = await h.d.act({ orb: true, card_id: calm.id });
-  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', TITLES[0], 'your note is still being folded in. that version comes next.']);
+  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', shown(TITLES[0]), 'your note is still being folded in. that version comes next.']);
   // the noted one lands while that idea is up: nothing swaps under him
   await h.gen.releaseOne();
   assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
@@ -1148,7 +1150,7 @@ test('calm line: an older calm line is stale, the same one under a new stamp is 
   assert.equal(h.d.card().card.id, ready.body.card.id, 'the card on screen stays');
   // and it is the next card, on its own, not one of a choice
   const next = await h.d.act({ orb: true, card_id: ready.body.card.id });
-  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', TITLES[2], null]);
+  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', shown(TITLES[2]), null]);
 });
 
 test('calm line: a note on a wait that ends with nothing is kept, and try again drafts with it', async () => {
@@ -1192,7 +1194,7 @@ test('calm line: try again after a failed noted drafting joins the one already w
   assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'one drafting carries the note');
   // and that idea is the one that comes in
   const landed = await h.d.act({ orb: true, card_id: again.body.card.id });
-  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[2]]);
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', shown(TITLES[2])]);
   await h.gen.release();
   assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'and never a second one later');
 });
@@ -3757,6 +3759,18 @@ test('card contract: a swap from a swap card no longer on screen does nothing, a
   const done = await h.d.act({ card_id: forLauncher.id, option_id: fast(forLauncher) });
   assert.deepEqual(swaps, [['launcher', 'atris', 'fast', 'member']]);
   assert.deepEqual([done.body.card.kind, done.body.card.line], ['team', 'launcher now runs on atris fast.']);
+});
+
+test('card contract: every served card speaks lowercase: an idea or job title written with a capital starts lowercase, and API stays API', () => {
+  const idea = gmCard.enforce(gmCard.idea({ id: 'b1', title: 'Write the getting started page', body: 'installs last week were 1,400.' }));
+  assert.equal(idea.title, 'write the getting started page');
+  const api = gmCard.enforce(gmCard.idea({ id: 'b2', title: 'API docs for the phone page', body: 'installs last week were 1,400.' }));
+  assert.equal(api.title, 'API docs for the phone page');
+  const deck = gmCard.enforce(gmCard.deck({ id: 'deck~1', at: 0, total: 1, columns: ['work', 'member', 'role', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'working', time: 'about 3 hours left', rows: [{ work: 'Write the getting started page', member: 'builder', role: 'writes and tests the code', status: 'working' }] } }));
+  assert.equal(deck.title, 'write the getting started page');
+  assert.equal(deck.table.rows[0][0], 'write the getting started page');
+  const choice = gmCard.enforce(gmCard.choice({ id: 'c1', items: [{ id: 'b1', title: 'Record a demo video', why: 'more people try it.' }] }));
+  assert.equal(choice.options[0].label, 'record a demo video');
 });
 
 test('card contract: a swap list with no picks opens short too, the model in use first, and more models fills the same card with all of them', () => {

@@ -489,10 +489,12 @@ test('over http: a choice card picks through /act with the same checks', async (
     await new Promise(r => setTimeout(r, 30));
     const c = (await post({ orb: true })).json.card;
     assert.equal(c.kind, 'choice');
-    assert.deepEqual(c.options.map(o => o.label), titles);
+    // the owner reads every idea lowercase, like the cards around it
+    const shown = titles.map(x => x[0].toLowerCase() + x.slice(1));
+    assert.deepEqual(c.options.map(o => o.label), shown);
     assert.equal((await post({ card_id: c.id, option_id: c.options[0].id }, { token: 'nope' })).status, 403);
     const picked = await post({ card_id: c.id, option_id: c.options[0].id });
-    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', titles[0]]);
+    assert.deepEqual([picked.status, picked.json.card.kind, picked.json.card.title], [200, 'idea', shown[0]]);
     assert.equal((await post({ card_id: c.id, option_id: c.options[1].id })).status, 409, 'the choice is gone once one is picked');
   } finally {
     await h.close();
@@ -1618,8 +1620,8 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
     check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
     steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
   });
-  const IDEA = idea('Write a getting started page for atris gm phone with a 30 second screen recording');
-  const NOTED = idea('Write a getting started page for schools that try atris gm phone in class');
+  const IDEA = idea('write a getting started page for atris gm phone with a 30 second screen recording');
+  const NOTED = idea('write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
   const FOLDED = 'got it, i\'ll fold that in.';
   const runs = [];
