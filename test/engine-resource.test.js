@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { localDay } = require('../lib/local-day');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -2478,8 +2479,7 @@ test('the youtube digest records paired readings and names the cause of a SIGKIL
   try {
     fs.mkdirSync(bin);
     fs.mkdirSync(path.join(root, 'atris', 'wiki', 'briefs'), { recursive: true });
-    const now = new Date(); // briefs are dated by the local calendar day
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const today = localDay();
     fs.writeFileSync(path.join(root, 'atris', 'wiki', 'briefs', 'youtube-abc.md'), `source: https://www.youtube.com/watch?v=abc\ndate: ${today}\n\n# sleds and dogs\n\nthe dog sets the pace.\n`);
     engine('echo "# what this week\'s videos changed"; echo "- the dog sets the pace (atris/wiki/briefs/youtube-abc.md)"');
     const ok = digest();

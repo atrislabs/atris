@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { localDay } = require('../lib/local-day');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -112,9 +113,7 @@ test('evaluateKeepRule: superset keeps, regression and verify failure revert', (
 test('same-day gate no-ops and --force overrides', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const now = new Date(); // the gate compares against the local calendar day
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    daily.writeDailyState(repo, { last_run_date: today, history: [] });
+    daily.writeDailyState(repo, { last_run_date: localDay(), history: [] });
     const gated = runCli(['experiments', 'daily', '--json'], repo);
     assert.equal(gated.status, 0, gated.stderr || gated.stdout);
     const gatedPayload = JSON.parse(gated.stdout);

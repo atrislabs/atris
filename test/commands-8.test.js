@@ -1,8 +1,7 @@
 // Part 8 of 8 of the commands suite, split so node --test runs them in parallel.
 // Shared imports and fixture helpers live in test/helpers/commands-fixtures.js.
 const test = require('node:test');
-// business files are named by the local calendar day (commands/business.js localDay)
-const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const { localDay } = require('../lib/local-day');
 const {
   assert,
   fs,
