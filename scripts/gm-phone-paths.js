@@ -363,7 +363,39 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
   }
 }
 
-module.exports = { pathsTrace, summarizePath, openTrace, PATHS, PATH_RECORDER };
+// ---- a turned phone and a resized window ---------------------------------------------------
+
+// The page at rest at one size, then at another: where the small orb sits
+// against the middle of the screen with a card up, and whether the big orb's
+// canvas holds as many pixels as it is shown at with no card.
+const AT_REST = `(function () {
+  var l = document.getElementById('lava').getBoundingClientRect(), c = document.getElementById('orb'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  return { vw: document.documentElement.clientWidth, orb_off_center_px: Math.round(Math.abs(l.left + l.width / 2 - document.documentElement.clientWidth / 2) * 10) / 10, canvas_shown: [c.clientWidth, c.clientHeight], canvas_pixels: [c.width, c.height], canvas_sharp: Math.abs(c.width - c.clientWidth * dpr) <= 1 && Math.abs(c.height - c.clientHeight * dpr) <= 1 };
+})()`;
+
+async function resizeTrace({ chromePath = findChrome(), first = CARDS.b1, from = PHONE, to = { ...PHONE, width: PHONE.height, height: PHONE.width }, page = phonePage } = {}) {
+  if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
+  const server = await serve(cardDesk(first, async (a, { card }) => ({ card })), page);
+  const chrome = await launch(chromePath);
+  try {
+    const { send } = chrome;
+    const p = driver(send);
+    await send('Emulation.setDeviceMetricsOverride', from);
+    await send('Page.enable');
+    await send('Page.navigate', { url: server.url });
+    await p.until(`document.readyState === 'complete' && (${READY})`, 'the page at rest');
+    await wait(400);
+    const before = await p.run(AT_REST);
+    await send('Emulation.setDeviceMetricsOverride', to);
+    await wait(700);
+    return { first: first ? first.kind : 'big orb', before, after: await p.run(AT_REST) };
+  } finally {
+    chrome.close();
+    await server.close();
+  }
+}
+
+module.exports = { pathsTrace, summarizePath, openTrace, resizeTrace, PATHS, PATH_RECORDER };
 
 if (require.main === module) {
   const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };

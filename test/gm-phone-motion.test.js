@@ -109,3 +109,15 @@ test('browser: a page that opens on a card shows the card fading in, never the b
   const orb = await paths.openTrace({ chromePath: CHROME, first: null, latency: 250 });
   assert.ok(orb.dots_drawn > 20 && orb.line_at_end === 1 && orb.footer_seen_jump === 0, show(orb));
 });
+
+test('browser: turning the phone keeps the small orb centred over the card, and a resized window redraws the big orb sharp', { skip, timeout: 90000 }, async () => {
+  const { LAPTOP } = require('../scripts/gm-phone-trace');
+  // 390x844 turned to 844x390 with a card up: before, the small orb stayed 227px left of centre
+  const turned = await paths.resizeTrace({ chromePath: CHROME });
+  assert.equal(turned.before.orb_off_center_px, 0, show(turned));
+  assert.ok(turned.after.vw === 844 && turned.after.orb_off_center_px <= 1, show(turned));
+  // a laptop window made smaller: before, a 1040px canvas was shown at 432px
+  const smaller = await paths.resizeTrace({ chromePath: CHROME, first: null, from: { ...LAPTOP, deviceScaleFactor: 2 }, to: { width: 900, height: 600, deviceScaleFactor: 2, mobile: false } });
+  assert.ok(smaller.before.canvas_sharp && smaller.after.canvas_sharp, show(smaller));
+  assert.notDeepEqual(smaller.after.canvas_shown, smaller.before.canvas_shown, show(smaller));
+});
