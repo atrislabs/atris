@@ -511,7 +511,9 @@ test('page: one renderer: draw(card) is the only place a card is drawn, and ever
   // a draw starts from nothing, so nothing from the card before survives it
   assert.match(script, /function draw\(card\) \{\n\s+var b = box\(\);\n\s+b\.textContent = '';/);
   // the buttons come only from the card's options and its box
-  assert.match(script, /var rest = card\.options\.filter\(function \(o\) \{ return !o\.cell; \}\);\n\s+var quiet = function \(o\) \{ return !o\.style \|\| o\.style === 'quiet'; \};/);
+  assert.match(script, /var rest = card\.options\.filter\(function \(o\) \{ return !o\.cell && flips\.indexOf\(o\) < 0; \}\);\n\s+var quiet = function \(o\) \{ return !o\.style \|\| o\.style === 'quiet'; \};/);
+  // a deck card's previous and next are the card's own options too, drawn at the top beside its place
+  assert.match(script, /var flips = card\.count \? card\.options\.filter\(function \(o\) \{ return o\.action === 'flip' && !o\.cell; \}\) : \[\];/);
   assert.match(script, /if \(card\.input\) b\.appendChild\(inputLine\(card\.input\)\);/);
   // an idea in a choice: a big title and one plain line of why
   assert.match(script, /btn\.appendChild\(el\('span', 't', o\.label\)\);\n\s+if \(o\.detail\) btn\.appendChild\(el\('span', 'w', o\.detail\)\);/);
@@ -787,8 +789,8 @@ test('phone page: the job deck is cards like any other, flipped by the arrows or
   // a deck card: its place, its status, its row, the yes bound to its request, and a box to its member
   const d = gmCard.deck({ id: 'deck~1', at: 0, total: 2, columns: ['done', 'work', 'member', 'role', 'ovr', 'engine', 'status'], card: { job_id: 'm1', mission_id: 'm1', member: 'builder', label: 'needs you', time: 'waiting 5 minutes', rows: [{ done: 'not yet', work: 'the try page', member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'needs you' }], yes: { key: 'm1:step-3:abc', hash: 'abc', what: 'ok to publish the page?', why: 'builder is waiting on your yes for this.' } } });
   assert.deepEqual([d.count, d.label], ['1 of 2', 'needs you']);
-  assert.deepEqual(d.options.map(o => o.label), ['yes', 'no', 'not now', 'previous', 'the whole team', 'next']);
-  assert.deepEqual(d.options[0].binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
+  assert.deepEqual(d.options.map(o => o.label), ['previous', 'next', 'yes', 'no', 'not now', 'the whole team']);
+  assert.deepEqual(d.options.find(o => o.id === 'yes').binds, { job: 'm1', key: 'm1:step-3:abc', hash: 'abc' });
   assert.equal(d.input.action, 'talk');
   assert.deepEqual(gmCard.cardProblems(d), []);
   // no pulsing or looping anywhere
