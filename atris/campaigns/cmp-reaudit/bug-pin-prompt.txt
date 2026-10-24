@@ -1,0 +1,10 @@
+You are checking one automated test that an AI wrote and that was merged into this repository today. You did not write it.
+
+Test file: {{FILE}}
+It is meant to check: {{TARGET}}{{FN}}
+{{NOTE}}
+
+Read the test and the code it checks (read only; do not edit or run anything). Answer one question: does any assertion lock in behavior that is a bug, meaning a result a user or caller would not want and the code's own comments, names, or callers do not intend (for example an off-by-one, a crash treated as a feature, a wrong default)? Deliberate design choices, even unusual ones, are not bugs. Check the code's comments and callers before calling something a bug.
+
+Answer with exactly one line of JSON and nothing else:
+{"verdict":"pins-bug|fine","reason":"one plain sentence naming the assertion and why"}
