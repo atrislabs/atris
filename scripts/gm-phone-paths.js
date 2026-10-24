@@ -364,7 +364,8 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
     await send('Page.navigate', { url: server.url });
     if (stall) await p.until("document.readyState === 'complete' && !document.body.classList.contains('opening')", 'the page to open', 6000).catch(() => {});
     if (flipAt != null) {
-      await p.until("document.body.classList.contains('has-card') && Number(getComputedStyle(document.getElementById('bet')).opacity) > 0", 'the card showing', 15000);
+      // polled from the moment the page is asked for: until its body is parsed it reads as not yet
+      await p.until("Boolean(document.body) && document.body.classList.contains('has-card') && Boolean(document.getElementById('bet')) && Number(getComputedStyle(document.getElementById('bet')).opacity) > 0", 'the card showing', 15000);
       await wait(flipAt);
       await p.key('ArrowRight', 39);
       await p.until("!document.body.hasAttribute('data-busy') && !document.querySelector('.bet.ghost')", 'the flip', 8000);

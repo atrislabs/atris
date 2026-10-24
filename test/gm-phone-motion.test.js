@@ -234,7 +234,7 @@ test('browser: a first look whose answer is cut off mid-read is no answer, so th
   const out = await onPhone(desk, CHROME, async (p, send) => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: STALL_FIRST_BODY });
     await send('Page.reload', {});
-    const shown = `document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)}`;
+    const shown = `document.readyState === 'complete' && document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && document.querySelector('#bet h1').textContent === ${JSON.stringify(CARDS.b1.title)}`;
     // the cut-off look is called off at 4s; the next look, about 5s on, has the card
     await p.until(shown, 'the card', 15000).catch(() => {});
     return p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), title: h ? h.textContent : null, opening: document.body.classList.contains('opening'), line: document.getElementById('line').textContent }; })()");
