@@ -961,6 +961,60 @@ test('ytnotes auto writer skips the Antigravity editor launcher named agy', (t) 
   assert.match(result.stderr, /^notes by Haiku$/m);
 });
 
+// uutils head (Ubuntu 26.04) makes one more call on the pipe after the bytes
+// land, to find the end of the file. When grep -q has already matched and quit,
+// that call dies of SIGPIPE. This head does the same, only always.
+test('ytnotes still skips the editor launcher when head touches the pipe after grep quits', (t) => {
+  const launcher = [
+    '#!/usr/bin/env bash',
+    'if [ -n "$VSCODE_IPC_HOOK_CLI" ]; then exit 0; fi',
+    'echo "Warning: \'p\' is not in the list of known options" >&2',
+    '',
+  ].join('\n');
+  const lateHead = [
+    '#!/bin/sh',
+    '/usr/bin/head "$@" || exit',
+    'sleep 0.3',
+    'printf "\\n"',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes(t, 'auto7', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: launcher, head: lateHead },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto7.md'), 'utf8'), /# No Caption Talk/);
+  assert.doesNotMatch(result.stderr, /Gemini did not answer/);
+  assert.match(result.stderr, /^notes by Haiku$/m);
+});
+
+// An answer longer than the pipe buffer made `printf | grep -q` die of SIGPIPE
+// every time, so a real answer read as "did not answer".
+test('ytnotes auto writer keeps a Gemini answer longer than the pipe buffer', (t) => {
+  const longAnswer = [
+    '#!/bin/sh',
+    'if [ "$1" = models ]; then echo "model list"; exit 0; fi',
+    'cat > /dev/null',
+    'printf "%s\\n" "# From Gemini" ""',
+    'i=0; while [ $i -lt 4000 ]; do echo "Spoken only in audio, line $i of a long answer."; i=$((i + 1)); done',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes(t, 'auto8', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: longAnswer },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto8.md'), 'utf8'), /# From Gemini/);
+  assert.doesNotMatch(result.stderr, /Haiku instead/);
+  assert.match(result.stderr, /^notes by Gemini$/m);
+});
+
 test('ytnotes auto writer skips a signed-out agy without running it', (t) => {
   const signedOut = [
     '#!/bin/sh',
