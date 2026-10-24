@@ -185,8 +185,10 @@ async function layout({ chromePath = trace.findChrome(), cases = CASES, viewport
     const { send } = chrome;
     await send('Page.enable');
     if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const name of viewports) {
-      const v = VIEWPORTS[name];
+    for (const at of viewports) {
+      // a name from VIEWPORTS, or a size of its own ({ name, width, height, ... })
+      const v = typeof at === 'string' ? VIEWPORTS[at] : at;
+      const name = typeof at === 'string' ? at : at.name;
       await send('Emulation.setDeviceMetricsOverride', { width: v.width, height: v.height, deviceScaleFactor: v.deviceScaleFactor, mobile: v.mobile });
       const inset = notch && v.notch ? { top: 0, bottom: 0, left: 0, right: 0, ...v.notch } : { top: 0, bottom: 0, left: 0, right: 0 };
       let safeArea = false;

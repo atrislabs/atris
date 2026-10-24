@@ -159,3 +159,17 @@ test('layout: no title, body, or label leaves one word alone on its last line, o
   assert.deepEqual(alone, []);
   assert.ok(wrapped >= 40, String(wrapped));
 });
+
+test('layout: the calm line\'s open box shows its whole hint on every phone, centered where there is room and from the left on narrow ones', { skip, timeout: 90000 }, async () => {
+  const probe = `(function () {
+    var i = document.querySelector('#bet .field input');
+    var s = getComputedStyle(i), c = document.createElement('canvas').getContext('2d');
+    c.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
+    return { hint_px: c.measureText(i.placeholder).width, room_px: i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight), align: s.textAlign };
+  })()`;
+  const mini = { name: 'mini', width: 375, height: 667, deviceScaleFactor: 2, mobile: true, notch: null };
+  const rows = await layout({ chromePath: CHROME, cases: only('wait'), viewports: ['small', mini, 'phone', 'big', 'laptop'], probe });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);
+  for (const r of rows) assert.ok(r.probe.room_px >= r.probe.hint_px, show);
+  assert.deepEqual(rows.map(r => r.probe.align), ['left', 'left', 'center', 'center', 'center'], show);
+});
