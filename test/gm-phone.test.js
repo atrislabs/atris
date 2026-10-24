@@ -1647,6 +1647,8 @@ test('browser: the team opened from the big orb closes back to the big orb, and 
   assert.deepEqual([out.tapped.has_card, out.tapped.asked], [true, 1], show);
   // opened from a card, Esc goes back to a card
   assert.deepEqual([out.fromCard.has_card, out.fromCard.kind], [true, 'idea'], show);
+  // from the big orb, to a talk card and back through the footer: Esc still goes to the big orb
+  assert.deepEqual([out.viaTalk.has_card, out.viaTalk.line], [false, 'tap to think'], show);
 });
 
 test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {

@@ -751,10 +751,11 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
 async function teamFromHomeTrace({ chromePath = findChrome() } = {}) {
   let asked = 0;
   let n = 1;
-  const desk = cardDesk(CARDS.b1, async (action) => {
+  const desk = cardDesk(CARDS.b1, async (action, { option }) => {
     n += 1;
     if (action === 'orb') { asked += 1; return { card: CARDS.b2 }; }
     if (action === 'open:team') return { card: teamCard(TEAM_ROWS, n) };
+    if (action === 'member') return { card: memberCard(option.binds.member, n) };
     if (action === 'back') return { card: CARDS.b1 };
     return { card: CARDS.b1 };
   });
@@ -782,7 +783,22 @@ async function teamFromHomeTrace({ chromePath = findChrome() } = {}) {
     await wait(300);
     await p.until(`${SETTLED} && document.getElementById('bet').getAttribute('data-kind') !== 'team'`, 'the card again', 8000).catch(() => {});
     const fromCard = await place();
-    return { team, closed, tapped, fromCard };
+    // from the big orb again: the team, a member's talk card, back through the footer, then Esc
+    await p.tap('#lava');
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb, once more', 6000);
+    await wait(500);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team, once more', 8000);
+    await p.tap('#bet tbody td.member button');
+    await p.until(titled('builder'), 'the talk card', 8000);
+    await p.tap('#working');
+    await p.until(titled('the team'), 'the team through the footer', 8000);
+    await esc(send);
+    await wait(300);
+    await p.until(`${rest} && !document.body.classList.contains('has-card')`, 'the big orb after the talk card', 6000).catch(() => {});
+    await wait(600);
+    const viaTalk = await place();
+    return { team, closed, tapped, fromCard, viaTalk };
   });
 }
 
