@@ -250,7 +250,7 @@ test('scanChatLogs keeps home runs out until global is set', () => {
     assert.strictEqual(globalReport.summary.sessions, 2);
     assert.strictEqual(globalReport.summary.ax_sessions, 2);
     assert.strictEqual(globalReport.summary.high_findings, 1);
-    assert.deepStrictEqual(globalReport.sources.ax_dirs, [runs]);
+    assert.deepStrictEqual(globalReport.sources.ax_dirs, [runs, homeRuns]);
     assert.strictEqual(globalReport.sessions[0].last_user, 'home prompt only');
     assert.strictEqual(globalReport.sessions[0].exit_code, 3);
     assert.strictEqual(globalReport.sessions[0].path, homeLog);
