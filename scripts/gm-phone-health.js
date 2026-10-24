@@ -348,11 +348,23 @@ const FOCUSED = `(function () {
   var n = document.activeElement;
   if (!n || n === document.body) return null;
   var s = getComputedStyle(n);
+  // (s may become the holder's ::after below)
   var scale = 1;
   for (var m = n; m && m.nodeType === 1; m = m.parentElement) {
     var t = getComputedStyle(m).transform;
     var k = t && t !== 'none' ? t.match(/matrix\\(([^,]+),\\s*([^,]+)/) : null;
     if (k) scale *= Math.hypot(Number(k[1]), Number(k[2]));
+  }
+  var b = n.getBoundingClientRect();
+  // a ring drawn for it by its holder instead (a ::after on its parent), as the big orb's can be
+  if (s.outlineStyle === 'none' && n.parentElement) {
+    var a = getComputedStyle(n.parentElement, '::after');
+    if (a.content && a.content !== 'none' && a.outlineStyle !== 'none') {
+      var pb = n.parentElement.getBoundingClientRect();
+      var px = function (v) { return parseFloat(v) || 0; };
+      b = { left: pb.left + px(a.left), right: pb.right - px(a.right), top: pb.top + px(a.top), bottom: pb.bottom - px(a.bottom) };
+      s = a;
+    }
   }
   var width = s.outlineStyle === 'none' ? 0 : parseFloat(s.outlineWidth) || 0;
   var out = ((parseFloat(s.outlineOffset) || 0) + width) * scale;
@@ -368,7 +380,6 @@ const FOCUSED = `(function () {
     if (!rs.length) return o.getBoundingClientRect();
     return { left: Math.min.apply(null, rs.map(function (x) { return x.left; })), right: Math.max.apply(null, rs.map(function (x) { return x.right; })), top: Math.min.apply(null, rs.map(function (x) { return x.top; })), bottom: Math.max.apply(null, rs.map(function (x) { return x.bottom; })), width: 1, height: 1 };
   };
-  var b = n.getBoundingClientRect();
   var ring = { left: b.left - out, right: b.right + out, top: b.top - out, bottom: b.bottom + out };
   var room = Infinity, nearest = null;
   Array.prototype.forEach.call(document.querySelectorAll('button, [tabindex], input'), function (o) {
