@@ -93,6 +93,17 @@ const PROBE = `(function () {
     if (++n < ${FRAMES}) requestAnimationFrame(look);
   }
   document.addEventListener('DOMContentLoaded', function () { requestAnimationFrame(look); });
+  // before the page's own script has run (its bytes still on the way): every
+  // frame where some of its words already show without the dots or the card
+  P.early = { frames: 0, words: 0, seen: [] };
+  (function before() {
+    var canvas = document.getElementById('orb');
+    if (canvas && canvas.__orb) return;
+    P.early.frames += 1;
+    var shown = ['line', 'foot'].map(function (id) { var n = document.getElementById(id); return n && n.textContent.trim() && n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden' ? n.textContent.trim() : null; }).filter(Boolean);
+    if (shown.length) { P.early.words += 1; if (P.early.seen.length < 3) P.early.seen.push(shown.join(' / ')); }
+    requestAnimationFrame(before);
+  })();
 })()`;
 
 // ---- the page, opened fresh with the probe in it ---------------------------------------
@@ -159,7 +170,7 @@ async function launchOnce(chromePath) {
 // moment. latency: ms each request waits on the way (a phone on wifi); cpu:
 // how many times slower the cpu runs (1 is this machine). fn(p, send, said,
 // server) drives it; said is every console line so far.
-async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, cpu = 1, page = phonePage } = {}) {
+async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, kbps = 0, cpu = 1, page = phonePage } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const server = await serveDesk(desk, page);
   let chrome = null;
@@ -174,7 +185,7 @@ async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = 
     await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride', viewport);
     if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-    if (latency) await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: -1, uploadThroughput: -1 });
+    if (latency || kbps) await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: kbps ? (kbps * 1024) / 8 : -1, uploadThroughput: -1 });
     if (cpu > 1) await send('Emulation.setCPUThrottlingRate', { rate: cpu });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: PROBE });
     await send('Page.navigate', { url: server.url });
@@ -223,7 +234,7 @@ const titled = t => `${AT_REST} && Boolean(document.querySelector('#bet h1')) &&
 // first_paint_ms: when anything was first painted; first_frame: what the
 // first frame showed (the card, or the big orb with the dots); orb_frames_
 // before_card: frames that showed the big orb while the Mac had a card up.
-async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, ...opts } = {}) {
+async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, kbps = 0, cpu = 1, ...opts } = {}) {
   const desk = trace.cardDesk(card, async () => ({ card }));
   return openPage(desk, async (p, send, said) => {
     const ready = card ? "document.body.classList.contains('has-card') && !document.body.hasAttribute('data-busy')" : "document.getElementById('orb').__orb.frame > 2";
@@ -231,25 +242,33 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, cpu = 1, 
     // long enough for the probe's frames to run out, so the frame pace reads a full second and more
     await wait(card ? 600 : 2200);
     const h = await p.run('window.__health');
-    const bytesAt = await p.run("performance.getEntriesByType('navigation')[0].responseEnd");
+    const nav = await p.run("(function () { var n = performance.getEntriesByType('navigation')[0]; return { end: n.responseEnd, sent: n.encodedBodySize, size: n.decodedBodySize }; })()");
+    const bytesAt = nav.end;
     const fcp = h.paints.find(x => x.name === 'first-contentful-paint');
     const shown = h.frames;
     const first = shown[0] || null;
     const cardAt = shown.findIndex(f => f.card);
     return {
       latency_ms: latency,
+      kbps,
       cpu,
+      // the page as it came over the link, and as it is once unpacked
+      page_bytes_sent: nav.sent,
+      page_bytes: nav.size,
       first_paint_ms: fcp ? Math.round(fcp.t) : null,
       // from the page's last byte to its first paint: the page's own work, with the link taken out
       paint_after_bytes_ms: fcp ? Math.round(fcp.t - bytesAt) : null,
       first_frame: first ? { card: first.card, title: first.title, dots: first.dots, line: first.line } : null,
       orb_frames_before_card: card ? (cardAt < 0 ? shown.length : cardAt) : null,
+      // frames painted with the page's words up before its script ran: the line and the footer with no dots
+      words_before_script: h.early.words,
+      words_seen_before_script: h.early.seen,
       // the big orb's pace once it is up: the middle gap between its frames (16.7 is every frame at 60 a second)
       orb_frame_ms: card ? null : (() => { const g = shown.slice(1).map((f, i) => f.t - shown[i].t).sort((a, b) => a - b); return g.length ? Math.round(g[Math.floor(g.length / 2)] * 10) / 10 : null; })(),
       layout_shift: Math.round(h.shifts.reduce((n, s) => n + s.value, 0) * 10000) / 10000,
       console: said,
     };
-  }, { latency, cpu, ...opts });
+  }, { latency, kbps, cpu, ...opts });
 }
 
 // ---- the head: what a phone reads to put the page on its home screen ----------------------
@@ -666,6 +685,8 @@ if (require.main === module) {
     (async () => {
       const out = [];
       for (const card of [trace.CARDS.b1, null]) for (const cpu of [1, 4]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, cpu })) });
+      // a weak wifi at the far end of the house
+      for (const card of [trace.CARDS.b1, null]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, latency: 60, kbps: 1000 })) });
       print(out);
     })().catch(fail);
   } else if (process.argv.includes('--head')) {

@@ -35,6 +35,7 @@ async function serveDesk(desk) {
   const base = `127.0.0.1:${server.address().port}`;
   hosts.push(base);
   return {
+    url: p => `http://${base}${p}${p.includes('?') ? '&' : '?'}t=${TOKEN}`,
     get: async (p) => { const r = await fetch(`http://${base}${p}${p.includes('?') ? '&' : '?'}t=${TOKEN}`); return { status: r.status, headers: r.headers, text: await r.text() }; },
     close: () => new Promise(r => { server.closeAllConnections(); server.close(r); fs.rmSync(dir, { recursive: true, force: true }); }),
   };
@@ -91,6 +92,40 @@ test('browser: while the Mac sleeps the page has one ask for the card out at a t
   assert.equal(out.tap_reached_mac, true, show);
   assert.equal(out.next_card, trace.CARDS.b2.title, show);
   assert.deepEqual(out.console, [], show);
+});
+
+test('over http: the page goes over the link packed when the phone takes it, about a third of its bytes, and unpacks to the same page', async () => {
+  const zlib = require('node:zlib');
+  const s = await serveDesk(trace.cardDesk(trace.CARDS.b1, async () => ({ card: trace.CARDS.b1 })));
+  try {
+    const raw = (opts) => new Promise((resolve, reject) => {
+      const u = new URL(s.url('/'));
+      http.get({ host: u.hostname, port: u.port, path: u.pathname + u.search, headers: opts }, (res) => {
+        const parts = [];
+        res.on('data', d => parts.push(d));
+        res.on('end', () => resolve({ headers: res.headers, body: Buffer.concat(parts) }));
+      }).on('error', reject);
+    });
+    const plain = await raw({});
+    assert.equal(plain.headers['content-encoding'], undefined, 'a client that does not ask gets it plain');
+    const packed = await raw({ 'accept-encoding': 'gzip, deflate, br' });
+    assert.equal(packed.headers['content-encoding'], 'gzip');
+    assert.match(packed.headers.vary, /accept-encoding/);
+    const html = zlib.gunzipSync(packed.body).toString('utf8');
+    // the same page but for its nonce
+    const same = t => t.replace(/nonce="[^"]*"/g, 'nonce=N');
+    assert.equal(same(html), same(plain.body.toString('utf8')));
+    assert.ok(packed.body.length < plain.body.length * 0.45, `${packed.body.length} of ${plain.body.length}`);
+  } finally {
+    await s.close();
+  }
+});
+
+test('browser: on a weak wifi the page comes over packed, under 45KB for its 107KB', browser, async () => {
+  const out = await health.firstPaintTrace({ chromePath: CHROME, latency: 60, kbps: 1000 });
+  assert.ok(out.page_bytes_sent < 45000, JSON.stringify(out));
+  assert.ok(out.page_bytes > 90000, JSON.stringify(out));
+  assert.deepEqual(out.console, []);
 });
 
 // ---- the home screen ------------------------------------------------------------------
