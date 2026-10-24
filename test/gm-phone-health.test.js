@@ -177,3 +177,9 @@ test('browser: a screen reader hears every card as it lands: the question, the i
   }
   assert.deepEqual(out.console.filter(l => !refusedAct(l)), [], show);
 });
+
+test('browser: when a tap does not go through, its one line why is a status, so a screen reader hears it as it appears', browser, async () => {
+  const out = await health.readerTrace({ chromePath: CHROME });
+  assert.equal(out.refused.text, 'that did not go through. try again.', JSON.stringify(out.refused));
+  assert.equal(out.refused.role, 'status', JSON.stringify(out.refused));
+});
