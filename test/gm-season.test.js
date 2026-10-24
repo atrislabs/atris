@@ -1369,8 +1369,9 @@ test('every board, league, card, and replay line fits the terminal width', () =>
 // ---- bordered roster ---------------------------------------------------------
 
 const { renderBorderedTable } = require('../lib/text-table');
+const { teamCells } = require('../lib/gm-bet');
 
-test('the table drawer draws a divided box, or gives up when it is wider than the terminal', () => {
+test('the table drawer draws a divided box, wraps its wrap columns to fit, and gives up when it cannot', () => {
   const columns = [{ header: 'member' }, { header: 'ovr' }];
   const text = renderBorderedTable(columns, [['builder', 80], ['scout', '··']], { width: 40 });
   assert.equal(text, [
@@ -1382,61 +1383,65 @@ test('the table drawer draws a divided box, or gives up when it is wider than th
     '└─────────┴─────┘',
   ].join('\n'));
   assert.equal(renderBorderedTable(columns, [['a member with a long name', 80]], { width: 30 }), null);
+  const wrapped = renderBorderedTable([{ header: 'member' }, { header: 'role', wrap: true }], [['builder', 'writes and tests the code']], { width: 30 });
+  assert.equal(wrapped, [
+    '┌─────────┬──────────────────┐',
+    '│ member  │ role             │',
+    '├─────────┼──────────────────┤',
+    '│ builder │ writes and tests │',
+    '│         │ the code         │',
+    '└─────────┴──────────────────┘',
+  ].join('\n'));
 });
 
-test('board roster is a bordered table with role, ovr, form, record, engine, status in a wide terminal', () => {
-  const profiles = { builder: { role: 'ships features', engine: 'claude opus 5.5' } };
-  const text = renderBoardLines(fixtureBoard(), { width: 140, bordered: true, profiles }).join('\n');
-  assert.match(text, /^ {2}│ member +│ role +│ ovr +│ form +│ record +│ engine +│ status +│$/m);
-  assert.match(text, /^ {2}│ builder +│ ships features +│ 80 +│ akkd +│ landed 2 of 4 +│ claude opus 5\.5 +│ on a job +│$/m);
-  assert.match(text, /^ {2}│ scout +│ ·· +│ ·· +│ x +│ landed 0 of 1 +│ ·· +│ asleep +│$/m);
+const BOARD_CELLS = new Map([['builder', { role: 'ships features', ovr: '80', engine: 'claude opus 5.5' }]]);
+
+test('board roster is the team table in a terminal: member, role, ovr, engine, status', () => {
+  const text = renderBoardLines(fixtureBoard(), { width: 140, bordered: true, cells: BOARD_CELLS }).join('\n');
+  assert.match(text, /^ {2}│ member +│ role +│ ovr +│ engine +│ status +│$/m);
+  assert.match(text, /^ {2}│ builder +│ ships features +│ 80 +│ claude opus 5\.5 +│ on a job +│$/m);
+  // a member the cells do not know shows two dots, never a guess
+  assert.match(text, /^ {2}│ scout +│ ·· +│ ·· +│ ·· +│ asleep +│$/m);
   assert.match(text, /^ {2}┌─+┬/m);
-  assert.doesNotMatch(text, /rookie +x +landed/);
+  assert.match(text, /new under 3 finished/);
+  assert.doesNotMatch(text, /form: last 5/);
 });
 
-test('board roster keeps the plain columns when the terminal is too narrow or output is piped', () => {
-  const profiles = { builder: { role: 'ships features', engine: 'claude opus 5.5' } };
-  const narrow = renderBoardLines(fixtureBoard(), { width: 70, bordered: true, profiles }).join('\n');
-  const piped = renderBoardLines(fixtureBoard(), { width: 140, bordered: false, profiles }).join('\n');
-  for (const text of [narrow, piped]) {
+test('board roster wraps to fit an 80 column terminal and keeps the plain columns when piped or too narrow', () => {
+  const lines = renderBoardLines(fixtureBoard(), { width: 80, bordered: true, cells: BOARD_CELLS });
+  assert.ok(lines.some(l => /^ {2}│ builder +│/.test(l)), 'the box still draws at 80 columns');
+  assert.ok(lines.every(l => l.length <= 80), lines.find(l => l.length > 80));
+  const narrow = renderBoardLines(fixtureBoard(), { width: 30, bordered: true, cells: BOARD_CELLS }).join('\n');
+  const piped = renderBoardLines(fixtureBoard(), { width: 140, bordered: false, cells: BOARD_CELLS }).join('\n');
+  const noCells = renderBoardLines(fixtureBoard(), { width: 140, bordered: true }).join('\n');
+  for (const text of [narrow, piped, noCells]) assert.doesNotMatch(text, /│/);
+  for (const text of [piped, noCells]) {
     assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
-    assert.doesNotMatch(text, /│/);
+    assert.match(text, /rookie under 3 finished/);
   }
 });
 
-test('roster profiles read role from MEMBER.md and the exact engine model, ·· style nulls otherwise', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-'));
-  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'),
-    '---\nname: builder\nrole: ships features\nengine: claude\nmodel: claude-opus-5-5\n---\n# Builder\n');
-  const profiles = season.rosterProfiles(root, ['builder', 'ghost', '../escape']);
-  assert.deepEqual(profiles.builder, { role: 'ships features', engine: 'claude opus 5.5' });
-  assert.deepEqual(profiles.ghost, { role: null, engine: null });
-  assert.deepEqual(profiles['../escape'], { role: null, engine: null });
-});
-
-test('roster profiles show the engine the runner would pick, so an ended lead shows its backup', () => {
-  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
-  const { memberRosterEngine } = require('../lib/member-engine');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-roster-'));
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-profiles-home-'));
-  const previous = process.env.ATRIS_MACHINE_ROSTER_PATH;
-  process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+test('team cells: role words from MEMBER.md, the engine the runner would pick, two dots for a stranger', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-team-cells-'));
   try {
     fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
     fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: ships features\n---\n# Builder\n');
-    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '## build\n- claude, until 2026-10-01\n- codex\n');
-    readEngineRegistry(root);
-    for (const name of ['claude', 'codex']) setEngineHealth(name, 'ready', root);
-    const runner = memberRosterEngine('builder', root);
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'designer'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'designer', 'MEMBER.md'), '---\nname: designer\ntype: human\nrole: Designer\n---\n');
+    // the build lead has ended, so the runner picks its backup
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '## build\n- claude, model: opus 5.5, until 2026-10-01\n- codex, model: gpt-6.1-sol\n');
+    const ids = Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS);
+    const engines = ids.map(id => (['claude', 'codex'].includes(id) ? { id, health: { status: 'ready' } } : { id, installed: false, health: { status: 'not_installed', checked_at: new Date().toISOString() } }));
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), `${JSON.stringify({ engines })}\n`);
+    const runner = require('../lib/member-engine').memberRosterEngine('builder', root);
     assert.equal(runner.engine.id, 'codex');
-    const profiles = season.rosterProfiles(root, ['builder']);
-    assert.equal(profiles.builder.role, 'ships features');
-    assert.match(profiles.builder.engine, /^codex\b/);
+    const ratings = season.memberRatings(['landed', 'landed', 'dropped'].map((kind, i) => ({ member: 'builder', kind, at: NOW - i * HOUR })));
+    const cells = teamCells(root, ['builder', 'designer', 'ghost', '../escape'], { ratings });
+    assert.deepEqual(cells.get('builder'), { role: 'ships features', ovr: '86', engine: `codex ${runner.model}`, parked: false });
+    assert.equal(cells.get('designer').engine, 'person');
+    for (const name of ['ghost', '../escape']) assert.deepEqual(cells.get(name), { role: '··', ovr: '··', engine: '··', parked: false });
   } finally {
-    if (previous === undefined) delete process.env.ATRIS_MACHINE_ROSTER_PATH;
-    else process.env.ATRIS_MACHINE_ROSTER_PATH = previous;
     fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
   }
 });

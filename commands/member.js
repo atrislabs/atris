@@ -11664,33 +11664,28 @@ async function memberStandupWalk(room, args = []) {
   return payload;
 }
 
-// Role, engine and board rating per standup member, read only when the
-// standup can draw its table (a terminal); --json never carries them.
-function standupTableData(standup, root = process.cwd()) {
+// The team page's cells (role, ovr, engine) per standup member, read only
+// when the standup can draw its table (a terminal); --json never carries
+// them. ovr comes from gm-season memberRatings, as on the orb's team page.
+function standupTableData(standup, cwd = process.cwd()) {
   if (!process.stdout.isTTY) return { bordered: false };
   const season = require('../lib/gm-season');
-  const names = standup.map((s) => s.member);
-  let ratings = {};
+  const root = require('../lib/task-db').workspaceRoot(path.resolve(cwd));
+  let ratings = new Map();
   try {
-    const played = season.loadSeason(require('../lib/task-db').workspaceRoot(path.resolve(root)));
-    ratings = season.memberRatings(played.outcomes || [], names);
-  } catch {}
-  return { bordered: true, profiles: season.rosterProfiles(root, names), ratings };
+    const played = season.loadSeason(root, { lastSeen: null });
+    if (played && !played.error) ratings = season.memberRatings(played.outcomes || []);
+  } catch { ratings = new Map(); }
+  const cells = require('../lib/gm-bet').teamCells(root, standup.map((s) => s.member), { ratings });
+  return { bordered: true, cells };
 }
 
-// The standup: in a wide terminal a divided table of member, role, ovr,
-// engine, status with each member's found and push lines under it; piped or
-// too narrow, the boxes it always had.
-function memberStandupLines(standup, { bordered = false, width = process.stdout.columns, profiles = {}, ratings = {} } = {}) {
-  if (bordered && standup.length) {
-    const { renderBorderedTable } = require('../lib/text-table');
-    const columns = ['member', 'role', 'ovr', 'engine', 'status'].map((header) => ({ header }));
-    const rows = standup.map((s) => {
-      const profile = profiles[s.member] || {};
-      const rating = ratings[s.member];
-      return [s.member, profile.role || '··', rating == null ? '··' : rating, profile.engine || '··', s.status];
-    });
-    const table = renderBorderedTable(columns, rows, { width: Number(width) - 2 });
+// The standup: in a terminal the orb's team table as a divided box
+// (member, role, ovr, engine, status) with each member's found and push
+// lines under it; piped, or when the box cannot fit, the boxes it always had.
+function memberStandupLines(standup, { bordered = false, width = process.stdout.columns, cells = null } = {}) {
+  if (bordered && cells && standup.length) {
+    const table = require('../lib/gm-bet').teamBox(standup.map((s) => ({ member: s.member, status: s.status })), cells, { width: Number(width) - 2 });
     if (table) {
       return [
         ...table.split('\n').map((line) => `  ${line}`),
@@ -12057,6 +12052,7 @@ async function memberCommand(subcommand, ...args) {
 module.exports = {
   logDateForScan,
   memberStandupLines,
+  standupTableData,
   memberRunDefaultWallSeconds,
   memberRunWantsReferee,
   proposalPromptForGoal,

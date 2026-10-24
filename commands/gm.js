@@ -830,33 +830,30 @@ function boardWorkspaceRoot(args = []) {
   return taskDb.workspaceRoot(path.resolve(workspaceArg));
 }
 
-// Role and engine per roster member, read only when the board draws a box.
-function boardProfiles(board, workspaceRoot) {
-  if (!process.stdout.isTTY || !workspaceRoot) return {};
-  return require('../lib/gm-season').rosterProfiles(workspaceRoot, board.roster.map(r => r.name));
+// The team page's cells (role, ovr, engine) for each roster member, read
+// only when the board draws its box in a terminal; null otherwise.
+function boardCells(board, workspaceRoot, ratings) {
+  if (!process.stdout.isTTY || !workspaceRoot) return null;
+  return require('../lib/gm-bet').teamCells(workspaceRoot, board.roster.map(r => r.name), { ratings });
 }
 
 function loadBoard(workspaceRoot, options = {}) {
-  const season = require('../lib/gm-season');
-  return season.seasonBoard(season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen }), options);
+  return loadSeasonBoard(workspaceRoot, options).board;
 }
 
-const BORDERED_ROSTER_COLUMNS = ['member', 'role', 'ovr', 'form', 'record', 'engine', 'status'].map(header => ({ header }));
-
-// The roster as a divided box, or null when it does not fit the width.
-function borderedRoster(roster, profiles, width) {
-  const { renderBorderedTable } = require('../lib/text-table');
-  const rows = roster.map((row) => {
-    const profile = profiles[row.name] || {};
-    return [row.name, profile.role || '··', row.ovr == null ? '··' : row.ovr, row.form || '-', `landed ${row.landed} of ${row.jobs}`, profile.engine || '··', row.status];
-  });
-  return renderBorderedTable(BORDERED_ROSTER_COLUMNS, rows, { width });
+// The board and every member's rating (gm-season memberRatings, the same
+// numbers the orb's team page reads) from one read of the season.
+function loadSeasonBoard(workspaceRoot, options = {}) {
+  const season = require('../lib/gm-season');
+  const played = season.loadSeason(workspaceRoot, { lastSeen: options.lastSeen });
+  return { board: season.seasonBoard(played, options), ratings: season.memberRatings(played.outcomes || []) };
 }
 
 // One screen, about 40 rows at most. Pure: board in, lines out.
-// In a terminal the roster is a bordered table with role and engine (from
-// profiles); piped, or too wide for the terminal, it keeps the plain columns.
-function renderBoardLines(board, { interactive = false, width = termWidth(), bordered = Boolean(process.stdout.isTTY), profiles = {} } = {}) {
+// In a terminal, given the team page's cells, the roster is the orb's team
+// table as a divided box (member, role, ovr, engine, status); piped, or when
+// the box cannot fit the width, it keeps the plain columns.
+function renderBoardLines(board, { interactive = false, width = termWidth(), bordered = Boolean(process.stdout.isTTY), cells = null } = {}) {
   const { clockLabel } = require('../lib/gm-season');
   const lines = [];
   const nameW = nameWidth([
@@ -876,7 +873,9 @@ function renderBoardLines(board, { interactive = false, width = termWidth(), bor
   lines.push('');
 
   lines.push('roster, last 30 days');
-  const boxed = bordered && board.roster.length ? borderedRoster(board.roster, profiles, width - 2) : null;
+  const boxed = bordered && cells && board.roster.length
+    ? require('../lib/gm-bet').teamBox(board.roster.map(r => ({ member: r.name, status: r.status })), cells, { width: width - 2 })
+    : null;
   if (boxed) {
     lines.push(...boxed.split('\n').map(line => `  ${line}`));
   } else if (board.roster.length) {
@@ -936,9 +935,10 @@ function renderBoardLines(board, { interactive = false, width = termWidth(), bor
   }
   lines.push('');
 
-  lines.push('key: ovr 60 to 99 = share of finished jobs landed, rookie under 3 finished,');
+  lines.push(`key: ovr 60 to 99 = share of finished jobs landed, ${boxed ? 'new' : 'rookie'} under 3 finished,`);
   lines.push('     stricter than the website rating on purpose (drops and abandons count)');
-  lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
+  if (boxed) lines.push('     ·· = nothing to show yet: no finished job, no role, or no pinned model');
+  else lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
   lines.push('     hours: claim to result. on a job: moved in the last 6h. review: pending');
   if (interactive) for (const line of PLAY_KEYS) lines.push(line);
   else lines.push('     run atris gm in a terminal to play');
@@ -1014,10 +1014,9 @@ function printLeague() {
 
 function printBoard(args = []) {
   const root = boardWorkspaceRoot(args);
-  const board = loadBoard(root);
+  const { board, ratings } = loadSeasonBoard(root);
   if (board.error) return failRead(board.error);
-  const profiles = boardProfiles(board, root);
-  console.log(renderBoardLines(board, { profiles }).join('\n'));
+  console.log(renderBoardLines(board, { cells: boardCells(board, root, ratings) }).join('\n'));
   return undefined;
 }
 
@@ -1132,11 +1131,11 @@ async function gmPlay(args = []) {
         leagueRowsSeen = [...board.rows, ...(board.hidden_clubs || [])];
         write(renderLeagueLines(board, { interactive: true }).join('\n'));
       } else {
-        const board = loadBoard(workspaceRoot, { seen, lastSeen });
+        const { board, ratings } = loadSeasonBoard(workspaceRoot, { seen, lastSeen });
         lastBoard = board;
         seen = new Set(board.last_plays.map(play => play.id));
         stuck = board.stuck || [];
-        write(renderBoardLines(board, { interactive: true, profiles: boardProfiles(board, workspaceRoot) }).join('\n'));
+        write(renderBoardLines(board, { interactive: true, cells: boardCells(board, workspaceRoot, ratings) }).join('\n'));
         season.writeLastSeen(workspaceRoot, board.now);
       }
     } catch (err) {
@@ -2011,9 +2010,11 @@ async function gmCommand(...args) {
 }
 
 module.exports = {
+  boardCells,
   displayCommand,
   ensureStarterMission,
   gmCommand,
+  loadSeasonBoard,
   pickClub,
   playAction,
   renderBoardLines,
