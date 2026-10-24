@@ -2521,3 +2521,7 @@ Proof: `node --test test/wish-teammates.test.js`, exit 0, tests 2, pass 2, fail 
 Proof: `node --test test/wish*.test.js`, exit 0, tests 97, pass 97, fail 0.
 Task lookup and claim could not write the shared database in this sandbox;
 this note holds the objective and proof instead. No acceptance or push is authorized.
+
+Campaign briefs: `lib/campaign-loop.js:53` flattens whitespace only when attaching a brief, shared by proposal storage at `lib/campaign-loop.js:269` and mission start at `lib/campaign-loop.js:293`, without appending the brief twice. The planner still reads the original formatting. The mission gate stays unchanged: slugs (`commands/mission.js:155`) and task titles (`commands/mission.js:928`) normalize whitespace already, while report headings (`commands/mission.js:2088`, `commands/mission.js:5963`) and several console lines interpolate objectives directly. `test/campaign-missions.test.js:127` covers real starts from single-line, multiline, claimed and legacy proposals.
+
+Computer messages: `commands/computer.js:3550` treats an explicit message as one input and keeps piped stdin line by line; `commands/computer.js:3554` recognizes slash commands only on a single line. `test/computer-create.test.js:1630` checks exact HTTP message bodies and one turn for paragraphs and slash-prefixed prompts; `test/computer-create.test.js:1681` checks `/audit 2` sends no chat turn. Verify both fixes: `node --test test/computer-create.test.js test/campaign-*.test.js`.
