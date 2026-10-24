@@ -18,10 +18,10 @@ const localContent = '# Local note\n';
 
 // Generated, unsigned fixtures only. Assertions report booleans so even a
 // regression cannot print a credential in the test runner's diagnostics.
-function fakeJwt(exp) {
+function fakeJwt(exp, type) {
   return [
     Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
-    Buffer.from(JSON.stringify({ exp, nonce: randomBytes(12).toString('hex') })).toString('base64url'),
+    Buffer.from(JSON.stringify({ exp, type, nonce: randomBytes(12).toString('hex') })).toString('base64url'),
     randomBytes(12).toString('hex'),
   ].join('.');
 }
@@ -59,12 +59,16 @@ const commands = [
 
 const scenarios = [
   { name: 'renews an expired access token', expired: true },
-  { name: 'renews after the server rejects the access token', rejected: true },
+  { name: 'renews within the existing refresh window', nearExpiry: true },
   { name: 'asks for login when refresh fails', expired: true, refreshFails: true },
+  { name: 'keeps a still-valid token when proactive refresh fails', nearExpiry: true, refreshFails: true, unchanged: true },
   { name: 'tries refresh first when expires_at is past', storedExpiry: true },
   { name: 'asks for login when a past expires_at cannot be renewed', storedExpiry: true, refreshFails: true },
-  { name: 'asks for login when a past expires_at has no refresh token', storedExpiry: true, noRefresh: true },
-  { name: 'keeps a valid token and profile unchanged', valid: true },
+  { name: 'passes through a past expires_at without a refresh token', storedExpiry: true, noRefresh: true, unchanged: true },
+  { name: 'passes through scoped agent credentials', expired: true, agent: true, unchanged: true },
+  { name: 'passes through environment credentials', expired: true, env: true, unchanged: true },
+  { name: 'passes through opaque credentials', opaque: true, unchanged: true },
+  { name: 'keeps a valid token and profile unchanged', unchanged: true },
 ];
 
 for (const command of commands) {
@@ -84,7 +88,8 @@ for (const command of commands) {
       fs.writeFileSync(path.join(workspace, 'atris', 'now.md'), localContent);
 
       const now = Math.floor(Date.now() / 1000);
-      const originalToken = fakeJwt(scenario.expired ? now - 3600 : now + 3600);
+      const originalToken = scenario.opaque ? randomBytes(24).toString('hex')
+        : fakeJwt(now + (scenario.expired ? -3600 : scenario.nearExpiry ? 120 : 3600), scenario.agent ? 'agent_access' : undefined);
       const renewedToken = fakeJwt(now + 7200);
       const originalRefresh = randomBytes(24).toString('hex');
       const renewedRefresh = randomBytes(24).toString('hex');
@@ -101,10 +106,9 @@ for (const command of commands) {
 
       const requests = [];
       let refreshBodyValid = true;
-      let validateBodyValid = true;
       let resourceAuthValid = true;
       let pushedLocalContent = false;
-      const expectedToken = scenario.valid ? originalToken : renewedToken;
+      const expectedToken = scenario.unchanged ? originalToken : renewedToken;
       const server = http.createServer((req, res) => {
         const chunks = [];
         req.on('data', chunk => chunks.push(chunk));
@@ -124,9 +128,7 @@ for (const command of commands) {
             return reply(200, { access_token: renewedToken, refresh_token: renewedRefresh, user });
           }
           if (pathname === '/auth/validate') {
-            validateBodyValid &&= req.headers.authorization === `Bearer ${body?.token}`;
-            const accepted = body?.token === renewedToken || (scenario.valid && body?.token === originalToken);
-            return accepted ? reply(200, { valid: true, user }) : reply(401, { detail: 'Token expired' });
+            return reply(404, { detail: 'Sync must not validate credentials' });
           }
           const authorized = req.headers.authorization === `Bearer ${expectedToken}`;
           resourceAuthValid &&= authorized;
@@ -169,6 +171,7 @@ for (const command of commands) {
         HOME: home, ATRIS_PROFILE: 'sync-test',
         ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`,
         ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_NO_INTERACTIVE: '1',
+        ...(scenario.env ? { ATRIS_TOKEN: originalToken } : {}),
       });
       const result = await runCli(command.args, workspace, env);
       for (const value of [originalToken, renewedToken, originalRefresh, renewedRefresh, globalToken]) {
@@ -176,14 +179,14 @@ for (const command of commands) {
       }
       assert.equal(result.signal, null);
       assert.ok(refreshBodyValid, 'refresh must use the selected profile');
-      assert.ok(validateBodyValid, 'validation must use the same credential in its header and body');
-      assert.ok(resourceAuthValid, 'sync must use the validated or renewed access token');
+      assert.ok(!requests.includes('/auth/validate'), 'sync must never validate credentials, even after renewal');
+      assert.ok(resourceAuthValid, 'sync must use the original or renewed access token');
       assert.ok(fs.readFileSync(globalPath, 'utf8') === originalGlobal, 'global login must stay unchanged');
 
-      if (scenario.refreshFails || scenario.noRefresh) {
+      if (scenario.refreshFails && !scenario.unchanged) {
         assert.equal(result.status, 1);
         assert.ok(result.output.includes('Session expired. Run: atris login'), 'failed renewal must explain how to log in');
-        assert.equal(requests.includes('/auth/refresh'), !scenario.noRefresh, 'renewal requires a refresh token');
+        assert.equal(requests.filter(p => p === '/auth/refresh').length, 1, 'expired credentials must try renewal once');
         assert.ok(requests.every(p => p.startsWith('/auth/')), 'failed renewal must stop before sync');
         assert.ok(fs.readFileSync(profilePath, 'utf8') === originalProfile, 'failed renewal must keep the profile');
         assert.ok(fs.readFileSync(path.join(workspace, 'atris', 'now.md'), 'utf8') === localContent);
@@ -193,17 +196,26 @@ for (const command of commands) {
       assert.equal(result.status, 0, 'sync must succeed');
       assert.ok(requests.some(p => p.includes(command.resource)), 'the requested sync operation must reach the API');
       const profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-      if (scenario.valid) {
-        assert.ok(!requests.includes('/auth/refresh'), 'valid credentials must not refresh');
-        assert.ok(fs.readFileSync(profilePath, 'utf8') === originalProfile, 'valid profile must stay unchanged');
+      if (scenario.unchanged) {
+        assert.equal(requests.filter(p => p === '/auth/refresh').length, scenario.nearExpiry ? 1 : 0, 'only nearly expired user logins should try renewal');
+        assert.ok(fs.readFileSync(profilePath, 'utf8') === originalProfile, 'unchanged credentials must keep the profile');
       } else {
         assert.equal(requests.filter(p => p === '/auth/refresh').length, 1);
         assert.ok(profile.token === renewedToken, 'renewed access token must persist to the selected profile');
         assert.ok(profile.refresh_token === renewedRefresh, 'rotated refresh token must persist to the selected profile');
         assert.ok(!('source_profile' in profile), 'source metadata must stay out of the profile file');
       }
-      if (scenario.storedExpiry) assert.equal(requests[0], '/auth/refresh', 'past expires_at must refresh before validation or sync');
-      if (scenario.rejected) assert.equal(requests[0], '/auth/validate', 'server rejection must trigger the fallback refresh');
+      if (!scenario.unchanged) assert.equal(requests[0], '/auth/refresh', 'renewal must happen before sync');
+      if (scenario.storedExpiry && !scenario.unchanged) {
+        assert.ok(Date.parse(profile.expires_at) > Date.now(), 'renewal must replace stale expiry metadata');
+        const next = await runCli(command.args, workspace, env);
+        assert.equal(next.status, 0, 'the next sync must reuse renewed credentials');
+        assert.equal(requests.filter(p => p === '/auth/refresh').length, 1, 'the next sync must not renew again');
+        assert.ok(!requests.includes('/auth/validate'), 'the next sync must not validate credentials');
+        for (const value of [originalToken, renewedToken, originalRefresh, renewedRefresh, globalToken]) {
+          assert.ok(!next.output.includes(value), 'CLI output must not contain credentials');
+        }
+      }
       if (command.name.endsWith('push')) assert.ok(pushedLocalContent, 'push must send the original local content');
       if (command.name === 'business pull') {
         assert.ok(fs.readFileSync(path.join(workspace, 'sync-co', 'atris', 'now.md'), 'utf8') === cloudContent);
@@ -220,3 +232,92 @@ for (const command of commands) {
     });
   }
 }
+
+function authFixture(t, credentials) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fresh-auth-'));
+  const savedEnv = { ...process.env };
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('ATRIS_')) delete process.env[key];
+  }
+  process.env.HOME = home;
+  t.after(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnv);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const filename = path.join(home, '.atris', 'credentials.json');
+  fs.mkdirSync(path.dirname(filename), { recursive: true });
+  fs.writeFileSync(filename, JSON.stringify(credentials));
+  return { auth: require('../utils/auth'), filename };
+}
+
+for (const cached of [false, true]) {
+  test(`fresh credentials leave agent clients untouched with ${cached ? 'an expired' : 'no'} cached token`, async (t) => {
+    const { auth, filename } = authFixture(t, { auth_type: 'agent_client', client_id: 'client-sync' });
+    const agentClient = require('../utils/agent-client');
+    if (cached) {
+      agentClient.writeTokenCache('client-sync', {
+        access_token: fakeJwt(Math.floor(Date.now() / 1000) - 3600),
+        expires_at: new Date(Date.now() - 3600000).toISOString(),
+      });
+    }
+    let calls = 0;
+    t.mock.method(agentClient, 'ensureAgentClientToken', async () => {
+      calls++;
+      throw new Error('agent clients must be left to the API client');
+    });
+    const original = auth.loadCredentials();
+    const originalFile = fs.readFileSync(filename, 'utf8');
+    const result = await auth.ensureFreshCredentials(async () => { calls++; return { ok: false }; });
+    assert.equal(calls, 0, 'reading agent client credentials must make no network calls');
+    assert.ok(JSON.stringify(result) === JSON.stringify(original), 'agent client credentials must be unchanged');
+    assert.ok(fs.readFileSync(filename, 'utf8') === originalFile, 'agent client login must be unchanged');
+  });
+}
+
+for (const expired of [false, true]) {
+  test(`a thrown refresh error ${expired ? 'stops expired syncs' : 'preserves still-valid syncs'}`, async (t) => {
+    const { auth } = authFixture(t, {
+      token: fakeJwt(Math.floor(Date.now() / 1000) + (expired ? -3600 : 120)),
+      refresh_token: randomBytes(24).toString('hex'),
+    });
+    const original = auth.loadCredentials();
+    const stopped = new Error('intercepted expired session exit');
+    let exitCode;
+    const errors = [];
+    t.mock.method(process, 'exit', code => { exitCode = code; throw stopped; });
+    t.mock.method(console, 'error', message => errors.push(message));
+    const api = async () => { throw new Error('simulated refresh connection failure'); };
+    if (expired) {
+      await assert.rejects(() => auth.ensureFreshCredentials(api), error => error === stopped);
+      assert.equal(exitCode, 1);
+      assert.deepEqual(errors, ['Session expired. Run: atris login']);
+    } else {
+      const result = await auth.ensureFreshCredentials(api);
+      assert.ok(JSON.stringify(result) === JSON.stringify(original), 'a still-valid login must remain usable');
+      assert.equal(exitCode, undefined);
+      assert.deepEqual(errors, []);
+    }
+  });
+}
+
+test('full validation still refreshes a past expires_at before refusing it', async (t) => {
+  const now = Math.floor(Date.now() / 1000);
+  const { auth } = authFixture(t, {
+    token: fakeJwt(now + 3600), refresh_token: randomBytes(24).toString('hex'),
+    expires_at: new Date((now - 3600) * 1000).toISOString(),
+  });
+  const renewed = fakeJwt(now + 7200);
+  const requests = [];
+  const result = await auth.ensureValidCredentials(async pathname => {
+    requests.push(pathname);
+    if (pathname === '/auth/refresh') return { ok: true, data: { access_token: renewed } };
+    if (pathname === '/auth/validate') return { ok: true, data: { valid: true } };
+    throw new Error('unexpected full validation endpoint');
+  });
+  assert.deepEqual(requests, ['/auth/refresh', '/auth/validate']);
+  assert.equal(result.error, undefined);
+  assert.ok(auth.loadCredentials().token === renewed, 'full validation must persist the refreshed token');
+});

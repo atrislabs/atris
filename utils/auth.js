@@ -720,7 +720,7 @@ function abortOnAuthFailure(result, printedWake = false, exitFn = (code) => proc
   return true;
 }
 
-async function performTokenRefresh(credentials, apiRequestJson) {
+async function performTokenRefresh(credentials, apiRequestJson, { validate = true } = {}) {
   if (!credentials || !credentials.refresh_token) {
     return { ok: false, error: 'missing_refresh_token' };
   }
@@ -740,13 +740,18 @@ async function performTokenRefresh(credentials, apiRequestJson) {
   const provider = refreshed.data?.provider || credentials.provider;
   const email = refreshUser?.email || credentials.email;
   const userId = refreshUser?.id || credentials.user_id;
+  const refreshedCredentials = { ...credentials };
+  const refreshedExpiry = getTokenExpiryEpochSeconds(accessToken);
+  if (credentials.expires_at != null && refreshedExpiry !== null) {
+    refreshedCredentials.expires_at = new Date(refreshedExpiry * 1000).toISOString();
+  }
 
   // Refreshed tokens must land in the file they were loaded from. Writing a
   // profile's refresh to the global credentials.json leaves the profile token
   // to expire permanently (every ATRIS_PROFILE session then 401s forever).
   const persistRefreshed = () => {
     if (credentials.source_profile) {
-      const { source_profile, source, ...rest } = { ...credentials };
+      const { source_profile, source, ...rest } = refreshedCredentials;
       saveProfile(credentials.source_profile, {
         ...rest,
         token: accessToken,
@@ -757,17 +762,17 @@ async function performTokenRefresh(credentials, apiRequestJson) {
         saved_at: new Date().toISOString(),
       });
     } else {
-      saveCredentials(accessToken, newRefreshToken, email, userId, provider, credentials);
+      saveCredentials(accessToken, newRefreshToken, email, userId, provider, refreshedCredentials);
     }
   };
 
   persistRefreshed();
   let latestCreds = loadCredentials();
 
-  const validation = await validateAccessToken(accessToken, apiRequestJson);
+  const validation = validate ? await validateAccessToken(accessToken, apiRequestJson) : null;
   let finalUser = refreshUser;
 
-  if (validation.ok && validation.data?.valid) {
+  if (validation?.ok && validation.data?.valid) {
     finalUser = validation.data.user || refreshUser || null;
     const updatedEmail = finalUser?.email || latestCreds?.email || email;
     const updatedProvider = finalUser?.provider || latestCreds?.provider || provider;
@@ -780,7 +785,7 @@ async function performTokenRefresh(credentials, apiRequestJson) {
       updatedUserId !== latestCreds.user_id
     ) {
       if (credentials.source_profile) {
-        const { source_profile, source, ...rest } = { ...credentials };
+        const { source_profile, source, ...rest } = refreshedCredentials;
         saveProfile(credentials.source_profile, {
           ...rest,
           token: accessToken,
@@ -791,7 +796,7 @@ async function performTokenRefresh(credentials, apiRequestJson) {
           saved_at: new Date().toISOString(),
         });
       } else {
-        saveCredentials(accessToken, newRefreshToken, updatedEmail, updatedUserId, updatedProvider, credentials);
+        saveCredentials(accessToken, newRefreshToken, updatedEmail, updatedUserId, updatedProvider, refreshedCredentials);
       }
       latestCreds = loadCredentials();
     }
@@ -805,6 +810,31 @@ async function performTokenRefresh(credentials, apiRequestJson) {
       source: 'refreshed',
     },
   };
+}
+
+// Sync only needs local expiry checks, not a validation request per file.
+async function ensureFreshCredentials(apiRequestJson) {
+  const credentials = loadCredentials();
+  if (!credentials || credentials.source || agentClient.isAgentClientCredential(credentials)) return credentials;
+  const claims = decodeJwtClaims(credentials.token);
+  if (claims?.type === 'agent_access' || !credentials.refresh_token) return credentials;
+
+  const selectedExpiry = expiryTimeMs(credentials.expires_at);
+  const isExpired = () => (selectedExpiry !== null && selectedExpiry <= Date.now())
+    || (typeof claims?.exp === 'number' && claims.exp * 1000 <= Date.now());
+  if (!isExpired() && !shouldRefreshToken(credentials.token)) return credentials;
+
+  try {
+    const refreshed = await performTokenRefresh(credentials, apiRequestJson, { validate: false });
+    if (refreshed.ok) return refreshed.payload.credentials;
+  } catch {
+    // A still-valid token can keep syncing if proactive renewal is unavailable.
+  }
+  if (isExpired()) {
+    console.error('Session expired. Run: atris login');
+    process.exit(1);
+  }
+  return credentials;
 }
 
 async function ensureValidCredentials(apiRequestJson, options = {}) {
@@ -985,6 +1015,7 @@ module.exports = {
   validateAccessToken,
   refreshAccessToken,
   performTokenRefresh,
+  ensureFreshCredentials,
   ensureValidCredentials,
   isAuthFailure,
   abortOnAuthFailure,

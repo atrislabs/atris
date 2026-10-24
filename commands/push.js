@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { ensureValidCredentials, abortOnAuthFailure } = require('../utils/auth');
+const { ensureFreshCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, isIgnoredSyncPath, filterSyncFiles } = require('../lib/manifest');
@@ -457,12 +457,8 @@ async function pushAtris() {
   const timeoutSec = parsePushTimeoutSec(process.argv);
   let onlyPrefixes = null;
 
-  const ensured = await ensureValidCredentials(apiRequestJson);
-  if (ensured.error) {
-    console.error(ensured.error === 'not_logged_in' ? 'Not logged in. Run: atris login' : 'Session expired. Run: atris login');
-    process.exit(1);
-  }
-  const creds = ensured.credentials;
+  const creds = await ensureFreshCredentials(apiRequestJson);
+  if (!creds || !creds.token) { console.error('Not logged in. Run: atris login'); process.exit(1); }
 
   // Determine source directory
   const sourceDir = resolvePushSourceDir({ slug });
