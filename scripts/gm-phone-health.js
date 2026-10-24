@@ -553,6 +553,11 @@ async function sessionTrace({ cards = 100, ...opts } = {}) {
     let landed = 0;
     const rows = [];
     const land = async (k, move) => { await move(); await ready(k); landed += 1; };
+    // first, a card the Mac changes with no tap: it turns in place on the next look
+    const fresh = idea();
+    desk.current = fresh;
+    await p.until(titled(fresh.title), 'the card the Mac changed', 15000);
+    landed += 1;
     while (landed < cards) {
       await land('question', () => p.tapButton('sharper idea'));
       await land('choice', () => p.tapButton('making money from it'));
@@ -580,7 +585,19 @@ async function sessionTrace({ cards = 100, ...opts } = {}) {
     const first = rows[0], last = rows[rows.length - 1];
     const grew = {};
     for (const k of ['heap_kb', 'listeners', 'dom_nodes', 'documents', 'intervals', 'timeouts', 'frames', 'canvases_made', 'canvases', 'nodes', 'copies']) grew[k] = last[k] - first[k];
-    return { cards: landed, seconds: Math.round((Date.now() - started) / 1000), samples: rows, grew_after_first_round: grew, console: said.filter(l => !(l.kind === 'error' && /status of 409/.test(l.text))) };
+    // layout shift over the whole session as the browser scores it (a shift
+    // right after a tap or a key is the answer to it, so it is not counted),
+    // and every shift that moved anything, counted or not
+    const shifts = await p.run('window.__health.shifts');
+    const moved = shifts.filter(x => x.value > 0);
+    const score = list => Math.round(list.reduce((t, x) => t + x.value, 0) * 10000) / 10000;
+    return {
+      cards: landed, seconds: Math.round((Date.now() - started) / 1000), samples: rows, grew_after_first_round: grew,
+      layout_shift: score(moved.filter(x => !x.input)),
+      layout_shift_after_taps: score(moved.filter(x => x.input)),
+      shifts: moved.slice(0, 12).map(x => ({ value: Math.round(x.value * 10000) / 10000, at_ms: Math.round(x.t), after_input: x.input, what: x.what })),
+      console: said.filter(l => !(l.kind === 'error' && /status of 409/.test(l.text))),
+    };
   }, opts);
 }
 

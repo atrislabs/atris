@@ -286,4 +286,7 @@ test('browser: 100 cards in a row through every kind of move, and nothing on the
   assert.equal(last.frames, 0, show);
   assert.equal(last.canvases, 1, show);
   assert.deepEqual(out.console, [], show);
+  // no card ever lands with a shift: none the browser counts, and next to none right after a tap
+  assert.equal(out.layout_shift, 0, JSON.stringify(out.shifts));
+  assert.ok(out.layout_shift_after_taps < 0.005, JSON.stringify(out.shifts));
 });
