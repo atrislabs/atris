@@ -10,7 +10,9 @@ const { spawnSync } = require('node:child_process');
 const {
   checkCampaignStart, defaultReserve, missionCost, recordCampaignMissionEnded, recordCampaignMissionStarted, recordCampaignTick,
 } = require('../lib/campaign-missions');
-const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
+const { createMemoryStore, createSqliteStore, getCampaign } = require('../lib/campaign-store');
+const { makeLoop } = require('../lib/campaign-loop');
+const { missionObjectiveIsJunk } = require('../commands/mission');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 const TERMINAL = new Set(['stopped', 'complete']);
@@ -120,6 +122,61 @@ test('the real commands: atris mission start --campaign reports into the campaig
   assert.equal(JSON.parse(plain.stdout).mission.campaign_id, undefined);
   assert.equal(JSON.parse(cli('campaign', 'show', 'cmp-ship', '--json').stdout).campaign.missions.length, 1);
 });
+
+for (const source of ['planned single line', 'planned multiline', 'claimed', 'legacy multiline']) {
+  test(`a campaign brief reaches a real mission start from ${source} work`, async (t) => {
+    const root = workspace(t);
+    const db = path.join(root, 'campaign.db');
+    const env = { ...process.env, HOME: root, ATRIS_TASKS_DB: path.join(root, 'tasks.db'),
+      ATRIS_CAMPAIGN_DB: db, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' };
+    const cli = (args) => {
+      const result = spawnSync(process.execPath, [CLI, ...args], { cwd: root, env, encoding: 'utf8', timeout: 15000 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result;
+    };
+    const brief = source === 'planned single line' ? 'Keep the existing output style.'
+      : 'Keep the existing output style.\n\nReuse the current helpers.\r\n\tAdd focused checks.';
+    const briefFile = path.join(root, 'notes.md');
+    fs.writeFileSync(briefFile, brief);
+    cli(['campaign', 'start', 'Ship the brief fix', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-brief', '--brief', briefFile]);
+    const store = createSqliteStore(db);
+    t.after(() => store.close());
+    const objective = 'Fix the route handler';
+    const expected = `${objective} ${brief.replace(/\s+/g, ' ')}`;
+    const started = [];
+    const loop = makeLoop(root, { runner: 'manual', parallel: 1 }, {
+      store, skipReconcile: true, log: () => {},
+      ask: async (cwd, view, prompt) => {
+        assert.ok(prompt.includes(brief), 'planning retains the original brief formatting');
+        return { ok: true, engine: 'claude', text: JSON.stringify([{ objective, member: 'builder', estimate_usd: 1 }]) };
+      },
+      cli: async (args) => {
+        // Exercise the real start and its campaign hooks, then stop without running an engine.
+        const result = cli(args[1] === 'run' ? ['mission', 'stop', args[2], '--json'] : args);
+        if (args[1] === 'start') {
+          assert.equal(missionObjectiveIsJunk(args[2]), false);
+          started.push(JSON.parse(result.stdout).mission);
+        }
+        return { code: result.status, out: result.stdout, err: result.stderr };
+      },
+    });
+    if (source.startsWith('planned')) {
+      await loop.propose('cmp-brief');
+      assert.equal(store.read('cmp-brief').find(e => e.type === 'mission_proposed').data.objective, expected);
+    } else {
+      store.append({ campaign_id: 'cmp-brief', type: 'mission_proposed', actor: 'builder', data: {
+        mission_id: 'm-brief', member: 'builder', objective: source === 'claimed' ? objective : `${objective}\n\n${brief}`,
+      } });
+      store.append({ campaign_id: 'cmp-brief', type: 'mission_claimed', actor: 'builder', data: { mission_id: 'm-brief', claim_key: objective } });
+    }
+    assert.equal((await loop.step('cmp-brief')).did, 'missions');
+    assert.equal(started.length, 1);
+    assert.equal(started[0].objective, expected);
+    assert.equal(started[0].campaign_id, 'cmp-brief');
+    assert.ok(store.read('cmp-brief').some(e => e.type === 'mission_started'));
+  });
+}
 
 test('a campaign mission records the engine that ran it, for traces and per-engine cost', () => {
   const store = campaign(20);

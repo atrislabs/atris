@@ -3547,25 +3547,27 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   if (scriptedInput !== null) {
-    for (const rawLine of scriptedInput.split(/\r?\n/)) {
+    const messages = oneShotMessage ? [scriptedInput] : scriptedInput.split(/\r?\n/);
+    for (const rawLine of messages) {
       const line = String(rawLine || '').trim();
       if (!line) continue;
-      if (line === '/exit' || line === '/quit') break;
-      if (line.startsWith('/run ')) {
+      const isCommand = line.startsWith('/') && !/[\r\n]/.test(line);
+      if (isCommand && (line === '/exit' || line === '/quit')) break;
+      if (isCommand && line.startsWith('/run ')) {
         await computerRun(token, line.slice(5), ctx);
         continue;
       }
-      if (line === '/pwd') {
+      if (isCommand && line === '/pwd') {
         await computerRun(token, 'pwd', ctx);
         continue;
       }
-      if (line === '/audit' || line.startsWith('/audit ')) {
+      if (isCommand && (line === '/audit' || line.startsWith('/audit '))) {
         const rawLimit = line.split(/\s+/, 2)[1];
         const limit = rawLimit ? Number.parseInt(rawLimit, 10) : 10;
         await computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
         continue;
       }
-      if (line.startsWith('/')) {
+      if (isCommand) {
         const command = line.split(/\s+/, 1)[0];
         if (!KNOWN_CHAT_COMMANDS.has(command)) {
           console.log(`Unknown command: ${command}`);
@@ -3573,7 +3575,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
         }
         continue;
       }
-      sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, null, {
+      sessionId = await sendBusinessChat(token, ctx, oneShotMessage ? rawLine : line, sessionId, false, null, {
         worker,
         model,
         systemPrompt: chatSystemPrompt,

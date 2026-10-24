@@ -166,6 +166,10 @@ function startApiServer(requests) {
         send(200, { status: 'completed', events: [{ type: 'assistant_text', content: reply }, { type: 'complete' }] });
         return;
       }
+      if (req.method === 'GET' && req.url.startsWith('/api/business/biz-1/chat/audit?')) {
+        send(200, { rows: [] });
+        return;
+      }
       if (
         req.method === 'POST' &&
         (
@@ -1601,13 +1605,15 @@ test('computer chat sends piped prompts non-interactively', async () => {
     ], {
       cwd,
       env,
-      input: 'What is 2+2?\n/exit\n',
+      input: 'What is 2+2?\n\nSecond prompt\n/exit\nIgnored prompt\n',
     });
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Atris Cloud Computer/);
     assert.match(res.stdout, /Running on cloud/);
     assert.match(res.stdout, /4/);
+    assert.deepEqual(requests.filter(request => request.method === 'POST' && request.url === '/api/business/biz-1/chat')
+      .map(request => request.body.message), ['What is 2+2?', 'Second prompt']);
     assert.ok(requests.some((request) => (
       request.method === 'POST' &&
       request.url === '/api/business/biz-1/chat' &&
@@ -1621,7 +1627,58 @@ test('computer chat sends piped prompts non-interactively', async () => {
   }
 });
 
-test('computer chat --message sends one quiet non-interactive prompt', async () => {
+for (const [label, message] of [
+  ['single line', 'Reply exactly CHAT_OK'],
+  ['paragraphs', '  Reply exactly CHAT_OK\n\nKeep both paragraphs.\r\n\t/audit 2\n/exit\nFinal paragraph.  '],
+  ['slash-prefixed prompt', '/audit 2\nThis is part of the prompt.'],
+]) {
+  test(`computer chat --message sends one quiet prompt with whitespace intact: ${label}`, async () => {
+    const home = makeTempDir();
+    const cwd = makeTempDir();
+    const requests = [];
+    const server = await startApiServer(requests);
+    try {
+      writeCredentials(home);
+      const { port } = server.address();
+      const env = {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      };
+
+      const res = await runCliAsync([
+        'computer',
+        'chat',
+        '--business',
+        'acme',
+        '--workspace',
+        'ws-new',
+        '--worker',
+        'claude',
+        '--message',
+        message,
+      ], { cwd, env });
+
+      assert.equal(res.status, 0, res.stderr || res.stdout);
+      assert.equal(res.stdout.trim(), message.includes('CHAT_OK') ? 'CHAT_OK' : '4');
+      assert.doesNotMatch(res.stdout, /Atris Cloud Computer/);
+      assert.doesNotMatch(res.stdout, /Running on cloud/);
+      const chats = requests.filter(request => request.method === 'POST' && request.url === '/api/business/biz-1/chat');
+      assert.equal(chats.length, 1);
+      assert.equal(chats[0].body.message, message);
+      assert.equal(chats[0].body.worker, 'claude');
+      assert.ok(!requests.some(request => request.url.includes('/chat/audit?')));
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      cleanupTempDir(home);
+      cleanupTempDir(cwd);
+    }
+  });
+}
+
+test('computer chat --message runs a single slash command without sending a chat turn', async () => {
   const home = makeTempDir();
   const cwd = makeTempDir();
   const requests = [];
@@ -1629,37 +1686,12 @@ test('computer chat --message sends one quiet non-interactive prompt', async () 
   try {
     writeCredentials(home);
     const { port } = server.address();
-    const env = {
-      ...process.env,
-      HOME: home,
-      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
-      ATRIS_NO_INTERACTIVE: '1',
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-    };
-
-    const res = await runCliAsync([
-      'computer',
-      'chat',
-      '--business',
-      'acme',
-      '--workspace',
-      'ws-new',
-      '--worker',
-      'claude',
-      '--message',
-      'Reply exactly CHAT_OK',
-    ], { cwd, env });
-
+    const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1', ATRIS_SKIP_UPDATE_CHECK: '1' };
+    const res = await runCliAsync(['computer', 'chat', '--business', 'acme', '--workspace', 'ws-new', '--message', '/audit 2'], { cwd, env });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.equal(res.stdout.trim(), 'CHAT_OK');
-    assert.doesNotMatch(res.stdout, /Atris Cloud Computer/);
-    assert.doesNotMatch(res.stdout, /Running on cloud/);
-    assert.ok(requests.some((request) => (
-      request.method === 'POST' &&
-      request.url === '/api/business/biz-1/chat' &&
-      request.body?.message === 'Reply exactly CHAT_OK' &&
-      request.body?.worker === 'claude'
-    )));
+    assert.equal(requests.filter(request => request.url === '/api/business/biz-1/chat/audit?workspace_id=ws-new&limit=2').length, 1);
+    assert.ok(!requests.some(request => request.method === 'POST' && request.url === '/api/business/biz-1/chat'));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
