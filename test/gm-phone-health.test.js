@@ -63,6 +63,9 @@ test('over http: the page carries the card on screen, so it paints that card fir
   assert.match(phonePage('n'), /<script type="application\/json" id="first-look"><\/script>/);
 });
 
+// how many times the fixed page's work to its first frame the page's may be (scripts/gm-phone-health.js firstFrameWork)
+const FIRST_FRAME_WORK = 2;
+
 test('browser: a card already up on the Mac is the first thing painted, with no big orb before it and no layout shift; with none the dots are on the first frame', browser, async () => {
   for (const cpu of [1, 4]) {
     const withCard = await health.firstPaintTrace({ chromePath: CHROME, cpu });
@@ -76,9 +79,16 @@ test('browser: a card already up on the Mac is the first thing painted, with no 
     assert.equal(none.first_frame && none.first_frame.dots, true, JSON.stringify(none));
     assert.equal(none.first_frame.card, false, JSON.stringify(none));
     assert.deepEqual(none.console, [], JSON.stringify(none));
-    // the page's own work from its last byte to its first paint, on a slowed cpu too
-    // (measured 50 to 140ms at 1x and 170 to 350ms at 4x; the room is for a busy machine)
-    for (const run of [withCard, none]) assert.ok(run.paint_after_bytes_ms != null && run.paint_after_bytes_ms < 400 * cpu, JSON.stringify(run));
+  }
+});
+
+test('browser: the page\'s own work to its first frame stays under twice a fixed page\'s in the same chrome, with a card and with none, so a page that takes twice its time fails', browser, async () => {
+  // measured 1.3 to 1.5 times it on a mac and on linux, and the same at 4x slower, where the
+  // fixed page is slowed too; twice the page's work reads 2.5 and up, and the page alone on a
+  // cpu twice as slow reads 3 to 4.7 (node scripts/gm-phone-health.js --work shows both)
+  for (const card of [trace.CARDS.b1, null]) {
+    const work = await health.firstFrameWork({ chromePath: CHROME, card, under: FIRST_FRAME_WORK });
+    assert.ok(work.ratio != null && work.ratio < FIRST_FRAME_WORK, JSON.stringify(work));
   }
 });
 

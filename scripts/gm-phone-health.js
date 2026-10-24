@@ -10,6 +10,7 @@
 // lib/headless-chrome.js, by way of the trace's launch.
 //
 //   node scripts/gm-phone-health.js --paint     first paint, on a slow link and a slowed cpu
+//   node scripts/gm-phone-health.js --work      the page's work to its first frame against a fixed page's, and a slowed page
 //   node scripts/gm-phone-health.js --head      the home screen tags and icons, as the page has them
 //   node scripts/gm-phone-health.js --reader    what a screen reader hears as cards land, a refused tap, the landmarks
 //   node scripts/gm-phone-health.js --focus     each Tab stop on a card and the big orb, and its ring on screen
@@ -80,6 +81,16 @@ const PROBE = `(function () {
   // the page asks for its frames first, so these come after them in each frame
   var n = 0;
   function look(t) {
+    // the first frame after the page's script ran: the moment its work there (the frame's
+    // scripts, style, layout, and paint) is done, when the first task after it gets to run
+    if (n === 0) {
+      // held: the trace reads the page's own time on the cpu at this moment (holdFirstFrame)
+      var done = function () { if (P.frame_done == null) { P.frame_done = performance.now(); if (P.hold) debugger; } };
+      if (window.scheduler && scheduler.postTask) scheduler.postTask(done, { priority: 'user-blocking' });
+      var after = new MessageChannel();
+      after.port1.onmessage = done;
+      after.port2.postMessage(0);
+    }
     var body = document.body, box = document.getElementById('bet'), canvas = document.getElementById('orb');
     if (body && box && canvas) {
       P.frames.push({
@@ -92,7 +103,12 @@ const PROBE = `(function () {
     }
     if (++n < ${FRAMES}) requestAnimationFrame(look);
   }
-  document.addEventListener('DOMContentLoaded', function () { requestAnimationFrame(look); });
+  // the first frame can come before the parser is done, so the frames start once the page's
+  // script has run: it marks the body first thing, and this hears that as the script ends
+  var looking = false;
+  var lookFrom = function () { if (!looking) { looking = true; requestAnimationFrame(look); } };
+  new MutationObserver(function () { if (document.body && document.body.classList.contains('on')) lookFrom(); }).observe(document, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('DOMContentLoaded', lookFrom);
   // before the page's own script has run (its bytes still on the way): every
   // frame where some of its words already show without the dots or the card
   P.early = { frames: 0, words: 0, seen: [] };
@@ -179,7 +195,7 @@ async function launchOnce(chromePath) {
 // moment. latency: ms each request waits on the way (a phone on wifi); cpu:
 // how many times slower the cpu runs (1 is this machine). fn(p, send, said,
 // server) drives it; said is every console line so far.
-async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, kbps = 0, cpu = 1, page = phonePage } = {}) {
+async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = trace.PHONE, reduced = false, latency = 0, kbps = 0, cpu = 1, page = phonePage, setup = null } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const server = await serveDesk(desk, page);
   let chrome = null;
@@ -197,6 +213,7 @@ async function openPage(desk, fn, { chromePath = trace.findChrome(), viewport = 
     if (latency || kbps) await send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: kbps ? (kbps * 1024) / 8 : -1, uploadThroughput: -1 });
     if (cpu > 1) await send('Emulation.setCPUThrottlingRate', { rate: cpu });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: PROBE });
+    if (setup) await setup(send);
     await send('Page.navigate', { url: server.url });
     const p = driver(send);
     await p.until("document.readyState === 'complete' && Boolean(window.__health)", 'the page to open', 15000);
@@ -266,7 +283,12 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, kbps = 0,
       page_bytes: nav.size,
       first_paint_ms: fcp ? Math.round(fcp.t) : null,
       // from the page's last byte to its first paint: the page's own work, with the link taken out
+      // (with a card this waits on the card's fade in, which starts at none: chrome counts the card
+      // at a later repaint, 110ms on a mac and more on a slow one)
       paint_after_bytes_ms: fcp ? Math.round(fcp.t - bytesAt) : null,
+      // from the page's last byte to the end of its first frame, with the link and the fade taken
+      // out (the page is judged on its time on the cpu to there instead: firstFrameWork)
+      frame_after_bytes_ms: h.frame_done != null ? Math.round(h.frame_done - bytesAt) : null,
       first_frame: first ? { card: first.card, title: first.title, dots: first.dots, line: first.line } : null,
       orb_frames_before_card: card ? (cardAt < 0 ? shown.length : cardAt) : null,
       // frames painted with the page's words up before its script ran: the line and the footer with no dots
@@ -278,6 +300,149 @@ async function firstPaintTrace({ card = trace.CARDS.b1, latency = 120, kbps = 0,
       console: said,
     };
   }, { latency, kbps, cpu, ...opts });
+}
+
+// The page's own work from its first moment to the end of its first frame,
+// as time its thread spent on the cpu: the link, the other work on a busy
+// machine, Chrome opening a tab, and the card's fade in are all out of it.
+// The page is held twice, as it starts and at the end of its first frame
+// (the probe's debugger lines), while Chrome reads the time its thread has
+// spent on tasks, then it goes on. work.ms is the time between, once known.
+function holdFirstFrame() {
+  const work = { ms: null };
+  const read = [];
+  const setup = async (send) => {
+    send.on((m) => {
+      if (m.method !== 'Debugger.paused') return;
+      if (read.length >= 2) { send('Debugger.resume').catch(() => { /* gone */ }); return; }
+      send('Performance.getMetrics').then(({ metrics }) => {
+        const task = metrics.find(x => x.name === 'TaskDuration');
+        read.push(task ? task.value : NaN);
+      }, () => { read.push(NaN); }).finally(() => {
+        if (read.length === 2) work.ms = read[1] - read[0] >= 0 ? Math.round((read[1] - read[0]) * 1000) : -1;
+        send('Debugger.resume').catch(() => { /* gone */ });
+      });
+    });
+    await send('Performance.enable', { timeDomain: 'threadTicks' });
+    await send('Debugger.enable');
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: 'if (window.__health) { window.__health.hold = true; debugger; }' });
+  };
+  return { setup, work };
+}
+
+// The yardstick for the first frame: a fixed page that never changes with
+// the phone page, doing the same kinds of work before its first frame. It
+// carries a stylesheet of 180 rules and a script of 280 functions it never
+// calls, about the page's own sizes, makes 5500 dots the way the big orb
+// does, sets a card's words in the page's serif and reads their layout
+// twice, and with dots draws the dots on its first frame at the page's
+// pixel density. Its own work to its first frame is this machine's pace for
+// that work in this Chrome, the way the motion checks read a slow frame
+// against the machine's own frames.
+const REFERENCE_RULES = Array.from({ length: 180 }, (_, i) => `.r${i} .k${i % 7}, #ref-${i} > span { margin: ${i % 9}px ${i % 5}px; padding: ${i % 3}px; color: rgba(234, 227, 217, 0.${(i % 9) + 1}); border-radius: ${i % 11}px; transition: opacity 0.${(i % 4) + 1}s ease, transform 0.${(i % 3) + 1}s ease-out; }`).join('\n');
+const REFERENCE_UNCALLED = Array.from({ length: 280 }, (_, i) => `  function k${i}(a, b, c) {
+    var out = [], at = a * ${i} + b;
+    for (var j = 0; j < (c || ${(i % 13) + 2}); j++) { at = (at * 31 + j + ${i}) % 1000003; if (at % ${(i % 5) + 2} === 0) out.push(String(at)); }
+    if (!out.length) return { kind: 'none', at: at, why: 'no step of ${i} was even' };
+    return { kind: 'some', at: at, steps: out.join(', '), first: out[0], last: out[out.length - 1] };
+  }`).join('\n');
+function referencePage(nonce, { dots = false } = {}) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style nonce="${nonce}">
+html, body { margin: 0; background: #141110; color: #eae3d9; font: 17px/1.5 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif; }
+main { max-width: 34rem; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; align-items: center; }
+canvas { width: 280px; height: 280px; border-radius: 50%; }
+h1 { font-size: 30px; line-height: 1.15; font-weight: 400; margin: 16px 0; }
+p { margin: 0 0 12px; color: #a39b92; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 12px 0; }
+${REFERENCE_RULES}
+</style></head>
+<body><main><canvas id="orb" width="560" height="560"${dots ? '' : ' hidden'}></canvas><article id="card"></article></main>
+<script nonce="${nonce}">
+(function () {
+  document.body.classList.add('on');
+  var c = document.getElementById('orb');
+  c.__orb = { frame: 0 };
+  var s = 1;
+  var rand = function () { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+  var gauss = function () { return Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand()); };
+  var dots = [], count = window.innerWidth < 768 ? 5500 : 11000;
+  for (var i = 0; i < count; i++) {
+    var x = gauss(), y = gauss(), z = gauss(), m = Math.hypot(x, y, z) || 1;
+    dots.push({ x: x / m, y: y / m, z: z / m, sx: 140, sy: 140, vx: 0, vy: 0, r: 0.4 + rand() * 0.7, bx: 0, by: 0, f1: rand(), f2: rand(), p1: rand() * 6.283, p2: rand() * 6.283 });
+  }
+  var card = document.getElementById('card');
+  var put = function (tag, words) { var n = document.createElement(tag); n.textContent = words; return card.appendChild(n); };
+  put('h1', 'Write a getting started page for the phone');
+  put('p', 'More people try the phone page by the first of the month, once they can see how to start in a minute.');
+  var row = put('div', '');
+  row.className = 'row';
+  ['yes, go', 'not now', 'say more'].forEach(function (w) { var b = document.createElement('button'); b.textContent = w; row.appendChild(b); });
+  if (row.lastChild.getBoundingClientRect().top > row.firstChild.getBoundingClientRect().top + 1) row.className += ' broke';
+  var ctx = c.getContext('2d');
+  ctx.scale(2, 2);
+  var styles = [];
+  for (var q = 0; q < 128; q++) styles.push((q < 64 ? 'rgba(251, 130, 36, ' : 'rgba(253, 196, 84, ') + ((q % 64) / 63).toFixed(3) + ')');
+  if (c.hidden) return;
+${REFERENCE_UNCALLED}
+  // lit from the upper left, front dots bright and the back half dim, drawn level by level
+  requestAnimationFrame(function () {
+    var levels = [];
+    for (var b = 0; b < 128; b++) levels.push([]);
+    for (var j = 0; j < dots.length; j++) {
+      var d = dots[j], l = Math.max(0, -0.5 * d.x - 0.6 * d.y + 0.6245 * d.z), front = d.z > 0;
+      var level = Math.min(63, Math.round((front ? 0.16 + Math.pow(l, 1.3) * 0.84 : 0.05 + l * 0.08) * 63));
+      if (level > 0) levels[(l > 0.93 ? 64 : 0) + level].push(d);
+      d.pr = d.r * (front ? 0.6 + l * 0.7 : 0.6);
+    }
+    levels.forEach(function (at, k) {
+      ctx.fillStyle = styles[k];
+      at.forEach(function (d) { ctx.beginPath(); ctx.arc(140 + d.x * 117.6, 140 + d.y * 117.6, d.pr, 0, Math.PI * 2); ctx.fill(); });
+    });
+  });
+})();
+</script></body></html>`;
+}
+
+// The page's own work to its first frame (holdFirstFrame), opened with a card
+// up on the Mac or none. reference: the fixed page in its place, the one
+// that matches: with a card its card and words, with none its dots too.
+// page: a stand-in for the phone page (a slowed copy, to see the check fail).
+async function workTrace({ card = trace.CARDS.b1, reference = false, latency = 120, cpu = 1, ...opts } = {}) {
+  const desk = trace.cardDesk(card, async () => ({ card }));
+  const held = holdFirstFrame();
+  const page = reference ? { page: nonce => referencePage(nonce, { dots: !card }) } : {};
+  return openPage(desk, async (p, send, said) => {
+    await p.until('Boolean(window.__health) && window.__health.frame_done != null', 'the first frame', 15000);
+    for (let i = 0; i < 500 && held.work.ms == null; i++) await wait(10);
+    return { work_ms: held.work.ms, console: said };
+  }, { latency, cpu, setup: held.setup, ...opts, ...page });
+}
+
+// The page's own work to its first frame against the fixed page's, each
+// round opening the two at the same moment in two of the same Chrome on this
+// machine, so a busy spell on a shared machine falls on both alike. ratio: the middle
+// of the rounds' ratios, how many times the fixed page's work the page's is.
+// under: a ratio not under it takes more rounds, up to most, before it
+// stands. slower: the page alone on a cpu that many times slower, to see a
+// page that takes twice its time fail the check.
+async function firstFrameWork({ card = trace.CARDS.b1, tries = 3, most = 6, under = Infinity, slower = 1, ...opts } = {}) {
+  const cpu = opts.cpu || 1;
+  const rounds = [];
+  const middle = () => {
+    const r = rounds.filter(x => x != null).sort((a, b) => a - b);
+    return r.length ? Math.round(((r[Math.floor((r.length - 1) / 2)] + r[Math.ceil((r.length - 1) / 2)]) / 2) * 100) / 100 : null;
+  };
+  const page = [], reference = [];
+  while (rounds.length < tries || (rounds.length < most && (middle() == null || middle() >= under))) {
+    const [ref, own] = await Promise.all([workTrace({ card, reference: true, ...opts }), workTrace({ card, ...opts, cpu: cpu * slower })]);
+    reference.push(ref.work_ms);
+    page.push(own.work_ms);
+    rounds.push(own.work_ms > 0 && ref.work_ms > 0 ? Math.round((own.work_ms / ref.work_ms) * 100) / 100 : null);
+  }
+  return { card: Boolean(card), cpu, slower, page_ms: page, reference_ms: reference, rounds, ratio: middle() };
 }
 
 // ---- the head: what a phone reads to put the page on its home screen ----------------------
@@ -729,7 +894,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   return out;
 }
 
-module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, headTrace, readerTrace, landmarkTrace, tableNamesTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, lostLookTrace, asleepTrace };
+module.exports = { PROBE, consoleLine, serveDesk, openPage, AT_REST, titled, firstPaintTrace, referencePage, holdFirstFrame, workTrace, firstFrameWork, headTrace, readerTrace, landmarkTrace, tableNamesTrace, focusTrace, ZOOMED, zoomTrace, sphereZoomTrace, ROUND, sessionTrace, lostLookTrace, asleepTrace };
 
 if (require.main === module) {
   const fail = (err) => { process.stderr.write(`${err.message}\n`); process.exit(1); };
@@ -740,6 +905,14 @@ if (require.main === module) {
       for (const card of [trace.CARDS.b1, null]) for (const cpu of [1, 4]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, cpu })) });
       // a weak wifi at the far end of the house
       for (const card of [trace.CARDS.b1, null]) out.push({ card: Boolean(card), ...(await firstPaintTrace({ card, latency: 60, kbps: 1000 })) });
+      print(out);
+    })().catch(fail);
+  } else if (process.argv.includes('--work')) {
+    // the first frame check at 1x and 4x, then the page alone on a cpu twice as slow, which it must fail
+    (async () => {
+      const out = [];
+      for (const card of [trace.CARDS.b1, null]) for (const cpu of [1, 4]) out.push(await firstFrameWork({ card, cpu }));
+      for (const card of [trace.CARDS.b1, null]) out.push(await firstFrameWork({ card, slower: 2 }));
       print(out);
     })().catch(fail);
   } else if (process.argv.includes('--head')) {
@@ -756,6 +929,6 @@ if (require.main === module) {
   } else if (process.argv.includes('--asleep')) {
     asleepTrace().then(print, fail);
   } else {
-    process.stdout.write('node scripts/gm-phone-health.js --paint | --head | --reader | --focus | --zoom | --long [cards] | --asleep\n');
+    process.stdout.write('node scripts/gm-phone-health.js --paint | --work | --head | --reader | --focus | --zoom | --long [cards] | --asleep\n');
   }
 }
