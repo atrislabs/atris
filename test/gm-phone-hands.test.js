@@ -599,3 +599,23 @@ test('browser: a note on the calm line that takes a while reads sending in place
   assert.deepEqual([out.done.text, out.done.words], ['send', ''], show);
   assert.deepEqual(out.notes, ['make it about schools'], show);
 });
+
+test('browser: when the phone keyboard leaves only a strip of screen, the box being typed in comes back into view', { skip, timeout: 90000 }, async () => {
+  const small = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.tap('#bet .sayline .quiet');
+    await wait(200);
+    const where = () => p.run("(function () { var r = document.querySelector('#bet .field').getBoundingClientRect(); var vv = window.visualViewport; return { top: Math.round(r.top), bottom: Math.round(r.bottom), shows: Math.round(vv.offsetTop + vv.height), typing: document.activeElement === document.querySelector('#bet .field input') }; })()");
+    const before = await where();
+    // the keyboard takes the bottom of the screen
+    await send('Emulation.setDeviceMetricsOverride', { ...small, height: 300 });
+    await wait(600);
+    return { before, after: await where() };
+  }, small);
+  const show = JSON.stringify(out, null, 1);
+  // the box sat below what the keyboard leaves showing
+  assert.ok(out.before.bottom > 300, show);
+  assert.ok(out.after.top >= 0 && out.after.bottom <= out.after.shows, show);
+  assert.equal(out.after.typing, true, show);
+});
