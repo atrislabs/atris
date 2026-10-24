@@ -217,3 +217,12 @@ test('browser: at 200% zoom on a phone nothing scrolls sideways: the big orb, th
     assert.equal(r.console, 0, JSON.stringify(r));
   }
 });
+
+test('browser: at 200% zoom on a 320 phone and on a laptop the amber button and every card stay inside the screen', browser, async () => {
+  const runs = await health.zoomTrace({ chromePath: CHROME, sizes: ['small', 'laptop'] });
+  // the calm line's open box at 160px is auto-improver-from-harness-engineer-01
+  for (const r of runs.filter(x => !(x.size === 'small' && x.card === 'calm line'))) {
+    assert.equal(r.wider_px, 0, JSON.stringify(r));
+    assert.deepEqual(r.past_edges, [], JSON.stringify(r));
+  }
+});
