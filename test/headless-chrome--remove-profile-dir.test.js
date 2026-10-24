@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 // removeProfileDir is the cleanup half of the headless Chrome profile
 // lifecycle: launch spots call it when Chrome exits, so it must delete a

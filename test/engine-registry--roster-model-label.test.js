@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/clean-temp');
 
 // rosterModelLabel turns a saved model id into the short words a person reads
 // on a roster line ("claude-opus-5-5" -> "opus 5.5"). It is pure string work,
