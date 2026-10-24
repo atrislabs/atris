@@ -133,8 +133,8 @@ test('browser: on a phone with a notch in full screen the small orb rests below 
 
 test('browser: under reduced motion every path is plain fades: nothing travels, and the sphere and the footer are never gone or moved in a frame', { skip, timeout: 240000 }, async () => {
   const out = await paths.pathsTrace({ chromePath: CHROME, reduced: true });
-  // still to come: the deck flip and leaving the calm line
-  const later = new Set(['deck flip', 'calm line home']);
+  // still to come: leaving the calm line
+  const later = new Set(['calm line home']);
   for (const p of out.paths) {
     assert.equal(p.error, undefined, show(p));
     if (later.has(p.name)) continue;
@@ -145,4 +145,7 @@ test('browser: under reduced motion every path is plain fades: nothing travels, 
     assert.equal(p.footer_seen_jump, 0, show(p));
     if (p.lands) assert.deepEqual([p.after.orb_frames, p.after.running], [0, []], show(p));
   }
+  // a flip is a fade out and in, never words swapped in one frame (before: no fade, the footer jumped 121px)
+  const flip = byName(out)['deck flip'];
+  assert.ok(flip.card_fade > 0 && flip.card_fade <= 0.15, show(flip));
 });

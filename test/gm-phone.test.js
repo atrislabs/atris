@@ -1137,8 +1137,8 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.match(script, /ghost\.style\.top = \(r\.top - p\.top\) \+ 'px';/);
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
-  // reduced motion: the new card simply takes the old one's place
-  assert.match(script, /if \(reduced\) \{ b\.style\.minHeight = ''; paint\(\); after\(\); return; \}/);
+  // reduced motion: the card fades out, changes, and fades back in, with the footer aside while it moves
+  assert.match(script, /if \(reduced\) \{[\s\S]*?document\.body\.removeAttribute\('data-in-place'\);[\s\S]*?b\.classList\.remove\('up'\);[\s\S]*?setTimeout\(function \(\) \{ paint\(\); void b\.offsetWidth; b\.classList\.add\('up'\); setTimeout\(after, 200\); \}, 200\);/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+b\.style\.minHeight = '';/);
 });
