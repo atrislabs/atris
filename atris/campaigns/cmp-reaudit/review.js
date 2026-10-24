@@ -33,6 +33,7 @@ async function review(job) {
   // never the engine that wrote the test, nor any the job says to avoid (an earlier grader)
   const avoid = new Set([job.writer, ...(job.avoid || [])]);
   const reviewer = [prefer, 'claude', 'codex', 'agy'].find((e) => !avoid.has(e));
+  if (!reviewer) return { file: job.file, group: job.group, writer: job.writer, reviewer: null, verdict: 'no-eligible-grader', reason: `every grader is the writer or an earlier grader: ${[...avoid].join(', ')}` };
   const r = reviewer === 'claude'
     ? await run('claude', ['-p', '--model', 'claude-sonnet-5-5', '--allowedTools=Read,Grep,Glob', '--', prompt])
     : reviewer === 'agy'
