@@ -303,7 +303,31 @@ const FOCUSED = `(function () {
     if (k) scale *= Math.hypot(Number(k[1]), Number(k[2]));
   }
   var width = s.outlineStyle === 'none' ? 0 : parseFloat(s.outlineWidth) || 0;
-  return { what: n.id || (n.textContent || '').trim().slice(0, 40) || n.tagName.toLowerCase(), ring_px: Math.round(width * scale * 100) / 100, offset_px: Math.round((parseFloat(s.outlineOffset) || 0) * scale * 100) / 100 };
+  var out = ((parseFloat(s.outlineOffset) || 0) + width) * scale;
+  // the ring's outer box, and the room between it and what can be seen of
+  // the nearest other control (below zero: the ring runs into it). A control
+  // with a fill or an edge is seen whole; a bare link only where its words are.
+  var seen = function (o) {
+    var st = getComputedStyle(o);
+    var filled = ['rgba(0, 0, 0, 0)', 'transparent'].indexOf(st.backgroundColor) < 0 || parseFloat(st.borderTopWidth) > 0 || o.tagName === 'CANVAS' || o.id === 'lava';
+    if (filled) return o.getBoundingClientRect();
+    var rg = document.createRange(); rg.selectNodeContents(o);
+    var rs = Array.prototype.slice.call(rg.getClientRects());
+    if (!rs.length) return o.getBoundingClientRect();
+    return { left: Math.min.apply(null, rs.map(function (x) { return x.left; })), right: Math.max.apply(null, rs.map(function (x) { return x.right; })), top: Math.min.apply(null, rs.map(function (x) { return x.top; })), bottom: Math.max.apply(null, rs.map(function (x) { return x.bottom; })), width: 1, height: 1 };
+  };
+  var b = n.getBoundingClientRect();
+  var ring = { left: b.left - out, right: b.right + out, top: b.top - out, bottom: b.bottom + out };
+  var room = Infinity, nearest = null;
+  Array.prototype.forEach.call(document.querySelectorAll('button, [tabindex], input'), function (o) {
+    if (o === n || o.contains(n) || n.contains(o)) return;
+    var box = o.getBoundingClientRect();
+    if (!box.width || !box.height || getComputedStyle(o).visibility === 'hidden') return;
+    var r = seen(o);
+    var gap = Math.max(r.left - ring.right, ring.left - r.right, r.top - ring.bottom, ring.top - r.bottom);
+    if (gap < room) { room = gap; nearest = o.id || (o.textContent || '').trim().slice(0, 40); }
+  });
+  return { what: n.id || (n.textContent || '').trim().slice(0, 40) || n.tagName.toLowerCase(), ring_px: Math.round(width * scale * 100) / 100, offset_px: Math.round((parseFloat(s.outlineOffset) || 0) * scale * 100) / 100, room_px: Number.isFinite(room) ? Math.round(room * 10) / 10 : null, nearest: nearest };
 })()`;
 
 async function tabStops(p, send, most = 12) {

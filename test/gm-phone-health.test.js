@@ -193,3 +193,15 @@ test('browser: the small orb on a card shows a focus ring of 2px on screen, thou
   assert.ok(lava.ring_px >= 1.95 && lava.ring_px <= 2.05, JSON.stringify(lava));
   assert.ok(lava.offset_px >= 3.9, JSON.stringify(lava));
 });
+
+test('browser: every Tab stop on a card and on the big orb shows a 2px amber ring that never touches the control beside it', browser, async () => {
+  const out = await health.focusTrace({ chromePath: CHROME });
+  const stops = [...out.card, ...out.orb];
+  assert.ok(out.card.length >= 5 && out.orb.length >= 2, JSON.stringify(out));
+  for (const s of stops) {
+    assert.ok(s.ring_px >= 1.95, JSON.stringify(s));
+    // clear of every other control it sits by, never touching
+    assert.ok(s.room_px >= 3, JSON.stringify(s));
+  }
+  assert.deepEqual(out.console, []);
+});
