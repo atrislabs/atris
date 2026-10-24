@@ -79,11 +79,11 @@ test('browser: a fumbled double tap on do it only arms it; a real second tap sta
 // The page again with its long waits cut a hundredfold (anything set for 15
 // seconds or more), so a give-up the page makes after a minute and a half
 // shows in about a second. Only timers that long are touched.
-async function quickClock(p, send) {
+async function quickClock(p, send, ready = "Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')") {
   await send('Page.addScriptToEvaluateOnNewDocument', { source: '(function () { var st = window.setTimeout; window.setTimeout = function (f, ms) { var rest = Array.prototype.slice.call(arguments, 2); return st.apply(window, [f, ms >= 15000 ? ms / 100 : ms].concat(rest)); }; })()' });
   await send('Page.reload', {});
   await wait(300);
-  await p.until("document.readyState === 'complete' && Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')", 'the page again', 8000);
+  await p.until(`document.readyState === 'complete' && ${ready}`, 'the page again', 8000);
 }
 
 test('browser: a do it whose two steps on the Mac outlast the give-up is never called a failure, a retry meanwhile does not start it twice, and the result shows when it is done', { skip, timeout: 90000 }, async () => {
@@ -797,4 +797,46 @@ test('browser: on the calm line a reveal that never answers is given up on, the 
   // a second reveal went out, with the id of the one the page gave up on, so the Mac answers it once
   assert.ok(out.reveals.length >= 2 && out.reveals[0] && out.reveals[1] === out.reveals[0], show);
   assert.deepEqual(out.did, ['orb'], show);
+});
+
+// The big orb's tap on a page with no card: the first reaches the Mac, which
+// makes its card, but the answer never gets back; every tap is recorded with
+// the id it carries.
+const LOSE_FIRST_ORB_ANSWER = `(function () {
+  var real = window.fetch;
+  window.__orbTaps = [];
+  window.fetch = function (url, opts) {
+    var b = null;
+    try { b = opts && opts.method === 'POST' && opts.body ? JSON.parse(opts.body) : null; } catch (e) { b = null; }
+    if (String(url).indexOf('/act') >= 0 && b && b.orb && b.card_id == null) {
+      window.__orbTaps.push(b.send || null);
+      if (window.__orbTaps.length === 1) { real.apply(this, arguments); return new Promise(function () {}); }
+    }
+    return real.apply(this, arguments);
+  };
+})()`;
+
+test('browser: a big orb tap tried again while the first one\'s answer is lost shows the first tap\'s card, and the Mac makes no other', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const next = [CARDS.b1, CARDS.b2];
+  const desk = trace.cardDesk(null, async (action) => { did.push(action); return { card: next[did.length - 1] || CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: LOSE_FIRST_ORB_ANSWER });
+    await quickClock(p, send, "document.getElementById('line').textContent === 'tap to think'");
+    await p.tap('#orb');
+    // the page stops waiting on the first answer and says the Mac is still at it
+    await p.until("document.getElementById('line').textContent.indexOf('still working') >= 0 && !document.body.hasAttribute('data-busy')", 'the page stops waiting', 8000).catch(() => {});
+    const gaveUp = await look(p);
+    await p.tap('#orb');
+    await p.until("document.body.classList.contains('has-card') && Boolean(document.querySelector('#bet h1')) && !document.body.hasAttribute('data-busy')", 'a card', 10000).catch(() => {});
+    await wait(300);
+    return { gaveUp, taps: await p.run('window.__orbTaps'), did, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.match(out.gaveUp.line, /still working/, show);
+  // the owner sees the card the first tap made, and nothing was passed on the Mac
+  assert.deepEqual([out.after.has_card, out.after.title], [true, CARDS.b1.title], show);
+  assert.deepEqual(out.did, ['orb'], show);
+  // the second tap carried the first tap's id, so the Mac answered it with the first tap's card
+  assert.ok(out.taps.length === 2 && out.taps[0] && out.taps[1] === out.taps[0], show);
 });
