@@ -1128,6 +1128,8 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.match(script, /if \(option && \(IN_PLACE\.indexOf\(option\.action\) >= 0 \|\| around\)\) \{/);
   // moving around the team pages is a place to go, not an answer: it turns in place too
   assert.match(script, /var AROUND = \['member', 'swap', 'deck', 'back', 'swap_to'\];/);
+  // a card's fade-in closes the marks of the tap that brought it, never those of a tap made since
+  assert.match(script, /var startedAt = bet\.tapAt;\n\s+var done = function \(e\) \{ if \(e\.propertyName === 'opacity'\) \{ b\.removeEventListener\('transitionend', done\); if \(bet\.tapAt === startedAt\) measured\(\); \} \};/);
   assert.match(script, /if \(r\.ok && r\.card && !sameCard\(r\.card, bet\.shown\)\) \{ arrive\(r\.card\); return; \}/);
   assert.match(script, /function arrive\(card\) \{\n\s+if \(waiting\(\)\) \{ landFromWait\(card\); return; \}/);
   // the box holds its height while the old card leaves, then eases to the new one
