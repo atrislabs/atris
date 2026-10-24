@@ -168,3 +168,22 @@ test('browser: flipping a deck the Mac has moved past turns to the Mac\'s card w
   // the refused flips did nothing on the Mac
   assert.deepEqual([moved.did, empty.did], [[], []], show);
 });
+
+test('browser: a Mac that errs or is starting again never reads as a dead link, and a page opened then shows its card once the Mac answers', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+  const read = desk.card;
+  let down = true;
+  desk.card = () => { if (down) throw new Error('starting again'); return read(); };
+  const out = await trace.onPhone(desk, CHROME, async (p) => {
+    await wait(1200);
+    const during = await look(p);
+    down = false;
+    // the next look, every five seconds, finds the Mac again
+    await p.until(titled(CARDS.b1.title), 'the card', 9000).catch(() => {});
+    return { during, after: await look(p) };
+  }, trace.PHONE, { firstCard: false });
+  const show = JSON.stringify(out, null, 1);
+  assert.doesNotMatch(out.during.line, /stopped working/, show);
+  assert.equal(out.during.has_card, false, show);
+  assert.deepEqual([out.after.has_card, out.after.title], [true, CARDS.b1.title], show);
+});
