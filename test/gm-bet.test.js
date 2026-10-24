@@ -1074,6 +1074,127 @@ test('queue: with every question answered and nothing ready, a tap shows a plain
   assert.deepEqual([h.d.next().kind, h.d.view().bet.title], ['bet', TITLES[0]]);
 });
 
+test('calm line: words typed while the idea is written are a note for it: the same card takes them, read by no model, and the idea that comes in is the one written with them', async () => {
+  const reads = [];
+  const h = desk(workspace(), { answered: true, readSaid: async (p) => { reads.push(p); return { ok: true, kind: 'instruction', reply: '' }; } });
+  h.d.next();
+  const calm = h.d.card().card;
+  // the calm line keeps its box open, as a note for the idea being written
+  assert.deepEqual([calm.kind, calm.watch, calm.input.action, calm.input.placeholder], ['wait', true, 'say', 'add a note for this idea']);
+  assert.equal(h.gen.calls.length, 1, 'an idea is being written');
+  // one lands while the owner types, and the next starts behind it
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls.length, 2);
+
+  // a typed post names the calm line and is taken, not refused as stale
+  const said = await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  assert.equal(said.status, 200, JSON.stringify(said.body));
+  assert.deepEqual([said.body.ok, said.body.ack, said.body.card.kind, said.body.card.id], [true, 'got it, i\'ll fold that in.', 'wait', calm.id]);
+  assert.deepEqual(said.body.card.thread, [{ who: 'owner', text: 'make it about schools' }, { who: 'orb', text: 'got it, i\'ll fold that in.' }]);
+  assert.ok(said.body.card.input, 'the box stays open');
+  assert.equal(reads.length, 0, 'a note is read by no model');
+  assert.ok(h.logs.some(r => r.choice === 'wait_note' && r.kind === 'wait'), 'the note is recorded');
+  // the drafting no one asked for is stopped for it; the idea written before it waits
+  assert.equal(h.gen.calls[1].signal.aborted, true);
+  assert.equal(h.d.card().queue, 0, 'nothing is ready for this card yet');
+  const early = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([early.body.card.kind, early.body.card.id], ['wait', calm.id], 'the big orb waits for the noted idea too');
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
+
+  // a second note joins the first under the same card; the drafting with the first goes on
+  const more = await h.d.act({ card_id: calm.id, text: 'and keep it cheap' });
+  assert.deepEqual([more.status, more.body.card.id], [200, calm.id]);
+  assert.deepEqual(more.body.card.thread.map(t => t.text), ['make it about schools', 'and keep it cheap', 'got it, i\'ll fold that in.']);
+  assert.equal(h.gen.calls[2].signal.aborted, false);
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[3].ownerNote, 'make it about schools; and keep it cheap');
+  assert.equal(h.d.card().queue, 0, 'the first note alone is not the newest note');
+  await h.gen.releaseOne();
+  assert.ok(h.d.card().queue > 0);
+  const landed = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[3]]);
+  assert.equal(h.d.view().queue, 2, 'the ideas written without the newest note are kept for later');
+});
+
+test('calm line: an older calm line is stale, the same one under a new stamp is not, and the wait for a noted idea lasts one drafting budget: then the ready idea comes alone, saying the note is still being folded in, and the noted one is the next card', async () => {
+  const h = desk(workspace(), { answered: true, choices: true });
+  h.d.next();
+  const calm = h.d.card().card;
+  const [base] = calm.id.split('#');
+  await h.gen.releaseOne();
+  // the same calm line served under another stamp (its words changed) still takes words
+  const restamped = await h.d.act({ card_id: `${base}#00000000`, text: 'make it about schools' });
+  assert.deepEqual([restamped.status, restamped.body.card.id], [200, calm.id]);
+  // a calm line from before is another card
+  const old = await h.d.act({ card_id: 'wait:1#00000000', text: 'hello' });
+  assert.deepEqual([old.status, old.body.reason], [409, 'gone']);
+  // the hold is one drafting budget, the same 30 seconds the writers get
+  assert.equal(h.d.card().queue, 0);
+  h.tick(29000);
+  assert.equal(h.d.card().queue, 0);
+  h.tick(1001);
+  assert.equal(h.d.card().queue, 1);
+  const ready = await h.d.act({ orb: true, card_id: calm.id });
+  assert.deepEqual([ready.body.card.kind, ready.body.card.title, ready.body.card.line], ['idea', TITLES[0], 'your note is still being folded in. that version comes next.']);
+  // the noted one lands while that idea is up: nothing swaps under him
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[2].ownerNote, 'make it about schools');
+  await h.gen.releaseOne();
+  await h.gen.releaseOne();
+  assert.ok(h.d.view().queue >= 2, 'two ideas ready, enough for a choice');
+  assert.equal(h.d.card().card.id, ready.body.card.id, 'the card on screen stays');
+  // and it is the next card, on its own, not one of a choice
+  const next = await h.d.act({ orb: true, card_id: ready.body.card.id });
+  assert.deepEqual([next.body.card.kind, next.body.card.title, next.body.card.line || null], ['idea', TITLES[2], null]);
+});
+
+test('calm line: a note on a wait that ends with nothing is kept, and try again drafts with it', async () => {
+  const h = desk(workspace(), { answered: true, gen: stubGenerator({ fail: n => n === 1 }) });
+  h.d.next();
+  const calm = h.d.card().card;
+  await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about schools');
+  // the drafting with the note fails: the wait ends in a card he can act on
+  await h.gen.releaseOne();
+  const missed = h.d.card().card;
+  assert.equal(missed.kind, 'missed');
+  const again = await h.d.act({ card_id: missed.id, option_id: 'again' });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[h.gen.calls.length - 1].ownerNote, 'make it about schools');
+});
+
+test('calm line: try again after a failed noted drafting joins the one already writing the combined note, never a second', async () => {
+  const h = desk(workspace(), { answered: true, gen: stubGenerator({ fail: n => n === 1 }) });
+  const joined = 'make it about schools; and keep it cheap';
+  h.d.next();
+  const calm = h.d.card().card;
+  await h.d.act({ card_id: calm.id, text: 'make it about schools' });
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls[1].ownerNote, 'make it about schools');
+  // a second note while the first is being written
+  await h.d.act({ card_id: calm.id, text: 'and keep it cheap' });
+  // that drafting fails: the wait ends, and the combined note starts drafting on its own
+  await h.gen.releaseOne();
+  const missed = h.d.card().card;
+  assert.equal(missed.kind, 'missed');
+  assert.equal(h.gen.calls[2].ownerNote, joined);
+  // try again joins it: the calm line shows the notes and starts nothing new
+  const again = await h.d.act({ card_id: missed.id, option_id: 'again' });
+  assert.deepEqual([again.status, again.body.card.kind], [200, 'wait'], JSON.stringify(again.body));
+  assert.deepEqual(again.body.card.thread.map(x => x.text), ['make it about schools', 'and keep it cheap', 'got it, i\'ll fold that in.']);
+  assert.equal(h.d.card().queue, 0, 'the calm line waits for the idea with the note');
+  await h.gen.releaseOne();
+  assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'one drafting carries the note');
+  // and that idea is the one that comes in
+  const landed = await h.d.act({ orb: true, card_id: again.body.card.id });
+  assert.deepEqual([landed.body.card.kind, landed.body.card.title], ['idea', TITLES[2]]);
+  await h.gen.release();
+  assert.equal(h.gen.calls.filter(c => c.ownerNote === joined).length, 1, 'and never a second one later');
+});
+
 test('queue: a tap while a background bet is being made shows a card now, and starts no second call', async () => {
   const h = desk(workspace(), { answered: true });
   h.d.warm();
@@ -1500,9 +1621,10 @@ test('say something: on any card free text does the plain thing, capped and logg
   q.d.next();
   assert.deepEqual(await q.d.say({ text: 'paying customers in schools' }), { ok: true, ack: 'got it: paying customers in schools.' });
   assert.equal(gmBet.readFocus(gmBet.focusPath(path.dirname(q.ledgerFile)), qroot).focus.label, 'paying customers in schools');
-  // on the plain card: the next idea fits it
+  // on the calm line: a note for the idea being written, and the card stays
   assert.equal(q.d.next().kind, 'wait');
-  assert.deepEqual(await q.d.say({ text: 'something for schools' }), { ok: true, ack: 'got it. the next idea will fit that.' });
+  assert.deepEqual(await q.d.say({ text: 'something for schools' }), { ok: true, noted: true, ack: 'got it, i\'ll fold that in.' });
+  assert.equal(q.d.view().kind, 'wait');
   // one writer at a time: the note goes to the next one, right after the one running now
   await q.gen.releaseOne();
   assert.equal(q.gen.calls[q.gen.calls.length - 1].ownerNote, 'something for schools');
@@ -3976,21 +4098,18 @@ setInterval(() => {}, 1000);
 });
 
 test('waiting card: words typed while the wait ends with nothing are never dropped; the next drafting is written with them', async () => {
-  // the drafting fails while his words are still being read
+  // the drafting under way would fail; his words on the calm line are a note, taken at once
+  // with no read, and that drafting is stopped for them, so the wait never ends with nothing
   const gen = stubGenerator({ fail: n => n === 0 });
-  let answerRead;
-  const h = desk(workspace(), { gen, answered: true, readSaid: () => new Promise((r) => { answerRead = r; }) });
+  const reads = [];
+  const h = desk(workspace(), { gen, answered: true, readSaid: async (p) => { reads.push(p); return { ok: true, kind: 'instruction', reply: '' }; } });
   const wait = (await h.d.act({ orb: true })).body.card;
   assert.equal(wait.kind, 'wait');
-  const sent = h.d.act({ card_id: wait.id, text: 'make it about small schools' });
-  await tick();
-  await gen.releaseOne();
-  assert.equal(h.d.view().kind, 'missed', 'the wait ended in the try-again card');
-  answerRead({ ok: true, kind: 'instruction', reply: '' });
-  const out = await sent;
+  const out = await h.d.act({ card_id: wait.id, text: 'make it about small schools' });
   assert.deepEqual([out.status, out.body.ok, out.body.card.kind], [200, true, 'wait'], JSON.stringify(out.body));
-  // the drafting started behind the try-again card gives way to his words
+  assert.equal(reads.length, 0);
   await gen.releaseOne();
+  assert.equal(h.d.view().kind, 'wait', 'the stopped drafting ends as stopped, not as nothing');
   assert.equal(gen.calls[gen.calls.length - 1].ownerNote, 'make it about small schools');
   // the wait ended before he sent, and the page had looked again: the words still count
   const gen2 = stubGenerator({ fail: n => n === 0 });

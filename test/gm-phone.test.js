@@ -1015,10 +1015,72 @@ test('page: an act holds the chosen spot, then one motion: the card fades into t
   assert.match(script, /var AFTER_MS = 1500;/);
   // the next card blooms where the dots land, as the sphere settles to the small orb
   assert.match(script, /if \(phase === 'cover'\) \{ showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
-  // reduced motion goes straight to the card
-  assert.match(script, /if \(reduced\) \{ orb\.settled\(\); showCard\(card, false\); bet\.busy = false; if \(after\) after\(\); return; \}/);
+  // reduced motion: no spiral, the card fades in where it goes
+  assert.match(script, /if \(reduced\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); return; \}/);
+  // the card fades all the way before it leaves the page, and the sphere comes back swarming, not idle
+  assert.match(html, /\.bet\.leave\.fast \{ transition: opacity 0\.2s ease-in-out; \}/);
+  assert.match(script, /var ACT_LEAVE_MS = 220,/);
+  assert.match(script, /mode = fast \? 'swarm' : 'idle';/);
   // no thinking text: nothing under the sphere while it waits but the Mac's own line
   assert.doesNotMatch(script, /thinking|line\.set\('\\u2026/);
+});
+
+test('page: while the next card is on its way the dots keep moving; on the calm line the sphere stays, its box is open, and a note goes on the calm line\'s own id', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new Function(script));
+  // the swarm is the dots themselves: the sphere turns faster and each dot wanders its own loop,
+  // eased in and out; it never runs under reduced motion and stops once a card is up
+  assert.match(script, /var swarming = mode === 'swarm' && !reduced;/);
+  assert.match(script, /swarmK \+= \(\(swarming \? 1 : 0\) - swarmK\) \* toward;/);
+  assert.match(script, /homeX \+= Math\.sin\(clock \* d\.f1 \+ d\.p1\) \* wander;/);
+  assert.match(script, /if \(mode === 'card' \|\| \(reduced && \(mode === 'idle' \|\| mode === 'swarm'\)\)\) \{ raf = 0; return; \}/);
+  // no glow loop and no keyframes of its own: motion of the dots, drawn frame by frame
+  assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
+  // a spiral starts from the dots' own speed, so they turn inward without a stop
+  assert.match(script, /d\.kx \+= d\.vx; d\.ky \+= d\.vy; d\.vx \*= CARRY; d\.vy \*= CARRY;/);
+  // the calm line: the sphere stays on the page with its dots swarming, and the card under it takes no room
+  assert.match(script, /function enterWait\(card, atOnce\) \{[\s\S]*?orb\.swarm\(\);[\s\S]*?document\.body\.classList\.add\('has-card', 'waiting'\);/);
+  assert.match(html, /body\.has-card\.waiting \.stage \{ display: block; transform: translateY\(var\(--wait-dy, 0px\)\) scale\(var\(--wait-k, 1\)\); \}/);
+  assert.match(html, /body\.waiting \.bet \{ position: absolute;/);
+  assert.match(html, /\.stage \{ transform-origin: 50% 0; transition: transform 0\.6s cubic-bezier\(0\.65, 0, 0\.35, 1\); \}/);
+  // its box is open from the start and stays open, without taking the cursor
+  assert.match(script, /if \(box\(\)\.getAttribute\('data-kind'\) === 'wait'\) typeHere\(open, input\.placeholder \|\| 'add a note for this idea', input\.max \|\| 280, function \(text, field\) \{ sendNote\(field, text\); \}, true\);/);
+  assert.match(script, /if \(stay \|\| input\.value\.trim\(\) \|\| field\.classList\.contains\('chosen'\) \|\| !field\.isConnected\) return;/);
+  assert.match(script, /if \(stay\) return field;\n\s+dimOthers\(field\);\n\s+input\.focus\(\);/);
+  // a note names the calm line and carries its own send id; the card stays, and only its live words change
+  assert.match(script, /var body = \{ card_id: from\.id, text: text, send: sendId\(\[from\.id, 'the box', text\]\.join\(' \| '\)\) \};/);
+  assert.match(script, /if \(r\.ok && r\.card && sameCard\(r\.card, from\)\) \{ input\.value = ''; input\.blur\(\); live\(r\.card\); return; \}/);
+  // the live words: the newest drafting line on the card, how long it has been (the Mac's own
+  // count, carried on), and the newest note with its answer
+  assert.match(script, /var lines = Array\.isArray\(card\.progress\) \? card\.progress : \[\];/);
+  assert.match(script, /if \(Number\.isFinite\(card\.waited_ms\)\) waitClock = \{ key: String\(card\.id\)\.split\('#'\)\[0\], ms: card\.waited_ms, at: Date\.now\(\) \};/);
+  assert.match(script, /var began = typeof card\.started_at === 'number' \? card\.started_at : Date\.parse\(card\.started_at \|\| ''\);/);
+  assert.match(script, /var want = turns\.slice\(-2\);/);
+  // the idea lands: the calm line's words fade while the dots spiral in, and it grows out of the point
+  assert.match(script, /function landFromWait\(card, after\) \{[\s\S]*?orb\.play\(function \(phase\) \{\n\s+if \(phase === 'cover'\) \{ off\(\); showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
+  // the idea waits while the owner types there or a note is on its way
+  assert.match(script, /var quiet = function \(\) \{ return !bet\.busy && !bet\.noting && document\.body\.classList\.contains\('has-card'\) && !typingOnCard\(\); \};/);
+  // the footer steps aside while a card moves, so it never jumps between places
+  assert.match(html, /body\[data-busy\]:not\(\[data-in-place\]\) \.foot \{ opacity: 0; transition: opacity 0\.15s ease-in; \}/);
+});
+
+test('page: under reduced motion nothing travels or swarms, and every card change is a plain fade', () => {
+  const html = phonePage('NONCE');
+  const script = html.split('<script nonce="NONCE">')[1].split('</script>')[0];
+  const block = html.split('@media (prefers-reduced-motion: reduce) {')[1].split('\n}')[0];
+  // the cards fade, the sphere and the live words never ease from place to place
+  assert.match(block, /\.bet \{ transform: none; transition: opacity 0\.2s linear; \}/);
+  assert.match(block, /\.bet\.quick, \.bet\.acted, \.bet\.leave, \.bet\.leave\.fast, \.bet\.wait-in \{ transform: none; transition: opacity 0\.2s linear; \}/);
+  assert.match(block, /\.stage, \.waitstep, \.waitnotes, \.waitnotes \.turn \{ transition: none; \}/);
+  // the sphere fades in at a new place instead of moving there
+  assert.match(script, /function stageFade\(\) \{\n\s+if \(!reduced\) return;/);
+  assert.match(script, /if \(!was\) \{ placeWait\(!atOnce && !reduced\); stageFade\(\); \}/);
+  // leaving a card: it fades, then the sphere is there; an idea from the calm line fades in
+  assert.match(script, /setTimeout\(function \(\) \{ swap\(\); stageFade\(\); orb\.melt\(then, to, function \(\) \{\}, fast\); \}, 200\);/);
+  assert.match(script, /setTimeout\(function \(\) \{ off\(\); orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \}, 200\);/);
+  // the dots are drawn once and hold
+  assert.match(script, /if \(!reduced && \(mode === 'idle' \|\| mode === 'swarm'\)\) angle \+= dt \* spin;/);
 });
 
 test('page: the idle orb answers the pointer like the landing orb, and only the pointer', () => {
@@ -1028,8 +1090,8 @@ test('page: the idle orb answers the pointer like the landing orb, and only the 
   // StippleOrb's constants, copied: dots within RADIUS are pushed out by PUSH,
   // then spring home; the ripple runs out from where the pointer came in
   assert.deepEqual(['RADIUS', 'PUSH', 'SPRING', 'DAMP', 'WAVE_SPEED', 'WAVE_WIDTH', 'WAVE_LIFE'].map(num), [90, 14, 0.07, 0.8, 620, 70, 1.6]);
-  // the push only in the idle sphere, never under reduced motion
-  assert.match(script, /if \(mode === 'idle'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
+  // the push only in the resting sphere (idle, or swarming while a card is on its way), never under reduced motion
+  assert.match(script, /if \(mode === 'idle' \|\| mode === 'swarm'\) \{\n\s+var homeX = cx \+ rx \* R, homeY = cy \+ d\.y \* R;/);
   assert.match(script, /if \(pointer\.inside && !reduced\) \{/);
   assert.match(script, /var f = \(1 - dist \/ RADIUS\) \* PUSH;\n\s+d\.vx \+= \(dx \/ dist\) \* f \* 0\.2;/);
   // the light eases toward the pointer anywhere on the page (trackWindow), as on the landing page
@@ -1057,9 +1119,11 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.equal(num('DRIFT'), 4);
   assert.ok(80 + num('TURN_IN_MS') < 500, 'a turn is well under half a second');
   // only the same card moving turns in place (a deck flip, more models, who a swap is
-  // for) and the calm line's idea turning in; an answer is the one motion through the sphere
+  // for); an answer is the one motion through the sphere, and the calm line's idea
+  // grows out of its dots
   assert.match(script, /if \(option && IN_PLACE\.indexOf\(option\.action\) >= 0\) \{/);
-  assert.match(script, /if \(s\.queue > 0\) \{[\s\S]*?if \(r\.ok && r\.card\) turnTo\(r\.card\);/);
+  assert.match(script, /if \(r\.ok && r\.card && !sameCard\(r\.card, bet\.shown\)\) \{ arrive\(r\.card\); return; \}/);
+  assert.match(script, /function arrive\(card\) \{\n\s+if \(waiting\(\)\) \{ landFromWait\(card\); return; \}/);
   // the box holds its height while the old card leaves, then eases to the new one
   assert.match(script, /var from = b\.offsetHeight;\n\s+b\.style\.height = from \+ 'px';\n\s+b\.style\.minHeight = '';/);
   assert.match(script, /b\.style\.height = to \+ 'px';/);
@@ -1092,9 +1156,20 @@ test('page: a tap on a card fades it, glides home to the sphere, and the fast bl
   assert.match(script, /var leaveMs = fast \? ACT_LEAVE_MS : LEAVE_MS, glideMs = fast \? ACT_GLIDE_MS : GLIDE_MS, beatMs = fast \? ACT_BEAT_MS : BEAT_MS;/);
   // the sphere grows back and holds for a beat before the next reveal
   assert.ok(num('BEAT_MS') >= 200);
-  // the queued bet's bloom stays under 80% of the smaller window side and never dims the page
+  // the queued bet's bloom stays under 80% of the smaller window side and never dims the
+  // page; after an act it is smaller still
   assert.ok(num('BLOOM') < 0.8);
-  assert.match(script, /BLOOM \* Math\.min\(window\.innerWidth, window\.innerHeight\) \/ 2/);
+  assert.ok(num('ACT_BLOOM') < num('BLOOM'));
+  assert.match(script, /var bloom = quick \? ACT_BLOOM : BLOOM;/);
+  assert.match(script, /bloom \* Math\.min\(window\.innerWidth, window\.innerHeight\) \/ 2/);
+  // a contained bloom is one motion: born at the point the dots drew, swelling on a soft
+  // curve while it already drifts up, then easing into the small orb with no stop
+  assert.match(script, /var vx = rect\.left \+ rect\.width \/ 2, vy = rect\.top \+ rect\.height \/ 2;/);
+  assert.match(script, /if \(contained\) \{ rise\(growMs, settleMs, sMin, sMax, rest\); return; \}/);
+  assert.match(script, /var s = u < k \? sMin \+ \(sMax - sMin\) \* \(0\.5 - 0\.5 \* Math\.cos\(Math\.PI \* u \/ k\)\) : sMax \+ \(rest - sMax\) \* ease\(\(u - k\) \/ \(1 - k\)\);/);
+  assert.match(script, /var m = ease\(u\);\n\s+place\(s, origin\.x \+ \(p\.x - origin\.x\) \* m, origin\.y \+ \(p\.y - origin\.y\) \* m\);/);
+  // the lava is at the point before it can be seen
+  assert.match(script, /lava\.style\.opacity = '0';\n\s+place\(sMin, origin\.x, origin\.y\);\n\s+lava\.style\.visibility = 'visible';/);
   assert.match(script, /dim\.style\.opacity = contained \? '0'/);
   // the bet still being made keeps the full grow toward the farthest corner
   assert.match(script, /var growMs = quick \? ACT_GROW_MS : contained \? FAST_GROW_MS : \(GROW_MS \* pace\);/);
@@ -1493,17 +1568,20 @@ test('browser: the small orb on any card goes back to the big dotted orb; the bi
 
 // ---- typing on the calm line: the idea waits for the owner -------------------------
 
-test('browser: on the calm line the owner types, the idea lands and waits; it comes in after they send, or after they clear the box and leave it', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+test('browser: on the calm line the owner types, the idea lands and waits; words sent there are a note, and the idea that comes in is the one written with it; a cleared box lets the waiting idea in', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
   const gmBet = require('../lib/gm-bet');
-  const IDEA = {
-    title: 'Write a getting started page for atris gm phone with a 30 second screen recording',
+  const idea = (title) => ({
+    title,
     why_now: 'installs last week were 1,400 and the phone page just went live, so new installs have nothing to try first.',
     expect: '300 more npm installs in the week before nov 1',
     target: { metric: 'installs', baseline: 1400, goal: 1700 },
     check_in_days: 9, metric_source: 'npm installs for atris', verify: 'test -s docs/gm-phone.md', cost: 'about 4 hours of agent time, $0',
     steps: [{ text: 'draft the getting started page', who: 'team', member: 'builder', public: false }],
-  };
+  });
+  const IDEA = idea('Write a getting started page for atris gm phone with a 30 second screen recording');
+  const NOTED = idea('Write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
+  const FOLDED = 'got it, i\'ll fold that in.';
   const runs = [];
   for (const end of ['send', 'clear']) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
@@ -1513,7 +1591,7 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
       workspaceRoot: root, ledgerFile: path.join(root, 'gm-bets.jsonl'), log: () => {}, warmOnCreate: false, choices: false,
       readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
       // like the real writer, a drafting the desk stops ends at once
-      generate: opts => new Promise((resolve) => { writing.push(resolve); if (opts.signal) opts.signal.addEventListener('abort', () => resolve({ ok: false, stopped: true })); }),
+      generate: o => new Promise((resolve) => { const w = { o, resolve, stopped: false }; writing.push(w); if (o.signal) o.signal.addEventListener('abort', () => { w.stopped = true; resolve({ ok: false, stopped: true }); }); }),
       generateQuestion: () => new Promise(() => {}),
       readSaid: async (p) => { said.push(p); return { ok: true, kind: 'instruction', reply: '' }; },
       runCli: async () => ({ code: 0, stdout: '{}' }),
@@ -1526,32 +1604,120 @@ test('browser: on the calm line the owner types, the idea lands and waits; it co
     await new Promise(r => setImmediate(r));
     assert.equal(writing.length, 2);
     runs.push(await trace.onPhone(desk, CHROME, async (p) => {
-      const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null }; })()");
+      const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null, notes: Array.prototype.map.call(document.querySelectorAll('#bet .waitnotes .turn'), function (n) { return n.textContent; }), dots: document.getElementById('orb').__orb.frame }; })()");
       const calm = await look();
-      await p.tap('#bet .sayline .quiet');
+      // the box is open already; a tap puts the cursor in it
+      await p.tap('#bet .sayline .field input');
       await new Promise(r => setTimeout(r, 250));
       await p.type(WORDS);
       // the idea is written while the owner types
-      writing[writing.length - 1]({ ok: true, bet: IDEA });
+      writing[writing.length - 1].resolve({ ok: true, bet: IDEA });
       await new Promise(r => setTimeout(r, 3500));
       const typing = await look();
-      if (end === 'send') await p.enter();
-      else await p.run("(function () { var i = document.querySelector('#bet .field input'); if (i) { i.value = ''; i.blur(); } })()");
-      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(IDEA.title)}`, 'the idea', 8000).catch(() => {});
+      const out = { end, calm, typing };
+      if (end === 'send') {
+        await p.enter();
+        await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet .waitnotes .turn'), function (n) { return n.textContent === ${JSON.stringify(FOLDED)}; })`, 'the note folded in', 6000);
+        await new Promise(r => setTimeout(r, 300));
+        out.folded = await look();
+        // the drafting no one asked for is stopped for the note, and one with the note starts;
+        // the idea that landed before it waits behind the calm line
+        const noted = () => writing.find(w => !w.stopped && w.o.ownerNote);
+        for (let i = 0; i < 100 && !noted(); i += 1) await new Promise(r => setTimeout(r, 20));
+        out.stopped = writing.filter(w => w.stopped).length;
+        await new Promise(r => setTimeout(r, 3200));
+        out.held = await look();
+        // the idea written with the note is the one that comes in
+        out.note = noted().o.ownerNote;
+        noted().resolve({ ok: true, bet: NOTED });
+      } else await p.run("(function () { var i = document.querySelector('#bet .field input'); if (i) { i.value = ''; i.blur(); } })()");
+      await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(end === 'send' ? NOTED.title : IDEA.title)}`, 'the idea', 9000).catch(() => {});
       await new Promise(r => setTimeout(r, 400));
-      return { end, calm, typing, after: await look(), said: said.length };
+      return { ...out, after: await look(), said: said.length };
     }));
   }
   const show = JSON.stringify(runs, null, 1);
   for (const r of runs) {
     assert.equal(r.calm.title, 'writing your next idea.', show);
+    assert.equal(r.calm.words, '', 'the calm line opens with its box open');
     // the idea landed while the owner typed: the words and the calm line stay
-    assert.deepEqual(r.typing, { title: 'writing your next idea.', words: WORDS }, show);
-    // then it comes in
-    assert.equal(r.after.title, IDEA.title, show);
+    assert.deepEqual([r.typing.title, r.typing.words], ['writing your next idea.', WORDS], show);
+    assert.ok(r.typing.dots - r.calm.dots > 60, `the dots kept moving the whole time: ${show}`);
   }
-  // sent: the words reached the desk first
-  assert.equal(runs[0].said, 1, show);
+  const [sent, cleared] = runs;
+  // sent: a note, read by no model; the box is open again and empty, the card says it is folded in
+  assert.deepEqual([sent.folded.title, sent.folded.words, sent.folded.notes], ['writing your next idea.', '', [WORDS, FOLDED]], show);
+  assert.equal(sent.said, 0, show);
+  // the drafting no one asked for stopped for it; the idea written without it waits,
+  // and the one written with it comes in
+  assert.ok(sent.stopped >= 2, show);
+  assert.equal(sent.held.title, 'writing your next idea.', show);
+  assert.equal(sent.note, WORDS, show);
+  assert.equal(sent.after.title, NOTED.title, show);
+  // cleared and left: the idea that landed comes in
+  assert.equal(cleared.after.title, IDEA.title, show);
+});
+
+// ---- the wait, frame by frame: no frozen moment and no jump ------------------------------
+
+test('browser: after a typed answer the dots never stop: got it, the calm line with its box open, a note folded in, and the idea grows out of the dots, with no frozen moment and no jump', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const r = await trace.waitTrace({ chromePath: CHROME });
+  const show = JSON.stringify(r, null, 1);
+  assert.equal(r.reached_idea, true, show);
+  // the only still moment is the beat the chosen answer holds; while the owner waits, never
+  assert.ok(r.longest_still_ms <= 250, show);
+  assert.ok(r.longest_still_waiting_ms <= 150, show);
+  assert.ok(r.dot_frames > 200, show);
+  // the got it line under the moving sphere, then the calm line's live words, its open box, the note
+  assert.ok(r.lines.includes('got it: paying schools.'), show);
+  assert.equal(r.calm_box_open, true, show);
+  assert.ok(r.calm_steps.length >= 2 && r.calm_steps.every(x => trace.CALM_LINES.includes(x)), show);
+  assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
+  // the note is a post on the calm line's own id, and the idea comes when asked for from it
+  assert.deepEqual(r.posts.map(x => [x.action, x.card]), [['say', 'question:focus'], ['say', 'wait:7'], ['orb', 'wait:7']], show);
+  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels)
+  assert.ok(r.lava_max_step_px <= 45, show);
+  assert.ok(r.lava_max_size_step_px <= 45, show);
+  assert.ok(r.lava_max_speed_change_px <= 15, show);
+  assert.ok(r.sphere_max_step_px <= 10, show);
+  assert.ok(r.dots_max_speed_change_px <= 10, show);
+  assert.ok(r.title_max_step_px <= 5, show);
+  assert.equal(r.footer_seen_jump_px, 0, show);
+  // the idea is born where the dots were
+  assert.ok(r.bloom_from_dots_px <= 3, show);
+});
+
+test('browser: the calm line fits every screen: its box is inside the edges with send whole, and its words are centered under the sphere with the team, at 390, 430, and laptop width', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const runs = await trace.calmLayoutTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  assert.deepEqual(runs.map(r => r.viewport), ['390x844', '430x932', '1280x800']);
+  for (const r of runs) {
+    // nothing runs off the side, and the page never scrolls sideways
+    assert.equal(r.scroll_w, r.vw, show);
+    assert.ok(r.field.left >= 16 && r.field.right <= r.vw - 16, show);
+    assert.ok(r.send.right <= r.field.right && r.send.left >= r.field.left, show);
+    // the card lines up with every other card: the same column, centered
+    assert.ok(Math.abs((r.card.left + r.card.right) / 2 - r.vw / 2) <= 1, show);
+    assert.ok(Math.abs(r.title.mid - r.team.mid) <= 4, show);
+    assert.ok(Math.abs(r.title.mid - r.vw / 2) <= 4, show);
+    // the box sits above the footer
+    assert.ok(r.field.bottom < r.foot.top, show);
+  }
+});
+
+test('browser: under reduced motion the same wait has no swarm and no travel, only plain fades, and the calm line still takes a note',{ skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+  const r = await trace.waitTrace({ chromePath: CHROME, reduced: true });
+  const show = JSON.stringify(r, null, 1);
+  assert.equal(r.reached_idea, true, show);
+  // the dots are drawn when the sphere changes, and hold: a redraw or two, never a swarm
+  assert.ok(r.orb_frames_drawn <= 6, show);
+  assert.ok(r.dot_frames <= 2, show);
+  // nothing travels: not the lava, not the sphere, not the footer
+  assert.deepEqual([r.lava_max_step_px, r.sphere_max_step_px, r.footer_seen_jump_px], [0, 0, 0], show);
+  // every card change is a fade
+  assert.ok(r.fading_frames >= 6, show);
+  assert.equal(r.calm_box_open, true, show);
+  assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
 });
 
 // ---- the number question and the weekly number card read first ---------------------

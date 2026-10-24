@@ -13,6 +13,10 @@
 //   node scripts/gm-phone-trace.js --shots DIR  also saves a phone screenshot
 //                                               at each moment (slows frames;
 //                                               read the numbers from a plain run)
+//   node scripts/gm-phone-trace.js --wait       a typed answer, got it, the calm
+//                                               line, a note, and the idea out of
+//                                               the dots, then the same under
+//                                               reduced motion (--shots DIR too)
 //   node scripts/gm-phone-trace.js --team       the team card at phone and
 //                                               laptop size (--shots DIR saves both)
 //   node scripts/gm-phone-trace.js --engine     the swap card from the team
@@ -112,7 +116,7 @@ function scriptedDesk({ readMs = 150 } = {}) {
   });
 }
 
-async function serve(desk) {
+async function serve(desk, page = phonePage) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-trace-'));
   const hosts = [];
   const handler = phone.createPhoneHandler({
@@ -124,7 +128,7 @@ async function serve(desk) {
     writeTarget: () => true,
     snapshotTarget: () => () => true,
     logPath: path.join(dir, 'gm-phone-actions.jsonl'),
-    page: phonePage,
+    page,
     makeBetDesk: () => desk,
   });
   const server = http.createServer((q, s) => { handler(q, s).catch(() => { s.writeHead(500); s.end(); }); });
@@ -300,14 +304,16 @@ const titled = t => `${SETTLED} && document.querySelector('#bet h1') && document
 // The real page on a phone-size headless Chrome (or the viewport given),
 // served with this desk and at rest on its first card. fn(p, send) drives
 // it; Chrome and the server are closed after, whatever happens.
-async function onPhone(desk, chromePath, fn, viewport = PHONE, { firstCard = true } = {}) {
+// reduced: the phone asks for reduced motion; page: another build of the page
+async function onPhone(desk, chromePath, fn, viewport = PHONE, { firstCard = true, reduced = false, page = phonePage } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
-  const server = await serve(desk);
+  const server = await serve(desk, page);
   let chrome = null;
   try {
     chrome = await launch(chromePath);
     const { send } = chrome;
     await send('Emulation.setDeviceMetricsOverride', viewport);
+    if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await send('Page.enable');
     await send('Page.navigate', { url: server.url });
     const p = driver(send);
@@ -664,10 +670,11 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
 
 // ---- the small orb on any card goes back to the big one -----------------------------------
 
-// On an idea, on the calm line while the next idea is written, and on a yes
-// card, the owner taps the small orb at the top. Where the page ends up and
-// whether it asked for a new card; then a tap on the big orb. On the calm
-// line the idea lands while the owner is on the big orb, and waits there.
+// On an idea and on a yes card the owner taps the small orb at the top; on
+// the calm line, while the next idea is written, the sphere itself is the
+// orb on the card and they tap its dots. Where the page ends up and whether
+// it asked for a new card; then a tap on the big orb. On the calm line the
+// idea lands while the owner is on the big orb, and waits there.
 async function orbHomeTrace({ chromePath = findChrome() } = {}) {
   const runs = [];
   for (const from of ['idea', 'calm', 'yes']) {
@@ -680,7 +687,7 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
     }, { queue: () => (landed ? 1 : 0), needs: () => (from === 'yes' ? 2 : 0) });
     runs.push(await onPhone(desk, chromePath, async (p) => {
       const place = () => p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), big_orb: getComputedStyle(document.querySelector('.stage')).display !== 'none' && getComputedStyle(document.getElementById('orb')).visibility !== 'hidden', line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()");
-      await p.tap('#lava');
+      await p.tap(from === 'calm' ? '#orb' : '#lava');
       await p.until("!document.body.classList.contains('has-card')", 'the big orb', 4000).catch(() => {});
       await wait(900);
       const home = { ...(await place()), asked };
@@ -1133,7 +1140,8 @@ async function walkTrace({ chromePath = findChrome(), cards } = {}) {
         if (o.confirm) { await wait(100); await p.tap(`#bet [data-option="${o.id}"]`); }
         if (o.type) { await wait(200); await p.type('a few words'); await p.enter(); }
       } else {
-        await p.tap('#bet .sayline .quiet');
+        // the calm line's box is open already; any other box opens on a tap
+        await p.tap((await p.run("Boolean(document.querySelector('#bet .sayline .field input'))")) ? '#bet .sayline .field input' : '#bet .sayline .quiet');
         await wait(200);
         await p.type('a few words');
         await p.enter();
@@ -1143,7 +1151,286 @@ async function walkTrace({ chromePath = findChrome(), cards } = {}) {
   });
 }
 
-module.exports = { findChrome, launch, trace, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
+// ---- the wait: a typed answer, got it, the calm line, a note, the idea out of the dots ------
+
+const CALM_LINES = ['drafting three ideas at once', 'the first draft is in. checking it', 'two drafts are in. picking the stronger one'];
+const FOLDED = 'got it, i\'ll fold that in.';
+
+// One row per frame of everything that can move while the owner waits: the
+// dots (the orb's own count of frames it drew and how far its dots went),
+// the sphere, the lava, the card and its title, the line under the sphere,
+// and the footer.
+const WAIT_RECORDER = `(function () {
+  var T = window.__wait = { frames: [], marks: [], on: true };
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter') T.marks.push({ what: 'enter', t: performance.now() }); }, true);
+  function r(n) { if (!n) return null; var b = n.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }
+  // a page with no motion count of its own: a sum over a grid of the canvas pixels
+  function pixels(canvas) {
+    var c = canvas.getContext('2d'), w = canvas.width, h = canvas.height, sum = 0;
+    var d = c.getImageData(Math.floor(w * 0.2), Math.floor(h * 0.2), Math.floor(w * 0.6), Math.floor(h * 0.6)).data;
+    for (var i = 3; i < d.length; i += 4 * 97) sum += d[i];
+    return sum;
+  }
+  (function rec() {
+    if (!T.on) return;
+    var canvas = document.getElementById('orb'), stage = document.getElementById('stage'), lava = document.getElementById('lava');
+    var box = document.getElementById('bet'), foot = document.getElementById('foot'), line = document.getElementById('line');
+    var o = canvas.__orb || null;
+    var shown = getComputedStyle(stage).display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden';
+    var lv = getComputedStyle(lava).visibility !== 'hidden' && Number(getComputedStyle(lava).opacity) > 0.01;
+    var field = box.querySelector('.sayline .field');
+    T.frames.push({
+      t: performance.now(),
+      orb: o ? { frame: o.frame, mode: o.mode, step: o.step, mean: o.mean } : null,
+      pix: o ? null : pixels(canvas),
+      sphere: shown && Number(getComputedStyle(stage).opacity) > 0.05,
+      stage: shown && Number(getComputedStyle(stage).opacity) > 0.05 ? r(stage) : null,
+      lava: lv ? { r: r(lava), o: Number(getComputedStyle(lava).opacity) } : null,
+      box: box.hidden ? null : { o: Number(getComputedStyle(box).opacity), kind: box.getAttribute('data-kind'), card: box.getAttribute('data-card'), title: r(box.querySelector('h1')), titleText: box.querySelector('h1') ? box.querySelector('h1').textContent : '' },
+      waiting: document.body.classList.contains('waiting'),
+      field: Boolean(field),
+      fieldRect: r(field),
+      step: (box.querySelector('.waitstep') || {}).textContent || '',
+      notes: Array.prototype.map.call(box.querySelectorAll('.waitnotes .turn'), function (n) { return n.textContent; }),
+      line: line.textContent,
+      lineO: Number(getComputedStyle(line).opacity),
+      foot: { r: r(foot), o: Number(getComputedStyle(foot).opacity) },
+      busy: document.body.hasAttribute('data-busy'),
+    });
+    requestAnimationFrame(rec);
+  })();
+})()`;
+
+const near = (a, b, px = 0.25) => (!a && !b) || (a && b && Math.abs(a.x - b.x) <= px && Math.abs(a.y - b.y) <= px && Math.abs(a.w - b.w) <= px && Math.abs(a.h - b.h) <= px);
+const mid = a => (a ? { x: a.x + a.w / 2, y: a.y + a.h / 2 } : null);
+const stepOf = (a, b) => (a && b ? Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) : 0);
+
+// Did anything on screen move from frame a to frame b? The dots count when
+// the orb drew a frame and they went a visible distance.
+function movedBetween(a, b) {
+  const dots = Boolean(b.sphere && ((b.orb && a.orb && b.orb.frame > a.orb.frame && b.orb.mean > 0.12) || (b.pix != null && a.pix != null && b.pix !== a.pix)));
+  const lava = Boolean((a.lava || b.lava) && (!a.lava || !b.lava || !near(a.lava.r, b.lava.r) || Math.abs(a.lava.o - b.lava.o) > 0.004));
+  const card = Boolean((a.box || b.box) && (!a.box || !b.box || Math.abs(a.box.o - b.box.o) > 0.003 || !near(a.box.title, b.box.title)));
+  const sphere = !near(a.stage, b.stage);
+  const line = Math.abs(a.lineO - b.lineO) > 0.003;
+  return { any: dots || lava || card || sphere || line, dots };
+}
+
+// The stretch from the owner's Enter on their answer to the idea at rest,
+// as numbers: the longest still moment, the biggest one-frame steps and the
+// biggest change of speed (a snap), and what each part showed. Steps are
+// per 60fps frame, so a slower machine reads the same.
+function summarizeWait(frames, from, idea) {
+  const run = frames.filter(f => f.t >= from);
+  const end = run.findIndex(f => f.box && f.box.titleText === idea && !f.busy && f.box.o > 0.99);
+  const span = end < 0 ? run : run.slice(0, end + 1);
+  let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0, stillWaiting = 0;
+  let lavaStep = 0, lavaGrow = 0, lavaJerk = 0, stageStep = 0, dotsStep = 0, dotsJerk = 0, titleStep = 0, footJump = 0;
+  let prevLavaStep = null, prevDots = null;
+  let dotFrames = 0;
+  for (let i = 1; i < span.length; i++) {
+    const a = span[i - 1], b = span[i];
+    const per = 16.7 / Math.min(50, Math.max(8, b.t - a.t));
+    const m = movedBetween(a, b);
+    if (m.dots) dotFrames += 1;
+    if (m.any) runStart = b.t;
+    else if (b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
+    if (!m.any && (b.waiting || (b.sphere && !b.box)) && b.t - runStart > stillWaiting) stillWaiting = b.t - runStart;
+    if (a.lava && b.lava) {
+      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * per;
+      lavaStep = Math.max(lavaStep, st);
+      lavaGrow = Math.max(lavaGrow, Math.abs(a.lava.r.w - b.lava.r.w) * per);
+      if (prevLavaStep != null) lavaJerk = Math.max(lavaJerk, Math.abs(st - prevLavaStep));
+      prevLavaStep = st;
+    } else prevLavaStep = null;
+    if (a.stage && b.stage) stageStep = Math.max(stageStep, stepOf(a.stage, b.stage) * per, Math.abs(a.stage.w - b.stage.w) * per);
+    if (b.orb && a.orb && b.orb.frame > a.orb.frame && a.sphere && b.sphere) {
+      // the orb counts its own frames: its step is for one of them
+      const drawn = b.orb.frame - a.orb.frame;
+      dotsStep = Math.max(dotsStep, b.orb.step);
+      if (prevDots != null && drawn === 1) dotsJerk = Math.max(dotsJerk, Math.abs(b.orb.mean - prevDots));
+      prevDots = drawn === 1 ? b.orb.mean : null;
+    } else prevDots = null;
+    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) titleStep = Math.max(titleStep, stepOf(a.box.title, b.box.title));
+    // the footer may change places only while it cannot be seen
+    if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, stepOf(a.foot.r, b.foot.r));
+  }
+  const calm = span.filter(f => f.waiting);
+  const bloom = span.findIndex((f, i) => i > 0 && f.lava && !span[i - 1].lava && span[i - 1].waiting);
+  const born = bloom > 0 ? span[bloom] : null;
+  const before = bloom > 0 ? span[bloom - 1] : null;
+  return {
+    ms: span.length ? Math.round(span[span.length - 1].t - from) : null,
+    reached_idea: end >= 0,
+    // nothing on screen moved for this long, at most
+    longest_still_ms: Math.round(still),
+    longest_still_at_ms: stillAt,
+    // and while the owner waited (the sphere up, or the calm line)
+    longest_still_waiting_ms: Math.round(stillWaiting),
+    dot_frames: dotFrames,
+    // one-frame steps and changes of speed, in css pixels
+    lava_max_step_px: round(lavaStep),
+    lava_max_size_step_px: round(lavaGrow),
+    lava_max_speed_change_px: round(lavaJerk),
+    sphere_max_step_px: round(stageStep),
+    dots_max_step_px: round(dotsStep),
+    dots_max_speed_change_px: round(dotsJerk),
+    title_max_step_px: round(titleStep),
+    footer_seen_jump_px: round(footJump),
+    // the calm line: its box open every frame, the live words, the notes
+    calm_frames: calm.length,
+    calm_box_open: calm.length > 0 && calm.every(f => f.field),
+    calm_steps: [...new Set(calm.map(f => f.step).filter(Boolean))],
+    calm_notes: calm.length ? calm[calm.length - 1].notes : [],
+    lines: [...new Set(span.map(f => f.line).filter(Boolean))],
+    // the idea is born where the dots were
+    bloom_from_dots_px: born && before && before.stage ? round(stepOf(mid(born.lava.r), mid(before.stage))) : null,
+    // under reduced motion: how many frames the dots drew, and how many frames a card was part way faded
+    orb_frames_drawn: span.length && span[span.length - 1].orb && span[0].orb ? span[span.length - 1].orb.frame - span[0].orb.frame : null,
+    fading_frames: span.filter(f => f.box && f.box.o > 0.05 && f.box.o < 0.95).length,
+  };
+}
+
+// The owner types their own answer into "something else". The Mac reads it
+// for readMs, says got it, and has no idea ready: the calm line comes, its
+// live words moving on while the idea is written. The owner types a note
+// there and the card says it is folded in; the note is the next post, on the
+// calm line's own id. After writeMs the idea is ready and grows out of the
+// dots. Every frame from the answer to the idea at rest is kept.
+// note: false skips the note (a page from before the calm line took one)
+async function waitTrace({ chromePath = findChrome(), reduced = false, shots = null, page = phonePage, readMs = 900, writeMs = 3200, note = true } = {}) {
+  const started = Date.now() - 4000;
+  let lines = CALM_LINES.slice(0, 1);
+  let notes = [];
+  let ready = false;
+  // the calm line as the desk serves it: its drafting lines with when each came, when it began, how long ago
+  const calm = () => gmCard.wait({ id: 'wait:7', progress: lines.map((line, i) => ({ at: started + i * 1100, line })), started_at: started, waited_ms: Date.now() - started, thread: notes.length ? [...notes.map(text => ({ who: 'owner', text })), { who: 'orb', text: FOLDED }] : [] });
+  const posts = [];
+  const desk = cardDesk(CARDS.q1, async (action, { card, text, body }) => {
+    posts.push({ action, card: body.card_id || null, text: text || null });
+    if (action === 'say' && card.kind === 'question') { await wait(readMs); return { card: calm(), ack: `got it: ${text}.` }; }
+    if (action === 'say' && card.kind === 'wait') { notes = [...notes, text]; return { card: calm(), ack: FOLDED }; }
+    if (action === 'orb') return { card: ready ? CARDS.b1 : calm() };
+    return { card };
+  }, { queue: () => (ready ? 1 : 0) });
+  return onPhone(desk, chromePath, async (p, send) => {
+    const shot = async (name) => {
+      if (!shots) return;
+      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      fs.mkdirSync(shots, { recursive: true });
+      fs.writeFileSync(path.join(shots, `${reduced ? 'r-' : ''}${name}.png`), Buffer.from(data, 'base64'));
+    };
+    await p.run(WAIT_RECORDER);
+    await p.tap('#bet .choice.other');
+    await wait(250);
+    await p.type('paying schools');
+    await shot('w1-typed');
+    await p.enter();
+    const sentAt = (await p.run('window.__wait.marks'))[0].t;
+    await wait(120);
+    await shot('w2-held');
+    await p.until("document.getElementById('line').textContent.indexOf('got it') === 0", 'got it', 6000);
+    await wait(150);
+    await shot('w3-got-it');
+    await wait(450);
+    await shot('w4-got-it-later');
+    await p.until(`document.getElementById('bet').getAttribute('data-kind') === 'wait' && !document.body.hasAttribute('data-busy') && Number(getComputedStyle(document.getElementById('bet')).opacity) > 0.99`, 'the calm line', 8000);
+    const calmAt = Date.now();
+    // the writer moves on while the owner looks
+    const moving = setInterval(() => {
+      if (lines.length < CALM_LINES.length) lines = CALM_LINES.slice(0, lines.length + 1);
+      if (desk.current && desk.current.kind === 'wait') desk.current = calm();
+    }, 1100);
+    try {
+      await shot('w5-calm');
+      await wait(700);
+      await shot('w6-calm-later');
+      // a note while it writes
+      if (note) {
+        await p.tap('#bet .sayline .field input');
+        await wait(150);
+        await p.type('make it about schools');
+        await shot('w7-note-typing');
+        await p.enter();
+        await p.until(`Array.prototype.some.call(document.querySelectorAll('#bet .waitnotes .turn'), function (n) { return n.textContent === ${JSON.stringify(FOLDED)}; })`, 'the note folded in', 6000);
+        await wait(400);
+        await shot('w8-note-folded');
+      }
+      const left = writeMs - (Date.now() - calmAt);
+      if (left > 0) await wait(left);
+      ready = true;
+      if (shots) {
+        await p.until("!document.body.classList.contains('waiting')", 'the idea landing', 8000);
+        await wait(60);
+        await shot('w9-landing');
+      }
+      await p.until(`${titled(CARDS.b1.title)}`, 'the idea', 10000);
+      await wait(300);
+      await shot('w10-idea');
+    } finally {
+      clearInterval(moving);
+    }
+    await p.run('window.__wait.on = false');
+    const frames = await p.run('window.__wait.frames');
+    return { reduced, viewport: `${PHONE.width}x${PHONE.height}`, frames: frames.length, posts, ...summarizeWait(frames, sentAt, CARDS.b1.title) };
+  }, PHONE, { reduced, page });
+}
+
+// ---- the calm line's layout at a phone, a large phone, and a laptop --------------------------
+
+const BIG_PHONE = { width: 430, height: 932, deviceScaleFactor: 3, mobile: true };
+
+// Where the calm line's parts sit, in css pixels: the box and its send
+// button against the screen's edges, and the middle of the words actually
+// drawn in the title and in "the team" (a range over the text, not the
+// full-width line it sits in). With note: one note and its answer on it.
+const CALM_LAYOUT = `(function () {
+  function rect(n) { if (!n) return null; var b = n.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; }
+  function words(n) {
+    if (!n) return null;
+    var r = document.createRange(); r.selectNodeContents(n);
+    var rs = Array.prototype.slice.call(r.getClientRects());
+    if (!rs.length) return null;
+    var left = Math.min.apply(null, rs.map(function (x) { return x.left; })), right = Math.max.apply(null, rs.map(function (x) { return x.right; }));
+    return { left: left, right: right, mid: (left + right) / 2, top: Math.min.apply(null, rs.map(function (x) { return x.top; })), bottom: Math.max.apply(null, rs.map(function (x) { return x.bottom; })) };
+  }
+  var box = document.getElementById('bet');
+  return {
+    vw: document.documentElement.clientWidth,
+    vh: window.innerHeight,
+    scroll_w: document.documentElement.scrollWidth,
+    card: rect(box),
+    field: rect(box.querySelector('.sayline .field')),
+    send: rect(box.querySelector('.sayline .field .send')),
+    title: words(box.querySelector('h1')),
+    team: words(document.getElementById('working')),
+    stage: rect(document.getElementById('stage')),
+    foot: rect(document.getElementById('foot')),
+  };
+})()`;
+
+async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, BIG_PHONE, LAPTOP], shots = null } = {}) {
+  const out = [];
+  for (const viewport of viewports) {
+    const started = Date.now() - 14000;
+    const calm = gmCard.wait({ id: 'wait:5', progress: [{ at: started, line: 'drafting three ideas at once' }], started_at: started, waited_ms: 14000, thread: [{ who: 'owner', text: 'make it about schools' }, { who: 'orb', text: FOLDED }] });
+    const desk = cardDesk(calm, async (a, { card }) => ({ card }));
+    out.push(await onPhone(desk, chromePath, async (p, send) => {
+      await p.until("document.body.classList.contains('waiting') && Boolean(document.querySelector('#bet .sayline .field'))", 'the calm line', 8000);
+      await wait(900);
+      const at = { viewport: `${viewport.width}x${viewport.height}`, ...(await p.run(CALM_LAYOUT)) };
+      if (shots) {
+        const { data } = await send('Page.captureScreenshot', { format: 'png' });
+        fs.mkdirSync(shots, { recursive: true });
+        fs.writeFileSync(path.join(shots, `calm-${viewport.width}.png`), Buffer.from(data, 'base64'));
+      }
+      return at;
+    }, viewport, { firstCard: false }));
+  }
+  return out;
+}
+
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
@@ -1153,6 +1440,12 @@ if (require.main === module) {
     (async () => {
       const out = [];
       for (const viewport of [PHONE, LAPTOP]) out.push(await engineCardTrace({ viewport, shots }));
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    })().catch(fail);
+  } else if (process.argv.includes('--wait')) {
+    (async () => {
+      const out = [];
+      for (const reduced of [false, true]) out.push(await waitTrace({ reduced, shots }));
       process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     })().catch(fail);
   } else if (process.argv.includes('--team')) {
