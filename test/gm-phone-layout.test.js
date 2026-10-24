@@ -39,3 +39,15 @@ test('layout: on a phone with a notch the small orb rests below it, as far above
   // the notched phones (47px and 59px) keep the gap of the 320px phone with none
   assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1, show);
 });
+
+test('layout: the big orb\'s line ends above the footer at every size, a phone on its side too', { skip, timeout: 90000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, cases: only('home') });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, stage: r.stage, line: r.line, foot: r.foot })), null, 1);
+  assert.equal(rows.length, 5, show);
+  for (const r of rows) {
+    assert.ok(r.line.bottom <= r.foot.top, show);
+    assert.equal(r.scroll_w, r.vw, show);
+  }
+  // an upright phone and the laptop keep their orb: 72% of the short side, at most 520px
+  for (const r of rows.filter(x => x.viewport !== 'side')) assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
+});
