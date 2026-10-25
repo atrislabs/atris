@@ -55,3 +55,16 @@ test('a member that already committed leaves nothing to save', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a job that forbids commits keeps its changes loose', () => {
+  const { base, side } = repoWithWorktree();
+  try {
+    fs.writeFileSync(path.join(side, 'app.js'), 'new\n');
+    for (const objective of ['fix the failing test. do not create a commit.', "fix it, don't commit", 'fix it without committing']) {
+      assert.equal(saveLeftoverMemberWork({ worktreePath: side, objective }).reason, 'job_forbids_commit');
+    }
+    assert.equal(git(['status', '--porcelain'], side), 'M app.js');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
