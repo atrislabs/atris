@@ -2620,7 +2620,8 @@ const MISSION_BARE_COMMAND_WORDS = new Set(['go', 'keep', 'going', 'do', 'it', '
 function missionObjectiveIsJunk(value) {
   const objective = String(value || '').trim();
   if (!objective || objective.startsWith('-')) return true;
-  if (/[\u0000-\u001f\u007f-\u009f\ufffd]/u.test(objective)) return true;
+  // Line breaks and tabs are normal in a pasted bug report; other control bytes are junk.
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\ufffd]/u.test(objective)) return true;
   if (objective.replace(/\s/g, '').length < 8) return true;
   const words = objective.toLowerCase().match(/[a-z]+/g) || [];
   return words.length > 0
@@ -9304,6 +9305,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ``,
     `## Landing rule`,
     `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
+    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that.`,
     `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
     missionShippedCard(),
     ``,

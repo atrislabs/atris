@@ -976,7 +976,20 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   if (testFileMatch && fs.existsSync(path.join(cwd, testFileMatch[1]))) {
     return `node --test ${testFileMatch[1]}`;
   }
+  // A job that names the project's own test command ("keep npm test green")
+  // chose that check; it is not a silent broad-suite default.
+  const npmMatch = text.match(/\bnpm\s+(run\s+)?test(?![\w:-]|\.\w)/i);
+  if (npmMatch && projectHasTestScript(cwd)) return npmMatch[1] ? 'npm run test' : 'npm test';
   return '';
+}
+
+function projectHasTestScript(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    return Boolean(pkg && pkg.scripts && pkg.scripts.test);
+  } catch {
+    return false;
+  }
 }
 
 function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cwd()) {
@@ -1023,7 +1036,10 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // Default to an isolated worktree only when there is a git repo to cut it
   // from. A plain (non-git) workspace would fail every mission start with
   // "fatal: not a git repository", degrade to the shared checkout instead.
-  if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
+  // A job that says "do not commit" wants the change in the person's own
+  // files; a side checkout would hide uncommitted work where they never see it.
+  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').jobForbidsCommit(missionText);
+  if (!forbidsCommit && !hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
   startArgs.push('--json');
@@ -1433,6 +1449,17 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   if (!reviewAsk && payload.reason === 'human_asks_open' && Array.isArray(payload.human_asks) && payload.human_asks.length) {
     result.ask = `${name} is waiting on you: ${payload.human_asks[0]}`;
     result.next_command = payload.next_command || 'atris decide';
+  }
+  // Passed but never committed: save the loose work on the member's branch so
+  // the branch holds it. Only in the member's own side checkout, never the main one.
+  const worktreePath = finalMission.worktree?.path || mission.worktree?.path || '';
+  if (ok && started && worktreePath && finalMission.verifier_result?.passed === true) {
+    result.saved_work = require('../lib/member-save-work').saveLeftoverMemberWork({
+      worktreePath, member: name, objective: finalMission.objective || mission.objective,
+    });
+    if (result.saved_work.saved && !asJson && !quiet) {
+      console.log(`saved ${result.saved_work.files.length} file(s) ${name} left unsaved onto its branch`);
+    }
   }
   // A finished ignited run whose check passed hands its branch to GitHub
   // auto-merge, only past the local gates; any held gate leaves the branch.
@@ -9946,13 +9973,24 @@ async function memberChat(name, ...rest) {
 
 const IDEA_ARCHETYPE_RULES = [
   {
-    slugs: ['auto-improver', 'improver'],
-    pattern: /\b(repeat|recurring|broken\s+test|flaky|error|regression|pain|fix\s+bug|self[- ]improv|crash)\b/i,
+    // A job that opens by asking where or which, or forbids source edits, is
+    // a read-and-answer job even when it mentions a bug.
+    slugs: ['navigator'],
+    // Wins wherever it matches: the question shape decides the whole job.
+    leading: true,
+    pattern: /^(?![\s\S]*(?<!not\s|n't\s)\b(fix|repair|implement|update|change|edit|add|rename|modify)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
+    reason: 'reads the code and answers where and which questions',
+  },
+  {
+    // The shipped `improver` proposes team and workflow changes; it is not a
+    // code fixer, so fix jobs go to auto-improver or fall back to the builder.
+    slugs: ['auto-improver'],
+    pattern: /\b(repeat|recurring|broken|flaky|errors?|regressions?|pain|fix(es|ed|ing)?|bugs?|fail(s|ing|ed|ure)?|self[- ]improv|crash(es|ed|ing)?)\b/i,
     reason: 'handles recurring errors, regressions, and test fixes',
   },
   {
     slugs: ['validator', 'orb'],
-    pattern: /\b(review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
+    pattern: /\b(code\s+review|review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
     reason: 'reviews changes and blocks weak work before merge',
   },
   {
@@ -9988,8 +10026,10 @@ const ARCHETYPE_FOR_JOB = { build: 'executor', review: 'validator', search: 'res
 const EXPERIMENT_STATUSES = new Set(['experimental', 'one-off']);
 
 function ideaRuleFor(slug, record, text) {
-  const own = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(slug));
-  if (own && own.pattern.test(text)) return { rule: own, own: true };
+  const ownRules = IDEA_ARCHETYPE_RULES.filter((rule) => rule.slugs.includes(slug));
+  const matched = ownRules.find((rule) => rule.pattern.test(text));
+  if (matched) return { rule: matched, own: true };
+  const own = ownRules[0];
   const { autoJobForMember } = require('../lib/member-engine');
   const archetype = ARCHETYPE_FOR_JOB[autoJobForMember(slug, record.role)];
   const rule = IDEA_ARCHETYPE_RULES.find((r) => r.slugs.includes(archetype)) || null;
@@ -10000,7 +10040,15 @@ function ideaRuleFor(slug, record, text) {
 // specific jobs to the general build job, so "where is the code" is a
 // navigator job even though "code" is also a build word.
 function ideaJobRule(text) {
-  return IDEA_ARCHETYPE_RULES.find((rule) => rule.pattern.test(text)) || null;
+  // The job word that comes first names the job: "review the bug fix" is a
+  // review, "fix the review page" is a fix. Ties keep list order.
+  let best = null;
+  for (const rule of IDEA_ARCHETYPE_RULES) {
+    const match = rule.pattern.exec(text);
+    const index = match ? (rule.leading ? -1 : match.index) : null;
+    if (match && (!best || index < best.index)) best = { rule, index };
+  }
+  return best ? best.rule : null;
 }
 
 // 3 = named in the idea, 2 = the job is the member's own, 1 = the member
@@ -10059,7 +10107,12 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 4);
-  const jobRule = ideaJobRule(text);
+  let jobRule = ideaJobRule(text);
+  // A job nobody on this team owns goes to the builder rule, not to whoever
+  // shares the most words with it.
+  if (jobRule && !members.some((m) => ideaRuleFor(memberSlugFromRecord(m), m, text).rule === jobRule)) {
+    jobRule = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes('executor')) || jobRule;
+  }
 
   let best = null;
   for (const record of members) {
@@ -10073,6 +10126,9 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
 
     const memberRule = ideaRuleFor(slug, record, text);
     const fit = ideaJobFit(named, memberRule, jobRule);
+    // A reviewer never patches, so it only takes review jobs unless named.
+    const reviewRule = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes('validator'));
+    const effectiveTier = !named && memberRule.rule === reviewRule && jobRule !== reviewRule ? Math.max(tier, 1) : tier;
     if (fit > 0 && memberRule.rule) {
       score += 30;
       matchedReason = memberRule.rule.reason;
@@ -10105,7 +10161,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
       role: record.role || 'Team Member',
       reason: matchedReason,
       score,
-      tier,
+      tier: effectiveTier,
       fit,
     };
     if (outranksDispatch(candidate, best)) best = candidate;
@@ -10438,7 +10494,7 @@ function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
 
 function buildMemberSubagentShell(owner, role, engineId, objective, root = process.cwd()) {
   const cleanObjective = compactSentence(objective || `Advance ${owner} roadmap`, 160);
-  const verify = inferMemberRunVerifier(owner, cleanObjective, root);
+  const verify = inferMemberRunVerifier(cleanObjective, [], root);
   return {
     role: `${owner} (${role || 'Team Member'})`,
     member: owner,
@@ -12068,6 +12124,7 @@ module.exports = {
   wakeBootLines,
   buildMemberRunStartArgs,
   inferMemberRunVerifier,
+  buildMemberSubagentShell,
   pickMemberForIdea,
   appendMemberGoalLog,
   appendProjectLog,

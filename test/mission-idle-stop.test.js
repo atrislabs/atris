@@ -200,6 +200,8 @@ test('buildTickPrompt gives idle workers a proof-backed self-landing backstop la
   assert.match(prompt, /Self-description such as "it works now" is never proof\./);
   assert.match(prompt, /## Landing rule/);
   assert.match(prompt, /Safe-lane work \(internal code, tests, docs, and proofs\) must be committed and pushed or landed WITHOUT asking a human\./);
+  // Member lab 2026-10-24: a member committed on a job that said "do not create a commit".
+  assert.match(prompt, /The objective's own limits win over this rule: if it says do not commit/);
   assert.match(prompt, /Protected lanes \(external sends, payments, credentials, auth\/CSP\/iframe\/sandbox surfaces, and deletes of user data\) are never self-landed/);
   assert.match(prompt, /After landing a ladder-sourced slice, append a judge card to atris\/status\/for-you\.md in this SHIPPED format:/);
   assert.ok(prompt.includes(missionShippedCard()));
