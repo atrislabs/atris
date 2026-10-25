@@ -1447,6 +1447,17 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
     result.ask = `${name} is waiting on you: ${payload.human_asks[0]}`;
     result.next_command = payload.next_command || 'atris decide';
   }
+  // Passed but never committed: save the loose work on the member's branch so
+  // the branch holds it. Only in the member's own side checkout, never the main one.
+  const worktreePath = finalMission.worktree?.path || mission.worktree?.path || '';
+  if (ok && started && worktreePath && finalMission.verifier_result?.passed === true) {
+    result.saved_work = require('../lib/member-save-work').saveLeftoverMemberWork({
+      worktreePath, member: name, objective: finalMission.objective || mission.objective,
+    });
+    if (result.saved_work.saved && !asJson && !quiet) {
+      console.log(`saved ${result.saved_work.files.length} file(s) ${name} left unsaved onto its branch`);
+    }
+  }
   // A finished ignited run whose check passed hands its branch to GitHub
   // auto-merge, only past the local gates; any held gate leaves the branch.
   if (ignite && ok && started && !reviewAsk && finalMission.verifier_result?.passed === true) {
