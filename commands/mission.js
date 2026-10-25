@@ -9305,6 +9305,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ``,
     `## Landing rule`,
     `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
+    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that.`,
     `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
     missionShippedCard(),
     ``,
