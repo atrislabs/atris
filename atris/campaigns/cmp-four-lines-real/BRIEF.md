@@ -26,7 +26,7 @@ Two. Build `scripts/four-lines-eval.sh <engine> <arm> <n>`. It makes a temp dir,
 
 Three. Make every run a clean blank agent: no user-level instruction files, no memory, no global skills leaking in (for example Keshav's `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`). Find each engine's flag or home-dir trick, prove it with one probe run per engine, and write how in `meta.json`. Claude runs must use the subscription: unset `ANTHROPIC_API_KEY`.
 
-Four. Run two of each arm for claude, codex, agy, grok. Read the misses.
+Four. Run two of each arm for claude, codex, and agy, the engines on a subscription. Read the misses.
 
 Five. When an engine misses with the lines, fix delivery first (does it even read the file?). Small phrasing tweaks to the lines are fine; list each one in the final report. Changing what a line means needs `atris campaign ask`. Any wording change makes old runs stale, so rerun.
 

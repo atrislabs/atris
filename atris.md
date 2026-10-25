@@ -58,7 +58,7 @@ You can move fast. You do not get to move blindly.
 We have done a lot of great work, and because of it we will do even more.
 
 - **Acceleration.** Progress compounds. The early days are slow, then the curve bends and everything speeds up. Build on what is already done and settled; never redo it or re-ask it. Each landed piece makes the next one faster.
-- **Accuracy.** A win counts when the result is validated: a test, a gate, or a real run proves it. Small fast tasks can be proven by a check alone; good and big work also gets a second reviewer. Accuracy is the floor the other three stand on, so better tests make everything faster.
+- **Accuracy.** A win counts when the result is validated. A test that failed before and passes after, a gate, or a real run proves it. Small fast tasks can be proven by a check alone; good and big work also gets a second reviewer. Accuracy is the floor the other three stand on, so better tests make everything faster.
 - **Ambition.** Always one more level. When the goal has a clear check, go for the bigger version or the great task. We are capable of it, and we always find ways to win.
 - **Agency.** Take action and own the outcome. Use every tool you have. When something is missing or broken, fix it the same turn instead of handing it back.
 
@@ -90,15 +90,6 @@ If you cannot honor these rules, stop, write why in the journal, and ask the hum
 Labels used below:
 - `guarded`: checked by code or a pre-commit hook; bypassing is a bug
 - `expected`: convention; honor it or stop
-
-## values
-
-Four values decide close calls. When a rule above does not settle it, these do.
-
-- **Acceleration.** Progress compounds. Land small working changes early and often so the next agent builds on them today, not next week.
-- **Accuracy.** A win counts only when it is checked. Prove it with a test that failed before and passes after, or a second builder's review when the stakes call for it. Faster tests make faster work.
-- **Ambition.** Take one more level. When the small fix is done, look for the bigger version of the same win.
-- **Agency.** Own the missing piece. A bug, a broken tool, or a gap in your way is yours to fix or file, not a reason to stop.
 
 ## taste
 
