@@ -127,6 +127,34 @@ test('browser: turning the phone keeps the small orb centred over the card, and 
   assert.notDeepEqual(smaller.after.canvas_shown, smaller.before.canvas_shown, show(smaller));
 });
 
+test('browser: turning a phone with the big orb up gives the sphere the dots its new size holds, every frame on the way draws it, and turning back brings the upright 5500 back', { skip, timeout: 90000 }, async () => {
+  const { onPhone, cardDesk, PHONE } = require('../scripts/gm-phone-trace');
+  const COUNT = "(function () { var P = CanvasRenderingContext2D.prototype, arc = P.arc; window.__arcs = 0; window.__frames = []; P.arc = function () { window.__arcs += 1; return arc.apply(this, arguments); }; (function tick() { window.__frames.push(window.__arcs); requestAnimationFrame(tick); })(); })();";
+  const DRAWN = "new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ size: Math.round(document.getElementById('orb').getBoundingClientRect().width), per_frame: Math.round((window.__arcs - a0) / (o.frame - f0)) }); }, 500); })";
+  const out = await onPhone(cardDesk(null, async () => ({ card: null })), CHROME, async (p, send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: COUNT });
+    await send('Page.reload');
+    await p.until("document.readyState === 'complete' && !document.body.classList.contains('opening') && document.getElementById('orb').__orb.frame > 2", 'the big orb');
+    const upright = await p.run(DRAWN);
+    const from = await p.run('window.__frames.length');
+    // an iPhone 17 Pro turned on its side in Safari: 874 wide, 296 tall
+    await send('Emulation.setDeviceMetricsOverride', { width: 874, height: 296, deviceScaleFactor: 3, mobile: true });
+    await new Promise(r => setTimeout(r, 600));
+    const side = await p.run(DRAWN);
+    // every frame from the turn on drew dots
+    const empty = await p.run(`(function () { var f = window.__frames, n = 0; for (var i = ${from} + 1; i < f.length; i++) if (f[i] === f[i - 1]) n += 1; return n; })()`);
+    await send('Emulation.setDeviceMetricsOverride', PHONE);
+    await new Promise(r => setTimeout(r, 600));
+    return { upright, side, empty, back: await p.run(DRAWN) };
+  }, undefined, { firstCard: false });
+  const said = show(out);
+  assert.equal(out.upright.per_frame, 5500, said);
+  // before: the 96px orb on its side drew the laptop's 11000 dots, a solid orange ball
+  assert.ok(out.side.per_frame < 5500 && out.side.per_frame / (out.side.size * out.side.size) <= 5500 / (230 * 230) * 1.02, said);
+  assert.equal(out.empty, 0, said);
+  assert.equal(out.back.per_frame, 5500, said);
+});
+
 test('browser: on a phone with a notch in full screen the small orb rests below the notch, as far above the card as anywhere', { skip, timeout: 90000 }, async () => {
   const plain = (await paths.resizeTrace({ chromePath: CHROME })).before;
   const notch = (await paths.resizeTrace({ chromePath: CHROME, insets: { top: 59, bottom: 34 } })).before;
