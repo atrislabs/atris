@@ -6968,7 +6968,11 @@ function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
   if (/^(npm|pnpm|yarn)\s/i.test(checkText.trim())) {
     try { checkText += ` ${JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))?.scripts?.test || ''}`; } catch {}
   }
+  // Runners that find tests by name (node --test, jest, pytest, go test) never
+  // list them, so any changed file shaped like a test counts as well.
+  const testShaped = /(^|\/)(tests?|__tests__|specs?|checks?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$|(^|\/)conftest\.py$/i;
   return changed.some((file) => path.basename(file) === 'package.json'
+    || testShaped.test(file)
     || checkText.includes(file)
     || (path.dirname(file) !== '.' && checkText.includes(`${path.dirname(file)}/`)));
 }

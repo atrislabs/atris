@@ -59,6 +59,14 @@ test('a worker that edits what the test command runs is caught, adding other fil
     // and with no starting commit every tracked file counts.
     assert.equal(tickTouchedCheckDefinition('npm test', before, dir), true);
     assert.equal(tickTouchedCheckDefinition('npm test', { head: null }, dir), true);
+    // Third round: auto-discovered tests are never named, so test-shaped files count.
+    const head2 = git('rev-parse', 'HEAD').stdout.trim();
+    fs.mkdirSync(path.join(dir, 'test'));
+    fs.writeFileSync(path.join(dir, 'test', 'b.test.js'), '// weakened');
+    assert.equal(tickTouchedCheckDefinition('node --test', { head: head2 }, dir), true);
+    fs.rmSync(path.join(dir, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'app.js'), 'newer');
+    assert.equal(tickTouchedCheckDefinition('node --test', { head: head2 }, dir), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
