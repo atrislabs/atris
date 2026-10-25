@@ -19,12 +19,16 @@ process.env.ATRIS_SWITCH_NOTICE = '0';
 process.env.ATRIS_ROUTER_EXPLAIN = '0';
 
 const gmBet = require('../lib/gm-bet');
+const gmCard = require('../lib/gm-card');
 const registry = require('../lib/engine-registry');
 
 const TODAY = '2026-10-21';
 const NOW = new Date(2026, 9, 21, 12, 0, 0).getTime();
 const REAL_PATH = process.env.PATH;
 
+const NO_MODEL_TITLE = 'the orb needs a model signed in on this computer.';
+const SAY_FALLBACK = 'say that another way, or tap a button.';
+const SAY_NO_MODEL = 'the orb needs a model signed in on this computer to read that, so nothing was saved.';
 const SAY_NOT_HEARD = 'the model did not answer this time, so nothing was saved. try again in a moment.';
 
 function workspace() {
@@ -187,7 +191,118 @@ async function ideaCard(d) {
   return shown.body.card;
 }
 
+// the words a person reads on a card, all of them
+function words(card) {
+  return [card.title, card.body, card.line, ...(card.options || []).map(o => o.label)].filter(Boolean).join(' ');
+}
+
+function plainForOwner(card) {
+  assert.deepEqual(gmCard.cardProblems(card), [], 'the card keeps every card rule');
+  assert.equal(gmBet.OWNER_BANNED.test(words(card)), false, `no word of ours on the card: ${words(card)}`);
+  assert.doesNotMatch(words(card), /claude|codex|`|--|\/|\binstall\b|\bnpm\b|\bcli\b/i, 'no command, flag, path, or tool name');
+}
+
+// ---- no model on this computer ------------------------------------------------------
+
+test('no model here: an idea attempt asks nothing, starts nothing, and says the orb needs a model', async () => {
+  const dir = bin();
+  const root = workspace();
+  await onPath(dir, async () => {
+    const started = Date.now();
+    const out = await generate(root);
+    assert.equal(out.ok, false);
+    assert.equal(out.no_model, 'none');
+    assert.equal(out.retry, false);
+    assert.ok(Date.now() - started < 5000, 'it knows at once, before the facts are read');
+  });
+  assert.deepEqual(calls(dir), []);
+});
+
+test('no model here: the desk shows one calm card with try again, and typed words are never blamed', async () => {
+  const dir = bin();
+  const root = workspace();
+  await onPath(dir, async () => {
+    const d = desk(root);
+    d.next();
+    const card = await settled(d);
+    assert.equal(card.kind, 'missed');
+    assert.equal(card.title, NO_MODEL_TITLE);
+    assert.equal(card.body, 'there is none here yet. once one is set up, tap try again.');
+    assert.deepEqual(card.options.map(o => [o.label, o.action]), [['try again', 'next']]);
+    assert.doesNotMatch(words(card), /no idea came together/);
+    plainForOwner(d.card().card);
+    // words typed on it get the truth, never "say that another way"
+    const said = await d.act({ card_id: card.id, text: 'what do i do?' });
+    assert.equal(said.status, 200, JSON.stringify(said.body));
+    assert.equal(said.body.card.kind, 'reply');
+    assert.equal(said.body.card.title, SAY_NO_MODEL);
+  });
+  assert.deepEqual(calls(dir), []);
+});
+
+test('no model here: once one is signed in, the next tap on try again writes an idea, with no restart', async () => {
+  const dir = bin();
+  const root = workspace();
+  await onPath(dir, async () => {
+    const d = desk(root);
+    d.next();
+    const missed = await settled(d);
+    assert.equal(missed.title, NO_MODEL_TITLE);
+    // the owner signs in to a model, then taps try again
+    fakeModel(dir, 'claude');
+    const again = await d.act({ card_id: missed.id, option_id: 'again' });
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    await settled(d);
+    const next = await d.act({ orb: true, card_id: d.card().card.id });
+    assert.equal(next.body.card.kind, 'idea', JSON.stringify(next.body.card));
+    assert.equal(next.body.card.title, 'write a getting started page for atris gm phone with a 30 second screen recording');
+  });
+  assert.ok(calls(dir).includes('claude'));
+});
+
+test('no model here: a model other than claude signed in after the card also works on the next tap', async () => {
+  const dir = bin();
+  const root = workspace();
+  await onPath(dir, async () => {
+    const d = desk(root);
+    d.next();
+    const missed = await settled(d);
+    assert.equal(missed.title, NO_MODEL_TITLE);
+    // the saved list says codex is not here, checked a moment ago
+    const saved = JSON.parse(fs.readFileSync(registry.engineRegistryFile(root), 'utf8')).engines.find(e => e.id === 'codex');
+    assert.equal(saved.health.status, 'not_installed');
+    fakeModel(dir, 'codex');
+    await d.act({ card_id: missed.id, option_id: 'again' });
+    await settled(d);
+    const next = await d.act({ orb: true, card_id: d.card().card.id });
+    assert.equal(next.body.card.kind, 'idea', JSON.stringify(next.body.card));
+  });
+  assert.ok(calls(dir).includes('codex'));
+});
+
 // ---- the model here is broken ----------------------------------------------------
+
+test('broken model only: the card says the model here did not answer, and a typed word is not blamed on the owner', async () => {
+  const dir = bin();
+  fakeModel(dir, 'claude', 'fail');
+  const root = workspace();
+  await onPath(dir, async () => {
+    const out = await generate(root);
+    assert.deepEqual([out.ok, out.no_model, out.retry], [false, 'failed', false]);
+    const r = await read(workspace());
+    assert.equal(r.ok, false);
+    assert.equal(r.answered, undefined, 'no model answered');
+    assert.equal(r.no_model, 'failed');
+    const d = desk(workspace());
+    d.next();
+    const card = await settled(d);
+    assert.deepEqual([card.kind, card.title, card.body], ['missed', NO_MODEL_TITLE, 'the model here did not answer. check that it is signed in, then tap try again.']);
+    plainForOwner(d.card().card);
+    const said = await d.act({ card_id: card.id, text: 'make it about schools' });
+    assert.equal(said.body.card.title, SAY_NO_MODEL);
+    assert.notEqual(said.body.card.title, SAY_FALLBACK);
+  });
+});
 
 test('broken model, a second one signed in: ideas and reads come from the second one', async () => {
   const dir = bin();
@@ -261,6 +376,20 @@ test('a model that never answers, a second one signed in: the wait keeps going a
     assert.equal(shown.body.card.kind, 'idea', JSON.stringify(shown.body.card));
   });
   assert.ok(calls(dir).includes('codex'));
+});
+
+test('a model that never answers and no other: the wait ends in the calm card, never "no idea came together"', async () => {
+  const dir = bin();
+  fakeModel(dir, 'claude', 'hang');
+  const root = workspace();
+  await onPath(dir, async () => {
+    const out = await generate(root, { budgetMs: 3000 });
+    assert.deepEqual([out.ok, out.no_model, out.retry], [false, 'failed', false]);
+    const d = desk(workspace(), { budgetMs: 3000 });
+    d.next();
+    const card = await settled(d);
+    assert.deepEqual([card.kind, card.title], ['missed', NO_MODEL_TITLE]);
+  });
 });
 
 test('a saved list that says claude is gone, with claude here now: the orb still thinks on it', async () => {
