@@ -1390,7 +1390,10 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     // no words spill out of a cell, and names, ratings, and models stay on one line
     assert.deepEqual(look.spills, [], at);
     assert.deepEqual(look.wrapped, [], at);
-    assert.ok(look.narrowest.status >= 250, `${at}: the status column keeps its width (${look.narrowest.status}px)`);
+    // the status column keeps its width on a laptop; on a phone it fills the room beside the held
+    // names and no more, so swiped all the way none of it sits under them (before: 256px of 187 at 390)
+    if (at === '1280x800') assert.ok(look.narrowest.status >= 250, `${at}: the status column keeps its width (${look.narrowest.status}px)`);
+    else assert.ok(look.narrowest.status >= 110 && look.narrowest.status <= look.grid_width - 2 - look.narrowest.member + 1, `${at}: the status column is ${look.narrowest.status}px beside ${look.narrowest.member}px of names in a ${look.grid_width}px box`);
     assert.ok(look.narrowest.role >= 140, `${at}: the role column keeps its width (${look.narrowest.role}px)`);
     // the page itself never scrolls sideways; only the table box does, and only on the phone
     assert.equal(look.page_scrolls_sideways, false, at);

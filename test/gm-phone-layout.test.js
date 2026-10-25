@@ -390,6 +390,58 @@ test('layout: when the team table scrolls sideways on a phone the name column ke
   }
 });
 
+// Swiped all the way sideways, where each status line starts against the right
+// edge of the held names, and every line of each status: none may start under them.
+const STATUS_AT_END = `(function () {
+  var grid = document.querySelector('#bet .grid');
+  grid.scrollLeft = grid.scrollWidth;
+  var out = Array.prototype.map.call(grid.querySelectorAll('tbody tr'), function (tr) {
+    var held = tr.querySelector('td.member').getBoundingClientRect().right, s = tr.querySelector('td.status');
+    var r = document.createRange(); r.selectNodeContents(s);
+    var lefts = Array.prototype.map.call(r.getClientRects(), function (x) { return x.left; });
+    return { name: tr.querySelector('td.member').textContent, held_right: +held.toFixed(1), cell_left: +s.getBoundingClientRect().left.toFixed(1), first_letter: +Math.min.apply(null, lefts).toFixed(1), width: +s.getBoundingClientRect().width.toFixed(1), lines: lefts.length };
+  });
+  grid.scrollLeft = 0;
+  return { scrolls: grid.scrollWidth > grid.clientWidth + 1, rows: out };
+})()`;
+const LONG_NAMES = gmCard.team({ id: 'team~long', rows: [
+  { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+  { member: 'coordinator', role: 'coordinator', ovr: '80', engine: 'tool one m-one', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left' },
+] });
+const PHONES = [[320, 568], [360, 780], [375, 667], [390, 844], [402, 874], [430, 932]].map(([width, height]) => ({ name: `${width}`, width, height, deviceScaleFactor: 3, mobile: true, notch: null }));
+
+test('layout: swiped all the way sideways on any phone from 320px up, every status line starts beside the held names, never under them, and a laptop keeps its 16rem column', { skip, timeout: 150000 }, async () => {
+  const cases = [...only('team'), { name: 'team-long-names', card: LONG_NAMES }];
+  const rows = await layout({ chromePath: CHROME, cases, viewports: [...PHONES, 'side', 'laptop'], probe: STATUS_AT_END });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
+  assert.equal(rows.length, 16, show);
+  for (const r of rows) {
+    for (const row of r.probe.rows) {
+      // before: at 390 the first 55px of every status sat under the names ("vorking" for "working")
+      assert.ok(row.first_letter >= row.held_right - 0.5, show);
+      assert.ok(row.cell_left >= row.held_right - 0.5, show);
+    }
+  }
+  // with room to spare (a laptop, a phone on its side) the status column keeps at least 16rem
+  for (const r of rows.filter(x => x.viewport === 'laptop' || x.viewport === 'side')) for (const row of r.probe.rows) assert.ok(row.width >= 256, show);
+  // the upright phones still scroll the table sideways, and the laptop never does
+  for (const r of rows.filter(x => x.viewport !== 'side')) assert.equal(r.probe.scrolls, r.viewport !== 'laptop', show);
+});
+
+test('layout: a phone turned upright with the team open still keeps every status line beside the held names', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(LONG_NAMES, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.until("Boolean(document.querySelector('#bet tbody tr')) && document.getElementById('bet').classList.contains('up')", 'the team', 8000);
+    const side = await p.run(STATUS_AT_END);
+    await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 3, mobile: true });
+    await new Promise(r => setTimeout(r, 400));
+    return { side, upright: await p.run(STATUS_AT_END) };
+  }, { width: 780, height: 360, deviceScaleFactor: 3, mobile: true });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.upright.scrolls, true, show);
+  for (const row of out.upright.rows) assert.ok(row.first_letter >= row.held_right - 0.5, show);
+});
+
 test('layout: on the team card the footer does not offer the team again; on every other card it does', { skip, timeout: 90000 }, async () => {
   const probe = `getComputedStyle(document.getElementById('working')).display !== 'none'`;
   const rows = await layout({ chromePath: CHROME, cases: only('home', 'idea', 'team', 'member', 'deck', 'swap', 'wait'), viewports: ['phone'], probe });
