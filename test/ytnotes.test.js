@@ -221,6 +221,57 @@ test('ytnotes stops the caption fetch once en-orig is whole, before the en copy'
   assert.deepEqual(fs.readdirSync(path.join(work, 'ytnotes')).filter((f) => f.endsWith('.part')), []);
 });
 
+// The fake yt-dlp logs each caption fetch's client. With iosHasCaptions false
+// it lists no captions to the iOS client, like the web clients without the
+// webpage, and writes them only on the full fetch.
+function runIosCaptions(id, iosHasCaptions) {
+  const tmp = tmpDir('atris-ytnotes-ios-');
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    'xargs=""; prev=""',
+    'for a in "$@"; do [ "$prev" = "--extractor-args" ] && xargs="$a"; prev="$a"; done',
+    'case "$xargs" in *player_client=ios*) client=ios ;; *) client=full ;; esac',
+    `echo "$client" >> "${tmp}/fetches"`,
+    `printf "%s\\n" "${id}|Ios Route|Chan|0:02"`,
+    `if [ "$client" = full ] || [ "${iosHasCaptions ? 1 : 0}" = 1 ]; then`,
+    `  printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The caption words are here." > yt_${id}.en-orig.vtt`,
+    'fi',
+    '',
+  ].join('\n'));
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'printf "%s\\n" "# Ios Route" "" "The caption words are here."',
+    '',
+  ].join('\n'));
+  const result = spawnSync(YTNOTES, [`https://www.youtube.com/watch?v=${id}`], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH || '/usr/bin'}`, TMPDIR: work },
+  });
+  const fetches = fs.readFileSync(path.join(tmp, 'fetches'), 'utf8').split('\n').filter(Boolean);
+  return { result, fetches, work };
+}
+
+test('ytnotes fetches captions again the full way when the iOS client lists none', () => {
+  const { result, fetches, work } = runIosCaptions('ntios1', false);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(fetches, ['ios', 'full']);
+  assert.match(fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntios1.md'), 'utf8'), /caption words/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
+});
+
+test('ytnotes fetches captions once when the iOS client has them', () => {
+  const { result, fetches, work } = runIosCaptions('ntios2', true);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(fetches, ['ios']);
+  assert.match(fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntios2.md'), 'utf8'), /caption words/);
+});
+
 test('ytnotes atris-fast says why a refused engine run wrote no notes, with no stack trace', () => {
   const tmp = tmpDir('atris-ytnotes-fastrefused-');
   const bin = path.join(tmp, 'bin');
