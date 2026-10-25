@@ -8,12 +8,14 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
+// the four values open the operating rules, unlabeled; the text from there to the next heading
 function valuesSection(text) {
-  const match = text.match(/\n## values\n([\s\S]*?)\n## /);
+  const match = text.match(/\nWe have done a lot of great work[^\n]*\n([\s\S]*?)\n## /);
   return match ? match[1] : '';
 }
 
-test('the shipped atris.md names the four values every agent works by', () => {
+test('the shipped atris.md names the four values every agent works by, once', () => {
+  assert.doesNotMatch(fs.readFileSync(path.join(repoRoot, 'atris.md'), 'utf8'), /\n## values\n/);
   const section = valuesSection(fs.readFileSync(path.join(repoRoot, 'atris.md'), 'utf8'));
   for (const name of ['Acceleration', 'Accuracy', 'Ambition', 'Agency']) {
     assert.match(section, new RegExp(`\\*\\*${name}\\.\\*\\*`), `missing ${name}`);
@@ -54,9 +56,9 @@ test('every boot shows the four values, from the package when the workspace pred
     const result = boot(dir);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /\n  values   acceleration +progress compounds\n/);
-    assert.match(result.stdout, /\n {11}accuracy +a win counts only when it is checked\n/);
-    assert.match(result.stdout, /\n {11}ambition +take one more level\n/);
-    assert.match(result.stdout, /\n {11}agency +own the missing piece\n/);
+    assert.match(result.stdout, /\n {11}accuracy +a win counts when the result is validated\n/);
+    assert.match(result.stdout, /\n {11}ambition +always one more level\n/);
+    assert.match(result.stdout, /\n {11}agency +take action and own the outcome\n/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
