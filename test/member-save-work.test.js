@@ -103,6 +103,8 @@ test('review of PR 1650: secrets, staged atris state, and the main checkout stay
     assert.equal(jobForbidsCommit('fix app.js; do not create any commits'), true);
     assert.equal(jobForbidsCommit('fix app.js, no commits please'), true);
     assert.equal(jobForbidsCommit('fix app.js and commit it'), false);
+    assert.equal(jobForbidsCommit('fix parser; no empty commits'), false);
+    assert.equal(jobForbidsCommit('fix it without committing'), true);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -127,6 +129,18 @@ test('ordinary files whose names mention tokens or secrets still get saved', () 
     const saved = saveLeftoverMemberWork({ worktreePath: side, member: 'executor', objective: 'add helpers' });
     assert.deepEqual(saved.files.sort(), ['password-reset.md', 'secrets-manager.js', 'token-bucket.js', 'tokenizer.js']);
     assert.equal(saved.skipped, undefined);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('the save refuses the main checkout even when git reports relative directories', () => {
+  const { base, main } = repoWithWorktree();
+  try {
+    fs.mkdirSync(path.join(main, 'sub'));
+    fs.writeFileSync(path.join(main, 'sub', 'x.js'), 'x\n');
+    assert.equal(saveLeftoverMemberWork({ worktreePath: main, objective: 'fix' }).reason, 'not_side_checkout');
+    assert.equal(saveLeftoverMemberWork({ worktreePath: path.join(main, 'sub'), objective: 'fix' }).reason, 'not_side_checkout');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -978,7 +978,7 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   }
   // A job that names the project's own test command ("keep npm test green")
   // chose that check; it is not a silent broad-suite default.
-  const npmMatch = text.match(/\bnpm\s+(run\s+)?test(?![\w:-])/i);
+  const npmMatch = text.match(/\bnpm\s+(run\s+)?test(?![\w:-]|\.\w)/i);
   if (npmMatch && projectHasTestScript(cwd)) return npmMatch[1] ? 'npm run test' : 'npm test';
   return '';
 }
@@ -9976,7 +9976,9 @@ const IDEA_ARCHETYPE_RULES = [
     // A job that opens by asking where or which, or forbids source edits, is
     // a read-and-answer job even when it mentions a bug.
     slugs: ['navigator'],
-    pattern: /^(?![\s\S]*\b(fix|repair|change|update|implement|add)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
+    // Wins wherever it matches: the question shape decides the whole job.
+    leading: true,
+    pattern: /^(?![\s\S]*\b(fix|repair|implement)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
     reason: 'reads the code and answers where and which questions',
   },
   {
@@ -9988,7 +9990,7 @@ const IDEA_ARCHETYPE_RULES = [
   },
   {
     slugs: ['validator', 'orb'],
-    pattern: /\b(review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
+    pattern: /\b(code\s+review|review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
     reason: 'reviews changes and blocks weak work before merge',
   },
   {
@@ -10043,7 +10045,8 @@ function ideaJobRule(text) {
   let best = null;
   for (const rule of IDEA_ARCHETYPE_RULES) {
     const match = rule.pattern.exec(text);
-    if (match && (!best || match.index < best.index)) best = { rule, index: match.index };
+    const index = match ? (rule.leading ? -1 : match.index) : null;
+    if (match && (!best || index < best.index)) best = { rule, index };
   }
   return best ? best.rule : null;
 }

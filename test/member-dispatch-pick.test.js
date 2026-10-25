@@ -149,6 +149,9 @@ test('review of PR 1650: the first job word names the job, and renamed researche
     assert.equal(pickMemberForIdea('Find and fix the parser error', root).member, 'auto-improver');
     assert.equal(pickMemberForIdea('research alternatives to SQLite', root).member, 'analyst');
     assert.equal(pickMemberForIdea('find the bug line. do not edit source files.', root).member, 'navigator');
+    // Second review round.
+    assert.equal(pickMemberForIdea('code review for security holes', root).member, 'validator');
+    assert.equal(pickMemberForIdea('find the bug line; do not change source files', root).member, 'navigator');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
