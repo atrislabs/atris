@@ -1936,21 +1936,37 @@ test('free text: an instruction routes to the writer with the reply saying what 
   assert.equal(h.gen.calls[h.gen.calls.length - 1].ownerNote, 'work on the try page instead');
 });
 
-test('free text: unclear asks back; a failed, slow, or off-words read falls back and saves nothing', async () => {
+test('free text: unclear asks back; a model that answered but misread falls back; one that never answered is never blamed on his words', async () => {
   const unclear = desk(workspace(), { questions: false, readSaid: async () => ({ ok: true, kind: 'unclear', reply: 'do you mean the number, or the project?' }) });
   unclear.d.next();
   assert.deepEqual(stayed(await unclear.d.say({ text: 'hmm' })), { ok: true, stay: true, kind: 'unclear', reply: 'do you mean the number, or the project?' });
+  // a model answered and its read is no use: only then is he asked to say it another way
   const FALL = { ok: true, stay: true, kind: 'unclear', reply: 'say that another way, or tap a button.' };
-  const slow = desk(workspace(), { questions: false, sayTimeoutMs: 30, readSaid: () => new Promise(() => {}) });
-  slow.d.next();
-  assert.deepEqual(stayed(await slow.d.say({ text: 'what do you mean?' })), FALL);
-  const broken = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'the model exited with code 1' }) });
-  broken.d.next();
-  assert.deepEqual(stayed(await broken.d.say({ text: 'what do you mean?' })), FALL);
   const worded = desk(workspace(), { questions: false, readSaid: async () => ({ ok: true, kind: 'question', reply: 'it picks the next bet.' }) });
   worded.d.next();
   assert.deepEqual(stayed(await worded.d.say({ text: 'why?' })), FALL);
-  for (const d of [slow, broken, worded]) assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(d.ledgerFile)), 'x'), {});
+  const misshapen = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'the read was not the shape asked for', answered: true }) });
+  misshapen.d.next();
+  assert.deepEqual(stayed(await misshapen.d.say({ text: 'what do you mean?' })), FALL);
+  // no model answered: slow, broken, or a failure that says nothing more is the model's, not his words
+  const UNHEARD = { ok: true, stay: true, kind: 'unheard', reply: 'the model did not answer this time, so nothing was saved. try again in a moment.' };
+  const slow = desk(workspace(), { questions: false, sayTimeoutMs: 30, readSaid: () => new Promise(() => {}) });
+  slow.d.next();
+  assert.deepEqual(stayed(await slow.d.say({ text: 'what do you mean?' })), UNHEARD);
+  const broken = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'the model exited with code 1' }) });
+  broken.d.next();
+  assert.deepEqual(stayed(await broken.d.say({ text: 'what do you mean?' })), UNHEARD);
+  const another = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'no time left', no_model: 'failed', retry: true }) });
+  another.d.next();
+  assert.deepEqual(stayed(await another.d.say({ text: 'what do you mean?' })), UNHEARD);
+  // nothing here can read at all: he is told what it needs
+  const NONE = { ok: true, stay: true, kind: 'unheard', reply: 'the orb needs a model signed in on this computer to read that, so nothing was saved.' };
+  for (const noModel of ['none', 'failed']) {
+    const none = desk(workspace(), { questions: false, readSaid: async () => ({ ok: false, reason: 'no model here', no_model: noModel, retry: false }) });
+    none.d.next();
+    assert.deepEqual(stayed(await none.d.say({ text: 'what do you mean?' })), NONE);
+  }
+  for (const d of [slow, broken, worded, misshapen, another]) assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(d.ledgerFile)), 'x'), {});
 });
 
 test('free text: the real reader is one quick subscription call on the roster model, strict json, 15 seconds', async () => {
@@ -1968,9 +1984,12 @@ test('free text: the real reader is one quick subscription call on the roster mo
   assert.match(calls[0].prompt, /\{"kind": "question" \| "answer" \| "instruction" \| "unclear", "reply": "\.\.\."\}/);
   assert.match(calls[0].prompt, /what number tells you this is going well\?/);
   assert.match(calls[0].prompt, /his message: "what do you mean\?"/);
-  // the wrong shape is a failed read
+  // the wrong shape is a failed read, from a model that did answer
   const bad = await gmBet.readSaid({ text: 'x', card: { kind: 'bet', title: 't', buttons: [] }, workspaceRoot: root, deps: { readerModel: () => 'haiku', runModel: async () => ({ ok: true, text: '{"kind": "maybe"}' }) } });
-  assert.equal(bad.ok, false);
+  assert.deepEqual([bad.ok, bad.answered], [false, true]);
+  // a model that never answered is a failed read nobody answered
+  const down = await gmBet.readSaid({ text: 'x', card: { kind: 'bet', title: 't', buttons: [] }, workspaceRoot: root, deps: { readerModel: () => 'haiku', runModel: async () => ({ ok: false, reason: 'the model exited with code 1' }) } });
+  assert.deepEqual(down, { ok: false, reason: 'the model exited with code 1' });
 });
 
 test('steer from the phone: it can only reach a live run; one that is not running takes a second tap, or keeps it as a note', async () => {
