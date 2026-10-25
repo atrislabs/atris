@@ -976,7 +976,20 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   if (testFileMatch && fs.existsSync(path.join(cwd, testFileMatch[1]))) {
     return `node --test ${testFileMatch[1]}`;
   }
+  // A job that names the project's own test command ("keep npm test green")
+  // chose that check; it is not a silent broad-suite default.
+  const npmMatch = text.match(/\bnpm\s+(run\s+)?test\b/i);
+  if (npmMatch && projectHasTestScript(cwd)) return npmMatch[1] ? 'npm run test' : 'npm test';
   return '';
+}
+
+function projectHasTestScript(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    return Boolean(pkg && pkg.scripts && pkg.scripts.test);
+  } catch {
+    return false;
+  }
 }
 
 function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cwd()) {
@@ -10438,7 +10451,7 @@ function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
 
 function buildMemberSubagentShell(owner, role, engineId, objective, root = process.cwd()) {
   const cleanObjective = compactSentence(objective || `Advance ${owner} roadmap`, 160);
-  const verify = inferMemberRunVerifier(owner, cleanObjective, root);
+  const verify = inferMemberRunVerifier(cleanObjective, [], root);
   return {
     role: `${owner} (${role || 'Team Member'})`,
     member: owner,
@@ -12068,6 +12081,7 @@ module.exports = {
   wakeBootLines,
   buildMemberRunStartArgs,
   inferMemberRunVerifier,
+  buildMemberSubagentShell,
   pickMemberForIdea,
   appendMemberGoalLog,
   appendProjectLog,
