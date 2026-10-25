@@ -117,3 +117,17 @@ test('review of PR 1650: an explicit --worktree keeps the side checkout even on 
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('ordinary files whose names mention tokens or secrets still get saved', () => {
+  const { base, side } = repoWithWorktree();
+  try {
+    for (const name of ['tokenizer.js', 'token-bucket.js', 'secrets-manager.js', 'password-reset.md']) {
+      fs.writeFileSync(path.join(side, name), 'x\n');
+    }
+    const saved = saveLeftoverMemberWork({ worktreePath: side, member: 'executor', objective: 'add helpers' });
+    assert.deepEqual(saved.files.sort(), ['password-reset.md', 'secrets-manager.js', 'token-bucket.js', 'tokenizer.js']);
+    assert.equal(saved.skipped, undefined);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
