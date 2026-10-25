@@ -91,39 +91,55 @@ function bin() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'gm-engines-bin-'));
 }
 
+// the program each model runs as, when it is not the model's own name
+const BIN_NAMES = { cursor: 'cursor-agent' };
+
 // mode: ok answers from the prompt, fail exits 1 like a model that is not
-// signed in, hang never answers. The claude fake speaks stream-json the way
-// claude -p --output-format stream-json does; the rest print plain text.
+// signed in, printfail says so on stdout and exits 1, hang never answers.
+// In ok mode a prompt with HANG in it is never answered, and one with LATE
+// is answered a second and a half late. The claude fake speaks stream-json
+// the way claude -p --output-format stream-json does; the rest print plain text.
 function fakeModel(dir, name, mode = 'ok') {
   const stream = name === 'claude';
   const body = `
 const fs = require('fs');
 const args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(path.join(dir, 'calls.jsonl'))}, JSON.stringify({ model: ${JSON.stringify(name)}, args }) + '\\n');
+fs.appendFileSync(${JSON.stringify(path.join(dir, 'calls.jsonl'))}, JSON.stringify({ model: ${JSON.stringify(name)}, args, pid: process.pid }) + '\\n');
 const mode = ${JSON.stringify(mode)};
 const say = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
 if (mode === 'fail') { process.stderr.write('please log in first\\n'); process.exit(1); }
-if (mode === 'hang') { if (${stream}) say({ type: 'system', subtype: 'init' }); setInterval(() => {}, 1000); return; }
+if (mode === 'printfail') { process.stdout.write('error: please log in first\\n'); process.exit(1); }
 const all = args.join(' ');
+if (mode === 'hang' || all.includes('HANG')) { if (${stream}) say({ type: 'system', subtype: 'init' }); setInterval(() => {}, 1000); return; }
 const text = all.includes('skeptical cofounder') ? ${JSON.stringify(PASS)} : all.includes('You read one short message') ? ${JSON.stringify(READ)} : ${JSON.stringify(BET)};
-if (${stream}) {
-  say({ type: 'system', subtype: 'init' });
-  say({ type: 'stream_event', event: { type: 'message_start' } });
-  say({ type: 'result', result: text });
-} else {
-  process.stdout.write(text + '\\n');
-}
+setTimeout(() => {
+  if (${stream}) {
+    say({ type: 'system', subtype: 'init' });
+    say({ type: 'stream_event', event: { type: 'message_start' } });
+    say({ type: 'result', result: text });
+  } else {
+    process.stdout.write(text + '\\n');
+  }
+}, all.includes('LATE') ? 1500 : 0);
 `;
-  const file = path.join(dir, name);
+  const file = path.join(dir, BIN_NAMES[name] || name);
   fs.writeFileSync(file, `#!${process.execPath}\n${body}`);
   fs.chmodSync(file, 0o755);
   return file;
 }
 
-function calls(dir) {
+function calls(dir, field = 'model') {
   const file = path.join(dir, 'calls.jsonl');
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l).model);
+  return fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)[field]);
+}
+
+// until every fake that was started has ended, so what its end decides is done
+async function allEnded(dir, ms = 10000) {
+  const end = Date.now() + ms;
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  while (Date.now() < end && calls(dir, 'pid').some(alive)) await new Promise(r => setTimeout(r, 25));
+  for (let i = 0; i < 5; i += 1) await new Promise(r => setTimeout(r, 10));
 }
 
 // PATH is this folder and /bin for the length of one test
@@ -344,8 +360,8 @@ test('a model that never answers: a typed word that times out is not blamed on t
     const card = await ideaCard(d);
     const first = await d.act({ card_id: card.id, text: 'what do you mean?' });
     assert.equal(first.body.card.title, SAY_NOT_HEARD);
-    // the silent one sat out once its time was up; the next word goes to the second model
-    await new Promise(r => setTimeout(r, 300));
+    // the silent one sits out once its time is up and it is stopped; the next word goes to the second model
+    await allEnded(dir);
     const base = d.card().card;
     const second = await d.act({ card_id: base.id, text: 'and then?' });
     assert.equal(second.body.card.title, 'it asks what you want the next idea to be about.');
@@ -407,6 +423,67 @@ test('a saved list that says claude is gone, with claude here now: the orb still
   assert.deepEqual(calls(dir), ['claude']);
 });
 
+test('claude not here, the second model never answers, a third one works: the read after the silent one goes to the third', async () => {
+  const dir = bin();
+  fakeModel(dir, 'codex', 'hang');
+  fakeModel(dir, 'cursor');
+  const root = workspace();
+  await onPath(dir, async () => {
+    // long enough for a busy machine to start the silent one, so it is seen to run
+    const first = await read(root, { timeoutMs: 4000 });
+    assert.deepEqual([first.ok, first.answered, first.retry], [false, undefined, true]);
+    await allEnded(dir);
+    const second = await read(root, { timeoutMs: 5000 });
+    assert.equal(second.ok, true, second.reason);
+  });
+  assert.deepEqual(calls(dir), ['codex', 'cursor']);
+});
+
+test('a second model that prints an error and exits 1 is a failure, never an answer to read', async () => {
+  const dir = bin();
+  fakeModel(dir, 'codex', 'printfail');
+  fakeModel(dir, 'cursor');
+  const root = workspace();
+  await onPath(dir, async () => {
+    const r = await read(root);
+    assert.equal(r.ok, true, r.reason);
+    assert.equal(r.reply, 'it asks what you want the next idea to be about.');
+  });
+  assert.deepEqual(calls(dir), ['codex', 'cursor']);
+});
+
+test('a model that answers after another call gave up on it is back in the lineup at once', async () => {
+  const dir = bin();
+  fakeModel(dir, 'claude');
+  const root = workspace();
+  await onPath(dir, async () => {
+    // one read gives up on claude while another is still being answered by it
+    const [gaveUp, answered] = await Promise.all([read(root, { text: 'HANG', timeoutMs: 1000 }), read(root, { text: 'LATE', timeoutMs: 8000 })]);
+    assert.equal(gaveUp.ok, false);
+    assert.equal(answered.ok, true, answered.reason);
+    const after = await read(root);
+    assert.equal(after.ok, true, after.reason);
+  });
+});
+
+test('stopping the phone server stops a call, and no other model is started after it', async () => {
+  const dir = bin();
+  fakeModel(dir, 'claude', 'hang');
+  fakeModel(dir, 'codex');
+  const root = workspace();
+  await onPath(dir, async () => {
+    const pending = read(root, { timeoutMs: 20000 });
+    const end = Date.now() + 10000;
+    while (Date.now() < end && !calls(dir).length) await new Promise(r => setTimeout(r, 20));
+    await new Promise(r => setTimeout(r, 200));
+    assert.ok(gmBet.stopWriters() >= 1);
+    const out = await pending;
+    assert.equal(out.ok, false);
+    await new Promise(r => setTimeout(r, 300));
+  });
+  assert.deepEqual(calls(dir), ['claude']);
+});
+
 // ---- cheap and cached ------------------------------------------------------------
 
 test('finding the models is cheap: read once and kept, so a tap never waits on it', async () => {
@@ -418,7 +495,10 @@ test('finding the models is cheap: read once and kept, so a tap never waits on i
   registry.readEngineRegistry = (...a) => { reads += 1; return real(...a); };
   try {
     await onPath(dir, async () => {
-      for (let i = 0; i < 3; i += 1) assert.equal((await read(root)).ok, true);
+      for (let i = 0; i < 3; i += 1) {
+        const r = await read(root);
+        assert.equal(r.ok, true, r.reason);
+      }
     });
   } finally {
     registry.readEngineRegistry = real;
