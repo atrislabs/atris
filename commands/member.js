@@ -9959,8 +9959,15 @@ async function memberChat(name, ...rest) {
 
 const IDEA_ARCHETYPE_RULES = [
   {
+    // A job that opens by asking where or which, or forbids source edits, is
+    // a read-and-answer job even when it mentions a bug.
+    slugs: ['navigator', 'researcher'],
+    pattern: /^\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
+    reason: 'reads the code and answers where and which questions',
+  },
+  {
     slugs: ['auto-improver', 'improver'],
-    pattern: /\b(repeat|recurring|broken\s+test|flaky|error|regression|pain|fix\s+bug|self[- ]improv|crash)\b/i,
+    pattern: /\b(repeat|recurring|broken|flaky|errors?|regressions?|pain|fix(es|ed|ing)?|bugs?|fail(s|ing|ed|ure)?|self[- ]improv|crash(es|ed|ing)?)\b/i,
     reason: 'handles recurring errors, regressions, and test fixes',
   },
   {
@@ -10001,8 +10008,10 @@ const ARCHETYPE_FOR_JOB = { build: 'executor', review: 'validator', search: 'res
 const EXPERIMENT_STATUSES = new Set(['experimental', 'one-off']);
 
 function ideaRuleFor(slug, record, text) {
-  const own = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(slug));
-  if (own && own.pattern.test(text)) return { rule: own, own: true };
+  const ownRules = IDEA_ARCHETYPE_RULES.filter((rule) => rule.slugs.includes(slug));
+  const matched = ownRules.find((rule) => rule.pattern.test(text));
+  if (matched) return { rule: matched, own: true };
+  const own = ownRules[0];
   const { autoJobForMember } = require('../lib/member-engine');
   const archetype = ARCHETYPE_FOR_JOB[autoJobForMember(slug, record.role)];
   const rule = IDEA_ARCHETYPE_RULES.find((r) => r.slugs.includes(archetype)) || null;
@@ -10086,6 +10095,9 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
 
     const memberRule = ideaRuleFor(slug, record, text);
     const fit = ideaJobFit(named, memberRule, jobRule);
+    // A reviewer never patches, so it only takes review jobs unless named.
+    const reviewRule = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes('validator'));
+    const effectiveTier = !named && memberRule.rule === reviewRule && jobRule !== reviewRule ? Math.max(tier, 1) : tier;
     if (fit > 0 && memberRule.rule) {
       score += 30;
       matchedReason = memberRule.rule.reason;
@@ -10118,7 +10130,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
       role: record.role || 'Team Member',
       reason: matchedReason,
       score,
-      tier,
+      tier: effectiveTier,
       fit,
     };
     if (outranksDispatch(candidate, best)) best = candidate;

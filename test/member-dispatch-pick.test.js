@@ -99,3 +99,39 @@ test('member dispatch --dry-run names the job owner through the CLI', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Member lab 2026-10-24: on a fresh `atris init` team, these plain jobs went to
+// the wrong member. The validator took a fix job its own rules forbid (judge
+// never patches) and left the fix uncommitted; the customer lead took a
+// find-the-line question.
+function freshInitTeam() {
+  const root = workspace();
+  for (const name of ['customer-lead', 'executor', 'improver', 'mission-lead', 'navigator', 'validator']) {
+    const src = path.join(__dirname, '..', 'atris', 'team', name);
+    const dest = path.join(root, 'atris', 'team', name);
+    fs.mkdirSync(dest, { recursive: true });
+    for (const file of ['MEMBER.md', 'MISSION.md']) {
+      if (fs.existsSync(path.join(src, file))) fs.copyFileSync(path.join(src, file), path.join(dest, file));
+    }
+  }
+  return root;
+}
+
+test('fix and find jobs on a fresh team go to a builder or the navigator, never the judge', () => {
+  const root = freshInitTeam();
+  try {
+    const builders = new Set(['executor', 'improver']);
+    for (const job of [
+      'fix the failing shipping tests.\n\nyou may only modify shipping.js.',
+      'cli.js crashes when scanning a file that has no headings.\n\nfix scan.js.',
+      'make npm test pass.\n\ndo not edit checks/cart.js.',
+    ]) {
+      const pick = pickMemberForIdea(job, root);
+      assert.ok(builders.has(pick.member), `${JSON.stringify(job.slice(0, 40))} went to ${pick.member}`);
+    }
+    assert.equal(pickMemberForIdea('find the bug line.\n\ndo not edit source files.', root).member, 'navigator');
+    assert.equal(pickMemberForIdea('review the diff for security holes', root).member, 'validator');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
