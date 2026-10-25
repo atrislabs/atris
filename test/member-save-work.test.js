@@ -68,3 +68,15 @@ test('a job that forbids commits keeps its changes loose', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a do-not-commit job runs in the person\'s own folder, other jobs get a side checkout', () => {
+  const { buildMemberRunStartArgs } = require('../commands/member');
+  const { base, main } = repoWithWorktree();
+  try {
+    assert.ok(buildMemberRunStartArgs('executor', 'fix the failing test', [], main).includes('--worktree'));
+    const loose = buildMemberRunStartArgs('executor', 'fix the failing test.\n\ndo not create a commit.', [], main);
+    assert.ok(!loose.includes('--worktree'));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

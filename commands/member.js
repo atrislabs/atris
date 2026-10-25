@@ -1036,7 +1036,10 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // Default to an isolated worktree only when there is a git repo to cut it
   // from. A plain (non-git) workspace would fail every mission start with
   // "fatal: not a git repository", degrade to the shared checkout instead.
-  if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
+  // A job that says "do not commit" wants the change in the person's own
+  // files; a side checkout would hide uncommitted work where they never see it.
+  const forbidsCommit = require('../lib/member-save-work').jobForbidsCommit(missionText);
+  if (!forbidsCommit && !hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
   startArgs.push('--json');
