@@ -87,7 +87,7 @@ test('only an ignited run defaults the review on, and an explicit choice wins', 
   assert.equal(memberRunWantsReferee([], true, ''), true);
   assert.equal(memberRunWantsReferee([], true, 'test -s work.txt'), true);
   // Review of the speed PR: a test command that can be made to pass anyway keeps the review.
-  for (const rigged of ['npm test || true', 'npm test -- --passWithNoTests', 'node --test missing.js || true', 'npm test; true', 'npm test | tail -1', 'npx jest --passWithNoTests']) {
+  for (const rigged of ['npm test || true', 'npm test -- --passWithNoTests', 'node --test missing.js || true', 'npm test; true', 'npm test | tail -1', 'npx jest --passWithNoTests', 'npm test\ntrue']) {
     assert.equal(memberRunWantsReferee([], true, rigged), true, rigged);
   }
 });

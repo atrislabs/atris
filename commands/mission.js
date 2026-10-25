@@ -6958,12 +6958,19 @@ function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
   const run = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   const head = String(before?.head || '').trim();
   const changed = [
-    ...(head ? String(run(['diff', '--name-only', head]).stdout || '').split('\n') : []),
+    // No starting commit to compare against: every tracked file counts.
+    ...String(run(head ? ['diff', '--name-only', head] : ['ls-files']).stdout || '').split('\n'),
     ...String(run(['diff', '--name-only', 'HEAD']).stdout || '').split('\n'),
     ...String(run(['ls-files', '--others', '--exclude-standard']).stdout || '').split('\n'),
   ].map((file) => file.trim()).filter(Boolean);
-  const command = String(verifier || '');
-  return changed.some((file) => path.basename(file) === 'package.json' || command.includes(file));
+  // npm test runs whatever package.json says, so its paths and folders count too.
+  let checkText = String(verifier || '');
+  if (/^(npm|pnpm|yarn)\s/i.test(checkText.trim())) {
+    try { checkText += ` ${JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))?.scripts?.test || ''}`; } catch {}
+  }
+  return changed.some((file) => path.basename(file) === 'package.json'
+    || checkText.includes(file)
+    || (path.dirname(file) !== '.' && checkText.includes(`${path.dirname(file)}/`)));
 }
 
 // The worker's `learned:` line from its receipt, so the lesson reaches the
@@ -9191,10 +9198,12 @@ function claudeRunnerMcpArgs(mission, cwd = process.cwd(), env = process.env) {
   // ~/.claude.json under the folder's path; keep those too.
   try {
     const home = env.HOME || os.homedir();
-    const local = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))?.projects?.[path.resolve(cwd)]?.mcpServers;
-    if (local && typeof local === 'object' && Object.keys(local).length) {
-      args.push('--mcp-config', JSON.stringify({ mcpServers: local }));
-    }
+    const projects = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))?.projects || {};
+    // A side checkout's servers are usually registered under the main checkout.
+    const common = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8' });
+    const mainRoot = common.status === 0 ? path.dirname(path.resolve(cwd, String(common.stdout || '').trim())) : '';
+    const local = { ...(mainRoot ? projects[mainRoot]?.mcpServers : null), ...projects[path.resolve(cwd)]?.mcpServers };
+    if (Object.keys(local).length) args.push('--mcp-config', JSON.stringify({ mcpServers: local }));
   } catch {}
   return args;
 }
@@ -9732,6 +9741,7 @@ function spawnGenericRunnerTick(mission, opts) {
         result: finalText,
         summary: usefulClaudeReceiptSummary(finalText || errStr, ok ? 'no-text' : 'error'),
         receipt_text: cappedClaudeReceiptText(finalText || errStr),
+        learned: receiptLearnedLine(finalText),
         duration_total_ms: Date.now() - startedAt,
         num_turns: null,
         stop_reason: null,
@@ -9928,6 +9938,7 @@ function spawnClaudeTick(mission, opts) {
         result: finalText,
         summary: usefulClaudeReceiptSummary(finalText, ok ? 'no-text' : 'error'),
         receipt_text: cappedClaudeReceiptText(finalText),
+        learned: receiptLearnedLine(finalText),
         api_equivalent_estimate: costEstimate,
         duration_api_ms: durationApiMs,
         duration_total_ms: Date.now() - startedAt,
@@ -11044,7 +11055,7 @@ async function executeMissionRunTicksPhase(context) {
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
         next_push: result.next_push ? String(result.next_push).slice(0, 180) : undefined,
-        learned: receiptLearnedLine(result?.claude?.receipt_text || result?.claude?.summary),
+        learned: result?.claude?.learned || receiptLearnedLine(result?.claude?.result || result?.claude?.receipt_text),
         feedback: verifierResult && !verifierResult.passed ? String(mission.last_check_feedback || '').slice(0, 240) : undefined,
         receipt: receiptPath,
       }, cwd);

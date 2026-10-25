@@ -1073,7 +1073,7 @@ function memberRunHasRealCheck(verifier) {
   const command = String(verifier || '').trim();
   // A plain test runner only: chaining (|| true, ; , &&, pipes, subshells) or a
   // pass-with-no-tests switch can make any run "pass", so those keep the review.
-  if (/\|\||&&|[;|`]|\$\(|pass-?with-?no-?tests|--no-tests|--exit-zero/i.test(command)) return false;
+  if (/\|\||&&|[;|`\r\n]|\$\(|pass-?with-?no-?tests|--no-tests|--exit-zero/i.test(command)) return false;
   return /^((npm|pnpm|yarn)\s+(run\s+)?test\b|node\s+--test\b|npx\s+(jest|vitest|mocha)\b|pytest\b|python3?\s+-m\s+pytest\b|go\s+test\b|cargo\s+test\b)/i.test(command);
 }
 

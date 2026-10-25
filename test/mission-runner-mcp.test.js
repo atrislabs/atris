@@ -55,6 +55,10 @@ test('a worker that edits what the test command runs is caught, adding other fil
     fs.writeFileSync(path.join(dir, 'checks', 'a.js'), '// emptied');
     git('commit', '-qam', 'worker commit');
     assert.equal(tickTouchedCheckDefinition('node --test checks/a.js', before, dir), true);
+    // Second round: npm test runs package.json's script, so its test files count,
+    // and with no starting commit every tracked file counts.
+    assert.equal(tickTouchedCheckDefinition('npm test', before, dir), true);
+    assert.equal(tickTouchedCheckDefinition('npm test', { head: null }, dir), true);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -65,4 +69,26 @@ test('the learned line from a receipt reaches the member log', () => {
   assert.equal(receiptLearnedLine('Fixed parser.\nlearned: use UTC for dates\nnext_push: x'), 'use UTC for dates');
   assert.equal(receiptLearnedLine('- learned: keep it small'), 'keep it small');
   assert.equal(receiptLearnedLine('Fixed parser.'), undefined);
+  assert.equal(receiptLearnedLine(`${'x'.repeat(4100)}\nlearned: use UTC`), 'use UTC');
+});
+
+test('a side checkout keeps tool servers registered for its main checkout', () => {
+  const { spawnSync } = require('node:child_process');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-mcp-wt-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-mcp-home-'));
+  const main = fs.realpathSync(base) + '/main';
+  const side = fs.realpathSync(base) + '/side';
+  const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
+  try {
+    fs.mkdirSync(main);
+    git(main, 'init', '-q'); git(main, 'commit', '-q', '--allow-empty', '-m', 'seed');
+    git(main, 'worktree', 'add', '-q', '-b', 'side', side);
+    const servers = { browser: { command: 'npx', args: ['browser-mcp'] } };
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: { [main]: { mcpServers: servers } } }));
+    assert.deepEqual(claudeRunnerMcpArgs({ owner: 'executor' }, side, { HOME: home }),
+      ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })]);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
