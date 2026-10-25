@@ -80,3 +80,40 @@ test('a do-not-commit job runs in the person\'s own folder, other jobs get a sid
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('review of PR 1650: secrets, staged atris state, and the main checkout stay out of the auto-save', () => {
+  const { jobForbidsCommit } = require('../lib/member-save-work');
+  const { base, main, side } = repoWithWorktree();
+  try {
+    fs.writeFileSync(path.join(side, 'app.js'), 'new\n');
+    fs.writeFileSync(path.join(side, 'credentials.json'), '{"key":"x"}\n');
+    fs.writeFileSync(path.join(side, '.env'), 'TOKEN=x\n');
+    fs.mkdirSync(path.join(side, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(side, '.atris', 'secret.json'), '{}\n');
+    git(['add', '-f', '.atris/secret.json'], side);
+    const saved = saveLeftoverMemberWork({ worktreePath: side, member: 'executor', objective: 'fix app.js' });
+    assert.equal(saved.saved, true);
+    assert.deepEqual(saved.files, ['app.js']);
+    assert.deepEqual(saved.skipped.sort(), ['.env', 'credentials.json']);
+    assert.equal(git(['show', '--name-only', '--format=', 'navigator-job'], main), 'app.js');
+
+    fs.writeFileSync(path.join(main, 'app.js'), 'edited in main\n');
+    assert.equal(saveLeftoverMemberWork({ worktreePath: main, objective: 'fix app.js' }).reason, 'not_side_checkout');
+
+    assert.equal(jobForbidsCommit('fix app.js; do not create any commits'), true);
+    assert.equal(jobForbidsCommit('fix app.js, no commits please'), true);
+    assert.equal(jobForbidsCommit('fix app.js and commit it'), false);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('review of PR 1650: an explicit --worktree keeps the side checkout even on a do-not-commit job', () => {
+  const { buildMemberRunStartArgs } = require('../commands/member');
+  const { base, main } = repoWithWorktree();
+  try {
+    assert.ok(buildMemberRunStartArgs('executor', 'fix app.js; do not commit', ['--worktree'], main).includes('--worktree'));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

@@ -14,11 +14,17 @@ test('with self-landing off, a passing run names its branch and the command that
     const git = (...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: dir, encoding: 'utf8' });
     git('init', '-q', '-b', 'main');
     git('commit', '-q', '--allow-empty', '-m', 'seed');
-    git('checkout', '-q', '-b', 'executor-fix-scan');
-    const result = autolandMemberRun({ mission: { verifier_result: { passed: true }, worktree: { branch: 'executor-fix-scan' } }, cwd: dir });
+    const side = `${dir}-side`;
+    git('worktree', 'add', '-q', '-b', 'executor-fix-scan', side);
+    const result = autolandMemberRun({ mission: { verifier_result: { passed: true }, worktree: { path: side, branch: 'executor-fix-scan' } }, cwd: side });
     assert.equal(result.merged, false);
     assert.equal(result.gate, 'policy');
     assert.equal(result.line, 'your files are not changed yet: the work is saved on branch executor-fix-scan. bring it in: git merge executor-fix-scan');
+    // Review of PR 1650: a run in the main checkout has no side branch, so it
+    // keeps the old line instead of telling the person to merge main.
+    const inPlace = autolandMemberRun({ mission: { verifier_result: { passed: true } }, cwd: dir });
+    assert.equal(inPlace.line, 'left the branch for you: self-landing is not switched on in the main checkout');
+    fs.rmSync(side, { recursive: true, force: true });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

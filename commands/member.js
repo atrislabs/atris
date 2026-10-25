@@ -978,7 +978,7 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   }
   // A job that names the project's own test command ("keep npm test green")
   // chose that check; it is not a silent broad-suite default.
-  const npmMatch = text.match(/\bnpm\s+(run\s+)?test\b/i);
+  const npmMatch = text.match(/\bnpm\s+(run\s+)?test(?![\w:-])/i);
   if (npmMatch && projectHasTestScript(cwd)) return npmMatch[1] ? 'npm run test' : 'npm test';
   return '';
 }
@@ -1038,7 +1038,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // "fatal: not a git repository", degrade to the shared checkout instead.
   // A job that says "do not commit" wants the change in the person's own
   // files; a side checkout would hide uncommitted work where they never see it.
-  const forbidsCommit = require('../lib/member-save-work').jobForbidsCommit(missionText);
+  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').jobForbidsCommit(missionText);
   if (!forbidsCommit && !hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
@@ -9975,8 +9975,8 @@ const IDEA_ARCHETYPE_RULES = [
   {
     // A job that opens by asking where or which, or forbids source edits, is
     // a read-and-answer job even when it mentions a bug.
-    slugs: ['navigator', 'researcher'],
-    pattern: /^\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
+    slugs: ['navigator'],
+    pattern: /^(?![\s\S]*\b(fix|repair|change|update|implement|add)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
     reason: 'reads the code and answers where and which questions',
   },
   {
@@ -10038,7 +10038,14 @@ function ideaRuleFor(slug, record, text) {
 // specific jobs to the general build job, so "where is the code" is a
 // navigator job even though "code" is also a build word.
 function ideaJobRule(text) {
-  return IDEA_ARCHETYPE_RULES.find((rule) => rule.pattern.test(text)) || null;
+  // The job word that comes first names the job: "review the bug fix" is a
+  // review, "fix the review page" is a fix. Ties keep list order.
+  let best = null;
+  for (const rule of IDEA_ARCHETYPE_RULES) {
+    const match = rule.pattern.exec(text);
+    if (match && (!best || match.index < best.index)) best = { rule, index: match.index };
+  }
+  return best ? best.rule : null;
 }
 
 // 3 = named in the idea, 2 = the job is the member's own, 1 = the member

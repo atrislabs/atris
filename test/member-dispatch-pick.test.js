@@ -136,3 +136,20 @@ test('fix and find jobs on a fresh team go to a builder or the navigator, never 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('review of PR 1650: the first job word names the job, and renamed researchers keep research', () => {
+  const root = workspace();
+  try {
+    writeMember(root, 'executor', 'Ship product changes.\n', 'Builder');
+    writeMember(root, 'validator', 'Review diffs.\n', 'Validator');
+    writeMember(root, 'auto-improver', 'Fix recurring errors.\n', 'Auto Improver');
+    writeMember(root, 'navigator', 'Map the codebase.\n', 'Navigator');
+    writeMember(root, 'analyst', 'Look into options.\n', 'Researcher');
+    assert.equal(pickMemberForIdea('review the bug fix for security holes', root).member, 'validator');
+    assert.equal(pickMemberForIdea('Find and fix the parser error', root).member, 'auto-improver');
+    assert.equal(pickMemberForIdea('research alternatives to SQLite', root).member, 'analyst');
+    assert.equal(pickMemberForIdea('find the bug line. do not edit source files.', root).member, 'navigator');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

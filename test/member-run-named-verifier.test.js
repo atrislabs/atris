@@ -20,6 +20,8 @@ test('a job that names the project test command gets that command as its check',
     assert.equal(inferMemberRunVerifier('fix scan.js.\n\nkeep npm test green.', [], dir), 'npm test');
     assert.equal(inferMemberRunVerifier('make `npm run test` pass', [], dir), 'npm run test');
     assert.equal(inferMemberRunVerifier('fix the parser', [], dir), '');
+    // Review of PR 1650: a named sub-suite is not the plain test script.
+    assert.equal(inferMemberRunVerifier('run npm run test:integration', [], dir), '');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
