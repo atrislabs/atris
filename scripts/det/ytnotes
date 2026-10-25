@@ -215,30 +215,48 @@ done
 # They never need the player script either: it only unlocks the video streams,
 # and solving it in deno took about 1.1s. The caption files come out the same.
 # A live video may have no other streams; keep going so its captions still land.
-yt-dlp --no-update --quiet --no-warnings --skip-download \
-  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
-  --extractor-args "youtube:skip=hls,dash;player_skip=js" --ignore-no-formats-error \
-  --no-simulate \
-  -o "yt_%(id)s" \
-  --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
-  "$URL" >"yt_meta.$$.out" 2>"yt_captions.$$.err" </dev/null &
-CAPTIONS_PID=$!
-# The notes read the original English track first. Once it is whole, stop
-# yt-dlp before it asks for the auto "en" copy, which took about 0.5s and
-# usually ends in a 429. yt-dlp prints the id line just before it writes
-# captions, and renames a track's .part file only when the track is whole.
-while kill -0 "$CAPTIONS_PID" 2>/dev/null; do
+fetch_captions() {
+  yt-dlp --no-update --quiet --no-warnings --skip-download \
+    --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
+    --extractor-args "$1" --ignore-no-formats-error \
+    --no-simulate \
+    -o "yt_%(id)s" \
+    --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
+    "$URL" >"yt_meta.$$.out" 2>>"yt_captions.$$.err" </dev/null &
+  CAPTIONS_PID=$!
+  # The notes read the original English track first. Once it is whole, stop
+  # yt-dlp before it asks for the auto "en" copy, which took about 0.5s and
+  # usually ends in a 429. yt-dlp prints the id line just before it writes
+  # captions, and renames a track's .part file only when the track is whole.
+  while kill -0 "$CAPTIONS_PID" 2>/dev/null; do
+    cid=$(sed -n 's/^\([A-Za-z0-9_-]\{1,\}\)|.*/\1/p' "yt_meta.$$.out" 2>/dev/null | tail -n 1)
+    if [ -n "$cid" ] && [ -s "yt_${cid}.en-orig.vtt" ] && [ ! -e "yt_${cid}.en-orig.vtt.part" ]; then
+      # A quiet wait ends the moment yt-dlp does, with no "Terminated" line.
+      kill "$CAPTIONS_PID" 2>/dev/null || true
+      wait "$CAPTIONS_PID" 2>/dev/null || true
+      rm -f "yt_${cid}".*.part
+      break
+    fi
+    sleep 0.05
+  done
+  wait "$CAPTIONS_PID" 2>/dev/null || true
+}
+captions_landed() {
+  local cid name
   cid=$(sed -n 's/^\([A-Za-z0-9_-]\{1,\}\)|.*/\1/p' "yt_meta.$$.out" 2>/dev/null | tail -n 1)
-  if [ -n "$cid" ] && [ -s "yt_${cid}.en-orig.vtt" ] && [ ! -e "yt_${cid}.en-orig.vtt.part" ]; then
-    # A quiet wait ends the moment yt-dlp does, with no "Terminated" line.
-    kill "$CAPTIONS_PID" 2>/dev/null || true
-    wait "$CAPTIONS_PID" 2>/dev/null || true
-    rm -f "yt_${cid}".*.part
-    break
-  fi
-  sleep 0.05
-done
-wait "$CAPTIONS_PID" 2>/dev/null || true
+  [ -n "$cid" ] || return 1
+  for name in "yt_${cid}.en-orig.vtt" "yt_${cid}.en.vtt" "yt_${cid}.en-US.vtt" "yt_${cid}.en-GB.vtt"; do
+    [ -s "$name" ] && return 0
+  done
+  return 1
+}
+# The iOS client skips the webpage too (about 1s) and still lists captions;
+# the others list none without it. Its file drops the word timing tags, but
+# the cleaned words come out the same. When it lands no English captions,
+# fetch again the full way, so a missing iOS track never reads as no captions.
+: > "yt_captions.$$.err"
+fetch_captions "youtube:skip=hls,dash;player_skip=js,webpage;player_client=ios"
+captions_landed || fetch_captions "youtube:skip=hls,dash;player_skip=js"
 META=$(cat "yt_meta.$$.out" 2>/dev/null) || true
 rm -f "yt_meta.$$.out"
 # A sign-in wall on the caption fetch is a blocked connection, not a video
