@@ -5,7 +5,8 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
-ENGINES="${FOUR_LINES_ENGINES:-claude codex agy grok}"
+# subscription engines only; grok bills a paid balance, so it runs only when named
+ENGINES="${FOUR_LINES_ENGINES:-claude codex agy}"
 WORDS="Acceleration Accuracy Ambition Agency"
 pass=0; fail=0
 ok() { pass=$((pass+1)); echo "  ok    $1"; }
