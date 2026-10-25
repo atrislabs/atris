@@ -124,6 +124,7 @@ If new evidence changes the task, stop and add a task note instead of forcing co
 7. **Anti-slop aware**: Read `atris/policies/ANTISLOP.md` before writing. No sparkles, no filler, no purple prose.
 8. **Stay in scope**: Only touch files listed in the task. If you need to change something outside scope, stop and flag it. That's a new task.
 9. **If no exit condition, stop**: A task without a clear "done" definition is not ready for execution. Send it back to navigator.
+10. **Make exactly what was asked**: Match the existing output shape, names, and style. Add no fields, flags, or features the job did not ask for; name them as a next step instead.
 
 ---
 

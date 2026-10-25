@@ -120,7 +120,8 @@ function freshInitTeam() {
 test('fix and find jobs on a fresh team go to a builder or the navigator, never the judge', () => {
   const root = freshInitTeam();
   try {
-    const builders = new Set(['executor', 'improver']);
+    // The shipped improver proposes workflow changes; the builder fixes code.
+    const builders = new Set(['executor']);
     for (const job of [
       'fix the failing shipping tests.\n\nyou may only modify shipping.js.',
       'cli.js crashes when scanning a file that has no headings.\n\nfix scan.js.',

@@ -9966,7 +9966,9 @@ const IDEA_ARCHETYPE_RULES = [
     reason: 'reads the code and answers where and which questions',
   },
   {
-    slugs: ['auto-improver', 'improver'],
+    // The shipped `improver` proposes team and workflow changes; it is not a
+    // code fixer, so fix jobs go to auto-improver or fall back to the builder.
+    slugs: ['auto-improver'],
     pattern: /\b(repeat|recurring|broken|flaky|errors?|regressions?|pain|fix(es|ed|ing)?|bugs?|fail(s|ing|ed|ure)?|self[- ]improv|crash(es|ed|ing)?)\b/i,
     reason: 'handles recurring errors, regressions, and test fixes',
   },
@@ -10081,7 +10083,12 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 4);
-  const jobRule = ideaJobRule(text);
+  let jobRule = ideaJobRule(text);
+  // A job nobody on this team owns goes to the builder rule, not to whoever
+  // shares the most words with it.
+  if (jobRule && !members.some((m) => ideaRuleFor(memberSlugFromRecord(m), m, text).rule === jobRule)) {
+    jobRule = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes('executor')) || jobRule;
+  }
 
   let best = null;
   for (const record of members) {
