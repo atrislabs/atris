@@ -2,7 +2,7 @@
 
 ## Goal
 
-The four lines at the top of `## operating rules` in `atris.md` (Acceleration, Accuracy, Ambition, Agency) reach every fresh agent in a new Atris project and change what it does, across four model families: Claude, GPT (codex), Gemini (agy), Grok.
+The four lines at the top of `## operating rules` in `atris.md` (Acceleration, Accuracy, Ambition, Agency) reach every fresh agent in a new Atris project and change what it does, across the three model families on a subscription: Claude, GPT (codex), Gemini (agy). Grok bills a paid balance, so it runs only when named (FOUR_LINES_ENGINES).
 
 Done means `sh atris/campaigns/cmp-four-lines-real/judge.sh` exits 0.
 
