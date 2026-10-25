@@ -788,6 +788,7 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--no-claude',
   '--no-verify',
   '--referee',
+  '--referee-if-check-edited',
   '--no-referee',
   '--complete-on-pass',
   '--no-drain',
@@ -6950,6 +6951,39 @@ function missionProtectedTags(mission, root = process.cwd()) {
   return tags;
 }
 
+// True when the tick changed what its check command runs: package.json (which
+// defines npm test) or a file the command names. A passing test the worker
+// rewrote is not evidence on its own.
+function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
+  const run = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  const head = String(before?.head || '').trim();
+  const changed = [
+    // No starting commit to compare against: every tracked file counts.
+    ...String(run(head ? ['diff', '--name-only', head] : ['ls-files']).stdout || '').split('\n'),
+    ...String(run(['diff', '--name-only', 'HEAD']).stdout || '').split('\n'),
+    ...String(run(['ls-files', '--others', '--exclude-standard']).stdout || '').split('\n'),
+  ].map((file) => file.trim()).filter(Boolean);
+  // npm test runs whatever package.json says, so its paths and folders count too.
+  let checkText = String(verifier || '');
+  if (/^(npm|pnpm|yarn)\s/i.test(checkText.trim())) {
+    try { checkText += ` ${JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))?.scripts?.test || ''}`; } catch {}
+  }
+  // Runners that find tests by name (node --test, jest, pytest, go test) never
+  // list them, so any changed file shaped like a test counts as well.
+  const testShaped = /(^|\/)(tests?|__tests__|specs?|checks?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$|(^|\/)conftest\.py$/i;
+  return changed.some((file) => path.basename(file) === 'package.json'
+    || testShaped.test(file)
+    || checkText.includes(file)
+    || (path.dirname(file) !== '.' && checkText.includes(`${path.dirname(file)}/`)));
+}
+
+// The worker's `learned:` line from its receipt, so the lesson reaches the
+// member log (and the next worker's preloaded memory) without a hand edit.
+function receiptLearnedLine(text) {
+  const match = String(text || '').match(/^[\s*-]*learned:\s*(.+)$/im);
+  return match ? match[1].trim().slice(0, 240) : undefined;
+}
+
 function inspectMissionTickProtectedDiff(mission, before, root = process.cwd()) {
   const after = gitWorktreeSnapshot(root);
   if (before?.reason === 'not-git-worktree' && after?.reason === 'not-git-worktree') {
@@ -9153,6 +9187,31 @@ function readBoundedContextFile(filePath, maxChars = 1600) {
   }
 }
 
+// Code members never call the account-wide tool servers (mail, calendar,
+// docs), yet loading them cost about 5s per worker start in the member lab.
+// They keep the project's own .mcp.json; ATRIS_MEMBER_KEEP_MCP=1 keeps all.
+const CODE_MEMBERS = new Set(['executor', 'builder', 'codex-executor', 'auto-improver', 'navigator', 'validator', 'architect']);
+
+function claudeRunnerMcpArgs(mission, cwd = process.cwd(), env = process.env) {
+  if (env.ATRIS_MEMBER_KEEP_MCP === '1') return [];
+  if (!CODE_MEMBERS.has(String(mission?.owner || '').trim().toLowerCase())) return [];
+  const args = ['--strict-mcp-config'];
+  const projectConfig = path.join(cwd, '.mcp.json');
+  if (fs.existsSync(projectConfig)) args.push('--mcp-config', projectConfig);
+  // Servers added for this folder with Claude's local scope live in
+  // ~/.claude.json under the folder's path; keep those too.
+  try {
+    const home = env.HOME || os.homedir();
+    const projects = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))?.projects || {};
+    // A side checkout's servers are usually registered under the main checkout.
+    const common = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8' });
+    const mainRoot = common.status === 0 ? path.dirname(path.resolve(cwd, String(common.stdout || '').trim())) : '';
+    const local = { ...(mainRoot ? projects[mainRoot]?.mcpServers : null), ...projects[path.resolve(cwd)]?.mcpServers };
+    if (Object.keys(local).length) args.push('--mcp-config', JSON.stringify({ mcpServers: local }));
+  } catch {}
+  return args;
+}
+
 function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
   const owner = String(mission?.owner || '').trim();
   const baseRoot = mission?.worktree_root || mission?.worktree?.path || root;
@@ -9282,7 +9341,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
-    `- ${memberIdentityLine(mission.owner)} Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
+    `- ${memberIdentityLine(mission.owner)} Your member files are preloaded above; open atris/team/${mission.owner}/MEMBER.md only if that copy is marked truncated. Work in that identity, inside its scope and stop rules. Atris writes your member log from your receipt, so end the receipt with one \`learned: <one line>\` line instead of editing the log.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
@@ -9290,7 +9349,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `- The tick is not done until the verify step passes. If a frozen verifier exists, the harness runs it, but that does not replace the real-surface proof below. If no frozen verifier exists, finish by actually running the surface you changed on this computer and paste the real command output into your receipt.`,
     `- After that one verify step, STOP. Never start a second slice in one tick.`,
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
-    `- Propose the next needle-mover: include a \`next_push: <one concrete feature or optimization to build next>\` line in your receipt and member log so the team compounds exponentially.`,
+    `- Propose the next needle-mover: include a \`next_push: <one concrete feature or optimization to build next>\` line in your receipt so the team compounds exponentially.`,
     ``,
     `## No claimable work? Work the backstop ladder`,
     `If the mission and task state offer no claimable work, inspect these rungs in order. Pick the FIRST rung with real fuel and do ONE bounded slice:`,
@@ -9686,6 +9745,7 @@ function spawnGenericRunnerTick(mission, opts) {
         result: finalText,
         summary: usefulClaudeReceiptSummary(finalText || errStr, ok ? 'no-text' : 'error'),
         receipt_text: cappedClaudeReceiptText(finalText || errStr),
+        learned: receiptLearnedLine(finalText),
         duration_total_ms: Date.now() - startedAt,
         num_turns: null,
         stop_reason: null,
@@ -9775,6 +9835,7 @@ function spawnClaudeTick(mission, opts) {
     ];
     if (model) args.push('--model', model);
     if (mission.roster_effort) args.push('--effort', mission.roster_effort);
+    args.push(...claudeRunnerMcpArgs(mission, cwd));
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
@@ -9881,6 +9942,7 @@ function spawnClaudeTick(mission, opts) {
         result: finalText,
         summary: usefulClaudeReceiptSummary(finalText, ok ? 'no-text' : 'error'),
         receipt_text: cappedClaudeReceiptText(finalText),
+        learned: receiptLearnedLine(finalText),
         api_equivalent_estimate: costEstimate,
         duration_api_ms: durationApiMs,
         duration_total_ms: Date.now() - startedAt,
@@ -10124,6 +10186,7 @@ async function parseAndValidateMissionRunPhase(args) {
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const refereeEach = hasFlag(args, '--referee') && !hasFlag(args, '--no-referee');
+  const refereeIfCheckEdited = hasFlag(args, '--referee-if-check-edited') && !hasFlag(args, '--no-referee');
   const refereeEngine = readFlag(args, '--referee-engine', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
@@ -10161,6 +10224,7 @@ async function parseAndValidateMissionRunPhase(args) {
     skipClaude,
     verifyEach,
     refereeEach,
+    refereeIfCheckEdited,
     refereeEngine,
     completeOnPass,
     skipDrain,
@@ -10995,6 +11059,7 @@ async function executeMissionRunTicksPhase(context) {
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
         next_push: result.next_push ? String(result.next_push).slice(0, 180) : undefined,
+        learned: result?.claude?.learned || receiptLearnedLine(result?.claude?.result || result?.claude?.receipt_text),
         feedback: verifierResult && !verifierResult.passed ? String(mission.last_check_feedback || '').slice(0, 240) : undefined,
         receipt: receiptPath,
       }, cwd);
@@ -11192,6 +11257,7 @@ async function verifyMissionRunTickPhase(context) {
       && (
         !currentTick.frozen.verifier
         || context.refereeEach
+        || (context.refereeIfCheckEdited && tickTouchedCheckDefinition(currentTick.frozen.verifier, currentTick.tickWorktreeBefore, cwd))
         || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
       );
     if (shouldRunReferee) {
@@ -12860,6 +12926,9 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  receiptLearnedLine,
+  tickTouchedCheckDefinition,
+  claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
