@@ -80,6 +80,12 @@ test('only an ignited run defaults the review on, and an explicit choice wins', 
   assert.equal(memberRunWantsReferee(['--no-referee'], true), false);
   assert.equal(memberRunWantsReferee(['--referee'], true), false, 'already present, no duplicate');
   assert.equal(memberRunWantsReferee([], false), false);
+  // A real test command is the verdict; a whitespace-only check still gets the review.
+  assert.equal(memberRunWantsReferee([], true, 'npm test'), false);
+  assert.equal(memberRunWantsReferee([], true, 'node --test test/a.test.js'), false);
+  assert.equal(memberRunWantsReferee([], true, 'git diff --check'), true);
+  assert.equal(memberRunWantsReferee([], true, ''), true);
+  assert.equal(memberRunWantsReferee([], true, 'test -s work.txt'), true);
 });
 
 test('naming the builder as its own reviewer still gets a different engine', () => {
