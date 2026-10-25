@@ -9153,6 +9153,20 @@ function readBoundedContextFile(filePath, maxChars = 1600) {
   }
 }
 
+// Code members never call the account-wide tool servers (mail, calendar,
+// docs), yet loading them cost about 5s per worker start in the member lab.
+// They keep the project's own .mcp.json; ATRIS_MEMBER_KEEP_MCP=1 keeps all.
+const CODE_MEMBERS = new Set(['executor', 'builder', 'codex-executor', 'auto-improver', 'navigator', 'validator', 'architect']);
+
+function claudeRunnerMcpArgs(mission, cwd = process.cwd(), env = process.env) {
+  if (env.ATRIS_MEMBER_KEEP_MCP === '1') return [];
+  if (!CODE_MEMBERS.has(String(mission?.owner || '').trim().toLowerCase())) return [];
+  const projectConfig = path.join(cwd, '.mcp.json');
+  return fs.existsSync(projectConfig)
+    ? ['--strict-mcp-config', '--mcp-config', projectConfig]
+    : ['--strict-mcp-config'];
+}
+
 function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
   const owner = String(mission?.owner || '').trim();
   const baseRoot = mission?.worktree_root || mission?.worktree?.path || root;
@@ -9775,6 +9789,7 @@ function spawnClaudeTick(mission, opts) {
     ];
     if (model) args.push('--model', model);
     if (mission.roster_effort) args.push('--effort', mission.roster_effort);
+    args.push(...claudeRunnerMcpArgs(mission, cwd));
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
@@ -12860,6 +12875,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
