@@ -212,10 +212,12 @@ for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
 done
 
 # Captions never need the stream lists, so skip fetching them (about 0.2s).
+# They never need the player script either: it only unlocks the video streams,
+# and solving it in deno took about 1.1s. The caption files come out the same.
 # A live video may have no other streams; keep going so its captions still land.
 yt-dlp --no-update --quiet --no-warnings --skip-download \
   --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
-  --extractor-args "youtube:skip=hls,dash" --ignore-no-formats-error \
+  --extractor-args "youtube:skip=hls,dash;player_skip=js" --ignore-no-formats-error \
   --no-simulate \
   -o "yt_%(id)s" \
   --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
