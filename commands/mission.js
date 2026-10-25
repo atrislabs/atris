@@ -788,6 +788,7 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--no-claude',
   '--no-verify',
   '--referee',
+  '--referee-if-check-edited',
   '--no-referee',
   '--complete-on-pass',
   '--no-drain',
@@ -6950,6 +6951,28 @@ function missionProtectedTags(mission, root = process.cwd()) {
   return tags;
 }
 
+// True when the tick changed what its check command runs: package.json (which
+// defines npm test) or a file the command names. A passing test the worker
+// rewrote is not evidence on its own.
+function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
+  const run = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  const head = String(before?.head || '').trim();
+  const changed = [
+    ...(head ? String(run(['diff', '--name-only', head]).stdout || '').split('\n') : []),
+    ...String(run(['diff', '--name-only', 'HEAD']).stdout || '').split('\n'),
+    ...String(run(['ls-files', '--others', '--exclude-standard']).stdout || '').split('\n'),
+  ].map((file) => file.trim()).filter(Boolean);
+  const command = String(verifier || '');
+  return changed.some((file) => path.basename(file) === 'package.json' || command.includes(file));
+}
+
+// The worker's `learned:` line from its receipt, so the lesson reaches the
+// member log (and the next worker's preloaded memory) without a hand edit.
+function receiptLearnedLine(text) {
+  const match = String(text || '').match(/^[\s*-]*learned:\s*(.+)$/im);
+  return match ? match[1].trim().slice(0, 240) : undefined;
+}
+
 function inspectMissionTickProtectedDiff(mission, before, root = process.cwd()) {
   const after = gitWorktreeSnapshot(root);
   if (before?.reason === 'not-git-worktree' && after?.reason === 'not-git-worktree') {
@@ -9161,10 +9184,19 @@ const CODE_MEMBERS = new Set(['executor', 'builder', 'codex-executor', 'auto-imp
 function claudeRunnerMcpArgs(mission, cwd = process.cwd(), env = process.env) {
   if (env.ATRIS_MEMBER_KEEP_MCP === '1') return [];
   if (!CODE_MEMBERS.has(String(mission?.owner || '').trim().toLowerCase())) return [];
+  const args = ['--strict-mcp-config'];
   const projectConfig = path.join(cwd, '.mcp.json');
-  return fs.existsSync(projectConfig)
-    ? ['--strict-mcp-config', '--mcp-config', projectConfig]
-    : ['--strict-mcp-config'];
+  if (fs.existsSync(projectConfig)) args.push('--mcp-config', projectConfig);
+  // Servers added for this folder with Claude's local scope live in
+  // ~/.claude.json under the folder's path; keep those too.
+  try {
+    const home = env.HOME || os.homedir();
+    const local = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))?.projects?.[path.resolve(cwd)]?.mcpServers;
+    if (local && typeof local === 'object' && Object.keys(local).length) {
+      args.push('--mcp-config', JSON.stringify({ mcpServers: local }));
+    }
+  } catch {}
+  return args;
 }
 
 function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
@@ -9296,7 +9328,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
-    `- ${memberIdentityLine(mission.owner)} Your member files are preloaded above; open atris/team/${mission.owner}/MEMBER.md only if that copy is marked truncated. Work in that identity, inside its scope and stop rules. Atris writes your member log from your receipt, so put what you learned in the receipt instead of editing the log.`,
+    `- ${memberIdentityLine(mission.owner)} Your member files are preloaded above; open atris/team/${mission.owner}/MEMBER.md only if that copy is marked truncated. Work in that identity, inside its scope and stop rules. Atris writes your member log from your receipt, so end the receipt with one \`learned: <one line>\` line instead of editing the log.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
@@ -10139,6 +10171,7 @@ async function parseAndValidateMissionRunPhase(args) {
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const refereeEach = hasFlag(args, '--referee') && !hasFlag(args, '--no-referee');
+  const refereeIfCheckEdited = hasFlag(args, '--referee-if-check-edited') && !hasFlag(args, '--no-referee');
   const refereeEngine = readFlag(args, '--referee-engine', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
@@ -10176,6 +10209,7 @@ async function parseAndValidateMissionRunPhase(args) {
     skipClaude,
     verifyEach,
     refereeEach,
+    refereeIfCheckEdited,
     refereeEngine,
     completeOnPass,
     skipDrain,
@@ -11010,6 +11044,7 @@ async function executeMissionRunTicksPhase(context) {
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
         next_push: result.next_push ? String(result.next_push).slice(0, 180) : undefined,
+        learned: receiptLearnedLine(result?.claude?.receipt_text || result?.claude?.summary),
         feedback: verifierResult && !verifierResult.passed ? String(mission.last_check_feedback || '').slice(0, 240) : undefined,
         receipt: receiptPath,
       }, cwd);
@@ -11207,6 +11242,7 @@ async function verifyMissionRunTickPhase(context) {
       && (
         !currentTick.frozen.verifier
         || context.refereeEach
+        || (context.refereeIfCheckEdited && tickTouchedCheckDefinition(currentTick.frozen.verifier, currentTick.tickWorktreeBefore, cwd))
         || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
       );
     if (shouldRunReferee) {
@@ -12875,6 +12911,8 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  receiptLearnedLine,
+  tickTouchedCheckDefinition,
   claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,

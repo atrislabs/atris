@@ -204,7 +204,7 @@ test('buildTickPrompt gives idle workers a proof-backed self-landing backstop la
   assert.match(prompt, /The objective's own limits win over this rule: if it says do not commit/);
   // Member lab speed pass: the runtime writes the member log from the receipt, so
   // the worker no longer spends a turn appending it by hand.
-  assert.match(prompt, /Atris writes your member log from your receipt/);
+  assert.match(prompt, /Atris writes your member log from your receipt, so end the receipt with one `learned: <one line>` line/);
   assert.doesNotMatch(prompt, /append what you did and what you learned/);
   assert.match(prompt, /Protected lanes \(external sends, payments, credentials, auth\/CSP\/iframe\/sandbox surfaces, and deletes of user data\) are never self-landed/);
   assert.match(prompt, /After landing a ladder-sourced slice, append a judge card to atris\/status\/for-you\.md in this SHIPPED format:/);

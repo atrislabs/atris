@@ -785,6 +785,7 @@ const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--json',
   '--no-verify',
   '--referee',
+  '--referee-if-check-edited',
   '--no-referee',
   '--worktree',
   '--shared-checkout',
@@ -1070,6 +1071,9 @@ function startMemberRunMission(name, missionText, args = []) {
 // runner (whitespace, syntax, or file-exists checks). --no-referee skips it; an explicit --referee is kept.
 function memberRunHasRealCheck(verifier) {
   const command = String(verifier || '').trim();
+  // A plain test runner only: chaining (|| true, ; , &&, pipes, subshells) or a
+  // pass-with-no-tests switch can make any run "pass", so those keep the review.
+  if (/\|\||&&|[;|`]|\$\(|pass-?with-?no-?tests|--no-tests|--exit-zero/i.test(command)) return false;
   return /^((npm|pnpm|yarn)\s+(run\s+)?test\b|node\s+--test\b|npx\s+(jest|vitest|mocha)\b|pytest\b|python3?\s+-m\s+pytest\b|go\s+test\b|cargo\s+test\b)/i.test(command);
 }
 
@@ -1403,6 +1407,9 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
     ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto', '--ignite', '--wait', '--sync']);
   if (ignite && !hasFlag(runArgs, '--complete-on-pass')) runArgs.push('--complete-on-pass');
   if (memberRunWantsReferee(runArgs, ignite, mission.verifier)) runArgs.push('--referee');
+  // Skipped because a real test is the check: review anyway if the worker
+  // edits what that test command runs.
+  else if (ignite && memberRunHasRealCheck(mission.verifier) && !hasFlag(runArgs, '--no-referee')) runArgs.push('--referee-if-check-edited');
   const budgetSeconds = memberRunBudgetSeconds(args);
   if (!readFlag(runArgs, '--max-ticks', '')) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
