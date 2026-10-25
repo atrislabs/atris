@@ -107,6 +107,7 @@ async function runTask(dir) {
     if (arm === 'member') {
       sh(process.execPath, [cli, 'init'], ws);
       sh('git', ['add', '-A'], ws);
+      spawnSync('git', ['reset', '-q', '--', '.bench-base-head'], { cwd: ws });
       sh('git', ['-c', 'user.email=lab@atris', '-c', 'user.name=lab', 'commit', '-qm', 'atris init'], ws);
       const baseFile = path.join(ws, '.bench-base-head');
       if (fs.existsSync(baseFile)) fs.writeFileSync(baseFile, `${sh('git', ['rev-parse', 'HEAD'], ws).trim()}\n`);
