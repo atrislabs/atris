@@ -81,3 +81,11 @@ test('due selection auto-stops pre-existing junk and selects real work', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('mission junk gate accepts a multi-line bug report', () => {
+  // A pasted bug report has line breaks and tabs; those are not control junk.
+  const report = 'cli.js crashes on empty.md.\n\nfix scan.js so cli.js exits 0.\r\n\tkeep npm test green.';
+  assert.equal(missionObjectiveIsJunk(report), false);
+  assert.equal(missionObjectiveIsJunk('fix the parser\u0000now'), true);
+  assert.equal(missionObjectiveIsJunk('fix the parser\u001bnow'), true);
+});

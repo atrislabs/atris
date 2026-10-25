@@ -2620,7 +2620,8 @@ const MISSION_BARE_COMMAND_WORDS = new Set(['go', 'keep', 'going', 'do', 'it', '
 function missionObjectiveIsJunk(value) {
   const objective = String(value || '').trim();
   if (!objective || objective.startsWith('-')) return true;
-  if (/[\u0000-\u001f\u007f-\u009f\ufffd]/u.test(objective)) return true;
+  // Line breaks and tabs are normal in a pasted bug report; other control bytes are junk.
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\ufffd]/u.test(objective)) return true;
   if (objective.replace(/\s/g, '').length < 8) return true;
   const words = objective.toLowerCase().match(/[a-z]+/g) || [];
   return words.length > 0
