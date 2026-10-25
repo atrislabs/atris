@@ -1204,10 +1204,12 @@ test('ytnotes auto writer sends no second Gemini request after a quota error, th
     'exit 3',
     '',
   ].join('\n');
+  // The fake Haiku answers at once; with no head start it can win before
+  // Gemini's quota error is read. Real Haiku takes about 4s, the error about 3s.
   const { result, dir } = runNoCaptionNotes('auto7', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
-    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_HEDGE_SECS: '1' },
     extraBins: { agy: quotaAgy },
   });
 

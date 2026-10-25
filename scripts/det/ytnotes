@@ -702,11 +702,12 @@ writer_ok() { [ "$(cat "$1.rc" 2>/dev/null)" = 0 ] && grep -q '^#' "$1"; }
 stop_writer() { disown "$1" 2>/dev/null || true; pkill -P "$1" 2>/dev/null || true; kill "$1" 2>/dev/null || true; }
 
 # A used-up Gemini quota answers about 3s after the captions are ready, and the
-# backup only started after that. Now Gemini gets a head start (1s), then the
-# backup starts too and the first good answer wins; Gemini wins a tie.
+# backup only started after that. Now both start together (no head start) and
+# the first good answer wins; Gemini wins a tie. Gemini takes about 5s from the
+# prompt, so a 1s head start only delayed Haiku: 8 paired runs, 7.80s vs 8.47s.
 # ATRIS_YTNOTES_HEDGE_SECS=off waits for Gemini first, as before. Returns 1 when
 # Gemini failed before the backup started, or with RACE_FAILED set when both failed.
-HEDGE_SECS="${ATRIS_YTNOTES_HEDGE_SECS:-1}"
+HEDGE_SECS="${ATRIS_YTNOTES_HEDGE_SECS:-0}"
 race_writers() {
   local a="$WORK/race.$$.a" b="$WORK/race.$$.b" apid bpid="" tpid blabel="${2##*|}" win=""
   rm -f "$a" "$a.rc" "$b" "$b.rc" "$b.go"

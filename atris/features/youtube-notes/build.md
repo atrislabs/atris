@@ -130,7 +130,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 **What it does:**
 - A quota error from Gemini is saved to `$TMPDIR/ytnotes/gemini_quota_until` until its reset, at most 3 hours. While it holds, `auto` skips Gemini and its early start, and never sends Gemini a second request in the same run.
-- When Gemini leads and has no saved quota error, it gets a 1s head start, then the first backup writer (Haiku on this Mac) starts too. The first good answer wins, and Gemini wins a tie. The head start is a real background timer; counting 0.05s polls had stretched it to about 2s.
+- When Gemini leads and has no saved quota error, it and the first backup writer (Haiku on this Mac) start together. The 1s head start was dropped on 2026-10-25: Gemini takes about 5s from the prompt, so it only delayed Haiku (8 paired runs, median 7.80s against 8.47s). The first good answer wins, and Gemini wins a tie. The head start is a real background timer; counting 0.05s polls had stretched it to about 2s.
 - `ATRIS_YTNOTES_HEDGE_SECS=off` waits for Gemini first, as before. While Gemini works, Haiku also runs on every notes request.
 - Five paired runs against the code before the head start: median 10.4s against 13.0s, all passing, 0 quotes dropped.
 
