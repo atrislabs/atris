@@ -105,6 +105,7 @@ test('review of PR 1650: secrets, staged atris state, and the main checkout stay
     assert.equal(jobForbidsCommit('fix app.js and commit it'), false);
     assert.equal(jobForbidsCommit('fix parser; no empty commits'), false);
     assert.equal(jobForbidsCommit('fix it without committing'), true);
+    assert.equal(jobForbidsCommit('fix parser; do not make any new commits'), true);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -141,6 +142,21 @@ test('the save refuses the main checkout even when git reports relative director
     fs.writeFileSync(path.join(main, 'sub', 'x.js'), 'x\n');
     assert.equal(saveLeftoverMemberWork({ worktreePath: main, objective: 'fix' }).reason, 'not_side_checkout');
     assert.equal(saveLeftoverMemberWork({ worktreePath: path.join(main, 'sub'), objective: 'fix' }).reason, 'not_side_checkout');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('secret folders and bare credentials files stay out of the auto-save', () => {
+  const { base, side } = repoWithWorktree();
+  try {
+    for (const rel of ['.aws/credentials', '.ssh/config', 'deploy/credentials', 'app.js']) {
+      fs.mkdirSync(path.dirname(path.join(side, rel)), { recursive: true });
+      fs.writeFileSync(path.join(side, rel), 'x\n');
+    }
+    const saved = saveLeftoverMemberWork({ worktreePath: side, member: 'executor', objective: 'fix app.js' });
+    assert.deepEqual(saved.files, ['app.js']);
+    assert.deepEqual(saved.skipped.sort(), ['.aws/credentials', '.ssh/config', 'deploy/credentials']);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

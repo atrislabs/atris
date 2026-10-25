@@ -9978,7 +9978,7 @@ const IDEA_ARCHETYPE_RULES = [
     slugs: ['navigator'],
     // Wins wherever it matches: the question shape decides the whole job.
     leading: true,
-    pattern: /^(?![\s\S]*\b(fix|repair|implement)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
+    pattern: /^(?![\s\S]*(?<!not\s|n't\s)\b(fix|repair|implement|update|change|edit|add|rename|modify)\b)\s*(find|locate|which|count|trace|identify)\b|\bdo\s+not\s+(edit|change|modify)\s+(any\s+)?source\b/i,
     reason: 'reads the code and answers where and which questions',
   },
   {

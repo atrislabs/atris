@@ -152,6 +152,9 @@ test('review of PR 1650: the first job word names the job, and renamed researche
     // Second review round.
     assert.equal(pickMemberForIdea('code review for security holes', root).member, 'validator');
     assert.equal(pickMemberForIdea('find the bug line; do not change source files', root).member, 'navigator');
+    // Third review round: a find that also asks for changes is a build job.
+    assert.notEqual(pickMemberForIdea('Find all callers and update them to the new API', root).member, 'navigator');
+    assert.equal(pickMemberForIdea("find the bug line; don't edit source files", root).member, 'navigator');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
