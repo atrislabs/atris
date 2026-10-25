@@ -408,6 +408,25 @@ test('a note committed on a side branch and edited again comes back whole on mai
   }
 });
 
+test('a clashing note names where your copy went from the repo root, short enough for the pane', () => {
+  const { base, seed, checkout } = createRepo();
+  try {
+    commit(seed, 'atris/TODO.md', NOTES.replace('line 5', 'line 5 theirs'), 'their note');
+    git(seed, 'push', '-q');
+    write(checkout, 'atris/TODO.md', NOTES.replace('line 5', 'line 5 mine'));
+
+    const cli = zen(checkout, 0);
+    assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+    const said = cli.stdout.match(/kept the new atris\/TODO\.md; your copy is in (\S+)/);
+    assert.ok(said, cli.stdout);
+    assert.match(said[1], /^\.git\/atris-zen\/[^/]+\/mine\/atris\/TODO\.md$/);
+    assert.doesNotMatch(cli.stdout, new RegExp(base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(fs.readFileSync(path.join(checkout, said[1]), 'utf8'), /line 5 mine/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a new note only staged does not stop zen when the same note arrives upstream', () => {
   const { base, seed, checkout } = createRepo();
   try {
@@ -429,7 +448,7 @@ test('a new note only staged does not stop zen when the same note arrives upstre
     assert.equal(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), 'their plan\n');
     const said = cli.stdout.match(/kept the new atris\/plan\.md; your copy is in (\S+)/);
     assert.ok(said, cli.stdout);
-    assert.equal(fs.readFileSync(said[1], 'utf8'), 'my plan\n');
+    assert.equal(fs.readFileSync(path.resolve(checkout, said[1]), 'utf8'), 'my plan\n');
     assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -670,7 +689,7 @@ test('atris zen --all still says where your copy of a clashing note went', () =>
     assert.match(cli.stdout, /checkout\s+caught up 1 commit/);
     const said = cli.stdout.match(/^\s+kept the new atris\/TODO\.md; your copy is in (\S+)$/m);
     assert.ok(said, cli.stdout);
-    assert.match(fs.readFileSync(said[1], 'utf8'), /line 10 mine/);
+    assert.match(fs.readFileSync(path.resolve(checkout, said[1]), 'utf8'), /line 10 mine/);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -931,7 +950,7 @@ test('a team note that truly clashes keeps the new version, saves yours, and nev
     assert.match(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), /line 1 mine/);
     const said = cli.stdout.match(/kept the new atris\/TODO\.md; your copy is in (\S+)/);
     assert.ok(said, cli.stdout);
-    assert.match(fs.readFileSync(said[1], 'utf8'), /line 10 mine/);
+    assert.match(fs.readFileSync(path.resolve(checkout, said[1]), 'utf8'), /line 10 mine/);
     assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -985,7 +1004,7 @@ test('when one unsaved note was deleted upstream, the other notes still land', (
     assert.equal(fs.existsSync(path.join(checkout, 'atris/old.md')), false);
     const said = cli.stdout.match(/atris\/old\.md no longer fits the new changes; your copy is in (\S+)/);
     assert.ok(said, cli.stdout);
-    assert.match(fs.readFileSync(said[1], 'utf8'), /line 3 mine/);
+    assert.match(fs.readFileSync(path.resolve(checkout, said[1]), 'utf8'), /line 3 mine/);
     assert.equal(git(checkout, 'diff', '--cached', '--name-only'), '');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -1105,7 +1124,7 @@ test('a local note identical to the incoming one is not reported as kept', () =>
     assert.doesNotMatch(cli.stdout, /atris\/logs\/archive\/[ab]\.md/);
     assert.match(cli.stdout, /kept the new atris\/logs\/archive\/c\.md; your copy is in (\S+)/);
     const saved = cli.stdout.match(/your copy is in (\S+)/)[1];
-    assert.equal(fs.readFileSync(saved, 'utf8'), 'old journal c, with my note\n');
+    assert.equal(fs.readFileSync(path.resolve(checkout, saved), 'utf8'), 'old journal c, with my note\n');
     assert.equal(fs.readFileSync(path.join(checkout, 'atris/logs/archive/a.md'), 'utf8'), 'old journal a\n');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
