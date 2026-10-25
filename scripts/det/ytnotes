@@ -126,6 +126,9 @@ start_warm_gemini() {
   local lead="agy|||" model effort probe
   if [ "$ENGINE" = auto ]; then
     lead=$(writer_list)
+    # Saved for run_auto: the lookup is a node start (about 0.2s) that would
+    # otherwise run again after the captions land, before any writer starts.
+    printf '%s' "$lead" > "$AGY_WARM.writers.tmp" && mv "$AGY_WARM.writers.tmp" "$AGY_WARM.writers"
     lead="${lead# }"
     lead="${lead%% *}"
   fi
@@ -719,7 +722,8 @@ race_writers() {
 
 run_auto() {
   local entry cmd model effort label out tried="" list backup="" skip=" "
-  list=$(writer_list)
+  list=$(cat "$AGY_WARM.writers" 2>/dev/null) || true
+  [ -n "$list" ] || list=$(writer_list)
   for entry in $list; do
     case "$entry" in agy\|*) continue ;; esac
     command -v "${entry%%|*}" >/dev/null 2>&1 && { backup="$entry"; break; }
