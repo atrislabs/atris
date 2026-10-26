@@ -34,3 +34,23 @@ Short writing where the words are the deliverable: the team note on fast tests, 
 
 - Account connectors leak into `claude -p` unless `--strict-mcp-config` is passed; three v1.0 rewrites mention a Drive connector.
 - Codex judge hit "model at capacity" twice; `judge.js` now retries and resumes.
+
+# final exam 1, 2026-10-26: v1.3 fails the ship gate
+
+28 fresh tasks written by Haiku, judge pinned to gpt-6-sol at high effort (the account default, gpt-6.1-sol at xhigh, stalled for minutes per call).
+
+```
+pass  all pairs judged             84/84
+FAIL  1 beats the nudge for real   13 won, 7 lost, 8 tied, p=0.1316
+FAIL  2 never worse than plain     10 won, 15 lost, 3 tied, p=0.8852
+pass  3 same size job              skill 2, nudge 10, plain 0 of 28
+pass  4 writing fixed              4 won, 3 lost, 1 tied, p=0.5000
+pass  5 nothing broken             none
+```
+
+- Writing is fixed: 6 to 0 against the nudge, 4 to 3 against plain, zero scope flags.
+- On the 20 mixed tasks plain beat the skill 12 to 6. The skill won the judgment calls (LLC vs DBA, photo rename script, phone validation, palette contrast, budget) and lost the quick exact asks (invoice math, physics, SUMIF, overdue formula, meeting items, titration), where it added checks nobody asked for. Longer answers also carried more small errors (weekdays, a 5 to 8 km jump).
+- The skill already said "skip precise specs", but the rewrite step never applied that to itself.
+- Freelance-bio was seen during code review before v1.3, so this exam was not fully blind on that one task.
+
+Next: v1.4 decides first whether the task needs deepening and passes quick exact asks through unchanged. Tested on a second fresh exam under the same gate.

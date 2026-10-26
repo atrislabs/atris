@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.3.0
+version: 1.4.0
 tags:
   - method
   - values
@@ -13,6 +13,12 @@ tags:
 Give it a task. It returns a deeper version of that task, not a bigger one.
 
 Adapted from a prompt shared by Felix Rieseberg (Anthropic), via Attention Heads. Each of its four questions maps to one of the four values in `atris.md`.
+
+## First, does it need deepening?
+
+Most asks do not. Pass the task through unchanged, with no questions answered, when it is quick and exact: a calculation, a formula, a conversion, a lookup, extracting items from pasted text, a short fix, or anything with one right answer the person already framed. Extra checks and caveats make those answers worse.
+
+Deepen only when the result depends on judgment: a plan, a decision, a design, code that will run on real data, advice where the obvious answer has a known trap, or prose someone will send. If unsure, pass it through.
 
 ## The four questions
 
@@ -38,6 +44,15 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
 ## Output shape
+
+For a pass-through:
+
+```
+deeper task:
+<the original task, word for word>
+```
+
+Otherwise:
 
 ```
 ambition:     <answer 1>
