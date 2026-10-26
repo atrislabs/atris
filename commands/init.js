@@ -655,9 +655,7 @@ tools: []
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
 
-> New here? Read \`atris/FOR_AGENTS.md\` first.
 > If a repo you touch next has no \`atris/\` folder, run \`npx -y atris init\`.
-> Then read \`atris/atris.md\` and leave proof on disk.
 
 ## FIRST MESSAGE: Boot Sequence
 
@@ -675,19 +673,13 @@ ${agentsOpeningBlock}
 
 The person you work for does not know atris words and never has to learn them. Never tell them to run an atris command or learn a term.
 
-When their words match a move below, run it and report what happened in plain words.
-
-When unsure, run \`atris guide "<their words>"\` and follow its answer.
-
-After anything lands, offer one next move in plain words, never a command name.
+When their words ask for a move like "what should i do next", "keep going while i'm away", "remember this", or "our goal is x", run \`atris guide "<their words>"\`, then run the move it names and report what happened in plain words. When unsure, run \`atris guide "<their words>"\` and follow its answer. \`atris guide\` alone lists every move.
 
 Moves marked asks you first send messages, spend credits, or run for hours. Say in one sentence what would happen and wait for a yes before running them. Never add a skip flag like --yes on the person's behalf.
 
-Never end a reply with a command for the person to run. If a move needs a claim or an approval, do it for them and say what you did.
+Never end a reply with a command for the person to run. If a move needs a claim or an approval, do it for them and say what you did. After anything lands, offer one next move in plain words, never a command name.
 
 In a project with nothing on the list yet, speak first: three things you noticed about the codebase, one question, then start on the most useful one.
-
-${intentTable}
 
 ## The way of talking (every reply, no exceptions)
 
@@ -701,17 +693,42 @@ Talk like a person. This governs every message you send the operator: boot, stat
 - No em dashes anywhere; use a comma, colon, or period.
 - The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
 
-copy these shapes:
+Canonical source: \`atris/atris.md\` \`## voice\`. This block is a copy for tools that only read \`AGENTS.md\`; if they differ, atris.md wins.
+
+## Read on demand
+
+Start on the job you were given. Open these only when the job needs them, not up front:
+
+| When | Read |
+|------|------|
+| You need to find where something lives | \`atris/MAP.md\` |
+| The work is bigger than a quick fix, or it involves tasks, missions, proof, or review | \`atris/atris.md\` (the protocol) |
+| You will create, claim, or hand off a task, report results, or run a mission | \`atris/AGENT_REFERENCE.md\` (task contract, reporting, missions, worktrees, rules) |
+| You are new to Atris | \`atris/FOR_AGENTS.md\` |
+| You are unsure how the person wants to be spoken to | \`atris/PERSONA.md\` |
+
+Do not write new operating doctrine here; add it to \`atris/atris.md\` and regenerate this adapter.`;
+
+  const agentReference = `# Agent reference
+
+The long form of \`AGENTS.md\`. Agents read this on demand, when the job involves tasks, reports, missions, or worktrees. The protocol itself is \`atris/atris.md\`.
+
+## Plain-English moves
+
+The same list \`atris guide\` prints. When the person's words match a move, run it and report what happened in plain words.
+
+${intentTable}
+
+## Reply shapes
+
 - **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
 - **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
 - **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
 
-Canonical source: \`atris/atris.md\` \`## voice\`. This block is a copy for tools that only read \`AGENTS.md\`; if they differ, atris.md wins.
-
 ## Core Files
 
-Atris is the source of truth. This file is only an adapter for tools that read
-\`AGENTS.md\`; do not turn it into a parallel brain. Durable policy, workflow,
+Atris is the source of truth. \`AGENTS.md\` and this file are only adapters for
+tools that read \`AGENTS.md\`; do not turn them into a parallel brain. Durable policy, workflow,
 task truth, proof, review, and backend/cloud sync all flow through Atris.
 
 | File | Purpose |
@@ -836,10 +853,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - Don't leave stale tasks
 - Don't hand-edit TODO.md for active task ownership
 - Don't write verbose docs
-
----
-
-**Protocol:** See \`atris/atris.md\` for full spec.`;
+`;
 
   const voiceCard = voiceCardForRoot(process.cwd());
 
@@ -870,6 +884,12 @@ member -> mission start --verify -> status --status active -> one bounded step -
   if (!fs.existsSync(agentsMdFile)) {
     fs.writeFileSync(agentsMdFile, agentInstructions);
     markReady('adapters', 'AGENTS.md', '✓ Created AGENTS.md (for Codex)');
+  }
+  // The long form AGENTS.md points to; agents open it on demand.
+  const agentReferenceFile = path.join(targetDir, 'AGENT_REFERENCE.md');
+  if (!fs.existsSync(agentReferenceFile)) {
+    fs.writeFileSync(agentReferenceFile, agentReference);
+    markReady('workspace', 'AGENT_REFERENCE.md', '✓ Created AGENT_REFERENCE.md');
   }
   const agentsVoiceResult = upsertAgentVoiceCard(agentsMdFile, voiceCard);
   if (agentsVoiceResult.action !== 'unchanged') {

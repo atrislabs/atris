@@ -55,8 +55,19 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
     assert.match(agentsContent, /asks you first/);
     assert.match(agentsContent, /Never end a reply with a command/);
     assert.ok(agentsContent.includes(INTENTS[0].say[0]));
-    assert.match(agentsContent, /Every created task leads with three plain fields/);
-    assert.match(agentsContent, /accept\/revise gates and never skips proof/);
+
+    // The long form moved behind an on-demand pointer, nothing was dropped.
+    assert.match(agentsContent, /## Read on demand/);
+    assert.ok(agentsContent.includes('atris/AGENT_REFERENCE.md'));
+    assert.doesNotMatch(agentsContent, /New here\? Read/);
+    assert.ok(agentsContent.length < 7000, `AGENTS.md boot stays lean, got ${agentsContent.length} chars`);
+    const referenceContent = fs.readFileSync(path.join(tempDir, 'atris', 'AGENT_REFERENCE.md'), 'utf8');
+    assert.match(referenceContent, /Every created task leads with three plain fields/);
+    assert.match(referenceContent, /accept\/revise gates and never skips proof/);
+    for (const intent of INTENTS) assert.ok(referenceContent.includes(intent.say[0]), `reference lists "${intent.say[0]}"`);
+    for (const section of ['## Agent Contract', '## How to Report', '## Mission Autonomy', '## Worktrees', '## Rules', '## Anti-patterns']) {
+      assert.ok(referenceContent.includes(section), `reference keeps ${section}`);
+    }
 
     const claudeContent = fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
     assert.match(claudeContent, /The person does not know atris words\./);

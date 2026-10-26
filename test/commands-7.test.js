@@ -1865,9 +1865,11 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     initWorkspace(dir);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'briefs')));
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'syntheses')), false);
-    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    // The long form lives in atris/AGENT_REFERENCE.md; AGENTS.md points to it.
+    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /atris\/AGENT_REFERENCE\.md/);
+    const agents = fs.readFileSync(path.join(dir, 'atris', 'AGENT_REFERENCE.md'), 'utf8');
     assert.match(agents, /Atris is the source of truth/);
-    assert.match(agents, /AGENTS\.md`; do not turn it into a parallel brain/);
+    assert.match(agents, /AGENTS\.md`; do not turn them into a parallel brain/);
     assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
     assert.match(agents, /`atris task ready <id> --proof/);
     assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
