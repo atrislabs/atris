@@ -10058,31 +10058,74 @@ function pickCrossEngineVerifier(mission, cwd = process.cwd(), preferredEngine =
   return workerEngine === 'codex' ? 'claude' : 'codex';
 }
 
+// Engine health lives in the main checkout, so a reviewer benched from one
+// member's side folder stays benched for the next member's review.
+function engineHealthRoot(cwd) {
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8' });
+  const dir = common.status === 0 ? String(common.stdout || '').trim() : '';
+  return dir && path.basename(dir) === '.git' ? path.dirname(dir) : cwd;
+}
+
+// Who reviews, in order. The usual reviewer first; then the roster's next
+// review worker, when it is not the builder grading itself: on the builder's
+// engine it must name a different model, and an unknown model counts as same. A benched reviewer goes behind its backup. A named reviewer
+// is never swapped.
+function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) {
+  const primary = pickCrossEngineVerifier(mission, cwd, preferredEngine);
+  const lineup = [{ engine: primary, model: '' }];
+  if (preferredEngine || mission?.referee_engine) return lineup;
+  const root = options.healthRoot || engineHealthRoot(cwd);
+  try {
+    const registry = require('../lib/engine-registry');
+    const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
+    const workerModel = resolveMissionTickRunnerModel(mission);
+    const team = registry.resolveEngineForRoleRanked('validator', root, { job: 'review' }).team || [];
+    const backup = team.find((engine) => engine && engine.id !== primary
+      && !(engine.id === workerEngine && (!engine.roster_model || !workerModel || engine.roster_model === workerModel)));
+    if (!backup) return lineup;
+    lineup.push({ engine: backup.id, model: backup.roster_model || '' });
+    const saved = registry.readEngineRegistry(root, { persist: false }).engines.find((engine) => engine.id === primary);
+    if (saved && !registry.engineReadyAt(saved)) lineup.reverse();
+  } catch {}
+  return lineup;
+}
+
 async function runEngineVerifier(mission, options = {}) {
   const cwd = options.cwd || process.cwd();
-  const engine = pickCrossEngineVerifier(mission, cwd, options.refereeEngine);
-  const verifyMission = { ...mission, runner: engine, runner_kind: 'engine', model: '' };
-  const restoreRunnerProfile = applyMissionRunnerProfile(engine);
-  let engineResult;
-  try {
-    engineResult = await spawnClaudeTick(verifyMission, {
-      sessionMode: 'set',
-      sessionId: crypto.randomUUID(),
-      cwd,
-      signal: options.signal,
-      timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+  const healthRoot = engineHealthRoot(cwd);
+  const lineup = engineVerifierLineup(mission, cwd, options.refereeEngine, { healthRoot });
+  let verdict = null;
+  for (const { engine, model } of lineup) {
+    const verifyMission = { ...mission, runner: engine, runner_kind: 'engine', model };
+    const restoreRunnerProfile = applyMissionRunnerProfile(engine);
+    let engineResult;
+    try {
+      engineResult = await spawnClaudeTick(verifyMission, {
+        sessionMode: 'set',
+        sessionId: crypto.randomUUID(),
+        cwd,
+        signal: options.signal,
         timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-        checkPassed: options.checkPassed || '',
-      }),
-      model: resolveMissionTickRunnerModel(verifyMission),
-    });
-  } catch (error) {
-    engineResult = { ok: false, error: error.message };
-  } finally {
-    restoreRunnerProfile();
+        prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+          timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+          checkPassed: options.checkPassed || '',
+        }),
+        model: resolveMissionTickRunnerModel(verifyMission),
+      });
+    } catch (error) {
+      engineResult = { ok: false, error: error.message };
+    } finally {
+      restoreRunnerProfile();
+    }
+    verdict = engineVerifierResultFromRun(engineResult, engine);
+    if (verdict.mode !== 'engine-unavailable' || engineResult?.aborted) return verdict;
+    // Member lab 10/26: codex hung on every review, and each job waited out
+    // the full five minutes. Bench it so the next review starts on the backup.
+    if (engineResult?.timedOut) {
+      try { setEngineHealth(engine, 'cooling', healthRoot); } catch {}
+    }
   }
-  return engineVerifierResultFromRun(engineResult, engine);
+  return verdict;
 }
 
 function stripClaudeReceiptLine(line) {
@@ -12933,6 +12976,7 @@ function missionCommand(args) {
 module.exports = {
   receiptLearnedLine,
   tickTouchedCheckDefinition,
+  engineVerifierLineup,
   claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
