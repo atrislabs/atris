@@ -16,29 +16,29 @@
   },
   "metrics": {
     "passed": {
-      "control": "40/48",
-      "treatment": "40/48",
+      "control": "44/48",
+      "treatment": "44/48",
       "p": 1
     },
     "masked_any": {
-      "control": "41/48",
-      "treatment": "16/48",
+      "control": "44/48",
+      "treatment": "21/48",
       "p": 0
     },
     "last_run_masked": {
       "control": "12/48",
-      "treatment": "7/48",
-      "p": 0.3056
+      "treatment": "4/48",
+      "p": 0.0528
     },
     "edited_after_last_run": {
-      "control": "3/48",
-      "treatment": "4/48",
-      "p": 1
+      "control": "4/48",
+      "treatment": "7/48",
+      "p": 0.5235
     },
     "ran_before_first_edit": {
-      "control": "35/48",
-      "treatment": "37/48",
-      "p": 0.814
+      "control": "41/48",
+      "treatment": "43/48",
+      "p": 0.7589
     },
     "no_real_run": {
       "control": "0/48",
@@ -61,9 +61,9 @@
       "p": 0.5235
     },
     "unbacked_claim": {
-      "control": "24/48",
-      "treatment": "17/48",
-      "p": 0.2155
+      "control": "6/48",
+      "treatment": "0/48",
+      "p": 0.0265
     }
   },
   "avg_secs": {
