@@ -90,6 +90,10 @@ function codexOnce(text, tag) {
     child.stdin.end(text);
     child.on('exit', (code) => {
       clearTimeout(timer);
+      // Anything left in the group would hold stderr open and keep this
+      // process alive after the summary, so end it and drop the pipe.
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      child.stderr.destroy();
       try { resolve(JSON.parse(fs.readFileSync(last, 'utf8'))); } catch (e) { reject(new Error(`codex exit ${code}: ${err.slice(-300)}`)); }
     });
   });

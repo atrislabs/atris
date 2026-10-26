@@ -75,6 +75,19 @@ info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
 - "Better than plain" is still not earned: 14 to 6 sits just above the 0.05 line. Public copy says "never worse than plain".
 - The generic "be ambitious" line lost to plain again, 7 to 18.
 
+## Where the wins came from
+
+| exam 2, 28 tasks | vs nudge | vs plain |
+|---|---|---|
+| 15 deepened (judgment tasks) | 9 won, 4 lost, 2 tied | 9 won, 3 lost, 3 tied |
+| 13 passed through unchanged (quick exact asks) | 11 won, 2 lost | 5 won, 3 lost, 5 tied |
+
+On pass-through tasks the skill answer is just a fresh plain answer, so those wins over the nudge come from stepping aside, not from the four questions. The grid-width task shows the worker's own noise: all three arms opened with the same wrong 82 px and corrected to 78 px.
+
 ## What we can say in public
 
-Telling a model "be ambitious" made its work worse: across both final exams it beat no instruction 14 times and lost 32. The four-question version beat that line 20 to 6 on fresh tasks (p = 0.005), never did worse than no instruction (14 to 6), and grew the job on 2 of 28 tasks against 14 for the generic line.
+Telling a model "be ambitious" made its work worse: across both final exams it beat no instruction 14 times and lost 32.
+
+The skill decides first. On quick exact asks it steps aside; on judgment tasks it asks four questions and rewrites the task. On fresh tasks it beat the generic line 20 to 6 (p = 0.005) and grew the job on 2 of 28 tasks against 14.
+
+Against no instruction it won more than it lost, 14 to 6, which is not yet beyond chance (p = 0.058). On the 15 tasks it deepened, the four questions won 9, lost 3, tied 3. We do not claim it beats no instruction until a larger run clears p = 0.05.
