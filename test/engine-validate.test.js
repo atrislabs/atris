@@ -20,6 +20,9 @@ const {
   runEngineValidateCommand,
 } = require('../lib/engine-validate');
 
+// Referees reply immediately; allow a busy machine time to start node.
+const REFEREE_REPLY_TIMEOUT_MS = 15000;
+
 function tempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-validate-'));
 }
@@ -150,7 +153,7 @@ test('validation writes the verdict receipt and flat jsonl row from a fake refer
         assert.match(job.prompt, /VERDICT: pass\|fail\|unsure\nREASON:/);
         return runAskProcess(fakeReplyInvocation('VERDICT: pass\nREASON: the answer gives the requested result.'), {
           cwd: root,
-          timeoutMs: 1000,
+          timeoutMs: REFEREE_REPLY_TIMEOUT_MS,
         });
       },
     });
@@ -211,7 +214,7 @@ test('referee engine override reaches the ask machinery', async () => {
         launchedJob = job;
         return runAskProcess(fakeReplyInvocation('VERDICT: pass\nREASON: the answer addresses the prompt.'), {
           cwd: root,
-          timeoutMs: 1000,
+          timeoutMs: REFEREE_REPLY_TIMEOUT_MS,
         });
       },
     });
@@ -283,7 +286,7 @@ test('malformed fake referee output records unsure and ends with stronger-judge 
     writeAskReceipt(root, 'engine-ask-source.json', { at: '2026-08-12T20:00:00.000Z' });
     const code = await runEngineValidateCommand(['latest'], root, {
       log: (line) => output.push(String(line)),
-      executeAskJob: () => runAskProcess(fakeReplyInvocation('looks fine'), { cwd: root, timeoutMs: 1000 }),
+      executeAskJob: () => runAskProcess(fakeReplyInvocation('looks fine'), { cwd: root, timeoutMs: REFEREE_REPLY_TIMEOUT_MS }),
     });
     assert.equal(code, 0);
     assert.match(output[0], /codex: unsure/);

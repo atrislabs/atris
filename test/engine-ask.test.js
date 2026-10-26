@@ -28,6 +28,7 @@ const { engineCommand } = require('../commands/engine');
 // a fresh node child can take seconds to boot on a busy machine; a shorter ask
 // deadline kills it before it runs a line, and the test checks nothing real.
 const ASK_CHILD_BOOT_MS = 3000;
+const ASK_REPLY_TIMEOUT_MS = 15000;
 
 function tempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-ask-'));
@@ -37,7 +38,7 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function waitUntil(predicate, timeoutMs = 1000) {
+function waitUntil(predicate, timeoutMs = 15000) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const tick = () => {
@@ -144,7 +145,7 @@ test('claude and fable ask spawn env pins USER to the OS username when a parent 
       ...fakeReplyInvocation({ stdout: 'hi' }),
     };
     const result = await runAskProcess(invocation, {
-      timeoutMs: 1000,
+      timeoutMs: ASK_REPLY_TIMEOUT_MS,
       spawnProcess: (bin, args, options) => {
         spawnedEnv = options.env;
         return spawn(bin, args, options);
@@ -335,7 +336,7 @@ test('fake engine commands run in parallel up to the cap and preserve every answ
         stderr: job.label === 'two' ? 'engine failed' : '',
         delayMs: 40,
         exitCode: job.label === 'two' ? 7 : 0,
-      }), { timeoutMs: 1000 });
+      }), { timeoutMs: ASK_REPLY_TIMEOUT_MS });
       active -= 1;
       return result;
     },
@@ -384,7 +385,7 @@ test('timeout kills only the process group launched for that ask', async () => {
 });
 
 test('silent fake engines fail or time out honestly and leave no process behind', async () => {
-  const empty = await runAskProcess(fakeReplyInvocation(), { timeoutMs: ASK_CHILD_BOOT_MS });
+  const empty = await runAskProcess(fakeReplyInvocation(), { timeoutMs: ASK_REPLY_TIMEOUT_MS });
   assert.equal(empty.ok, false);
   assert.equal(empty.reason, 'no_output');
   assert.equal(empty.exit_code, 0);
@@ -439,10 +440,10 @@ test('command prints labeled statuses and writes its receipt plus engine health'
       now: () => new Date('2026-08-12T05:30:00.000Z'),
       executeAskJob: async (job) => {
         if (job.engine === 'codex') {
-          return runAskProcess(fakeReplyInvocation({ stdout: 'codex answer' }), { cwd: root, timeoutMs: 1000 });
+          return runAskProcess(fakeReplyInvocation({ stdout: 'codex answer' }), { cwd: root, timeoutMs: ASK_REPLY_TIMEOUT_MS });
         }
         if (job.engine === 'cursor') {
-          return runAskProcess(fakeReplyInvocation(), { cwd: root, timeoutMs: 1000 });
+          return runAskProcess(fakeReplyInvocation(), { cwd: root, timeoutMs: ASK_REPLY_TIMEOUT_MS });
         }
         return runAskProcess(fakeReplyInvocation({ hang: true }), { cwd: root, timeoutMs: 40 });
       },
@@ -550,7 +551,7 @@ test('chunked engine output reaches the receipt live log before process exit', a
       args: ['-e', engineScript],
     }, {
       cwd: root,
-      timeoutMs: 3000,
+      timeoutMs: ASK_REPLY_TIMEOUT_MS,
       signal: context.signal,
       onOutputChunk: context.onOutputChunk,
     }),
@@ -563,13 +564,13 @@ test('chunked engine output reaches the receipt live log before process exit', a
       if (!file) return false;
       const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, file), 'utf8'));
       return Boolean(receipt.live_log && fs.existsSync(path.join(root, receipt.live_log)));
-    }, 2000);
+    });
     const receiptFile = fs.readdirSync(runsDir).find((name) => name.endsWith('.json'));
     const receiptPath = path.join(runsDir, receiptFile);
     const running = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
     assert.match(running.live_log, /^atris\/runs\/engine-ask-.+[.]live[.]log$/);
     const liveLogPath = path.join(root, running.live_log);
-    await waitUntil(() => fs.readFileSync(liveLogPath, 'utf8').includes('first live chunk'), 2000);
+    await waitUntil(() => fs.readFileSync(liveLogPath, 'utf8').includes('first live chunk'));
     assert.equal(settled, false, 'the dispatch must still be running when its first chunk is readable');
     assert.equal(await runningCommand, 0);
     assert.match(fs.readFileSync(liveLogPath, 'utf8'), /first live chunk[\s\S]*second live chunk/);
@@ -598,7 +599,7 @@ test('killing an ask mid-run leaves a running receipt with its pid and pgid', as
   const child = spawn(process.execPath, [runner], { cwd: root, detached: true, stdio: 'ignore' });
   try {
     const runsDir = path.join(root, 'atris', 'runs');
-    await waitUntil(() => fs.existsSync(runsDir) && fs.readdirSync(runsDir).some((file) => file.startsWith('engine-ask-') && file.endsWith('.json')), 2000);
+    await waitUntil(() => fs.existsSync(runsDir) && fs.readdirSync(runsDir).some((file) => file.startsWith('engine-ask-') && file.endsWith('.json')));
     const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
     const receiptPath = path.join(runsDir, receiptFile);
     const running = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));

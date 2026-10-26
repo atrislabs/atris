@@ -146,7 +146,7 @@ test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
 });
 
-test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
+test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
   try {
@@ -155,12 +155,32 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     assert.equal(once.status, 0, once.stderr);
     assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
-    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
-    assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
-    assert.equal(watch.stdout.split('redraws every 3s').length - 1, 2, 'drew once, then redrew at 3s');
-    assert.match(watch.stdout, /\x1b\[2J\x1b\[H/);
-    assert.match(watch.stdout, /navigator\s+working/);
-    assert.match(watch.stdout, /redraws every 3s/);
+    const watch = spawn(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env });
+    let stdout = '';
+    let stderr = '';
+    watch.stdout.on('data', (chunk) => { stdout += chunk; });
+    watch.stderr.on('data', (chunk) => { stderr += chunk; });
+    const stopped = new Promise((resolve, reject) => {
+      watch.on('error', reject);
+      watch.on('close', (_code, signal) => resolve(signal));
+    });
+    try {
+      // Startup can take seconds under load; stop only after seeing the redraw.
+      const deadline = Date.now() + 15000;
+      while (stdout.split('redraws every 3s').length - 1 < 2 && Date.now() < deadline
+        && watch.exitCode === null && watch.signalCode === null) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(stdout.split('redraws every 3s').length - 1, 2,
+        `drew once, then redrew on the 3s interval: ${stderr || stdout}`);
+      assert.equal(watch.exitCode, null, 'watch stays open until stopped');
+      assert.match(stdout, /\x1b\[2J\x1b\[H/);
+      assert.match(stdout, /navigator\s+working/);
+      assert.match(stdout, /redraws every 3s/);
+    } finally {
+      watch.kill('SIGTERM');
+      assert.equal(await stopped, 'SIGTERM', 'watch stays open until stopped');
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
