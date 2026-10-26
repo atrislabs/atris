@@ -44,3 +44,13 @@ The final exam is a fresh task set written by a different model that never saw t
 7. **Shipped.** Merged to master and released, with the version read back from npm.
 
 Public copy says only what these numbers say.
+
+## Exam 3, fixed 2026-10-26 before any exam 3 data exists
+
+Question: does skill v1.4, exactly as shipped in 3.74.18, beat no instruction?
+
+- 60 fresh tasks written blind by Haiku (45 mixed, 15 writing), every earlier topic banned. SKILL.md is frozen: no edits until the result is logged.
+- Same worker, tools, nudge line, and pinned judge (gpt-6-sol, high) as exam 2.
+- **"Better than plain" is earned only if exam 3 alone gives skill vs plain wins over losses with one-sided sign test p below 0.05.** No pooling with exam 2, and no rerun if it misses.
+- Gate lines 1 to 5 must also pass on exam 3.
+- If it misses, public copy keeps saying "not yet proven".
