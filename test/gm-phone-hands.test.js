@@ -446,7 +446,7 @@ async function press(send, key, code, text) {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code });
 }
 
-test('browser: with the keyboard alone, the next card takes the focus on its first action, and going home puts it on the big orb', { skip, timeout: 90000 }, async () => {
+test('browser: with the keyboard alone, the next card takes the focus on the card itself, one Tab from its first action, and going home puts it on the big orb', { skip, timeout: 90000 }, async () => {
   const did = [];
   const desk = trace.cardDesk(CARDS.q1, async (action) => { did.push(action); return { card: action === 'orb' ? CARDS.b2 : CARDS.b1 }; });
   const out = await trace.onPhone(desk, CHROME, async (p, send) => {
@@ -468,13 +468,51 @@ test('browser: with the keyboard alone, the next card takes the focus on its fir
     await press(send, 'Enter', 13, '\r');
     await p.until(titled(CARDS.b2.title), 'the card after', 8000).catch(() => {});
     await wait(300);
-    return { next, home, after: await look(p), did };
+    const after = await look(p);
+    await press(send, 'Tab', 9);
+    return { next, home, after, tabbed: await look(p), did };
   });
   const show = JSON.stringify(out, null, 1);
-  assert.equal(out.next.active, 'BUTTON:do', show);
+  // the card itself, never its do it, so an Enter too many starts nothing; one Tab is its first action
+  assert.equal(out.next.active, 'ARTICLE#bet', show);
   assert.equal(out.home.active, 'CANVAS#orb', show);
-  assert.equal(out.after.active, 'BUTTON:do', show);
+  assert.equal(out.after.active, 'ARTICLE#bet', show);
+  assert.equal(out.tabbed.active, 'BUTTON:do', show);
   assert.deepEqual(out.did, ['answer', 'orb'], show);
+});
+
+// where the focus is, and whether a keyboard user can see it there
+const RING = "(function () { var a = document.activeElement, s = getComputedStyle(a); return { visible: a.matches(':focus-visible'), ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2 ? s.outlineColor : null }; })()";
+
+test('browser: after a note sent with Enter the next card takes the focus on the card itself with a ring to see, never on do it, so two more Enters arm and start nothing', { skip, timeout: 90000 }, async () => {
+  const did = [];
+  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    // the keyboard alone: Tab to the box's button, Enter opens it, type, Enter sends
+    let tabs = 0;
+    while (!(await p.run("document.activeElement.textContent === 'or say something'")) && tabs++ < 12) await press(send, 'Tab', 9);
+    await press(send, 'Enter', 13, '\r');
+    await p.until("document.activeElement && document.activeElement.tagName === 'INPUT'", 'the box', 5000);
+    await p.type('make it about schools');
+    await press(send, 'Enter', 13, '\r');
+    await p.until(titled(CARDS.b2.title), 'the next card', 8000);
+    await wait(300);
+    const landed = { ...(await look(p)), ...(await p.run(RING)) };
+    // the Enter presses a keyboard user may still be making, a deliberate second tap apart
+    await press(send, 'Enter', 13, '\r');
+    await wait(450);
+    await press(send, 'Enter', 13, '\r');
+    await wait(600);
+    return { landed, after: await look(p), did };
+  });
+  const show = JSON.stringify(out, null, 1);
+  // before: the focus landed on do it, and the next two Enters armed it and started the job
+  assert.equal(out.landed.active, 'ARTICLE#bet', show);
+  assert.equal(out.landed.visible, true, show);
+  assert.equal(out.landed.ring, 'rgb(255, 140, 66)', show);
+  assert.deepEqual(out.did, ['say'], show);
+  assert.deepEqual(out.after.armed, [], show);
+  assert.equal(out.after.title, CARDS.b2.title, show);
 });
 
 test('browser: Tab from an open box goes to its send, and Esc in the box puts the focus back on the button it came from', { skip, timeout: 90000 }, async () => {
