@@ -1069,6 +1069,16 @@ function startMemberRunMission(name, missionText, args = []) {
 // second engine only reran the same commands and cost about a minute a run
 // (member lab 2026-10-24), so it stays for runs whose check is not a test
 // runner (whitespace, syntax, or file-exists checks). --no-referee skips it; an explicit --referee is kept.
+// 'checked' when the run passed, 'unchecked' when the only thing missing is a
+// reviewer verdict (timed out or could not start), '' otherwise.
+function memberRunSaveDecision({ started, ok, verdict } = {}) {
+  if (!started) return '';
+  const v = verdict || {};
+  if (v.passed === true) return ok ? 'checked' : '';
+  const reviewerGone = v.referee?.mode === 'engine-unavailable' || v.mode === 'engine-unavailable';
+  return reviewerGone && (v.status === undefined || v.status === 0) ? 'unchecked' : '';
+}
+
 function memberRunHasRealCheck(verifier) {
   const command = String(verifier || '').trim();
   // A plain test runner only: chaining (|| true, ; , &&, pipes, subshells) or a
@@ -1468,13 +1478,22 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   }
   // Passed but never committed: save the loose work on the member's branch so
   // the branch holds it. Only in the member's own side checkout, never the main one.
+  // A reviewer that timed out or could not start gave no verdict; the work is
+  // unchecked, not rejected, so save it too (member lab: a correct answer was
+  // lost when the reviewer hit its time limit on a busy machine). Landing still
+  // needs a real pass.
   const worktreePath = finalMission.worktree?.path || mission.worktree?.path || '';
-  if (ok && started && worktreePath && finalMission.verifier_result?.passed === true) {
+  const saveDecision = memberRunSaveDecision({ started, ok, verdict: finalMission.verifier_result });
+  const reviewerUnavailable = saveDecision === 'unchecked';
+  if (worktreePath && saveDecision) {
     result.saved_work = require('../lib/member-save-work').saveLeftoverMemberWork({
       worktreePath, member: name, objective: finalMission.objective || mission.objective,
     });
+    if (reviewerUnavailable) result.saved_work.unchecked = true;
     if (result.saved_work.saved && !asJson && !quiet) {
-      console.log(`saved ${result.saved_work.files.length} file(s) ${name} left unsaved onto its branch`);
+      console.log(reviewerUnavailable
+        ? `saved ${result.saved_work.files.length} file(s) onto ${name}'s branch, not checked yet: the reviewer timed out or could not start`
+        : `saved ${result.saved_work.files.length} file(s) ${name} left unsaved onto its branch`);
     }
   }
   // A finished ignited run whose check passed hands its branch to GitHub
@@ -12140,6 +12159,7 @@ module.exports = {
   wakeBootLines,
   buildMemberRunStartArgs,
   inferMemberRunVerifier,
+  memberRunSaveDecision,
   buildMemberSubagentShell,
   pickMemberForIdea,
   appendMemberGoalLog,
