@@ -26,10 +26,39 @@ function events() {
 test('held missions add no failure, streak, or lesson; a real failure still does', () => {
   const summary = summarizeTrace(events());
   const builder = summary.members.find((row) => row.member === 'builder');
-  assert.equal(builder.missions, 3);
+  assert.equal(builder.missions, 1, 'held is not decided, so ratings do not divide by it');
+  assert.equal(builder.held, 2);
   assert.equal(builder.failed, 1, 'only the failed mission counts');
   assert.equal(builder.repeat_failures, 0, 'two holds then one failure is not a streak');
   const lessons = summary.lessons.join('\n');
   assert.doesNotMatch(lessons, /end held/);
   assert.match(lessons, /m3 end failed/);
+});
+
+test('two holds in a row do not bench a member, and a hold does not end a real streak', () => {
+  const { rankCampaignMembers } = require('../lib/campaign-loop');
+  const view = (outcomes) => ({
+    owner: 'builder',
+    seats: [{ member: 'helper' }],
+    missions: outcomes.map((outcome, i) => ({ id: `m${i}`, member: 'builder', status: 'ended', outcome })),
+  });
+  const row = (outcomes) => rankCampaignMembers(view(outcomes)).find((r) => r.member === 'builder');
+  assert.deepEqual([row(['held', 'held']).consecutiveFailures, row(['held', 'held']).benched], [0, false]);
+  assert.equal(row(['failed', 'held', 'failed']).consecutiveFailures, 2);
+  assert.equal(row(['failed', 'failed']).benched, true, 'two real failures still bench');
+});
+
+test('a round with a hold says it waits on you, not that it failed', () => {
+  const { roundSummary, roundTally } = require('../lib/campaign-cadence');
+  const before = { missions: [], budget: { spent: 0 } };
+  const after = { budget: { spent: 0 }, missions: [
+    { id: 'm1', status: 'ended', outcome: 'held' },
+    { id: 'm2', status: 'ended', outcome: 'failed' },
+    { id: 'm3', status: 'ended', outcome: 'kept' },
+  ] };
+  const summary = roundSummary(before, after);
+  assert.deepEqual([summary.kept, summary.failed, summary.held], [1, 1, 1]);
+  assert.match(roundTally({}, summary), /^1 kept, 1 failed, 1 waiting on you/);
+  const quiet = roundSummary(before, { ...after, missions: after.missions.slice(1) });
+  assert.doesNotMatch(roundTally({}, quiet), /waiting on you/);
 });

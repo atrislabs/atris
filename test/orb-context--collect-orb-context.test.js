@@ -5,7 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { collectOrbContext } = require('../lib/orb-context');
 
-const now = Date.parse('2025-02-12T12:00:00Z');
+// local noon, so the local day is Feb 12 in every time zone
+const now = new Date(2025, 1, 12, 12).getTime();
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orb-context-collect-'));

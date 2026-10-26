@@ -1007,6 +1007,15 @@ function mergedCloseNote(receipt) {
     + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
 }
 
+// The digest goes out once per local day. A stamp written before the switch
+// to local days is a UTC day: compare it to the UTC day once, so the upgrade
+// neither repeats nor skips a digest.
+function digestSentToday(state, now = new Date()) {
+  if (!state || !state.last_digest_date) return false;
+  const key = state.last_digest_local ? localDay(now) : now.toISOString().slice(0, 10);
+  return state.last_digest_date === key;
+}
+
 async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
 
   try {
@@ -1301,7 +1310,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // 4. daily digest at the configured hour
   const today = localDay();
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
-  if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
+  if (new Date().getHours() === digestHour && !digestSentToday(state)) {
     receipt.digest_due = true;
     let waitingWishes = [];
     try {
@@ -1327,6 +1336,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
     receipt.digest_text = text;
     state.last_digest_date = today;
+    state.last_digest_local = true;
     delete state.janitor;
 
     // 5. once a day, keep the receipt shelf lean: compress old run receipts
@@ -1473,6 +1483,7 @@ function autolandCommand(args = []) {
 
 module.exports = {
   autolandCommand,
+  digestSentToday,
   digestNextMoves,
   acceptSweepTimeoutMs,
   describeAcceptKillCause,

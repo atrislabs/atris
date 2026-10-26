@@ -48,3 +48,22 @@ test('the daily digest day is the local day', () => {
   // The digest hour is read with getHours(), local; the day it compares must be local too.
   assert.match(todayLine, /localDay\(\)/);
 });
+
+test('the upgrade from UTC stamps neither repeats nor skips a digest', () => {
+  const out = runInLosAngelesEvening(`
+    const { digestSentToday } = require(process.env.ROOT + '/commands/autoland');
+    const now = new Date();
+    console.log(JSON.stringify([
+      // sent tonight under the old UTC stamp: already sent, no second digest
+      digestSentToday({ last_digest_date: '2026-10-23' }, now),
+      // sent yesterday under the old stamp: due
+      digestSentToday({ last_digest_date: '2026-10-22' }, now),
+      // sent tonight under the new local stamp: already sent
+      digestSentToday({ last_digest_date: '2026-10-22', last_digest_local: true }, now),
+      // a local stamp from two days back: due
+      digestSentToday({ last_digest_date: '2026-10-21', last_digest_local: true }, now),
+      digestSentToday({}, now),
+    ]));
+  `);
+  assert.deepEqual(JSON.parse(out), [true, false, true, false, false]);
+});
