@@ -74,10 +74,12 @@ test('init creates structured TODO and feature templates', () => {
     assert.ok(fs.existsSync(path.join(wikiDir, 'log.md')));
     assert.ok(fs.existsSync(path.join(wikiDir, 'STATUS.md')));
 
-    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    const agentsBoot = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agentsBoot, /OpenClaw/);
+    assert.match(agentsBoot, /atris\/AGENT_REFERENCE\.md/);
+    const agents = fs.readFileSync(path.join(dir, 'atris', 'AGENT_REFERENCE.md'), 'utf8');
     assert.match(agents, /## Mission Autonomy/);
     assert.match(agents, /atris mission status --status active --json/);
-    assert.match(agents, /OpenClaw/);
     assert.match(agents, /Agent Contract/);
     assert.match(agents, /atris task note <id>/);
     assert.match(agents, /atris task ready <id> --proof/);
