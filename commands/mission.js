@@ -6971,10 +6971,12 @@ function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
   // Runners that find tests by name (node --test, jest, pytest, go test) never
   // list them, so any changed file shaped like a test counts as well.
   const testShaped = /(^|\/)(tests?|__tests__|specs?|checks?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$|(^|\/)conftest\.py$/i;
+  // Whole paths only: order.js is not named by `node --test checks/order.js`.
+  const named = checkText.split(/[\s'"`=]+/).map((word) => word.replace(/^\.\//, '')).filter(Boolean);
   return changed.some((file) => path.basename(file) === 'package.json'
     || testShaped.test(file)
-    || checkText.includes(file)
-    || (path.dirname(file) !== '.' && checkText.includes(`${path.dirname(file)}/`)));
+    || named.includes(file)
+    || (path.dirname(file) !== '.' && named.some((word) => word.startsWith(`${path.dirname(file)}/`))));
 }
 
 // The worker's `learned:` line from its receipt, so the lesson reaches the
