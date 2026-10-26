@@ -177,7 +177,8 @@ test('mission run --detach writes driver state and appends to the mission log', 
     assert.equal(fs.existsSync(path.join(dir, payload.log_path)), true);
   } finally {
     if (driverPid) {
-      for (let i = 0; i < 100 && processIsAlive(driverPid); i += 1) {
+      const deadline = Date.now() + 15000;
+      while (processIsAlive(driverPid) && Date.now() < deadline) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
       }
     }
@@ -210,10 +211,13 @@ test('a second mission driver exits before spawning a colliding tick', () => {
 
 test('the mission lock names the live tick subprocess until it exits', async () => {
   const dir = makeTempDir();
+  const releasePath = path.join(dir, 'release-tick');
+  let firstRun;
   try {
     prepareWorkspace(dir);
     const runner = path.join(dir, 'slow-claude.js');
     fs.writeFileSync(runner, `#!/usr/bin/env node
+const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
   console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
@@ -221,19 +225,23 @@ if (args.includes('--help')) {
 }
 const index = args.includes('--session-id') ? args.indexOf('--session-id') : args.indexOf('--resume');
 const sessionId = args[index + 1];
-setTimeout(() => {
+// Stay alive until the competing driver has checked the held lock.
+const timer = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(releasePath)})) return;
+  clearInterval(timer);
   console.log(JSON.stringify({ type: 'result', session_id: sessionId, result: 'slow tick finished\\nlayer: capabilities', is_error: false, num_turns: 1 }));
-}, 1500);
+}, 20);
 `, 'utf8');
     fs.chmodSync(runner, 0o755);
     const mission = startMission(dir, 'hold the tick subprocess lock', ['--runner', 'claude']);
     const env = { ATRIS_RUNNER_BIN: runner };
-    const firstRun = runCliAsync([
+    firstRun = runCliAsync([
       'mission', 'run', mission.id, '--max-ticks', '1', '--no-verify', '--json',
     ], dir, env);
     const lockPath = path.join(dir, '.atris', 'state', `mission-${mission.id}.lock`);
     let lock = null;
-    for (let i = 0; i < 100; i += 1) {
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
       try {
         const candidate = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
         if (candidate.phase === 'tick') {
@@ -255,10 +263,13 @@ setTimeout(() => {
       `another driver is already running mission ${mission.id} (pid ${lock.pid})`,
     );
 
+    fs.writeFileSync(releasePath, 'release');
     const firstResult = await firstRun;
     assert.equal(firstResult.status, 0, firstResult.stderr || firstResult.stdout);
     assert.equal(fs.existsSync(lockPath), false);
   } finally {
+    fs.writeFileSync(releasePath, 'release');
+    if (firstRun) await firstRun;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
