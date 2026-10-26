@@ -1,0 +1,152 @@
+[
+  {
+    "id": "vendor-net30-extension",
+    "field": "vendor payments",
+    "task": "Write an email to our packaging supplier, Ridgeline Packaging (contact Dana Whitfield), asking if we can move our payment on invoice #48213 from net-30 to net-45 because our largest client is paying us late this month. Keep it polite, mention we've paid on time for 3 years, and offer to pay the 1.5% late fee if they need it."
+  },
+  {
+    "id": "seed-round-press-release",
+    "field": "funding announcement",
+    "task": "Draft a short press release announcing our $3.2M seed round led by Brightpath Ventures, with participation from two angel investors. We're a 9-person company building scheduling software for physical therapy clinics, and the money goes toward hiring 4 engineers and launching in Texas and Ohio. Include a quote from our CEO, Priya Anand, and keep it under 300 words."
+  },
+  {
+    "id": "investor-monthly-update",
+    "field": "investor reporting",
+    "task": "Help me write our monthly investor update for September. MRR went from $41k to $47.5k, churn was 2.1%, we signed 6 new enterprise pilots, and our biggest miss was the mobile app slipping two weeks. Keep the tone candid and short, with a \"asks\" section at the bottom where we want intros to hospital networks."
+  },
+  {
+    "id": "subscription-price-increase-notice",
+    "field": "customer pricing notice",
+    "task": "Write an email to our existing monthly subscribers telling them the Plus plan is going from $12 to $15 starting January 1, with 30 days' notice. Explain briefly that we added weekly backups and doubled storage, and that anyone on an annual plan keeps their current rate until renewal. Don't make it sound like we're apologizing too much."
+  },
+  {
+    "id": "raise-request-manager",
+    "field": "compensation request",
+    "task": "I'm a senior accountant at a 60-person firm and I want to ask my manager, Tom, for a raise in our 1:1 next week. I've taken over the month-end close for two departments and trained the new hire, and I want to ask for 12% instead of the 4% cost-of-living bump. Help me write a short message to send him beforehand asking for 30 minutes to talk about my role and pay."
+  },
+  {
+    "id": "restaurant-web-proposal",
+    "field": "client proposal",
+    "task": "I run a small web design studio and I'm pitching a family-owned Italian restaurant called Bella Notte in Columbus that wants a new website with online reservations and a menu they can update themselves. Budget is around $6,000 and they want it live by March 15. Write a one-page proposal with a short intro, three phases, a pricing table, and what they need to send us."
+  },
+  {
+    "id": "planning-meeting-followup-q4",
+    "field": "meeting follow-up",
+    "task": "Write a follow-up email to the marketing team after our Q4 planning meeting this morning. We agreed to cut the paid social budget by 20%, move the webinar from November 12 to November 19, and Mei will own the case study draft due Oct 31. Keep the action items clearly listed with owners and due dates."
+  },
+  {
+    "id": "outage-postmortem-customers",
+    "field": "incident communication",
+    "task": "Our API was down for about 90 minutes yesterday because a database migration locked the orders table. Write a customer-facing message explaining what happened in plain language, what we changed so it won't happen again, and offering affected customers one free month. The message goes out to about 4,000 business customers, so keep it calm and direct."
+  },
+  {
+    "id": "remote-work-policy-memo",
+    "field": "HR policy",
+    "task": "Draft an internal memo for our 45-person company updating the remote work policy: employees can work remotely up to 3 days per week, core hours are 10am to 3pm Eastern, and anyone in the office on Tuesdays and Thursdays gets a meal stipend. Include a section on how to request an exception and say the policy takes effect February 1."
+  },
+  {
+    "id": "warehouse-hours-change",
+    "field": "operations notice",
+    "task": "Our warehouse in Reno is changing its pickup hours starting next Monday from 7am-7pm to 8am-5pm Monday through Friday, closed weekends. Write a short notice to our regional carriers and drivers explaining the change, the new cutoff time for same-day dispatch at 3pm, and who to call for after-hours emergencies."
+  },
+  {
+    "id": "slack-shoutout-coworker",
+    "field": "team recognition",
+    "task": "Write a Slack post for our #general channel recognizing Marcus from the support team, who stayed late three nights in a row to clear a backlog of 400 tickets before our Black Friday launch. Make it warm but not gushing, and tag him with a couple of appropriate emoji. Keep it under 80 words."
+  },
+  {
+    "id": "double-charge-complaint-reply",
+    "field": "customer support reply",
+    "task": "A customer named Renee emailed saying she was charged twice for her order #88217 on the same day, and she's upset. Write a reply apologizing, confirming we found the duplicate charge from a payment retry, and saying the extra $64.20 will be refunded to her Visa within 3-5 business days. Keep it empathetic and under 150 words."
+  },
+  {
+    "id": "partnership-intro-warm",
+    "field": "partnership outreach",
+    "task": "I want to introduce our bakery-delivery app to Hannah at Greenleaf Grocers, and our mutual friend Sam Ortiz suggested I reach out. Write a short intro email that mentions Sam, explains we deliver artisan bread to 40 of their store locations' neighborhoods, and proposes a 20-minute call next week."
+  },
+  {
+    "id": "kitchen-gadget-product-copy",
+    "field": "product description",
+    "task": "Write product page copy for our new 6-in-1 garlic press and herb stripper. It's made from food-grade stainless steel, dishwasher safe, costs $29.99, and we want the tone to feel friendly and practical, not salesy. Include a short headline, three bullet points, and a two-sentence description."
+  },
+  {
+    "id": "conference-talk-pitch",
+    "field": "speaking proposal",
+    "task": "Write a conference talk proposal for the DevOps Days Chicago call for papers. The talk is \"Shipping Without Fear: Canary Deploys for Small Teams,\" about how our 5-person team moved from monthly releases to daily ones over 8 months. It's 25 minutes, and I need a 200-word abstract plus a 50-word speaker bio for me, Ellen Park, a platform engineer at a logistics startup."
+  },
+  {
+    "id": "bookshop-newsletter-intro",
+    "field": "newsletter copy",
+    "task": "Write the intro paragraph for our bookshop's monthly newsletter, The Shelf Note, for the November issue. We're featuring a staff picks list, a poetry night on November 8 at 7pm, and a reminder that our holiday gift wrap is free with purchases over $40. The voice should be warm and a little witty, around 120 words."
+  },
+  {
+    "id": "open-enrollment-benefits-note",
+    "field": "benefits communication",
+    "task": "Write an email to all employees at our 120-person company about open enrollment, which runs November 1 through November 15. Our dental plan changed to a new carrier, the HSA employer contribution went up to $800 for individuals, and everyone needs to actively re-select their plan or they'll be auto-enrolled in the 2025 default. Keep it skimmable with a short bulleted list of what changed."
+  },
+  {
+    "id": "kickoff-agenda-client",
+    "field": "project kickoff",
+    "task": "Our client, Westbrook Realty, has their project kickoff next Tuesday at 10am over Zoom, with four of their people and three of ours. Write an email to the client contact, Luis Ferreira, with a 45-minute agenda covering scope review, timeline, their approval process, and what they need to prepare before the call."
+  },
+  {
+    "id": "freelancer-scope-change",
+    "field": "contractor communication",
+    "task": "I need to tell my freelance illustrator, Jun, that we're adding 4 more icons to the onboarding illustration set, bringing the total from 12 to 16. The original fee was $900, and I want to offer $240 more and keep the same deadline of October 30. Write a message that's friendly, clear about the change, and asks him to confirm by Friday."
+  },
+  {
+    "id": "5k-sponsorship-ask",
+    "field": "sponsorship request",
+    "task": "I'm organizing the Harbor Lights 5K, a charity run for the Eastside food pantry, happening May 17 with about 300 registered runners. Write an email to local business owners asking for a $500 sponsorship in exchange for logo placement on our shirts and a shout-out at the finish line. Keep it under 200 words and mention we raised $18,000 last year."
+  },
+  {
+    "id": "year-end-donor-appeal",
+    "field": "fundraising appeal",
+    "task": "Draft a year-end donation appeal letter for our literacy nonprofit, Read Forward. We served 1,240 kids last year, our goal is $85,000 by December 31, and a $50 gift buys a book kit for one child. Write it as a letter from our executive director, Carla Mendes, with a personal opening story about a second grader named Eli."
+  },
+  {
+    "id": "winback-lapsed-users",
+    "field": "retention email",
+    "task": "Write a win-back email for users who haven't logged into our budgeting app in 90 days. We added bank sync for credit unions and a new weekly summary feature, and we want to offer 2 months free on the Pro plan with the code COMEBACK2. Keep the subject line under 45 characters and make the email feel like a human wrote it."
+  },
+  {
+    "id": "bistro-menu-item-copy",
+    "field": "menu description",
+    "task": "Write menu copy for our new dish, a roasted beet and whipped feta salad with pistachio dukkah and honey-lime vinaigrette, priced at $14. Our bistro is casual and neighborhood-focused, so keep the description to 25 words or fewer and avoid words like \"artisanal\" or \"elevated.\""
+  },
+  {
+    "id": "office-move-announcement",
+    "field": "internal announcement",
+    "task": "We're moving our 35-person office from the Fourth Street building to the new space on Carver Avenue on December 12-13. Write an announcement to staff with the new address, the three days before the move when we'll be remote, where to find desk assignments, and who to ask about IT setup. Keep it friendly and organized."
+  },
+  {
+    "id": "reference-request-former-boss",
+    "field": "reference request",
+    "task": "I'm applying for a senior operations role at Helix Logistics, and I need a reference from my former manager, David Okafor, who I worked under for 3 years at Crestline Foods. Write a polite email asking if he'd be willing to speak with a recruiter next week, attach my resume, and mention the two projects I'd like him to highlight."
+  },
+  {
+    "id": "chargeback-dispute-response",
+    "field": "payment dispute",
+    "task": "Our payment processor sent a chargeback notice for $1,850 on transaction #TX-44201, where the customer claims they never received a custom order. I have the signed delivery confirmation and the customer's approval email from March 3. Write a concise dispute response letter to the processor summarizing the evidence and explaining why the chargeback should be reversed."
+  },
+  {
+    "id": "trade-show-lead-followup",
+    "field": "sales follow-up",
+    "task": "I met about 30 people at the Midwest Hospitality Expo last week, and I want to send a follow-up to the ones who asked about our inventory software for independent grocers. Write a short follow-up email that references the booth conversation, offers a 15-minute demo this week or next, and includes a link to our case study for a store in Dayton."
+  },
+  {
+    "id": "exec-okr-status-update",
+    "field": "executive reporting",
+    "task": "Write a status update for our exec team on Q3 OKRs. We hit 2 of 4 key results: revenue is at 92% of target and NPS rose from 31 to 38. We're behind on hiring, with 3 of 7 roles filled, and the data migration is at risk because the vendor delayed a key deliverable to October 20. Keep it to one page with a red/yellow/green summary."
+  },
+  {
+    "id": "wholesale-pricing-reply",
+    "field": "wholesale inquiry",
+    "task": "A boutique owner named Claire from Maple & Thread emailed asking for wholesale pricing on our linen tote bags, and she's thinking about ordering 48 units. Write a reply that thanks her, explains our tiers (25 units at $18 each, 50+ at $15 each), mentions the 2-week lead time, and asks whether she'd like a sample pack first."
+  },
+  {
+    "id": "phishing-alert-staff",
+    "field": "security alert",
+    "task": "Our finance team just got a fake email that looked like it came from our CEO asking them to urgently wire $42,000 to a new vendor. Write an alert to all staff explaining what happened, what the email looked like, the rule that no wire changes happen by email alone, and who to report suspicious messages to, which is security@ourcompany.com. Keep it short and direct, under 200 words."
+  }
+]
