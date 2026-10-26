@@ -20,7 +20,7 @@ function load(dir) {
   for (const rec of records) {
     for (const [a, b] of PAIRS) {
       const key = verdictKey(rec, a, b);
-      const v = raw.find((x) => x.id === rec.id && x.a === a && x.b === b && x.key === key);
+      const v = raw.find((x) => x.id === rec.id && x.a === a && x.b === b && x.key === key && [a, b, 'tie'].includes(x.winner));
       if (v) valid.set(`${rec.id}|${a}|${b}`, v);
     }
   }
@@ -49,7 +49,21 @@ function tally(verdicts, a, b) {
 
 function main(dirs) {
   if (new Set(dirs).size !== dirs.length) { console.error('the same folder was given twice'); process.exitCode = 2; return; }
-  const sets = dirs.map(load);
+  // Each out-<name> folder is scored against its exam file <name>.json. The
+  // file is required, every task in it needs answers, and saved answers for
+  // tasks no longer in it are left out.
+  const exams = dirs.map((dir) => path.join(path.dirname(dir), `${path.basename(dir).replace(/^out-/, '')}.json`));
+  const noExam = exams.filter((f) => !fs.existsSync(f));
+  if (noExam.length) { console.error(`exam file not found: ${noExam.join(', ')}`); process.exitCode = 2; return; }
+  const examTasks = exams.map((f) => new Map(JSON.parse(fs.readFileSync(f, 'utf8')).map((t) => [t.id, t])));
+  const examIds = examTasks.map((m) => new Set(m.keys()));
+  // A record counts only if it answered the exam's current wording.
+  const matches = (r, i) => { const t = examTasks[i].get(r.id); return Boolean(t) && (t.task === undefined || (t.task === r.task && t.field === r.field)); };
+  const sets = dirs.map(load).map((set, i) => ({
+    records: set.records.filter((r) => matches(r, i)),
+    verdicts: set.verdicts.filter((v) => set.records.some((r) => r.id === v.id && matches(r, i))),
+  }));
+  const missing = examIds.flatMap((want, i) => [...want].filter((id) => !sets[i].records.some((r) => r.id === id)));
   const ids = sets.flatMap((set) => set.records.map((r) => r.id));
   const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (repeated.length) { console.error(`task counted twice: ${[...new Set(repeated)].join(', ')}`); process.exitCode = 2; return; }
@@ -64,11 +78,13 @@ function main(dirs) {
   const grew = (arm) => new Set(all.verdicts.filter((v) => v.grew[arm]).map((v) => v.id)).size;
   const wc = (s) => s.split(/\s+/).filter(Boolean).length;
   // Broken = no real answer: fake command markup (every break seen in these
-  // runs) or a near-empty reply. Correct short answers are not broken.
-  const broken = all.records.filter((r) => /<invoke\b|<parameter\b/.test(r.answers.skill) || wc(r.answers.skill) < 10).map((r) => r.id);
+  // runs) or a blank reply. Length is not a test: a correct answer can be one
+  // line, like a single tracked link.
+  const broken = all.records.filter((r) => /<invoke\b|<parameter\b/.test(r.answers.skill) || !r.answers.skill.trim()).map((r) => r.id);
 
   const fmt = (t) => `${t.wins} won, ${t.losses} lost, ${t.ties} tied, p=${t.p.toFixed(4)}`;
   const lines = [
+    ['all tasks answered', missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : `${all.records.length} tasks`],
     ['all pairs judged', all.verdicts.length === expectedPairs, `${all.verdicts.length}/${expectedPairs}`],
     ['1 beats the nudge for real', vsNudge.wins > vsNudge.losses && vsNudge.p < 0.05, fmt(vsNudge)],
     ['2 never worse than plain', vsPlain.wins >= vsPlain.losses, fmt(vsPlain)],

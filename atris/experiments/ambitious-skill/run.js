@@ -50,8 +50,9 @@ async function runTask(t) {
   const base = sha(JSON.stringify([t.task, WORKER, TOOLS, NUDGE]));
   const withSkill = sha(base + SKILL);
   const old = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
-  if (old && old.made && old.made.base === base && old.made.skill === withSkill) return old;
-  const keepBase = old && old.made && old.made.base === base;
+  const sameTask = old && old.task === t.task && old.field === t.field;
+  if (sameTask && old.made && old.made.base === base && old.made.skill === withSkill) return old;
+  const keepBase = sameTask && old.made && old.made.base === base;
   const rewriteSystem = `${SKILL}\n\nOnly produce the output shape block (the four answers and the deeper task). Do not do the task.`;
   const [plain, nudge, rewrite] = await Promise.all([
     keepBase ? old.answers.plain : claude(t.task),

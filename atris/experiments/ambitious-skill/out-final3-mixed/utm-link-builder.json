@@ -1,0 +1,16 @@
+{
+  "id": "utm-link-builder",
+  "field": "email marketing",
+  "task": "Can you build a UTM tracked link for me? Base URL is https://shop.example.com/spring-sale, source is newsletter, medium is email, campaign is spring_sale_2026, content is header_button. Give me the full lowercase URL.",
+  "made": {
+    "base": "e8ed86c7e0628c04",
+    "skill": "73f60e37f13995da"
+  },
+  "rewrite": "```\ndeeper task:\nCan you build a UTM tracked link for me? Base URL is https://shop.example.com/spring-sale, source is newsletter, medium is email, campaign is spring_sale_2026, content is header_button. Give me the full lowercase URL.\n```",
+  "deeper": "Can you build a UTM tracked link for me? Base URL is https://shop.example.com/spring-sale, source is newsletter, medium is email, campaign is spring_sale_2026, content is header_button. Give me the full lowercase URL.",
+  "answers": {
+    "plain": "Here's your UTM-tracked link:\n\n```\nhttps://shop.example.com/spring-sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale_2026&utm_content=header_button\n```",
+    "nudge": "**Tracked URL:**\n\n```\nhttps://shop.example.com/spring-sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale_2026&utm_content=header_button\n```\n\n**Parameters**\n\n| Parameter | Value |\n|---|---|\n| `utm_source` | `newsletter` |\n| `utm_medium` | `email` |\n| `utm_campaign` | `spring_sale_2026` |\n| `utm_content` | `header_button` |\n\n**Checks**\n- Everything is lowercase. GA4 treats `Email` and `email` as different values, so mixed case splits your reports.\n- Underscores separate words. Spaces would become `%20` and clutter reports.\n- The base URL had no existing query string, so the first separator is `?` and the rest are `&`. If you later add a query string to the base URL, such as `?ref=x`, switch the first `?` to `&`.\n- No special characters need encoding.\n\n**Recommendations**\n- **Medium:** `email` is one of GA4's default channel group matches, so this traffic lands in the Email channel. Don't use variants like `e-mail` or `newsletter` as the medium, because they fall into \"Unassigned\".\n- **Campaign date:** The campaign name says 2026 and today is October 2026. If this is a spring sale that already ran, or one planned for next spring, check that the year matches your plan.\n- **Content tags:** If the email has more than one link to this page, give each a distinct `utm_content`, such as `footer_link` or `hero_image`. That lets you compare placements.\n- **Internal links:** Don't put UTMs on links between pages of your own site. They overwrite the visitor's original source and start a new session.\n- **Tracking:** Keep a shared spreadsheet of the values you use so the team doesn't invent near-duplicates like `springsale2026`.\n- **Testing:** Click the link once and look for it in GA4 Realtime. Confirm that the page doesn't redirect and strip the parameters.\n\nI can also generate a batch of variants (other placements, channels, or a CSV for your tracking sheet) if you'd like.",
+    "skill": "https://shop.example.com/spring-sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale_2026&utm_content=header_button"
+  }
+}

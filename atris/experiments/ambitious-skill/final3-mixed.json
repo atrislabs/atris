@@ -1,0 +1,227 @@
+[
+  {
+    "id": "kayak-buy-vs-rent",
+    "field": "outdoor recreation",
+    "task": "We go kayaking about 6 times a summer, and rentals at the lake are $45 a session. A used tandem kayak is listed for $650, and I'd guess we'd need about $80 for a paddle, vests, and a roof rack. Over a 3-year horizon, is buying worth it, or should we keep renting?"
+  },
+  {
+    "id": "bike-tire-bar-to-psi",
+    "field": "cycling maintenance",
+    "task": "The sidewall on my road tires says max 110 psi, but my pump gauge reads in bar and I'm at 7.5 bar right now. Am I over the limit, and what's 6.5 bar in psi?"
+  },
+  {
+    "id": "rsvp-headcount-formula",
+    "field": "event planning",
+    "task": "I have an RSVP sheet with columns Name, Attending, Guests, where Attending is Y, N, or ?. Here are the rows: Ana,Y,2 | Ben,N,0 | Cy,Y,1 | Dee,?,0 | Eli,Y,0. Give me a formula that totals headcount, counting the person plus their guests only when Attending is Y."
+  },
+  {
+    "id": "sourdough-hydration-math",
+    "field": "baking",
+    "task": "My recipe calls for 500 g of flour and I want 75% hydration. How many grams of water do I need, and with 10 g of salt added, what's the total dough weight not counting the starter?"
+  },
+  {
+    "id": "compost-pile-fix",
+    "field": "gardening",
+    "task": "My compost pile is mostly kitchen scraps now and it's wet and smells sour. I have a bag of dry leaves, some shredded cardboard, and a load of grass clippings from this week. How should I layer or adjust it, and how often should I turn it?"
+  },
+  {
+    "id": "bathroom-fan-cfm",
+    "field": "home repair",
+    "task": "Our bathroom is 8 ft by 10 ft with a 9 ft ceiling and no window. The old fan is rated 50 CFM, it's loud, and it barely clears the steam after showers. What CFM should I target, and is a 110 CFM fan overkill for this room?"
+  },
+  {
+    "id": "weighted-gpa-calc",
+    "field": "high school grades",
+    "task": "Here are my semester grades with credit units: English A (3), Chemistry B+ (4), Spanish A- (3), History B (3), Gym P (1, pass only, not graded). Using a 4.0 scale, what's my GPA? Please leave out the Gym line."
+  },
+  {
+    "id": "nginx-status-count",
+    "field": "web operations",
+    "task": "I need to count how many requests returned each HTTP status code in my access log. The lines look like this: 10.0.0.4 - - [26/Oct/2026:10:01:02] GET /index 200 | 10.0.0.9 - - [26/Oct/2026:10:01:03] GET /api 500 | 10.0.0.4 - - [26/Oct/2026:10:01:05] POST /api 200 | 10.0.0.7 - - [26/Oct/2026:10:01:06] GET /login 404. Give me a one-liner in bash that prints each status code with its count."
+  },
+  {
+    "id": "archive-old-files-script",
+    "field": "scripting",
+    "task": "I want a bash script that moves files older than 90 days from ~/Downloads into ~/Archive/YYYY-MM folders based on each file's modified date. Please add a dry-run flag that only prints what would move, since I don't want to lose anything by accident."
+  },
+  {
+    "id": "photo-shoot-quote",
+    "field": "freelance photography",
+    "task": "A local bakery wants a 3-hour product shoot and 40 edited final images delivered within 5 days. My shooting rate is $120 an hour and my editing rate is $75 an hour, and I think editing will take about 1.5 minutes per image. How should I structure the quote so it doesn't end up underpaying me?"
+  },
+  {
+    "id": "pool-shock-dose",
+    "field": "pool maintenance",
+    "task": "My pool holds about 15,000 gallons and free chlorine is at 0.5 ppm. I want it at 3 ppm. The label on my shock says 1 lb per 10,000 gallons raises chlorine about 1 ppm. How many ounces of shock should I add?"
+  },
+  {
+    "id": "protein-target-split",
+    "field": "strength training",
+    "task": "I'm 82 kg and I lift 4 days a week, mostly for strength. How many grams of protein should I aim for per day, and how should I split that across 4 meals?"
+  },
+  {
+    "id": "emergency-fund-months",
+    "field": "personal finance",
+    "task": "Here are my typical monthly essentials: rent $1,450, utilities $180, groceries $420, car insurance $140, phone $60, minimum debt payments $230. I'm a freelancer with irregular income and have $6,800 saved. How many months of expenses does that cover, and how big should my target be?"
+  },
+  {
+    "id": "sales-tax-backout",
+    "field": "retail receipts",
+    "task": "My receipt total is $58.45 and the tax rate here is 7.25%. What was the pre-tax subtotal, and how much tax was charged?"
+  },
+  {
+    "id": "pendulum-period-calc",
+    "field": "physics homework",
+    "task": "I need the period of a simple pendulum with a 1.2 m string. Use g = 9.81 m/s^2 and T = 2\u03c0\u221a(L/g). Please show the steps so I can check my work."
+  },
+  {
+    "id": "quadrat-density-stats",
+    "field": "field ecology",
+    "task": "My class counted dandelions in 5 quadrats and got 4, 7, 3, 9, and 6. What's the mean and the sample standard deviation, and how should I write the density in one sentence for my lab report?"
+  },
+  {
+    "id": "kid-chore-rotation",
+    "field": "household planning",
+    "task": "I have three kids aged 8, 11, and 14, and six weekly chores: dishes, trash, vacuuming, bathroom, laundry, and yard. I want a fair weekly rotation that doesn't put the youngest on the hardest jobs, and each kid should get a different mix each week. Can you make me a 4-week schedule?"
+  },
+  {
+    "id": "vlookup-na-fix",
+    "field": "spreadsheet formulas",
+    "task": "My formula is =VLOOKUP(A2,Sheet2!A:C,3,FALSE), and it returns #N/A for some IDs that clearly exist in Sheet2. I think it has to do with hidden spaces or number formatting in the source column. How do I find and fix it without rewriting the whole sheet?"
+  },
+  {
+    "id": "oncall-rotation-design",
+    "field": "engineering team",
+    "task": "Our team has 5 engineers and we're doing a weekly on-call rotation that includes weekends. One person is out for 2 weeks in November, and we want weekend shifts spread evenly so nobody gets stuck with them every time. How would you structure the rotation and handle the vacation gap?"
+  },
+  {
+    "id": "trail-hike-hydration",
+    "field": "hiking",
+    "task": "I'm 70 kg and planning a 12 km hike with about 600 m of elevation gain. It'll be 28\u00b0C and I expect to take around 4 hours. How much water and electrolytes should I bring, and how often should I drink?"
+  },
+  {
+    "id": "cast-iron-rust-restore",
+    "field": "cookware care",
+    "task": "I left my cast iron skillet in the sink overnight and now it has some orange rust spots, though the seasoning is still mostly there. Can I save it with stuff I already have in the kitchen, and what steps should I follow?"
+  },
+  {
+    "id": "fence-post-picket-count",
+    "field": "fencing",
+    "task": "My fence line is 62 feet long. I want posts every 8 feet on center, and the pickets are 5.5 inches wide with a 0.5-inch gap between them. How many posts do I need including both ends, and how many pickets?"
+  },
+  {
+    "id": "frost-date-seed-plan",
+    "field": "vegetable gardening",
+    "task": "My last frost date is April 15. Tomatoes need 6 to 8 weeks indoors before transplant, and peppers need 8 to 10 weeks. What sowing dates should I aim for, and what should I do if a cold snap shows up in mid-April after I've already started them?"
+  },
+  {
+    "id": "dock-door-assign",
+    "field": "warehouse operations",
+    "task": "We have 4 trucks arriving and 3 dock doors. Trucks: A (53ft, 7:00-7:45), B (28ft, 7:20-8:00), C (53ft, 7:30-8:15), D (28ft, 8:00-8:30). Docks 1 and 2 take 53ft trailers, dock 3 is short-only, and no truck can wait more than 20 minutes. Which truck goes to which dock and in what order?"
+  },
+  {
+    "id": "utm-link-builder",
+    "field": "email marketing",
+    "task": "Can you build a UTM tracked link for me? Base URL is https://shop.example.com/spring-sale, source is newsletter, medium is email, campaign is spring_sale_2026, content is header_button. Give me the full lowercase URL."
+  },
+  {
+    "id": "outlier-flag-zscore",
+    "field": "survey analysis",
+    "task": "Here are my 10 order totals: 42, 38, 45, 40, 39, 41, 220, 44, 37, 43. Which values have a z-score above 2 in absolute value, and what are the mean and standard deviation I'm using? Use the population standard deviation."
+  },
+  {
+    "id": "pto-accrual-days",
+    "field": "small business HR",
+    "task": "Our policy accrues 1.25 PTO hours per biweekly pay period. I've been here 14 pay periods and have used 22 hours so far. How many hours do I have left, and how many full 8-hour days is that?"
+  },
+  {
+    "id": "poster-print-dpi",
+    "field": "graphic design",
+    "task": "My logo file is 1800 x 1200 px and I want to print it as a poster. What's the largest print size in inches at 300 DPI, and what's the size at 150 DPI, without upscaling?"
+  },
+  {
+    "id": "tire-psi-conversion",
+    "field": "auto maintenance",
+    "task": "The tire placard says 35 psi, but the air pump at the gas station only shows bar. Convert 35 psi to bar and kPa so I can set it right."
+  },
+  {
+    "id": "hsa-receipt-tally",
+    "field": "benefits admin",
+    "task": "Here are my receipts for HSA reimbursement this year: Pharmacy copay $25, Vision exam $150, Gym membership $480, Prescription glasses $210, Dental cleaning $120, Protein powder $45. Total the eligible ones and list the ones you'd leave out with a reason. I'm not sure about the gym one."
+  },
+  {
+    "id": "capo-chord-shift",
+    "field": "guitar teaching",
+    "task": "I'm playing a song with the chords G, C, D, and Em, and I want to put a capo on fret 3. What shape do I play for each chord, and what key am I singing in?"
+  },
+  {
+    "id": "donor-tier-sort",
+    "field": "nonprofit fundraising",
+    "task": "Sort these year-end gifts into tiers: Bronze under $100, Silver $100-$499, Gold $500-$999, Platinum $1000+. Gifts: 50, 250, 1200, 99.99, 500, 75, 999.50, 3000. How many gifts are in each tier and how much was raised per tier?"
+  },
+  {
+    "id": "cooler-temp-excursions",
+    "field": "food service ops",
+    "task": "Here's last night's walk-in cooler log: 22:00 38\u00b0F, 23:00 39\u00b0F, 00:00 42\u00b0F, 01:00 43\u00b0F, 02:00 41\u00b0F, 03:00 40\u00b0F, 04:00 44\u00b0F, 05:00 39\u00b0F. Flag any readings above 41\u00b0F and tell me the time windows where it stayed above that."
+  },
+  {
+    "id": "ad-budget-pacing",
+    "field": "paid social",
+    "task": "I have $1,800 left in my May ad budget with 6 days remaining. What daily spend should I run starting tomorrow to use it evenly, and is that a reasonable amount compared to my last week's average of $240 a day?"
+  },
+  {
+    "id": "raffle-odds",
+    "field": "event planning",
+    "task": "We're selling 350 raffle tickets and drawing 3 winners without replacement. If someone buys 10 tickets, what's the probability they win at least one prize? Round to two decimal places."
+  },
+  {
+    "id": "fuzzy-name-merge",
+    "field": "data cleanup",
+    "task": "I'm merging two mailing lists. One has 'Jon Smith, 14 Oak St' and the other has 'Jonathan Smith, 14 Oak Street', and there are a few hundred more like that. What matching rules would you use to decide these are the same person, and where would you still want a human to check?"
+  },
+  {
+    "id": "seating-chart",
+    "field": "wedding planning",
+    "task": "We have 40 guests for 5 tables of 8. The Okafors and Lindqvists should not sit together, Grandma needs a table near the restroom, and the four college friends should be together. How would you arrange them, and what's the layout reasoning?"
+  },
+  {
+    "id": "kid-carpool-rota",
+    "field": "parenting logistics",
+    "task": "Three families share school drop-off and pickup, Monday through Friday, for two weeks. The Chens can't do Tuesdays, the Ruiz family can't do Fridays, and I can't do Wednesday mornings. Draft a rota that spreads the load fairly and tell me what to do if someone is sick."
+  },
+  {
+    "id": "rental-car-insurance",
+    "field": "business travel",
+    "task": "I'm renting a car for a 5-day work trip. My company's travel policy covers collision if I book through them, and my credit card has secondary rental coverage, but the counter is pushing a $29/day waiver. Should I take it, and what should I check before I decline?"
+  },
+  {
+    "id": "logo-placement",
+    "field": "social media design",
+    "task": "I'm putting my square logo on a photo of a mountain sunrise for an Instagram post. The top-left has a bright sky and the bottom-right is dark rock. Where should I place the logo and what size and color should I use so it stays readable?"
+  },
+  {
+    "id": "volunteer-grant-report",
+    "field": "nonprofit grants",
+    "task": "Our food pantry logged 1,240 volunteer hours this year across 38 volunteers, served 6,900 households, and ran 48 distribution days. Write a short paragraph for our grant report that shows impact, and tell me which numbers the funder is most likely to question."
+  },
+  {
+    "id": "meeting-room-policy",
+    "field": "office admin",
+    "task": "We're a 3-person office with one shared meeting room. People keep double-booking and leaving the calendar blocked for hours. Draft a short booking policy with rules for duration, cancellation, and what to do if someone's late, and keep it friendly."
+  },
+  {
+    "id": "setlist-order",
+    "field": "live music",
+    "task": "Our band has 12 songs for a 45-minute set. Three are slow ballads, two are our loudest, and one is a cover everyone expects near the end. Order the setlist for me and explain where you'd put the ballads so the energy doesn't drop."
+  },
+  {
+    "id": "keep-or-sell-sedan",
+    "field": "vehicle decisions",
+    "task": "My 2014 sedan has 162,000 miles and needs about $1,400 in brake and suspension work. A dealer offered $3,200 as a trade-in and I'm not sure if it's worth fixing. I drive 25 miles a day for my commute and want the car for at least two more years. What would you do?"
+  },
+  {
+    "id": "fsa-spend-plan",
+    "field": "benefits planning",
+    "task": "I have $640 left in my flexible spending account and it expires December 31. My prescriptions and a few copays will cover about $150 of that, and I'd like to avoid losing the rest. What eligible purchases should I plan for, and what should I buy first?"
+  }
+]

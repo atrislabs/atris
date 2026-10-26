@@ -1,0 +1,16 @@
+{
+  "id": "sales-tax-backout",
+  "field": "retail receipts",
+  "task": "My receipt total is $58.45 and the tax rate here is 7.25%. What was the pre-tax subtotal, and how much tax was charged?",
+  "made": {
+    "base": "c54aa0a84b71c862",
+    "skill": "bf510f49e7b59b03"
+  },
+  "rewrite": "```\ndeeper task:\nMy receipt total is $58.45 and the tax rate here is 7.25%. What was the pre-tax subtotal, and how much tax was charged?\n```",
+  "deeper": "My receipt total is $58.45 and the tax rate here is 7.25%. What was the pre-tax subtotal, and how much tax was charged?",
+  "answers": {
+    "plain": "Subtotal = 58.45 / 1.0725 ≈ **$54.50**\n\nTax = 58.45 − 54.50 = **$3.95**\n\nCheck: 54.50 × 0.0725 = $3.95, so the total comes to $58.45.",
+    "nudge": "**Pre-tax subtotal: $54.50**\n**Tax charged: $3.95**\n\n**How I got it:**\n- Total = subtotal × (1 + 0.0725), so subtotal = 58.45 ÷ 1.0725 ≈ 54.499.\n- Prices are in whole cents, so I rounded to $54.50.\n\n**Check:**\n- Tax on $54.50 is 54.50 × 0.0725 = $3.95125, which rounds to $3.95.\n- $54.50 + $3.95 = $58.45, which matches your receipt.\n\nThe neighboring subtotals don't work. $54.49 gives a total of $58.44, and $54.51 gives $58.46. So $54.50 is the only subtotal that produces $58.45 at 7.25%.\n\nIf the store rounds tax per line item instead of on the whole subtotal, the tax could differ by a cent or so. Even then, the tax is most likely $3.95, because the total pins it down.",
+    "skill": "Subtotal = 58.45 / 1.0725 ≈ **$54.50**\n\nTax = 58.45 − 54.50 = **$3.95**\n\nCheck: 54.50 × 0.0725 = 3.951, which rounds to $3.95, so the total comes to $58.45."
+  }
+}

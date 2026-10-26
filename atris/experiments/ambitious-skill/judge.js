@@ -63,6 +63,9 @@ ${y}
 Reply with JSON only: winner (X, Y, or tie), x_grew_scope, y_grew_scope, reason (one sentence).`;
 }
 
+const validVerdict = (v) => Boolean(v) && ['X', 'Y', 'tie'].includes(v.winner)
+  && typeof v.x_grew_scope === 'boolean' && typeof v.y_grew_scope === 'boolean' && typeof v.reason === 'string';
+
 async function codex(text, tag) {
   for (let attempt = 1; ; attempt += 1) {
     try { return await codexOnce(text, tag); } catch (e) {
@@ -77,6 +80,7 @@ function codexOnce(text, tag) {
   const { dir, schema } = workdir();
   const last = path.join(dir, `${tag}.txt`);
   const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '-m', JUDGE, '-c', `model_reasoning_effort=${JUDGE_EFFORT}`, '--output-schema', schema, '-o', last, '-'];
+  fs.rmSync(last, { force: true });
   return new Promise((resolve, reject) => {
     // Own process group: codex runs a native child that outlives a plain kill
     // and holds the pipes open, so a hung call is killed as a group.
@@ -94,7 +98,10 @@ function codexOnce(text, tag) {
       // process alive after the summary, so end it and drop the pipe.
       try { process.kill(-child.pid, 'SIGKILL'); } catch {}
       child.stderr.destroy();
-      try { resolve(JSON.parse(fs.readFileSync(last, 'utf8'))); } catch (e) { reject(new Error(`codex exit ${code}: ${err.slice(-300)}`)); }
+      let verdict = null;
+      try { verdict = JSON.parse(fs.readFileSync(last, 'utf8')); } catch {}
+      if (code === 0 && validVerdict(verdict)) resolve(verdict);
+      else reject(new Error(`codex exit ${code}, ${verdict ? 'invalid verdict' : 'no verdict'}: ${err.slice(-300)}`));
     });
   });
 }
@@ -123,7 +130,7 @@ async function judgePair(rec, a, b) {
 // A saved verdict survives only if its own task and pair still hash to its key.
 function keepVerdicts(records, saved) {
   const current = new Map(records.flatMap((rec) => PAIRS.map(([a, b]) => [`${rec.id}|${a}|${b}`, verdictKey(rec, a, b)])));
-  return saved.filter((v) => current.get(`${v.id}|${v.a}|${v.b}`) === v.key);
+  return saved.filter((v) => current.get(`${v.id}|${v.a}|${v.b}`) === v.key && [v.a, v.b, 'tie'].includes(v.winner));
 }
 
 function loadRecords(dir) {
@@ -163,4 +170,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { PAIRS, verdictKey, keepVerdicts, loadRecords };
+module.exports = { PAIRS, verdictKey, keepVerdicts, loadRecords, validVerdict };
