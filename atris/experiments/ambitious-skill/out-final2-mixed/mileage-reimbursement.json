@@ -1,0 +1,16 @@
+{
+  "id": "mileage-reimbursement",
+  "field": "tax and admin",
+  "task": "My company reimburses mileage at $0.67 per mile. Here's my trip log from last month: Mon 42, Wed 58, Fri 31, Sat 104, and Sun 17 miles. What's the total reimbursement?",
+  "made": {
+    "base": "82684e1af7c4bd32",
+    "skill": "b2fefe61688fc51c"
+  },
+  "rewrite": "deeper task:\nMy company reimburses mileage at $0.67 per mile. Here's my trip log from last month: Mon 42, Wed 58, Fri 31, Sat 104, and Sun 17 miles. What's the total reimbursement?",
+  "deeper": "My company reimburses mileage at $0.67 per mile. Here's my trip log from last month: Mon 42, Wed 58, Fri 31, Sat 104, and Sun 17 miles. What's the total reimbursement?",
+  "answers": {
+    "plain": "Total miles: 42 + 58 + 31 + 104 + 17 = **252 miles**\n\nReimbursement: 252 × $0.67 = **$168.84**",
+    "nudge": "**Total reimbursement: $168.84** (252 miles × $0.67)\n\n| Day | Miles | Reimbursement |\n|---|---|---|\n| Mon | 42 | $28.14 |\n| Wed | 58 | $38.86 |\n| Fri | 31 | $20.77 |\n| Sat | 104 | $69.68 |\n| Sun | 17 | $11.39 |\n| **Total** | **252** | **$168.84** |\n\nI added the miles and multiplied once, and I also added the per-day amounts. Both methods give $168.84.\n\nThings to check before you submit:\n- **Weekend trips:** Saturday (104 miles) is the largest single entry, and Saturday and Sunday together are 121 miles. Finance teams often ask about weekend mileage, so have the business purpose ready.\n- **Commute miles:** Most policies, and the IRS, don't reimburse the normal commute between home and your regular workplace. Make sure none of these miles are commute miles.\n- **Documentation:** The IRS expects a log with the date, destination, business purpose, and odometer or total miles for each trip. Your log has dates and miles, so add the other details.\n- **Rate:** $0.67 matches the 2024 IRS standard rate. If your company follows the IRS rate, it may have been updated since. Check whether your company's rate is current. I'm not certain of the current IRS figure.\n\nIf you give me the destinations and purposes, I can format this as an expense-report table or a CSV.",
+    "skill": "Total miles: 42 + 58 + 31 + 104 + 17 = **252 miles**\n\nReimbursement: 252 × $0.67 = **$168.84**"
+  }
+}

@@ -63,7 +63,9 @@ function main(dirs) {
   const writingVsPlain = tally(writing.verdicts, 'skill', 'plain');
   const grew = (arm) => new Set(all.verdicts.filter((v) => v.grew[arm]).map((v) => v.id)).size;
   const wc = (s) => s.split(/\s+/).filter(Boolean).length;
-  const broken = all.records.filter((r) => wc(r.answers.skill) < 50 || /<invoke\b|<parameter\b/.test(r.answers.skill)).map((r) => r.id);
+  // Broken = no real answer: fake command markup (every break seen in these
+  // runs) or a near-empty reply. Correct short answers are not broken.
+  const broken = all.records.filter((r) => /<invoke\b|<parameter\b/.test(r.answers.skill) || wc(r.answers.skill) < 10).map((r) => r.id);
 
   const fmt = (t) => `${t.wins} won, ${t.losses} lost, ${t.ties} tied, p=${t.p.toFixed(4)}`;
   const lines = [

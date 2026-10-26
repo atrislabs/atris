@@ -1,0 +1,962 @@
+[
+  {
+    "id": "cake-pan-scale",
+    "a": "skill",
+    "b": "nudge",
+    "key": "acf5b56598cc77a6",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X handles the one-versus-two-layer ambiguity correctly; Y incorrectly says to double the per-pan amounts for a two-layer recipe and recommends reducing leavening without a sound basis.",
+      "Y correctly adjusts for a recipe that makes two 9-inch layers, while X incorrectly says to double the per-pan amounts; Y’s taller-fill sugar amount should be about ⅔ cup, not ¾ cup."
+    ]
+  },
+  {
+    "id": "cake-pan-scale",
+    "a": "nudge",
+    "b": "plain",
+    "key": "24afee044afadf47",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives usable ingredient amounts and a sensible doneness check; X adds unsupported pan-fill estimates and advises reducing the scaled leavening, which could compromise the cake.",
+      "X gives a usable per-pan scale and practical doneness checks; Y incorrectly says to double the amounts if the original recipe makes two layers and recommends reducing leavening without a sound basis."
+    ]
+  },
+  {
+    "id": "cake-pan-scale",
+    "a": "skill",
+    "b": "plain",
+    "key": "926acac581c84440",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X accounts for whether the recipe makes one or two 9-inch layers and gives a better bake-time check, though its taller-fill sugar amount should be ⅔ cup, not ¾ cup.",
+      "Y accounts for the possibility that the original recipe makes two layers and gives a safer early bake-time check, while X assumes one layer and may have the baker check a smaller cake too late."
+    ]
+  },
+  {
+    "id": "carbon-dating-remaining",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6200b64cc92de42f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct decay calculation and a useful sanity check, while Y adds unnecessary and partly unsupported precision and calibration claims.",
+      "Y gives the correct decay calculation and a useful check, while X expands the simple estimate into an unnecessary calibration and reporting analysis with unsupported precision claims."
+    ]
+  },
+  {
+    "id": "car-loan-extra-payment",
+    "a": "skill",
+    "b": "nudge",
+    "key": "de26347d1a70b3fe",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate about $810 extra per month, but Y catches the mismatch in the stated loan terms and gives a more accurate interest-savings estimate; X understates the remaining interest by assuming 34 payments of $372 pay off the loan.",
+      "Both give the right extra payment, but X catches that $372 leaves a balance after 34 months and gives a useful principal-payment check; Y’s interest-savings estimate ignores that remaining balance."
+    ]
+  },
+  {
+    "id": "car-loan-extra-payment",
+    "a": "skill",
+    "b": "plain",
+    "key": "9a85c41735f36bce",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the right approximate extra payment, but Y incorrectly says $372 over 34 months at 7.9% amortizes about $11,570; X’s consistency check is closer to correct.",
+      "Both give the right approximate extra payment, but X incorrectly says $372 over 34 months amortizes about $11,570 and calls a 12-month payoff about one year early; Y’s alternative timeline is correct."
+    ]
+  },
+  {
+    "id": "car-loan-extra-payment",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9f9ac49f82bbb8e4",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the right extra payment, but X’s check of the current loan is more accurate; Y incorrectly says $372 amortizes about $11,570 over 34 months and calls a 12-month payoff about one year early.",
+      "Y correctly checks that $372 would take slightly more than 34 months; X’s claim that it amortizes about $11,570 reverses the discrepancy and understates the current interest."
+    ]
+  },
+  {
+    "id": "carbon-dating-remaining",
+    "a": "skill",
+    "b": "plain",
+    "key": "4b021a9f41181a91",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the age correctly, but Y gives a sufficient sanity check more concisely.",
+      "Both calculate the age correctly, but X gives the same useful sanity check more concisely."
+    ]
+  },
+  {
+    "id": "csv-median-by-region",
+    "a": "skill",
+    "b": "plain",
+    "key": "a534f3179427cc90",
+    "winner": "tie",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct medians with equally clear, concise calculations and no scope growth.",
+      "Both give the correct medians with equally clear calculations and stay within the requested scope."
+    ]
+  },
+  {
+    "id": "carbon-dating-remaining",
+    "a": "nudge",
+    "b": "plain",
+    "key": "fde49fda16daf04a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y correctly calculates about 12,500 years and checks the result, while X adds unnecessary and uncertain calibration estimates beyond the requested calculation.",
+      "X correctly calculates the requested rough age and checks it, while Y adds unnecessary and partly speculative claims about measurement uncertainty and calendar calibration."
+    ]
+  },
+  {
+    "id": "csv-median-by-region",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f6cfb9b00a5b6be0",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives all three correct medians with just enough calculation to verify them, while Y adds unnecessary analysis and an overly broad warning against comparing regions.",
+      "Y gives all three correct medians with just enough calculation to verify them, while X adds an unrequested overall median, code, and an overly strong warning against comparing the regions."
+    ]
+  },
+  {
+    "id": "csv-median-by-region",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f0453a3220231ede",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the medians correctly, but Y answers the question directly while X adds unnecessary analysis and an overly broad warning against comparing the regions.",
+      "X gives the correct regional medians with just enough explanation, while Y adds unsolicited metrics and overstates what the small sample prevents us from comparing."
+    ]
+  },
+  {
+    "id": "dormant-customers-sql",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1787bf430616b335",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Both queries are correct, but X answers the request concisely with useful boundary notes, while Y adds an index migration and testing work beyond the requested query.",
+      "Both queries are correct, but Y gives the relevant boundary and performance caveats concisely, while X adds unnecessary operational detail and overstates how PostgreSQL will plan the query."
+    ]
+  },
+  {
+    "id": "dormant-customers-sql",
+    "a": "skill",
+    "b": "plain",
+    "key": "d20c5755ddf4b260",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct query, but Y is more concise and avoids X’s misleading suggestion to exclude future orders with a cutoff that could also exclude orders placed today.",
+      "Both queries are correct, but X is more concise and avoids Y’s misleading suggestion that `o.order_date <= CURRENT_DATE` excludes only future orders when `order_date` is a timestamp."
+    ]
+  },
+  {
+    "id": "dormant-customers-sql",
+    "a": "nudge",
+    "b": "plain",
+    "key": "563eb3ee2da4ef4f",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Both queries are correct, but Y answers the request concisely with the key boundary and index notes, while X adds an unrequested index change and excessive verification guidance.",
+      "X gives the correct query and a useful boundary caveat concisely; Y expands into indexing and verification work and suggests a future-date cutoff that would exclude most orders placed today if order_date is a timestamp."
+    ]
+  },
+  {
+    "id": "escalation-policy-design",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f072522ef7aa007e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a policy the manager can adapt and roll out Monday, while Y mainly describes an unseen file and adds templates, a rollout plan, and metrics beyond the requested policy.",
+      "Y provides a policy the manager can customize and roll out Monday, while X only describes a policy in a separate file; Y should still confirm after-hours coverage and avoid promising fixed outage resolution times."
+    ]
+  },
+  {
+    "id": "escalation-policy-design",
+    "a": "nudge",
+    "b": "plain",
+    "key": "85acca99d58721e7",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable policy in the answer, while X only describes an unseen file and adds a 30-day plan and metrics beyond the requested draft.",
+      "X provides a policy the manager can adapt and roll out immediately; Y describes an unseen file and expands the request into templates, an announcement, and a 30-day plan."
+    ]
+  },
+  {
+    "id": "escalation-policy-design",
+    "a": "skill",
+    "b": "plain",
+    "key": "29f06a31c0c627b5",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better addresses the constant interruptions with a rotating triage owner, clear routing, and timely outage updates, though its 24/7 P1 target needs an explicit coverage plan before rollout.",
+      "X is simpler to roll out and keeps manager escalations focused; Y’s unconditional 24/7 P1 target and broad escalation triggers could overwhelm a three-person team."
+    ]
+  },
+  {
+    "id": "expense-categorize",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a595747c607b3780",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives the correct totals and useful submission checks, while X’s alternative Other total is wrong: moving the $35 baggage fee there would make it $53.99, not $54.99.",
+      "Both give the requested totals, but X adds useful submission checks, while Y’s optional reclassification miscalculates Other ($53.99, not $54.99)."
+    ]
+  },
+  {
+    "id": "expense-categorize",
+    "a": "skill",
+    "b": "plain",
+    "key": "f8e75e6c3768b5f5",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct $900.94 grand total, while Y’s $901.00 is wrong, though X’s optional reclassification total for Other is also misstated.",
+      "Both category breakdowns are correct, but Y gives the correct grand total of $900.94; X overstates it by $0.06, although Y’s optional recategorization has a typo and an incorrect Other total."
+    ]
+  },
+  {
+    "id": "grid-column-width",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b1582acfa85c6296",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both correct their initial errors to 78 px, but X gives the needed calculation and check more concisely.",
+      "Both correct their initial errors to 78 px, but Y gives the calculation and check more concisely without X’s unnecessary layout details."
+    ]
+  },
+  {
+    "id": "expense-categorize",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e95396f504d24caf",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct $900.94 grand total and useful expense-report checks, while Y’s $901.00 grand total is wrong.",
+      "Y gives the correct $900.94 grand total and useful expense-report checks, while X incorrectly totals the receipts as $901.00."
+    ]
+  },
+  {
+    "id": "grid-column-width",
+    "a": "skill",
+    "b": "plain",
+    "key": "0b1fefc19797710c",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both correct their opening error and give 78 px, but Y’s check also accounts for the margins and verifies the full 1440 px width.",
+      "Both correct their misleading first lines to 78 px, but Y gives the same calculation and check more concisely."
+    ]
+  },
+  {
+    "id": "grid-column-width",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3ea41f14ce090771",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both correct their initial error, but Y gives the exact 78 px result with a concise check, while X adds unnecessary layout advice.",
+      "Both correct their initial error to 78 px, but X gives a shorter, clear calculation and check without Y’s unnecessary layout advice."
+    ]
+  },
+  {
+    "id": "karvonen-zones",
+    "a": "skill",
+    "b": "plain",
+    "key": "45978a87d6d224f4",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give correct Karvonen zones and the same useful caveat, but Y avoids X’s redundant calculation list.",
+      "Both give correct Karvonen zones and the key estimate caveat, but X delivers the same useful result without Y’s redundant calculations."
+    ]
+  },
+  {
+    "id": "karvonen-zones",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1d0cd7ba4053cb2e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate the zones correctly, but X answers the question directly and explains the estimated maximum and shared boundaries, while Y adds unnecessary training prescriptions and a strenuous field test.",
+      "Y gives the correct Karvonen ranges, shows the calculation, and explains the estimated maximum and shared boundaries without X’s unnecessary training prescriptions and field test advice."
+    ]
+  },
+  {
+    "id": "karvonen-zones",
+    "a": "nudge",
+    "b": "plain",
+    "key": "39cbd9102b1b1dd8",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the zones correctly, but Y answers the question clearly and flags the estimated max heart rate without adding X’s unnecessary and potentially misleading training prescriptions.",
+      "Both calculate the zones correctly, but X gives the requested ranges and the key limitation without Y’s unnecessary testing and training prescriptions."
+    ]
+  },
+  {
+    "id": "mileage-reimbursement",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5afbab46d5b6022f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate $168.84 correctly, but X answers the arithmetic question directly while Y adds unnecessary checks and potentially misleading tax and policy claims.",
+      "Y gives the correct total directly; X adds unnecessary checks, including a misleading claim about IRS reimbursement of commuting miles."
+    ]
+  },
+  {
+    "id": "mileage-reimbursement",
+    "a": "skill",
+    "b": "plain",
+    "key": "179ad14dcc047914",
+    "winner": "tie",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both answers correctly total 252 miles and calculate the reimbursement as $168.84, with no difference in scope or usefulness.",
+      "Both answers give the same correct mileage total and reimbursement without expanding the scope."
+    ]
+  },
+  {
+    "id": "mileage-reimbursement",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e21b4e918dd1697f",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate $168.84 correctly, but Y answers the question directly while X adds unnecessary checks and an imprecise claim about IRS reimbursement.",
+      "X gives the correct total and calculation concisely, while Y adds unnecessary checks and a potentially misleading claim about commute reimbursement."
+    ]
+  },
+  {
+    "id": "molarity-conversion",
+    "a": "skill",
+    "b": "nudge",
+    "key": "dda731ad93ac78c0",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct conversion clearly, while Y expands into unrequested preparation and biological claims, including an unsupported uncertainty comparison.",
+      "Y gives the correct conversion directly, while X adds unrequested preparation and physiological guidance, including a questionable uncertainty claim."
+    ]
+  },
+  {
+    "id": "molarity-conversion",
+    "a": "skill",
+    "b": "plain",
+    "key": "5152f09e5fec4892",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both are correct and concise, but X shows the mM conversion explicitly, making the calculation easier to check.",
+      "Both conversions are correct, but X gives the calculation and units more concisely."
+    ]
+  },
+  {
+    "id": "molarity-conversion",
+    "a": "nudge",
+    "b": "plain",
+    "key": "33ff155af61f25ba",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct conversion and rounding directly; X adds an unrequested preparation procedure and biological claims, including an unsupported uncertainty comparison.",
+      "X gives the correct conversion clearly; Y adds unrequested preparation and physiological claims, including an unsupported uncertainty comparison."
+    ]
+  },
+  {
+    "id": "paint-finish-choice",
+    "a": "skill",
+    "b": "nudge",
+    "key": "ac9c45eb3f85a372",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a sound satin bathroom-paint choice, adjusts primer color to the new paint, and flags cure time before scrubbing; X incorrectly suggests PVA primer and gray tint for every color.",
+      "X gives the better bathroom-wall recommendation and correctly pairs a light new color with white high-hide primer; Y’s suggestion of PVA primer and gray tint under a light color could lead to poor adhesion or extra coats."
+    ]
+  },
+  {
+    "id": "oil-change-interval",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a24296c2c1bac00c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the better oil-change guidance by prioritizing the Maintenance Minder, annual limit, and specified 0W-20 grade; Y overstates that full synthetic is required and expands into a broader maintenance checklist.",
+      "Y correctly prioritizes the Maintenance Minder and specified 0W-20 grade without falsely ruling out conventional oil that meets Honda’s specification; X makes that error and expands into unrelated maintenance work."
+    ]
+  },
+  {
+    "id": "oil-change-interval",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6651907f92ecf13f",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the clearer oil-change guidance; X incorrectly says conventional oil is inherently wrong, although [Honda permits it](https://crmshonda.my.salesforce-sites.com/hondaknowledge/articles/Knowledge/What-type-of-motor-oil-should-I-use-in-my-Honda) when it meets the specified viscosity and grade, and X adds unrelated maintenance work.",
+      "X better answers the oil question and follows Honda’s Maintenance Minder, while Y incorrectly says conventional oil is categorically wrong and expands into unrelated maintenance work."
+    ]
+  },
+  {
+    "id": "paint-finish-choice",
+    "a": "skill",
+    "b": "plain",
+    "key": "2e22acc99fb72230",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a practical satin recommendation and clear prep steps; X’s suggested PVA primer is intended for new drywall and is a poor choice over existing bathroom paint.",
+      "X gives a practical satin choice and coverage plan; Y is longer than requested and incorrectly suggests PVA primer over existing paint."
+    ]
+  },
+  {
+    "id": "paint-finish-choice",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9478d5da52902297",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the better primer tint guidance for covering dark blue and flags the paint’s cure time before scrubbing; Y incorrectly suggests gray primer for a light topcoat and unnecessarily favors oil-based primer.",
+      "Y gives better primer tint guidance and, crucially, tells them to let the paint cure before scrubbing, though it is longer than requested."
+    ]
+  },
+  {
+    "id": "oil-change-interval",
+    "a": "skill",
+    "b": "plain",
+    "key": "9bb1ed347d2b277c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the more actionable guidance: use the specified 0W-20, service at the Maintenance Minder alert or annually, and check oil level regularly at 96,000 miles, though it includes unnecessary detail.",
+      "Y gives the better next step: use 0W-20, follow the Maintenance Minder with Honda’s 12-month limit, and check the oil level; X’s 5,000–7,500-mile ceiling undercuts its advice to follow the Minder."
+    ]
+  },
+  {
+    "id": "rate-limit-backoff",
+    "a": "skill",
+    "b": "nudge",
+    "key": "db9cf25652da9de0",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is the safer choice because it raises after five failed attempts and verifies the retry boundaries thoroughly, while Y returns a failed response that callers could overlook.",
+      "X gives a usable call example and covers practical concerns such as timeouts, connection cleanup, and final error handling, while Y spends more space on test details without showing how to use the function."
+    ]
+  },
+  {
+    "id": "rate-limit-backoff",
+    "a": "skill",
+    "b": "plain",
+    "key": "ff7e0fdb155df2ec",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "X meets the requested retry conditions and reports tests for them; Y also retries connection errors and timeouts, contrary to the explicit restriction.",
+      "X provides usable code, though it also retries network errors; Y expands the request into files and tests but does not show the function."
+    ]
+  },
+  {
+    "id": "reorder-point-calc",
+    "a": "skill",
+    "b": "nudge",
+    "key": "42f8e9adb76fea04",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X correctly gives the 182-unit reorder point and 56 units remaining on arrival, while Y adds an unnecessary inventory-planning project and treats the requested four-day buffer as if it must be statistically derived.",
+      "Y gives the correct 182-unit trigger and 56-unit remaining stock directly, while X expands a simple calculation into an unnecessary inventory-planning project."
+    ]
+  },
+  {
+    "id": "reorder-point-calc",
+    "a": "skill",
+    "b": "plain",
+    "key": "a1f0c5f7ad92829b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct 182-unit reorder point and 56 units remaining, but X delivers the same useful guidance more concisely.",
+      "Both give the correct 182-unit reorder point and 56 units remaining on arrival, with no meaningful difference in actionable guidance."
+    ]
+  },
+  {
+    "id": "reorder-point-calc",
+    "a": "nudge",
+    "b": "plain",
+    "key": "4058802fe5d5c76a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct 182-unit reorder point and 56-unit arrival balance with a useful buffer check, while X adds an unnecessary inventory analysis project.",
+      "X correctly answers both questions with a usable trigger, while Y adds unnecessary inventory-planning work and assumes a seasonal sales increase without evidence."
+    ]
+  },
+  {
+    "id": "rate-limit-backoff",
+    "a": "nudge",
+    "b": "plain",
+    "key": "99ae3d77e18713e7",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X meets the 429/5xx-only retry requirement and addresses timeouts and Retry-After, while Y also retries network errors despite the explicit restriction.",
+      "X provides a usable function in the answer, while Y adds unrequested files and tests but supplies only an import from files that are not present."
+    ]
+  },
+  {
+    "id": "screen-time-plan",
+    "a": "skill",
+    "b": "plain",
+    "key": "cce100d2db73b277",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clear, flexible plan the parent can use today, while X turns a simple request into an agreement, device setup, and tracking project with unnecessary rules.",
+      "X gives a clear, flexible plan the parent can use today, while Y turns a simple routine into an agreement, device setup, and tracking project."
+    ]
+  },
+  {
+    "id": "screen-time-plan",
+    "a": "skill",
+    "b": "nudge",
+    "key": "993feb3692f79c51",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a workable weekday and weekend routine with clear ways to reduce arguments, while X turns a simple plan into a device setup and tracking project.",
+      "X gives a usable weekday and weekend plan with practical ways to reduce arguments, while Y turns a simple routine into an agreement, device setup, and tracking project."
+    ]
+  },
+  {
+    "id": "sku-price-lookup",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2b456039bc6d2a29",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives the correct formula and the useful IFNA alternative concisely; Y adds largely unnecessary checks and an audit formula for this simple request.",
+      "Y gives the requested formula and the useful IFNA alternative concisely, while X adds unnecessary troubleshooting and an optional audit."
+    ]
+  },
+  {
+    "id": "sku-price-lookup",
+    "a": "skill",
+    "b": "plain",
+    "key": "4c0026d6a3171f04",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct formula, but X is more concise and identifies the supported Excel versions for XLOOKUP.",
+      "Both give the correct formula, but Y more clearly recommends IFNA to expose other errors and adds a useful ISBLANK caveat."
+    ]
+  },
+  {
+    "id": "screen-time-plan",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3468ef337b7427d7",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clearer, shorter plan with a consistent response to requests for more time, making it easier to use amid weekday arguments.",
+      "X gives a clearer weekday and weekend routine with practical steps for ending arguments, while Y adds enough rules and repetition to make the plan harder to follow."
+    ]
+  },
+  {
+    "id": "sku-price-lookup",
+    "a": "nudge",
+    "b": "plain",
+    "key": "fb9010a5e4c266e3",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct formula and useful IFNA alternative concisely, while X adds unnecessary troubleshooting and an audit formula for this simple request.",
+      "Y gives the formula and recommends IFNA or XLOOKUP so missing SKUs appear blank without hiding unrelated errors; its extra checks remain within the lookup task."
+    ]
+  },
+  {
+    "id": "soil-volume-bed",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a95b8f1e367292d5",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct volumes and bag counts concisely, while Y adds a larger set of optional tasks and some questionable soil-mix advice.",
+      "Y gives the correct volumes and bag counts with a useful settling note, while X expands the simple calculation into extensive and sometimes questionable bed-building advice."
+    ]
+  },
+  {
+    "id": "soil-volume-bed",
+    "a": "skill",
+    "b": "plain",
+    "key": "f3355cf6f85c09d8",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the bags correctly, but X adds a useful bulk-buying conversion and avoids Y’s suggestion to top off with either material, which could change the requested 60/40 mix.",
+      "Both calculate the amounts correctly, but Y adds a useful bulk-purchase conversion without suggesting that extra bags of either material will preserve the requested mix."
+    ]
+  },
+  {
+    "id": "soil-volume-bed",
+    "a": "nudge",
+    "b": "plain",
+    "key": "853dd61c1268b246",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the bags correctly, but Y gives the needed shopping quantities and a useful settling note, while X expands into unnecessary and partly questionable bed-building advice.",
+      "Both calculate the amounts correctly, but X gives a clear shopping count while Y expands a simple fill calculation into a larger project with several unnecessary or questionable recommendations."
+    ]
+  },
+  {
+    "id": "subject-line-pick",
+    "a": "skill",
+    "b": "nudge",
+    "key": "299c0540f54682f8",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives the same strong pick with a clearer check that the email delivers on “3 more” and better guidance to judge the result by visits or redemptions; Y adds unsupported claims about preview text and the other subject lines.",
+      "Y makes the same strong pick more concisely, checks that the email delivers on the subject line’s promise, and focuses on clicks or purchases rather than opens."
+    ]
+  },
+  {
+    "id": "subject-line-pick",
+    "a": "skill",
+    "b": "plain",
+    "key": "352e41dfe29f233a",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes the same strong pick as Y but adds a crucial check that the email contains the promised four items and gives a more concrete way to evaluate the choice.",
+      "Y makes the same strong pick but adds the crucial check that the email delivers the four promised items and suggests judging results by customer action rather than opens."
+    ]
+  },
+  {
+    "id": "subject-line-pick",
+    "a": "nudge",
+    "b": "plain",
+    "key": "068a949a37444810",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes the same strong pick and adds useful checks that the email delivers the promised items and that any test measures clicks or orders rather than opens.",
+      "Both choose the strongest line, but Y adds useful checks that the email delivers on the promised three items and that success is judged by clicks or orders rather than opens."
+    ]
+  },
+  {
+    "id": "two-hour-connection",
+    "a": "skill",
+    "b": "plain",
+    "key": "c12e1ab92e7329e8",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes the decisive bag-drop deadline clear and describes Denver’s concourses more accurately; both should verify the airlines’ actual bag policies.",
+      "Y shows that a typical 45-minute bag cutoff is just 10 minutes after the scheduled arrival and correctly treats Denver’s gate areas as concourses, making its recommendation to change flights more reliable despite the extra padding."
+    ]
+  },
+  {
+    "id": "two-hour-connection",
+    "a": "nudge",
+    "b": "plain",
+    "key": "b39db6d96425d3d6",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X calculates that a 45-minute bag-drop cutoff would be just 10 minutes after landing and describes Denver’s one-terminal, three-concourse layout more accurately; Y misleadingly refers to travel between terminals.",
+      "Y gives the decisive bag-drop cutoff calculation and a clear reason to change the flight now, although both answers describe DEN’s [single terminal](https://www.flydenver.com/international-travelers/) imprecisely."
+    ]
+  },
+  {
+    "id": "two-hour-connection",
+    "a": "skill",
+    "b": "nudge",
+    "key": "402f72e611b7508a",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives the clearer decision based on the bag-check deadline and correctly treats DEN’s gates as concourses; Y refers to a transfer between terminals even though DEN has [one terminal and three concourses](https://www.flydenver.com/at-the-airport/).",
+      "X identifies the decisive bag-check cutoff, recommends changing the flight, and offers a useful carry-on alternative without Y’s longer, partly speculative timeline."
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "id": "molarity-conversion",
+  "field": "chemistry lab",
+  "task": "My lab sheet says a solution has a concentration of 3.5 g/L of sodium chloride. NaCl has a molar mass of 58.44 g/mol. What is that in mol/L and in mM?",
+  "made": {
+    "base": "bbde2db5d53bd050",
+    "skill": "549db9ded2dc900c"
+  },
+  "rewrite": "deeper task:\nMy lab sheet says a solution has a concentration of 3.5 g/L of sodium chloride. NaCl has a molar mass of 58.44 g/mol. What is that in mol/L and in mM?",
+  "deeper": "My lab sheet says a solution has a concentration of 3.5 g/L of sodium chloride. NaCl has a molar mass of 58.44 g/mol. What is that in mol/L and in mM?",
+  "answers": {
+    "plain": "Divide the mass concentration by the molar mass:\n\n3.5 g/L ÷ 58.44 g/mol ≈ **0.0599 mol/L**\n\nThat is about **0.060 mol/L**, or about **59.9 mM** (roughly 60 mM). To get mM, multiply mol/L by 1000.",
+    "nudge": "**Calculation**\n\nmolarity = mass concentration ÷ molar mass\n= 3.5 g/L ÷ 58.44 g/mol\n= 0.05989 mol/L\n\n**Answer: ≈ 0.060 mol/L = ≈ 59.9 mM**\n\nSince 1 mol/L = 1000 mM, 0.05989 mol/L × 1000 = 59.89 mM.\n\n**Significant figures:** The 3.5 g/L has two significant figures, so the properly rounded result is **0.060 M (60 mM)**. I'd carry 59.9 mM in intermediate steps and round only at the end.\n\n**Checks a careful practitioner would do**\n\n- **Sanity check:** 58.44 g is 1 mol, so 3.5 g is about 6% of a mole. That gives about 0.06 mol/L, which matches.\n- **Ionic concentration:** NaCl dissociates fully, so 60 mM NaCl gives about 60 mM Na⁺ and 60 mM Cl⁻. That is about 120 mOsm/L in ideal terms. The real osmolality is a bit lower, roughly 0.93 × ideal, because of activity effects.\n- **Comparison:** Physiological saline (0.9% w/v) is 9 g/L, or about 154 mM. This solution is roughly 40% of that strength. It is hypotonic, so cells such as red blood cells would swell in it.\n- **Check the sheet's wording:**\n  - \"g/L\" is different from \"% w/v\" (3.5 g/L = 0.35% w/v).\n  - It is also different from \"g per kg of solution\" (w/w). At this dilution the difference is small, but it matters for concentrated solutions.\n- **Preparing 1 L:** Dissolve 3.5 g NaCl, weighed to ±0.01 g, in less than 1 L of water. Then make up to the 1 L mark in a volumetric flask. Adding the salt to exactly 1 L of water would give a slightly larger volume and a slightly lower concentration.\n- **Uncertainty:** On a balance with ±0.01 g, 3.5 g is ±0.3%, which is negligible next to the uncertainty in the volume.\n\n**Formula for other cases:**\n- mM = (g/L ÷ M) × 1000\n- Here, (3.5 ÷ 58.44) × 1000 = 59.9 mM.",
+    "skill": "Divide the mass concentration by the molar mass:\n\n3.5 g/L ÷ 58.44 g/mol ≈ **0.0599 mol/L**\n\nSince 1 mol/L = 1000 mM:\n\n0.0599 mol/L × 1000 ≈ **59.9 mM**\n\nThat's about 0.060 M, or roughly 60 mM."
+  }
+}

@@ -66,3 +66,23 @@ test('resume drops a verdict whose answer changed, even when another pair has th
   const kept = keepVerdicts([after], saved).map((v) => `${v.a}|${v.b}`);
   assert.deepEqual(kept, ['nudge|plain']);
 });
+
+test('gate fails an answer made of fake command calls but not a correct short one', () => {
+  const dir = fakeSet(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']);
+  const short = JSON.parse(fs.readFileSync(path.join(dir, 'm1.json'), 'utf8'));
+  short.answers.skill = 'Total miles: 42 + 58 + 31 + 104 + 17 = **252 miles**\n\nReimbursement: 252 × $0.67 = **$168.84**';
+  fs.writeFileSync(path.join(dir, 'm1.json'), JSON.stringify(short));
+  const fake = JSON.parse(fs.readFileSync(path.join(dir, 'm2.json'), 'utf8'));
+  fake.answers.skill = '<invoke name="Bash"><parameter name="command">ls</parameter></invoke>';
+  fs.writeFileSync(path.join(dir, 'm2.json'), JSON.stringify(fake));
+  // rewrite keys so only the broken-answer line can fail
+  const verdicts = JSON.parse(fs.readFileSync(path.join(dir, 'verdicts.json'), 'utf8'));
+  for (const v of verdicts) {
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, `${v.id}.json`), 'utf8'));
+    v.key = verdictKey(rec, v.a, v.b);
+  }
+  fs.writeFileSync(path.join(dir, 'verdicts.json'), JSON.stringify(verdicts));
+  const run = gate(dir, fakeSet(['w1', 'w2']));
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /FAIL {2}5 nothing broken\s+m2$/m);
+});

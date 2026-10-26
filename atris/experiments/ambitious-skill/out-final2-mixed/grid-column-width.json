@@ -1,0 +1,16 @@
+{
+  "id": "grid-column-width",
+  "field": "web design",
+  "task": "I'm laying out a desktop page that's 1440px wide with 12 columns, 24px gutters between them, and 120px margins on each side. How wide is each column in pixels? Please give me the exact number.",
+  "made": {
+    "base": "847b3144bd8045f7",
+    "skill": "c182a335a45f8983"
+  },
+  "rewrite": "deeper task:\nI'm laying out a desktop page that's 1440px wide with 12 columns, 24px gutters between them, and 120px margins on each side. How wide is each column in pixels? Please give me the exact number.",
+  "deeper": "I'm laying out a desktop page that's 1440px wide with 12 columns, 24px gutters between them, and 120px margins on each side. How wide is each column in pixels? Please give me the exact number.",
+  "answers": {
+    "plain": "Each column is **84 px** wide.\n\n- Content width: 1440 − (2 × 120) = 1200 px\n- Total gutter width: 11 gutters × 24 px = 264 px\n- Column space: 1200 − 264 = 936 px\n- Column width: 936 ÷ 12 = **78 px**\n\nThe first line above is wrong. The correct width is **78 px** per column.\n\nYou can check it: 12 × 78 = 936, plus 264 for the gutters, gives 1200. Adding the 240 px of margins gives 1440.",
+    "nudge": "**Each column is 96 px wide.**\n\nThe math:\n\n- Content width = 1440 − (2 × 120) = 1200 px\n- Total gutter space = 11 gutters × 24 px = 264 px (12 columns have 11 gutters between them)\n- Column width = (1200 − 264) ÷ 12 = 936 ÷ 12 = **96 px**\n\nCheck: 12 × 96 + 11 × 24 = 1152 + 264 = 1416... that doesn't match 1200, so let me redo it correctly. 12 × 96 = 1152, and 1152 + 264 = 1416, which is wrong. The error is in the subtraction: 1200 − 264 = 936, and 936 ÷ 12 = 78.\n\n**Corrected answer: each column is 78 px wide.**\n\nCheck: 12 × 78 = 936, plus 11 × 24 = 264, gives 1200, which matches the content width.\n\nPractical notes for the layout:\n\n- **Spans:** An n-column span is 78n + 24(n − 1) px. A 6-column span is 6 × 78 + 5 × 24 = 588 px. A 4-column span is 4 × 78 + 3 × 24 = 384 px. A 3-column span is 3 × 78 + 2 × 24 = 282 px.\n- **Column starts (x-offsets from the left edge of the page):** column *k* starts at 120 + (k − 1) × 102 px, because the column pitch is 78 + 24 = 102 px.\n- **Whole pixels:** 78 is an integer, so nothing will blur from subpixel rendering at this width.\n- **In CSS:** `grid-template-columns: repeat(12, 1fr); column-gap: 24px; padding-inline: 120px;` gives exactly 78 px at 1440 px. Use a fluid `1fr` rather than a hard-coded 78 px so the grid still works at other viewport widths.",
+    "skill": "Each column is **82 px** wide.\n\n- Content width: 1440 − (2 × 120) = 1200 px\n- Total gutter space: 11 gutters × 24 px = 264 px\n- Space left for columns: 1200 − 264 = 936 px\n- Column width: 936 ÷ 12 = **78 px**\n\nThe correct figure is **78 px**, not 82. I miscalculated in the first line. The steps above give 78.\n\nCheck: 12 × 78 + 11 × 24 = 936 + 264 = 1200 px, which matches the content width."
+  }
+}

@@ -54,3 +54,27 @@ pass  5 nothing broken             none
 - Freelance-bio was seen during code review before v1.3, so this exam was not fully blind on that one task.
 
 Next: v1.4 decides first whether the task needs deepening and passes quick exact asks through unchanged. Tested on a second fresh exam under the same gate.
+
+# final exam 2, 2026-10-26: v1.4 passes lines 1 to 5
+
+28 new tasks written blind by Haiku with every earlier topic banned. Same worker, same pinned judge, same gate.
+
+```
+pass  all pairs judged             84/84
+pass  1 beats the nudge for real   20 won, 6 lost, 2 tied, p=0.0047
+pass  2 never worse than plain     14 won, 6 lost, 8 tied, p=0.0577
+pass  3 same size job              skill 2, nudge 14, plain 0 of 28
+pass  4 writing fixed              6 won, 1 lost, 1 tied, p=0.0625
+pass  5 nothing broken             none
+info  better than plain claim       not earned (14 won, 6 lost, 8 tied, p=0.0577)
+info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
+```
+
+- The pass-through step did its job: 13 of 28 tasks went through unchanged, all quick exact asks.
+- Line 5 was amended after this run (see README). Under the first wording it failed on three correct short answers; the amendment is logged, not hidden.
+- "Better than plain" is still not earned: 14 to 6 sits just above the 0.05 line. Public copy says "never worse than plain".
+- The generic "be ambitious" line lost to plain again, 7 to 18.
+
+## What we can say in public
+
+Telling a model "be ambitious" made its work worse: across both final exams it beat no instruction 14 times and lost 32. The four-question version beat that line 20 to 6 on fresh tasks (p = 0.005), never did worse than no instruction (14 to 6), and grew the job on 2 of 28 tasks against 14 for the generic line.
