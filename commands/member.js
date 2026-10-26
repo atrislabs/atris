@@ -986,7 +986,7 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   // of scope"). Member lab: these jobs fell back to a whitespace check.
   // Only sentences that ask for the work count; "x is out of scope" or "do not
   // run the failing tests" must not pick a check.
-  const asks = text.split(/[;\n]+|\.(?=\s|$)/).filter((part) => part.trim()
+  const asks = text.split(/[;,\n]+|\.(?=\s|$)|\s(?:and|but)\s/i).filter((part) => part.trim()
     && !/\b(out\s+of\s+scope|do\s+not|don't|never|without|skip|ignore|leave|except|known\s+bug|reference)\b/i.test(part)).join('. ');
   const testScript = projectTestScript(cwd);
   // The project runs node's test runner itself, not as part of another command.

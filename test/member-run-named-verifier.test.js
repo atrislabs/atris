@@ -69,6 +69,7 @@ test('a named test file or "the failing tests" become the check in a node --test
     fs.writeFileSync(path.join(dir, 'checks', 'legacy.js'), '');
     assert.equal(inferMemberRunVerifier('checks/legacy.js is out of scope; fix the failing shipping tests', [], dir), 'npm test');
     assert.equal(inferMemberRunVerifier('Update docs; do not run the failing tests', [], dir), '');
+    assert.equal(inferMemberRunVerifier('fix the failing tests and leave the docs alone', [], dir), 'npm test');
     fs.mkdirSync(path.join(path.dirname(dir), 'x'), { recursive: true });
     fs.writeFileSync(path.join(path.dirname(dir), 'x', 'order.test.js'), '');
     assert.equal(inferMemberRunVerifier('Fix shipping.js using ../x/order.test.js', [], dir), '');
