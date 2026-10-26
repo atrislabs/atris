@@ -7,6 +7,8 @@ test('a test run piped into a filter loses its exit code', () => {
   assert.equal(isMaskedRun('node --test test/a.test.js 2>&1 | tail -15'), true);
   assert.equal(isMaskedRun("npm test | grep -E 'pass|fail'"), true);
   assert.equal(isMaskedRun('set -o pipefail; node --test 2>&1 | tail'), false);
+  assert.equal(isMaskedRun('node --test a.js 2>&1 | tail -9; echo "exit=${pipestatus[1]}"'), false);
+  assert.equal(isMaskedRun('node --test a.js 2>&1 | tail -9; echo "exit=$?"'), true);
   assert.equal(isMaskedRun('node --test test/a.test.js; echo "exit=$?"'), false);
   assert.equal(isMaskedRun('node tool.js bogus || echo failed'), false);
   assert.equal(isMaskedRun('git log | head'), false);

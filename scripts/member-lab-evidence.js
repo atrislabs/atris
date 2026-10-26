@@ -42,7 +42,7 @@ function isRun(cmd) {
 }
 
 function isMaskedRun(cmd) {
-  if (/pipefail|PIPESTATUS/.test(cmd)) return false;
+  if (/pipefail|pipestatus/i.test(cmd)) return false;
   return segments(cmd).some((s) => RUN.test(s) && MASK.test(s) && !/^\s*(atris|git)\b/.test(s));
 }
 
