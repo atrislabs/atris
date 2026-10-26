@@ -1,28 +1,29 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-23
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
-  - commands/wiki.js:549-557 (wiki loop alias)
-  - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
-  - lib/wiki.js:620-705 (suggested sources, STATUS, log)
-  - bin/atris.js:922-940 (showLoopHelp)
-  - bin/atris.js:2743-2751 (top-level loop route, now via commands/loop-front.js)
-  - test/commands.test.js:18016 (loop help coverage)
-  - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
+  - commands/wiki.js:586-595 (wiki loop alias)
+  - lib/wiki.js:443-572 (page reads, stale checks, orphan checks)
+  - lib/wiki.js:745-829 (suggested sources, STATUS, log)
+  - commands/loop-front.js:34-70 (top-level loop router, wiki forwarded to loop.js)
+  - bin/atris.js:1113-1131 (showLoopHelp)
+  - bin/atris.js:3251-3259 (top-level loop route, now via commands/loop-front.js)
+  - test/commands-8.test.js:324 (loop help coverage)
+  - test/commands-8.test.js:2033-2102 (loop stale/suggest/alias coverage)
 ---
 
 # Wiki Upkeep Loop: Validation
 
-> **Status:** shipped local upkeep command; the entry point moved to `atris loop wiki`
-> **Validated:** 2026-07-25
+> **Status:** shipped local upkeep command; the entry point is `atris loop wiki`
+> **Validated:** 2026-10-23
 > **Exit condition:** `atris loop wiki` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
 
 ## Checks
 
 - [x] `atris loop wiki` runs against `atris/wiki/`
-- [x] `atris wiki loop` routes to the same upkeep logic
-- [ ] Bare `atris loop` runs wiki upkeep. It no longer does. `bin/atris.js:2743` now routes `loop` to `commands/loop-front.js`, the single front door to the self-improvement loop, which delegates to `run.js` and `pulse.js` and forwards only the `wiki` subcommand to `commands/loop.js`. Bare `atris loop` prints the self-improvement loop home screen. The `loop` help line at `bin/atris.js:543` still describes the old wiki behavior and is now wrong.
-- [x] `--dry-run` reports without rewriting `STATUS.md` or `log.md`
+- [x] `atris wiki loop` routes to the same upkeep logic. It prints an `ACTION TAKEN` line before the report, so `atris wiki loop --json` is not pure JSON; use `atris loop wiki --json` for tools.
+- [ ] Bare `atris loop` runs wiki upkeep. It does not, by design. `bin/atris.js:3251` routes `loop` to `commands/loop-front.js`, the single front door to the self-improvement loop, which delegates to `run.js` and `pulse.js` and forwards only the `wiki` subcommand to `commands/loop.js`. Bare `atris loop` prints the self-improvement loop home screen. `atris loop --help` (`showLoopHelp`) and the top-level help line both point at `atris loop wiki` for wiki upkeep.
+- [x] `--dry-run` reports without rewriting `STATUS.md` or `log.md`. It still creates the empty wiki scaffold if `atris/wiki/` is missing, because the report builder calls `ensureWikiScaffold` first.
 - [x] `--json` emits the same report object for tools
 - [x] `--limit=N` bounds next-ingest suggestions
 - [x] `STATUS.md` refreshes `Last loop`, `Health`, and `Next move`
@@ -31,12 +32,12 @@ sources:
 - [x] orphan page detection works
 - [x] next-ingest suggestions work
 - [x] targeted tests pass
-- [ ] current repo reports a clean public wiki. It does not, as of 2026-07-25: 1 stale page and 1 orphan page. The detector working is the point of this feature; the content debt is tracked on the wiki side.
+- [ ] current repo reports a clean public wiki. Not applicable any more: `atris/wiki/` is gitignored local workspace memory, so a fresh checkout has no pages to report on. The detector working is the point of this feature.
 
 ## Current Verification
 
 ```bash
-node --test test/commands.test.js --test-name-pattern 'wiki|loop'
+node --test --test-name-pattern 'wiki|loop' test/commands-8.test.js
 node -c commands/loop.js
 node -c commands/wiki.js
 node -c lib/wiki.js
@@ -49,15 +50,14 @@ node bin/atris.js loop wiki --json
 
 ## Current Repo Report
 
-_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-07-25 - recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
+_Point-in-time snapshot from `node bin/atris.js loop wiki --dry-run --json` in a fresh checkout on 2026-10-23. The wiki is local and changes with every ingest, so a mismatch here is drift, not a bug._
 
-- Reports 26 pages, 1 stale page, 1 orphan page, and 0 next-ingest candidates.
-- Stale: `atris/wiki/concepts/wisdom-traditions-operating-doctrine.md`, reason `missing last_compiled`. Orphan: `atris/wiki/systems/loops.md`.
-- Health is `1 stale page need recompiling`.
-- Next move is to recompile `atris/wiki/concepts/wisdom-traditions-operating-doctrine.md` from its source.
+- Reports 0 pages, 0 stale pages, 0 orphan pages, and 3 next-ingest candidates: `README.md`, `atris/CLAUDE.md`, `atris/atris.md`.
+- Health is `wiki is stable, 3 high-value sources ready for ingest`.
+- Next move is `ingest README.md`.
 
 ## Notes
 
 - The upkeep command is local-first and does not auto-push.
-- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits with guidance to run local upkeep first.
+- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits 1 with guidance to run local upkeep first. That message still says "Run local `atris loop` first", which predates the move to `atris loop wiki`.
 - Scheduling belongs to the next layer; this feature just makes upkeep callable and testable.
