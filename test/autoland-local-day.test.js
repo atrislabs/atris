@@ -67,3 +67,20 @@ test('the upgrade from UTC stamps neither repeats nor skips a digest', () => {
   `);
   assert.deepEqual(JSON.parse(out), [true, false, true, false, false]);
 });
+
+test('across the spring clock change an old stamp sends the digest instead of skipping it', () => {
+  const res = spawnSync(process.execPath, ['-e', `
+    const { digestSentToday } = require(process.env.ROOT + '/commands/autoland');
+    // 4 pm on Mar 7 (winter time) and 4 pm on Mar 8 (summer time) are both Mar 8 in UTC
+    const now = new Date(2026, 2, 8, 16, 5);
+    const normal = new Date(2026, 2, 12, 16, 5);
+    console.log(JSON.stringify([
+      digestSentToday({ last_digest_date: '2026-03-08' }, now),
+      digestSentToday({ last_digest_date: '2026-03-12' }, normal),
+      digestSentToday({ last_digest_date: '2026-03-13' }, normal),
+    ]));
+  `], { encoding: 'utf8', env: { ...process.env, TZ: 'America/Los_Angeles', ROOT, ATRIS_SKIP_UPDATE_CHECK: '1', CI: '1' } });
+  assert.equal(res.status, 0, res.stderr);
+  // ambiguous: send; 4 pm summer time is 11 pm UTC the same day, so Mar 12 is tonight
+  assert.deepEqual(JSON.parse(res.stdout.trim()), [false, true, false]);
+});

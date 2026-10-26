@@ -1008,12 +1008,16 @@ function mergedCloseNote(receipt) {
 }
 
 // The digest goes out once per local day. A stamp written before the switch
-// to local days is a UTC day: compare it to the UTC day once, so the upgrade
-// neither repeats nor skips a digest.
+// to local days is the UTC day of a send at this same local hour, today or
+// yesterday. Across a clock change both can be the same UTC day; that stamp
+// cannot say which, so the digest goes out rather than go quiet.
 function digestSentToday(state, now = new Date()) {
   if (!state || !state.last_digest_date) return false;
-  const key = state.last_digest_local ? localDay(now) : now.toISOString().slice(0, 10);
-  return state.last_digest_date === key;
+  if (state.last_digest_local) return state.last_digest_date === localDay(now);
+  const utcDay = (d) => d.toISOString().slice(0, 10);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
 }
 
 async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
