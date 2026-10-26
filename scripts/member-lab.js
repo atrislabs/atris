@@ -54,7 +54,7 @@ function makeCtx(workspace, fixtureDir) {
     env,
     run(command, args = [], opts = {}) {
       return spawnSync(command, args, {
-        cwd: opts.cwd || workspace, encoding: 'utf8', env, input: opts.input,
+        cwd: opts.cwd || workspace, encoding: 'utf8', env: { ...env, ...(opts.env || {}) }, input: opts.input,
         timeout: Number(opts.timeoutMs || 60000), maxBuffer: 16 * 1024 * 1024,
       });
     },
