@@ -45,10 +45,20 @@ test('a worker that edits what the test command runs is caught, adding other fil
     fs.mkdirSync(path.join(dir, 'checks'));
     fs.writeFileSync(path.join(dir, 'checks', 'a.js'), '');
     fs.writeFileSync(path.join(dir, 'app.js'), 'old');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'old');
     git('add', '-A'); git('commit', '-qm', 'seed');
     const before = { head: git('rev-parse', 'HEAD').stdout.trim() };
     fs.writeFileSync(path.join(dir, 'app.js'), 'new');
     assert.equal(tickTouchedCheckDefinition('npm test', before, dir), false);
+    // The source file a.js shares a name with the test checks/a.js, and is not it.
+    fs.writeFileSync(path.join(dir, 'a.js'), 'fixed');
+    assert.equal(tickTouchedCheckDefinition('npm test', before, dir), false);
+    assert.equal(tickTouchedCheckDefinition('node --test ./checks/a.js', before, dir), false);
+    // A file the check names outright counts, through shell punctuation and full paths.
+    for (const check of ['node a.js; echo ok', 'node a.js&&echo ok', '(node a.js)', 'node a.js>out.log',
+      'node ./a.js', 'node $PWD/a.js', `node ${path.join(dir, 'a.js')}`, `node ${path.join(fs.realpathSync(dir), 'a.js')}`]) {
+      assert.equal(tickTouchedCheckDefinition(check, before, dir), true, check);
+    }
     fs.writeFileSync(path.join(dir, 'package.json'), '{"scripts":{"test":"true"}}');
     assert.equal(tickTouchedCheckDefinition('npm test', before, dir), true);
     git('checkout', '--', 'package.json');

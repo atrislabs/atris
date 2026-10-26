@@ -6971,10 +6971,21 @@ function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
   // Runners that find tests by name (node --test, jest, pytest, go test) never
   // list them, so any changed file shaped like a test counts as well.
   const testShaped = /(^|\/)(tests?|__tests__|specs?|checks?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$|(^|\/)conftest\.py$/i;
+  // Whole paths only: order.js is not named by `node --test checks/order.js`.
+  // Shell punctuation ends a word, and $PWD or this folder's own path is cut off.
+  const here = [path.resolve(root), (() => { try { return fs.realpathSync(root); } catch { return ''; } })()].filter(Boolean);
+  const named = checkText.split(/[\s'"`=;&|<>()]+/)
+    .map((word) => {
+      let clean = word.replace(/^\$\{?PWD\}?\//, '');
+      const inside = here.find((dir) => clean.startsWith(`${dir}/`));
+      if (inside) clean = clean.slice(inside.length + 1);
+      return clean.replace(/^(\.\/)+/, '');
+    })
+    .filter(Boolean);
   return changed.some((file) => path.basename(file) === 'package.json'
     || testShaped.test(file)
-    || checkText.includes(file)
-    || (path.dirname(file) !== '.' && checkText.includes(`${path.dirname(file)}/`)));
+    || named.includes(file)
+    || (path.dirname(file) !== '.' && named.some((word) => word.startsWith(`${path.dirname(file)}/`))));
 }
 
 // The worker's `learned:` line from its receipt, so the lesson reaches the
@@ -10056,31 +10067,87 @@ function pickCrossEngineVerifier(mission, cwd = process.cwd(), preferredEngine =
   return workerEngine === 'codex' ? 'claude' : 'codex';
 }
 
+// Engine health lives in the main checkout, so a reviewer benched from one
+// member's side folder stays benched for the next member's review.
+function engineHealthRoot(cwd) {
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8' });
+  const dir = common.status === 0 ? String(common.stdout || '').trim() : '';
+  return dir && path.basename(dir) === '.git' ? path.dirname(dir) : cwd;
+}
+
+// Every spelling and version of one model family counts as the same model,
+// with or without the long-context tag. Unknown counts as same.
+function reviewerMayBeSameModel(a, b) {
+  const { CLAUDE_MODEL_ALIASES, CLAUDE_LONG_CONTEXT } = require('../lib/model-names');
+  const key = (model) => {
+    const name = String(model || '').toLowerCase().replace(CLAUDE_LONG_CONTEXT, '').replace(/^claude-/, '').trim();
+    return CLAUDE_MODEL_ALIASES.find((family) => name.split(/[^a-z]+/).includes(family)) || name;
+  };
+  const left = key(a);
+  const right = key(b);
+  return !left || !right || left.includes(right) || right.includes(left);
+}
+
+// Who reviews, in order. The usual reviewer first; then the roster's next
+// review worker, when it is not the builder grading itself: on the builder's
+// engine it must be a different model. A benched reviewer is skipped while
+// its backup can run. A named reviewer is never swapped.
+function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) {
+  const primary = pickCrossEngineVerifier(mission, cwd, preferredEngine);
+  const lineup = [{ engine: primary, model: '' }];
+  if (preferredEngine || mission?.referee_engine) return lineup;
+  const root = options.healthRoot || engineHealthRoot(cwd);
+  try {
+    const registry = require('../lib/engine-registry');
+    const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
+    const workerModel = resolveMissionTickRunnerModel(mission);
+    const team = registry.resolveEngineForRoleRanked('validator', root, { job: 'review', quiet: true }).team || [];
+    const backup = team.find((engine) => engine && engine.id !== primary
+      && !(engine.id === workerEngine && reviewerMayBeSameModel(engine.roster_model, workerModel)));
+    if (!backup) return lineup;
+    lineup.push({ engine: backup.id, model: backup.roster_model || '' });
+    const saved = registry.readEngineRegistry(root, { persist: false }).engines.find((engine) => engine.id === primary);
+    if (saved && !registry.engineReadyAt(saved)) lineup.shift();
+  } catch {}
+  return lineup;
+}
+
 async function runEngineVerifier(mission, options = {}) {
   const cwd = options.cwd || process.cwd();
-  const engine = pickCrossEngineVerifier(mission, cwd, options.refereeEngine);
-  const verifyMission = { ...mission, runner: engine, runner_kind: 'engine', model: '' };
-  const restoreRunnerProfile = applyMissionRunnerProfile(engine);
-  let engineResult;
-  try {
-    engineResult = await spawnClaudeTick(verifyMission, {
-      sessionMode: 'set',
-      sessionId: crypto.randomUUID(),
-      cwd,
-      signal: options.signal,
-      timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+  const healthRoot = engineHealthRoot(cwd);
+  const lineup = engineVerifierLineup(mission, cwd, options.refereeEngine, { healthRoot });
+  let verdict = null;
+  for (const { engine, model } of lineup) {
+    const verifyMission = { ...mission, runner: engine, runner_kind: 'engine', model };
+    const restoreRunnerProfile = applyMissionRunnerProfile(engine);
+    let engineResult;
+    try {
+      engineResult = await spawnClaudeTick(verifyMission, {
+        sessionMode: 'set',
+        sessionId: crypto.randomUUID(),
+        cwd,
+        signal: options.signal,
         timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-        checkPassed: options.checkPassed || '',
-      }),
-      model: resolveMissionTickRunnerModel(verifyMission),
-    });
-  } catch (error) {
-    engineResult = { ok: false, error: error.message };
-  } finally {
-    restoreRunnerProfile();
+        prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+          timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+          checkPassed: options.checkPassed || '',
+        }),
+        model: resolveMissionTickRunnerModel(verifyMission),
+      });
+    } catch (error) {
+      engineResult = { ok: false, error: error.message };
+    } finally {
+      restoreRunnerProfile();
+    }
+    verdict = engineVerifierResultFromRun(engineResult, engine);
+    if (verdict.mode !== 'engine-unavailable' || engineResult?.aborted) return verdict;
+    // Member lab 10/26: codex hung on every review, and each job waited out
+    // the full five minutes. Bench it so the next review starts on the backup.
+    if (engineResult?.timedOut) {
+      try { setEngineHealth(engine, 'cooling', healthRoot); } catch {}
+    }
   }
-  return engineVerifierResultFromRun(engineResult, engine);
+  return verdict;
 }
 
 function stripClaudeReceiptLine(line) {
@@ -12931,6 +12998,7 @@ function missionCommand(args) {
 module.exports = {
   receiptLearnedLine,
   tickTouchedCheckDefinition,
+  engineVerifierLineup,
   claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
