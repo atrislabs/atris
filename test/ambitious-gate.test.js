@@ -62,7 +62,7 @@ test('gate passes a complete, fresh, clean set', () => {
 test('resume drops a verdict whose answer changed, even when another pair has the old text', () => {
   const { keepVerdicts } = require('../atris/experiments/ambitious-skill/judge.js');
   const before = { id: 'r1', task: 't', field: 'f', answers: { plain: 'p', nudge: 'same', skill: 'same' } };
-  const saved = PAIRS.map(([a, b]) => ({ id: 'r1', a, b, key: verdictKey(before, a, b) }));
+  const saved = PAIRS.map(([a, b]) => ({ id: 'r1', a, b, winner: a, key: verdictKey(before, a, b) }));
   const after = { ...before, answers: { ...before.answers, skill: 'new skill answer' } };
   const kept = keepVerdicts([after], saved).map((v) => `${v.a}|${v.b}`);
   assert.deepEqual(kept, ['nudge|plain']);
@@ -124,4 +124,23 @@ test('judge accepts only well-formed verdicts', () => {
   assert.equal(validVerdict({ winner: 'maybe', x_grew_scope: false, y_grew_scope: true, reason: 'r' }), false);
   assert.equal(validVerdict({ winner: 'X', x_grew_scope: 'no', y_grew_scope: true, reason: 'r' }), false);
   assert.equal(validVerdict(null), false);
+});
+
+test('gate drops verdicts with an impossible winner and answers to reworded tasks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-gate-root-'));
+  const ids = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'];
+  fs.renameSync(fakeSet(ids), path.join(root, 'out-exam-mixed'));
+  fs.renameSync(fakeSet(['w1', 'w2']), path.join(root, 'out-exam-writing'));
+  fs.writeFileSync(path.join(root, 'exam-writing.json'), JSON.stringify(['w1', 'w2'].map((id) => ({ id }))));
+  const exam = ids.map((id) => ({ id, field: 'test', task: `task ${id}` }));
+  exam[0].task = 'task m1, reworded';
+  fs.writeFileSync(path.join(root, 'exam-mixed.json'), JSON.stringify(exam));
+  const vfile = path.join(root, 'out-exam-mixed', 'verdicts.json');
+  const verdicts = JSON.parse(fs.readFileSync(vfile, 'utf8'));
+  verdicts.find((v) => v.id === 'm2').winner = 'maybe';
+  fs.writeFileSync(vfile, JSON.stringify(verdicts));
+  const run = gate(path.join(root, 'out-exam-mixed'), path.join(root, 'out-exam-writing'));
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /FAIL {2}all tasks answered\s+missing m1/);
+  assert.match(run.stdout, /FAIL {2}all pairs judged\s+20\/21/);
 });

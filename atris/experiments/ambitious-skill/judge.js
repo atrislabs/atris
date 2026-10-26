@@ -130,7 +130,7 @@ async function judgePair(rec, a, b) {
 // A saved verdict survives only if its own task and pair still hash to its key.
 function keepVerdicts(records, saved) {
   const current = new Map(records.flatMap((rec) => PAIRS.map(([a, b]) => [`${rec.id}|${a}|${b}`, verdictKey(rec, a, b)])));
-  return saved.filter((v) => current.get(`${v.id}|${v.a}|${v.b}`) === v.key);
+  return saved.filter((v) => current.get(`${v.id}|${v.a}|${v.b}`) === v.key && [v.a, v.b, 'tie'].includes(v.winner));
 }
 
 function loadRecords(dir) {

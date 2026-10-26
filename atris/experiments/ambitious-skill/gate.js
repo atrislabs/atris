@@ -20,7 +20,7 @@ function load(dir) {
   for (const rec of records) {
     for (const [a, b] of PAIRS) {
       const key = verdictKey(rec, a, b);
-      const v = raw.find((x) => x.id === rec.id && x.a === a && x.b === b && x.key === key);
+      const v = raw.find((x) => x.id === rec.id && x.a === a && x.b === b && x.key === key && [a, b, 'tie'].includes(x.winner));
       if (v) valid.set(`${rec.id}|${a}|${b}`, v);
     }
   }
@@ -55,10 +55,13 @@ function main(dirs) {
   const exams = dirs.map((dir) => path.join(path.dirname(dir), `${path.basename(dir).replace(/^out-/, '')}.json`));
   const noExam = exams.filter((f) => !fs.existsSync(f));
   if (noExam.length) { console.error(`exam file not found: ${noExam.join(', ')}`); process.exitCode = 2; return; }
-  const examIds = exams.map((f) => new Set(JSON.parse(fs.readFileSync(f, 'utf8')).map((t) => t.id)));
+  const examTasks = exams.map((f) => new Map(JSON.parse(fs.readFileSync(f, 'utf8')).map((t) => [t.id, t])));
+  const examIds = examTasks.map((m) => new Set(m.keys()));
+  // A record counts only if it answered the exam's current wording.
+  const matches = (r, i) => { const t = examTasks[i].get(r.id); return Boolean(t) && (t.task === undefined || (t.task === r.task && t.field === r.field)); };
   const sets = dirs.map(load).map((set, i) => ({
-    records: set.records.filter((r) => examIds[i].has(r.id)),
-    verdicts: set.verdicts.filter((v) => examIds[i].has(v.id)),
+    records: set.records.filter((r) => matches(r, i)),
+    verdicts: set.verdicts.filter((v) => set.records.some((r) => r.id === v.id && matches(r, i))),
   }));
   const missing = examIds.flatMap((want, i) => [...want].filter((id) => !sets[i].records.some((r) => r.id === id)));
   const ids = sets.flatMap((set) => set.records.map((r) => r.id));
