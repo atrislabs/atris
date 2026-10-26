@@ -98,7 +98,11 @@ function codexHome() {
   fs.mkdirSync(home, { recursive: true });
   const realHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   const auth = path.join(home, 'auth.json');
-  if (!fs.existsSync(auth)) fs.symlinkSync(path.join(realHome, 'auth.json'), auth);
+  const realAuth = path.join(realHome, 'auth.json');
+  // Link the login only when there is one; key-only setups run without it.
+  let linked = false;
+  try { fs.lstatSync(auth); linked = true; } catch {}
+  if (!linked && fs.existsSync(realAuth)) fs.symlinkSync(realAuth, auth);
   const model = flag('codex-model', 'gpt-6.1-sol');
   const effort = flag('codex-effort', 'medium');
   fs.writeFileSync(path.join(home, 'config.toml'), [
@@ -186,11 +190,16 @@ function readAgentLog(arm, logPath, logEngine = engine) {
     if (!line.startsWith('{')) continue;
     let e; try { e = JSON.parse(line); } catch { continue; }
     // The engine itself failed and did not recover. The summary leaves such
-    // runs out unless they passed anyway.
-    const errText = e.type === 'error' || e.type === 'turn.failed' ? String(e.message || e.error?.message || '')
-      : e.type === 'result' && e.is_error ? String(e.result || e.subtype || '') : '';
-    if (errText && INFRA_ERROR.test(errText)) stats.infra_error = errText.slice(0, 200);
-    if (e.type === 'turn.completed') stats.infra_error = null;
+    // runs out unless they passed anyway. Claude reports its outcome once, in
+    // the final result line; Codex can fail a turn and then finish another.
+    if (logEngine === 'claude' && e.type === 'result') {
+      const text = e.is_error ? String(e.result || e.subtype || '') : '';
+      stats.infra_error = text && INFRA_ERROR.test(text) ? text.slice(0, 200) : null;
+    } else if (logEngine === 'codex') {
+      const text = e.type === 'error' || e.type === 'turn.failed' ? String(e.message || e.error?.message || '') : '';
+      if (text) stats.infra_error = INFRA_ERROR.test(text) ? text.slice(0, 200) : null;
+      if (e.type === 'turn.completed') stats.infra_error = null;
+    }
     if (logEngine === 'claude') {
       if (e.type === 'assistant' && e.message) {
         const u = e.message.usage;

@@ -87,8 +87,9 @@ Claude round, and never opened an atris/ doc.
 
 Pass counts leave out runs where the engine itself failed and did not
 recover (model at capacity), which says nothing about the agent. Those are
-listed. Round-one rows predate the engine-failure field; `--summary` reads it
-back from the saved logs.
+listed. Round-one Codex rows predate the engine-failure field; it was filled
+in from the saved logs with the lab's own rule, so `--summary` on the raw
+file alone gives the counts below.
 
 ### Round one: Codex, gpt-6.1-sol, medium effort, 28 tasks x 2
 

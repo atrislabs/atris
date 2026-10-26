@@ -7,7 +7,7 @@
 // ~/.agents/skills still load, since HOME stays real).
 //
 // usage: node scripts/boot-tokens.js --engine claude|codex --cli <atris.js>|none
-//          [--dir /tmp/boot-tokens] [--model gpt-6.1-sol]
+//          [--dir /tmp/boot-tokens] [--model gpt-6.1-sol] [--keep-api-keys]
 'use strict';
 
 const fs = require('node:fs');
@@ -29,7 +29,8 @@ fs.mkdirSync(base, { recursive: true });
 // A fresh folder this run owns; it is the only thing removed at the end.
 const work = fs.mkdtempSync(path.join(base, `${engine}-${cli === 'none' ? 'bare' : 'atris'}-`));
 const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_UPDATE_NOTIFIER: '1' };
-for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY']) delete env[key];
+// Logins only by default; --keep-api-keys passes keys through.
+if (!process.argv.includes('--keep-api-keys')) for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY']) delete env[key];
 
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { cwd: work, encoding: 'utf8', env, timeout: 300000, ...opts });
 run('git', ['init', '-q']);
@@ -48,7 +49,10 @@ if (engine === 'codex') {
   const home = path.join(base, 'codex-home');
   fs.mkdirSync(home, { recursive: true });
   const auth = path.join(home, 'auth.json');
-  if (!fs.existsSync(auth)) fs.symlinkSync(path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json'), auth);
+  const realAuth = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json');
+  let linked = false;
+  try { fs.lstatSync(auth); linked = true; } catch {}
+  if (!linked && fs.existsSync(realAuth)) fs.symlinkSync(realAuth, auth);
   fs.writeFileSync(path.join(home, 'config.toml'), `model = "${flag('model', 'gpt-6.1-sol')}"\nmodel_reasoning_effort = "low"\n\n[features]\nmemories = false\n`);
   const r = run('codex', ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', ask], { env: { ...env, CODEX_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
   let threadId = '';
