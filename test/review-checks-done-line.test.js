@@ -89,3 +89,12 @@ test('a mission with no matching job hands the reviewer nothing', () => {
     assert.equal(missionDoneLooksLike({ objective: 'Something nobody filed', task_ids: [] }, dir), '');
   });
 });
+
+test('the reviewer skips the workspace boot and starts with the diff', () => {
+  // Member lab 2026-10-25: about half of each review went to atris atris.md and
+  // reading MAP, PERSONA, and skill files before the change itself.
+  const { buildEngineVerifyPrompt } = require('../commands/mission');
+  const prompt = buildEngineVerifyPrompt({ objective: 'fix the pager' }, 1);
+  assert.match(prompt, /do not run `atris atris\.md`/);
+  assert.match(prompt, /Start with `git diff` and the changed files/);
+});

@@ -161,3 +161,14 @@ test('secret folders and bare credentials files stay out of the auto-save', () =
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('work is saved unchecked when the reviewer timed out, never when it said no or the tests failed', () => {
+  const { memberRunSaveDecision } = require('../commands/member');
+  assert.equal(memberRunSaveDecision({ started: true, ok: true, verdict: { passed: true } }), 'checked');
+  // Member lab: the reviewer confirmed the answer but timed out before its verdict.
+  assert.equal(memberRunSaveDecision({ started: true, ok: false, verdict: { passed: false, mode: 'engine-unavailable', timed_out: true } }), 'unchecked');
+  assert.equal(memberRunSaveDecision({ started: true, ok: false, verdict: { passed: false, status: 0, referee: { mode: 'engine-unavailable' } } }), 'unchecked');
+  assert.equal(memberRunSaveDecision({ started: true, ok: false, verdict: { passed: false, status: 1, referee: { mode: 'engine-unavailable' } } }), '');
+  assert.equal(memberRunSaveDecision({ started: true, ok: false, verdict: { passed: false, status: 0, referee: { mode: 'engine', passed: false } } }), '');
+  assert.equal(memberRunSaveDecision({ started: false, ok: false, verdict: { passed: true } }), '');
+});
