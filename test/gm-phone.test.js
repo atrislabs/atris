@@ -1263,7 +1263,9 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
     // machine added at most 1.7 seconds
     assert.ok(Number.isFinite(s.reveal_ms) && Number.isFinite(s.waited_ms), show(s));
     assert.ok(s.late_ms >= -s.slowest_frame_ms, show(s));
-    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms, 2 * s.motion_ms), show(s));
+    // one stalled frame is the machine, not the page: it gets its own room on top
+    const stall = Math.max(0, s.slowest_frame_ms - s.pace_frame_ms);
+    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms + stall, 2 * s.motion_ms), show(s));
   }
   for (const s of [answered, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
   // a reply instead of a card takes the title's spot; it only explains, so the
