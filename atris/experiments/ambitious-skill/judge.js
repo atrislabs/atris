@@ -11,6 +11,10 @@ const crypto = require('node:crypto');
 const HERE = __dirname;
 const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
 const PAIRS = [['skill', 'nudge'], ['skill', 'plain'], ['nudge', 'plain']];
+// Pinned so every verdict in a run comes from one judge. The account default
+// (gpt-6.1-sol at xhigh) stalled for minutes per call on 2026-10-26.
+const JUDGE = process.env.AMB_JUDGE || 'gpt-6-sol';
+const JUDGE_EFFORT = process.env.AMB_JUDGE_EFFORT || 'high';
 // The scratch folder and answer schema are made on first use, so loading
 // this file (the gate does) writes nothing.
 let scratch = null;
@@ -72,7 +76,7 @@ async function codex(text, tag) {
 function codexOnce(text, tag) {
   const { dir, schema } = workdir();
   const last = path.join(dir, `${tag}.txt`);
-  const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '--output-schema', schema, '-o', last, '-'];
+  const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '-m', JUDGE, '-c', `model_reasoning_effort=${JUDGE_EFFORT}`, '--output-schema', schema, '-o', last, '-'];
   return new Promise((resolve, reject) => {
     // Own process group: codex runs a native child that outlives a plain kill
     // and holds the pipes open, so a hung call is killed as a group.
@@ -93,7 +97,7 @@ function codexOnce(text, tag) {
 
 // A verdict is valid only for the exact ask and answers it judged.
 function verdictKey(rec, a, b) {
-  return crypto.createHash('sha256').update(JSON.stringify([prompt('', '', '', ''), rec.task, rec.field, rec.answers[a], rec.answers[b]])).digest('hex').slice(0, 16);
+  return crypto.createHash('sha256').update(JSON.stringify([JUDGE, JUDGE_EFFORT, prompt('', '', '', ''), rec.task, rec.field, rec.answers[a], rec.answers[b]])).digest('hex').slice(0, 16);
 }
 
 async function judgePair(rec, a, b) {
