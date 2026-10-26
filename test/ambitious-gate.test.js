@@ -69,6 +69,9 @@ test('resume drops a verdict whose answer changed, even when another pair has th
 
 test('gate fails an answer made of fake command calls but not a correct short one', () => {
   const dir = fakeSet(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']);
+  const link = JSON.parse(fs.readFileSync(path.join(dir, 'm3.json'), 'utf8'));
+  link.answers.skill = 'https://shop.example.com/spring-sale?utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale_2026';
+  fs.writeFileSync(path.join(dir, 'm3.json'), JSON.stringify(link));
   const short = JSON.parse(fs.readFileSync(path.join(dir, 'm1.json'), 'utf8'));
   short.answers.skill = 'Total miles: 42 + 58 + 31 + 104 + 17 = **252 miles**\n\nReimbursement: 252 × $0.67 = **$168.84**';
   fs.writeFileSync(path.join(dir, 'm1.json'), JSON.stringify(short));
@@ -85,4 +88,16 @@ test('gate fails an answer made of fake command calls but not a correct short on
   const run = gate(dir, fakeSet(['w1', 'w2']));
   assert.equal(run.status, 1);
   assert.match(run.stdout, /FAIL {2}5 nothing broken\s+m2$/m);
+});
+
+test('gate fails when a task in the exam file has no answers', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-gate-root-'));
+  const mixed = fakeSet(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']);
+  const writing = fakeSet(['w1', 'w2']);
+  fs.renameSync(mixed, path.join(root, 'out-exam-mixed'));
+  fs.renameSync(writing, path.join(root, 'out-exam-writing'));
+  fs.writeFileSync(path.join(root, 'exam-mixed.json'), JSON.stringify(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'].map((id) => ({ id }))));
+  const run = gate(path.join(root, 'out-exam-mixed'), path.join(root, 'out-exam-writing'));
+  assert.equal(run.status, 1);
+  assert.match(run.stdout, /FAIL {2}all tasks answered\s+missing m7/);
 });

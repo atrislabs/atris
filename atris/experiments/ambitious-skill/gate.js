@@ -50,6 +50,13 @@ function tally(verdicts, a, b) {
 function main(dirs) {
   if (new Set(dirs).size !== dirs.length) { console.error('the same folder was given twice'); process.exitCode = 2; return; }
   const sets = dirs.map(load);
+  // Every task in the exam file must have answers: out-<name> pairs with <name>.json.
+  const missing = dirs.flatMap((dir, i) => {
+    const tasks = path.join(path.dirname(dir), `${path.basename(dir).replace(/^out-/, '')}.json`);
+    if (!fs.existsSync(tasks)) return [];
+    const have = new Set(sets[i].records.map((r) => r.id));
+    return JSON.parse(fs.readFileSync(tasks, 'utf8')).map((t) => t.id).filter((id) => !have.has(id));
+  });
   const ids = sets.flatMap((set) => set.records.map((r) => r.id));
   const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (repeated.length) { console.error(`task counted twice: ${[...new Set(repeated)].join(', ')}`); process.exitCode = 2; return; }
@@ -64,11 +71,13 @@ function main(dirs) {
   const grew = (arm) => new Set(all.verdicts.filter((v) => v.grew[arm]).map((v) => v.id)).size;
   const wc = (s) => s.split(/\s+/).filter(Boolean).length;
   // Broken = no real answer: fake command markup (every break seen in these
-  // runs) or a near-empty reply. Correct short answers are not broken.
-  const broken = all.records.filter((r) => /<invoke\b|<parameter\b/.test(r.answers.skill) || wc(r.answers.skill) < 10).map((r) => r.id);
+  // runs) or a blank reply. Length is not a test: a correct answer can be one
+  // line, like a single tracked link.
+  const broken = all.records.filter((r) => /<invoke\b|<parameter\b/.test(r.answers.skill) || !r.answers.skill.trim()).map((r) => r.id);
 
   const fmt = (t) => `${t.wins} won, ${t.losses} lost, ${t.ties} tied, p=${t.p.toFixed(4)}`;
   const lines = [
+    ['all tasks answered', missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : `${all.records.length} tasks`],
     ['all pairs judged', all.verdicts.length === expectedPairs, `${all.verdicts.length}/${expectedPairs}`],
     ['1 beats the nudge for real', vsNudge.wins > vsNudge.losses && vsNudge.p < 0.05, fmt(vsNudge)],
     ['2 never worse than plain', vsPlain.wins >= vsPlain.losses, fmt(vsPlain)],
