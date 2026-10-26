@@ -1,0 +1,12 @@
+[
+  { "id": "dedupe", "field": "software", "task": "Write a JavaScript function that removes duplicate customer records from an array. Each record has name, email, and phone." },
+  { "id": "croissant", "field": "small business", "task": "Our bakery wants to raise the croissant price from $4 to $5. Write the plan." },
+  { "id": "cold-email", "field": "sales", "task": "Write a cold email to a local coffee shop owner offering a tool that drafts replies to their customer emails." },
+  { "id": "onboarding", "field": "product analytics", "task": "We changed our onboarding email last week. How do we tell if it increased activation?" },
+  { "id": "calculus", "field": "studying", "task": "I have a calculus final in two weeks. Make me a study plan." },
+  { "id": "hire", "field": "management", "task": "Should I hire a contractor or a full-time engineer for a three-month project? Help me decide." },
+  { "id": "bandcamp", "field": "music", "task": "Write the description for my new single on Bandcamp. It is a slow instrumental track made with a cello and a drum machine." },
+  { "id": "slow-page", "field": "web performance", "task": "Our web page takes 8 seconds to load on phones. What should we do?" },
+  { "id": "forecast", "field": "forecasting", "task": "Monthly sales: Jan 120, Feb 135, Mar 128, Apr 160, May 155, Jun 190. Forecast July." },
+  { "id": "release-note", "field": "developer tools", "task": "Write the release note for version 2.3 of our CLI, which adds a --json flag to the status command." }
+]
