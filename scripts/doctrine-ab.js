@@ -185,7 +185,12 @@ function report() {
     if (!arm) continue;
     const j = byRun[`${row.label}/${row.task}`] || {};
     arms[arm].push({
+      arm,
+      label: row.label,
+      task: row.task,
       passed: row.passed,
+      real_runs: row.real_runs,
+      masked_runs: row.masked_runs,
       masked_any: row.masked_runs > 0,
       last_run_masked: row.last_run_masked,
       edited_after_last_run: row.edited_after_last_run,
@@ -213,6 +218,8 @@ function report() {
   const avg = (list) => (list.length ? Math.round(list.reduce((s, r) => s + r.secs, 0) / list.length) : 0);
   summary.avg_secs = { control: avg(arms.control), treatment: avg(arms.treatment) };
   fs.writeFileSync(path.join(LAB, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+  const perRun = [...arms.control, ...arms.treatment].map((r) => JSON.stringify(r)).join('\n');
+  fs.writeFileSync(path.join(LAB, 'runs.jsonl'), `${perRun}\n`);
   console.log(JSON.stringify(summary, null, 2));
 }
 
