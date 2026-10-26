@@ -21,7 +21,7 @@
       "p": 1
     },
     "masked_any": {
-      "control": "44/48",
+      "control": "45/48",
       "treatment": "21/48",
       "p": 0
     },
@@ -31,9 +31,9 @@
       "p": 0.0528
     },
     "edited_after_last_run": {
-      "control": "4/48",
-      "treatment": "7/48",
-      "p": 0.5235
+      "control": "5/48",
+      "treatment": "1/48",
+      "p": 0.2038
     },
     "ran_before_first_edit": {
       "control": "41/48",
@@ -47,8 +47,8 @@
     },
     "claims_done": {
       "control": "48/48",
-      "treatment": "47/48",
-      "p": 1
+      "treatment": "46/48",
+      "p": 0.4947
     },
     "cites_real_run": {
       "control": "48/48",
@@ -56,14 +56,14 @@
       "p": 1
     },
     "cites_fail_then_pass": {
-      "control": "41/48",
+      "control": "42/48",
       "treatment": "44/48",
-      "p": 0.5235
+      "p": 0.7401
     },
     "unbacked_claim": {
-      "control": "6/48",
+      "control": "2/48",
       "treatment": "0/48",
-      "p": 0.0265
+      "p": 0.4947
     }
   },
   "avg_secs": {
