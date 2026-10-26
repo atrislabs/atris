@@ -69,7 +69,7 @@ test('public review uses bounded linear before-row identity reads for unchanged 
   const result = await h.review(before);
   const observedReads = reads;
   const bound = 12 * (before.missions.length + result.view.missions.length);
-  assert.deepEqual(result.summary, { kept: 0, failed: 0, vetoed: 0, spent: 0, fresh: [] });
+  assert.deepEqual(result.summary, { kept: 0, failed: 0, held: 0, vetoed: 0, spent: 0, fresh: [] });
   assert.equal(result.quiet, true);
   assert.deepEqual(result.lessons, []);
   assert.deepEqual(h.prompts, []);
@@ -140,7 +140,7 @@ test('real lifecycle changes preserve fresh order, spend, prompts and a subseque
   assert.ok(h.prompts[0].indexOf('- worked: ended') < h.prompts[0].indexOf('- refused: vetoed'));
   assert.ok(h.prompts[0].indexOf('- refused: vetoed') < h.prompts[0].indexOf('- new-failure: ended'));
   const quiet = await h.review(after);
-  assert.deepEqual(quiet.summary, { kept: 0, failed: 0, vetoed: 0, spent: 0, fresh: [] });
+  assert.deepEqual(quiet.summary, { kept: 0, failed: 0, held: 0, vetoed: 0, spent: 0, fresh: [] });
   assert.equal(quiet.quiet, true);
   assert.deepEqual(quiet.lessons, []);
   assert.equal(h.prompts.length, 1);

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { localDay } = require('../lib/local-day');
 
 const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
@@ -1006,6 +1007,19 @@ function mergedCloseNote(receipt) {
     + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
 }
 
+// The digest goes out once per local day. A stamp written before the switch
+// to local days is the UTC day of a send at this same local hour, today or
+// yesterday. Across a clock change both can be the same UTC day; that stamp
+// cannot say which, so the digest goes out rather than go quiet.
+function digestSentToday(state, now = new Date()) {
+  if (!state || !state.last_digest_date) return false;
+  if (state.last_digest_local) return state.last_digest_date === localDay(now);
+  const utcDay = (d) => d.toISOString().slice(0, 10);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
+}
+
 async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
 
   try {
@@ -1298,9 +1312,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   }
 
   // 4. daily digest at the configured hour
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
-  if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
+  if (new Date().getHours() === digestHour && !digestSentToday(state)) {
     receipt.digest_due = true;
     let waitingWishes = [];
     try {
@@ -1326,6 +1340,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
     receipt.digest_text = text;
     state.last_digest_date = today;
+    state.last_digest_local = true;
     delete state.janitor;
 
     // 5. once a day, keep the receipt shelf lean: compress old run receipts
@@ -1472,6 +1487,7 @@ function autolandCommand(args = []) {
 
 module.exports = {
   autolandCommand,
+  digestSentToday,
   digestNextMoves,
   acceptSweepTimeoutMs,
   describeAcceptKillCause,

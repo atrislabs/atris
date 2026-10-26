@@ -17,6 +17,7 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { looksLikeBusinessSlug, requireAccountBound, refuseAccountGlobal } = require('../lib/account-bound');
 const { argsWantHelp, wantsJson } = require('../lib/noninteractive');
+const { localDay } = require('../lib/local-day');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -58,7 +59,7 @@ async function fetchDailyReport(token, businessId) {
 }
 
 async function writeReportToComputer(token, businessId, workspaceId, report) {
-  const date = report.date || new Date().toISOString().slice(0, 10);
+  const date = report.date || localDay();
   const remotePath = `/workspace/atris/reports/daily-${date}.md`;
   const b64 = Buffer.from(report.markdown || '', 'utf8').toString('base64');
   const command =
@@ -231,4 +232,4 @@ async function fleetReport() {
   process.exitCode = delivered > 0 || dryRun || results.every((r) => r.reason === 'asleep') ? 0 : 1;
 }
 
-module.exports = { fleetReport, formatScoreboardPnl };
+module.exports = { fleetReport, formatScoreboardPnl, writeReportToComputer };
