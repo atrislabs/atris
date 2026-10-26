@@ -65,12 +65,21 @@ test('steer --detach: starts the member in the background and returns at once wi
   const payload = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')));
   assert.deepEqual([payload.ok, payload.action, payload.member], [true, 'member_run_detached', 'builder']);
   assert.ok(Number.isInteger(payload.pid) && payload.pid > 0);
-  // the background run gets the words as its prompt
-  const file = path.join(root, 'ran.jsonl');
-  const until = Date.now() + 20000;
-  while (!fs.existsSync(file) && Date.now() < until) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},200)']);
-  assert.ok(fs.existsSync(file), 'the background run started');
-  assert.match(fs.readFileSync(file, 'utf8'), /write the readme first/);
+  const alive = () => { try { process.kill(payload.pid, 0); return true; } catch { return false; } };
+  try {
+    // the background run gets the words as its prompt
+    const file = path.join(root, 'ran.jsonl');
+    const until = Date.now() + 20000;
+    while (!fs.existsSync(file) && Date.now() < until) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},200)']);
+    assert.ok(fs.existsSync(file), 'the background run started');
+    assert.match(fs.readFileSync(file, 'utf8'), /write the readme first/);
+  } finally {
+    // the run still writes its files as it ends; deleting the folder under it
+    // failed with ENOTEMPTY on a slow runner, so it finishes first
+    const until = Date.now() + 20000;
+    while (alive() && Date.now() < until) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},100)']);
+    if (alive()) { try { process.kill(-payload.pid, 'SIGKILL'); } catch { try { process.kill(payload.pid, 'SIGKILL'); } catch {} } }
+  }
 });
 
 test('steer --detach: a member that cannot run is refused before anything starts, with the plain reason', (t) => {
