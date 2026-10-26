@@ -57,3 +57,12 @@ test('gate passes a complete, fresh, clean set', () => {
   const run = gate(fakeSet(ids), fakeSet(['w1', 'w2']));
   assert.equal(run.status, 0, run.stdout + run.stderr);
 });
+
+test('resume drops a verdict whose answer changed, even when another pair has the old text', () => {
+  const { keepVerdicts } = require('../atris/experiments/ambitious-skill/judge.js');
+  const before = { id: 'r1', task: 't', field: 'f', answers: { plain: 'p', nudge: 'same', skill: 'same' } };
+  const saved = PAIRS.map(([a, b]) => ({ id: 'r1', a, b, key: verdictKey(before, a, b) }));
+  const after = { ...before, answers: { ...before.answers, skill: 'new skill answer' } };
+  const kept = keepVerdicts([after], saved).map((v) => `${v.a}|${v.b}`);
+  assert.deepEqual(kept, ['nudge|plain']);
+});

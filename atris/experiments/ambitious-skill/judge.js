@@ -11,19 +11,27 @@ const crypto = require('node:crypto');
 const HERE = __dirname;
 const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
 const PAIRS = [['skill', 'nudge'], ['skill', 'plain'], ['nudge', 'plain']];
-const EMPTY = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-judge-'));
-const SCHEMA = path.join(EMPTY, 'schema.json');
-fs.writeFileSync(SCHEMA, JSON.stringify({
-  type: 'object',
-  additionalProperties: false,
-  required: ['winner', 'x_grew_scope', 'y_grew_scope', 'reason'],
-  properties: {
-    winner: { type: 'string', enum: ['X', 'Y', 'tie'] },
-    x_grew_scope: { type: 'boolean' },
-    y_grew_scope: { type: 'boolean' },
-    reason: { type: 'string' },
-  },
-}));
+// The scratch folder and answer schema are made on first use, so loading
+// this file (the gate does) writes nothing.
+let scratch = null;
+function workdir() {
+  if (scratch) return scratch;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-judge-'));
+  const schema = path.join(dir, 'schema.json');
+  fs.writeFileSync(schema, JSON.stringify({
+    type: 'object',
+    additionalProperties: false,
+    required: ['winner', 'x_grew_scope', 'y_grew_scope', 'reason'],
+    properties: {
+      winner: { type: 'string', enum: ['X', 'Y', 'tie'] },
+      x_grew_scope: { type: 'boolean' },
+      y_grew_scope: { type: 'boolean' },
+      reason: { type: 'string' },
+    },
+  }));
+  scratch = { dir, schema };
+  return scratch;
+}
 
 function prompt(task, field, x, y) {
   return `You are a top professional in ${field}. Someone asked:
@@ -61,10 +69,11 @@ async function codex(text, tag) {
 }
 
 function codexOnce(text, tag) {
-  const last = path.join(EMPTY, `${tag}.txt`);
-  const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '--output-schema', SCHEMA, '-o', last, '-'];
+  const { dir, schema } = workdir();
+  const last = path.join(dir, `${tag}.txt`);
+  const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '--output-schema', schema, '-o', last, '-'];
   return new Promise((resolve, reject) => {
-    const child = spawn('codex', args, { cwd: EMPTY, stdio: ['pipe', 'ignore', 'pipe'] });
+    const child = spawn('codex', args, { cwd: dir, stdio: ['pipe', 'ignore', 'pipe'] });
     let err = '';
     // Codex calls sometimes hang with no output; cut them off and retry.
     const timer = setTimeout(() => { err += ' timed out'; child.kill('SIGKILL'); }, Number(process.env.AMB_JUDGE_TIMEOUT_MS || 240000));
@@ -98,6 +107,12 @@ async function judgePair(rec, a, b) {
   };
 }
 
+// A saved verdict survives only if its own task and pair still hash to its key.
+function keepVerdicts(records, saved) {
+  const current = new Map(records.flatMap((rec) => PAIRS.map(([a, b]) => [`${rec.id}|${a}|${b}`, verdictKey(rec, a, b)])));
+  return saved.filter((v) => current.get(`${v.id}|${v.a}|${v.b}`) === v.key);
+}
+
 function loadRecords(dir) {
   return fs.readdirSync(dir).filter((f) => /^[a-z0-9-]+\.json$/.test(f) && f !== 'verdicts.json')
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
@@ -107,8 +122,7 @@ async function main() {
   const records = loadRecords(OUT);
   // Resumable: a saved verdict is kept only if it judged these exact answers.
   const saved = path.join(OUT, 'verdicts.json');
-  const current = new Set(records.flatMap((rec) => PAIRS.map(([a, b]) => verdictKey(rec, a, b))));
-  const verdicts = (fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : []).filter((v) => current.has(v.key));
+  const verdicts = keepVerdicts(records, fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : []);
   const done = new Set(verdicts.map((v) => `${v.id}|${v.a}|${v.b}`));
   const jobs = records.flatMap((rec) => PAIRS.filter(([a, b]) => !done.has(`${rec.id}|${a}|${b}`)).map(([a, b]) => () => judgePair(rec, a, b)));
   const workers = Array.from({ length: Number(process.env.AMB_PARALLEL || 3) }, async () => {
@@ -136,4 +150,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { PAIRS, verdictKey, loadRecords };
+module.exports = { PAIRS, verdictKey, keepVerdicts, loadRecords };
