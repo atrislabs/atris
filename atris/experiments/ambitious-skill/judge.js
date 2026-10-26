@@ -50,7 +50,16 @@ ${y}
 Reply with JSON only: winner (X, Y, or tie), x_grew_scope, y_grew_scope, reason (one sentence).`;
 }
 
-function codex(text, tag) {
+async function codex(text, tag) {
+  for (let attempt = 1; ; attempt += 1) {
+    try { return await codexOnce(text, tag); } catch (e) {
+      if (attempt >= 4) throw e;
+      await new Promise((r) => setTimeout(r, 20000 * attempt));
+    }
+  }
+}
+
+function codexOnce(text, tag) {
   const last = path.join(EMPTY, `${tag}.txt`);
   const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '--output-schema', SCHEMA, '-o', last, '-'];
   return new Promise((resolve, reject) => {
@@ -83,8 +92,11 @@ async function judgePair(rec, a, b) {
 async function main() {
   const records = fs.readdirSync(OUT).filter((f) => /^[a-z-]+\.json$/.test(f) && f !== 'verdicts.json')
     .map((f) => JSON.parse(fs.readFileSync(path.join(OUT, f), 'utf8')));
-  const jobs = records.flatMap((rec) => PAIRS.map(([a, b]) => () => judgePair(rec, a, b)));
-  const verdicts = [];
+  // Resumable: pairs already in verdicts.json are kept, only missing ones run.
+  const saved = path.join(OUT, 'verdicts.json');
+  const verdicts = fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : [];
+  const done = new Set(verdicts.map((v) => `${v.id}|${v.a}|${v.b}`));
+  const jobs = records.flatMap((rec) => PAIRS.filter(([a, b]) => !done.has(`${rec.id}|${a}|${b}`)).map(([a, b]) => () => judgePair(rec, a, b)));
   const workers = Array.from({ length: Number(process.env.AMB_PARALLEL || 3) }, async () => {
     while (jobs.length) {
       const job = jobs.shift();
