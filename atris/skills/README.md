@@ -26,6 +26,7 @@ cp -r atris/skills/[name] ~/.codex/skills/
 | Skill | Description | Policy |
 |-------|-------------|--------|
 | aeo | Content engineered to get cited by ChatGPT, Claude, and Gemini | - |
+| ambitious | Rewrite a task into the deeper version a top professional would do | - |
 | apps | View, manage, and trigger Atris apps | - |
 | atris | Workspace navigation, tasks, MAP.md, where-is-X questions | `policies/ANTISLOP.md` |
 | atris-feedback | Submit, list, resolve, close, or delete customer feedback | - |

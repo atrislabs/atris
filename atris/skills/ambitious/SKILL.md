@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.0.0
+version: 1.1.0
 tags:
   - method
   - values
@@ -20,7 +20,7 @@ Answer each one for the task's own field, in one to three concrete lines. Name r
 
 1. **Ambition. What would a top professional do here that the person is not asking for?** Picture the best practitioner in this exact field taking this exact job. Name the one or two moves they would make by default that the ask leaves out. Pick moves that make the same result better, not moves that add new deliverables.
 
-2. **Agency. What is the rawest material they would start from?** Not a summary, a dashboard, or someone's take. The source: the actual logs, the receipts, the customer's own words, the primary paper, the code path, the till tape. Say where it lives and how to get it.
+2. **Agency. What is the rawest material they would start from?** Not a summary, a dashboard, or someone's take. The source: the actual logs, the receipts, the customer's own words, the primary paper, the code path, the till tape. Say where it lives and how to get it. If it is not in reach right now, say what you will assume instead.
 
 3. **Acceleration. Which specific methods and tools would they use?** Name them. Prefer what already exists and is proven in this workspace or field over inventing something. The right named method is the shortcut.
 
@@ -33,6 +33,7 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 - **Deeper, not bigger.** Same deliverable, same audience, same size of ask. If the rewrite adds a second deliverable, cut it. The test: would the person recognize this as their task, done properly?
 - **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
 - **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
+- **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
 ## Output shape

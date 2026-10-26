@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const HERE = __dirname;
-const OUT = path.join(HERE, 'out');
+const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
 const PAIRS = [['skill', 'nudge'], ['skill', 'plain'], ['nudge', 'plain']];
 const EMPTY = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-judge-'));
 const SCHEMA = path.join(EMPTY, 'schema.json');

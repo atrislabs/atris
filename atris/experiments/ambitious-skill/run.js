@@ -8,15 +8,15 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const HERE = __dirname;
-const OUT = path.join(HERE, 'out');
+const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
 const SKILL = fs.readFileSync(path.join(HERE, '..', '..', 'skills', 'ambitious', 'SKILL.md'), 'utf8');
-const TASKS = JSON.parse(fs.readFileSync(path.join(HERE, 'tasks.json'), 'utf8'));
+const TASKS = JSON.parse(fs.readFileSync(path.join(HERE, process.env.AMB_TASKS || 'tasks.json'), 'utf8'));
 const WORKER = process.env.AMB_WORKER || 'claude-sonnet-5-5';
 const NUDGE = 'Be ambitious: do the deeper, better version of this that a top professional in the field would do.';
 const EMPTY = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-run-'));
 
 function claude(prompt, system) {
-  const args = ['-p', prompt, '--model', WORKER, '--tools', '', '--setting-sources', ''];
+  const args = ['-p', prompt, '--model', WORKER, '--tools', '', '--setting-sources', '', '--strict-mcp-config'];
   if (system) args.push('--append-system-prompt', system);
   return new Promise((resolve, reject) => {
     const child = spawn('claude', args, { cwd: EMPTY, stdio: ['ignore', 'pipe', 'pipe'] });
