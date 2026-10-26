@@ -66,9 +66,12 @@ function codexOnce(text, tag) {
   return new Promise((resolve, reject) => {
     const child = spawn('codex', args, { cwd: EMPTY, stdio: ['pipe', 'ignore', 'pipe'] });
     let err = '';
+    // Codex calls sometimes hang with no output; cut them off and retry.
+    const timer = setTimeout(() => { err += ' timed out'; child.kill('SIGKILL'); }, Number(process.env.AMB_JUDGE_TIMEOUT_MS || 240000));
     child.stderr.on('data', (d) => { err += d; });
     child.stdin.end(text);
     child.on('close', (code) => {
+      clearTimeout(timer);
       try { resolve(JSON.parse(fs.readFileSync(last, 'utf8'))); } catch (e) { reject(new Error(`codex exit ${code}: ${err.slice(-300)}`)); }
     });
   });
