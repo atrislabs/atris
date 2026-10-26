@@ -9997,6 +9997,9 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeo
       `Split that line into each separate thing it promises and check every one. List each part as met or missing.`,
       `Work that does only some of the parts is not done. If any part is missing, end with 'VERDICT: FAIL; missing: <that part>'.`,
     ] : []),
+    // Member lab: reviewers spent about half their time on the workspace boot
+    // (atris atris.md, MAP, PERSONA, skills) before reading the change.
+    `Skip any workspace boot or start-of-session routine the folder's instructions ask for: do not run \`atris atris.md\` and do not read MAP.md, PERSONA.md, FOR_AGENTS.md, or skill files. Start with \`git diff\` and the changed files.`,
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
     `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
