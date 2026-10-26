@@ -1,0 +1,152 @@
+[
+  {
+    "id": "grandpa-eulogy",
+    "field": "eulogy writing",
+    "task": "My grandpa Walt passed last Tuesday at 91. He farmed corn in Iowa for 50 years and taught me to fish on Miller's Pond. Can you help me write a 3-minute eulogy I can read at the funeral Saturday at St. Mark's?"
+  },
+  {
+    "id": "hoa-mailbox-letter",
+    "field": "HOA letter",
+    "task": "Our HOA sent me a violation notice saying my mailbox post needs to be repainted black, but I already have it painted the color listed in the covenants from 2019. Write a polite letter to the board asking them to reinspect and withdraw the fine of $75."
+  },
+  {
+    "id": "nurse-dating-profile",
+    "field": "dating profile",
+    "task": "I'm a 34-year-old ER nurse who loves trivia nights, sourdough, and long walks with my beagle. Write a short, funny dating profile for Hinge, under 500 characters, that doesn't sound cheesy."
+  },
+  {
+    "id": "tball-snack-email",
+    "field": "team email",
+    "task": "I'm the snack coordinator for my son's T-ball team and need to send a signup email to 14 families. Please write something friendly that explains we need one snack per game for the next 6 Saturdays and that we're keeping it nut-free."
+  },
+  {
+    "id": "book-club-invite",
+    "field": "club invitation",
+    "task": "I'm starting a mystery book club at the Eastside branch library and want to invite my neighbors. Write an invitation for our first meeting on November 8 at 7pm, where we'll discuss 'The Thursday Murder Club' and everyone brings a snack to share."
+  },
+  {
+    "id": "pta-bake-sale",
+    "field": "school announcement",
+    "task": "I'm co-chairing the PTA fall bake sale at Lincoln Elementary on Friday, Oct 31 from 8 to 10am. Write an announcement for the school newsletter asking parents to donate baked goods, with a note that items need labels for allergens."
+  },
+  {
+    "id": "garage-sale-post",
+    "field": "social media post",
+    "task": "My husband and I are doing a big garage sale on Saturday, November 1, starting at 8am at 412 Cedar Lane. Write a Facebook neighborhood group post listing that we have kids' bikes, a patio set, and lots of kitchen stuff, and that cash only."
+  },
+  {
+    "id": "dog-loss-card",
+    "field": "sympathy card",
+    "task": "Our neighbor's 13-year-old golden retriever Biscuit died this morning. I want to write a short handwritten card to go in her mailbox tomorrow, something warm that mentions how Biscuit always waited for the mail carrier."
+  },
+  {
+    "id": "niece-ninth-birthday",
+    "field": "birthday card",
+    "task": "My niece Priya turns 9 this Sunday and she's obsessed with horses and the Harry Potter books. Write a short birthday card message from her Auntie Jo that I can write inside a card with a horse on the front."
+  },
+  {
+    "id": "forgot-birthday-apology",
+    "field": "apology message",
+    "task": "I completely forgot my best friend Dana's birthday last Thursday and didn't call until today. I feel awful and want to text her an apology that owns it without groveling too much, and offer to take her to brunch this weekend."
+  },
+  {
+    "id": "awards-night-speech",
+    "field": "speech writing",
+    "task": "I'm the Little League commissioner and I have to give a 2-minute opening speech at the end-of-season awards night at the Riverside fields on Saturday. Please write something encouraging about how the kids improved, thanks to the 22 volunteer coaches, and the new dugout sponsors."
+  },
+  {
+    "id": "housewarming-invite",
+    "field": "party invitation",
+    "task": "We finally closed on our first house and are hosting a housewarming on Sunday, December 7 from 2 to 5pm. Write a text-style invitation for our group chat that says it's a potluck, we'll provide drinks, and to bring slippers because we just refinished the floors."
+  },
+  {
+    "id": "make-up-test-text",
+    "field": "teacher message",
+    "task": "My daughter Maya missed her Chemistry unit test on Tuesday because she had strep throat and has a doctor's note. Write a short email to Mr. Okafor asking if she can take the make-up test next week and mention she has her notes ready."
+  },
+  {
+    "id": "streetlight-letter",
+    "field": "city council letter",
+    "task": "The streetlight at the corner of Oak and 14th has been out for three weeks and it's dark enough that I nearly hit a kid on a bike last night. Write a letter to the city council asking for a repair date and mention the work order number 24-7731."
+  },
+  {
+    "id": "garden-plot-notice",
+    "field": "community notice",
+    "task": "I'm the secretary for the Maple Street Community Garden and we have 6 unused plots that got reassigned from people who never showed up this season. Write a notice to post at the gate explaining that plots left empty past Nov 15 will go to the waitlist of 9 people."
+  },
+  {
+    "id": "choir-welcome",
+    "field": "welcome message",
+    "task": "I'm the director of the St. Anne's community choir and we have 5 new members joining tomorrow night's rehearsal. Write a warm welcome message I can read aloud before we start, mentioning we rehearse Tuesdays at 7pm and that our spring concert is in April."
+  },
+  {
+    "id": "decline-wedding-text",
+    "field": "declining invitation",
+    "task": "My college roommate Kelsey is getting married in Charleston in June and I just found out I can't go because of a work commitment that I can't move. Write a text reply to her saying I'm devastated to miss it, I'll send a gift, and I'd love a video of the reception."
+  },
+  {
+    "id": "grandma-90th-card",
+    "field": "birthday card",
+    "task": "My grandmother Helen is turning 90 next Saturday and we're throwing her a family dinner at her favorite diner. Write a short card message from me, her oldest grandson, that mentions her bingo nights and her famous apple pie."
+  },
+  {
+    "id": "troop-fundraiser",
+    "field": "fundraiser announcement",
+    "task": "Our Scout troop 214 is selling popcorn tins to fund a trip to the state jamboree next summer, and the goal is $6,000. Write an announcement for the parents' email that lists the pickup date of November 22 at the church parking lot and the cash or Venmo options."
+  },
+  {
+    "id": "watch-meeting-reminder",
+    "field": "social media post",
+    "task": "I'm organizing our neighborhood watch meeting on Thursday, November 6 at 7pm in the Hollow Creek clubhouse, and we've had a rash of car break-ins. Write a short post for the Nextdoor group encouraging people to come and say we'll cover locking cars and the new camera program."
+  },
+  {
+    "id": "nurse-thank-you",
+    "field": "thank-you note",
+    "task": "A nurse named Renee took care of my mom in the cardiac unit at St. Luke's for 8 nights and was incredibly patient with her and with me. I want to write her a handwritten thank-you note that I can drop off at the front desk tomorrow."
+  },
+  {
+    "id": "roommate-dishes-apology",
+    "field": "apology note",
+    "task": "I've left dirty dishes in the sink for two weeks and my roommate Tomas has been quietly washing them, which I just realized was super unfair. Write a note I can slide under his door apologizing and saying I'll do a full cleaning on Sunday."
+  },
+  {
+    "id": "silver-anniversary-note",
+    "field": "anniversary note",
+    "task": "My wife Lynn and I hit 25 years of marriage this Friday, and I want to write her a card that mentions our first date at the Fourth Street pizza place and that I'd marry her all over again. Please keep it under 150 words and not too sappy."
+  },
+  {
+    "id": "moving-farewell-text",
+    "field": "farewell message",
+    "task": "My best friend since fourth grade, Marcus, is moving to Portland next Monday and I want to send him a goodbye text that's heartfelt but also a little funny. Something about the time we got lost in Yellowstone and how I'm going to miss him, and that he owes me a visit."
+  },
+  {
+    "id": "rotary-introduction",
+    "field": "speech writing",
+    "task": "I'm introducing the guest speaker, Dr. Anita Shah, at our Rotary club lunch on Wednesday. She's a pediatric dentist who started a free dental clinic for uninsured kids in Lake County, and I need a 90-second introduction."
+  },
+  {
+    "id": "library-hours-letter",
+    "field": "letter to editor",
+    "task": "The county library cut Saturday hours at our branch from 9am-5pm to 10am-2pm starting next month, and I think this hurts working parents. Write a letter to the editor of the Lakeside Herald, around 200 words, that asks the county commission to restore the hours."
+  },
+  {
+    "id": "5k-recap-post",
+    "field": "social media post",
+    "task": "Our Hope for Kids 5K on Saturday raised $11,400 and we had 312 runners, which is way more than last year. Write a recap post for our Instagram thanking the sponsors, volunteers, and the Ridgeview High cross-country team."
+  },
+  {
+    "id": "daycare-pickup-policy",
+    "field": "parent message",
+    "task": "My son's daycare changed their pickup policy so that only people on the emergency list can pick up after 5:30pm, and my mother-in-law who lives with us isn't on it. Write a polite email to the director, Ms. Dawson, asking to add Carol Reyes to the list with her driver's license info sent separately."
+  },
+  {
+    "id": "new-baby-card",
+    "field": "congratulations card",
+    "task": "My coworker Jen and her husband just had a baby girl named Lila at 6 lbs 2 oz, and I'm planning to send a card to the office. Write a short, sweet congratulations message for the card that's appropriate for a coworker I'm not super close with."
+  },
+  {
+    "id": "scholarship-reference",
+    "field": "reference letter",
+    "task": "A high school senior named Aaliyah volunteered with my food pantry every Saturday for two years, and she's applying for a community service scholarship due December 1. Write a short reference letter from me as the pantry coordinator that highlights her reliability and that she ran our Thanksgiving drive by herself."
+  }
+]

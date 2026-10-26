@@ -1,0 +1,1442 @@
+[
+  {
+    "id": "5k-recap-post",
+    "a": "nudge",
+    "b": "plain",
+    "key": "05def49818686a68",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a more usable single caption, while X expands into a carousel and posting plan and adds several unsupported claims; both should avoid calling this the biggest turnout ever without confirming it.",
+      "X provides a usable caption with fewer unsupported details, while Y adds unverified claims and expands the request into a carousel and posting plan."
+    ]
+  },
+  {
+    "id": "5k-recap-post",
+    "a": "skill",
+    "b": "nudge",
+    "key": "961a92aeeba5c902",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a focused, usable recap, while Y adds unrequested deliverables and makes unsupported claims about record results, participants, and how the funds will be used.",
+      "Y provides the requested caption directly, while X adds a carousel plan and posting campaign and makes unsupported claims about the event."
+    ]
+  },
+  {
+    "id": "awards-night-speech",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c362c0354fe90840",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a more inclusive awards-night opening and prompts the commissioner to add a real season moment and sponsor names, while X presents an invented player story as a personal memory.",
+      "X provides a usable speech with clear prompts to verify the personal moment and sponsor names, while Y presents invented memories and attendance claims as facts."
+    ]
+  },
+  {
+    "id": "5k-recap-post",
+    "a": "skill",
+    "b": "plain",
+    "key": "823aa345e069b9b8",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable recap and concrete checks for sponsor tags, last year’s count, and the funds’ impact, though its unsupported “biggest turnout yet” claim should be removed before posting.",
+      "X provides a usable caption and practical customization notes, while Y leaves essential claims as placeholders that must be resolved before posting."
+    ]
+  },
+  {
+    "id": "awards-night-speech",
+    "a": "skill",
+    "b": "plain",
+    "key": "80648cc8b1eec246",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y covers the requested points without inventing a firsthand player story or claiming every seat is full, though the commissioner should confirm the sponsor names and dugout details before speaking.",
+      "X is a usable two-minute speech that covers the requested thanks, while Y invents a personal memory and assumes three sponsors."
+    ]
+  },
+  {
+    "id": "awards-night-speech",
+    "a": "nudge",
+    "b": "plain",
+    "key": "11caf73cbdf4186b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is more usable as delivered; X is more vivid but puts invented personal memories and season details in the commissioner’s mouth.",
+      "X is closer to a ready-to-deliver two-minute speech, while Y depends on an unprovided personal moment and presents invented season details as fact."
+    ]
+  },
+  {
+    "id": "book-club-invite",
+    "a": "skill",
+    "b": "plain",
+    "key": "0aaa4e07dd00c916",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives neighbors a concise invitation with all the meeting details and a clear contact placeholder, while X adds an unverified room and library-copy suggestion and promises gentle spoilers for a book discussion.",
+      "X is more ready to send, gives neighbors a way to RSVP, and flags useful room and allergy details without adding speculative library-copy information or promising limited spoilers during a book discussion."
+    ]
+  },
+  {
+    "id": "book-club-invite",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c28106ab626a3883",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a usable invitation for the requested meeting, while Y expands into multiple formats and an organizing checklist that outweigh its useful details.",
+      "X provides a stronger invitation and flags room, food, and spoiler logistics, though its extra drafts and meeting-planning material expand the requested scope."
+    ]
+  },
+  {
+    "id": "book-club-invite",
+    "a": "nudge",
+    "b": "plain",
+    "key": "38b0a8418210b12e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a ready-to-use invitation and flags the missing room detail, while X expands a single invitation into multiple formats and meeting-planning extras.",
+      "X provides a clear, usable invitation, while Y expands the request into multiple drafts and event-planning advice and adds an unrequested RSVP deadline."
+    ]
+  },
+  {
+    "id": "choir-welcome",
+    "a": "skill",
+    "b": "plain",
+    "key": "d4813a241ad40d3e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the director a warm, concise message with both requested details, while X is padded with repetition and makes unnecessary promises to the new members.",
+      "X gives the director a warm, concise message with both requested details, while Y is drawn out and makes promises about the rehearsal the director may not want to make."
+    ]
+  },
+  {
+    "id": "choir-welcome",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3e46f07391f81b05",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a warm, ready-to-read welcome with both requested details, while X adds an unnecessary second script and rehearsal planning advice.",
+      "X provides a warm, ready-to-read welcome with both requested details, while Y adds unrequested scripts and rehearsal plans and puts newcomers on the spot."
+    ]
+  },
+  {
+    "id": "choir-welcome",
+    "a": "skill",
+    "b": "nudge",
+    "key": "23788d93a78cae01",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y offers a warmer, more natural read-aloud welcome with the requested rehearsal and concert details, though its extra script and advice expand the scope.",
+      "X offers a warmer, more distinctive script with useful cues for existing members, though its second version and extra advice expand the requested scope."
+    ]
+  },
+  {
+    "id": "daycare-pickup-policy",
+    "a": "skill",
+    "b": "plain",
+    "key": "ea4da2f0eb746d1c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X asks Ms. Dawson to confirm Carol has been added, giving the parent a clear check before relying on her for an after-5:30 pickup.",
+      "Y asks Ms. Dawson to confirm when Carol is added, giving the parent a clear way to know she is authorized for pickup."
+    ]
+  },
+  {
+    "id": "daycare-pickup-policy",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9ccc1b85da127005",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X provides a polite, ready-to-send email that addresses the policy and asks for confirmation, while Y adds unnecessary placeholders, commentary, and a broader request.",
+      "Y is a concise, ready-to-send email that requests the addition, keeps the license information separate, and asks for confirmation without X’s extra placeholders and unnecessary notes."
+    ]
+  },
+  {
+    "id": "daycare-pickup-policy",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e47cfb814bf8c40b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X asks for confirmation before Carol’s first pickup and offers to complete required forms, making the request more actionable despite its extra notes.",
+      "Y asks for confirmation that Carol is authorized before she attempts pickup and accounts for any required forms or ID checks, though its extra notes are longer than necessary."
+    ]
+  },
+  {
+    "id": "decline-wedding-text",
+    "a": "skill",
+    "b": "plain",
+    "key": "2632020cfa10dee2",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y covers every requested point and asks for a reception video without putting extra pressure on Kelsey, while X changes the request to a first-dance video.",
+      "X covers every requested point and makes the video request optional for whoever can take one, while Y narrows it to the first dance and puts the task on the bride."
+    ]
+  },
+  {
+    "id": "decline-wedding-text",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2a2fa2fc774e0945",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y’s shorter text covers the requested reception video and gives Kelsey a considerate way to share it later, while X asks specifically for a first-dance video and puts the request directly on her.",
+      "X includes every requested point and suggests asking for reception clips without making Kelsey responsible for filming them, while Y asks only for a first-dance video."
+    ]
+  },
+  {
+    "id": "decline-wedding-text",
+    "a": "nudge",
+    "b": "plain",
+    "key": "4c5b0cf1a5a42df0",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives one warm, ready-to-send text and makes the video request easy to accommodate, while X adds an unrequested second draft and advice and risks burdening Kelsey with its request to see everything.",
+      "X gives a warm, ready-to-send text that covers every request while asking for a reception video without making it Kelsey's task; Y is longer and adds an unrequested dinner plan."
+    ]
+  },
+  {
+    "id": "dog-loss-card",
+    "a": "skill",
+    "b": "plain",
+    "key": "57e3bd9d5813056b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a short, warm card centered on the mail carrier memory, while Y adds unnecessary advice and invents details such as Biscuit waiting by a window.",
+      "X offers a warmer, more natural condolence and uses the mail carrier memory well, though its extra advice and invented window detail should be cut; Y’s opening is too blunt for a sympathy card."
+    ]
+  },
+  {
+    "id": "dog-loss-card",
+    "a": "skill",
+    "b": "nudge",
+    "key": "441a7cc70d7bc202",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X offers one short, warm card centered on Biscuit’s mail carrier ritual, while Y expands a single-card request into multiple drafts and lengthy advice.",
+      "Y gives a short, personal card centered on the mail-carrier memory, while X expands the request into multiple drafts and unnecessary delivery advice; Y should avoid assuming Biscuit’s pronouns."
+    ]
+  },
+  {
+    "id": "forgot-birthday-apology",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5c2d236029be3d91",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a warm, direct text that owns the missed birthday and offers brunch without the repeated self-reproach in Y.",
+      "Y is ready to send, owns the missed birthday warmly without groveling, and makes a clear brunch offer; X adds unnecessary variants and advice."
+    ]
+  },
+  {
+    "id": "dog-loss-card",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f6adee128e64a3a6",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives one warm, usable card with Biscuit’s mail-carrier habit at its center, while X adds too many versions and tips for a simple handwritten note.",
+      "X gives one usable card centered on Biscuit’s mail-carrier habit; Y turns the single-card request into three drafts and lengthy advice, including questionable advice to put an unstamped card in a mailbox."
+    ]
+  },
+  {
+    "id": "forgot-birthday-apology",
+    "a": "skill",
+    "b": "plain",
+    "key": "d3de12914d57c20e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to send, owns the missed birthday without overdoing the guilt, and offers brunch; Y’s extra drafts and tips add little to this request.",
+      "Y is a concise, send-ready apology that owns the missed birthday and offers brunch without dwelling on guilt."
+    ]
+  },
+  {
+    "id": "forgot-birthday-apology",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9af5d992f491bbce",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise, sendable apology that owns the missed birthday and offers brunch, while X adds enough repetition and extra advice to dilute the message.",
+      "X gives a sincere, ready-to-send text that owns the missed birthday and offers brunch without making Dana manage the sender’s guilt; Y adds unnecessary self-focus and advice."
+    ]
+  },
+  {
+    "id": "garage-sale-post",
+    "a": "skill",
+    "b": "plain",
+    "key": "2f5539c80c420128",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to post and sticks to the supplied details, while Y invents specific kitchen items and adds unnecessary commentary; both miss that November 1, 2026 is Sunday, not Saturday.",
+      "Y is concise and sticks to the supplied sale details; X invents kitchen items, and neither catches that November 1, 2026 is a Sunday."
+    ]
+  },
+  {
+    "id": "garage-sale-post",
+    "a": "skill",
+    "b": "nudge",
+    "key": "3e10664aecd4535b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y catches the Saturday–November 1 date conflict, which could misdirect buyers, though its extra advice and unverified details make the response longer than needed.",
+      "X flags that November 1, 2026 is Sunday, a crucial error Y misses, though X adds excessive advice and unsupported sale details."
+    ]
+  },
+  {
+    "id": "garage-sale-post",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9ce68c4a9ce7d4ef",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X flags that November 1, 2026 is Sunday, a critical error Y misses, though X should resolve the date before drafting and adds unnecessary promotion advice.",
+      "Y catches the critical Saturday–November 1 date conflict, though its post still needs that date corrected and its extra promotional plan goes beyond the requested post."
+    ]
+  },
+  {
+    "id": "garden-plot-notice",
+    "a": "skill",
+    "b": "plain",
+    "key": "7c098abbfc2325fa",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better reflects that the six plots were reassigned but remain unused, while Y incorrectly calls them unassigned and could make every plot holder think their plot is at risk.",
+      "Y is a clearer gate notice that identifies the affected plots and states the deadline, while X incorrectly says the previous holders released the plots and leaves it unclear which plots are affected."
+    ]
+  },
+  {
+    "id": "garden-plot-notice",
+    "a": "nudge",
+    "b": "plain",
+    "key": "faedcfc74ca8234d",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better reflects that the six plots have been reassigned, gives current holders a clear deadline and contact path, and flags details to verify; Y incorrectly says the plots are now unassigned.",
+      "X gives a usable gate notice and flags the key uncertainty, while Y incorrectly tells former plot holders they can keep plots that have already been reassigned and invents additional rules."
+    ]
+  },
+  {
+    "id": "grandma-90th-card",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b29e1be82d22df2d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a short, personal card that includes the requested details, while Y invents bingo memories and expands the request into alternate copy and advice.",
+      "Y gives a single, ready-to-use card message with the requested details, while X adds an extra version and advice and invents details about Helen."
+    ]
+  },
+  {
+    "id": "garden-plot-notice",
+    "a": "skill",
+    "b": "nudge",
+    "key": "37f09f98eb08c529",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y better explains the action required and flags the need to notify absent plot holders, though it adds a sign-up sheet and other posting tasks and its proposed rules must be checked before posting.",
+      "Y is a clearer gate notice that reflects the reassigned plots, while X adds unverified rules about plot use, waitlist order, and eligibility; Y should change “before Nov 15” to “by Nov 15” before posting."
+    ]
+  },
+  {
+    "id": "grandma-90th-card",
+    "a": "skill",
+    "b": "plain",
+    "key": "0a1b4f69c4a7f14e",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X includes the requested details in a warm, usable card without inventing specific bingo memories that may not be true.",
+      "X is more personal and works when handed to Helen at the dinner, while Y’s “next Saturday” will be out of date by then."
+    ]
+  },
+  {
+    "id": "grandpa-eulogy",
+    "a": "skill",
+    "b": "plain",
+    "key": "02780b3c61eb0df6",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y makes uncertain details explicit and gives useful reading guidance, while X presents invented memories, dialogue, and traits as facts.",
+      "X offers a customizable draft and useful reading guidance, while Y invents dialogue, memories, and beliefs that the mourner did not provide."
+    ]
+  },
+  {
+    "id": "grandpa-eulogy",
+    "a": "skill",
+    "b": "nudge",
+    "key": "8a5712bd664d3518",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable draft with places for real memories and practical reading guidance, while X invents a scene and dialogue the family may recognize as untrue.",
+      "X provides a usable eulogy while clearly marking unknown details for the family to supply; Y presents invented memories, dialogue, and beliefs as fact."
+    ]
+  },
+  {
+    "id": "grandma-90th-card",
+    "a": "nudge",
+    "b": "plain",
+    "key": "7927aa536b6b7f53",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides one ready-to-use card that includes the diner, bingo nights, apple pie, and the grandson’s relationship, while X adds unrequested versions and advice and assumes Helen calls bingo numbers.",
+      "X provides one ready-to-use card message with the requested details, while Y adds an alternate card and unsolicited advice and invents more specific bingo habits."
+    ]
+  },
+  {
+    "id": "grandpa-eulogy",
+    "a": "nudge",
+    "b": "plain",
+    "key": "55e674de74a31506",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers a fuller eulogy closer to the requested length and more useful guidance for making it personal and reading it aloud, though both drafts should be timed before Saturday.",
+      "Y offers a stronger spoken arc and more useful prompts for making the eulogy personal, though the reader should verify its claims about Walt’s character before using them."
+    ]
+  },
+  {
+    "id": "hoa-mailbox-letter",
+    "a": "skill",
+    "b": "plain",
+    "key": "431944e08a7e41a7",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y better protects the homeowner by prompting a check for later covenant amendments, including the relevant covenant text and photos, and requesting a hearing in time to preserve appeal rights.",
+      "X better protects the homeowner by requesting a hearing now, checking for later amendments, and advising prompt, documented submission before any dispute deadline."
+    ]
+  },
+  {
+    "id": "hoa-mailbox-letter",
+    "a": "nudge",
+    "b": "plain",
+    "key": "bf62c84ff147a82e",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a stronger letter by citing the exact covenant, requesting the rule behind the notice, and seeking written removal of the fine and related charges, though its extra tips are longer than needed.",
+      "X gives a concise, usable letter while Y adds length and legal or factual assumptions the homeowner would need to verify before sending."
+    ]
+  },
+  {
+    "id": "hoa-mailbox-letter",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e80bca4c3178930a",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, usable letter that requests reinspection, withdrawal, and appeal details, while Y adds an extensive action plan and includes hearing language that may not apply.",
+      "X better supports the request by asking for reinspection, withdrawal of the fine, the rule behind the notice, and a hearing if needed, while prompting the owner to verify the covenant and any later rules before sending."
+    ]
+  },
+  {
+    "id": "housewarming-invite",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c866ac932c98797a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y catches that December 7, 2026 is Monday, so the host can correct the date before sending, though its extra versions and follow-ups expand the request.",
+      "X catches the critical day-and-date mismatch before sending, though its extra versions and follow-ups exceed the requested single group-chat text."
+    ]
+  },
+  {
+    "id": "housewarming-invite",
+    "a": "skill",
+    "b": "plain",
+    "key": "74c8789a8bdef4ea",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready for the group chat, includes a place to add the essential address, and asks guests what they’re bringing so the potluck can be coordinated.",
+      "Y includes space for the address and asks guests what they’re bringing, making the text more useful for coordinating the potluck."
+    ]
+  },
+  {
+    "id": "housewarming-invite",
+    "a": "nudge",
+    "b": "plain",
+    "key": "98f47bfb6723f2cf",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X flags the Sunday–December 7 date conflict before the invite is sent, though its extra versions and follow-up messages expand a request for one text.",
+      "Y flags the conflicting day and date, includes an address placeholder, and asks guests what they’re bringing, though its extra versions and follow-ups exceed the requested invitation."
+    ]
+  },
+  {
+    "id": "library-hours-letter",
+    "a": "skill",
+    "b": "nudge",
+    "key": "ce50d8acff72d6db",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X delivers a focused, ready-to-send letter near the requested length, while Y makes unsupported claims about savings and branch activities that need checking before publication.",
+      "Y is a focused, ready-to-send letter near the requested length, while X includes an unsupported claim about savings and needs revision before submission."
+    ]
+  },
+  {
+    "id": "library-hours-letter",
+    "a": "skill",
+    "b": "plain",
+    "key": "2da308c4624b4c5a",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X delivers a focused letter with the correct arithmetic and a clear request, while Y incorrectly calls the 50% cut 'more than half' and weakens the request with a fallback.",
+      "Y makes the requested case clearly and accurately, while X incorrectly says the hours were cut by more than half and assumes budget pressures without evidence."
+    ]
+  },
+  {
+    "id": "library-hours-letter",
+    "a": "nudge",
+    "b": "plain",
+    "key": "5e3f98d328e8ba81",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X states the hours accurately and gives commissioners a concrete request, while Y incorrectly calls a reduction from eight hours to four 'more than half'; X should still remove its unsupported claim about savings before submission.",
+      "Y gives a clear request to restore the hours and useful checks before submission, though its unsupported claim that the cut “saves little” should be removed unless verified."
+    ]
+  },
+  {
+    "id": "make-up-test-text",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9d99480aed173179",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X provides a concise, ready-to-send email that covers the request without assuming the note is attached or that Maya has recovered.",
+      "Y is a short, ready-to-send email that covers the request without assuming Maya has recovered or claiming the doctor’s note is attached."
+    ]
+  },
+  {
+    "id": "make-up-test-text",
+    "a": "skill",
+    "b": "plain",
+    "key": "202c824331b0c9fa",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is shorter and makes the doctor's note easy to provide while clearly requesting a make-up test next week.",
+      "X is more concise while covering the illness, doctor's note, next-week request, and Maya's readiness, with a practical offer to send or bring the note."
+    ]
+  },
+  {
+    "id": "make-up-test-text",
+    "a": "nudge",
+    "b": "plain",
+    "key": "2277c5b44d8e2fbe",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a short, ready-to-send email that covers the request without assuming the note is attached or that Maya has recovered.",
+      "X provides a short, ready-to-send email without assuming the note is attached or that Maya has recovered; Y adds unnecessary logistics and advice."
+    ]
+  },
+  {
+    "id": "moving-farewell-text",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c38f37d379057983",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X offers a heartfelt, funny text ready to send, while Y adds an unrequested second draft and tips and misreads the visit as a trip to Portland.",
+      "Y gives a concise, heartfelt text with a natural Yellowstone joke, while X adds an unrequested second version and advice and includes more invented details."
+    ]
+  },
+  {
+    "id": "moving-farewell-text",
+    "a": "skill",
+    "b": "plain",
+    "key": "40a432dd5bfc0aab",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a heartfelt, funny text built around the details provided, while Y invents a Yellowstone shortcut and guesses how long they have been friends.",
+      "Y feels more like a text a longtime friend would send, with a warm Yellowstone callback and a funny visit request, while X adds length and invented details."
+    ]
+  },
+  {
+    "id": "new-baby-card",
+    "a": "skill",
+    "b": "nudge",
+    "key": "db64e5d1ecaeeda1",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a warm, ready-to-use coworker card message, while Y adds unnecessary alternatives and advice beyond the requested note.",
+      "Y gives a short, warm message ready for a coworker’s card, while X adds several unrequested versions and advice."
+    ]
+  },
+  {
+    "id": "new-baby-card",
+    "a": "skill",
+    "b": "plain",
+    "key": "a46f61782d2b718c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives one brief, warm message suited to a coworker, while Y adds unnecessary alternatives and commentary.",
+      "Y gives a short, warm message suited to a coworker, while X adds unnecessary alternatives and commentary."
+    ]
+  },
+  {
+    "id": "moving-farewell-text",
+    "a": "nudge",
+    "b": "plain",
+    "key": "7937027bdfb8815f",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a more natural, sendable text, while X adds a second draft and extra advice; both should replace invented Yellowstone details with a real memory.",
+      "X gives a warm, funny text that is nearly ready to send, while Y adds an unfilled placeholder, a second draft, and plans beyond the requested text."
+    ]
+  },
+  {
+    "id": "new-baby-card",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3ee3efd9a37cec89",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a warm, coworker-appropriate message with less unnecessary explanation and advice than X.",
+      "X gives a brief, warm message suited to a coworker, while Y adds unnecessary guidance and some overly familiar phrasing."
+    ]
+  },
+  {
+    "id": "niece-ninth-birthday",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2fcfdd7315e89a6e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives Auntie Jo a short, personal message that connects horses and Harry Potter, while Y expands the request into multiple drafts and writing tips.",
+      "Y gives a short, playful message Priya’s aunt can write directly in the card, while X expands the request into multiple versions and writing tips."
+    ]
+  },
+  {
+    "id": "niece-ninth-birthday",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e6aa51627a91c550",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a ready-to-write message that fits Priya’s interests, while X expands a single short card request into multiple versions and extra advice.",
+      "X gives a warm, ready-to-write message for Priya, while Y turns the single-message request into multiple versions and extra advice."
+    ]
+  },
+  {
+    "id": "niece-ninth-birthday",
+    "a": "skill",
+    "b": "plain",
+    "key": "d758dccbae2d6bd4",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is shorter and more distinctive, weaving Priya’s love of horses and Harry Potter into a message that fits inside a birthday card.",
+      "Y is shorter and more playful, weaving Priya’s love of horses and Harry Potter into a message that fits naturally inside the card."
+    ]
+  },
+  {
+    "id": "nurse-dating-profile",
+    "a": "skill",
+    "b": "plain",
+    "key": "8129a79bd5c23079",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a concise, funny profile within the 500-character limit, while Y exceeds the limit and relies on several invented details.",
+      "Y gives a concise profile with a conversation starter, while X appears to exceed 500 characters and relies on several invented specifics."
+    ]
+  },
+  {
+    "id": "nurse-dating-profile",
+    "a": "skill",
+    "b": "nudge",
+    "key": "8143f92916b27e40",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers one short, conversational profile with an easy opener, while Y expands into multiple prompts and photo advice and leans too heavily on ER jokes.",
+      "X offers sharper, more distinctive Hinge prompts, while Y repeats details and relies on invented anecdotes; X also expands the request with alternate prompts and photo advice."
+    ]
+  },
+  {
+    "id": "nurse-dating-profile",
+    "a": "nudge",
+    "b": "plain",
+    "key": "bd4bd5353ea71c7a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X provides usable Hinge prompts within the character limit, while Y exceeds it and invents details the user must replace; X also adds photo advice and extra prompts beyond the requested profile.",
+      "Y gives usable, concise Hinge prompt answers, while X’s draft exceeds 500 characters and invents personal details; Y’s photo tips and alternate prompts expand the requested scope."
+    ]
+  },
+  {
+    "id": "nurse-thank-you",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6c2c643d42e81708",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a warm, ready-to-handwrite note with room for a real memory, while Y adds useful delivery details but buries the note in generic advice and an unrequested manager message.",
+      "X gives a personal note and practical details for getting it to Renee tomorrow, though its optional manager note adds a separate deliverable."
+    ]
+  },
+  {
+    "id": "nurse-thank-you",
+    "a": "skill",
+    "b": "plain",
+    "key": "d253a2c7be1bcc0b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a note ready to handwrite and useful details for personalizing and delivering it, while X leaves a required placeholder in the note.",
+      "X provides a complete note ready to copy and a practical way to help the front desk identify Renee; Y leaves a moment blank and assumes how the mother felt."
+    ]
+  },
+  {
+    "id": "nurse-thank-you",
+    "a": "nudge",
+    "b": "plain",
+    "key": "1d5021bd0071a957",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise note the user can handwrite today, while X inserts unverified details and adds a separate manager message beyond the requested note.",
+      "X gives a warm, ready-to-copy note with useful delivery details, while Y requires filling in memories, assumes facts not supplied, and adds an optional manager note or nomination."
+    ]
+  },
+  {
+    "id": "pta-bake-sale",
+    "a": "skill",
+    "b": "nudge",
+    "key": "61d1e5a546a2b709",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y catches the conflicting weekday and date before publication, though its extra short version and volunteer request expand the assignment.",
+      "X catches the Friday–October 31 date conflict and flags missing newsletter details, though its extra short version expands the requested scope; Y misses the date error."
+    ]
+  },
+  {
+    "id": "pta-bake-sale",
+    "a": "nudge",
+    "b": "plain",
+    "key": "86316716e928be8d",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X catches the Friday–October 31 date conflict, which must be resolved before publication, though its extra short version and planning notes expand the requested deliverable.",
+      "Y catches the weekday/date conflict and prompts a school food-policy check, though its extra short announcement expands the requested deliverable."
+    ]
+  },
+  {
+    "id": "pta-bake-sale",
+    "a": "skill",
+    "b": "plain",
+    "key": "f5dc5cb176ff4fa3",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives parents a clearer, more consistent labeling requirement and stays closer to the requested newsletter announcement, while Y weakens the ingredient requirement and adds unnecessary claims and placeholders.",
+      "Y is more concise and gives parents clearer labeling and drop-off instructions, though both should verify the date before publication because October 31, 2026 is a Saturday."
+    ]
+  },
+  {
+    "id": "roommate-dishes-apology",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6af5c15a1654f7fc",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X takes responsibility and promises the requested Sunday cleaning; Y shifts some blame to Tomas and adds an unrequested dinner offer and follow-up tasks.",
+      "Y gives Tomas a concise apology and a clear Sunday commitment, while X shifts some responsibility onto him and adds an unasked-for dinner or drinks commitment."
+    ]
+  },
+  {
+    "id": "roommate-dishes-apology",
+    "a": "nudge",
+    "b": "plain",
+    "key": "96cc9d53cc3afe82",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise, accountable note, while X shifts some responsibility onto Tomas and adds an unrequested dinner or drinks commitment.",
+      "X gives a usable apology and Sunday commitment, while Y partly shifts responsibility to Tomas and adds an unrequested dinner offer and follow-up conversation."
+    ]
+  },
+  {
+    "id": "roommate-dishes-apology",
+    "a": "skill",
+    "b": "plain",
+    "key": "6dc684c168c8f42d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives Tomas a direct apology and a concrete Sunday cleanup plan, while Y weakens the note by thanking him for staying quiet and asking him to identify more chores.",
+      "Y gives a direct apology and a concrete Sunday cleanup, while X’s thanks for Tomas “not making a big deal of it” risks minimizing his frustration."
+    ]
+  },
+  {
+    "id": "rotary-introduction",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b6c3c0d445257b8c",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X provides a more complete, Rotary-specific introduction close to the requested length, while Y leaves more of the script unfinished and overstates its word count.",
+      "X offers a stronger introduction and practical checks for missing facts, pronunciation, and timing, while Y relies more heavily on an imagined scene and unverified assumptions."
+    ]
+  },
+  {
+    "id": "rotary-introduction",
+    "a": "skill",
+    "b": "plain",
+    "key": "032a1298d1a08a12",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable introduction and prompts a pronunciation check, while X requires three missing facts and opens with an imagined child whose story could be mistaken for a real one.",
+      "X provides a usable introduction and flags details to verify, while Y leaves three essential facts blank and opens with an invented scene."
+    ]
+  },
+  {
+    "id": "rotary-introduction",
+    "a": "nudge",
+    "b": "plain",
+    "key": "2296e43ed7681a6c",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the host a usable introduction that connects Dr. Shah’s work to Rotary, while X leaves several essential lines as placeholders requiring facts the host does not have.",
+      "X provides a usable introduction close to the requested length, while Y leaves key lines unfinished and makes unsupported claims about children in Lake County."
+    ]
+  },
+  {
+    "id": "scholarship-reference",
+    "a": "skill",
+    "b": "nudge",
+    "key": "7e3d244c78bfd9eb",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y asks the coordinator to verify specific claims, clarify what running the drive alone meant, and check submission requirements, making it more usable despite exceeding the requested brevity.",
+      "Y delivers a shorter, more usable letter centered on the two facts provided, while X adds length and numerous unsupported details that require checking."
+    ]
+  },
+  {
+    "id": "scholarship-reference",
+    "a": "skill",
+    "b": "plain",
+    "key": "d243d158c7476feb",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a usable letter while marking the drive’s activities and results for verification, whereas X presents several unprovided details as fact.",
+      "X gives a stronger, more natural letter and flags Thanksgiving details for verification, while Y presents several unsupported details as facts."
+    ]
+  },
+  {
+    "id": "scholarship-reference",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6f765a444a41b008",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides the requested short letter with fewer unsupported claims, while X adds length and several details the coordinator would need to verify.",
+      "Y gives a usable letter and adds practical checks on the Thanksgiving claim, supporting details, and submission requirements, though it should be tightened before sending."
+    ]
+  },
+  {
+    "id": "silver-anniversary-note",
+    "a": "skill",
+    "b": "nudge",
+    "key": "05188504c8be3ef9",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a usable, restrained card, while Y adds an unrequested alternate and advice and invents details about the first date.",
+      "Y gives one restrained, ready-to-use card with both requested details, while X adds an alternate and advice and invents first-date memories."
+    ]
+  },
+  {
+    "id": "silver-anniversary-note",
+    "a": "skill",
+    "b": "plain",
+    "key": "680cede6f3f6740c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is warm, concise, and uses the supplied details without inventing memories or adding Y’s awkward “shopping around” joke.",
+      "Y is concise and unsappy while including both requested details; X adds invented memories and a do-over joke that may land poorly in an anniversary card."
+    ]
+  },
+  {
+    "id": "silver-anniversary-note",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e11f869f8662578c",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives one ready-to-use card and avoids X’s unsupported claim that the first date happened exactly 25 years ago; X also expands the request with a second card and lengthy advice.",
+      "X gives one ready-to-use card that meets the requested tone and details, while Y adds an unrequested alternate and lengthy advice."
+    ]
+  },
+  {
+    "id": "streetlight-letter",
+    "a": "skill",
+    "b": "plain",
+    "key": "1eb76329b463a63c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes a clearer, time-bound request for a written repair date and interim safety measures, while Y’s request to reply at the council’s earliest convenience is less actionable.",
+      "Y gives the council a clear one-week deadline for a written repair date and asks for an interim safety measure, making the letter more actionable."
+    ]
+  },
+  {
+    "id": "streetlight-letter",
+    "a": "skill",
+    "b": "nudge",
+    "key": "67f27955ecc5b0ce",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a focused, usable letter requesting a repair date and interim safety measures, while Y adds unsupported details and turns the single-letter request into a broader follow-up campaign.",
+      "Y gives a concise, usable letter that asks for a repair date and interim safety measures, while X adds distracting requests and generic follow-up advice."
+    ]
+  },
+  {
+    "id": "streetlight-letter",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6d6085e3bdab8e68",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise, credible letter requesting the repair date, work order status, and interim safety measures; X dilutes the request with speculative details and excessive extras.",
+      "X provides a concise, usable letter focused on the repair date and safety risk; Y adds unsupported details and several requests that dilute the message."
+    ]
+  },
+  {
+    "id": "tball-snack-email",
+    "a": "skill",
+    "b": "plain",
+    "key": "ec89d80de6386a91",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to send with the six correct Saturday dates, while Y invents an allergy and team size, adds unnecessary signup options, and leaves key details for the coordinator to finish.",
+      "Y is closer to send-ready because it lists the correct six Saturdays and gives a clear signup process without guessing the team size or adding optional logistics."
+    ]
+  },
+  {
+    "id": "tball-snack-email",
+    "a": "skill",
+    "b": "nudge",
+    "key": "4a74a05532dfb648",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a concise, ready-to-send signup email, while Y adds an unsupported snack quantity, a broad allergy-accommodation promise, and unnecessary optional advice.",
+      "X gives families a clearer signup process and flags that the assumed dates need checking, while Y presents those dates as confirmed."
+    ]
+  },
+  {
+    "id": "troop-fundraiser",
+    "a": "nudge",
+    "b": "plain",
+    "key": "d9f4ef0099788510",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, usable parent email with the required date, location, goal, and payment options, while X adds an unrequested text message and extensive extras.",
+      "X provides a concise, usable parent email and flags its assumptions, while Y expands the request into extra deliverables and introduces several unconfirmed logistics."
+    ]
+  },
+  {
+    "id": "troop-fundraiser",
+    "a": "skill",
+    "b": "plain",
+    "key": "632ade03bf12bbef",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a concise, usable announcement with the requested details and placeholders, while Y adds an unconfirmed order-confirmation requirement and promises alternate pickup arrangements.",
+      "X gives a usable announcement and flags the missing pickup time, Venmo handle, and payment assumption, though its promises about order confirmations and alternate pickup should be verified before sending."
+    ]
+  },
+  {
+    "id": "troop-fundraiser",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a856506239d5fbab",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a usable parent email with the requested pickup and payment details, while Y adds extra deliverables and unconfirmed pickup, payment, and volunteer arrangements.",
+      "X gives parents more useful pickup and payment instructions and flags missing details before sending, though its extra text version and volunteer request expand the task."
+    ]
+  },
+  {
+    "id": "tball-snack-email",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3083a24d1027ab0b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives families six specific dates and a clear way to claim a slot, making the email more actionable, though the coordinator should verify the dates and team size before sending.",
+      "X gives a shorter, usable signup email without assuming the team's game dates, while Y adds length and schedule details that could be wrong."
+    ]
+  },
+  {
+    "id": "watch-meeting-reminder",
+    "a": "skill",
+    "b": "nudge",
+    "key": "3a3a3cfe64fb071d",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y catches a day-and-date conflict that could cost attendance, though its turnout plan goes beyond the requested short post.",
+      "X catches the Thursday–November 6 date conflict that could cost attendance, though its lengthy draft and extra posting plan exceed the request for one short post."
+    ]
+  },
+  {
+    "id": "watch-meeting-reminder",
+    "a": "skill",
+    "b": "plain",
+    "key": "189e2d148a5914b0",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is clearer and more compelling for Nextdoor, though both posts should verify the date because November 6, 2026 is a Friday.",
+      "X is shorter and ready to post, though both should verify the date because November 6, 2026 falls on a Friday."
+    ]
+  },
+  {
+    "id": "watch-meeting-reminder",
+    "a": "nudge",
+    "b": "plain",
+    "key": "77596cdd7d55807e",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X flags the day–date conflict that could cause neighbors to miss the meeting, though its draft and extra tips are longer than requested.",
+      "Y catches the day-and-date conflict that could cost attendance, though its extra turnout advice goes beyond the requested short post and the draft still needs the date corrected before posting."
+    ]
+  }
+]

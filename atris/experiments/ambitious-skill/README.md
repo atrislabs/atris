@@ -54,3 +54,15 @@ Question: does skill v1.4, exactly as shipped in 3.74.18, beat no instruction?
 - **"Better than plain" is earned only if exam 3 alone gives skill vs plain wins over losses with one-sided sign test p below 0.05.** No pooling with exam 2, and no rerun if it misses.
 - Gate lines 1 to 5 must also pass on exam 3.
 - If it misses, public copy keeps saying "not yet proven".
+
+## Exam 4, fixed 2026-10-26 before any exam 4 data exists
+
+Question: on prose a person will send or say, does skill v1.4, exactly as shipped in 3.74.18, beat no instruction?
+
+Why this question: across exams 1 to 3 the skill led plain on writing tasks every time (4 to 3, 6 to 1, 9 to 3), but no exam tested writing on its own with enough tasks.
+
+- 60 fresh writing tasks written blind by Haiku, every earlier topic banned. SKILL.md frozen.
+- Same worker, tools, nudge line, and pinned judge as exams 2 and 3.
+- **"Better than plain on writing" is earned only if exam 4 alone gives skill vs plain wins over losses with one-sided sign test p below 0.05.** No pooling with earlier exams, and no rerun if it misses.
+- Also reported, not gating: skill vs nudge, and scope growth.
+- Scored with `node gate.js out-final4-a out-final4-writing`, where the a half holds 30 tasks and the writing half holds 30 tasks, so line 4 reads the second half. The claim reads the "better than plain claim" line over all 60.

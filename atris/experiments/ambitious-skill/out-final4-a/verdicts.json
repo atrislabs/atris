@@ -1,0 +1,1442 @@
+[
+  {
+    "id": "5k-sponsorship-ask",
+    "a": "skill",
+    "b": "plain",
+    "key": "f63e881b2c565ade",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clear sponsorship offer and reply deadline, with a useful reminder to align that deadline with the shirt printer’s cutoff; X makes the unsupported claim that the full $500 goes directly to food.",
+      "X gives a clear sponsorship offer and ties the reply deadline to the shirt printer’s logo cutoff; Y makes an unsupported claim that the full $500 goes directly to food."
+    ]
+  },
+  {
+    "id": "bistro-menu-item-copy",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f4029d2ede0dddeb",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides clear, appealing menu copy within 25 words at the stated price, while Y adds unnecessary alternatives and operational advice, including dietary claims that need verification.",
+      "Y gives clear, appetizing copy within 25 words at the stated price, while X adds unnecessary alternatives and team guidance to a request for one description."
+    ]
+  },
+  {
+    "id": "5k-sponsorship-ask",
+    "a": "nudge",
+    "b": "plain",
+    "key": "55641ef024b641a6",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a usable email and flags the May 17 date for verification before sending, though its extra notes are more than the user needed.",
+      "Y provides a tighter sponsorship email with a clearer reply request and flags that the May 17 date needs checking before it is sent."
+    ]
+  },
+  {
+    "id": "5k-sponsorship-ask",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e0326e1a224cb17a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a clearer sponsorship ask, a practical logo deadline, and a necessary date check; X makes the unsupported claim that the full $500 goes directly to feeding neighbors.",
+      "X makes a clearer sponsorship offer and flags the date to verify, while Y makes an unsupported claim that the full $500 goes directly to food."
+    ]
+  },
+  {
+    "id": "bistro-menu-item-copy",
+    "a": "skill",
+    "b": "plain",
+    "key": "dc34f1824da9d6ad",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the dish more appetizing texture and flavor while staying concise and casual; Y adds an unnecessary and inaccurate word-count note.",
+      "X is clear, appetizing, and easy to scan, with natural wording that suits a casual neighborhood bistro."
+    ]
+  },
+  {
+    "id": "bistro-menu-item-copy",
+    "a": "nudge",
+    "b": "plain",
+    "key": "33f5ffe541a0d9d6",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers clear, casual menu copy within 25 words, while X adds unnecessary alternatives and operational notes and miscounts its description.",
+      "X provides concise, ready-to-use copy with the requested $14 price, while Y adds unnecessary alternatives and team guidance and changes the price format."
+    ]
+  },
+  {
+    "id": "bookshop-newsletter-intro",
+    "a": "skill",
+    "b": "plain",
+    "key": "7788a58dfe0ec69e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers the requested warm, witty intro without X’s incorrect claim that November 8 falls on a Saturday.",
+      "X delivers the requested warm, witty intro with all three details, while Y incorrectly calls November 8 a Saturday."
+    ]
+  },
+  {
+    "id": "bookshop-newsletter-intro",
+    "a": "nudge",
+    "b": "plain",
+    "key": "d8d6c93871eb3275",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a warm, usable intro without X’s incorrect claim that November 8, 2026 is a Saturday or its invented event details.",
+      "X is warm, witty, and ready to publish, while Y invents event details and incorrectly calls November 8, 2026 a Saturday."
+    ]
+  },
+  {
+    "id": "bookshop-newsletter-intro",
+    "a": "skill",
+    "b": "nudge",
+    "key": "730b59e6689ac046",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X delivers the requested paragraph more cleanly; both incorrectly call November 8 a Saturday in 2026, but Y compounds the error by claiming it verified the date and adds unnecessary notes.",
+      "Y is the cleaner, more usable intro, though both answers incorrectly call November 8, 2026 a Saturday, and X adds unconfirmed event details."
+    ]
+  },
+  {
+    "id": "chargeback-dispute-response",
+    "a": "skill",
+    "b": "plain",
+    "key": "6fc2acff836ea5aa",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X stays closer to the stated evidence, while Y invents that the March 3 approval came after delivery and proves satisfaction, then adds unsupported claims about authorization and refund requests.",
+      "Y is the safer concise rebuttal because X repeatedly turns the approval email into unsupported proof of post-delivery acceptance and satisfaction, though Y should also remove its unsupported claim that approval preceded fulfillment."
+    ]
+  },
+  {
+    "id": "chargeback-dispute-response",
+    "a": "skill",
+    "b": "nudge",
+    "key": "cfe119be80c90dd5",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise letter grounded in the two available exhibits, while Y adds an evidence-packet checklist and makes unsupported claims about delivery, cardholder approval, and filing deadlines.",
+      "Y provides the requested concise letter using the two available exhibits; X adds unsupported claims and a potentially misleading objection about the chargeback deadline."
+    ]
+  },
+  {
+    "id": "chargeback-dispute-response",
+    "a": "nudge",
+    "b": "plain",
+    "key": "63bc577311e95a3a",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a more usable evidence-based letter with placeholders for facts to verify, while Y asserts without support that the March 3 approval came after delivery and proves the customer received the item.",
+      "X provides a more usable concise letter, while Y expands the requested letter into an evidence package and makes an unsupported claim about the chargeback filing deadline; X’s claim that the March 3 approval followed delivery should be verified before sending."
+    ]
+  },
+  {
+    "id": "conference-talk-pitch",
+    "a": "skill",
+    "b": "plain",
+    "key": "50155313645fbfe6",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is safer to submit because Y’s stronger narrative depends on invented incidents, technical choices, and a leadership claim that Ellen would need to verify or rewrite.",
+      "Y is safer to submit because X invents a failed canary, a failed rollback, and Ellen’s leadership role; Y stays closer to the supplied facts while giving reviewers clear takeaways."
+    ]
+  },
+  {
+    "id": "conference-talk-pitch",
+    "a": "skill",
+    "b": "nudge",
+    "key": "8a0307fddb5f3ee8",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y offers a stronger conference pitch with a clear story, audience, and takeaways, and flags claims Ellen must verify, though its added outline and submission fields expand the requested deliverable.",
+      "X offers a more distinctive, technically concrete 25-minute proposal and flags claims to verify, though its added outline and reviewer fields expand the requested deliverables."
+    ]
+  },
+  {
+    "id": "conference-talk-pitch",
+    "a": "nudge",
+    "b": "plain",
+    "key": "caed61340685fac5",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a stronger, accurately sized proposal and flags unsupported claims, while Y invents specific failures and says Ellen led the migration without evidence.",
+      "Y gives the proposal a clearer small-team angle and a workable 25-minute structure, while flagging claims that need verification; X relies on more specific invented incidents and assumes Ellen led the migration."
+    ]
+  },
+  {
+    "id": "exec-okr-status-update",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9e2e6632f27197e1",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y clearly flags the conflicting 2-of-4 claim and the passed vendor deadline while giving executives a more actionable status summary, despite some unsupported outlook language.",
+      "X better serves executives with a concise scorecard, concrete decisions and next steps, and explicit checks of the conflicting 2-of-4 claim and the already-passed vendor date."
+    ]
+  },
+  {
+    "id": "double-charge-complaint-reply",
+    "a": "skill",
+    "b": "nudge",
+    "key": "45c2e2063aac1561",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, empathetic reply with a refund status consistent across its subject and body; Y’s subject says the refund is complete while its body says it is still being issued.",
+      "Y gives Renee a clear, empathetic reply, while X’s subject prematurely says the refund is complete and its added operational checklist expands beyond the requested reply."
+    ]
+  },
+  {
+    "id": "double-charge-complaint-reply",
+    "a": "nudge",
+    "b": "plain",
+    "key": "a46cfc5208848648",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers the requested empathetic reply concisely, while X adds an unrequested checklist and its subject prematurely says the refund has already been completed.",
+      "X provides a concise, empathetic reply that matches the requested refund promise, while Y adds an unrequested checklist and its subject prematurely says the refund has been completed."
+    ]
+  },
+  {
+    "id": "double-charge-complaint-reply",
+    "a": "skill",
+    "b": "plain",
+    "key": "3972e5d57f3c9beb",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y clearly explains the payment retry, refund amount and timing, and what Renee should do if it does not arrive, while X adds a potentially confusing statement explanation.",
+      "X gives Renee the confirmed cause, refund amount and timing, and a clear follow-up step without Y’s unsupported claims that the refund is already underway or will appear as a separate statement credit."
+    ]
+  },
+  {
+    "id": "exec-okr-status-update",
+    "a": "skill",
+    "b": "plain",
+    "key": "27fbd643ae617fae",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y flags the conflicting OKR count and overdue vendor date more clearly, while X leaves the headline unresolved and presents speculative business impacts as fact.",
+      "X flags the conflicting 2-of-4 claim and the passed vendor date up front, then gives a usable status summary without Y’s unsupported claims about business impact."
+    ]
+  },
+  {
+    "id": "freelancer-scope-change",
+    "a": "skill",
+    "b": "nudge",
+    "key": "dbbf98f68988082d",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable message and catches both the same-day confirmation deadline and the lower per-icon rate, which are material issues to resolve before sending.",
+      "X gives a friendlier draft and catches both the same-day confirmation problem and the lower per-icon offer, with concrete ways to address them before sending."
+    ]
+  },
+  {
+    "id": "exec-okr-status-update",
+    "a": "nudge",
+    "b": "plain",
+    "key": "278f630ba7f3635b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives executives clearer decisions and next steps, and more precisely flags the conflicting hit count and the passed vendor date.",
+      "X flags the conflicting hit count and past vendor date before presenting a tighter draft; Y adds unsupported claims about shifting milestones and a proposed Q4 target decision."
+    ]
+  },
+  {
+    "id": "freelancer-scope-change",
+    "a": "skill",
+    "b": "plain",
+    "key": "00394b29837f5a5a",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X states the revised scope and total fee clearly and flags that Friday is the delivery date; Y adds padding and delays sharing the new icon details until after Jun confirms.",
+      "X is friendlier and flags that Friday is the delivery date while suggesting a workable earlier confirmation; Y suggests confirmation dates that are already past or after delivery."
+    ]
+  },
+  {
+    "id": "freelancer-scope-change",
+    "a": "nudge",
+    "b": "plain",
+    "key": "1108ff796917930a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better supports a fair agreement by flagging that Friday is the delivery date, noting the lower per-icon offer, and proposing to share the new icon brief before Jun commits.",
+      "Y gives Jun the new icon brief before asking him to agree and flags that Friday is the delivery date and the added fee is below the original per-icon rate."
+    ]
+  },
+  {
+    "id": "investor-monthly-update",
+    "a": "skill",
+    "b": "plain",
+    "key": "924d64e3b6ecca87",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is shorter, gives investors a more actionable introduction request, and explicitly flags its assumption about pilot revenue; Y repeats the wins and implies churn was stable without prior-month data.",
+      "Y is shorter and makes the hospital-network ask more actionable while explicitly flagging its assumption about pilot revenue; X adds an unrequested October priorities section and implies churn was stable without supporting data."
+    ]
+  },
+  {
+    "id": "investor-monthly-update",
+    "a": "nudge",
+    "b": "plain",
+    "key": "888433a28c4a981b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes the hospital introduction request more actionable and flags the missing context investors need, while Y incorrectly implies churn held steady without an August comparison.",
+      "X gives a shorter, more usable update with accurate MRR growth, a candid placeholder for the mobile slip, and a specific hospital-network ask; Y adds too many placeholders and notes for the requested brief update."
+    ]
+  },
+  {
+    "id": "investor-monthly-update",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b8fdfe9755367533",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better handles the investor-critical gaps—what drove MRR growth, what the 2.1% churn measures, whether pilots will convert, and the mobile delay’s impact—without making X’s unsupported claim that pilots are excluded from MRR.",
+      "X accurately reports the six pilots as signed and flags missing context without inventing facts, while Y changes 'signed' to 'started' and assumes the pilots contribute no MRR."
+    ]
+  },
+  {
+    "id": "kickoff-agenda-client",
+    "a": "skill",
+    "b": "nudge",
+    "key": "38cda26f0edc9425",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a focused, sendable agenda and relevant preparation requests, while Y adds speculative project-specific requests and commits the sender to a scope summary and written recap.",
+      "X gives Luis a timed agenda and more useful preparation requests, including scope boundaries, timeline dependencies, and approval turnaround, while keeping the work within a single email draft."
+    ]
+  },
+  {
+    "id": "kickoff-agenda-client",
+    "a": "skill",
+    "b": "plain",
+    "key": "b35ef4a660ae6cca",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is more ready to send today: it gives Luis a clear prep deadline and checks whether the right approvers will attend, while keeping the 45-minute agenda focused on decisions and owners.",
+      "Y gives Luis a dated, outcome-focused agenda and a clear deadline for preparation, making the email more actionable while keeping the request to one deliverable."
+    ]
+  },
+  {
+    "id": "kitchen-gadget-product-copy",
+    "a": "skill",
+    "b": "plain",
+    "key": "1dd53571c5a0ced7",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y stays closer to the supplied facts, while X makes unverified claims about pressing unpeeled garlic and the cost of separate gadgets.",
+      "X better fits the requested format and tone while acknowledging the missing functions; Y asserts unverified features and a price comparison."
+    ]
+  },
+  {
+    "id": "kitchen-gadget-product-copy",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c0118868ab48b426",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y avoids X’s unsupported claims about pressing unpeeled garlic and the cost of separate gadgets, though its alternate headlines add deliverables beyond the requested copy.",
+      "X adds unnecessary alternatives and notes, but its publish checks address the missing functions, while Y makes unverified claims about pressing unpeeled garlic and the cost of separate gadgets."
+    ]
+  },
+  {
+    "id": "kickoff-agenda-client",
+    "a": "nudge",
+    "b": "plain",
+    "key": "b025bb0ea7a8505b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives Luis a dated, timed agenda and clear preparation requests, including approval owners and a Friday deadline, though its attachment and Zoom placeholders need checking before sending.",
+      "Y gives Luis a dated, timed agenda and clearer preparation requests, though its promised scope summary and written recap add deliverables beyond the requested email."
+    ]
+  },
+  {
+    "id": "office-move-announcement",
+    "a": "nudge",
+    "b": "plain",
+    "key": "b1bd9961e984a6b3",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clearer, more concise staff announcement with the requested details and visible placeholders, while X adds several unconfirmed policies and logistics that would need review before sending.",
+      "X is a clearer, more concise announcement that covers the requested details with placeholders, while Y adds length and several unverified logistics."
+    ]
+  },
+  {
+    "id": "office-move-announcement",
+    "a": "skill",
+    "b": "plain",
+    "key": "a175b64c9249771e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is clearer and more useful, with the missing details and date assumption flagged, though its claims about what movers will pack and IT readiness need verification before sending.",
+      "X is the clearer, more useful announcement: it flags missing details and the date assumption, gives staff a direct IT contact route, and avoids Y’s repetitive action prompts, though its claims about packing and workstation readiness need verification."
+    ]
+  },
+  {
+    "id": "office-move-announcement",
+    "a": "skill",
+    "b": "nudge",
+    "key": "d49f41eca9dfb080",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is a clearer, more sendable announcement and flags its unsupported closure claim; Y adds substantial length and several unverified moving instructions.",
+      "X gives staff more useful move preparation and clearly flags the missing address, desk location, IT contact, and dates for confirmation, though it needs trimming and fact-checking before sending."
+    ]
+  },
+  {
+    "id": "kitchen-gadget-product-copy",
+    "a": "nudge",
+    "b": "plain",
+    "key": "66e963ab549a9543",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives more usable copy and flags the missing function details, though its alternate headlines and publishing notes expand the requested deliverable; Y makes unsupported odor-resistance and durability claims.",
+      "Y provides usable copy and flags the missing function list, while X makes unsupported claims about odor resistance and durability."
+    ]
+  },
+  {
+    "id": "open-enrollment-benefits-note",
+    "a": "skill",
+    "b": "plain",
+    "key": "9708451b58aaf7c0",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is a concise, sendable email with the required action and a useful dentist-network check; Y adds an unverified restriction on changing elections and unnecessary draft notes.",
+      "Y is concise and ready to adapt, gives a useful dentist-network check, and avoids X’s unverified claim about changes after the deadline."
+    ]
+  },
+  {
+    "id": "open-enrollment-benefits-note",
+    "a": "skill",
+    "b": "nudge",
+    "key": "3b76524a080bef9e",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y flags the potentially incorrect 2025 default and gives the sender useful checks before sending, though its unverified 11:59 p.m. deadline and qualifying-life-event claim also need confirmation.",
+      "X catches the potentially incorrect 2025 default and gives useful pre-send checks, though its unverified deadline time and other added details should be removed or confirmed."
+    ]
+  },
+  {
+    "id": "outage-postmortem-customers",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1cccddd99f8bb05c",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better addresses failed orders, credit eligibility, and consistency with prior updates, though its unsupported claims about diagnosis time and data safety must be verified before sending.",
+      "X provides a usable message and flags essential checks on data loss, specific fixes, credit eligibility, and existing SLA terms before sending, while Y leaves more unverified claims in the draft."
+    ]
+  },
+  {
+    "id": "open-enrollment-benefits-note",
+    "a": "nudge",
+    "b": "plain",
+    "key": "2bd256458d86b0f7",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives employees clearer steps and flags important details to verify before sending, especially the 2025 default, dental network, and HSA eligibility, though its assumed 11:59 p.m. cutoff also needs confirmation.",
+      "X delivers a clearer, more skimmable email and flags uncertain plan rules, while Y adds an unverified 11:59 p.m. cutoff and misleading language about automatic enrollment."
+    ]
+  },
+  {
+    "id": "outage-postmortem-customers",
+    "a": "skill",
+    "b": "plain",
+    "key": "5d9761e81983c6ae",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives customers a clearer account, concrete proposed safeguards, and credit details, while explicitly flagging the claims that must be verified before sending.",
+      "Y leaves the unknown fixes and credit process to be confirmed, while X drafts specific remediation and billing promises that could mislead customers if sent today."
+    ]
+  },
+  {
+    "id": "outage-postmortem-customers",
+    "a": "nudge",
+    "b": "plain",
+    "key": "aaed43fde6a0f879",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better protects accuracy by leaving unverified fixes and credit terms to confirm, and it identifies the data, billing, and status-page checks needed before sending, despite being longer than necessary.",
+      "Y makes the remediation and credit details explicit items to verify before sending and adds useful checks for failed orders, existing SLA credits, and consistency with prior updates."
+    ]
+  },
+  {
+    "id": "partnership-intro-warm",
+    "a": "skill",
+    "b": "plain",
+    "key": "fd76991f4d02bbe7",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y makes the potential partnership clearer and gives Hannah a concrete scheduling step while keeping the email brief.",
+      "X gives Hannah a clearer reason to talk and a concrete scheduling next step, while Y assumes the sender runs the app."
+    ]
+  },
+  {
+    "id": "partnership-intro-warm",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1c16769458d573e2",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a short, usable email that covers the request, while Y adds unverified claims, fill-in proof, and a broader outreach plan.",
+      "Y provides a short, usable email with every requested point, while X adds an unrequested outreach checklist and leaves the email dependent on extra claims and placeholders."
+    ]
+  },
+  {
+    "id": "phishing-alert-staff",
+    "a": "skill",
+    "b": "plain",
+    "key": "e6b877b3173c75ef",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives staff a short, actionable alert and a verification rule, while Y adds unverified claims about the incident and an editorial note that would need removal before sending.",
+      "Y is shorter and puts the verification and reporting steps first, though its date, sender address, and claim about the address need checking before it is sent."
+    ]
+  },
+  {
+    "id": "partnership-intro-warm",
+    "a": "nudge",
+    "b": "plain",
+    "key": "c631aebbee90845d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a short, ready-to-personalize email with all three requested points, while X dilutes the ask with a longer draft, speculative partnership options, and extra advice.",
+      "X gives a short, usable email that covers every requested point, while Y adds unsupported claims and placeholders that make its longer draft harder to send today."
+    ]
+  },
+  {
+    "id": "phishing-alert-staff",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9ce4de1eb73407e9",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers a short, usable staff alert, while Y exceeds the requested format with an incident-response checklist and states email details that were not confirmed.",
+      "Y is shorter and closer to a sendable staff alert; X adds an incident-response checklist, exceeds the requested length overall, and includes unverified details about the email."
+    ]
+  },
+  {
+    "id": "planning-meeting-followup-q4",
+    "a": "skill",
+    "b": "nudge",
+    "key": "67b418bd305fe17e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a concise, usable email with the agreed decisions and clear action items; Y adds unconfirmed commitments and incorrectly calls Oct 31 a Friday.",
+      "Y gives a concise, usable email with the correct Oct 31 date, while X mislabels that deadline and adds several unagreed action items and assumptions."
+    ]
+  },
+  {
+    "id": "planning-meeting-followup-q4",
+    "a": "skill",
+    "b": "plain",
+    "key": "5a21a80f2fc4b987",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a concise, usable follow-up with clear action items, while Y adds an unsupported effective date and confirmation deadline plus a distracting note outside the email.",
+      "Y gives a concise, usable email with clear owners and due-date placeholders, while X adds an unsupported effective date for the budget cut and an unrequested confirmation deadline."
+    ]
+  },
+  {
+    "id": "phishing-alert-staff",
+    "a": "nudge",
+    "b": "plain",
+    "key": "53441db3c609984e",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a clearer verification and reporting procedure while leaving the payment outcome to be confirmed; Y states without evidence that no money was sent.",
+      "Y gives staff a clearer verification and reporting procedure and flags the payment outcome for confirmation, though its specific claims about the fake email should also be verified before sending."
+    ]
+  },
+  {
+    "id": "raise-request-manager",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1048b16ea215bde7",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a ready-to-send request for 30 minutes, while Y turns a short message request into an extensive raise-preparation guide.",
+      "Y provides a short, ready-to-send request that names the compensation discussion and expanded duties, while X adds an unrequested meeting-preparation project."
+    ]
+  },
+  {
+    "id": "planning-meeting-followup-q4",
+    "a": "nudge",
+    "b": "plain",
+    "key": "fcd016c3e2d9a289",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a clearer, more concise email with the agreed decisions and essential follow-ups, while X adds speculative tasks and incorrectly calls October 29 a Friday.",
+      "X gives a usable follow-up with clear actions and flags its assumptions, while Y adds unagreed work and rationale and incorrectly calls October 29 a Friday."
+    ]
+  },
+  {
+    "id": "raise-request-manager",
+    "a": "skill",
+    "b": "plain",
+    "key": "9c30f951606da071",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": true
+    },
+    "reasons": [
+      "Y gives a concise message and useful preparation for discussing the 12% raise, while X’s closing line feels unnecessarily transactional.",
+      "X gives Tom a professional, flexible request and useful preparation for the pay discussion, though its suggested summary and negotiation prep extend beyond the requested message."
+    ]
+  },
+  {
+    "id": "raise-request-manager",
+    "a": "nudge",
+    "b": "plain",
+    "key": "82d49211cd28aa2c",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, ready-to-send message with useful context, while X expands a request for one short message into a full negotiation plan and adds an unsupported timeline.",
+      "X gives a concise, usable message for next week’s 1:1, while Y expands into a meeting preparation plan and adds an unsupported claim about when the responsibilities began."
+    ]
+  },
+  {
+    "id": "reference-request-former-boss",
+    "a": "skill",
+    "b": "nudge",
+    "key": "96c94a45352e1409",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, usable email without inventing application details, while Y assumes a final-stage application and an attached job description and expands into extra deliverables.",
+      "Y provides a concise, sendable request with accurate dates and honest placeholders; X adds unsupported claims, an unprovided attachment, and extra deliverables beyond the requested email."
+    ]
+  },
+  {
+    "id": "reference-request-former-boss",
+    "a": "skill",
+    "b": "plain",
+    "key": "aec6e85e3eebb16a",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is concise and ready to personalize, while Y invents a call length, format, and recruiter request that the applicant has not established.",
+      "Y is concise, gives the correct dates for next week, and avoids X’s unsupported assumptions about the recruiter’s preferred format and call length."
+    ]
+  },
+  {
+    "id": "reference-request-former-boss",
+    "a": "nudge",
+    "b": "plain",
+    "key": "a70f19fe2c0124f5",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a focused, usable request with the requested resume attachment, while X assumes the application is in its final stages and promises a job description attachment the user did not provide.",
+      "X provides a usable reference request without inventing application details, while Y assumes a final-stage application, adds a job-description attachment, and expands the task into a brief and follow-up note."
+    ]
+  },
+  {
+    "id": "remote-work-policy-memo",
+    "a": "skill",
+    "b": "nudge",
+    "key": "d3c248eaa03b6229",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y better protects confidential accommodation requests and flags stipend tax and existing-arrangement decisions, though its Q&A, FAQ, and rollout timeline expand a single memo into a broader project.",
+      "X provides a usable memo and flags essential HR checks, especially a confidential path for accommodation requests and the stipend’s tax treatment; Y asks employees to copy managers on potentially sensitive requests."
+    ]
+  },
+  {
+    "id": "remote-work-policy-memo",
+    "a": "skill",
+    "b": "plain",
+    "key": "7dd041e415373789",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives employees a clearer exception process and a confidential route for medical requests, while flagging details to confirm instead of presenting invented stipend and approval rules as settled policy.",
+      "X provides the requested memo while flagging details that need a decision and allowing medical requests to go directly to HR; Y invents policy terms and requires employees to copy their manager on potentially sensitive requests."
+    ]
+  },
+  {
+    "id": "remote-work-policy-memo",
+    "a": "nudge",
+    "b": "plain",
+    "key": "7bccd9ba99a8e749",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better handles confidential accommodation requests and flags the stipend’s tax treatment, existing arrangements, and other decisions that must be settled before the memo is sent.",
+      "Y provides a more actionable memo and flags the stipend tax treatment, accommodation process, and existing arrangements that HR should resolve before sending it."
+    ]
+  },
+  {
+    "id": "restaurant-web-proposal",
+    "a": "skill",
+    "b": "nudge",
+    "key": "8cc37e3e9cf14be3",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X offers a clearer, more practical proposal within budget, with reservation rules and ongoing costs spelled out; Y adds a private-events page, scheduled menu features, and a video guide while using the full budget.",
+      "Y gives the restaurant a clearer, more usable proposal by specifying booking requirements, account ownership, recurring costs, and a launch date with a real buffer while staying within budget."
+    ]
+  },
+  {
+    "id": "restaurant-web-proposal",
+    "a": "skill",
+    "b": "plain",
+    "key": "8545521c658ea8b0",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers a workable schedule with a launch buffer, itemized costs below budget, recurring-fee disclosure, and specific client inputs; Y’s 16-week schedule from early December would miss March 15 despite claiming a buffer.",
+      "Y offers a workable schedule before March 15, clear deliverables, and transparent ongoing costs; X’s 16-week schedule from an early-December kickoff would miss its claimed launch buffer."
+    ]
+  },
+  {
+    "id": "seed-round-press-release",
+    "a": "skill",
+    "b": "nudge",
+    "key": "577908bd9a03c4b3",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is the more usable release; Y adds unverified product and launch claims, plus an unfinished investor quote that would need removal or approval before publication.",
+      "Y covers every requested fact in a concise release, while X adds unverified product and outcome claims plus an unfinished investor quote."
+    ]
+  },
+  {
+    "id": "restaurant-web-proposal",
+    "a": "nudge",
+    "b": "plain",
+    "key": "eb33e7dd2ecdabbf",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the studio a more actionable proposal with dated milestones, clear approvals, and a complete $6,000 breakdown; Y’s 16-week schedule from an early December kickoff runs past the promised March 15 launch.",
+      "Y gives a workable dated schedule, clear client deadlines, and a reservation test, while X’s 16-week plan starting in early December cannot leave the month of buffer it promises before March 15."
+    ]
+  },
+  {
+    "id": "seed-round-press-release",
+    "a": "nudge",
+    "b": "plain",
+    "key": "222b9c810d47eea6",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a concise release with fewer unsupported product claims, while X adds unverified capabilities and an investor quote formatted as if it were approved.",
+      "Y provides a usable release and the stronger publication checks, especially CEO quote approval, a verified traction metric, and launch timing, though its product and market claims also need verification."
+    ]
+  },
+  {
+    "id": "seed-round-press-release",
+    "a": "skill",
+    "b": "plain",
+    "key": "32177b81ce588742",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y better flags the CEO quote for approval and identifies missing release details, though its unsupported claim that Texas and Ohio are the first expansion markets should be removed.",
+      "X is more publication-ready and flags the CEO quote for approval, while Y adds unsupported claims about clinic practices and patient recovery."
+    ]
+  },
+  {
+    "id": "slack-shoutout-coworker",
+    "a": "skill",
+    "b": "plain",
+    "key": "391f58d271c6c883",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to post and connects Marcus’s work to its concrete impact, while Y adds unnecessary framing and a generic follow-up offer.",
+      "Y is ready to post, stays under 80 words, and connects Marcus’s specific effort to its impact in a warm, restrained tone."
+    ]
+  },
+  {
+    "id": "slack-shoutout-coworker",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3caaf1bb46e86e54",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives Marcus’s effort a concrete connection to launch readiness and acknowledges the need for rest, while Y’s praise is warmer but more generic.",
+      "Y gives a usable post that names the impact and acknowledges recovery, while X relies on more generic praise of the late nights."
+    ]
+  },
+  {
+    "id": "subscription-price-increase-notice",
+    "a": "skill",
+    "b": "plain",
+    "key": "72778abcf681a9c5",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is concise and ready to adapt, while Y adds an inaccurate claim that the email gives exactly 30 days’ notice and assumes the upgrades happened over the past year.",
+      "Y gives monthly subscribers a concise price notice with the effective date, reason for the increase, annual-plan exception, and a clear option to cancel."
+    ]
+  },
+  {
+    "id": "slack-shoutout-coworker",
+    "a": "skill",
+    "b": "nudge",
+    "key": "4745ded29f2c5f71",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y’s post is warmer and uses two emoji while recognizing the impact and need for rest, though its optional reward and metrics suggestions expand the task beyond writing a post.",
+      "X offers a warm, ready-to-post message and thoughtfully acknowledges the need for recovery after three late nights; its extra notes are unnecessary but do not expand the task."
+    ]
+  },
+  {
+    "id": "subscription-price-increase-notice",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f1447c23e2b2d60f",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, nearly send-ready notice, while Y adds unverified claims and placeholders and expands the single-email request into reminder and support-prep work.",
+      "X gives a clearer notice and identifies the billing-date and send-deadline checks needed before sending, though its unsupported service and cancellation claims should be verified or removed."
+    ]
+  },
+  {
+    "id": "trade-show-lead-followup",
+    "a": "skill",
+    "b": "plain",
+    "key": "da0133a2776ff2a4",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable short email with a personalized booth reference, demo invitation, and case study link, while X places an invented customer quote in the draft that could be sent by mistake.",
+      "X provides a usable follow-up with a clear demo request, while Y puts an invented customer quote in the email and relies on the sender noticing and replacing it before sending."
+    ]
+  },
+  {
+    "id": "trade-show-lead-followup",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a59b9c5ddf31c0bc",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y provides a usable email with clear placeholders and a check on the Dayton claim, while X puts an invented customer quote in the draft; Y also expands the request into a follow-up sequence.",
+      "X provides a usable email with clear prompts to verify the Dayton claim, while Y puts an invented customer quote in the draft; X also expands the request into a follow-up sequence."
+    ]
+  },
+  {
+    "id": "trade-show-lead-followup",
+    "a": "nudge",
+    "b": "plain",
+    "key": "1c5f0a09dcc55c23",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, usable email that meets the request, while X adds an unrequested follow-up sequence and generic sending advice.",
+      "X provides a short, usable email without inventing a Dayton result; Y adds an unrequested follow-up sequence and delays a time-sensitive send with unsupported timing advice."
+    ]
+  },
+  {
+    "id": "subscription-price-increase-notice",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3a72f7f3477a523c",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a clearer notice by specifying when monthly subscribers will first be charged $15 and flagging the billing-date assumption for verification, though its unsupported cancellation-fee claim should be checked before sending.",
+      "X provides a concise, usable notice, while Y adds a reminder and support-preparation work and makes unverified promises about billing, cancellation, and support."
+    ]
+  },
+  {
+    "id": "vendor-net30-extension",
+    "a": "skill",
+    "b": "plain",
+    "key": "92681d8679c79726",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X asks Dana to confirm the revised due date in writing, making the payment arrangement clearer and more actionable.",
+      "Y makes the proposed due date explicit and asks Dana to confirm it, creating a clear record of the agreed extension."
+    ]
+  },
+  {
+    "id": "vendor-net30-extension",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5260cb9a50f0874d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives Dana a clear, polite request and asks for written confirmation, while Y adds length and proposes a partial payment the sender has not authorized.",
+      "Y gives Dana a concise, complete request and asks for written confirmation; X adds unnecessary explanation and payment alternatives the sender may not be ready to honor."
+    ]
+  },
+  {
+    "id": "vendor-net30-extension",
+    "a": "nudge",
+    "b": "plain",
+    "key": "797e7793958e909b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes the requested extension more actionable with a specific payment date and a check on how the 1.5% fee applies, despite unnecessary extra commentary.",
+      "Y makes the requested extension actionable with specific dates and a payment commitment, while prompting a check of the fee terms before sending."
+    ]
+  },
+  {
+    "id": "warehouse-hours-change",
+    "a": "skill",
+    "b": "plain",
+    "key": "91cd6df7c6d8d78f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct effective date and Pacific Time hours in a shorter, sendable notice, while Y leaves the date blank and adds unverified loading rules.",
+      "Y gives the correct effective date, specifies Pacific time, and delivers the requested short notice; both still need the after-hours contact filled in."
+    ]
+  },
+  {
+    "id": "warehouse-hours-change",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1c2d4edfac0ea084",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is a short, ready-to-fill notice covering the requested change, while Y adds length and unverified scheduling commitments; both still need the actual emergency contact before sending.",
+      "Y gives carriers a short, usable notice with the required hours, cutoff, and emergency contact field, while X adds an unapproved rescheduling deadline and dispatch conditions."
+    ]
+  },
+  {
+    "id": "wholesale-pricing-reply",
+    "a": "skill",
+    "b": "plain",
+    "key": "d67f69a9246f09a5",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives Claire the useful 48-versus-50-unit comparison and a clear next step without leaving an unresolved sample-pack placeholder in the email.",
+      "X gives Claire a ready-to-send reply with accurate totals and a useful 50-unit option, while Y leaves an unresolved sample-pack placeholder in the email."
+    ]
+  },
+  {
+    "id": "wholesale-pricing-reply",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2c13eac3d9cd4597",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives Claire a clear 48-versus-50-unit choice and next step, while X leaves an unresolved sample-pack placeholder in the email.",
+      "X provides a sendable reply with a useful 48-versus-50-unit comparison and a clear sample-pack question, while Y leaves an unresolved placeholder in the email."
+    ]
+  },
+  {
+    "id": "warehouse-hours-change",
+    "a": "nudge",
+    "b": "plain",
+    "key": "d45176aaba81f93f",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct effective date and addresses existing appointments and driver instructions, though its invented rescheduling deadline should be removed before sending.",
+      "X provides the requested short notice and flags its assumptions, while Y adds an unapproved rescheduling deadline and promises a preferred slot and 24/7 coverage."
+    ]
+  },
+  {
+    "id": "wholesale-pricing-reply",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3f6b3ff246b4cea6",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives Claire a clear 25–49-unit tier, shows the substantial savings at 50 units, and flags missing commercial terms for the sender before the reply goes out.",
+      "X gives Claire the useful 48-versus-50-unit comparison, lead time, and sample offer more concisely, while Y adds unnecessary sales language and assumes the two-week lead time means time to shipment."
+    ]
+  },
+  {
+    "id": "winback-lapsed-users",
+    "a": "skill",
+    "b": "nudge",
+    "key": "d9741affeebe21ed",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers a concise, usable email, while Y expands into a campaign plan and puts several unverified claims in the copy.",
+      "Y delivers a concise, human email with the requested offer, while X adds an unrequested campaign sequence and several claims that need verification."
+    ]
+  },
+  {
+    "id": "winback-lapsed-users",
+    "a": "skill",
+    "b": "plain",
+    "key": "14aff44878de86f0",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X delivers a concise, usable email with a clear offer and link, while Y adds several unverified claims and a longer, less natural pitch.",
+      "Y is more concise and closer to send-ready; X adds unverified claims about feature demand, saved budgets, and personal replies that would need checking or removal."
+    ]
+  },
+  {
+    "id": "winback-lapsed-users",
+    "a": "nudge",
+    "b": "plain",
+    "key": "07586586eac99b81",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise, human-sounding email with the requested features and offer, while X expands into an unrequested campaign and makes several claims that need verification.",
+      "X delivers a usable, human-sounding email with key claims flagged for verification, while Y expands the request into a campaign and adds several unsupported product claims."
+    ]
+  },
+  {
+    "id": "year-end-donor-appeal",
+    "a": "skill",
+    "b": "nudge",
+    "key": "12a3b73f05a5805e",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers a focused appeal with fewer unsupported claims, while Y adds campaign materials and advice and invents detailed facts about Eli, the program, and what the $85,000 will fund.",
+      "X gives a more actionable appeal and explicitly flags its invented story details and unverified claims for correction, while Y leaves story placeholders unresolved without flagging its own invented details."
+    ]
+  },
+  {
+    "id": "year-end-donor-appeal",
+    "a": "nudge",
+    "b": "plain",
+    "key": "bf8dea993070a5f5",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a stronger appeal and explicitly flags its invented story details, kit assumptions, and potentially misleading $85,000-to-1,700-children claim for verification before sending.",
+      "X is the more usable letter; both require a verified Eli story, but Y adds an unsupported promise to reach 1,700 children and several unconfirmed giving and tax claims."
+    ]
+  },
+  {
+    "id": "year-end-donor-appeal",
+    "a": "skill",
+    "b": "plain",
+    "key": "dac57b9e8d479bd1",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is the safer letter to adapt because it flags story details for Carla to verify, while Y invents Eli’s progress, family details, program promises, and a $250 gift claim as facts.",
+      "Y keeps the appeal focused on the supported $50 impact and leaves details to verify, while X adds invented outcomes and unsupported claims about how donations will be used."
+    ]
+  }
+]
