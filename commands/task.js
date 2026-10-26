@@ -10702,6 +10702,10 @@ function evaluateSweepAutoAccept(task, root) {
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
+  const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
+  if (storedVerify && nonFalsifyingIssue(storedVerify)) {
+    return { eligible: false, ref, reason: 'non_falsifying_verify', verify: storedVerify };
+  }
   const policyGate = candidatePolicyGate(task, { executeDetectors: true });
   if (!policyGate.ok) return { ...policyGate, ref };
 
@@ -10712,7 +10716,6 @@ function evaluateSweepAutoAccept(task, root) {
   // executed) in the proof, but the older receipt-path check below could not
   // find file evidence for it once `ready --verify` stopped writing a
   // receipt file and started embedding the executed result into proof text.
-  const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
   if (storedVerify) {
     const result = runVerifyCommand(storedVerify, root);
     if (!result.ok) return { eligible: false, ref, reason: result.reason, verify: storedVerify };
@@ -10769,6 +10772,12 @@ function evaluateSweepAutoAccept(task, root) {
         };
       }
       return { eligible: false, ref, reason: result.reason, verify: derived };
+    }
+    // Certification filters these out, but the sweep should explain why a
+    // legacy proof with only whitespace evidence cannot approve the work.
+    const proofCommands = taskReviewEvidenceCommands(proof);
+    if (proofCommands.length && proofCommands.every(command => nonFalsifyingIssue(command))) {
+      return { eligible: false, ref, reason: 'non_falsifying_verify' };
     }
   }
 

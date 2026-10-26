@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { evaluateAutoAccept, isAutoCertifyVerifyCommandAllowed, parseVerifyChain, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
 
 let isolatedVerifyRoot;
@@ -69,6 +70,48 @@ test('accepts certified review with two actors and meaningful proof', () => {
   const result = evaluateAutoAccept(reviewTask());
   assert.equal(result.eligible, true);
   assert.equal(result.policy, 'strict_verify');
+});
+
+test('solo whitespace verify cannot auto-accept under any execution or acceptance policy', () => {
+  const task = reviewTask({ metadata: { verify: 'git diff --check' } });
+  task.claimed_by = 'trusted-member';
+  task.workspace_root = trustRoot('trusted-member');
+  try {
+    for (const acceptAll of [false, true]) {
+      for (const strictVerify of [false, true]) {
+        for (const executeVerify of [false, true]) {
+          const result = evaluateAutoAccept(task, { acceptAll, strictVerify, executeVerify });
+          assert.equal(result.eligible, false);
+          assert.equal(result.reason, 'non_falsifying_verify');
+        }
+      }
+    }
+  } finally {
+    fs.rmSync(task.workspace_root, { recursive: true, force: true });
+  }
+});
+
+test('real npm test and whitespace check chains still run and decide auto-accept', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-accept-chain-'));
+  try {
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test check.test.js' } }));
+    fs.writeFileSync(path.join(root, 'check.test.js'), "require('node:test')('passes', () => {});\n");
+    const task = reviewTask({ metadata: { verify: 'npm test && git diff --check' } });
+    task.workspace_root = root;
+    for (const acceptAll of [false, true]) {
+      for (const executeVerify of [false, true]) {
+        const result = evaluateAutoAccept(task, { acceptAll, executeVerify });
+        assert.equal(result.eligible, true, JSON.stringify(result));
+      }
+    }
+    fs.writeFileSync(path.join(root, 'check.test.js'), "require('node:test')('fails', () => { throw new Error('regression'); });\n");
+    const failed = evaluateAutoAccept(task);
+    assert.equal(failed.eligible, false);
+    assert.equal(failed.reason, 'verify_failed');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('strict verify missing points agents back to review chat', () => {
