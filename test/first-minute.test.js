@@ -68,7 +68,7 @@ function assertKeepWorkingNext(stdout, ref) {
     assert.equal(next, keepWorkingNext(ref));
     return next;
   }
-  assert.match(next, /^atris task ready \S+ --verify "git diff --check"$/);
+  assert.match(next, /^atris "add a test for the claimed task"$/);
   assert.notEqual(next, 'atris do');
   return next;
 }
@@ -160,18 +160,18 @@ test('fresh first-minute copy starts a conversation and stays short', () => {
 test('keep-working minute is claimed ready, and the win line drops the greeting', () => {
   assert.equal(isKeepWorkingMinute({ nextCommand: 'atris do' }), true);
   assert.equal(isKeepWorkingMinute({
-    nextCommand: 'atris task ready CLI-9 --verify "git diff --check"',
+    nextCommand: 'atris "add a test for the claimed task"',
   }), true);
   assert.equal(isKeepWorkingMinute({ nextCommand: 'atris task claim CLI-1 --as keshav' }), false);
   assert.equal(isKeepWorkingMinute(null), false);
   assert.equal(isClaimMinute({ nextCommand: 'atris task claim CLI-1 --as keshav' }), true);
   assert.equal(isClaimMinute({ nextCommand: 'atris do' }), false);
   assert.equal(isClaimMinute({
-    nextCommand: 'atris task ready CLI-9 --verify "git diff --check"',
+    nextCommand: 'atris "add a test for the claimed task"',
   }), false);
   assert.equal(isClaimMinute(null), false);
   assert.equal(
-    spokenWinReason('hey keshav, "notes.md" is already yours.\n\nnext: atris task ready T2 --verify "git diff --check"'),
+    spokenWinReason('hey keshav, "notes.md" is already yours.\n\nnext: atris "add a test for the claimed task"'),
     '"notes.md" is already yours',
   );
 });
@@ -467,7 +467,7 @@ test('claimed task first-minute names the person or title and one next command',
     nextCommand: keepWorkingNext('CLI-9'),
   });
   assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris task ready CLI-9 --verify "git diff --check"$/m);
+  assert.match(text, /^next: atris "add a test for the claimed task"$/m);
   assert.equal(text.match(/^next:/mg).length, 1);
   assert.ok(spokenLineCount(text) <= 4);
 });
@@ -856,7 +856,7 @@ test('workspace with a claimed task names the person or title and one next comma
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /keshav|ship the landing page/i);
-    assert.match(res.stdout, /^next: atris task ready CLI-9 --verify "git diff --check"$/m);
+    assert.match(res.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /What do you want to build|context   loaded|Atris Do/);
     assert.ok(spokenLineCount(res.stdout) <= 6);

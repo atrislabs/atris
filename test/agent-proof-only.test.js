@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const { spawnSync } = require('node:child_process');
 const { DEFAULT_TASK_RESULT_SENTENCE, withTaskReadyResult } = require('./helpers/task-result');
@@ -95,6 +96,44 @@ test('explicit ATRIS_AGENT_PROOF_ONLY=1 still blocks accept without agent marker
     const res = runCli(['task', 'accept', id], { cwd: dir, env: { ATRIS_AGENT_PROOF_ONLY: '1' } });
     assert.notEqual(res.status, 0, `accept should fail\n${res.stdout}`);
     assert.match(`${res.stdout}${res.stderr}`, /cannot accept tasks or award XP/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task sweep cannot accept from an agent session, even with a dry-run flag', () => {
+  const dir = makeTempDir();
+  try {
+    const id = setupReviewTask(dir);
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'proof.json'), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'agent-sweep-proof',
+      result: { verifier_result: { passed: true } },
+    }));
+    const before = runCli(['task', 'events', id, '--json'], { cwd: dir });
+    assert.equal(before.status, 0, before.stderr);
+    for (const agentEnv of [...AGENT_MARKERS.map(marker => ({ [marker]: '1' })), { ATRIS_AGENT_PROOF_ONLY: '1' }]) {
+      for (const flags of [[], ['--dry-run']]) {
+        const res = runCli(['task', 'sweep', '--auto-accept', ...flags, '--json'], { cwd: dir, env: agentEnv });
+        assert.notEqual(res.status, 0, `sweep should fail: ${JSON.stringify(agentEnv)} ${res.stdout}`);
+        assert.equal(JSON.parse(res.stdout).reason, 'agent_proof_only_human_accept_blocked');
+        assert.match(`${res.stdout}${res.stderr}`, /cannot accept tasks or award XP/i);
+      }
+    }
+    const after = runCli(['task', 'events', id, '--json'], { cwd: dir });
+    assert.equal(after.status, 0, after.stderr);
+    assert.deepEqual(JSON.parse(after.stdout), JSON.parse(before.stdout));
+    const shown = runCli(['task', 'show', id, '--json'], { cwd: dir });
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.equal(JSON.parse(shown.stdout).status, 'review');
+
+    // The same receipt is actually eligible when the human override is set.
+    const human = runCli(['task', 'sweep', '--auto-accept', '--json'], {
+      cwd: dir, env: { CLAUDECODE: '1', ATRIS_AGENT_PROOF_ONLY: '0' },
+    });
+    assert.equal(human.status, 0, human.stderr);
+    assert.equal(JSON.parse(human.stdout).accepted, 1, human.stdout);
   } finally {
     cleanupTempDir(dir);
   }

@@ -568,7 +568,7 @@ test('stop after a claimed file talks keep-working and does not hit the cloud', 
     const spoken = output.stdout.join('\n');
     assert.equal(code, 0);
     assert.match(spoken, /"notes.md" is already yours/);
-    assert.match(spoken, /next: atris task ready T2 --verify "git diff --check"/);
+    assert.match(spoken, /next: atris "add a test for the claimed task"/);
     assert.doesNotMatch(spoken, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|nothing is running|what do you want here|atris do/);
     assert.equal(fs.existsSync(path.join(root, '.atris', 'business.json')), false);
   } finally {

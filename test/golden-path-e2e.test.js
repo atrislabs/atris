@@ -281,7 +281,18 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     assertOk(runCommand('git', ['config', 'user.email', 'golden-path@example.invalid'], { cwd: workspace, env }), 'git config email');
     assertOk(runCommand('git', ['config', 'user.name', 'Golden Path'], { cwd: workspace, env }), 'git config name');
     fs.writeFileSync(path.join(workspace, 'README.md'), '# Toy repo\n', 'utf8');
-    assertOk(runCommand('git', ['add', 'README.md'], { cwd: workspace, env }), 'stage toy repo');
+    fs.writeFileSync(path.join(workspace, 'package.json'), JSON.stringify({ scripts: { test: 'node --test test/readme.test.js' } }));
+    fs.mkdirSync(path.join(workspace, 'test'));
+    fs.writeFileSync(path.join(workspace, 'test', 'readme.test.js'), [
+      "const test = require('node:test');",
+      "const assert = require('node:assert/strict');",
+      "const fs = require('node:fs');",
+      "test('first useful step is complete', () => {",
+      "  assert.match(fs.readFileSync('README.md', 'utf8'), /First useful step complete\\./);",
+      '});',
+      '',
+    ].join('\n'));
+    assertOk(runCommand('git', ['add', 'README.md', 'package.json', 'test/readme.test.js'], { cwd: workspace, env }), 'stage toy repo');
     assertOk(runCommand('git', ['commit', '-m', 'initial toy repo'], { cwd: workspace, env }), 'initial commit');
 
     const packed = runCommand('npm', ['pack', '--ignore-scripts', '--pack-destination', packDir], {
@@ -324,8 +335,8 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const talk = runInstalled(doArgs, { timeout: 30000 });
     assertGoldenPathStep(talk, 'printed do from files already here');
-    assert.match(talk.stdout, /README\.md is started\. nothing is built yet\./);
-    assert.match(talk.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(talk.stdout, /is started\. nothing is built yet\./);
+    assert.match(talk.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
@@ -333,14 +344,14 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     const doit = runInstalled(doArgs);
     assertGoldenPathStep(doit, 'second do after first-talk');
     assert.match(doit.stdout, /already yours/);
-    assert.match(doit.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(doit.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
     assert.doesNotMatch(doit.stdout, /^next: atris do$/m);
     assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|You are the Executor|executor\.md/);
 
     const afterDo = runInstalled([]);
     assertGoldenPathStep(afterDo, 'first minute after do');
     assert.doesNotMatch(afterDo.stdout, /No open tasks/);
-    assert.match(afterDo.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(afterDo.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
 
     const listed = parseJson(runInstalled(['task', 'list', '--json']), 'task list');
     const starter = (listed.tasks || []).find((row) => row && row.status === 'claimed');
@@ -351,16 +362,20 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
       'ready',
       taskRef,
       '--verify',
-      'git diff --check',
+      'npm test',
     ]);
 
+    const checkArgs = parseShellWords(printedAtrisArgs(afterDo.stdout, 'next').at(-1));
+    const failingCheck = runCommand(checkArgs[0], checkArgs.slice(1), { cwd: workspace, env: { ...env, NODE_TEST_CONTEXT: undefined } });
+    assert.equal(failingCheck.status, 1, failingCheck.stdout || failingCheck.stderr);
+    assert.match(failingCheck.stdout, /first useful step is complete/);
     fs.appendFileSync(path.join(workspace, 'README.md'), '\nFirst useful step complete.\n', 'utf8');
     const ready = runInstalled([
       'task',
       'ready',
       taskRef,
       '--verify',
-      'git diff --check',
+      'npm test',
       '--result',
       'New users can now finish a first proof loop faster because every next step is printed.',
       '--landing',
@@ -371,17 +386,15 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const landed = runInstalled(['autoland', 'tick']);
     assertGoldenPathStep(landed, 'autoland tick');
-    // The starter edit is never committed, the toy repo has no origin, and its
-    // check is `git diff --check`, so the tick accepts it but must not call it
-    // landed.
+    // The check fails against the committed tree because the edit is uncommitted.
     assert.match(landed.stdout, /\b0 landed\b/);
-    assert.match(landed.stdout, new RegExp(`1 accepted but not proven landed \\(${taskRef} (unverified|no op)\\)`));
 
     const taskResult = runInstalled(['task', 'show', taskRef, '--json']);
     assertGoldenPathStep(taskResult, 'landed task');
     const task = parseJson(taskResult, 'landed task');
-    assert.equal(task.status, 'done');
-    assert.equal(task.review?.approval_status, 'accepted');
+    assert.equal(task.status, 'review');
+    assert.equal(task.review?.approval_status, 'pending');
+    assert.equal(task.metadata.verify_cache?.reason, 'verify_failed');
     const workspaceDiff = runCommand('git', ['diff', '--', 'README.md'], { cwd: workspace, env });
     assertOk(workspaceDiff, 'workspace diff');
     assert.match(workspaceDiff.stdout, /First useful step complete\./);

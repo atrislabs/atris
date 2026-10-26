@@ -80,7 +80,7 @@ test('task desk next line names ready for a claimed task without templates', () 
     const desk = runCli(['task', 'desk'], { cwd: dir, env: deskEnv(dir) });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /TASK DESK/);
-    assert.equal(nextLine(desk.stdout), `atris task ready ${ref} --verify "git diff --check"`);
+    assert.equal(nextLine(desk.stdout), `atris "add a test for the claimed task"`);
     assert.doesNotMatch(desk.stdout, /<cmd>|<plain sentence>|next: atris task next/);
     assert.doesNotMatch(desk.stdout, /Describe the desired outcome|say yes:/i);
   } finally {

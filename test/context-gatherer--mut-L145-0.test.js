@@ -65,5 +65,7 @@ test('createStarterTask reports the claimed starter display ref, not an older op
     title,
     status: 'claimed',
     claimed_by: refreshed.claimed_by,
+    workspace_root: workspaceRoot,
+    metadata: refreshed.metadata,
   });
 });

@@ -38,13 +38,13 @@ test('task next names ready for a claimed task even when the unix user differs',
     const ref = JSON.parse(created.stdout).task.display_id;
     const claimed = runCli(['task', 'claim', ref, '--as', 'keshav'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
-    const expected = `atris task ready ${ref} --verify "git diff --check"`;
+    const expected = `atris "add a test for the claimed task"`;
     const { desk, next } = assertSameNext(dir, env, expected);
     assert.equal(nextLine(desk.stdout), expected);
     const json = runCli(['task', 'next', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
-    assert.equal(payload.action, 'ready');
+    assert.equal(payload.action, 'none');
     assert.equal(payload.command, expected);
     assert.equal(payload.task.display_id, ref);
     assert.equal(payload.task.status, 'claimed');

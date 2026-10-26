@@ -340,3 +340,49 @@ test('a proof citing a real, passing node --test path with no receipt at all aut
     cleanupTempDir(dir);
   }
 });
+
+test('sweep refuses stored and derived solo whitespace checks but accepts real test chains', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
+  const taskDb = require('../lib/task-db');
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: dir }).status, 0);
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test check.test.js' } }));
+    fs.writeFileSync(path.join(dir, 'check.test.js'), "require('node:test')('passes', () => {});\n");
+    const cases = [];
+    for (const stored of [false, true]) {
+      for (const real of [false, true]) {
+        const verify = real ? 'npm test && git diff --check' : 'git diff --check';
+        const task = setupLegacyNamedProofTask(dir, env, {
+          title: `Check parser change ${stored} ${real}`,
+          proof: `Checks: \`${verify}\` passed.`,
+        });
+        if (stored) {
+          const db = taskDb.open(env.ATRIS_TASKS_DB);
+          const row = taskDb.getTask(db, task.id);
+          db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?')
+            .run(JSON.stringify({ ...row.metadata, verify }), task.id);
+        }
+        cases.push({ task, stored, real });
+      }
+    }
+    taskDb.close();
+    const sweep = runCli(['task', 'sweep', '--auto-accept', '--json'], { cwd: dir, env });
+    assert.equal(sweep.status, 0, sweep.stderr);
+    const payload = JSON.parse(sweep.stdout);
+    assert.equal(payload.summary.accepted, 2, JSON.stringify(payload.results));
+    for (const { task, stored, real } of cases) {
+      const row = payload.results.find(row => row.ref === task.display_id);
+      assert.equal(row.action, real ? 'accepted' : 'skipped', JSON.stringify(row));
+      assert.equal(row.reason, real ? (stored ? 'verified_command' : 'verified_derived_command') : 'non_falsifying_verify');
+      const shown = runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env });
+      assert.equal(shown.status, 0, shown.stderr);
+      assert.equal(JSON.parse(shown.stdout).status, real ? 'done' : 'review');
+    }
+  } finally {
+    taskDb.close();
+    cleanupTempDir(dir);
+  }
+});

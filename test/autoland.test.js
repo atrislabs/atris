@@ -10,6 +10,7 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const autoland = require('../lib/autoland');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { withTaskReadyResult } = require('./helpers/task-result');
+const VERIFIED_DIFF_CHECK = 'node --test verify.test.js && git diff --check';
 
 function makeTempRepo() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
@@ -19,6 +20,7 @@ function makeTempRepo() {
   runGit(['config', 'user.email', 'test@example.com'], repo);
   runGit(['config', 'user.name', 'Test'], repo);
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
+  fs.writeFileSync(path.join(repo, 'verify.test.js'), "require('node:test')('readme exists', () => { require('node:assert/strict').match(require('node:fs').readFileSync('README.md', 'utf8'), /^# fixture/); });\n");
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
   fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
@@ -548,7 +550,7 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
   const { base, repo } = makeTempRepo();
   try {
     const landing = certifiedVerifiedTask(repo, 'Fix the landing page typo so visitors trust the page', {
-      verify: 'git diff --check',
+      verify: VERIFIED_DIFF_CHECK,
     });
     const heldBack = certifiedTask(repo, 'Tidy the settings copy so the panel reads clearly');
     replaceLatestProof(repo, heldBack, '');
@@ -925,7 +927,7 @@ test('autoland help forms are read-only and do not run a heartbeat', () => {
 test('live auto-accept refuses without policy, lands with it, blocks denied lanes', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const codeTask = certifiedVerifiedTask(repo, 'Fix the flaky moves test', { tag: 'code', verify: 'git diff --check' });
+    const codeTask = certifiedVerifiedTask(repo, 'Fix the flaky moves test', { tag: 'code', verify: VERIFIED_DIFF_CHECK });
     const billingTask = certifiedVerifiedTask(repo, 'Send the June invoice', { tag: 'billing', verify: 'git diff --check' });
 
     // explicit off: live refuses
@@ -940,8 +942,8 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.deepEqual(receipt.accepted, [codeTask]);
-    // Accepted is not landed: this task never committed anything, and its
-    // only check is `git diff --check`, so the receipt must not say landed.
+    // Accepted is not landed: this task never committed anything of its own,
+    // so a passing check cannot make the receipt say landed.
     assert.deepEqual(receipt.landed, []);
     assert.equal(receipt.accepted_not_landed.length, 1);
     assert.equal(receipt.accepted_not_landed[0].ref, codeTask);
@@ -1030,7 +1032,7 @@ function proofBackedTask(repo, title, { tag = 'code', work = false } = {}) {
   const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
-  const verify = work ? shipWork(repo, title, 'git diff --check') : 'git diff --check';
+  const verify = work ? shipWork(repo, title, 'git diff --check') : VERIFIED_DIFF_CHECK;
   assert.equal(runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo).status, 0);
   return String(id);
 }
@@ -1200,14 +1202,14 @@ test('one heartbeat runs an identical verifier once for every matching task', ()
   const marker = path.join(repo, 'shared-verify-runs.txt');
   try {
     const first = certifiedVerifiedTask(repo, 'First task shares a verifier', {
-      verify: 'git diff --check',
+      verify: VERIFIED_DIFF_CHECK,
     });
     const second = certifiedVerifiedTask(repo, 'Second task shares a verifier', {
-      verify: 'git diff --check',
+      verify: VERIFIED_DIFF_CHECK,
     });
     const before = projectionByRef(repo);
-    assert.equal(before[first].metadata.verify, 'git diff --check');
-    assert.equal(before[second].metadata.verify, 'git diff --check');
+    assert.equal(before[first].metadata.verify, VERIFIED_DIFF_CHECK);
+    assert.equal(before[second].metadata.verify, VERIFIED_DIFF_CHECK);
     const fakeBin = path.join(base, 'fake-bin');
     const fakeGit = path.join(fakeBin, 'git');
     fs.mkdirSync(fakeBin, { recursive: true });
@@ -1246,10 +1248,10 @@ test('one cached verifier failure revises every matching task', () => {
   const marker = path.join(repo, 'shared-failure-runs.txt');
   try {
     const first = certifiedVerifiedTask(repo, 'First task shares a failing verifier', {
-      verify: 'git diff --check',
+      verify: VERIFIED_DIFF_CHECK,
     });
     const second = certifiedVerifiedTask(repo, 'Second task shares a failing verifier', {
-      verify: 'git diff --check',
+      verify: VERIFIED_DIFF_CHECK,
     });
     const fakeBin = path.join(base, 'fake-bin');
     const fakeGit = path.join(fakeBin, 'git');
@@ -1885,7 +1887,7 @@ test('daily tick verifies planning missions after all linked repair tasks close'
       'ready',
       ref,
       '--verify',
-      'git diff --check',
+      VERIFIED_DIFF_CHECK,
       '--as',
       'builder',
       '--json',

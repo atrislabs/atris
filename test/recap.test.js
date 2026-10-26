@@ -367,7 +367,7 @@ test('renderRecapMinute names a claimed file, not factory map.md', () => {
     next: null,
   }, { person: 'keshav' });
     assert.match(text, /^hey keshav, "notes.md" is already yours\.$/m);
-    assert.match(text, /^next: atris task ready T2 --verify "git diff --check"$/m);
+    assert.match(text, /^next: atris "add a test for the claimed task"$/m);
   assert.doesNotMatch(text, /generate map|ready to claim/i);
   assert.equal(spokenLineCount(text), 2);
 });
@@ -385,7 +385,7 @@ test('renderRecapMinute still names a claimed non-seed task', () => {
     next: null,
   }, { person: 'keshav' });
     assert.match(text, /^hey keshav, "ship the landing page" is already yours\.$/m);
-    assert.match(text, /^next: atris task ready T2 --verify "git diff --check"$/m);
+    assert.match(text, /^next: atris "add a test for the claimed task"$/m);
   assert.doesNotMatch(text, /generate map|ready to claim/i);
   assert.equal(spokenLineCount(text), 2);
 });
@@ -540,7 +540,7 @@ test('headless recap after a claimed file skips factory map.md and does not prom
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris task ready T2 --verify "git diff --check"$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP|Share this/i);
     assert.doesNotMatch(recap.stdout, /\? $/m);
     assert.doesNotMatch(recap.stdout, /What do you want/);
@@ -549,7 +549,7 @@ test('headless recap after a claimed file skips factory map.md and does not prom
     const json = runCli(['recap', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
-    assert.equal(payload.next_action, 'atris task ready T2 --verify "git diff --check"');
+    assert.equal(payload.next_action, 'atris "add a test for the claimed task"');
     assert.equal(payload.reason, '"notes.md" is already yours');
     assert.doesNotMatch(json.stdout, /generate map|ready to claim/i);
   } finally {
@@ -592,7 +592,7 @@ test('headless recap still names a claimed non-seed task when factory map.md is 
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.match(recap.stdout, /^hey keshav, "ship the landing page" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris task ready T2 --verify "git diff --check"$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP/i);
     assert.equal(spokenLineCount(recap.stdout), 2);
   } finally {

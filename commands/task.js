@@ -32,7 +32,7 @@ const {
   runVerifyCommand,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
-const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
 const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
@@ -10089,7 +10089,7 @@ function certifyVerifyCandidate(task) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
     // inspected: ..."); try the full clause, then the first sentence of it.
     for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
-      if (candidate && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
+      if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
   return null;
@@ -10702,6 +10702,10 @@ function evaluateSweepAutoAccept(task, root) {
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
+  const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
+  if (storedVerify && nonFalsifyingIssue(storedVerify)) {
+    return { eligible: false, ref, reason: 'non_falsifying_verify', verify: storedVerify };
+  }
   const policyGate = candidatePolicyGate(task, { executeDetectors: true });
   if (!policyGate.ok) return { ...policyGate, ref };
 
@@ -10712,7 +10716,6 @@ function evaluateSweepAutoAccept(task, root) {
   // executed) in the proof, but the older receipt-path check below could not
   // find file evidence for it once `ready --verify` stopped writing a
   // receipt file and started embedding the executed result into proof text.
-  const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
   if (storedVerify) {
     const result = runVerifyCommand(storedVerify, root);
     if (!result.ok) return { eligible: false, ref, reason: result.reason, verify: storedVerify };
@@ -10770,6 +10773,12 @@ function evaluateSweepAutoAccept(task, root) {
       }
       return { eligible: false, ref, reason: result.reason, verify: derived };
     }
+    // Certification filters these out, but the sweep should explain why a
+    // legacy proof with only whitespace evidence cannot approve the work.
+    const proofCommands = taskReviewEvidenceCommands(proof);
+    if (proofCommands.length && proofCommands.every(command => nonFalsifyingIssue(command))) {
+      return { eligible: false, ref, reason: 'non_falsifying_verify' };
+    }
   }
 
   return { eligible: false, ref, reason: verifier.reason, evidence: verifier.evidence };
@@ -10781,6 +10790,14 @@ function cmdSweep(args) {
       'atris task sweep',
       'missing_auto_accept',
       'atris task sweep currently requires --auto-accept for the explicit verified accept policy',
+    );
+  }
+  // Sweep has no dry-run implementation: every successful invocation can
+  // write accepts, even when an unrecognized --dry-run flag is supplied.
+  if (agentProofOnlyMode()) {
+    failAgentProofOnly(
+      'atris task sweep',
+      'agents cannot accept tasks or award xp. leave proof in review for a human to accept or revise.',
     );
   }
   const actor = String(flag(args, '--as') || 'orb-autoaccept');

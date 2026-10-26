@@ -136,7 +136,7 @@ test('claimed task gets the ready-with-verify command', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, "bake bread" is already yours.\n\nnext: atris task ready T-3 --verify "git diff --check"',
+    'hey sam, "bake bread" is already yours.\n\nnext: atris "add a test for the claimed task"',
   );
 });
 
@@ -146,7 +146,7 @@ test('claimed work beats an open task, and a certified review beats claimed work
     { display_id: 'T-4', title: 'Open one', status: 'open', updated_at: 30 },
     { display_id: 'T-5', title: 'Claimed one', status: 'claimed', updated_at: 20 },
   ]);
-  assert.ok(speak({ root }).lines[1].endsWith('next: atris task ready T-5 --verify "git diff --check"'));
+  assert.ok(speak({ root }).lines[1].endsWith('next: atris "add a test for the claimed task"'));
 
   writeTasks(root, [
     { display_id: 'T-4', title: 'Open one', status: 'open', updated_at: 30 },
