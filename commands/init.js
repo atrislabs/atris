@@ -673,7 +673,7 @@ ${agentsOpeningBlock}
 
 The person you work for does not know atris words and never has to learn them. Never tell them to run an atris command or learn a term.
 
-When their words ask for a move like "what should i do next", "keep going while i'm away", "remember this", or "our goal is x", run \`atris guide "<their words>"\`, then run the move it names and report what happened in plain words. \`atris guide\` alone lists every move.
+When their words ask for a move like "what should i do next", "keep going while i'm away", "remember this", or "our goal is x", run \`atris guide "<their words>"\`, then run the move it names and report what happened in plain words. When unsure, run \`atris guide "<their words>"\` and follow its answer. \`atris guide\` alone lists every move.
 
 Moves marked asks you first send messages, spend credits, or run for hours. Say in one sentence what would happen and wait for a yes before running them. Never add a skip flag like --yes on the person's behalf.
 

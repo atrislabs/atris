@@ -22,13 +22,27 @@ What an engine loads in a fresh project before it does anything, measured as
 the input tokens of one "reply ok" call (`scripts/boot-tokens.js`), with the
 user's own settings and skills left out so this is what a new user sees.
 
+As tested in the lab (master at 55952f79c):
+
 | engine | no Atris | Atris on master | Atris lean (this change) |
 |---|---|---|---|
 | Codex (gpt-6.1-sol) | 15,721 | 19,433 (+3,712) | 16,974 (+1,253) |
 | Claude Code (Opus 5.5) | 16,846 | 21,775 (+4,929) | 21,776 (unchanged) |
 
-AGENTS.md went from 14,809 to 5,048 characters. Codex boot cost from Atris
-fell by 66 percent.
+On the current base, after master lengthened the Accuracy rule and review
+added one "When unsure, run atris guide" sentence back to the lean file:
+
+| engine | no Atris | Atris on master | Atris lean (this change) |
+|---|---|---|---|
+| Codex (gpt-6.1-sol) | 15,725 | 19,539 (+3,814) | 17,098 (+1,373) |
+| Claude Code (Opus 5.5) | 16,852 | 21,921 (+5,069) | 21,921 (unchanged) |
+
+AGENTS.md went from 14,809 to 5,048 characters as tested (15,756 to 6,071
+as counted by Codex on the current base). Codex boot cost from Atris fell
+by about 64 percent.
+
+Codex in the lab still saw the user's ~/.agents/skills (HOME stays real so
+commits keep the user's identity). That is the same in every arm.
 
 The Claude boot is 3,723 tokens of skill listing (43 skills), 388 tokens of
 hook output, and about 800 tokens of CLAUDE.md and slash commands. Codex
@@ -45,30 +59,36 @@ tokens per Codex run (table below).
 Two sources: 14 days of real transcripts on this machine
 (`scripts/boot-usage.js`, `raw/boot-usage-14d.json`), and every lab run.
 
-Real transcripts, share of sessions that touched each file:
+Real transcripts (lab runs left out with `--exclude bootdiet-k7`), share of
+sessions that touched each file:
 
-| file | Claude member workers (764) | Claude direct (794) | Codex member workers (616) | Codex direct (71) |
+| file | Claude member workers (864) | Claude direct (812) | Codex member workers (696) | Codex direct (84) |
 |---|---|---|---|---|
-| atris/MAP.md | 12% | 15% | 90% | 75% |
-| atris/atris.md | 0.3% | 2.5% | 46% | 56% |
-| atris/PERSONA.md | 0% | 0.8% | 34% | 38% |
-| atris/FOR_AGENTS.md | 0% | 0.4% | 34% | 27% |
-| AGENTS.md | 1% | 4% | 20% | 37% |
-| CLAUDE.md | 0.5% | 4% | 17% | 32% |
-| atris/skills files | 0% | 6% | 10% | 16% |
-| `atris guide` | 0.1% | 0% | 0% | 0% |
+| atris/MAP.md | 15% | 15% | 91% | 79% |
+| atris/atris.md | 0.2% | 2.5% | 51% | 62% |
+| atris/PERSONA.md | 0% | 0.7% | 40% | 46% |
+| atris/FOR_AGENTS.md | 0% | 0.5% | 41% | 37% |
+| AGENTS.md | 3.5% | 4.6% | 23% | 35% |
+| CLAUDE.md | 0.5% | 4.2% | 15% | 31% |
+| atris/skills files | 0% | 5.9% | 8.9% | 14% |
+| `atris guide` | 0.1% | 0.1% | 0% | 0% |
 
-In the lab, Codex on master opened atris.md, MAP, FOR_AGENTS, and PERSONA
-in 54 of 54 scored runs, then often created, claimed, and closed an Atris
-task for a two-line fix. With the lean AGENTS.md it opened none of them on
-any task; it ran the boot command and did the job.
+In round one, Codex on master opened atris.md, MAP, and FOR_AGENTS in 55 of
+56 runs and PERSONA in 54, then often created, claimed, and closed an Atris
+task for a two-line fix. In the final round it opened MAP in 56 of 56,
+FOR_AGENTS in 49, and atris.md in 46. With the lean AGENTS.md, Codex opened
+none of those four files in any of 112 runs; it ran the boot command and
+did the job.
 
-Claude opened no boot files in 108 of 112 lab runs on either version.
+Claude opened no boot files at all in 104 of 112 boot-arm runs in each
+Claude round, and never opened an atris/ doc.
 
 ## Scores
 
-Pass counts leave out runs where the engine itself failed (model at
-capacity), which says nothing about the agent. Those are listed.
+Pass counts leave out runs where the engine itself failed and did not
+recover (model at capacity), which says nothing about the agent. Those are
+listed. Round-one rows predate the engine-failure field; `--summary` reads it
+back from the saved logs.
 
 ### Round one: Codex, gpt-6.1-sol, medium effort, 28 tasks x 2
 
@@ -97,8 +117,8 @@ pairs (median 41 percent of master) and was faster in 46 of 52.
 | Claude Code, Opus 5.5 | 52/56, 17s, 103,540 tokens | 52/56, 16s, 100,709 tokens | same | same |
 
 The first Codex final on gpt-6.1-sol was stopped after 14 runs because the
-model was at capacity and runs stalled near the 10 minute mark; its rows are
-kept in `raw/codex-final-aborted-sol-capacity.jsonl`. The final was rerun on
+model was at capacity and runs stalled near the 10 minute mark; its 17 rows
+are kept in `raw/codex-final-aborted-sol-capacity.jsonl`. The final was rerun on
 gpt-5.6-terra, so the lean boot was checked on two Codex models.
 
 Every miss in every arm is one of three tasks:

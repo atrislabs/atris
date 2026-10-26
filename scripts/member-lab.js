@@ -22,7 +22,8 @@
 //            alternate in time, and folder names are random ids, so the agent
 //            cannot tell which arm it is in from its path.
 // Common:    [--lab /tmp/x] [--tasks 06,09,...|all] [--jobs 3] [--timeout 600]
-//            [--clean-home] [--seed 1] [--rescore] [--summary]
+//            [--clean-home] [--seed 1] [--rescore] [--summary] [--keep-api-keys]
+//            [--codex-model gpt-6.1-sol] [--codex-effort medium]
 //
 // --clean-home runs the engine as a fresh user would see it: Claude without
 // user settings, skills, or CLAUDE.md (--setting-sources project,local), and
@@ -83,10 +84,14 @@ fs.mkdirSync(runsRoot, { recursive: true });
 fs.mkdirSync(path.dirname(resultsPath), { recursive: true });
 
 const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_UPDATE_NOTIFIER: '1' };
-for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY']) delete env[key];
+// Engines run on their own logins by default so a stray API key never bills a
+// lab run. --keep-api-keys passes them through for API-key-only setups.
+if (!has('keep-api-keys')) for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY']) delete env[key];
 
 // Codex reads skills, memories, and AGENTS.md from CODEX_HOME. A private home
-// with only the login keeps the user's own setup out of every arm.
+// with only the login keeps the user's own setup out of every arm. Skills in
+// ~/.agents/skills still load (HOME stays real so git identity works); they
+// are the same in every arm.
 function codexHome() {
   if (!cleanHome || engine !== 'codex') return null;
   const home = path.join(LAB, 'codex-home');
@@ -165,8 +170,13 @@ const BOOT_PIECES = [
   ['skill tool', /^Skill /],
 ];
 
+// Engine-side failures that say nothing about the agent: the model was busy,
+// rate limited, or the service errored. Agent failures (max turns, bad work)
+// never match, so they stay in the score.
+const INFRA_ERROR = /at capacity|rate.?limit|usage limit|overloaded|temporarily unavailable|service unavailable|internal server error|\b(429|500|502|503|529)\b|ECONNRESET|ETIMEDOUT|stream disconnected/i;
+
 // Read tokens, turns, and tool calls back out of the engine's log.
-function readAgentLog(arm, logPath) {
+function readAgentLog(arm, logPath, logEngine = engine) {
   const stats = { tokens_in: null, tokens_out: null, first_call_in: null, turns: null, tool_calls: 0, opened: [], infra_error: null };
   if (arm.kind === 'member') return stats;
   let text = '';
@@ -175,11 +185,13 @@ function readAgentLog(arm, logPath) {
   for (const line of text.split('\n')) {
     if (!line.startsWith('{')) continue;
     let e; try { e = JSON.parse(line); } catch { continue; }
-    // The engine itself failed (model at capacity, rate limit, API error).
-    // Such a run says nothing about the agent; the summary leaves it out.
-    if (e.type === 'error' || e.type === 'turn.failed') stats.infra_error = String(e.message || e.error?.message || 'engine error').slice(0, 200);
-    if (e.type === 'result' && e.is_error) stats.infra_error = String(e.result || e.subtype || 'engine error').slice(0, 200);
-    if (engine === 'claude') {
+    // The engine itself failed and did not recover. The summary leaves such
+    // runs out unless they passed anyway.
+    const errText = e.type === 'error' || e.type === 'turn.failed' ? String(e.message || e.error?.message || '')
+      : e.type === 'result' && e.is_error ? String(e.result || e.subtype || '') : '';
+    if (errText && INFRA_ERROR.test(errText)) stats.infra_error = errText.slice(0, 200);
+    if (e.type === 'turn.completed') stats.infra_error = null;
+    if (logEngine === 'claude') {
       if (e.type === 'assistant' && e.message) {
         const u = e.message.usage;
         if (u && stats.first_call_in == null) stats.first_call_in = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
@@ -203,7 +215,7 @@ function readAgentLog(arm, logPath) {
       }
     }
   }
-  if (engine === 'codex') stats.turns = calls.length;
+  if (logEngine === 'codex') stats.turns = calls.length;
   stats.tool_calls = calls.length;
   const joined = calls.join('\n');
   stats.opened = BOOT_PIECES.filter(([, re]) => calls.some((c) => re.test(c)) || re.test(joined)).map(([name]) => name);
@@ -353,7 +365,12 @@ function summarize(rows) {
     const rows = fs.readFileSync(resultsPath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     // Older rows predate some log fields; read them back from the saved logs.
     for (const r of rows) {
-      if (!('infra_error' in r) && r.kind !== 'member') Object.assign(r, readAgentLog({ kind: r.kind }, path.join(runsRoot, `${r.folder}.log`)));
+      if (r.kind === 'member') continue;
+      const logPath = path.join(runsRoot, `${r.folder}.log`);
+      if (!fs.existsSync(logPath)) continue;
+      const fresh = readAgentLog({ kind: r.kind }, logPath, r.engine);
+      if (!('infra_error' in r)) Object.assign(r, fresh);
+      else r.infra_error = fresh.infra_error;
     }
     console.log(summarize(rows));
     return;

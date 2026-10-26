@@ -3,7 +3,8 @@
 // Makes a one-file repo, runs `atris init` with the given CLI (or none), asks
 // the engine to reply "ok", and reads the input tokens of that one call.
 // Runs as a fresh user: Claude without user settings, skills, or CLAUDE.md;
-// Codex with a private CODEX_HOME holding only the login.
+// Codex with a private CODEX_HOME holding only the login (skills in
+// ~/.agents/skills still load, since HOME stays real).
 //
 // usage: node scripts/boot-tokens.js --engine claude|codex --cli <atris.js>|none
 //          [--dir /tmp/boot-tokens] [--model gpt-6.1-sol]
@@ -20,13 +21,16 @@ function flag(name, fallback) {
 }
 
 const engine = flag('engine', 'claude');
-const cli = flag('cli', path.join(__dirname, '..', 'bin', 'atris.js'));
+if (!['claude', 'codex'].includes(engine)) { console.error('--engine must be claude or codex'); process.exit(2); }
+const cliFlag = flag('cli', path.join(__dirname, '..', 'bin', 'atris.js'));
+const cli = cliFlag === 'none' ? 'none' : path.resolve(cliFlag);
 const base = path.resolve(flag('dir', path.join(os.tmpdir(), 'atris-boot-tokens')));
-const work = path.join(base, `${engine}-${cli === 'none' ? 'bare' : 'atris'}-${process.pid}`);
+fs.mkdirSync(base, { recursive: true });
+// A fresh folder this run owns; it is the only thing removed at the end.
+const work = fs.mkdtempSync(path.join(base, `${engine}-${cli === 'none' ? 'bare' : 'atris'}-`));
 const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_UPDATE_NOTIFIER: '1' };
 for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY']) delete env[key];
 
-fs.mkdirSync(work, { recursive: true });
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { cwd: work, encoding: 'utf8', env, timeout: 300000, ...opts });
 run('git', ['init', '-q']);
 fs.writeFileSync(path.join(work, 'README.md'), 'hello\n');

@@ -6,7 +6,8 @@
 // boot file or command. Counts sessions, not reads, so one chatty session
 // cannot skew a row.
 //
-// usage: node scripts/boot-usage.js [--days 14] [--filter <cwd substring>] [--json out.json]
+// usage: node scripts/boot-usage.js [--days 14] [--filter <cwd substring>]
+//          [--exclude <cwd substring>] [--json out.json]
 'use strict';
 
 const fs = require('node:fs');
@@ -20,6 +21,8 @@ function flag(name, fallback) {
 
 const days = Number(flag('days', 14));
 const filter = flag('filter', '');
+// Leave out lab runs (or anything else) by a cwd substring.
+const exclude = flag('exclude', '');
 const since = Date.now() - days * 86400000;
 
 const PIECES = [
@@ -42,7 +45,7 @@ const PIECES = [
   ['`atris guide`', /\batris guide\b/],
   ['`atris task ...`', /\batris task\b/],
   ['`atris mission ...`', /\batris mission\b/],
-  ['any `atris` command', /(^|[;&|\s(])atris\s+[a-z]/],
+  ['any `atris` command', /(^|[;&|\s('"])atris\s+[a-z]/],
 ];
 
 function walk(dir, out = []) {
@@ -60,13 +63,31 @@ function readLines(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 }
 
+// A resumed session can be recent on disk yet hold old calls; count only
+// calls stamped inside the window (unstamped lines are kept).
+function inWindow(e) {
+  const t = Date.parse(e.timestamp || '');
+  return Number.isNaN(t) || t >= since;
+}
+
+// Codex tool arguments are JSON text; pull out the command so a match sees
+// `atris mission status`, not `{"cmd":"atris mission status"}`.
+function codexCallText(p) {
+  let args = p.arguments;
+  if (typeof args === 'string') { try { args = JSON.parse(args); } catch { return `${p.name || p.type} ${args}`; } }
+  const a = args || p.action || p.input || {};
+  if (typeof a === 'string') return `${p.name || p.type} ${a}`;
+  const cmd = Array.isArray(a.command) ? a.command.join(' ') : (a.cmd || a.command || '');
+  return `${p.name || p.type} ${cmd} ${a.path || ''} ${a.file_path || ''} ${typeof a.input === 'string' ? a.input : ''}`;
+}
+
 function claudeSession(file) {
   let cwd = '';
   const calls = [];
   const skills = [];
   for (const e of readLines(file)) {
     if (!cwd && e.cwd) cwd = e.cwd;
-    if (e.type !== 'assistant' || !e.message) continue;
+    if (e.type !== 'assistant' || !e.message || !inWindow(e)) continue;
     for (const c of e.message.content || []) {
       if (c.type !== 'tool_use') continue;
       const inp = c.input || {};
@@ -83,8 +104,8 @@ function codexSession(file) {
   for (const e of readLines(file)) {
     const p = e.payload || {};
     if (!cwd && p.cwd) cwd = p.cwd;
-    if (e.type === 'response_item' && ['function_call', 'local_shell_call', 'custom_tool_call'].includes(p.type)) {
-      calls.push(`${p.name || p.type} ${p.arguments || JSON.stringify(p.action || p.input || '')}`);
+    if (e.type === 'response_item' && inWindow(e) && ['function_call', 'local_shell_call', 'custom_tool_call'].includes(p.type)) {
+      calls.push(codexCallText(p));
     }
   }
   return { engine: 'codex', cwd, calls, skills: [] };
@@ -106,7 +127,7 @@ for (const f of walk(path.join(process.env.CODEX_HOME || path.join(os.homedir(),
 
 const groups = {};
 for (const s of sessions) {
-  if (!s.calls.length || (filter && !s.cwd.includes(filter)) || !isAtrisProject(s.cwd)) continue;
+  if (!s.calls.length || (filter && !s.cwd.includes(filter)) || (exclude && s.cwd.includes(exclude)) || !isAtrisProject(s.cwd)) continue;
   const key = `${s.engine}, ${kindOf(s.cwd)}`;
   const g = groups[key] || (groups[key] = { sessions: 0, tool_calls: 0, pieces: {}, skills: {} });
   g.sessions++;
