@@ -193,7 +193,8 @@ function readAgentLog(arm, logPath, logEngine = engine) {
     // runs out unless they passed anyway. Claude reports its outcome once, in
     // the final result line; Codex can fail a turn and then finish another.
     if (logEngine === 'claude' && e.type === 'result') {
-      const text = e.is_error ? String(e.result || e.subtype || '') : '';
+      const details = Array.isArray(e.errors) ? e.errors.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('; ') : '';
+      const text = e.is_error ? [e.result, e.subtype, details].filter(Boolean).join('; ') : '';
       stats.infra_error = text && INFRA_ERROR.test(text) ? text.slice(0, 200) : null;
     } else if (logEngine === 'codex') {
       const text = e.type === 'error' || e.type === 'turn.failed' ? String(e.message || e.error?.message || '') : '';
