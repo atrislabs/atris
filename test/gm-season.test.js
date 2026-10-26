@@ -454,15 +454,11 @@ function makeTaskDb(dir) {
 
 // The week starts Monday 00:00 on the local clock, and the records here sit up
 // to 10 hours back. In the first hours of a Monday they would fall in last
-// week, so the CLI runs on a clock at least 12 hours into its week: UTC, or
-// twelve hours either side of it (Etc/GMT+12 is UTC-12).
+// week, so the CLI runs on a clock at least 12 hours from either end of its
+// week: twelve hours ahead of UTC on a UTC Monday, twelve behind on any other
+// day (Etc/GMT-12 is UTC+12, Etc/GMT+12 is UTC-12).
 function midWeekTz(now = Date.now()) {
-  for (const [tz, offset] of [['UTC', 0], ['Etc/GMT+12', -12], ['Etc/GMT-12', 12]]) {
-    const local = new Date(now + offset * HOUR);
-    const intoWeek = ((local.getUTCDay() + 6) % 7) * 24 + local.getUTCHours() + local.getUTCMinutes() / 60;
-    if (intoWeek >= 12) return tz;
-  }
-  return 'UTC';
+  return new Date(now).getUTCDay() === 1 ? 'Etc/GMT-12' : 'Etc/GMT+12';
 }
 
 // Runs the CLI with its own HOME so ~/.atris/state stays inside the test.
