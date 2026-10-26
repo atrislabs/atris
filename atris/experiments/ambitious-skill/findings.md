@@ -119,3 +119,27 @@ info  nudge vs plain                32 won, 25 lost, 3 tied, p=0.2135
 ## Status
 
 The skill stays in 3.74.18. Against no instruction it showed no proven difference either way (25 to 23, p = 0.44). It grows the job far less than a generic ambition line, and may help with writing. Its file makes no performance claims. Nothing in the package needs pulling.
+
+# final exam 4, 2026-10-26: no proven win on writing either
+
+Pre-registered in README.md and pushed before any data. 60 new writing tasks written blind by Haiku, skill frozen as shipped in 3.74.18, same worker and pinned judge.
+
+```
+pass  all tasks answered           60 tasks
+pass  all pairs judged             180/180
+FAIL  1 beats the nudge for real   27 won, 20 lost, 13 tied, p=0.1908
+pass  2 never worse than plain     30 won, 24 lost, 6 tied, p=0.2483
+pass  3 same size job              skill 0, nudge 38, plain 1 of 60
+pass  4 writing fixed              15 won, 12 lost, 3 tied, p=0.3506
+pass  5 nothing broken             none
+info  better than plain claim       not earned (30 won, 24 lost, 6 tied, p=0.2483)
+info  nudge vs plain                19 won, 28 lost, 13 tied, p=0.9281
+```
+
+- "Better than plain on writing" is not earned. The lean seen in exams 1 to 3 (4-3, 6-1, 9-3) did not hold at 60 tasks: 30 to 24. Per the pre-registration there is no rerun.
+
+## Where this leaves the skill, after four exams
+
+- **Proven at every size:** it rarely grows the job. Scope flags, skill against the generic line: 2 vs 10, 2 vs 14, 1 vs 14, 0 vs 38.
+- **Not proven:** better work than no instruction (exam 3: 25 to 23; exam 4 writing: 30 to 24), or better work than the generic line (exam 3: 26 to 26; exam 4: 27 to 20).
+- No exam showed the skill doing worse than no instruction by a margin that clears chance.
