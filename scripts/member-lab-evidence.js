@@ -28,45 +28,83 @@ function encode(p) {
 }
 
 // A command that runs the project's own code or tests (not git, not atris).
-const RUN = /(^|[\s;&|(])(node\s+(--test\b|[^\s-][^\s]*\.(c|m)?js\b)|npm\s+(run\s+)?test\b|npx\s+(jest|vitest|mocha)\b|bash\s+\S+\.sh\b|\.\/\S+\.sh\b|python3?\s+\S+\.py\b|pytest\b)/;
+const RUN = /(^|[\s(])(node\s+(--test\b|[^\s-][^\s]*\.(c|m)?js\b)|npm\s+(run\s+)?test\b|npx\s+(jest|vitest|mocha)\b|bash\s+\S+\.sh\b|\.\/\S+\.sh\b|python3?\s+\S+\.py\b|pytest\b)/;
+// `node -e` / `node -p` that loads the project's own files.
+const INLINE_RUN = /\bnode\s+(-e|-p|--eval|--print)\b[\s\S]*\b(require|import)\s*\(\s*['"]\.\.?\//;
 // A pipe into a filter that throws away the left side's exit status.
 const MASK = /[^|]\|\s*(tail|head|grep|sed|awk|wc|cut|sort|less|cat)\b/;
 const NOT_PROJECT = /^\s*(atris|git)\b/;
+const PIPEFAIL = /\bset\s+-o\s+pipefail\b|\bsetopt\s+pipefail\b/;
 
-// Heredoc bodies are file content, not commands; keep only the opening line.
+// Heredoc bodies are file content, not commands; keep the opening line and
+// note how long the body was.
 function stripHeredocs(cmd) {
-  return String(cmd).replace(/(<<-?\s*['"]?(\w+)['"]?[^\n]*)\n[\s\S]*?\n\s*\2[ \t]*(?=\n|$)/g, '$1');
+  return String(cmd).replace(/(<<-?\s*['"]?(\w+)['"]?[^\n]*)\n([\s\S]*?)\n\s*\2[ \t]*(?=\n|$)/g,
+    (_, open, _tag, body) => `${open} [${body.split('\n').length} lines]`);
+}
+
+// Split on ; && || and newlines outside quotes and $( ), keep pipes inside a
+// segment.
+function splitTop(cmd) {
+  const out = [];
+  let cur = '';
+  let quote = '';
+  let depth = 0;
+  for (let i = 0; i < cmd.length; i += 1) {
+    const ch = cmd[i];
+    const two = cmd.slice(i, i + 2);
+    if (quote) {
+      if (ch === '\\' && quote === '"') { cur += two; i += 1; continue; }
+      if (ch === quote) quote = '';
+      cur += ch;
+      continue;
+    }
+    if (ch === '\\') { cur += two; i += 1; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (two === '$(') { depth += 1; cur += two; i += 1; continue; }
+    if (ch === ')' && depth > 0) { depth -= 1; cur += ch; continue; }
+    if (depth === 0 && (two === '&&' || two === '||')) { out.push(cur); cur = ''; i += 1; continue; }
+    if (depth === 0 && (ch === ';' || ch === '\n')) { out.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
 }
 
 function segments(cmd) {
-  // Split on && ; || and newlines, keep pipes inside a segment.
-  return stripHeredocs(cmd).split(/&&|\|\||;|\n/).map((s) => s.trim()).filter(Boolean);
+  return splitTop(stripHeredocs(cmd)).map((s) => s.trim()).filter(Boolean);
 }
 
 function segIsRun(seg) {
-  return RUN.test(seg) && !NOT_PROJECT.test(seg);
+  return !NOT_PROJECT.test(seg) && (RUN.test(seg) || INLINE_RUN.test(seg));
 }
 
-// The Bash tool runs the user's shell (zsh here): `set -o pipefail` and zsh's
-// lowercase `pipestatus` keep a piped exit code; bash's PIPESTATUS is empty
-// under zsh, so it does not.
-function keepsPipeStatus(cmd) {
-  return /pipefail|\bpipestatus\b/.test(cmd);
-}
-
-function segIsMasked(seg, cmd) {
-  return segIsRun(seg) && MASK.test(seg) && !keepsPipeStatus(cmd);
+// The run is piped into a filter and nothing keeps its status: no pipefail
+// set earlier in the command, and the very next step does not read zsh's
+// `pipestatus`. The Bash tool runs the user's shell (zsh here), where bash's
+// PIPESTATUS is empty, so it does not count.
+function maskedAt(segs, i) {
+  const seg = segs[i];
+  if (!segIsRun(seg)) return false;
+  const run = seg.search(RUN) > -1 ? seg.search(RUN) : seg.search(INLINE_RUN);
+  const pipe = seg.slice(run).search(MASK);
+  if (pipe === -1) return false;
+  if (segs.slice(0, i + 1).some((s) => PIPEFAIL.test(s))) return false;
+  return !(segs[i + 1] && /\bpipestatus\b/.test(segs[i + 1]));
 }
 
 const DESK = /(^|\/)(atris|\.atris|\.claude|\.cursor|\.devin|logs)\/|(^|\/)(AGENTS|CLAUDE)\.md$|\.cursorrules$/;
-const SCRATCH = /^(\/dev\/|\/tmp\/|\/private\/|\$TMPDIR|&)/;
+const SCRATCH = /^(\/dev\/|\/tmp\/|\/private\/|\$|&)/;
 
-// The file a shell segment writes, if any: sed -i, perl -i, tee, or a
-// redirect that is not scratch output.
+// The file a shell segment writes, if any: sed -i, perl -i, cp, mv, tee,
+// git checkout or restore of a path, or a redirect that is not scratch output.
 function segEditTarget(seg) {
+  const tokens = seg.trim().split(/\s+/);
+  const last = (tokens[tokens.length - 1] || '').replace(/['"]/g, '');
+  if (/^\s*git\s+(restore\b|checkout\b.*\s--\s)/.test(seg)) return last;
   if (NOT_PROJECT.test(seg)) return '';
-  const tokens = seg.split(/\s+/);
-  if (/\bsed\s+(-[a-zA-Z]*i\b|--in-place)|\bperl\s+-[a-z]*i/.test(seg)) return tokens[tokens.length - 1].replace(/['"]/g, '');
+  if (/\bsed\s+(-[a-zA-Z]*i\b|--in-place)|\bperl\s+-[a-z]*i/.test(seg)) return last;
+  if (/^\s*(cp|mv)\s/.test(seg)) return SCRATCH.test(last) ? '' : last;
   const tee = seg.match(/\btee\s+(?:-a\s+)?([^\s|;&]+)/);
   if (tee && !SCRATCH.test(tee[1])) return tee[1];
   const redirect = seg.match(/(?:^|[^0-9&>])>>?\s*([^\s|;&]+)/);
@@ -79,7 +117,8 @@ function isRun(cmd) {
 }
 
 function isMaskedRun(cmd) {
-  return segments(cmd).some((s) => segIsMasked(s, cmd));
+  const segs = segments(cmd);
+  return segs.some((_, i) => maskedAt(segs, i));
 }
 
 function readSession(file) {
@@ -101,11 +140,12 @@ function readSession(file) {
         if (c.name === 'Bash') {
           const cmd = String(c.input?.command || '');
           commands.push(cmd);
-          for (const seg of segments(cmd)) {
+          const segs = segments(cmd);
+          segs.forEach((seg, i) => {
             const target = segEditTarget(seg);
             if (target) steps.push({ kind: 'edit', file: target });
-            if (segIsRun(seg)) steps.push({ kind: 'run', masked: segIsMasked(seg, cmd) });
-          }
+            if (segIsRun(seg)) steps.push({ kind: 'run', masked: maskedAt(segs, i) });
+          });
         } else if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(c.name)) {
           steps.push({ kind: 'edit', file: String(c.input?.file_path || c.input?.notebook_path || '') });
         }
@@ -189,4 +229,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { isRun, isMaskedRun, segEditTarget, encode, measure, measureLab };
+module.exports = { isRun, isMaskedRun, segEditTarget, segments, stripHeredocs, encode, measure, measureLab };

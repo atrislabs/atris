@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { isRun, isMaskedRun, segEditTarget, measure } = require('../scripts/member-lab-evidence');
+const { isRun, isMaskedRun, segEditTarget, segments, measure } = require('../scripts/member-lab-evidence');
 const { fisher } = require('../scripts/doctrine-ab');
 
 test('a test run piped into a filter loses its exit code', () => {
@@ -16,6 +16,20 @@ test('a test run piped into a filter loses its exit code', () => {
   assert.equal(isMaskedRun('git log | head'), false);
 });
 
+test('a pipestatus read only saves the pipe right before it', () => {
+  assert.equal(isMaskedRun('node --test 2>&1 | tail -3; node tool.js x | grep y; echo "${pipestatus[1]}"'), true);
+  assert.equal(isMaskedRun('node --test 2>&1 | tail -3; echo "${pipestatus[1]}"'), false);
+  assert.equal(isMaskedRun('cat input.txt | node tool.js'), false);
+});
+
+test('quotes and inline node are read as one step', () => {
+  assert.deepEqual(segments('node -e "const {f} = require(\'./lib\'); console.log(f())"; echo ok'), [
+    'node -e "const {f} = require(\'./lib\'); console.log(f())"', 'echo ok',
+  ]);
+  assert.equal(isRun('node -e "require(\'./lib\').f()"'), true);
+  assert.equal(isRun('node -e "console.log(1)"'), false);
+});
+
 test('only runs of the project code count as real runs', () => {
   assert.equal(isRun('node tool.js add widget'), true);
   assert.equal(isRun('cat tool.js && ls'), false);
@@ -29,6 +43,9 @@ test('shell writes count as edits, scratch output does not', () => {
   assert.equal(segEditTarget('node --test > /tmp/out.log 2>&1'), '');
   assert.equal(segEditTarget('node tool.js 2>/dev/null'), '');
   assert.equal(segEditTarget('git log > history.txt'), '');
+  assert.equal(segEditTarget('cp /tmp/tool.js.bak tool.js'), 'tool.js');
+  assert.equal(segEditTarget('cp tool.js $d/tool.js'), '');
+  assert.equal(segEditTarget('git checkout -- tool.js'), 'tool.js');
 });
 
 test('edit order and the last run are read per step', () => {

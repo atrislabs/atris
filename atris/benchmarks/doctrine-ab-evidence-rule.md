@@ -7,7 +7,7 @@ Result: same pass rate, agents hid test exit codes behind a pipe half as often, 
 ## setup
 
 - Control: the CLI at `55952f79c` (origin/master on 2026-10-26). Treatment: the same files with only `atris.md` and `atris/atris.md` changed.
-- A coin flip named the arms `p` and `q` (`key.json`), so folder names, labels, and prompts never said which arm a run was in. The agent saw only the doctrine its project was set up with.
+- A coin flip named the arms `p` and `q` (the `key` in the summary file), so folder names, labels, and prompts never said which arm a run was in. The agent saw only the doctrine its project was set up with.
 - 12 agents-v1 tasks (02 06 08 09 11 12 15 16 19 26 27 28), run through `atris member run` (Claude Opus 5.5 on the subscription login) by `scripts/member-lab.js`, scored by each task's own `check.js`.
 - 4 rounds, arms alternating p,q then q,p to cancel drift: 48 runs per arm, 96 total. 48 per arm finds a change of about 30 points in a yes or no behavior 8 times in 10 at the usual 5 percent bar; the count was fixed before the first run and not extended.
 - Behavior came from each run's Claude transcript (`scripts/member-lab-evidence.js`), read step by step: shell writes like `sed -i` count as edits, and a pipe counts as hiding the exit code unless the command sets `pipefail` or reads zsh's `pipestatus`.
@@ -41,13 +41,12 @@ An outside codex review of the first draft found real measurement bugs: zsh's em
 
 ## files
 
-- `runs.jsonl`: one row per run with arm, task, pass, and every measure above.
-- `summary.json`: the table above as counts and p values.
-- `key.json`: which letter was which arm.
+- `doctrine-ab-evidence-rule.runs.jsonl`: one row per run with arm, task, pass, and every measure above.
+- `doctrine-ab-evidence-rule.summary.json`: the table above as counts and p values, plus which letter was which arm.
 
 ## reproduce
 
-From a checkout of the commit that added this folder, with the claude and codex CLIs logged in:
+From a checkout of the commit that added these files, with the claude and codex CLIs logged in:
 
 ```
 node scripts/doctrine-ab.js --lab /tmp/doctrine-ab-$(date +%s) --control 55952f79c --rounds 4 --jobs 3
