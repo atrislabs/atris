@@ -72,7 +72,7 @@ info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
 
 - The pass-through step did its job: 13 of 28 tasks went through unchanged, all quick exact asks.
 - Line 5 was amended after this run (see README). Under the first wording it failed on three correct short answers; the amendment is logged, not hidden.
-- "Better than plain" is still not earned: 14 to 6 sits just above the 0.05 line. Public copy says "never worse than plain".
+- "Better than plain" is still not earned: 14 to 6 sits just above the 0.05 line. Public copy says it won more than it lost, not yet beyond chance.
 - The generic "be ambitious" line lost to plain again, 7 to 18.
 
 ## Where the wins came from
@@ -82,7 +82,7 @@ info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
 | 15 deepened (judgment tasks) | 9 won, 4 lost, 2 tied | 9 won, 3 lost, 3 tied |
 | 13 passed through unchanged (quick exact asks) | 11 won, 2 lost | 5 won, 3 lost, 5 tied |
 
-On pass-through tasks the skill answer is just a fresh plain answer, so those wins over the nudge come from stepping aside, not from the four questions. The grid-width task shows the worker's own noise: all three arms opened with the same wrong 82 px and corrected to 78 px.
+On pass-through tasks the skill answer is just a fresh plain answer, so those wins over the nudge come from stepping aside, not from the four questions. The grid-width task shows the worker's own noise: each arm opened with a wrong bold width (plain 84 px, nudge 96 px, skill 82 px) and then worked down to the right 78 px. It was a pass-through, so the skill's answer there is an ordinary plain answer.
 
 ## What we can say in public
 
