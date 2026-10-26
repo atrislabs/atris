@@ -1106,7 +1106,8 @@ test('page: under reduced motion nothing travels or swarms, and every card chang
   assert.match(script, /function stageFade\(\) \{\n\s+if \(!reduced\) return;/);
   assert.match(script, /if \(!was\) \{ placeWait\(!atOnce && !reduced\); stageFade\(\); \}/);
   // leaving a card: it fades, then the sphere is there; an idea from the calm line fades in
-  assert.match(script, /setTimeout\(function \(\) \{ swap\(\); stageFade\(\); orb\.melt\(then, to, function \(\) \{\}, fast\); \}, 200\);/);
+  // the swap waits for the card's fade to end, not a bare timer that could cut a late fade at 0.17
+  assert.match(script, /afterFade\(b, 200, function \(\) \{ swap\(\); stageFade\(\); orb\.melt\(then, to, function \(\) \{\}, fast\); \}\);/);
   assert.match(script, /setTimeout\(function \(\) \{ off\(\); orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \}, 200\);/);
   // the dots are drawn once and hold
   assert.match(script, /if \(!reduced && \(mode === 'idle' \|\| mode === 'swarm'\)\) angle \+= dt \* spin;/);
