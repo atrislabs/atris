@@ -23,7 +23,8 @@ const { PAIRS, verdictKey } = require('../atris/experiments/ambitious-skill/judg
 const GATE = path.join(__dirname, '..', 'atris', 'experiments', 'ambitious-skill', 'gate.js');
 
 function fakeSet(ids, { stale = [] } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-gate-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'out-amb-gate-'));
+  fs.writeFileSync(`${path.join(path.dirname(dir), path.basename(dir).replace(/^out-/, ''))}.json`, JSON.stringify(ids.map((id) => ({ id }))));
   const verdicts = [];
   for (const id of ids) {
     const skill = `a full and careful answer for ${id} `.repeat(10);
@@ -97,7 +98,30 @@ test('gate fails when a task in the exam file has no answers', () => {
   fs.renameSync(mixed, path.join(root, 'out-exam-mixed'));
   fs.renameSync(writing, path.join(root, 'out-exam-writing'));
   fs.writeFileSync(path.join(root, 'exam-mixed.json'), JSON.stringify(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'].map((id) => ({ id }))));
+  fs.writeFileSync(path.join(root, 'exam-writing.json'), JSON.stringify(['w1', 'w2'].map((id) => ({ id }))));
   const run = gate(path.join(root, 'out-exam-mixed'), path.join(root, 'out-exam-writing'));
   assert.equal(run.status, 1);
   assert.match(run.stdout, /FAIL {2}all tasks answered\s+missing m7/);
+});
+
+test('gate refuses a folder with no exam file and ignores answers to tasks not on the exam', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-gate-root-'));
+  const mixed = fakeSet(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'gone']);
+  const writing = fakeSet(['w1', 'w2']);
+  fs.renameSync(mixed, path.join(root, 'out-exam-mixed'));
+  fs.renameSync(writing, path.join(root, 'out-exam-writing'));
+  fs.writeFileSync(path.join(root, 'exam-writing.json'), JSON.stringify(['w1', 'w2'].map((id) => ({ id }))));
+  assert.equal(gate(path.join(root, 'out-exam-mixed'), path.join(root, 'out-exam-writing')).status, 2);
+  fs.writeFileSync(path.join(root, 'exam-mixed.json'), JSON.stringify(['m1', 'm2', 'm3', 'm4', 'm5', 'm6'].map((id) => ({ id }))));
+  const run = gate(path.join(root, 'out-exam-mixed'), path.join(root, 'out-exam-writing'));
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /all pairs judged\s+24\/24/);
+});
+
+test('judge accepts only well-formed verdicts', () => {
+  const { validVerdict } = require('../atris/experiments/ambitious-skill/judge.js');
+  assert.equal(validVerdict({ winner: 'X', x_grew_scope: false, y_grew_scope: true, reason: 'r' }), true);
+  assert.equal(validVerdict({ winner: 'maybe', x_grew_scope: false, y_grew_scope: true, reason: 'r' }), false);
+  assert.equal(validVerdict({ winner: 'X', x_grew_scope: 'no', y_grew_scope: true, reason: 'r' }), false);
+  assert.equal(validVerdict(null), false);
 });

@@ -49,14 +49,18 @@ function tally(verdicts, a, b) {
 
 function main(dirs) {
   if (new Set(dirs).size !== dirs.length) { console.error('the same folder was given twice'); process.exitCode = 2; return; }
-  const sets = dirs.map(load);
-  // Every task in the exam file must have answers: out-<name> pairs with <name>.json.
-  const missing = dirs.flatMap((dir, i) => {
-    const tasks = path.join(path.dirname(dir), `${path.basename(dir).replace(/^out-/, '')}.json`);
-    if (!fs.existsSync(tasks)) return [];
-    const have = new Set(sets[i].records.map((r) => r.id));
-    return JSON.parse(fs.readFileSync(tasks, 'utf8')).map((t) => t.id).filter((id) => !have.has(id));
-  });
+  // Each out-<name> folder is scored against its exam file <name>.json. The
+  // file is required, every task in it needs answers, and saved answers for
+  // tasks no longer in it are left out.
+  const exams = dirs.map((dir) => path.join(path.dirname(dir), `${path.basename(dir).replace(/^out-/, '')}.json`));
+  const noExam = exams.filter((f) => !fs.existsSync(f));
+  if (noExam.length) { console.error(`exam file not found: ${noExam.join(', ')}`); process.exitCode = 2; return; }
+  const examIds = exams.map((f) => new Set(JSON.parse(fs.readFileSync(f, 'utf8')).map((t) => t.id)));
+  const sets = dirs.map(load).map((set, i) => ({
+    records: set.records.filter((r) => examIds[i].has(r.id)),
+    verdicts: set.verdicts.filter((v) => examIds[i].has(v.id)),
+  }));
+  const missing = examIds.flatMap((want, i) => [...want].filter((id) => !sets[i].records.some((r) => r.id === id)));
   const ids = sets.flatMap((set) => set.records.map((r) => r.id));
   const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (repeated.length) { console.error(`task counted twice: ${[...new Set(repeated)].join(', ')}`); process.exitCode = 2; return; }

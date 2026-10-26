@@ -1,6 +1,6 @@
 # findings, 2026-10-25
 
-> **Read "final exam 3" first.** The sections before it are a dated log. Several of their conclusions, including both numbered lessons under "What we learned", did not hold on the larger pre-registered exam.
+> **Read "final exam 3" first.** The sections before it are a dated log. Several of their conclusions, including several of the numbered lessons under "What we learned", did not hold on the larger pre-registered exam.
 
 Worker: Sonnet 5.5 for every arm. Judge: codex, blind, both orders, a split counts as a tie.
 
@@ -22,7 +22,7 @@ Rule check on the last row: beats nudge (6 to 1), scope flags not above nudge (3
 
 2. **The four questions looked like they turned ambition from a cost into a gain (not confirmed by exam 3).** With tools on, the code review actually ran the function on nine inputs and found four real bugs. The SQL answer caught a window bug the plain answer had.
 
-3. **Against plain, it is roughly even (7 to 7 across both fresh sets).** Eight tasks is too few to claim a win over plain. The honest claim is "ambition without the cost", not "better than no ambition".
+3. **Against plain, it is roughly even (7 to 7 across both fresh sets).** Eight tasks is too few to claim a win over plain. At the time we read this as "ambition without the cost". Exam 3 did not confirm it.
 
 4. **Version 1.0 stalled.** "Start from the rawest material" made the worker ask for files instead of doing the job (calculus, hiring, slow page). The 1.1 rule, "do the work now, state assumptions, name the one thing to pull", removed the stalls: scope flags went from 6 of 10 to 0 of 7 with no tools.
 
@@ -84,13 +84,13 @@ info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
 | 15 deepened (judgment tasks) | 9 won, 4 lost, 2 tied | 9 won, 3 lost, 3 tied |
 | 13 passed through unchanged (quick exact asks) | 11 won, 2 lost | 5 won, 3 lost, 5 tied |
 
-On pass-through tasks the skill answer is just a fresh plain answer, so those wins over the nudge come from stepping aside, not from the four questions. The grid-width task shows the worker's own noise: each arm opened with a wrong bold width (plain 84 px, nudge 96 px, skill 82 px) and then worked down to the right 78 px. It was a pass-through, so the skill's answer there is an ordinary plain answer.
+On pass-through tasks the skill answer is just a fresh plain answer, so those results do not come from the four questions. They reflect a fresh plain answer meeting the nudge's own costs, plus chance. The grid-width task shows the worker's own noise: each arm opened with a wrong bold width (plain 84 px, nudge 96 px, skill 82 px) and then worked down to the right 78 px. It was a pass-through, so the skill's answer there is an ordinary plain answer.
 
 ## What we can say in public (retracted, see exam 3)
 
 The claims first written here ("be ambitious" hurts, the skill beats it 20 to 6) did not replicate on the larger exam 3 below. They are withdrawn.
 
-# final exam 3, 2026-10-26: v1.4 does not beat no instruction
+# final exam 3, 2026-10-26: no proven win for v1.4 over no instruction
 
 Pre-registered in README.md and pushed before any data. 60 new tasks written blind by Haiku, skill frozen as shipped in 3.74.18, same worker and pinned judge.
 
@@ -112,9 +112,9 @@ info  nudge vs plain                32 won, 25 lost, 3 tied, p=0.2135
 
 ## What actually holds across all three exams
 
-- **The skill keeps the job the same size.** Scope growth was flagged on 1 to 2 tasks per exam for the skill, against 10 to 14 for the generic line.
+- **The skill rarely grows the job.** Scope growth was flagged on 1 to 2 tasks per exam for the skill, against 10 to 14 for the generic line.
 - **Writing leans its way.** Against plain on prose tasks: 4 to 3, 6 to 1, 9 to 3. That is consistent, but no single exam clears 0.05, so it is not claimed.
-- **Exam 2's lead did not replicate.** One likely reason is that 20 to 30 tasks is too few to separate a small effect from chance. That is a hypothesis, not a finding. Any future claim gets a pre-registered test sized in advance.
+- **Exam 2's lead did not replicate.** Possible reasons include chance at 20 to 30 tasks and a different task mix. We have not tested which. Any future claim gets a pre-registered test sized in advance.
 
 ## Status
 
