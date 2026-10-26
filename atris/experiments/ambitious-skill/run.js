@@ -15,11 +15,17 @@ const WORKER = process.env.AMB_WORKER || 'claude-sonnet-5-5';
 const NUDGE = 'Be ambitious: do the deeper, better version of this that a top professional in the field would do.';
 const EMPTY = fs.mkdtempSync(path.join(os.tmpdir(), 'amb-run-'));
 
-function claude(prompt, system) {
-  const args = ['-p', prompt, '--model', WORKER, '--tools', '', '--setting-sources', '', '--strict-mcp-config'];
+// AMB_TOOLS=Bash,Read,Write,Edit gives every worker call the same tools in
+// its own empty folder. The rewrite call never gets tools.
+const TOOLS = process.env.AMB_TOOLS || '';
+
+function claude(prompt, system, { tools = TOOLS } = {}) {
+  const args = ['-p', prompt, '--model', WORKER, '--tools', tools, '--setting-sources', '', '--strict-mcp-config'];
+  if (tools) args.push('--permission-mode', 'bypassPermissions');
   if (system) args.push('--append-system-prompt', system);
+  const cwd = tools ? fs.mkdtempSync(path.join(EMPTY, 'call-')) : EMPTY;
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', args, { cwd: EMPTY, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('claude', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => { out += d; });
@@ -41,7 +47,7 @@ async function runTask(t) {
   const [plain, nudge, rewrite] = await Promise.all([
     claude(t.task),
     claude(`${t.task}\n\n${NUDGE}`),
-    claude(t.task, rewriteSystem),
+    claude(t.task, rewriteSystem, { tools: '' }),
   ]);
   const deeper = deeperTask(rewrite);
   const skill = await claude(deeper);
