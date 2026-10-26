@@ -1,0 +1,73 @@
+{
+  "key": {
+    "control": "p",
+    "treatment": "q",
+    "control_ref": "origin/master",
+    "control_sha": "55952f79c9ce1959da29954ab400d43d3fdb694e",
+    "doctrine_changed": [
+      "atris.md",
+      "atris/atris.md"
+    ],
+    "created_at": "2026-10-26T05:37:38.027Z"
+  },
+  "runs": {
+    "control": 48,
+    "treatment": 48
+  },
+  "metrics": {
+    "passed": {
+      "control": "44/48",
+      "treatment": "44/48",
+      "p": 1
+    },
+    "masked_any": {
+      "control": "45/48",
+      "treatment": "21/48",
+      "p": 0
+    },
+    "last_run_masked": {
+      "control": "12/48",
+      "treatment": "4/48",
+      "p": 0.0528
+    },
+    "edited_after_last_run": {
+      "control": "5/48",
+      "treatment": "1/48",
+      "p": 0.2038
+    },
+    "ran_before_first_edit": {
+      "control": "41/48",
+      "treatment": "43/48",
+      "p": 0.7589
+    },
+    "no_real_run": {
+      "control": "0/48",
+      "treatment": "0/48",
+      "p": 1
+    },
+    "claims_done": {
+      "control": "48/48",
+      "treatment": "46/48",
+      "p": 0.4947
+    },
+    "cites_real_run": {
+      "control": "48/48",
+      "treatment": "48/48",
+      "p": 1
+    },
+    "cites_fail_then_pass": {
+      "control": "42/48",
+      "treatment": "44/48",
+      "p": 0.7401
+    },
+    "unbacked_claim": {
+      "control": "2/48",
+      "treatment": "0/48",
+      "p": 0.4947
+    }
+  },
+  "avg_secs": {
+    "control": 124,
+    "treatment": 127
+  }
+}
