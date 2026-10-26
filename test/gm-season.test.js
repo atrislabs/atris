@@ -452,13 +452,22 @@ function makeTaskDb(dir) {
   };
 }
 
+// The week starts Monday 00:00 on the local clock, and the records here sit up
+// to 10 hours back. In the first hours of a Monday they would fall in last
+// week, so the CLI runs on a clock at least 12 hours from either end of its
+// week: twelve hours ahead of UTC on a UTC Monday, twelve behind on any other
+// day (Etc/GMT-12 is UTC+12, Etc/GMT+12 is UTC-12).
+function midWeekTz(now = Date.now()) {
+  return new Date(now).getUTCDay() === 1 ? 'Etc/GMT-12' : 'Etc/GMT+12';
+}
+
 // Runs the CLI with its own HOME so ~/.atris/state stays inside the test.
 function runCli(dir, dbPath, args, home = path.join(dir, 'home')) {
   return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], {
     cwd: dir,
     encoding: 'utf8',
     timeout: 15000,
-    env: { ...process.env, HOME: home, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...process.env, HOME: home, ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1', TZ: midWeekTz() },
   });
 }
 

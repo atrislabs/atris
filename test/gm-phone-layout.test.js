@@ -53,6 +53,66 @@ test('layout: the big orb\'s line ends above the footer at every size, a phone o
   for (const r of rows.filter(x => x.viewport !== 'side')) assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
 });
 
+// short screens: an iPhone 17 Pro on its side in Safari (its bars leave 296px),
+// a phone on its side in full screen, and two small phones on their side
+const SHORT = [
+  { name: 'safari-side', width: 874, height: 296, deviceScaleFactor: 3, mobile: true, notch: { left: 62, right: 62, bottom: 20 } },
+  'side',
+  { name: 'se-side', width: 667, height: 375, deviceScaleFactor: 2, mobile: true, notch: null },
+  { name: 'small-side', width: 568, height: 320, deviceScaleFactor: 2, mobile: true, notch: null },
+];
+const inset = (r, side) => (r.safe_area && r.safe_area[side]) || 0;
+
+test('layout: on a short screen the big orb takes the room above the footer and its line still ends above it; upright phones and the laptop keep the orb where it was', { skip, timeout: 120000 }, async () => {
+  const rows = await layout({ chromePath: CHROME, cases: only('home'), viewports: [...SHORT, 'phone', 'big', 'small', 'laptop'] });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, inset: r.safe_area, stage: r.stage, line: r.line, foot: r.foot })), null, 1);
+  assert.equal(rows.length, 8, show);
+  for (const r of rows) {
+    const top = Math.max(24, inset(r, 'top'));
+    assert.ok(r.line.bottom <= r.foot.top, show);
+    assert.ok(r.stage.top >= top - 0.5, show);
+    if (SHORT.some(s => (s.name || s) === r.viewport)) {
+      // as big as the room between the top margin and the footer allows, once the line has
+      // its two lines and 8px above the footer (before: 96px of 144 on the iPhone in Safari)
+      assert.ok(r.stage.width >= r.foot.top - 8 - 55 - top - 1, show);
+    } else {
+      // upright phones and the laptop: 72% of the short side, at most 520px, centred as before
+      assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
+      const mid = (top + r.vh - Math.max(24, inset(r, 'bottom'))) / 2;
+      assert.ok(Math.abs((r.stage.top + r.line.bottom) / 2 - mid) <= 1, show);
+    }
+  }
+});
+
+// the big orb's dots: how many each frame draws, how many per square px of the
+// orb, and how much of the sphere's disc is lit (alpha past 40 of 255)
+const DOTS = `new Promise(function (done) {
+  var c = document.getElementById('orb'), P = CanvasRenderingContext2D.prototype, arc = P.arc, n = 0, f0 = c.__orb.frame;
+  P.arc = function () { n += 1; return arc.apply(this, arguments); };
+  setTimeout(function () {
+    P.arc = arc;
+    var frames = c.__orb.frame - f0, W = c.width, H = c.height, img = c.getContext('2d').getImageData(0, 0, W, H).data;
+    var R = Math.min(W, H) * 0.42, inside = 0, lit = 0;
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) { var dx = x - W / 2, dy = y - H / 2; if (dx * dx + dy * dy > R * R) continue; inside += 1; if (img[(y * W + x) * 4 + 3] > 40) lit += 1; }
+    var size = c.getBoundingClientRect().width, dots = Math.round(n / frames);
+    done({ size: Math.round(size), dots: dots, per_px: dots / (size * size), lit: lit / inside });
+  }, 600);
+})`;
+
+test('layout: the big orb draws the dots its size holds, so a small orb on a phone on its side is as light as an upright phone\'s, and upright phones and the laptop draw what they always did', { skip, timeout: 150000 }, async () => {
+  const promax = { name: 'promax', width: 440, height: 956, deviceScaleFactor: 3, mobile: true, notch: { top: 62, bottom: 34 } };
+  const rows = await layout({ chromePath: CHROME, cases: only('home'), viewports: [...SHORT, 'phone', 'big', 'small', promax, 'laptop', { name: 'window', width: 900, height: 600, deviceScaleFactor: 1, mobile: false, notch: null }], probe: DOTS });
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);
+  const at = name => rows.find(r => r.viewport === name).probe;
+  for (const v of ['phone', 'big', 'small', 'promax']) assert.equal(at(v).dots, 5500, show);
+  assert.equal(at('laptop').dots, 11000, show);
+  // never denser than the narrowest upright phone's orb (5500 on 230px), never sparser than the laptop's (11000 on 520px)
+  for (const r of rows) assert.ok(r.probe.per_px <= 5500 / (230 * 230) * 1.02 && r.probe.per_px >= 11000 / (520 * 520) * 0.98, show);
+  // and as light to look at: before, the iPhone on its side lit 72% of its sphere, a solid ball; upright phones light 8 to 14%
+  const upright = Math.max(...['phone', 'big', 'small'].map(v => at(v).lit));
+  for (const r of rows) assert.ok(r.probe.lit <= upright * 1.25, show);
+});
+
 test('layout: on the calm line the footer never lands on the card, with the phone on its side or a note open, and the sphere stays put', { skip, timeout: 120000 }, async () => {
   const probe = `(function () {
     function R(n) { var b = n.getBoundingClientRect(); return { top: b.top + scrollY, bottom: b.bottom + scrollY }; }
@@ -388,6 +448,58 @@ test('layout: when the team table scrolls sideways on a phone the name column ke
     assert.ok(r.probe.head_over_names <= 0.5, show);
     assert.equal(r.probe.head_on_top, true, show);
   }
+});
+
+// Swiped all the way sideways, where each status line starts against the right
+// edge of the held names, and every line of each status: none may start under them.
+const STATUS_AT_END = `(function () {
+  var grid = document.querySelector('#bet .grid');
+  grid.scrollLeft = grid.scrollWidth;
+  var out = Array.prototype.map.call(grid.querySelectorAll('tbody tr'), function (tr) {
+    var held = tr.querySelector('td.member').getBoundingClientRect().right, s = tr.querySelector('td.status');
+    var r = document.createRange(); r.selectNodeContents(s);
+    var lefts = Array.prototype.map.call(r.getClientRects(), function (x) { return x.left; });
+    return { name: tr.querySelector('td.member').textContent, held_right: +held.toFixed(1), cell_left: +s.getBoundingClientRect().left.toFixed(1), first_letter: +Math.min.apply(null, lefts).toFixed(1), width: +s.getBoundingClientRect().width.toFixed(1), lines: lefts.length };
+  });
+  grid.scrollLeft = 0;
+  return { scrolls: grid.scrollWidth > grid.clientWidth + 1, rows: out };
+})()`;
+const LONG_NAMES = gmCard.team({ id: 'team~long', rows: [
+  { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
+  { member: 'coordinator', role: 'coordinator', ovr: '80', engine: 'tool one m-one', status: 'working', sentence: 'working: launch a try page for any public repo, about 4 hours left' },
+] });
+const PHONES = [[320, 568], [360, 780], [375, 667], [390, 844], [402, 874], [430, 932]].map(([width, height]) => ({ name: `${width}`, width, height, deviceScaleFactor: 3, mobile: true, notch: null }));
+
+test('layout: swiped all the way sideways on any phone from 320px up, every status line starts beside the held names, never under them, and a laptop keeps its 16rem column', { skip, timeout: 150000 }, async () => {
+  const cases = [...only('team'), { name: 'team-long-names', card: LONG_NAMES }];
+  const rows = await layout({ chromePath: CHROME, cases, viewports: [...PHONES, 'side', 'laptop'], probe: STATUS_AT_END });
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
+  assert.equal(rows.length, 16, show);
+  for (const r of rows) {
+    for (const row of r.probe.rows) {
+      // before: at 390 the first 55px of every status sat under the names ("vorking" for "working")
+      assert.ok(row.first_letter >= row.held_right - 0.5, show);
+      assert.ok(row.cell_left >= row.held_right - 0.5, show);
+    }
+  }
+  // with room to spare (a laptop, a phone on its side) the status column keeps at least 16rem
+  for (const r of rows.filter(x => x.viewport === 'laptop' || x.viewport === 'side')) for (const row of r.probe.rows) assert.ok(row.width >= 256, show);
+  // the upright phones still scroll the table sideways, and the laptop never does
+  for (const r of rows.filter(x => x.viewport !== 'side')) assert.equal(r.probe.scrolls, r.viewport !== 'laptop', show);
+});
+
+test('layout: a phone turned upright with the team open still keeps every status line beside the held names', { skip, timeout: 90000 }, async () => {
+  const desk = trace.cardDesk(LONG_NAMES, async (a, { card }) => ({ card }));
+  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+    await p.until("Boolean(document.querySelector('#bet tbody tr')) && document.getElementById('bet').classList.contains('up')", 'the team', 8000);
+    const side = await p.run(STATUS_AT_END);
+    await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 3, mobile: true });
+    await new Promise(r => setTimeout(r, 400));
+    return { side, upright: await p.run(STATUS_AT_END) };
+  }, { width: 780, height: 360, deviceScaleFactor: 3, mobile: true });
+  const show = JSON.stringify(out, null, 1);
+  assert.equal(out.upright.scrolls, true, show);
+  for (const row of out.upright.rows) assert.ok(row.first_letter >= row.held_right - 0.5, show);
 });
 
 test('layout: on the team card the footer does not offer the team again; on every other card it does', { skip, timeout: 90000 }, async () => {
