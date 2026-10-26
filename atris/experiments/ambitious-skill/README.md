@@ -30,3 +30,17 @@ Anything else means the skill stays opt-in or gets cut, and the numbers say whic
 node atris/experiments/ambitious-skill/run.js      # writes out/
 node atris/experiments/ambitious-skill/judge.js    # writes out/verdicts.json + summary
 ```
+
+## Ship gate, fixed 2026-10-26 before the final exam
+
+The final exam is a fresh task set written by a different model that never saw the skill: 20 mixed tasks plus 8 writing-only tasks, tools on, version 1.2. Every line must hold or nothing ships.
+
+1. **Beats the nudge for real.** Against nudge, wins beat losses with a one-sided sign test p below 0.05 (ties dropped).
+2. **Never worse than plain.** Against plain, wins are at least losses. "Better than plain" goes into public copy only if the sign test also clears 0.05.
+3. **Same size job.** Scope-growth flags no higher than the nudge.
+4. **Writing fixed.** On the 8 writing tasks, wins against plain are at least losses.
+5. **Nothing broken.** No skill answer under 50 words or made of fake command calls.
+6. **Code reviewed.** A second model reviews the branch and every real finding is fixed.
+7. **Shipped.** Merged to master and released, with the version read back from npm.
+
+Public copy says only what these numbers say.
