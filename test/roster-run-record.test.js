@@ -403,10 +403,11 @@ test('a mission tick on a roster engine records its outcome, time, and reported 
 });
 
 test('an autopilot phase on a roster worker records landed with tokens, or stalled at its cap', async () => {
+  // the passing phase gets room to start on a busy machine; the stall gets the 1s cap
   const roster = `# roster
 
 ## review
-- codex, max: 1 s
+- codex, max: 60 s
 `;
   await withRoom(async ({ root, bin }) => {
     const { executePhaseDetailed } = require('../commands/autopilot');
@@ -420,6 +421,7 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
       process.chdir(cwd);
     }
     fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nsleep 30\n');
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster.replace('max: 60 s', 'max: 1 s'));
     process.chdir(root);
     try {
       assert.throws(() => executePhaseDetailed('review', { task: 'fixture', kind: 'endgame' }, { verbose: false }), /timed out/);

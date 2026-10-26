@@ -43,9 +43,12 @@ function project() {
   const work = git(['rev-parse', 'HEAD'], repo);
   git(['checkout', '-q', 'master'], repo);
   const dbPath = path.join(base, 'tasks.db');
+  // the CLI's own temp folder, so other test files' scratch copies never count here
+  const tmp = path.join(base, 'tmp');
+  fs.mkdirSync(tmp);
   taskDb.close();
   const db = taskDb.open(dbPath);
-  return { base, repo, start, work, db, dbPath };
+  return { base, repo, start, work, db, dbPath, tmp };
 }
 
 function reviewJob(fx) {
@@ -62,18 +65,18 @@ function reviewJob(fx) {
 }
 
 function cli(fx, args) {
-  const env = { ...process.env, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
+  const env = { ...process.env, TMPDIR: fx.tmp, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
   delete env.NODE_TEST_CONTEXT;
   const res = spawnSync(process.execPath, [CLI, ...args], { cwd: fx.repo, encoding: 'utf8', env, timeout: 240000 });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   return JSON.parse(res.stdout);
 }
 
-const scratchDirs = () => fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('atris-job-check-')).sort();
+const scratchDirs = (fx) => fs.readdirSync(fx.tmp).filter((n) => n.startsWith('atris-job-check-')).sort();
 
 test('the second check runs the test that lives only on the job\'s branch, then cleans up', () => {
   const fx = project();
-  const before = scratchDirs();
+  const before = scratchDirs(fx);
   try {
     const id = reviewJob(fx);
     const out = cli(fx, ['task', 'certify-verified', '--json']);
@@ -83,7 +86,7 @@ test('the second check runs the test that lives only on the job\'s branch, then 
     assert.equal(cache.ok, true);
     assert.equal(cache.code_sha, fx.work, 'the check names the code it ran on');
     assert.equal(git(['worktree', 'list', '--porcelain'], fx.repo).split('\n').filter((l) => l.startsWith('worktree ')).length, 1);
-    assert.deepEqual(scratchDirs().filter((n) => !before.includes(n)), [], 'no scratch copy left behind');
+    assert.deepEqual(scratchDirs(fx).filter((n) => !before.includes(n)), [], 'no scratch copy left behind');
     assert.equal(fs.existsSync(path.join(fx.repo, 'test', 'branch-only.test.js')), false, 'the main folder is untouched');
   } finally {
     taskDb.close();
@@ -137,7 +140,7 @@ test('the commit autoland queued wins over the builder\'s stamp, and a job in a 
       schema: 'atris.autoland_queue.v1',
       entries: { 'codex/builder-branch-only': { branch: 'codex/builder-branch-only', base: 'master', number: 7, pushed: queued, task_ids: [id] } },
     }));
-    const env = { ...process.env, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
+    const env = { ...process.env, TMPDIR: fx.tmp, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
     delete env.NODE_TEST_CONTEXT;
     const res = spawnSync(process.execPath, [CLI, 'task', 'certify-verified', '--json'], { cwd: backend, encoding: 'utf8', env, timeout: 240000 });
     assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -154,7 +157,7 @@ test('the commit autoland queued wins over the builder\'s stamp, and a job in a 
 test('a scratch copy left by a killed pass is cleaned up by the next one', () => {
   const fx = project();
   try {
-    const stale = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-job-check-'));
+    const stale = fs.mkdtempSync(path.join(fx.tmp, 'atris-job-check-'));
     git(['worktree', 'add', '-q', '--detach', stale, fx.work], fx.repo);
     const old = new Date(Date.now() - 3 * 60 * 60 * 1000);
     fs.utimesSync(stale, old, old);

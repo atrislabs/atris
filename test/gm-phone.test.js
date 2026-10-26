@@ -1043,7 +1043,7 @@ test('page: an act holds the chosen spot, then one motion: the card fades into t
   // the next card blooms where the dots land, as the sphere settles to the small orb
   assert.match(script, /if \(phase === 'cover'\) \{ showCard\(card, true, true, true\); if \(after\) after\(\); \}/);
   // reduced motion: no spiral; a sphere on screen fades out first, then the card fades in where it goes
-  assert.match(script, /if \(reduced\) \{\n\s+var show = function \(\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \};\n\s+if \(fadeSphere\(\)\) setTimeout\(show, 200\); else show\(\);/);
+  assert.match(script, /if \(reduced\) \{\n\s+var show = function \(\) \{ orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \};\n\s+if \(fadeSphere\(\)\) afterFade\(document\.getElementById\('stage'\), 200, show\); else show\(\);/);
   // the card fades all the way before it leaves the page, and the sphere comes back swarming, not idle
   assert.match(html, /\.bet\.leave\.fast \{ transition: opacity 0\.2s ease-in-out; \}/);
   assert.match(script, /var ACT_LEAVE_MS = 220,/);
@@ -1108,7 +1108,7 @@ test('page: under reduced motion nothing travels or swarms, and every card chang
   // leaving a card: it fades, then the sphere is there; an idea from the calm line fades in
   // the swap waits for the card's fade to end, not a bare timer that could cut a late fade at 0.17
   assert.match(script, /afterFade\(b, 200, function \(\) \{ swap\(\); stageFade\(\); orb\.melt\(then, to, function \(\) \{\}, fast\); \}\);/);
-  assert.match(script, /setTimeout\(function \(\) \{ off\(\); orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \}, 200\);/);
+  assert.match(script, /afterFade\(b, 200, function \(\) \{ off\(\); orb\.settled\(\); showCard\(card, true\); bet\.busy = false; if \(after\) after\(\); \}\);/);
   // the dots are drawn once and hold
   assert.match(script, /if \(!reduced && \(mode === 'idle' \|\| mode === 'swarm'\)\) angle \+= dt \* spin;/);
 });
@@ -1170,7 +1170,7 @@ test('page: in place, a card turns into the next: crossfade, a small drift, the 
   assert.match(html, /\.bet\.turn-in \{ opacity: 0; transform: translateY\(4px\); transition: none; \}/);
   assert.deepEqual([...html.matchAll(/@keyframes ([a-z-]+)/g)].map(m => m[1]), ['sine-x', 'sine-y', 'spin']);
   // reduced motion: the card fades out, changes, and fades back in, with the footer aside while it moves
-  assert.match(script, /if \(reduced\) \{[\s\S]*?document\.body\.removeAttribute\('data-in-place'\);[\s\S]*?b\.classList\.remove\('up'\);[\s\S]*?setTimeout\(function \(\) \{ paint\(\); void b\.offsetWidth; b\.classList\.add\('up'\); setTimeout\(after, 200\); \}, 200\);/);
+  assert.match(script, /if \(reduced\) \{[\s\S]*?document\.body\.removeAttribute\('data-in-place'\);[\s\S]*?b\.classList\.remove\('up'\);[\s\S]*?afterFade\(b, 200, function \(\) \{ paint\(\); void b\.offsetWidth; b\.classList\.add\('up'\); afterFade\(b, 200, after\); \}\);/);
   // leaving to the sphere clears the height lock too
   assert.match(script, /var swap = function \(\) \{\n\s+b\.style\.minHeight = '';/);
 });
@@ -1263,7 +1263,9 @@ test('browser: the tapped spot becomes the field, holds as chosen, and the next 
     // machine added at most 1.7 seconds
     assert.ok(Number.isFinite(s.reveal_ms) && Number.isFinite(s.waited_ms), show(s));
     assert.ok(s.late_ms >= -s.slowest_frame_ms, show(s));
-    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms, 2 * s.motion_ms), show(s));
+    // one stalled frame is the machine, not the page: it gets its own room on top
+    const stall = Math.max(0, s.slowest_frame_ms - s.pace_frame_ms);
+    assert.ok(s.late_ms <= Math.min(12 * s.pace_frame_ms + stall, 2 * s.motion_ms), show(s));
   }
   for (const s of [answered, idea]) assert.ok(s.others_dimmed_to < 0.6, show(s));
   // a reply instead of a card takes the title's spot; it only explains, so the
