@@ -548,6 +548,36 @@ test('denied lanes match tag variants: plurals, compounds, whitespace', () => {
   assert.equal(fine.eligible, true);
 });
 
+test('untagged personal money and people work waits for human approval', () => {
+  const { sniffedProtectedLane, protectedLaneOf } = require('../lib/auto-accept-certified');
+  const cases = [
+    ['Verify United certificate and prepare remaining expense recovery', 'money'],
+    ['Find more money Keshav can recover from personal Gmail', 'money'],
+    ...['refund', 'reimbursement', 'payment', 'cash', 'bank', 'venmo', 'zelle', 'tax'].map(term => [`Review ${term} recovery`, 'money']),
+    ...['imessage', 'text message', 'send a text', 'reply to', 'outreach', 'cold email', 'send to', 'dm '].map(term => [`Prepare ${term} Sam`, 'customer']),
+  ];
+  for (const [title, lane] of cases) {
+    const task = { ...reviewTask(), title, tag: null };
+    assert.equal(sniffedProtectedLane(task)?.lane, lane, title);
+    assert.equal(protectedLaneOf(task), lane, title);
+    const result = evaluateAutoAccept(task, { acceptAll: true, executeVerify: false });
+    assert.equal(result.eligible, false, title);
+    assert.equal(result.reason, 'untagged_protected_lane_text', title);
+    assert.equal(result.declared_lane, lane, title);
+  }
+});
+
+test('protected text matches word starts instead of ordinary word fragments', () => {
+  const { sniffedProtectedLane } = require('../lib/auto-accept-certified');
+  for (const title of ['Fix syntax error in parser', 'Improve cache rendering', 'Fix estripe parsing', 'Fix adm panel']) {
+    const task = { ...reviewTask(), title, tag: null };
+    assert.equal(sniffedProtectedLane(task), null, title);
+    assert.equal(evaluateAutoAccept(task, { acceptAll: true, executeVerify: false }).eligible, true, title);
+  }
+  assert.equal(sniffedProtectedLane({ title: 'FIX: TAX recovery' })?.lane, 'money');
+  assert.equal(sniffedProtectedLane({ title: 'Draft reply', objective: 'Request the expense refund.' })?.lane, 'money');
+});
+
 test('acceptAll: a check pointing at a vanished worktree blocks; an un-runnable check does not', () => {
   const gone = evaluateAutoAccept(reviewTask({
     metadata: { verify: 'git -C reaped-away-worktree diff --check' },
