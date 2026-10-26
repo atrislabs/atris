@@ -10075,12 +10075,13 @@ function engineHealthRoot(cwd) {
   return dir && path.basename(dir) === '.git' ? path.dirname(dir) : cwd;
 }
 
-// Spellings of one model ("opus", "claude-opus-5-5[1m]") count as the same,
-// and so does any opus against any other opus. Unknown counts as same.
+// Every spelling and version of one model family counts as the same model,
+// with or without the long-context tag. Unknown counts as same.
 function reviewerMayBeSameModel(a, b) {
+  const { CLAUDE_MODEL_ALIASES, CLAUDE_LONG_CONTEXT } = require('../lib/model-names');
   const key = (model) => {
-    const name = String(model || '').toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/^claude-/, '').trim();
-    return (name.match(/\b(opus|sonnet|haiku|fable)\b/) || [name])[0];
+    const name = String(model || '').toLowerCase().replace(CLAUDE_LONG_CONTEXT, '').replace(/^claude-/, '').trim();
+    return CLAUDE_MODEL_ALIASES.find((family) => name.split(/[^a-z]+/).includes(family)) || name;
   };
   const left = key(a);
   const right = key(b);
