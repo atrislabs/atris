@@ -1,0 +1,16 @@
+{
+  "id": "weighted-gpa-calc",
+  "field": "high school grades",
+  "task": "Here are my semester grades with credit units: English A (3), Chemistry B+ (4), Spanish A- (3), History B (3), Gym P (1, pass only, not graded). Using a 4.0 scale, what's my GPA? Please leave out the Gym line.",
+  "made": {
+    "base": "8847c9e5e99d3c4a",
+    "skill": "04c728b093ce966b"
+  },
+  "rewrite": "deeper task:\nHere are my semester grades with credit units: English A (3), Chemistry B+ (4), Spanish A- (3), History B (3), Gym P (1, pass only, not graded). Using a 4.0 scale, what's my GPA? Please leave out the Gym line.",
+  "deeper": "Here are my semester grades with credit units: English A (3), Chemistry B+ (4), Spanish A- (3), History B (3), Gym P (1, pass only, not graded). Using a 4.0 scale, what's my GPA? Please leave out the Gym line.",
+  "answers": {
+    "plain": "Your GPA is **3.45**, on a standard 4.0 scale with Gym left out.\n\n| Course | Grade | Points | Credits | Quality points |\n|---|---|---|---|---|\n| English | A | 4.0 | 3 | 12.0 |\n| Chemistry | B+ | 3.3 | 4 | 13.2 |\n| Spanish | A- | 3.7 | 3 | 11.1 |\n| History | B | 3.0 | 3 | 9.0 |\n\n- Total quality points: 45.3\n- Total graded credits: 13\n- GPA: 45.3 ÷ 13 ≈ 3.485, which rounds to **3.49**\n\nI made an arithmetic slip in the first line. The correct GPA is **3.49**, not 3.45.",
+    "nudge": "Your semester GPA is **3.30**, using the standard 4.0 scale and leaving out Gym.\n\n| Course | Grade | Points | Credits | Quality points |\n|---|---|---|---|---|\n| English | A | 4.0 | 3 | 12.0 |\n| Chemistry | B+ | 3.3 | 4 | 13.2 |\n| Spanish | A- | 3.7 | 3 | 11.1 |\n| History | B | 3.0 | 3 | 9.0 |\n| **Total** | | | **13** | **45.3** |\n\nGPA = 45.3 ÷ 13 = **3.485**, which rounds to **3.48** (or 3.49 if your school rounds half up).\n\nI first wrote 3.30 above, and that was an arithmetic slip. The correct figure is **3.485**.\n\n- **Scale:** I used the common plus/minus scale (A = 4.0, A- = 3.7, B+ = 3.3, B = 3.0). Some schools differ. For example, some give an A- 3.67 and a B+ 3.33. With those values you'd get about 3.49. Check your registrar's table if you need an official number.\n- **Gym:** A pass/fail course earns credit but doesn't enter the GPA, so leaving it out is also how the school would calculate it. Your total earned credits for the semester are 14, but only 13 count toward the GPA.\n- **Chemistry:** It has the most credits (4), so its B+ pulls your GPA down a little more than any other grade. If it had been an A, you'd have 3.79.",
+    "skill": "Your semester GPA is **3.38**, with Gym left out.\n\n| Course | Grade | Points | Credits | Quality points |\n|---|---|---|---|---|\n| English | A | 4.0 | 3 | 12.0 |\n| Chemistry | B+ | 3.3 | 4 | 13.2 |\n| Spanish | A- | 3.7 | 3 | 11.1 |\n| History | B | 3.0 | 3 | 9.0 |\n| **Total** | | | **13** | **45.3** |\n\nGPA = 45.3 ÷ 13 ≈ 3.485\n\nI made an error in that last line. Here is the corrected division: 45.3 ÷ 13 = **3.485**, which rounds to **3.48** (or 3.49 if you round up).\n\nSo your GPA is **about 3.48**, not the 3.38 I wrote at the top. This assumes the standard scale where B+ = 3.3 and A- = 3.7. If your school uses a different scale, such as B+ = 3.33 and A- = 3.67, the result changes slightly, to about 3.49."
+  }
+}

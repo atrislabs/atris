@@ -1,0 +1,16 @@
+{
+  "id": "raffle-odds",
+  "field": "event planning",
+  "task": "We're selling 350 raffle tickets and drawing 3 winners without replacement. If someone buys 10 tickets, what's the probability they win at least one prize? Round to two decimal places.",
+  "made": {
+    "base": "b2cb148b936cf584",
+    "skill": "ecf29b53b699df51"
+  },
+  "rewrite": "deeper task:\nWe're selling 350 raffle tickets and drawing 3 winners without replacement. If someone buys 10 tickets, what's the probability they win at least one prize? Round to two decimal places.",
+  "deeper": "We're selling 350 raffle tickets and drawing 3 winners without replacement. If someone buys 10 tickets, what's the probability they win at least one prize? Round to two decimal places.",
+  "answers": {
+    "plain": "The probability is about **0.08**.\n\nFind the chance of winning nothing, then subtract it from 1. The person holds 10 tickets, so 340 of the 350 tickets are not theirs.\n\nP(no win) = C(340,3) / C(350,3) = (340/350)(339/349)(338/348) ≈ 0.9165\n\nP(at least one win) = 1 − 0.9165 ≈ 0.0835, which rounds to **0.08**, or about 8%.",
+    "nudge": "**P(at least one prize) ≈ 0.08**, about an 8.4% chance.\n\nThree tickets are drawn without replacement, so use the complement. You win nothing only if all 3 drawn tickets come from the 340 tickets you don't hold:\n\nP(no win) = C(340,3) / C(350,3) = (340·339·338) / (350·349·348) ≈ 0.9165\n\nP(at least one win) = 1 − 0.9165 ≈ 0.0835, which rounds to **0.08**.\n\nTwo quick checks agree:\n- **Union bound:** 3 × 10/350 ≈ 0.0857. This slightly overstates the answer, as expected, because it double-counts the small chance of winning more than once.\n- **Binomial approximation:** 1 − (340/350)³ ≈ 0.0836, which is very close.\n\nI assumed the three prizes go to three distinct tickets, and that each ticket has an equal chance. If one person's tickets could win more than one prize, the answer would still be about the same. Winning two or more prizes is unlikely: about 0.03%.",
+    "skill": "The probability is about **0.08**, or roughly 8.4%.\n\nIt's easier to find the chance of winning nothing and subtract it from 1. The 3 winners are drawn without replacement, so the chance that none of the 3 drawn tickets belongs to this buyer is:\n\nP(no win) = C(340,3) / C(350,3) = (340 × 339 × 338) / (350 × 349 × 348) ≈ 0.9165\n\nP(at least one win) = 1 − 0.9165 ≈ 0.0835, which rounds to **0.08**."
+  }
+}

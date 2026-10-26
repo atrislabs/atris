@@ -84,10 +84,36 @@ info  nudge vs plain                7 won, 18 lost, 3 tied, p=0.9927
 
 On pass-through tasks the skill answer is just a fresh plain answer, so those wins over the nudge come from stepping aside, not from the four questions. The grid-width task shows the worker's own noise: each arm opened with a wrong bold width (plain 84 px, nudge 96 px, skill 82 px) and then worked down to the right 78 px. It was a pass-through, so the skill's answer there is an ordinary plain answer.
 
-## What we can say in public
+## What we can say in public (retracted, see exam 3)
 
-Telling a model "be ambitious" made its work worse: across both final exams it beat no instruction 14 times and lost 32.
+The claims first written here ("be ambitious" hurts, the skill beats it 20 to 6) did not replicate on the larger exam 3 below. They are withdrawn.
 
-The skill decides first. On quick exact asks it steps aside; on judgment tasks it asks four questions and rewrites the task. On fresh tasks it beat the generic line 20 to 6 (p = 0.005) and grew the job on 2 of 28 tasks against 14.
+# final exam 3, 2026-10-26: v1.4 does not beat no instruction
 
-Against no instruction it won more than it lost, 14 to 6, which is not yet beyond chance (p = 0.058). On the 15 tasks it deepened, the four questions won 9, lost 3, tied 3. We do not claim it beats no instruction until a larger run clears p = 0.05.
+Pre-registered in README.md and pushed before any data. 60 new tasks written blind by Haiku, skill frozen as shipped in 3.74.18, same worker and pinned judge.
+
+```
+pass  all pairs judged             180/180
+FAIL  1 beats the nudge for real   26 won, 26 lost, 8 tied, p=0.5551
+pass  2 never worse than plain     25 won, 23 lost, 12 tied, p=0.4427
+pass  3 same size job              skill 1, nudge 14, plain 0 of 60
+pass  4 writing fixed              9 won, 3 lost, 3 tied, p=0.0730
+FAIL  5 nothing broken             utm-link-builder
+info  better than plain claim       not earned (25 won, 23 lost, 12 tied, p=0.4427)
+info  nudge vs plain                32 won, 25 lost, 3 tied, p=0.2135
+```
+
+- "Better than plain" is not earned, and per the pre-registration there is no rerun.
+- The skill's 20 to 6 lead over the nudge in exam 2 did not hold: 26 to 26 here. On the 38 deepened tasks it went 15 to 13 against plain and 15 to 18 against the nudge.
+- The generic nudge beat plain 32 to 25 here, after losing 7 to 14 and 7 to 18 in exams 1 and 2. Across all three: 46 won, 57 lost. That is too unstable to call "ambition hurts".
+- The line 5 failure is a correct one-line UTM link (one long word), a false alarm by the under-10-words rule. It does not change the outcome, since line 1 fails anyway.
+
+## What actually holds across all three exams
+
+- **The skill keeps the job the same size.** Scope growth was flagged on 1 to 2 tasks per exam for the skill, against 10 to 14 for the generic line.
+- **Writing leans its way.** Against plain on prose tasks: 4 to 3, 6 to 1, 9 to 3. That is consistent, but no single exam clears 0.05, so it is not claimed.
+- **Single exams of 20 to 30 tasks swing by more than the effects we were chasing.** Exam 2's result was in that noise. Future claims need about 60 tasks and a pre-registered test.
+
+## Status
+
+The skill stays in 3.74.18. It ties no instruction, grows the job far less than a generic ambition line, and may help with writing. Its file makes no performance claims. Nothing in the package needs pulling.
