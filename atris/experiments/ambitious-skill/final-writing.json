@@ -1,0 +1,42 @@
+[
+  {
+    "id": "apology-late-delivery",
+    "field": "client services",
+    "task": "Write a short apology email to a client whose website redesign got delivered three days late because our developer got sick. Keep it sincere, no excuses, and tell them the revised date is Thursday. Sign it from Dana, project lead."
+  },
+  {
+    "id": "cover-letter-accountant",
+    "field": "job application",
+    "task": "write a cover letter for a junior accountant job. I have 2 years at a small CPA firm doing bookkeeping and tax prep for about 60 small business clients, and I'm finishing my CPA exam section 3. Keep it under 300 words and not cheesy."
+  },
+  {
+    "id": "freelance-bio",
+    "field": "personal branding",
+    "task": "write a 3 sentence bio for my LinkedIn about page. I'm a freelance translator from Spanish and French into English, mostly for nonprofits and small publishers, 8 years experience, and I like working on food and travel writing."
+  },
+  {
+    "id": "retirement-speech",
+    "field": "workplace event",
+    "task": "I'm giving a 2 minute speech at the retirement party for Gloria, who taught 6th grade science here for 31 years. she started a robotics club and built the school garden. make it warm and a little funny, and have a closing line I can say while raising a glass."
+  },
+  {
+    "id": "repaving-notice",
+    "field": "neighborhood association",
+    "task": "write a notice for our neighborhood newsletter saying Maple Street will be repaved on Oct 30 and 31, cars need to be off the street from 7am to 5pm both days, and trash pickup will move to the main road. keep it friendly and easy to skim."
+  },
+  {
+    "id": "candle-product-description",
+    "field": "ecommerce copy",
+    "task": "write a product description for our hand-poured soy candle called Cedar Dusk. 8 oz, cedar, smoked vanilla, and a little orange peel. burns about 45 hours, cotton wick, made in small batches in Ohio. about 100 words, no hype words like amazing."
+  },
+  {
+    "id": "closure-social-post",
+    "field": "social media",
+    "task": "write an instagram post announcing that our bookstore will close for inventory from Nov 3 to Nov 5 and reopen Nov 6 with a 20% off sale. keep it short, warm, and add a couple of emojis but not too many."
+  },
+  {
+    "id": "thank-you-mentor",
+    "field": "professional relationships",
+    "task": "write a thank you note to a former manager, Rob, who wrote me a reference letter that helped me get a job at a logistics company. I want to thank him and mention that I'm happy to return the favor. around 120 words, sent as an email."
+  }
+]
