@@ -8,11 +8,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 
-const load = (dir) => ({
-  records: fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'verdicts.json')
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))),
-  verdicts: JSON.parse(fs.readFileSync(path.join(dir, 'verdicts.json'), 'utf8')),
-});
+const { PAIRS, verdictKey, loadRecords } = require('./judge.js');
+
+// Keeps one verdict per task and pair, and only if it judged the answers on
+// file now. Stale or duplicate verdicts never count.
+function load(dir) {
+  const records = loadRecords(dir);
+  const file = path.join(dir, 'verdicts.json');
+  const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+  const valid = new Map();
+  for (const rec of records) {
+    for (const [a, b] of PAIRS) {
+      const key = verdictKey(rec, a, b);
+      const v = raw.find((x) => x.id === rec.id && x.a === a && x.b === b && x.key === key);
+      if (v) valid.set(`${rec.id}|${a}|${b}`, v);
+    }
+  }
+  return { records, verdicts: [...valid.values()] };
+}
 
 // One-sided sign test: chance of at least `wins` heads in wins + losses fair flips.
 function signP(wins, losses) {
@@ -35,10 +48,14 @@ function tally(verdicts, a, b) {
 }
 
 function main(dirs) {
+  if (new Set(dirs).size !== dirs.length) { console.error('the same folder was given twice'); process.exitCode = 2; return; }
   const sets = dirs.map(load);
+  const ids = sets.flatMap((set) => set.records.map((r) => r.id));
+  const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
+  if (repeated.length) { console.error(`task counted twice: ${[...new Set(repeated)].join(', ')}`); process.exitCode = 2; return; }
   const all = { records: sets.flatMap((s) => s.records), verdicts: sets.flatMap((s) => s.verdicts) };
   const writing = sets[sets.length - 1];
-  const expectedPairs = all.records.length * 3;
+  const expectedPairs = all.records.length * PAIRS.length;
 
   const vsNudge = tally(all.verdicts, 'skill', 'nudge');
   const vsPlain = tally(all.verdicts, 'skill', 'plain');

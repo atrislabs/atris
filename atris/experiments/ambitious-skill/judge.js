@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 
 const HERE = __dirname;
 const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
@@ -73,6 +74,11 @@ function codexOnce(text, tag) {
   });
 }
 
+// A verdict is valid only for the exact ask and answers it judged.
+function verdictKey(rec, a, b) {
+  return crypto.createHash('sha256').update(JSON.stringify([prompt('', '', '', ''), rec.task, rec.field, rec.answers[a], rec.answers[b]])).digest('hex').slice(0, 16);
+}
+
 async function judgePair(rec, a, b) {
   const [first, second] = await Promise.all([
     codex(prompt(rec.task, rec.field, rec.answers[a], rec.answers[b]), `${rec.id}-${a}-${b}-1`),
@@ -81,7 +87,7 @@ async function judgePair(rec, a, b) {
   const pick1 = first.winner === 'X' ? a : first.winner === 'Y' ? b : 'tie';
   const pick2 = second.winner === 'X' ? b : second.winner === 'Y' ? a : 'tie';
   return {
-    id: rec.id, a, b,
+    id: rec.id, a, b, key: verdictKey(rec, a, b),
     winner: pick1 === pick2 ? pick1 : 'tie',
     split: pick1 !== pick2,
     grew: { [a]: first.x_grew_scope || second.y_grew_scope, [b]: first.y_grew_scope || second.x_grew_scope },
@@ -89,12 +95,17 @@ async function judgePair(rec, a, b) {
   };
 }
 
+function loadRecords(dir) {
+  return fs.readdirSync(dir).filter((f) => /^[a-z0-9-]+\.json$/.test(f) && f !== 'verdicts.json')
+    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
+}
+
 async function main() {
-  const records = fs.readdirSync(OUT).filter((f) => /^[a-z-]+\.json$/.test(f) && f !== 'verdicts.json')
-    .map((f) => JSON.parse(fs.readFileSync(path.join(OUT, f), 'utf8')));
-  // Resumable: pairs already in verdicts.json are kept, only missing ones run.
+  const records = loadRecords(OUT);
+  // Resumable: a saved verdict is kept only if it judged these exact answers.
   const saved = path.join(OUT, 'verdicts.json');
-  const verdicts = fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : [];
+  const current = new Set(records.flatMap((rec) => PAIRS.map(([a, b]) => verdictKey(rec, a, b))));
+  const verdicts = (fs.existsSync(saved) ? JSON.parse(fs.readFileSync(saved, 'utf8')) : []).filter((v) => current.has(v.key));
   const done = new Set(verdicts.map((v) => `${v.id}|${v.a}|${v.b}`));
   const jobs = records.flatMap((rec) => PAIRS.filter(([a, b]) => !done.has(`${rec.id}|${a}|${b}`)).map(([a, b]) => () => judgePair(rec, a, b)));
   const workers = Array.from({ length: Number(process.env.AMB_PARALLEL || 3) }, async () => {
@@ -121,3 +132,5 @@ async function main() {
 }
 
 if (require.main === module) main();
+
+module.exports = { PAIRS, verdictKey, loadRecords };

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 
 const HERE = __dirname;
 const OUT = path.join(HERE, process.env.AMB_OUT || 'out');
@@ -40,18 +41,26 @@ function deeperTask(rewrite) {
   return rewrite.slice(at).replace(/^deeper task:\s*/i, '').replace(/```\s*$/, '').trim();
 }
 
+const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+
+// Saved answers are reused only when what produced them is unchanged:
+// plain and nudge depend on task, worker, tools; skill also on SKILL.md.
 async function runTask(t) {
   const file = path.join(OUT, `${t.id}.json`);
-  if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const base = sha(JSON.stringify([t.task, WORKER, TOOLS, NUDGE]));
+  const withSkill = sha(base + SKILL);
+  const old = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+  if (old && old.made && old.made.base === base && old.made.skill === withSkill) return old;
+  const keepBase = old && old.made && old.made.base === base;
   const rewriteSystem = `${SKILL}\n\nOnly produce the output shape block (the four answers and the deeper task). Do not do the task.`;
   const [plain, nudge, rewrite] = await Promise.all([
-    claude(t.task),
-    claude(`${t.task}\n\n${NUDGE}`),
+    keepBase ? old.answers.plain : claude(t.task),
+    keepBase ? old.answers.nudge : claude(`${t.task}\n\n${NUDGE}`),
     claude(t.task, rewriteSystem, { tools: '' }),
   ]);
   const deeper = deeperTask(rewrite);
   const skill = await claude(deeper);
-  const record = { ...t, rewrite, deeper, answers: { plain, nudge, skill } };
+  const record = { ...t, made: { base, skill: withSkill }, rewrite, deeper, answers: { plain, nudge, skill } };
   fs.writeFileSync(file, JSON.stringify(record, null, 2));
   console.log(`done ${t.id}  words plain=${wc(plain)} nudge=${wc(nudge)} skill=${wc(skill)}`);
   return record;

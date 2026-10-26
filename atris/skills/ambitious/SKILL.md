@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.2.0
+version: 1.3.0
 tags:
   - method
   - values
@@ -34,7 +34,7 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 - **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
 - **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
 - **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
-- **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a job ad), the four answers shape the writing and add no steps: no data gathering, no review loop, no analysis section. Write it complete. Leave a blank only for a fact only the person knows, like a name, and never invent one.
+- **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
 ## Output shape
