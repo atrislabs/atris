@@ -10792,6 +10792,14 @@ function cmdSweep(args) {
       'atris task sweep currently requires --auto-accept for the explicit verified accept policy',
     );
   }
+  // Sweep has no dry-run implementation: every successful invocation can
+  // write accepts, even when an unrecognized --dry-run flag is supplied.
+  if (agentProofOnlyMode()) {
+    failAgentProofOnly(
+      'atris task sweep',
+      'agents cannot accept tasks or award xp. leave proof in review for a human to accept or revise.',
+    );
+  }
   const actor = String(flag(args, '--as') || 'orb-autoaccept');
   const parsedReward = parseAcceptReward(flag(args, '--reward'));
   if (!parsedReward.ok) {
