@@ -984,15 +984,22 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   // A named test file in a project that runs node's own test runner: check
   // just that file, since other files may fail on purpose ("legacy.js is out
   // of scope"). Member lab: these jobs fell back to a whitespace check.
+  // Only sentences that ask for the work count; "x is out of scope" or "do not
+  // run the failing tests" must not pick a check.
+  const asks = text.split(/[;\n]+|\.(?=\s|$)/).filter((part) => part.trim()
+    && !/\b(out\s+of\s+scope|do\s+not|don't|never|without|skip|ignore|leave|except|known\s+bug|reference)\b/i.test(part)).join('. ');
   const testScript = projectTestScript(cwd);
-  if (/\bnode\s+--test\b/.test(testScript)) {
-    const named = (text.match(/[\w./-]+\.[cm]?js\b/g) || [])
+  // The project runs node's test runner itself, not as part of another command.
+  if (/^\s*node\s+--test\b/.test(testScript) && !/&&|\|\||[;|]/.test(testScript)) {
+    const root = path.resolve(cwd);
+    const named = (asks.match(/[\w./-]+\.[cm]?js\b/g) || [])
       .filter((file) => /(^|\/)(tests?|checks?|specs?|__tests__)\/|\.(test|spec)\.[cm]?js$/.test(file))
-      .find((file) => fs.existsSync(path.join(cwd, file)));
+      .filter((file) => !path.isAbsolute(file) && path.resolve(root, file).startsWith(`${root}${path.sep}`))
+      .find((file) => fs.existsSync(path.join(root, file)));
     if (named) return `node --test ${named}`;
   }
   // "fix the failing tests" names the project's tests as the target.
-  if (testScript && /\b(fail(ing|ed)?\s+(\w+\s+){0,3}tests?|tests?\s+(pass|green)|fix\s+the\s+(\w+\s+){0,2}tests?)\b/i.test(text)) {
+  if (testScript && /\b(fail(ing|ed)?\s+(\w+\s+){0,3}tests?|tests?\s+(pass|green)|fix\s+the\s+(\w+\s+){0,2}tests?)\b/i.test(asks)) {
     return 'npm test';
   }
   return '';
