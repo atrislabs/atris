@@ -1,0 +1,452 @@
+[
+  {
+    "id": "bandcamp",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a concise, focused description, while X expands into an unsolicited promotional package and adds unsupported recording and pricing claims, though both invent musical details.",
+      "X supplies a focused, usable description, while Y expands into an unnecessary promotional package and adds unsupported claims about audible details, pricing, and purchase proceeds."
+    ]
+  },
+  {
+    "id": "calculus",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Despite incorrect weekdays and an overly broad topic schedule, Y offers an immediately usable plan with diagnostic testing, spaced practice, and timed finals, while X postpones the requested plan pending answers.",
+      "Despite calendar errors and excess detail, X provides an immediately usable plan with diagnostic practice, spaced review, and timed finals, while Y postpones the requested plan behind questions."
+    ]
+  },
+  {
+    "id": "bandcamp",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides an immediately usable draft, while X stalls a simple request with excessive required questions and irrelevant connector instructions, though Y’s invented sonic details and production credit need correction.",
+      "X delivers usable copy, albeit with unsupported musical details to revise, while Y turns a simple description request into an excessive production intake with added tags and irrelevant connector instructions."
+    ]
+  },
+  {
+    "id": "calculus",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Despite calendar errors, Y gives an actionable plan with diagnostics, problem practice, error review, and timed exams, while X withholds the plan pending answers and adds irrelevant connector instructions.",
+      "X gives an immediately usable plan with diagnostics, targeted practice, error review, and timed exams, while Y withholds the plan pending answers and adds irrelevant connector instructions."
+    ]
+  },
+  {
+    "id": "bandcamp",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "nudge": true
+    },
+    "reasons": [
+      "Y provides an editable description, despite unsupported sonic details and unnecessary extras, while X blocks a simple writing task with an excessive questionnaire and an irrelevant authorization detour.",
+      "X supplies an editable description despite unsupported sonic details and extra promotional deliverables, while Y blocks a straightforward request with an excessive production questionnaire and irrelevant connector authorization."
+    ]
+  },
+  {
+    "id": "cold-email",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise pitch with factual checks, while Y adds unsupported claims of being a regular, unverified trial promises, and an unnecessary outreach campaign and pricing plan.",
+      "Despite its unnecessary opening caveat, Y offers a concise, adaptable email, while X assumes a regular-customer relationship and expands the request into follow-ups, outreach planning, and pricing advice."
+    ]
+  },
+  {
+    "id": "calculus",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides stronger learning methods through spaced recall, mixed practice, fresh problems after error correction, and concrete answer checks, outweighing its unnecessary padding.",
+      "Y’s spaced recall, mixed-topic practice, explicit error correction, and answer-checking methods make it more effective despite its unnecessary padding."
+    ]
+  },
+  {
+    "id": "cold-email",
+    "a": "skill",
+    "b": "plain",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a shorter, more concrete pitch with one clear next step and useful accuracy checks, while Y relies on unverified familiarity, unsupported claims, and a higher-friction meeting request.",
+      "Y offers tighter copy and a concrete demonstration without X’s unsupported claims or irrelevant connector aside, although requiring an owner/barista interview unnecessarily expands the task."
+    ]
+  },
+  {
+    "id": "cold-email",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X’s core email is shorter, more targeted, and offers a concrete trial instead of a meeting, outweighing its excessive follow-up, prospecting, and pricing additions.",
+      "X offers a usable email and a straightforward next step, while Y expands the request into an outreach campaign and creates friction by asking a cold prospect for ten customer emails."
+    ]
+  },
+  {
+    "id": "croissant",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y supplies actionable margin checks, rollout steps, and monitoring despite unsupported demand assumptions and excessive complexity; X supplies only file-search commands and no plan.",
+      "X delivers an actionable pricing and rollout plan despite excessive complexity and unsupported demand assumptions, while Y supplies only file-search commands and no plan."
+    ]
+  },
+  {
+    "id": "croissant",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable plan with cost checks, correct revenue break-even math, rollout steps, and monitoring, while X provides only unexplained file-search commands.",
+      "X provides an actionable pricing plan with break-even checks, rollout steps, and monitoring, while Y contains only file-search commands and no plan."
+    ]
+  },
+  {
+    "id": "dedupe",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable function with explicit matching rules and limitations, while X expands the request into an unnecessary multi-file testing and export-audit workflow.",
+      "X provides a usable function with explicit matching rules and limitations, while Y adds unrequested record merging, dependencies, baseline testing, and an export-reporting workflow."
+    ]
+  },
+  {
+    "id": "croissant",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides stronger profit-based break-even calculations, basket-level checks, and testing; Y’s arbitrary volume-based rollback rule could abandon a profitable increase.",
+      "X more directly implements the requested $5 price, while Y relies on unsupported demand estimates, an unjustified launch date, and product upgrades that could undermine the margin gain."
+    ]
+  },
+  {
+    "id": "dedupe",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides clearer matching rules, useful shared-phone safeguards, and auditable results, while X expands into an unrequested export-validation workflow; however, Y’s near-linear complexity claim is incorrect.",
+      "X provides more cautious shared-phone matching and auditable merges, while Y merges unrelated customers sharing a phone number and expands the request into a baseline, test suite, and export-report workflow."
+    ]
+  },
+  {
+    "id": "dedupe",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers transitive grouping, name checks for shared phones, and reviewable merges, whereas Y can discard distinct customers sharing a phone and explicitly misses chained matches.",
+      "X provides a straightforward function with explicit assumptions, while Y adds unnecessary merging policies and incorrectly claims near-linear performance despite potentially quadratic shared-phone comparisons."
+    ]
+  },
+  {
+    "id": "hire",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides an actionable conditional recommendation and practical safeguards, while X postpones the decision behind extensive input requests and invents prior instructions.",
+      "X provides an actionable recommendation with relevant exceptions and safeguards, while Y invents prior instructions and postpones useful advice behind an extensive input request."
+    ]
+  },
+  {
+    "id": "forecast",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides correct model-based prediction intervals, while Y understates uncertainty and its growth cross-check actually yields about 211; X’s incorrect R² and padding are lesser flaws.",
+      "Y’s correctly calculated prediction intervals outweigh its excess detail and incorrect R² (actually about 0.84); X gives an unjustifiably narrow range and falsely claims recent average growth supports 190–195."
+    ]
+  },
+  {
+    "id": "forecast",
+    "a": "skill",
+    "b": "plain",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X’s explicit backtests and better-supported uncertainty outweigh its repetition and spike-range inconsistency, while Y’s claimed growth cross-check actually forecasts about 211, not 190–195.",
+      "Y’s backtest and June sensitivity analysis outweigh its verbosity and inconsistent spike-range remark, while X incorrectly claims recent average growth supports a forecast of 190–195."
+    ]
+  },
+  {
+    "id": "hire",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides an actionable recommendation with relevant exceptions and risk controls, while X invents prior instructions and withholds useful guidance pending extensive inputs.",
+      "X provides an actionable recommendation with relevant exceptions and safeguards, while Y invents prior instructions and turns the decision into a substantial data-gathering and modeling project before offering advice."
+    ]
+  },
+  {
+    "id": "forecast",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides a concise, sound regression forecast and prediction intervals; although its R² should be about 0.84, X materially misstates uncertainty by placing its 155–165 downside within a 170–220 interval.",
+      "Y better supports its forecast with accurate rolling backtests and June-sensitivity checks, although its 155–165 spike scenario falls outside—not inside—the stated 80% interval."
+    ]
+  },
+  {
+    "id": "hire",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a focused recommendation with useful exceptions and safeguards, while X adds arbitrary scoring, overly confident productivity assumptions, and an irrelevant connector claim.",
+      "X provides a clear decision rule and practical safeguards, while Y adds arbitrary scoring, overly optimistic contractor ramp-up assumptions, and an unsupported connector claim."
+    ]
+  },
+  {
+    "id": "onboarding",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better handles cohort eligibility, immature data, and opener bias while recommending a randomized holdout, though its claim that nonrandom rollouts establish causality and its premature time-series advice need correction.",
+      "X better handles immature cohorts and prioritizes randomized evidence, while Y makes activation gains among self-selected openers an attribution requirement despite opening being a biased, unreliable measure."
+    ]
+  },
+  {
+    "id": "onboarding",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better handles the unknown rollout design, eligible cohorts, uncertainty, and randomized follow-up, while Y assumes a universal rollout and incorrectly treats changes within normal historical variation as necessarily noise.",
+      "X provides a more actionable cohort-and-holdout approach, while Y incorrectly labels potentially nonrandomized comparisons causal and recommends time-series modeling with almost no mature post-change data."
+    ]
+  },
+  {
+    "id": "onboarding",
+    "a": "skill",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Despite its unnecessary access preamble and flawed emphasis on openers, X provides stronger rollout checks, channel adjustment, and experiment sizing, while Y incorrectly treats changes within historical variation as noise.",
+      "X gives a more actionable, proportionate approach, while Y adds irrelevant access claims and incorrectly requires lift to concentrate among self-selected email openers."
+    ]
+  },
+  {
+    "id": "release-note",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a more focused release-note draft with fewer unsupported details and no irrelevant connector instructions, though both require verification of their output-behavior and compatibility claims.",
+      "X is more focused and makes fewer unsupported claims; Y invents release and installation details, asserts unverified error behavior, and adds an irrelevant connector aside."
+    ]
+  },
+  {
+    "id": "release-note",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a usable release-note draft, though its unsupported output and compatibility claims need trimming, while X expands a simple writing task into a blocked tooling, verification, and sign-off workflow.",
+      "X delivers a usable draft, despite unsupported output and compatibility claims, while Y turns a simple release note into an unnecessary tooling, verification, and approval workflow."
+    ]
+  },
+  {
+    "id": "release-note",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is unnecessarily obstructive, but it avoids Y’s invented schema, installation method, and unverified guarantees about stdout, stderr, exit codes, and compatibility.",
+      "X provides a usable draft, although its unsupported behavior claims need removing, while Y unnecessarily blocks a simple writing task on tooling access, PR metadata, and human sign-off."
+    ]
+  },
+  {
+    "id": "slow-page",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides stronger diagnostic guidance and crucial LCP-image checks, including avoiding lazy loading and ensuring early discovery, while Y omits these and adds irrelevant connector instructions.",
+      "Y better clarifies what “8 seconds” measures, connects symptoms to diagnostic checks, and includes valuable LCP-image prioritization and mobile field-data guidance that X misses."
+    ]
+  },
+  {
+    "id": "slow-page",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides actionable measurement and fixes today, while X turns advice into an access-heavy implementation project and incorrectly requests TBT from CrUX.",
+      "X offers actionable diagnosis and prioritized fixes today, while Y turns advice into an access-gated implementation project and incorrectly requests TBT from CrUX."
+    ]
+  },
+  {
+    "id": "slow-page",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": true,
+      "nudge": true
+    },
+    "reasons": [
+      "Y provides actionable diagnosis and fixes, while X blocks on unnecessary access and incorrectly requests field TBT; Y expands scope with CI budgets, dashboards, and tag governance.",
+      "X provides actionable diagnosis and fixes today, while Y turns advice into an unnecessarily access-heavy implementation project and incorrectly requests TBT as a CrUX field metric."
+    ]
+  }
+]

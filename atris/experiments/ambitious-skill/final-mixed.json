@@ -1,0 +1,102 @@
+[
+  {
+    "id": "py-rename-photos",
+    "field": "software",
+    "task": "write me a python script that renames all the jpgs in a folder to YYYY-MM-DD_HHMMSS based on the EXIF date taken, and if there's no EXIF date just skip the file and print its name. keep it short, no fancy stuff"
+  },
+  {
+    "id": "excel-category-sum",
+    "field": "spreadsheets",
+    "task": "I have expenses in a sheet like this: A: date, B: category, C: amount. Rows: groceries 84.20, fuel 40.00, groceries 61.75, dining 32.10, fuel 38.50. I need a formula that totals each category on a separate tab. What do I type?"
+  },
+  {
+    "id": "invoice-tax-math",
+    "field": "small business",
+    "task": "I'm making an invoice for a freelance photo shoot. 2 hours at 85/hr, 1 print package at 120, and a travel fee of 35. Sales tax is 8.25 percent but only on the print package. Give me the subtotal, tax, and total."
+  },
+  {
+    "id": "budget-split-paycheck",
+    "field": "personal finance",
+    "task": "my take-home pay is 4120 a month. rent is 1480, car payment 312, insurance 145, utilities about 160, phone 65. I want to put 15 percent toward savings and keep the rest for food and fun. how much is left for groceries and fun after that, and is the 15 percent doable?"
+  },
+  {
+    "id": "physics-projectile",
+    "field": "school",
+    "task": "physics hw. a ball is thrown horizontally off a 20 m cliff at 12 m/s. how far from the base does it land and how long is it in the air? use g = 9.8 and show the steps so i can understand it"
+  },
+  {
+    "id": "houseplant-watering",
+    "field": "home",
+    "task": "I have a monstera, a snake plant, and a pothos in a fairly dry apartment with heat on in winter. make me a watering schedule by plant for the next 6 weeks in a simple table, and tell me what signs of overwatering to watch for."
+  },
+  {
+    "id": "disk-full-alert",
+    "field": "ops",
+    "task": "got a disk alert on our build server. output of df -h: /dev/sda1 is 96% used, 46G of 48G. the big folders are /var/log at 19G and /opt/cache at 17G. what should I safely clean first and what commands should I run? don't want to break the running builds"
+  },
+  {
+    "id": "ab-test-check",
+    "field": "marketing",
+    "task": "ran an A/B test on a landing page. control: 412 conversions out of 8,300 visitors. variant: 468 out of 8,250. is the variant actually better or could this be noise? give me the rough z-test reasoning and a plain yes or no."
+  },
+  {
+    "id": "titration-calc",
+    "field": "science",
+    "task": "lab question. I titrated 25.00 mL of an unknown HCl solution with 0.1000 M NaOH. the endpoint was reached at 31.40 mL of NaOH. what's the molarity of the HCl and how would I convert that to a percent w/v if the mass of HCl in that solution is what I'd need?"
+  },
+  {
+    "id": "dba-vs-llc",
+    "field": "law-ish admin",
+    "task": "I'm a solo freelancer and I want to operate under a different business name than my own. someone told me I need a DBA. explain in plain words what a DBA is, how it differs from an LLC, and what usually has to happen to register one in Ohio. this is general info only, not legal advice"
+  },
+  {
+    "id": "recipe-scale-up",
+    "field": "cooking",
+    "task": "my recipe serves 4 and I need it for 11. original: 500g chicken thighs, 2 tbsp olive oil, 1 onion, 3 garlic cloves, 1 can (400g) crushed tomatoes, 1 tsp smoked paprika, 150g rice, 300ml stock. scale everything and tell me if the pan size will be a problem."
+  },
+  {
+    "id": "running-plan-8wk",
+    "field": "fitness",
+    "task": "I can currently run 3 km without stopping and I want to be able to do 10 km in 8 weeks. I can train 3 days a week. make me a week-by-week plan with the run, the distance, and one rest or cross-training day noted."
+  },
+  {
+    "id": "lisbon-three-days",
+    "field": "travel",
+    "task": "we have 3 days in Lisbon in late November. we like food, walking, and not too many museums. budget is moderate. give me a day-by-day plan with neighborhoods, one food stop per day, and a rainy-day backup for each."
+  },
+  {
+    "id": "brand-palette",
+    "field": "design",
+    "task": "my small brand uses navy #1B2A4A and mustard #D9A441 as main colors. suggest a 6-color palette that works with these for a website, including a light background, a text color, and an accent for buttons, with hex codes and a note on contrast."
+  },
+  {
+    "id": "phone-normalize-regex",
+    "field": "software",
+    "task": "I have phone numbers pasted like this: (555) 201-4433, 555.201.4433, +1 555 201 4433, 5552014433. I need a regex or a small JS function that turns every one into +15552014433. show me the function and what it does with bad input like 12345."
+  },
+  {
+    "id": "sheets-overdue-flag",
+    "field": "spreadsheets",
+    "task": "in google sheets I have due dates in column B and a status in column C that says open or closed. I want column D to show OVERDUE if the due date is before today and status is still open, otherwise blank. write the formula and say where to put it."
+  },
+  {
+    "id": "staff-shift-week",
+    "field": "small business",
+    "task": "I run a 3 person cafe kitchen. Maya works Mon-Thu 7am-2pm, Dev works Wed-Sun 2pm-close, Ren covers weekends 8am-4pm and one weekday, pick one. Make a weekly schedule grid, make sure no one works more than 5 days, and flag any gap where nobody is covering."
+  },
+  {
+    "id": "ww1-essay-outline",
+    "field": "school",
+    "task": "need an outline for a 5 paragraph history essay: what were the main causes of WWI. my teacher wants a thesis, three body paragraphs with evidence, and a counterargument paragraph. I'm 10th grade so keep the vocabulary normal."
+  },
+  {
+    "id": "meeting-action-items",
+    "field": "ops",
+    "task": "pasted my meeting notes below. pull out every action item as a bullet with the owner and the due date if one is mentioned, and list any open questions separately. Notes: Priya will send the vendor quote by Friday. We still don't know who owns the migration. Tom to check the staging backup before the 14th. Should we move the launch? Maybe revisit next week. Alex will draft the customer FAQ."
+  },
+  {
+    "id": "delivery-times-pandas",
+    "field": "data",
+    "task": "I have a CSV with columns: region, carrier, days_to_deliver. Rows: West,UPS,3 / West,FedEx,5 / East,UPS,2 / East,FedEx,4 / East,UPS,3. Write pandas code that gives the average days per region and carrier, sorted by average, and tell me the output."
+  }
+]

@@ -1,0 +1,317 @@
+[
+  {
+    "id": "avg-review",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides an actionable review covering empty inputs, coercion, and a concrete fix, while X contains only an unexecuted test command and no review.",
+      "X explains the empty-array failure, coercion risks, and concrete fixes, while Y provides only a test-command fragment with no results or substantive review."
+    ]
+  },
+  {
+    "id": "barista-post",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, usable post covering the hiring essentials, while Y makes numerous unsupported employment promises and expands the task with promotional copy and application screening materials.",
+      "Y provides a focused, usable job post covering essential hiring details, while X adds unrequested promotional and screening materials plus unsupported promises about benefits, scheduling, and raises."
+    ]
+  },
+  {
+    "id": "avg-review",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y identifies concrete defects and supplies actionable fixes and tests, despite excessive detail and some numerical overclaims, while X provides no usable review.",
+      "X identifies concrete bugs and provides actionable fixes and tests within the function review, while Y provides no substantive review."
+    ]
+  },
+  {
+    "id": "avg-review",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Despite excess detail, X provides a stricter implementation and targeted tests, while Y’s suggested fix retains silent coercion and its optional validation misses sparse-array holes.",
+      "X offers a proportionate JavaScript fix and clear contract choices, while Y adds useful edge cases but unnecessarily expands the review into a TypeScript iterable-utility redesign."
+    ]
+  },
+  {
+    "id": "barista-post",
+    "a": "skill",
+    "b": "plain",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides more useful scheduling and tip-policy details and a focused application process, while Y adds arbitrary hours, physical requirements, and promotion promises.",
+      "Y better supports candidate self-selection with explicit shift and tip-policy details, accessible experience requirements, and a transparent hiring process that includes a paid trial."
+    ]
+  },
+  {
+    "id": "barista-post",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a focused, usable job-post template, while X invents consequential scheduling and employment commitments and expands the task into promotional copy and application screening.",
+      "X provides a focused, usable job-post template, while Y adds unrequested deliverables and too many unverified promises about benefits, scheduling, and hiring practices."
+    ]
+  },
+  {
+    "id": "rent",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers a focused, evidence-backed counteroffer with a clear exchange, while Y expands into a negotiation playbook and includes unreliable claims about midpoint bargaining and silence implying acceptance.",
+      "Y offers a focused counterproposal with useful verification checks, while X expands the requested draft into a negotiation playbook and includes overconfident claims about midpoint bargaining and acceptance by silence."
+    ]
+  },
+  {
+    "id": "fast-tests",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a ready-to-send note with clear rationale and practical next steps, while X includes unfinished metrics, an oversimplified cost calculation, and a distracting request for more data.",
+      "X is ready to send and explains the benefits with practical next steps, while Y contains unfilled metrics, an unreliable cost calculation, and an unnecessary request for more data."
+    ]
+  },
+  {
+    "id": "fast-tests",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise rationale and measurable target suited to the requested short note; Y remains the same deliverable but adds excessive implementation detail and unsupported claims about productivity costs.",
+      "Y delivers a concise rationale with a measurable CI target, while X adds unsupported productivity estimates and turns a short note into a suite optimization project."
+    ]
+  },
+  {
+    "id": "fast-tests",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y better fits the requested short note with clear rationale and practical next steps, while X is unnecessarily long and makes unsupported claims about time lost to context switching.",
+      "X better satisfies the request for a short, usable team note, while Y adds excessive process detail and unsupported claims about the time lost to context switching."
+    ]
+  },
+  {
+    "id": "support-inbox",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives an actionable triage workflow with priorities, ownership, routing, escalation, and monitoring, while X provides no usable answer.",
+      "X provides actionable priorities, ownership, routing, and monitoring, while Y offers no triage guidance."
+    ]
+  },
+  {
+    "id": "support-inbox",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y provides actionable priorities, routing, ownership, escalation, and quality checks, whereas X gives no guidance, though Y unnecessarily expands into a multiweek classifier and automation project.",
+      "X provides actionable prioritization, routing, ownership, and escalation guidance while Y never answers, although X expands the task into a multiweek classifier and automation project."
+    ]
+  },
+  {
+    "id": "rent",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y offers a usable, cooperative draft with practical checks, while X expands the task into a negotiation playbook with arbitrary concession ranges and an unjustified split-the-difference prediction.",
+      "X provides a cooperative, usable reply with flexible options and relevant checks, while Y expands into a negotiation playbook with arbitrary targets, unsupported market assumptions, and overconfident bargaining and legal claims."
+    ]
+  },
+  {
+    "id": "toast",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is tighter and easier to personalize truthfully, while Y runs well beyond its promised length and invents personal details, including an awkward comparison to past partners.",
+      "Y offers a tighter, more personal toast built around a true memory, while X invents numerous personal details, awkwardly references past partners, and understates its delivery time."
+    ]
+  },
+  {
+    "id": "toast",
+    "a": "skill",
+    "b": "plain",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X has a stronger emotional arc, more natural spoken phrasing, and concrete guidance for adding a personal memory, while Y relies on unsupported character claims and strained occupational jokes.",
+      "Y provides a stronger personal-story framework, warmer marriage-focused wishes, and practical rehearsal guidance, while X relies on occupational clichés, an awkward cooking joke, and an understated runtime."
+    ]
+  },
+  {
+    "id": "toast",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y offers a tighter, more usable toast, while X invents relationship history and awkwardly suggests the couple hopes to encounter people on their worst days.",
+      "X is easier to personalize safely, while Y invents relationship history, habits, and dialogue that could embarrass the couple despite its useful delivery tips."
+    ]
+  },
+  {
+    "id": "support-inbox",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a practical starting workflow with ownership, priorities, escalation, and canned replies, while X turns the immediate triage need into a multiweek classifier and automation project.",
+      "X provides a practical starting workflow with priorities, ownership, escalation, and monitoring, while Y makes a multiweek labeling, classifier, and clustering project central before establishing that this inbox needs it."
+    ]
+  },
+  {
+    "id": "tokyo",
+    "a": "skill",
+    "b": "plain",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y offers a clearer itinerary and includes lodging costs, while X’s added detail undermines reliability through [reversed observatory hours](https://www.kotsu.metro.tokyo.jp/sp/newsevent/pickup/2104/en.html) and advice about the [discontinued PASMO Passport](https://www.pasmo.co.jp/visitors/en/news/pdf/EN_20241004_Rules%20for%20Using%20PASMO%20PASSPORT.pdf).",
+      "X offers a clearer, more flexible itinerary with lodging estimates, while Y adds substantial padding and actionable errors, including [discontinued PASMO Passport advice](https://www.pasmo.co.jp/visitors/en/news/pdf/EN_20241004_Rules%20for%20Using%20PASMO%20PASSPORT.pdf) and [reversed observatory hours](https://www.zaimu.metro.tokyo.lg.jp/tochousha/goannai/tenbou/)."
+    ]
+  },
+  {
+    "id": "tokyo",
+    "a": "skill",
+    "b": "nudge",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides lodging-inclusive budgeting and practical booking steps, while X omits accommodation costs and adds unreliable detail, including [reversed observatory hours](https://www.zaimu.metro.tokyo.lg.jp/tochousha/goannai/tenbou/).",
+      "X provides a more complete budget including lodging and booking essentials, while Y omits accommodation costs and adds misleading specifics such as the [discontinued PASMO Passport](https://www.pasmo.co.jp/visitors/en/news/pdf/EN_20241004_Rules%20for%20Using%20PASMO%20PASSPORT.pdf)."
+    ]
+  },
+  {
+    "id": "tokyo",
+    "a": "nudge",
+    "b": "plain",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers better geographic grouping, airport-transfer guidance, booking priorities, and a fuller trip budget, while Y omits airport costs and contradicts its own daily budget; both contain transit inaccuracies.",
+      "Y is more actionable because it includes an overall trip budget, airport planning, subway-pass exclusions, and booking steps, though its airport routing, Android wallet compatibility, and attraction prices need correction."
+    ]
+  },
+  {
+    "id": "rent",
+    "a": "skill",
+    "b": "plain",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers a clearer counterproposal supported by verifiable rent comparisons and makes a longer lease conditional on agreement, giving the landlord a concrete financial reason to negotiate.",
+      "Y offers a specific counterproposal, explains how to validate comparable rents, and makes a longer lease conditional on price, giving the landlord a clearer basis to accept or counter."
+    ]
+  }
+]

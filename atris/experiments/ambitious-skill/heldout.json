@@ -1,0 +1,10 @@
+[
+  { "id": "toast", "field": "speechwriting", "task": "Write a toast for my sister's wedding. She is a nurse and her husband is a firefighter." },
+  { "id": "support-inbox", "field": "customer support", "task": "Our support inbox gets 200 emails a day. How should we triage them?" },
+  { "id": "repeat-buyers", "field": "data engineering", "task": "Write a SQL query that finds customers who bought twice or more in the last 30 days. Table: orders(customer_id, created_at, total)." },
+  { "id": "tokyo", "field": "travel planning", "task": "Plan a 3-day trip to Tokyo for a first-timer on a budget." },
+  { "id": "barista-post", "field": "hiring", "task": "Write a job post for a part-time barista." },
+  { "id": "rent", "field": "negotiation", "task": "My landlord raised the rent 15%. Draft a reply asking to negotiate." },
+  { "id": "avg-review", "field": "software", "task": "Review this function: function avg(xs) { return xs.reduce((a, b) => a + b) / xs.length }" },
+  { "id": "fast-tests", "field": "engineering leadership", "task": "Write a short note to my team on why our test suite should run in under 5 minutes." }
+]

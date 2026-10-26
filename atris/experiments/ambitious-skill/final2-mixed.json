@@ -1,0 +1,102 @@
+[
+  {
+    "id": "rate-limit-backoff",
+    "field": "software engineering",
+    "task": "My script calls a weather API that sometimes returns HTTP 429. Can you write a Python function that retries with exponential backoff and jitter, up to 5 attempts, and only retries on 429 and 5xx responses? I'm using the requests library."
+  },
+  {
+    "id": "sku-price-lookup",
+    "field": "spreadsheets",
+    "task": "I have a Sheet1 with SKUs in column A and a Prices tab with SKU in column A and price in column B. Some SKUs in Sheet1 aren't in Prices, and I want those cells to show blank instead of #N/A. What formula should I put in Sheet1!B2?"
+  },
+  {
+    "id": "reorder-point-calc",
+    "field": "small business",
+    "task": "I run a small candle shop. I sell about 14 units a day, my supplier takes 9 days to deliver, and I want 4 days of safety stock. What reorder point should I use, and how many units would that leave on hand when the order lands if sales run exactly on average?"
+  },
+  {
+    "id": "car-loan-extra-payment",
+    "field": "personal finance",
+    "task": "I owe $11,400 on a car loan at 7.9% APR with 34 months left and a payment of $372. How much extra per month would I need to pay to finish about 2 years early? Please show the math briefly."
+  },
+  {
+    "id": "molarity-conversion",
+    "field": "chemistry lab",
+    "task": "My lab sheet says a solution has a concentration of 3.5 g/L of sodium chloride. NaCl has a molar mass of 58.44 g/mol. What is that in mol/L and in mM?"
+  },
+  {
+    "id": "paint-finish-choice",
+    "field": "home repair",
+    "task": "We're repainting our upstairs bathroom, which gets a lot of steam and has a toddler who will be scrubbing the walls. Should I go with satin, eggshell, or semi-gloss, and does the primer choice change if the old paint is a dark blue? Keep the answer short, I'm about to walk into Home Depot."
+  },
+  {
+    "id": "csv-median-by-region",
+    "field": "data analysis",
+    "task": "Here's a CSV of store sales. I need the median revenue per region.\n\nregion,store,revenue\nNorth,A,12000\nNorth,B,9500\nSouth,C,15400\nSouth,D,8800\nSouth,E,11100\nWest,F,7300\n\nWhat are the medians for each region?"
+  },
+  {
+    "id": "carbon-dating-remaining",
+    "field": "science",
+    "task": "A fossil sample has a carbon-14 level that's about 22% of the modern level. Given a half-life of 5,730 years, roughly how old is it? Show the calculation."
+  },
+  {
+    "id": "expense-categorize",
+    "field": "office administration",
+    "task": "Here are my receipts from the conference trip, can you sort them into Travel, Meals, Lodging, and Other, and give me a total for each?\n\nUber SF airport 48.20\nHotel Marriott 3 nights 612.00\nChipotle 14.75\nDelta baggage fee 35.00\nStarbucks 6.40\nUber hotel to venue 22.10\nDinner w/ team 143.50\nNotebook and pens 18.99"
+  },
+  {
+    "id": "cake-pan-scale",
+    "field": "home cooking",
+    "task": "My cake recipe is for a 9-inch round pan and calls for 2 cups of flour and 1 cup of sugar. I only have 6-inch pans and want to make a tall layer cake with them. How much of each ingredient should I use per 6-inch pan, and how long should I expect the bake time to change?"
+  },
+  {
+    "id": "karvonen-zones",
+    "field": "fitness",
+    "task": "I'm 42 with a resting heart rate of 58 bpm. Using the Karvonen method, what are my five training heart rate zones? Give me the bpm range for each zone."
+  },
+  {
+    "id": "grid-column-width",
+    "field": "web design",
+    "task": "I'm laying out a desktop page that's 1440px wide with 12 columns, 24px gutters between them, and 120px margins on each side. How wide is each column in pixels? Please give me the exact number."
+  },
+  {
+    "id": "soil-volume-bed",
+    "field": "gardening",
+    "task": "I'm building a raised bed that's 4 ft by 8 ft and 12 inches deep. I want to fill it with 60% topsoil and 40% compost. How many cubic feet of each do I need, and how many 1.5 cubic foot bags is that?"
+  },
+  {
+    "id": "mileage-reimbursement",
+    "field": "tax and admin",
+    "task": "My company reimburses mileage at $0.67 per mile. Here's my trip log from last month: Mon 42, Wed 58, Fri 31, Sat 104, and Sun 17 miles. What's the total reimbursement?"
+  },
+  {
+    "id": "escalation-policy-design",
+    "field": "IT operations",
+    "task": "I manage a three-person IT team for a 60-person office. We keep getting pinged about everything at once, so I want a simple escalation policy: who handles what, response time targets, and when something goes to me. Can you draft a version I can roll out Monday?"
+  },
+  {
+    "id": "subject-line-pick",
+    "field": "email marketing",
+    "task": "I'm sending a newsletter for our bakery's fall menu. I have three subject lines: 'Fall is here, come taste it', 'New pumpkin loaf + 3 more', and 'Warm bread for a cold week'. Which one would you pick for an audience of local customers who already know us, and why?"
+  },
+  {
+    "id": "two-hour-connection",
+    "field": "travel planning",
+    "task": "My flight lands at Denver at 1:10pm, and my connection leaves from a different terminal at 2:05pm. I'm checking one bag and have already booked the flights separately, not on one ticket. Is 55 minutes enough, and should I try to change to a later flight now?"
+  },
+  {
+    "id": "screen-time-plan",
+    "field": "parenting",
+    "task": "My 9-year-old has been asking for more screen time and the weekday arguments are wearing me out. Can you suggest a simple weekday and weekend screen time plan that's reasonable for a kid their age and easy to stick to?"
+  },
+  {
+    "id": "oil-change-interval",
+    "field": "auto maintenance",
+    "task": "I have a 2015 Honda Accord with 96,000 miles. The owner's manual says to change the oil every 7,500 miles or 12 months with synthetic, but my mechanic says every 5,000 with conventional oil. Which interval should I follow, and does oil type matter for this car?"
+  },
+  {
+    "id": "dormant-customers-sql",
+    "field": "data engineering",
+    "task": "I have a Postgres table customers(id, email, created_at) and an orders(id, customer_id, order_date, total). Can you write a query that finds customers with no orders in the last 90 days, including customers who have never ordered? Return id and email."
+  }
+]

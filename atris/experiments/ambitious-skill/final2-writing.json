@@ -1,0 +1,42 @@
+[
+  {
+    "id": "heater-repair-landlord",
+    "field": "tenant communication",
+    "task": "Write a text to my landlord saying the heater in the living room has been out for four days, it's getting cold, and I'd like someone to come look at it this week. Keep it polite but firm, and ask them to confirm a day."
+  },
+  {
+    "id": "absence-note-teacher",
+    "field": "parent communication",
+    "task": "Write a short note to my daughter's teacher saying she'll be out Thursday and Friday for a family funeral out of state. Ask if she can get her homework through the class portal."
+  },
+  {
+    "id": "neighbor-noise-note",
+    "field": "neighborly relations",
+    "task": "Write a short friendly note to put in my neighbor's mailbox. Their party went until about 1am last Saturday and I could hear it clearly. I'd like them to keep it down after 10pm next time, and I want it to sound neighborly, not angry."
+  },
+  {
+    "id": "feedback-request-rejection",
+    "field": "job search",
+    "task": "I got a rejection email for a marketing coordinator role today. Write a reply thanking them, saying I'm still interested in future openings, and asking if they'd be willing to share one or two points of feedback on my application."
+  },
+  {
+    "id": "sick-day-manager-msg",
+    "field": "workplace communication",
+    "task": "Write a Slack message to my manager saying I've caught a stomach bug and won't be in today. Say I'll update by noon whether I can work from my phone this afternoon, and that I'll get my tasks to the team."
+  },
+  {
+    "id": "refund-denied-shop",
+    "field": "customer service",
+    "task": "Write an email to a customer whose refund request I have to deny. They bought a custom-sized sofa cover 26 days ago and the return window is 14 days, but the cover is ill-fitting and they're upset. Be kind, clear about the policy, and offer them a 15% store credit as a goodwill gesture."
+  },
+  {
+    "id": "overdue-invoice-reminder",
+    "field": "freelance billing",
+    "task": "Write a payment reminder to a client whose invoice for $2,400 is now 15 days past due. Keep it professional but not hostile, give them the invoice number INV-1047, and say I can send a new copy if the original got lost."
+  },
+  {
+    "id": "pet-sitter-instructions",
+    "field": "household logistics",
+    "task": "Write a text to the person watching my dog this weekend. Our dog Biscuit gets fed twice a day, one cup of kibble each time, needs a 20-minute walk in the morning, and takes a pill with a bit of cheese at 8pm. Mention the spare key is under the blue pot and that the vet's number is on the fridge."
+  }
+]

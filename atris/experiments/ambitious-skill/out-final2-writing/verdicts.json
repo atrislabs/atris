@@ -1,0 +1,386 @@
+[
+  {
+    "id": "absence-note-teacher",
+    "a": "skill",
+    "b": "plain",
+    "key": "74ed1561990b5a58",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a ready-to-send subject line and asks for both homework and missed assignments through the portal while keeping the note brief and considerate.",
+      "Y gives the specific Thursday and Friday dates and asks directly about getting homework through the class portal."
+    ]
+  },
+  {
+    "id": "absence-note-teacher",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c2ba9f6453dcb81b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides a ready-to-send note that asks for portal access and gives the teacher a clear way to flag missed materials or assessments, though its extra tips are unnecessary.",
+      "X provides a usable note and addresses missed materials and attendance reporting, though its extra tone advice is unnecessary."
+    ]
+  },
+  {
+    "id": "absence-note-teacher",
+    "a": "nudge",
+    "b": "plain",
+    "key": "0d384ec8dbccbefb",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides the requested short, considerate note, while X adds unnecessary detail and advice beyond what the parent needs to send.",
+      "Y gives the correct dates, asks how to handle work that cannot go through the portal, and leaves catching up until after the funeral, despite some unnecessary extra advice."
+    ]
+  },
+  {
+    "id": "feedback-request-rejection",
+    "a": "skill",
+    "b": "plain",
+    "key": "60869d0a7496f2bb",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to send without assuming an interview or prior contact with the team, and it makes a concise, low-pressure request for feedback.",
+      "Y is ready to send without assuming an interview and makes the feedback request easy to answer."
+    ]
+  },
+  {
+    "id": "feedback-request-rejection",
+    "a": "skill",
+    "b": "nudge",
+    "key": "bdee10481dafeab2",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X is a concise, ready-to-send reply that covers all three requests, while Y adds a second draft and extra job-search tasks that make the simple reply harder to use today.",
+      "Y provides a concise, ready-to-send reply that covers all three requests, while X adds an alternate draft and unrelated follow-up tasks."
+    ]
+  },
+  {
+    "id": "feedback-request-rejection",
+    "a": "nudge",
+    "b": "plain",
+    "key": "062fcb03221ee4f3",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, ready-to-send reply that covers all three requests, while X adds an alternative draft and unrelated follow-up tasks.",
+      "X gives a clear, courteous reply that covers all three requests, while Y adds extra tasks and a second draft and requires more editing before sending."
+    ]
+  },
+  {
+    "id": "heater-repair-landlord",
+    "a": "skill",
+    "b": "plain",
+    "key": "e9478289feb72d8f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is a concise, polite text that states the four-day outage, requests a visit this week, and asks the landlord to confirm a day.",
+      "Y is a concise, polite text that states the four-day outage and cold conditions and directly asks for a visit this week and a confirmed day."
+    ]
+  },
+  {
+    "id": "heater-repair-landlord",
+    "a": "skill",
+    "b": "nudge",
+    "key": "29928de9c1b93670",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X is a concise, polite but firm text that asks for a day this week, while Y adds an unrequested follow-up and advice that make the response harder to use immediately.",
+      "Y is a polite, firm text that states the problem and asks for a confirmed day, while X adds an unrequested follow-up and tangential advice."
+    ]
+  },
+  {
+    "id": "heater-repair-landlord",
+    "a": "nudge",
+    "b": "plain",
+    "key": "70a3da51b701917f",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X’s main text is polite and firmer because it asks for a confirmed day by a clear deadline, though its follow-up draft expands beyond the requested single text.",
+      "Y’s ready-to-send text is polite but firmer, with a clear request to confirm a day by a stated deadline, though its extra follow-up draft expands the scope."
+    ]
+  },
+  {
+    "id": "neighbor-noise-note",
+    "a": "skill",
+    "b": "nudge",
+    "key": "dc8caac48ae53095",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a friendly, usable note with a clear 10pm request; Y adds a second note, lengthy explanation, and advice the person did not ask for.",
+      "Y gives a short, friendly note with a clear after-10pm request, while X adds an overly long note, an alternate version, and unsolicited advice."
+    ]
+  },
+  {
+    "id": "neighbor-noise-note",
+    "a": "skill",
+    "b": "plain",
+    "key": "a7c85faaf97ac624",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is shorter and makes the after-10pm request clearly; Y’s unsolicited offer to be flexible on future late nights weakens the request.",
+      "Y makes the after-10pm request clearly and warmly, while X’s offer to be flexible weakens the boundary the person wants to set."
+    ]
+  },
+  {
+    "id": "neighbor-noise-note",
+    "a": "nudge",
+    "b": "plain",
+    "key": "68bd8ba3fe79946a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a usable, friendly note with a clear 10pm request, while X adds an unnecessary second draft and delivery advice.",
+      "X gives a friendly, ready-to-use note with a clear 10pm request, while Y adds an extra draft and advice the person did not ask for."
+    ]
+  },
+  {
+    "id": "overdue-invoice-reminder",
+    "a": "skill",
+    "b": "nudge",
+    "key": "0a17417b5549b88f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, professional reminder with the invoice details and a clear request for a payment date, while Y adds an unrequested follow-up and advice and leaves more placeholders to fill.",
+      "Y provides a concise, professional reminder with the amount, invoice number, payment-date request, and replacement-copy offer; X adds an unrequested follow-up draft and advice."
+    ]
+  },
+  {
+    "id": "overdue-invoice-reminder",
+    "a": "skill",
+    "b": "plain",
+    "key": "48a917267d678563",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the client a concrete request to confirm when payment will be sent, while Y’s request to pay at their earliest convenience is less actionable.",
+      "Y keeps the tone courteous while asking for a specific payment date, making the reminder more actionable than X’s open-ended request."
+    ]
+  },
+  {
+    "id": "overdue-invoice-reminder",
+    "a": "nudge",
+    "b": "plain",
+    "key": "289ea1ab1ef867fc",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, professional reminder with all requested details, while X adds an unrequested follow-up and generic billing advice.",
+      "X provides a professional, ready-to-send reminder with every requested detail, while Y expands the task into a follow-up email and billing advice."
+    ]
+  },
+  {
+    "id": "pet-sitter-instructions",
+    "a": "skill",
+    "b": "plain",
+    "key": "cf2f7d1827ca7abf",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to send, includes every instruction clearly, and avoids Y’s formatting and extra commentary.",
+      "Y is ready to send, includes every requested instruction, and avoids X’s extra framing and follow-up offer."
+    ]
+  },
+  {
+    "id": "pet-sitter-instructions",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f40cc31a5e5a6f46",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, ready-to-send text with every requested detail; Y adds useful pill guidance but burdens the simple request with a separate checklist and extra commentary.",
+      "Y is a concise, ready-to-send text that includes every requested instruction, while X adds unnecessary commentary and a separate list of suggestions."
+    ]
+  },
+  {
+    "id": "pet-sitter-instructions",
+    "a": "nudge",
+    "b": "plain",
+    "key": "bc358d8da634b28d",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a sendable text and adds a useful check that Biscuit actually swallows the pill, while flagging missing details that could otherwise leave the sitter guessing.",
+      "Y gives a ready-to-send text and adds the useful check that Biscuit swallows the pill, though its extra suggestions make it longer than needed."
+    ]
+  },
+  {
+    "id": "refund-denied-shop",
+    "a": "skill",
+    "b": "plain",
+    "key": "712aaca059bdf60e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y offers a practical path to resolve the fit issue and flags the need to verify when the return window began before denying the refund.",
+      "X addresses the fit problem, offers a practical next step, and flags the need to verify when the return window began; Y offers no help with the fit and uses awkward language about the credit."
+    ]
+  },
+  {
+    "id": "refund-denied-shop",
+    "a": "skill",
+    "b": "nudge",
+    "key": "88f56b993a30822d",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y addresses the ill fit with a useful check for a manufacturing error, though its claim that the return window runs from delivery needs verification before sending.",
+      "X offers a concrete way to investigate the poor fit and reconsider the outcome if the cover was made incorrectly, though its delivery-date claim and credit details need verification before sending."
+    ]
+  },
+  {
+    "id": "refund-denied-shop",
+    "a": "nudge",
+    "b": "plain",
+    "key": "da6f97d69a2308f2",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is clearer and flags the crucial need to verify the delivery date before denying the refund, while X assumes the window has closed and adds unverified credit terms and potentially unsuitable fit advice.",
+      "X provides a kind, usable email and flags the crucial need to verify the delivery date before denying a refund, while Y treats the order date as proof that the return window has closed."
+    ]
+  },
+  {
+    "id": "sick-day-manager-msg",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5899f7a26b48c4ab",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a concise, ready-to-send message that covers every request, while Y adds unnecessary detail and suggests availability before noon despite the sick day.",
+      "Y provides a clear, ready-to-send message that covers every request without X’s extra advice or unnecessary offer to be reachable while sick."
+    ]
+  },
+  {
+    "id": "sick-day-manager-msg",
+    "a": "nudge",
+    "b": "plain",
+    "key": "452694bb5206b43d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clear, ready-to-send message covering every requested point without X’s extra advice or implied availability while sick.",
+      "X gives a concise, ready-to-send message that covers every request, while Y adds unnecessary length and a commitment to respond before noon while sick."
+    ]
+  },
+  {
+    "id": "sick-day-manager-msg",
+    "a": "skill",
+    "b": "plain",
+    "key": "bfd2303e604490a8",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X’s main draft makes clear that the team will receive the tasks regardless of whether the sender can work from their phone, while staying concise and ready to send.",
+      "Y makes clear that the tasks will go to the team regardless of whether the person can work from their phone later."
+    ]
+  }
+]
