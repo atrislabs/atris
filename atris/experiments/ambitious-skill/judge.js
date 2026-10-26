@@ -63,6 +63,7 @@ async function codex(text, tag) {
   for (let attempt = 1; ; attempt += 1) {
     try { return await codexOnce(text, tag); } catch (e) {
       if (attempt >= 4) throw e;
+      console.error(`retry ${tag} after attempt ${attempt}: ${e.message.slice(-120)}`);
       await new Promise((r) => setTimeout(r, 20000 * attempt));
     }
   }
@@ -73,13 +74,17 @@ function codexOnce(text, tag) {
   const last = path.join(dir, `${tag}.txt`);
   const args = ['exec', '--skip-git-repo-check', '--ephemeral', '-s', 'read-only', '--output-schema', schema, '-o', last, '-'];
   return new Promise((resolve, reject) => {
-    const child = spawn('codex', args, { cwd: dir, stdio: ['pipe', 'ignore', 'pipe'] });
+    // Own process group: codex runs a native child that outlives a plain kill
+    // and holds the pipes open, so a hung call is killed as a group.
+    const child = spawn('codex', args, { cwd: dir, stdio: ['pipe', 'ignore', 'pipe'], detached: true });
     let err = '';
-    // Codex calls sometimes hang with no output; cut them off and retry.
-    const timer = setTimeout(() => { err += ' timed out'; child.kill('SIGKILL'); }, Number(process.env.AMB_JUDGE_TIMEOUT_MS || 240000));
+    const timer = setTimeout(() => {
+      err += ' timed out';
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    }, Number(process.env.AMB_JUDGE_TIMEOUT_MS || 360000));
     child.stderr.on('data', (d) => { err += d; });
     child.stdin.end(text);
-    child.on('close', (code) => {
+    child.on('exit', (code) => {
       clearTimeout(timer);
       try { resolve(JSON.parse(fs.readFileSync(last, 'utf8'))); } catch (e) { reject(new Error(`codex exit ${code}: ${err.slice(-300)}`)); }
     });
