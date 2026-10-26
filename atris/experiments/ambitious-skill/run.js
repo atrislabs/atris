@@ -71,4 +71,4 @@ async function main() {
   await Promise.all(workers);
 }
 
-main();
+if (require.main === module) main();

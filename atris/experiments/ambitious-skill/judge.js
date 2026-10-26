@@ -100,11 +100,10 @@ async function main() {
   const workers = Array.from({ length: Number(process.env.AMB_PARALLEL || 3) }, async () => {
     while (jobs.length) {
       const job = jobs.shift();
-      try { const v = await job(); verdicts.push(v); console.log(`${v.id} ${v.a} vs ${v.b}: ${v.winner}`); } catch (e) { console.error(e.message); process.exitCode = 1; }
+      try { const v = await job(); verdicts.push(v); fs.writeFileSync(saved, JSON.stringify(verdicts, null, 2)); console.log(`${v.id} ${v.a} vs ${v.b}: ${v.winner}`); } catch (e) { console.error(e.message); process.exitCode = 1; }
     }
   });
   await Promise.all(workers);
-  fs.writeFileSync(path.join(OUT, 'verdicts.json'), JSON.stringify(verdicts, null, 2));
 
   const wc = (s) => s.split(/\s+/).filter(Boolean).length;
   console.log('\nsummary');
@@ -121,4 +120,4 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) main();
