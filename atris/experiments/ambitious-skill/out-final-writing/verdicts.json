@@ -1,0 +1,386 @@
+[
+  {
+    "id": "apology-late-delivery",
+    "a": "skill",
+    "b": "plain",
+    "key": "8cc5313c598b216d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is shorter and ready to send, while Y adds an unnecessary note about the developer’s illness after the email.",
+      "Y is shorter and takes responsibility without excuses, while X adds unnecessary commentary and promises it may not be able to guarantee."
+    ]
+  },
+  {
+    "id": "apology-late-delivery",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f30b2f7ecf015ce9",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a concise, sincere apology, while Y adds an unrequested Wednesday update and extensive notes that turn a short email request into more work.",
+      "X takes clearer responsibility, gives a specific Thursday date, and flags the brief’s delivery-date ambiguity; Y repeats that ambiguity and uses an awkward line asking the client to hold the team to its commitment."
+    ]
+  },
+  {
+    "id": "apology-late-delivery",
+    "a": "nudge",
+    "b": "plain",
+    "key": "b555e91f7a03bd2a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the exact Thursday date and flags the brief’s delivery-date ambiguity, making it more useful despite its unnecessary notes and added Wednesday check-in.",
+      "Y gives a specific Thursday date and flags the conflict between saying the site was already delivered and promising a revised delivery date, though its Wednesday update should be kept only if Dana can make it."
+    ]
+  },
+  {
+    "id": "candle-product-description",
+    "a": "skill",
+    "b": "plain",
+    "key": "b84bc8f903fc60c7",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X delivers distinctive, usable product copy with the supplied facts, while Y adds an unsupported clean-burning claim, generic filler, and an unnecessary word-count note.",
+      "Y gives Cedar Dusk a distinctive scent description while covering the supplied facts; X adds an unsupported clean-burn claim, generic usage scenes, and unnecessary copy notes."
+    ]
+  },
+  {
+    "id": "candle-product-description",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2df860d2dfa38a38",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers usable copy with all the supplied facts, while Y adds an unsupported clean-burn claim and unrequested extras.",
+      "Y provides usable product copy with the requested details, while X adds an unsolicited listing title and advice, repeats specs, and claims the candle burns cleanly and evenly without support."
+    ]
+  },
+  {
+    "id": "closure-social-post",
+    "a": "skill",
+    "b": "plain",
+    "key": "8d874f649e0a6360",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is warm and ready to post, while Y’s Markdown bolding would appear as literal asterisks on Instagram.",
+      "X is shorter and warmer while clearly giving the closure dates, reopening date, and 20% sale with just two emojis."
+    ]
+  },
+  {
+    "id": "closure-social-post",
+    "a": "skill",
+    "b": "nudge",
+    "key": "27f105ce15c2af01",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a warm, ready-to-post caption with the correct dates and two emojis, while Y expands the request into a posting plan and suggests an unconfirmed '20% off everything' claim.",
+      "Y provides a warm, concise caption ready to post; X adds an unnecessary campaign plan and suggests an unconfirmed “20% off everything” claim."
+    ]
+  },
+  {
+    "id": "candle-product-description",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f6eb543ac31d5628",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X offers more distinctive copy and flags the unsupported clean-burn claim and burn-time figure for checking, though its alternate headline and extra notes expand beyond the requested description.",
+      "X provides a more usable description near the requested length, while Y adds an unrequested headline and extensive commentary, repeats the specs, and implies an unverified scent progression."
+    ]
+  },
+  {
+    "id": "closure-social-post",
+    "a": "nudge",
+    "b": "plain",
+    "key": "ce5b119e9e0d6c65",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a short, warm caption with the correct dates and sale, while X expands the request into a broader posting plan and suggests unconfirmed sale terms.",
+      "X delivers a short, warm, ready-to-post caption, while Y expands the request into a broader campaign and suggests unconfirmed sale terms."
+    ]
+  },
+  {
+    "id": "cover-letter-accountant",
+    "a": "skill",
+    "b": "nudge",
+    "key": "74ab842e7efbf739",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y provides a letter under 300 words and flags the CPA section wording and employer-specific details to verify, while X repeats the ambiguous exam wording and offers potentially confidential client work samples.",
+      "Y is a more natural, focused letter under 300 words; X adds several unverified duties and leaves too many substantive placeholders for a letter the applicant could use today."
+    ]
+  },
+  {
+    "id": "cover-letter-accountant",
+    "a": "skill",
+    "b": "plain",
+    "key": "2a73f6d5900ebd23",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is a more restrained, usable letter; Y adds several specific accounting duties the applicant never confirmed.",
+      "Y is more direct and specific to the applicant’s experience, while X relies on generic phrasing and several unverified duties; Y should omit the offer of work samples unless confidentiality permits it."
+    ]
+  },
+  {
+    "id": "cover-letter-accountant",
+    "a": "nudge",
+    "b": "plain",
+    "key": "917f4cdda26c1c16",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers a stronger draft and catches the need to name the CPA exam section and match relevant software to the posting, while Y inaccurately calls exam preparation coursework.",
+      "Y gives a more specific, natural draft and flags the CPA section wording and relevant software to verify before sending."
+    ]
+  },
+  {
+    "id": "freelance-bio",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e4e11e0286b2bfd2",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X delivers the requested three-sentence bio and stays faithful to the stated experience, while Y adds unrequested alternatives and overstates an interest in food and travel writing as a specialization.",
+      "Y provides one usable three-sentence bio and accurately presents food and travel writing as an interest, while X adds two unrequested bios and overstates it as a specialty."
+    ]
+  },
+  {
+    "id": "freelance-bio",
+    "a": "skill",
+    "b": "plain",
+    "key": "fe31f1bd96369faf",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a concise, credible three-sentence bio with a clear specialty and invitation, while X is wordier and adds illustrative details the person did not provide.",
+      "X is clear, credible, and easy to scan on LinkedIn, while Y’s long final sentence weakens an otherwise distinctive bio."
+    ]
+  },
+  {
+    "id": "freelance-bio",
+    "a": "nudge",
+    "b": "plain",
+    "key": "ec69562b1fcc28bb",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y delivers a concise, ready-to-use three-sentence bio and accurately presents food and travel as interests, while X adds unrequested versions and overstates that interest as a specialty.",
+      "X gives a usable three-sentence bio that stays faithful to the stated experience and interests, while Y overstates food and travel as a specialty and adds unrequested versions and commentary."
+    ]
+  },
+  {
+    "id": "repaving-notice",
+    "a": "skill",
+    "b": "nudge",
+    "key": "718afe9510d27024",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is easier to skim and keeps the parking instruction accurate, though its Halloween promise is unverified; Y adds several unconfirmed warnings and incorrectly implies cars must stay off the street overnight.",
+      "Y is easier to skim and closer to the supplied facts, though its unverified Halloween promise should be removed before publication."
+    ]
+  },
+  {
+    "id": "repaving-notice",
+    "a": "skill",
+    "b": "plain",
+    "key": "e5440a37bff381ef",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is easier to skim and gives the correct 2026 weekdays; Y lists the wrong weekdays, though X should remove its unverified Halloween promise.",
+      "Y is easier to skim and gives the correct weekdays and parking deadline, though its unverified promise about Halloween access should be removed before publication."
+    ]
+  },
+  {
+    "id": "repaving-notice",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f460d5bd8a64391e",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is easier to skim and states the parking hours correctly; X adds an unsupported towing warning and extends the restriction overnight, though Y’s incorrect weekdays need correcting before publication.",
+      "Y gets the weekdays right and clearly states the required actions, though its unsupported towing warning and overnight parking restriction should be removed before publication."
+    ]
+  },
+  {
+    "id": "retirement-speech",
+    "a": "skill",
+    "b": "plain",
+    "key": "7a471a19df843a95",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a complete, warm two-minute speech with a clear toast, while X leaves several essential placeholders the speaker would need to fill before using it.",
+      "X is closer to a ready-to-deliver two-minute speech with a warm toast, while Y leaves several placeholders that require the speaker to supply memories before using it."
+    ]
+  },
+  {
+    "id": "retirement-speech",
+    "a": "skill",
+    "b": "nudge",
+    "key": "416c95126b3e20a2",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X offers a warmer, tighter toast; Y leaves a major math error in the speech itself and is likely too long for two minutes.",
+      "Y offers a warmer, more coherent toast with a strong glass-raising line, while X leaves a glaringly incorrect calculation in the speech despite correcting it in the notes."
+    ]
+  },
+  {
+    "id": "retirement-speech",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6ab50461f78e3eec",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is closer to a ready-to-deliver two-minute toast; X leaves a major math error in the speech itself, despite correcting it in a note.",
+      "X provides a warm, usable toast with a clear closing line, while Y leaves a known math error in the speech and asks the speaker to fix it."
+    ]
+  },
+  {
+    "id": "thank-you-mentor",
+    "a": "skill",
+    "b": "plain",
+    "key": "a39288fba1f06f7b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y shares the job news, thanks Rob for his specific support, and offers to return the favor in a warm, ready-to-send email.",
+      "X names the logistics job, clearly credits Rob’s letter, and offers to return the favor in a warm, ready-to-send email."
+    ]
+  },
+  {
+    "id": "thank-you-mentor",
+    "a": "nudge",
+    "b": "plain",
+    "key": "bfc0370f4815698e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is a polished, ready-to-send email that matches the facts given, while X assumes the writer has already started the job and uses a less professional subject line.",
+      "X is a warm, ready-to-send email that matches the stated situation, while Y assumes the sender has already started the job and adds unnecessary drafting notes."
+    ]
+  },
+  {
+    "id": "thank-you-mentor",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6188d1e25ee015a6",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is ready to send and stays true to the facts, while Y assumes the sender has started the job and adds unverified personal details.",
+      "Y is a more natural, professional email ready to send, while X’s emphatic subject and added advice make the response less polished."
+    ]
+  }
+]

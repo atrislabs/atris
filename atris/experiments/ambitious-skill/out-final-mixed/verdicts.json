@@ -1,0 +1,962 @@
+[
+  {
+    "id": "ab-test-check",
+    "a": "skill",
+    "b": "nudge",
+    "key": "c9728518571a5475",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both get the borderline z-test result right, but Y better translates it into a conditional decision and flags peeking and multiple comparisons, though its claim that shipping has little downside is unsupported.",
+      "Y gives the correct borderline z-test result, states the assumptions behind its yes, and avoids X’s speculative power and shipping claims."
+    ]
+  },
+  {
+    "id": "ab-test-check",
+    "a": "skill",
+    "b": "plain",
+    "key": "75aa26c863a106fa",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct borderline z-test result, a clear yes, and the decision-relevant caveats without X’s redundant tests and extra detail.",
+      "X gives the correct borderline z-test result and a clear yes with relevant caveats, while Y adds redundant tests and suggests that a visitor export could rule out peeking, which it cannot."
+    ]
+  },
+  {
+    "id": "brand-palette",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b653e90f7d35265c",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a usable six-color palette and catches the key accessibility issue: a mustard button needs a contrasting border or dark surrounding section to remain distinct on a light background, which Y overlooks.",
+      "X gives a more usable six-color palette with clear roles, button and link pairings, and contrast guidance; Y incorrectly implies its dark mustard accent passes text contrast on the sand surface."
+    ]
+  },
+  {
+    "id": "ab-test-check",
+    "a": "nudge",
+    "b": "plain",
+    "key": "055eee2838f9ca9e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct borderline z-test result and the caveats needed for a decision without X’s unnecessary post-hoc power and Bayesian claims.",
+      "X gives the correct borderline z-test and a clear yes, while Y adds misleading post hoc power analysis and a specific follow-up sample recommendation that the test design does not justify."
+    ]
+  },
+  {
+    "id": "brand-palette",
+    "a": "nudge",
+    "b": "plain",
+    "key": "62b039385c0b0908",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a usable six-color palette with a button pairing that passes text contrast, while Y’s proposed terracotta button is borderline and needs a seventh color for smaller text.",
+      "Y gives a usable six-color palette with a button pairing that clears normal-text contrast, while X recommends cream or white text on a terracotta button it acknowledges may fail."
+    ]
+  },
+  {
+    "id": "budget-split-paycheck",
+    "a": "skill",
+    "b": "plain",
+    "key": "9ce07557d489c745",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate $1,340 correctly, but X treats the 15% savings target as conditional on unlisted expenses and gives a practical way to check affordability, while Y calls it comfortable without enough information.",
+      "Both calculate $1,340 correctly, but Y makes the 15% savings judgment conditional on unlisted expenses and suggests checking actual spending, while X calls it comfortably affordable without enough information."
+    ]
+  },
+  {
+    "id": "budget-split-paycheck",
+    "a": "skill",
+    "b": "nudge",
+    "key": "fccb326b0287d958",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate $1,340 correctly, but X more accurately treats 15% savings as conditional on unlisted expenses, while Y overstates the available slack and suggests increasing savings before those costs are known.",
+      "Both calculate $1,340 correctly, but Y gives a more reliable conditional assessment of whether 15% is affordable because groceries and other unlisted necessities must come from that amount; X overstates the available cushion."
+    ]
+  },
+  {
+    "id": "brand-palette",
+    "a": "skill",
+    "b": "plain",
+    "key": "0d02d78574f5bf44",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a usable six-color palette with more precise contrast guidance; Y’s recommended terracotta button with cream text may fail the 4.5:1 standard for normal text.",
+      "Y gives a six-color palette with a button accent that meets AA text contrast; X’s terracotta button needs a seventh, darker color for small labels."
+    ]
+  },
+  {
+    "id": "budget-split-paycheck",
+    "a": "nudge",
+    "b": "plain",
+    "key": "36beb1f1c4f36201",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate $1,340 correctly, but X better shows how other expenses reduce the amount available for groceries and fun and offers a concrete allocation, despite overstating how certain the 15% savings target is.",
+      "Both calculate $1,340 correctly, but Y better accounts for omitted expenses and offers a concrete way to test the 15% savings plan, though its claim that the plan is comfortably doable is too certain."
+    ]
+  },
+  {
+    "id": "dba-vs-llc",
+    "a": "skill",
+    "b": "plain",
+    "key": "32da6375aa72254b",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is more reliable for someone filing today: Y incorrectly says an Ohio trade name grants no exclusive rights and wrongly frames fictitious names as mainly for other entity types.",
+      "Y gives a more reliable Ohio filing path; X incorrectly says a registered trade name gives no exclusive rights in Ohio and suggests fictitious names are generally for other entity types, though either answer should mention the required date of first use."
+    ]
+  },
+  {
+    "id": "dba-vs-llc",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b35105cc2fb912fa",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is safer to act on because Y incorrectly says fictitious names are only for entities and implies “Jane Smith Photography” needs no filing; [Ohio’s guidance](https://www.ohiosos.gov/globalassets/publications/busserv/soleprop.pdf) says sole proprietors may use either name filing and must file when using more than their personal name.",
+      "X gives more actionable Ohio filing details, including the $39 fee and five-year term, though it incorrectly suggests fictitious names are only for entities and understates the rights a registered Ohio trade name provides."
+    ]
+  },
+  {
+    "id": "dba-vs-llc",
+    "a": "nudge",
+    "b": "plain",
+    "key": "c842ac165f4939d6",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clearer filing path with fewer categorical errors; X wrongly says Ohio fictitious names are for entities and suggests that “Jane Smith Photography” generally needs no registration, while [Ohio’s guidance](https://www.ohiosos.gov/preview/en-US/business/ohio-business-roadmap/frequently-asked-questions) says otherwise, though both answers incorrectly downplay the exclusive rights a registered Ohio trade name provides.",
+      "X is more focused and avoids Y’s misleading claim that “Jane Smith Photography” needs no registration; both answers wrongly describe Ohio trade names as lacking exclusive state-level name rights."
+    ]
+  },
+  {
+    "id": "delivery-times-pandas",
+    "a": "skill",
+    "b": "plain",
+    "key": "6ae54740aa10502f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct sorted averages, but X also shows group counts and flags that three averages come from a single delivery, which matters when interpreting the ranking.",
+      "Both give correct code and output, but Y also shows group sizes and explains why averages based on one or two deliveries should be interpreted cautiously."
+    ]
+  },
+  {
+    "id": "delivery-times-pandas",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a37a5dc18d5f504d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives correct code and output, while Y’s shown output omits the index that its print statement would produce and silently drops malformed rows.",
+      "Y gives correct code and matching printed output; X’s displayed output omits the index that print(summary) would show and adds unnecessary processing for the five supplied rows."
+    ]
+  },
+  {
+    "id": "delivery-times-pandas",
+    "a": "nudge",
+    "b": "plain",
+    "key": "051aff925d9f774c",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the requested calculation and correctly formatted output concisely, while X adds unnecessary processing and claims to have run code despite showing output that omits the pandas index.",
+      "X gives the requested aggregation and accurate pandas output, while Y silently drops invalid rows and shows output that does not match its printed DataFrame."
+    ]
+  },
+  {
+    "id": "disk-full-alert",
+    "a": "skill",
+    "b": "nudge",
+    "key": "45ae5c6396c6b71c",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better prioritizes identifying the cache owner and draining builds before bulk cleanup, while X assumes the cache is disposable and recommends risky truncation of arbitrary deleted file descriptors.",
+      "X gives safer triage and defers cache deletion until its owner and active builds are understood, while Y assumes the cache is disposable and recommends a deletion plan that can race with running builds."
+    ]
+  },
+  {
+    "id": "disk-full-alert",
+    "a": "nudge",
+    "b": "plain",
+    "key": "82a511c8c0f33a4e",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives stronger checks before cleanup and cautions about active builds, though its alerting, scheduled pruning, and volume migration proposals expand beyond the immediate disk cleanup.",
+      "X gives a more focused cleanup sequence; Y adds a broader infrastructure project and recommends riskier commands, including compressing logs with little free space and blindly deleting aged cache files."
+    ]
+  },
+  {
+    "id": "disk-full-alert",
+    "a": "skill",
+    "b": "plain",
+    "key": "dfab0a5022672625",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives better checks and a reviewed cache deletion list that excludes open files, while Y’s age-based deletion can remove files used by running builds; X’s advice to truncate deleted open files still needs caution.",
+      "X gives a safer inspection-first cleanup sequence, while Y adds risky forced rotation, raw cache deletion and scheduled cleanup that assume too much about the server."
+    ]
+  },
+  {
+    "id": "excel-category-sum",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5236e3f69398b4c7",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a working single-cell summary for both Sheets and Excel plus a simple SUMIF fallback, though its reconciliation range needs adjusting for the Excel spill.",
+      "Y gives usable formulas for both apps and checks the sample totals, while X’s reconciliation formula omits the first total from its recommended Excel spill, producing a false discrepancy."
+    ]
+  },
+  {
+    "id": "excel-category-sum",
+    "a": "skill",
+    "b": "plain",
+    "key": "4bfb075cb79cc680",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y leads with the simple, correct SUMIF formula the person can enter and fill down, with the expected totals and a clear tab-name adjustment; X adds substantial detail for a straightforward request.",
+      "X leads with a correct SUMIF formula that works in both Excel and Google Sheets, with clear setup and verified totals; Y makes the simple request harder to follow."
+    ]
+  },
+  {
+    "id": "excel-category-sum",
+    "a": "nudge",
+    "b": "plain",
+    "key": "28e359d1c33142bc",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y leads with the correct SUMIF formula and clear steps for filling it down; X adds useful checks but buries the direct answer under unnecessary options and advice.",
+      "Y gives a more reliable automatic formula for each platform, though its reconciliation check applies cleanly only to the classic layout."
+    ]
+  },
+  {
+    "id": "houseplant-watering",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e0e575191cc93754",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable six-week schedule with soil checks that override the dates, while X labels the 2026 check dates with incorrect weekdays.",
+      "Y gives a safer soil-based checking routine without assuming the plants were just watered, though its weekday labels are wrong for the listed dates."
+    ]
+  },
+  {
+    "id": "houseplant-watering",
+    "a": "skill",
+    "b": "plain",
+    "key": "09b422e20d7e1c47",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a simpler soil-based schedule; X’s specific check dates have incorrect weekdays, making its six-week calendar unreliable.",
+      "X gives a simpler six-week table with soil checks and useful overwatering signs; Y is much longer and labels several 2026 dates with the wrong weekdays."
+    ]
+  },
+  {
+    "id": "invoice-tax-math",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9681d9b7ca73df33",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate the amounts correctly, but X gives the requested figures and taxable base clearly without Y’s lengthy, mostly unnecessary checklist.",
+      "Both calculate the invoice correctly, but Y stays focused on the requested figures while X adds a lengthy checklist and unneeded tax advice."
+    ]
+  },
+  {
+    "id": "invoice-tax-math",
+    "a": "skill",
+    "b": "plain",
+    "key": "c332ab53285f08ec",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate the invoice correctly, but Y gives the requested figures and tax basis clearly without X’s unnecessary verification and caveat.",
+      "Both answers calculate the invoice correctly, but X gives the requested figures clearly without Y’s unnecessary verification and caveat."
+    ]
+  },
+  {
+    "id": "houseplant-watering",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e01df0d6de18783a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a simpler soil-led schedule and the key overwatering signs; X assumes every plant was watered today and adds lengthy advice, including some unreliable signs and unnecessary rescue steps.",
+      "X gives a simpler six-week plan with soil checks and useful overwatering signs; Y adds unnecessary detail and assumes all three plants were watered today."
+    ]
+  },
+  {
+    "id": "invoice-tax-math",
+    "a": "nudge",
+    "b": "plain",
+    "key": "706e81dd003459e6",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate $325.00 subtotal, $9.90 tax, and $334.90 total correctly, but Y answers the request directly while X expands it into an unnecessary invoice and tax review.",
+      "Both calculate the invoice correctly, but X gives the requested figures clearly without Y’s lengthy, partly jurisdiction-dependent checklist."
+    ]
+  },
+  {
+    "id": "lisbon-three-days",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b29a01b0e3615348",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a more flexible food and walking plan, while X assumes travel dates and incorrectly says the [Glória funicular runs daily](https://apnews.com/article/f5b087df737496cbe033833512fcccb5).",
+      "X offers a more usable food and walking plan; Y assumes dates the traveler never gave and says the Glória funicular runs daily, though [its operator lists it as closed](https://www.carris.pt/descubra/frota/ascensores/)."
+    ]
+  },
+  {
+    "id": "meeting-action-items",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6b92d9a5d187296b",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y makes the list more useful by flagging ambiguous and missing dates and the unresolved launch decision, though it overstates the migration owner as unassigned when the notes only say the owner is unknown.",
+      "X identifies the action items and open questions while flagging the ambiguous 14th and the missing owners and deadlines that need follow-up; Y adds a sentence-count audit that does not help the team act."
+    ]
+  },
+  {
+    "id": "lisbon-three-days",
+    "a": "skill",
+    "b": "plain",
+    "key": "438f47d927629ec5",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better fits the walking, budget, and low-museum preferences with coherent daily routes, though its Glória funicular advice needs correction because [Carris lists it as out of service](https://www.carris.pt/en/travel/alteracoes-de-servico/ascensor-da-gloria-out-of-service/).",
+      "X is more usable for unspecified dates and a moderate food budget; Y assumes exact dates, makes pastries a day's only food stop, and routes travelers onto the [out-of-service Glória funicular](https://www.carris.pt/viaje/alteracoes-de-servico/ascensores-e-elevador-da-carris-temporariamente-encerrados/)."
+    ]
+  },
+  {
+    "id": "meeting-action-items",
+    "a": "skill",
+    "b": "plain",
+    "key": "d42833545215149a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y captures all action items and open questions clearly, while X adds an unnecessary sentence-counting check.",
+      "X extracts the actions and open questions accurately without Y’s unnecessary and distracting sentence-count check."
+    ]
+  },
+  {
+    "id": "lisbon-three-days",
+    "a": "nudge",
+    "b": "plain",
+    "key": "a1e193684df7990b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X offers more coherent walking routes, a clearer moderate-budget food plan, and more useful weather adjustments, while Y’s expensive seafood stop requires a detour.",
+      "X is more usable for a moderate-budget walking trip because Y’s Day 1 food stop, [Zé da Mouraria, closed in 2026](https://postal.pt/nacional/se-vir-a-porta-fechada-nao-estranhe-uma-das-tascas-mais-conhecidas-do-pais-encerrou-e-esta-e-a-unica-hipotese-de-reabrir/), would leave travelers without the planned lunch."
+    ]
+  },
+  {
+    "id": "meeting-action-items",
+    "a": "nudge",
+    "b": "plain",
+    "key": "302f7358c936b71b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y extracts the stated actions and open questions without inventing a migration assignment or assuming what “before the 14th” means.",
+      "X extracts the stated actions and open questions faithfully, while Y adds speculative dates and planning advice that could mislead someone acting on the notes."
+    ]
+  },
+  {
+    "id": "phone-normalize-regex",
+    "a": "skill",
+    "b": "plain",
+    "key": "a52b248fb4220716",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X validates the allowed characters and NANP number structure, so it rejects malformed inputs that Y can silently turn into plausible phone numbers.",
+      "Y better rejects malformed input and invalid NANP prefixes while returning the requested normalized numbers and null for 12345."
+    ]
+  },
+  {
+    "id": "phone-normalize-regex",
+    "a": "skill",
+    "b": "nudge",
+    "key": "efc91facb3da9f72",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X directly returns the requested E.164 string or null for bad input, while Y adds an unnecessary result wrapper and incorrectly claims a library can verify whether a number is assigned.",
+      "Y gives a focused function that handles the requested formats and rejects 12345; X adds unnecessary extension handling and incorrectly claims a library can verify that a number is assigned."
+    ]
+  },
+  {
+    "id": "physics-projectile",
+    "a": "skill",
+    "b": "nudge",
+    "key": "d7713bf38dd78f3f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X clearly derives and checks the requested time and distance, while Y adds an unnecessary impact speed and angle calculation that expands the homework task.",
+      "Y shows the correct steps and checks the result while staying focused on the two quantities asked for; X adds unnecessary impact calculations."
+    ]
+  },
+  {
+    "id": "physics-projectile",
+    "a": "skill",
+    "b": "plain",
+    "key": "a006cd99c8e5f7f0",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct method and answers with clear steps and a useful conceptual check, while X adds redundant verification.",
+      "X gives the correct calculations, clear steps, and a useful conceptual check without Y’s redundant verification and extra detail."
+    ]
+  },
+  {
+    "id": "phone-normalize-regex",
+    "a": "nudge",
+    "b": "plain",
+    "key": "575b753d864fb7cb",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X validates characters and NANP digits before normalizing, while Y can silently turn malformed text containing ten digits into a phone number; X also adds unrequested test files and extension handling.",
+      "Y better rejects malformed input and explains failures, though its claimed test files exceed the request and its claim that a library verifies number assignment is inaccurate."
+    ]
+  },
+  {
+    "id": "physics-projectile",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e27cecfd90bd8c6e",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct method and steps concisely, while X adds unrequested impact speed and angle calculations.",
+      "X correctly explains and checks both requested results, while Y adds an unasked impact-speed and angle calculation that makes the answer longer without helping solve the homework question."
+    ]
+  },
+  {
+    "id": "py-rename-photos",
+    "a": "nudge",
+    "b": "plain",
+    "key": "08bd00c4cfe14983",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better handles same-second photos without losing renames, prevents overwrites, and offers a dry run; these are useful safeguards within the requested script.",
+      "Y handles same-second photos without losing renames, avoids overwrites, and explains the risk of using the fallback EXIF date."
+    ]
+  },
+  {
+    "id": "py-rename-photos",
+    "a": "skill",
+    "b": "nudge",
+    "key": "42f40b84604764b3",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": true,
+      "nudge": false
+    },
+    "reasons": [
+      "X provides a working script that uses DateTimeOriginal and skips missing dates, though its extra test folders and exiftool installation exceed the requested job; Y provides no script.",
+      "X provides a usable script with collision-safe names and a dry run, while Y leaves photos unrenamed when timestamps collide and adds lengthy test details."
+    ]
+  },
+  {
+    "id": "py-rename-photos",
+    "a": "skill",
+    "b": "plain",
+    "key": "091c97816813fb94",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a usable script that reads DateTimeOriginal, skips files without it, and avoids overwrites; Y does not include the script.",
+      "Y provides a usable script that reads DateTimeOriginal, skips missing dates, avoids overwrites, and reports a concrete check; X only describes an unseen script and may use a general EXIF date instead of the date taken."
+    ]
+  },
+  {
+    "id": "recipe-scale-up",
+    "a": "skill",
+    "b": "nudge",
+    "key": "99ed856348ad5328",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y scales the listed ingredients more faithfully and gives practical pan and cooking options, while X assumes an unmeasured pan capacity and uses inconsistent stock calculations.",
+      "X gives the correct scaling and a workable batch-cooking method, while Y assumes a pan size the user never supplied and uses inconsistent stock calculations."
+    ]
+  },
+  {
+    "id": "recipe-scale-up",
+    "a": "skill",
+    "b": "plain",
+    "key": "a2d0e34ddf07e55b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct scaling and practical pan options, while X invents a pan size and uses contradictory liquid calculations to justify its recommendation.",
+      "X gives accurate scaling and a practical two-pan option, while Y assumes an unmeasured pan size and uses contradictory stock calculations."
+    ]
+  },
+  {
+    "id": "recipe-scale-up",
+    "a": "nudge",
+    "b": "plain",
+    "key": "943166e9d4c19741",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives more usable pan options and concrete checks for rice doneness and added stock, though its precise pan-depth and cooking-time claims should be treated as estimates.",
+      "X gives the correct scaled amounts and practical pan options more concisely, while Y adds questionable reductions to oil and stock and specifies a roasting dish too small for its own stated capacity requirement."
+    ]
+  },
+  {
+    "id": "running-plan-8wk",
+    "a": "skill",
+    "b": "plain",
+    "key": "c042b3be619653ff",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a steadier long-run progression; X jumps from 5 km to 8 km in one week, a large increase for someone currently running 3 km.",
+      "X builds the long run more steadily; Y’s jump from 5 km to 8 km in week 6 is too abrupt despite its useful checkpoints."
+    ]
+  },
+  {
+    "id": "running-plan-8wk",
+    "a": "nudge",
+    "b": "plain",
+    "key": "c4629bed1ef465e2",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a simpler, safer progression for a first 10 km, while X adds unnecessary speed work and some quality sessions that may not fit their stated distances.",
+      "X gives a clear, manageable three-day progression for a 3 km runner, while Y adds hard workouts and race pacing that are unnecessary for the stated goal."
+    ]
+  },
+  {
+    "id": "running-plan-8wk",
+    "a": "skill",
+    "b": "nudge",
+    "key": "b9a82920172d9fb4",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y offers a steadier long-run progression and useful pain guidance; X’s jump from 5 km to 8 km in one week is too abrupt, though Y’s speed sessions are unnecessary for a first 10 km.",
+      "X gives a steadier long-run progression and clearer pain and missed-week adjustments; Y’s jump from 5 km to 8 km in week 6 is too abrupt for a runner starting at 3 km."
+    ]
+  },
+  {
+    "id": "sheets-overdue-flag",
+    "a": "skill",
+    "b": "plain",
+    "key": "f11b34eabdc8d3f1",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a correct formula and clear placement with less unnecessary material, while its ISNUMBER check handles blank and text due dates reliably.",
+      "X gives a concise, robust formula for D2; Y’s test table and cross-checks add unnecessary work for this simple request."
+    ]
+  },
+  {
+    "id": "sheets-overdue-flag",
+    "a": "skill",
+    "b": "nudge",
+    "key": "bb637097a52045f9",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a correct formula for D2, while Y’s first array formula places a header in D2 and shifts the results down one row, and its optional steps expand the task.",
+      "Y gives a correct D2 formula and clear fill-down instructions; X leads with an array formula that puts a header in D2 and can fail to expand, then adds unrelated spreadsheet changes."
+    ]
+  },
+  {
+    "id": "sheets-overdue-flag",
+    "a": "nudge",
+    "b": "plain",
+    "key": "63bf3d5452681a3d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a correct formula and clear placement, while X’s first recommended array formula starts at D2 but includes a header row, shifting the results, and adds several unrelated tasks.",
+      "X gives a correct formula and placement, while Y’s recommended array formula puts a header in D2 and adds unrelated sheet changes."
+    ]
+  },
+  {
+    "id": "staff-shift-week",
+    "a": "skill",
+    "b": "nudge",
+    "key": "7091bc3df617d6d2",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable named-shift grid, flags the gaps without inventing a closing time, and offers concise ways to address the largest coverage hole.",
+      "X gives a readable schedule with named staff and conditional gaps, while Y assumes an unsupported 10pm close and understates the Friday morning coverage Ren adds."
+    ]
+  },
+  {
+    "id": "staff-shift-week",
+    "a": "nudge",
+    "b": "plain",
+    "key": "1ed9cd8079710352",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X’s time-based grid makes every coverage gap visible, checks the five-day limit, and explains why Friday is the best weekday for Ren.",
+      "Y gives a clearer time-by-time grid, correctly checks each person’s days, and flags the uncovered periods while making the opening-time assumption explicit."
+    ]
+  },
+  {
+    "id": "staff-shift-week",
+    "a": "skill",
+    "b": "plain",
+    "key": "b7511d9b2549bedc",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a clear schedule, correct day counts, and the key coverage gaps without X’s lengthy hourly matrix and mistaken claim that Friday adds only one hour of new coverage.",
+      "X provides the requested named weekly schedule and flags the uncovered periods without relying on Y’s invented 10pm closing time or making the manager decode hourly counts into shifts."
+    ]
+  },
+  {
+    "id": "titration-calc",
+    "a": "skill",
+    "b": "nudge",
+    "key": "a13b419fa521cc0e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives the correct four-significant-figure conversion (0.4579% w/v), while Y rounds it incorrectly to 0.4580% and reports an uncertainty based on assumed tolerances.",
+      "Y correctly reports 0.1256 M and 0.4579% w/v, while X misrounds the four-significant-figure percentage and reports an uncertainty based on assumed instrument tolerances."
+    ]
+  },
+  {
+    "id": "titration-calc",
+    "a": "skill",
+    "b": "plain",
+    "key": "2fbd479bb64eb573",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct calculation and a useful dilution check concisely, though its four-significant-figure % w/v value should be 0.4579% rather than 0.4580%.",
+      "X gives the correct molarity and a practical % w/v conversion with a useful dilution caveat, while Y adds substantial repetition and optional lab advice beyond what the calculation needs."
+    ]
+  },
+  {
+    "id": "titration-calc",
+    "a": "nudge",
+    "b": "plain",
+    "key": "4baf6593ea4259ef",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct calculation and dilution caveat concisely, while X adds unsupported uncertainty figures and a broader experimental workflow.",
+      "X gives the correct conversion concisely, while Y adds a larger validation workflow and reports an uncertainty based on assumed tolerances that were not provided."
+    ]
+  },
+  {
+    "id": "ww1-essay-outline",
+    "a": "skill",
+    "b": "nudge",
+    "key": "9ff25e46e9e38bf3",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better explains the main underlying causes, treats the assassination as a trigger, and supplies three evidence-based body paragraphs plus a counterargument while flagging the five-paragraph limit.",
+      "X better distinguishes the assassination from the main causes and gives three body paragraphs on long-term causes, while Y treats the assassination as a main cause and gives nationalism too little attention."
+    ]
+  },
+  {
+    "id": "ww1-essay-outline",
+    "a": "skill",
+    "b": "plain",
+    "key": "4215ab33d04db4d8",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise five-paragraph outline with three long-term causes and a counterargument, while X treats the assassination trigger as a main cause and adds unnecessary detail.",
+      "X gives a concise five-paragraph outline that distinguishes the assassination from the underlying causes, while Y is repetitive and treats the assassination as a main cause."
+    ]
+  },
+  {
+    "id": "ww1-essay-outline",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f869fc2a9cbacd64",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the student a distinct counterargument paragraph with relevant evidence and a rebuttal, while Y combines it with the conclusion and presents a less focused opposing claim.",
+      "X gives a clear, usable five-paragraph outline with age-appropriate evidence and folds the counterargument into the final paragraph, while Y is longer than needed and adds a confusing optional sixth paragraph."
+    ]
+  }
+]
