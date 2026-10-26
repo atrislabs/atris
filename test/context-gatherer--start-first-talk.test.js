@@ -54,7 +54,7 @@ test('startFirstTalk saves normalized context and returns the claimed starter in
   const output = JSON.parse(logs[0]);
   assert.deepStrictEqual(output, {
     schema: 'atris.one_lap.v1', ok: true, status: 'started',
-    next_action: `atris task ready ${output.task.display_id} --verify "git diff --check"`,
+    next_action: `atris "add a test for the claimed task"`,
     task: { display_id: output.task.display_id, title: 'build a garden website' },
   });
   assert.match(output.task.display_id, /^[A-Z0-9]{3}-1$/);

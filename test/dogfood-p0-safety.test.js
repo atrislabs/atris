@@ -348,17 +348,17 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(status.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(status.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(status.stdout, /^next: atris do$/m);
     assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(now.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(now.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(pad.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(pad.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(pad.stdout, /^next: atris do$/m);
     assert.match(stopped.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
       status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr + stopped.stdout + stopped.stderr,
@@ -576,7 +576,7 @@ test('26j: atris stop after minting a file folder talks keep-working, not cloud-
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), recap.stdout.trim());
     assert.match(stopped.stdout, /^hey keshav, "notes\.txt" is already yours\.$/m);
-    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
       stopped.stdout + stopped.stderr,
@@ -732,7 +732,7 @@ test('26k: atris stop after init and claim talks keep-working, not cloud-compute
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(stopped.stdout, /already yours/);
-    assert.match(stopped.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do$/m);
     assert.doesNotMatch(
       stopped.stdout + stopped.stderr,

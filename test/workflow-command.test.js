@@ -455,7 +455,7 @@ test('plan names a claimed task the same way first-minute does', () => {
   assert.equal(plan.stdout.trim(), minute.stdout.trim());
   assert.match(plan.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(plan.stdout), nextLine(minute.stdout));
-  assert.equal(nextLine(plan.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
+  assert.equal(nextLine(plan.stdout), 'atris "add a test for the claimed task"');
   assert.doesNotMatch(plan.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(plan.stdout, /Atris Plan - Navigator Agent Activated/);
   assert.doesNotMatch(plan.stdout, /CONTEXT FILES \(agent should read\)/);
@@ -466,7 +466,7 @@ test('plan names a claimed task the same way first-minute does', () => {
   const verbose = runCli(['plan', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
-  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
+  assert.equal(nextLine(verbose.stdout), 'atris "add a test for the claimed task"');
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
   assert.match(verbose.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT:/);
   assert.match(verbose.stdout, /You are the Navigator\./);
@@ -484,7 +484,7 @@ test('do names a claimed task the same way first-minute does', () => {
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.match(doit.stdout, /"ship the landing page" is already yours\./);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
-  assert.equal(nextLine(doit.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
+  assert.equal(nextLine(doit.stdout), 'atris "add a test for the claimed task"');
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
   assert.doesNotMatch(doit.stdout, /PROMPT ONLY/);
   assert.doesNotMatch(doit.stdout, /Atris Do - Executor Agent Activated/);
@@ -497,7 +497,7 @@ test('do names a claimed task the same way first-minute does', () => {
   const verbose = runCli(['do', '--verbose'], { cwd: dir, env });
   assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
   assert.match(verbose.stdout, /"ship the landing page" is already yours\./);
-  assert.equal(nextLine(verbose.stdout), 'atris task ready CLI-9 --verify "git diff --check"');
+  assert.equal(nextLine(verbose.stdout), 'atris "add a test for the claimed task"');
   assert.doesNotMatch(verbose.stdout, /Context: UNKNOWN/);
   assert.doesNotMatch(verbose.stdout, /Backlog tasks: 0/);
   assert.match(verbose.stdout, /CONTEXT FILES \(agent should read\)/);
@@ -654,11 +654,12 @@ test('renderReviewMinute names a claimed ready next instead of an empty desk', (
       status: 'claimed',
       display_id: 'CLI-9',
       claimed_by: 'keshav',
+      metadata: { verify: 'node --test test/landing.test.js' },
       updated_at: 20,
     }],
   });
   assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris task ready CLI-9 --verify "git diff --check"$/m);
+  assert.match(text, /^next: atris task ready CLI-9 --verify "node --test test\/landing\.test\.js"$/m);
   assert.doesNotMatch(text, /nothing is waiting on you/);
   assert.equal(spokenLineCount(text), 2);
 });

@@ -13,7 +13,7 @@ test('firstTalkJson describes a newly claimed starter and its next action', () =
     schema: 'atris.one_lap.v1',
     ok: true,
     status: 'started',
-    next_action: 'atris task ready T42 --verify "git diff --check"',
+    next_action: 'atris "add a test for the claimed task"',
     task: { display_id: 'T42', title: 'Build a garden planner' },
   });
   assert.deepStrictEqual(starter, {
