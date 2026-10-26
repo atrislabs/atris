@@ -32,7 +32,7 @@ const {
   runVerifyCommand,
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
-const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
 const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
@@ -10089,7 +10089,7 @@ function certifyVerifyCandidate(task) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
     // inspected: ..."); try the full clause, then the first sentence of it.
     for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
-      if (candidate && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
+      if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
   return null;

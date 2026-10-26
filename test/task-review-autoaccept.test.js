@@ -258,3 +258,42 @@ test('certifyVerifyCandidate skips file-exists-only checks and prefers the full 
     'node scripts/test-foo.mjs && test -s atris/out.md',
   );
 });
+
+test('certifyVerifyCandidate refuses solo whitespace checks but keeps real check chains', () => {
+  const { certifyVerifyCandidate } = require('../commands/task');
+  const pick = (proof, metadata = {}) => certifyVerifyCandidate({ metadata, review: { proof } });
+  assert.equal(pick('Checks: `git diff --check` passed.'), null);
+  assert.equal(pick('Whitespace is clean.', { verify: 'git diff --check' }), null);
+  assert.equal(pick('Checks: `npm test && git diff --check` passed.'), 'npm test && git diff --check');
+  assert.equal(pick('Checks passed.', { verify: 'npm test && git diff --check' }), 'npm test && git diff --check');
+  assert.equal(pick('Checks: `git diff --check`; `node --check lib/task-db.js` passed.'), 'node --check lib/task-db.js');
+});
+
+test('certify-verified skips legacy proof that only checks whitespace', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0' };
+  try {
+    initWorkspace(dir);
+    const created = runCli(['task', 'new', 'Check the parser change', '--tag', 'test', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const db = taskStore.open(dbPath);
+    const ready = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof: 'Checks: `git diff --check` passed.' });
+    assert.equal(ready.ready, true, ready.reason);
+    taskStore.close();
+
+    const result = runCli(['task', 'certify-verified', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(result.status, 0, result.stderr);
+    const row = JSON.parse(result.stdout).results.find(row => row.ref === task.display_id);
+    assert.equal(row.action, 'skipped');
+    assert.equal(row.reason, 'no_runnable_check_in_proof');
+    const shown = showTask(dir, env, task.display_id);
+    assert.equal(shown.status, 'review');
+    assert.notEqual(shown.metadata.machine_verified, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

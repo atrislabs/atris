@@ -586,6 +586,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** The owner approves the policy once; certified work lands itself with receipts. Money, deploys, security, customer, and outward lanes always wait for the human.
 
+- **Meaningful certification:** `commands/task.js:10071` (`certifyVerifyCandidate`) reuses `lib/accept-verify-gate.js:58` (`nonFalsifyingIssue`) to refuse solo whitespace proof and retain chains containing a real check. Regression: `test/task-review-autoaccept.test.js:262`.
+
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
 - **Daily experiment hook:** `commands/autoland.js:134` (`runOwnCli` resolves the local CLI), `commands/autoland.js:1221` (`autoland tick` daily experiment block), `commands/autoland.js:636` (`daily_experiment` policy gate), `commands/autoland.js:1224` (`experiments daily --json`)
 - **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()`: the policy file is the standing human confirmation
