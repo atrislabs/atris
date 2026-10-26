@@ -6972,7 +6972,16 @@ function tickTouchedCheckDefinition(verifier, before, root = process.cwd()) {
   // list them, so any changed file shaped like a test counts as well.
   const testShaped = /(^|\/)(tests?|__tests__|specs?|checks?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$|(^|\/)conftest\.py$/i;
   // Whole paths only: order.js is not named by `node --test checks/order.js`.
-  const named = checkText.split(/[\s'"`=]+/).map((word) => word.replace(/^\.\//, '')).filter(Boolean);
+  // Shell punctuation ends a word, and $PWD or this folder's own path is cut off.
+  const here = [path.resolve(root), (() => { try { return fs.realpathSync(root); } catch { return ''; } })()].filter(Boolean);
+  const named = checkText.split(/[\s'"`=;&|<>()]+/)
+    .map((word) => {
+      let clean = word.replace(/^\$\{?PWD\}?\//, '');
+      const inside = here.find((dir) => clean.startsWith(`${dir}/`));
+      if (inside) clean = clean.slice(inside.length + 1);
+      return clean.replace(/^(\.\/)+/, '');
+    })
+    .filter(Boolean);
   return changed.some((file) => path.basename(file) === 'package.json'
     || testShaped.test(file)
     || named.includes(file)
@@ -10066,10 +10075,22 @@ function engineHealthRoot(cwd) {
   return dir && path.basename(dir) === '.git' ? path.dirname(dir) : cwd;
 }
 
+// Spellings of one model ("opus", "claude-opus-5-5[1m]") count as the same,
+// and so does any opus against any other opus. Unknown counts as same.
+function reviewerMayBeSameModel(a, b) {
+  const key = (model) => {
+    const name = String(model || '').toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/^claude-/, '').trim();
+    return (name.match(/\b(opus|sonnet|haiku|fable)\b/) || [name])[0];
+  };
+  const left = key(a);
+  const right = key(b);
+  return !left || !right || left.includes(right) || right.includes(left);
+}
+
 // Who reviews, in order. The usual reviewer first; then the roster's next
 // review worker, when it is not the builder grading itself: on the builder's
-// engine it must name a different model, and an unknown model counts as same. A benched reviewer goes behind its backup. A named reviewer
-// is never swapped.
+// engine it must be a different model. A benched reviewer is skipped while
+// its backup can run. A named reviewer is never swapped.
 function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) {
   const primary = pickCrossEngineVerifier(mission, cwd, preferredEngine);
   const lineup = [{ engine: primary, model: '' }];
@@ -10079,13 +10100,13 @@ function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) 
     const registry = require('../lib/engine-registry');
     const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
     const workerModel = resolveMissionTickRunnerModel(mission);
-    const team = registry.resolveEngineForRoleRanked('validator', root, { job: 'review' }).team || [];
+    const team = registry.resolveEngineForRoleRanked('validator', root, { job: 'review', quiet: true }).team || [];
     const backup = team.find((engine) => engine && engine.id !== primary
-      && !(engine.id === workerEngine && (!engine.roster_model || !workerModel || engine.roster_model === workerModel)));
+      && !(engine.id === workerEngine && reviewerMayBeSameModel(engine.roster_model, workerModel)));
     if (!backup) return lineup;
     lineup.push({ engine: backup.id, model: backup.roster_model || '' });
     const saved = registry.readEngineRegistry(root, { persist: false }).engines.find((engine) => engine.id === primary);
-    if (saved && !registry.engineReadyAt(saved)) lineup.reverse();
+    if (saved && !registry.engineReadyAt(saved)) lineup.shift();
   } catch {}
   return lineup;
 }

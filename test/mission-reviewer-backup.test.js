@@ -33,13 +33,17 @@ test('the review backup steps in, never as the builder grading itself', () => {
       .map(({ engine, model }) => `${engine} ${model}`.trim());
 
     assert.deepEqual(lineup({ runner: 'claude', model: 'claude-sonnet-5-5' }), ['codex', 'claude claude-opus-5-5']);
-    // Opus built it, so opus may not review it.
+    // Opus built it, so opus may not review it, however the model is spelled.
     assert.deepEqual(lineup({ runner: 'claude', model: 'claude-opus-5-5' }), ['codex']);
+    assert.deepEqual(lineup({ runner: 'claude', model: 'opus' }), ['codex']);
+    assert.deepEqual(lineup({ runner: 'claude', model: 'claude-opus-5-5[1m]' }), ['codex']);
+    assert.deepEqual(lineup({ model: 'opus' }), ['codex']);
     // A named reviewer is never swapped.
     assert.deepEqual(lineup({ runner: 'claude', model: 'claude-sonnet-5-5' }, 'codex'), ['codex']);
-    // A benched reviewer waits behind its backup.
+    // A benched reviewer is skipped while its backup can run.
     setEngineHealth('codex', 'cooling', root);
-    assert.deepEqual(lineup({ runner: 'claude', model: 'claude-sonnet-5-5' }), ['claude claude-opus-5-5', 'codex']);
+    assert.deepEqual(lineup({ runner: 'claude', model: 'claude-sonnet-5-5' }), ['claude claude-opus-5-5']);
+    assert.deepEqual(lineup({ runner: 'claude', model: 'claude-opus-5-5' }), ['codex']);
   } finally {
     if (previous === undefined) delete process.env.ATRIS_MACHINE_ROSTER_PATH;
     else process.env.ATRIS_MACHINE_ROSTER_PATH = previous;
