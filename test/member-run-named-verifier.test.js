@@ -49,3 +49,32 @@ test('the subagent shell reads the job text, not the member name, for its check'
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a named test file or "the failing tests" become the check in a node --test project', () => {
+  // Member lab: seven of ten jobs got only a whitespace check, so a second AI had
+  // to review every one. Task 15 says another test file fails on purpose, so a
+  // named file is checked alone rather than the whole suite.
+  const dir = tempProject({ scripts: { test: 'node --test checks/*.js' } });
+  try {
+    fs.mkdirSync(path.join(dir, 'checks'));
+    fs.writeFileSync(path.join(dir, 'checks', 'order.js'), '');
+    assert.equal(inferMemberRunVerifier('fix the failing order total tests in checks/order.js.\nlegacy.js is out of scope.', [], dir), 'node --test checks/order.js');
+    assert.equal(inferMemberRunVerifier('fix the failing shipping tests.\nyou may only modify shipping.js.', [], dir), 'npm test');
+    assert.equal(inferMemberRunVerifier('fix the failing test.\n\ndo not create a commit.', [], dir), 'npm test');
+    // Feature jobs that never mention tests keep the reviewer.
+    assert.equal(inferMemberRunVerifier('add a --json flag to the toy cli.', [], dir), '');
+    // A named file that does not exist is not a check.
+    assert.equal(inferMemberRunVerifier('fix checks/missing.js', [], dir), '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('"the failing tests" in a project with no test script infers nothing', () => {
+  const dir = tempProject({ scripts: {} });
+  try {
+    assert.equal(inferMemberRunVerifier('fix the failing tests', [], dir), '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

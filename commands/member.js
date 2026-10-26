@@ -981,7 +981,30 @@ function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
   // chose that check; it is not a silent broad-suite default.
   const npmMatch = text.match(/\bnpm\s+(run\s+)?test(?![\w:-]|\.\w)/i);
   if (npmMatch && projectHasTestScript(cwd)) return npmMatch[1] ? 'npm run test' : 'npm test';
+  // A named test file in a project that runs node's own test runner: check
+  // just that file, since other files may fail on purpose ("legacy.js is out
+  // of scope"). Member lab: these jobs fell back to a whitespace check.
+  const testScript = projectTestScript(cwd);
+  if (/\bnode\s+--test\b/.test(testScript)) {
+    const named = (text.match(/[\w./-]+\.[cm]?js\b/g) || [])
+      .filter((file) => /(^|\/)(tests?|checks?|specs?|__tests__)\/|\.(test|spec)\.[cm]?js$/.test(file))
+      .find((file) => fs.existsSync(path.join(cwd, file)));
+    if (named) return `node --test ${named}`;
+  }
+  // "fix the failing tests" names the project's tests as the target.
+  if (testScript && /\b(fail(ing|ed)?\s+(\w+\s+){0,3}tests?|tests?\s+(pass|green)|fix\s+the\s+(\w+\s+){0,2}tests?)\b/i.test(text)) {
+    return 'npm test';
+  }
   return '';
+}
+
+function projectTestScript(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    return String(pkg?.scripts?.test || '');
+  } catch {
+    return '';
+  }
 }
 
 function projectHasTestScript(cwd) {
