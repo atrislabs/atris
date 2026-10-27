@@ -6,6 +6,8 @@
 // outcomes, the live policy id, and the last dream receipt. Read-only: it
 // never touches record.py, never writes state, and exits 0 even when the
 // workspace has no ledger yet.
+//
+// `atris rsi loop` ships notebook fixes with no mission queued (lib/rsi-loop.js).
 
 const fs = require('fs');
 const rsi = require('../lib/rsi-record');
@@ -114,8 +116,29 @@ Usage:
   atris rsi            same as status
   atris rsi status     trees + attempts by lane, last night's outcomes, policy, last dream
   atris rsi status --json   machine-readable status
+  atris rsi loop [--minutes M] [--json]
+                       find notebook fixes with no mission queued, verify, commit and
+                       push them on one reusable isolated branch (default budget 5 minutes)
 
-Read-only. State lives in .atris/state/rsi/ (or $ATRIS_RSI_STATE).`);
+status is read-only. loop checks atris/ pages for line refs that point at
+moved code and for wording the slop rules can repair, commits each check
+that verifies, and pushes the branch. It removes the local branch and checkout
+only once the remote tip matches; the remote branch is reused on later runs.
+The budget is checked between steps and limits network operations.
+The main checkout is never edited.
+
+State lives in .atris/state/rsi/ (or $ATRIS_RSI_STATE); loop reports go to loops.jsonl there.`);
+}
+
+async function runLoopCommand(args) {
+  const rsiLoop = require('../lib/rsi-loop');
+  const i = args.indexOf('--minutes');
+  const raw = i >= 0 ? String(args[i + 1] || '') : '';
+  const minutes = i < 0 ? undefined : (/^\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN);
+  const result = await rsiLoop.runLoop({ minutes, workspace: process.cwd() });
+  console.log(args.includes('--json') ? JSON.stringify(result) : rsiLoop.formatLoopReport(result));
+  if (result.refused) return 2;
+  return result.ok ? 0 : 1;
 }
 
 function run(argv = []) {
@@ -125,6 +148,7 @@ function run(argv = []) {
     return 0;
   }
   const sub = args[0] && !args[0].startsWith('-') ? args[0] : 'status';
+  if (sub === 'loop') return runLoopCommand(args.slice(1));
   if (sub !== 'status') {
     console.log(`unknown rsi subcommand: ${sub}`);
     showHelp();
