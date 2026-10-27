@@ -1,0 +1,77 @@
+[
+  {
+    "id": "dentist-no-show-appeal",
+    "field": "Health billing",
+    "task": "I missed my cleaning at Bright Smile Dental on Tuesday March 4 at 9:30am. I had the flu and called them at 8:10 that morning, but they still charged me a $75 no-show fee. My name is Dana Okafor and my patient ID is 88214. Write me a short, polite email to their billing office asking them to waive the fee. Mention that I called in before the appointment and that this is my first no-show in four years of visits."
+  },
+  {
+    "id": "water-heater-quote-text",
+    "field": "Plumbing trade",
+    "task": "Write a text I can send to Marco at Eastside Plumbing. He quoted me $1,240 to replace my 40 gallon gas water heater, and I want him to break down the cost. Ask for the price of the unit, the labor hours, and whether the quote includes the old tank removal and the expansion tank. Keep it friendly and under four sentences. I'm thinking about getting a second quote from another company."
+  },
+  {
+    "id": "swarm-neighbor-text",
+    "field": "Beekeeping hobby",
+    "task": "A honeybee swarm settled in the oak tree on the border of my yard this morning. My neighbor Linda Pruitt at 412 Cedar Lane has kids playing out back. I'm a registered hobby beekeeper and I'll come get the swarm by 2pm today, and I want to text her so she knows to keep the kids away from the tree until then. Write a calm, reassuring text that's friendly and doesn't sound alarmist."
+  },
+  {
+    "id": "mom-birthday-cost-split",
+    "field": "Family finances",
+    "task": "Mom turns 70 on Saturday November 8. My brother Rafi and I want to take her to dinner at Trattoria Lucia. The bill for 8 people will come to about $640 after tax and tip. Rafi is covering the drinks and I'm covering the cake, which costs $95. Write me a text to send to Rafi suggesting we split the dinner bill evenly but that he pays the full cost of the wine, which is roughly $180. Make it sound light, not like a fight."
+  },
+  {
+    "id": "pottery-class-refund",
+    "field": "Hobby classes",
+    "task": "I signed up for the Wednesday evening wheel throwing class at Clayworks Studio, which is $285 for six weeks. I've only attended two sessions because I have to work late on Wednesdays now. The class starts again October 29, and the studio has a policy that refunds are available with 7 days notice before the next session. Write me an email to Clayworks requesting a refund or a transfer to their Saturday morning class. My name is Jordan Ellis and I signed up under jordan.ellis@example.com."
+  },
+  {
+    "id": "contractor-deposit-demand",
+    "field": "Home renovation",
+    "task": "I paid Ridgeline Construction a $3,200 deposit on August 12 to start painting and drywall repair in my hallway and kitchen. They promised to start on September 2 and still haven't shown up. Their owner, Tony Reyes, has stopped answering calls. Write a firm but professional letter demanding either a start date within 10 days or a full refund of the deposit. Mention that the job was quoted at $5,800 total and that I'll file a complaint with the state contractor board if I don't hear back by November 7."
+  },
+  {
+    "id": "jury-duty-deferral",
+    "field": "Civic duty",
+    "task": "I got a jury summons for the Multnomah County Circuit Court for a jury pool starting Monday November 17. I'm scheduled to be out of state for a work conference November 15 through November 22, and I already paid nonrefundable airfare. My juror number is 4471 and the summons was dated October 14. Write a formal letter asking the court to defer my service to a date after November 30. Keep it respectful and include the reason and the dates."
+  },
+  {
+    "id": "lost-cat-flyer",
+    "field": "Community notice",
+    "task": "My orange tabby named Biscuit got out Thursday evening from our backyard on 27th Street near Maple Avenue. He's 6 years old, around 14 pounds, has a white chest and a torn left ear, and wears a red collar with a tag that says Biscuit and my number. He's microchipped too. My number is 555-0172. Write a short lost pet flyer with a headline and no more than six lines, and add a line asking neighbors to check garages and sheds."
+  },
+  {
+    "id": "tutor-inquiry-algebra",
+    "field": "Tutoring inquiry",
+    "task": "My daughter Ava is in 9th grade and is failing her algebra class at Lincoln High with a 58 percent average. She needs help with linear equations and systems of equations. I'm looking for a tutor for two one-hour sessions per week, starting next Tuesday, and I can pay up to $45 an hour. Write a short message to a tutor I found on the Mathnasium listing. Include her grade, her current average, the topics, our budget, and ask whether they have availability on Tuesdays or Thursdays after 4pm."
+  },
+  {
+    "id": "vet-surgery-estimate-email",
+    "field": "Pet care",
+    "task": "My 8-year-old beagle Murphy was diagnosed with a torn cranial cruciate ligament in his left knee by Dr. Hensley at Oak Hill Animal Hospital. The surgery quote was $2,400, but I don't know whether that includes anesthesia, post-op x-rays, or the two-week recheck. I'd like to schedule the surgery in early December. Write me an email to the front desk asking them to itemize the estimate and tell me their deposit requirement and payment plan options."
+  },
+  {
+    "id": "hail-claim-adjuster-note",
+    "field": "Insurance claim",
+    "task": "A hailstorm on the afternoon of August 19 damaged my roof, two gutters, and the north side siding on my house at 88 Hollis Road. My insurance company is Pinnacle Mutual and my claim number is PM-2024-77392. The adjuster, Denise Fraser, came out on September 3 and told me she'd send a written estimate within 10 business days, which would be by September 17. I haven't heard anything yet. Write a short, firm email to her asking for the estimate status and when I can expect it."
+  },
+  {
+    "id": "robotics-sponsor-thanks",
+    "field": "School fundraising",
+    "task": "Our high school robotics team, the Dunmore Gearheads, got a $500 sponsorship from Harbor Hardware. Their manager Carlos Mendes also donated 40 bags of concrete for our practice field. The team is going to the regional competition in Akron on March 14 and 15. Write a thank you note from the team captain, Priya Shah, to Carlos. Keep it under 120 words, sound like a 17-year-old who means it, and mention that we'll put Harbor Hardware on the banner at the competition."
+  },
+  {
+    "id": "marathon-injury-coach-update",
+    "field": "Running coaching",
+    "task": "I'm training for the Chicago Marathon on October 11 with my coach, Renee. I've had a sharp pain on the outside of my right knee, about a 4 out of 10 when I run, and it started during my 16-mile long run last Sunday. I've been icing it and I took the rest day Monday. I'm supposed to do a 10-mile run this Saturday. Write me a message to Renee that describes the symptoms clearly so she can decide whether to change my training plan this week."
+  },
+  {
+    "id": "cell-plan-cancel-complaint",
+    "field": "Consumer complaint",
+    "task": "I've been charged $89.99 a month by Skyline Wireless since they moved my plan from Unlimited Plus to a new bundle without asking me. I called on October 2 and was told the change was an error and would be reversed by the next billing cycle. It wasn't. My account number is 4038821 and I've been overcharged for two cycles, so $179.98. Write an email to their billing team asking for the full credit, a corrected plan, and written confirmation. Mention that I'll dispute the charges with my bank if this isn't fixed by October 31."
+  },
+  {
+    "id": "eighth-grade-graduation-speech",
+    "field": "Speech writing",
+    "task": "I'm giving a 90-second speech at the eighth grade graduation at Westfield Middle School on June 6. My name is Mia Torres and I'm representing the class. The class has been together since kindergarten, and our teacher Mr. Abebe ran the science fair club that made us finally win the district prize last year. Write a speech that's warm and a little funny, with one real memory, one thank-you for the teachers, and one line for the classmates heading to different high schools next year."
+  }
+]

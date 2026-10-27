@@ -1,0 +1,227 @@
+[
+  {
+    "id": "unit-mph-kph",
+    "field": "unit conversion",
+    "task": "How fast is 65 mph in km/h? I need it for a rental car form that only takes metric."
+  },
+  {
+    "id": "sleep-cycles-count",
+    "field": "sleep schedule",
+    "task": "How many complete 90-minute sleep cycles fit into 7 hours and 40 minutes of sleep?"
+  },
+  {
+    "id": "dinner-tip-share",
+    "field": "everyday math",
+    "task": "Four of us had dinner and the bill came to $137.40. We're tipping 18 percent on the pre-tax total and splitting evenly. What does each person pay, rounded to the cent?"
+  },
+  {
+    "id": "oven-f-to-c",
+    "field": "kitchen temperature",
+    "task": "The recipe says bake at 350 F. My oven only shows celsius. What should I set it to?"
+  },
+  {
+    "id": "simple-interest-loan",
+    "field": "loan math",
+    "task": "I borrowed $4,000 at 6 percent simple interest per year and I'll pay it back at the end of 30 months. How much interest will I owe in total?"
+  },
+  {
+    "id": "days-between-dates",
+    "field": "calendar math",
+    "task": "How many days are there from March 3, 2026 to July 19, 2026? Count the start date as day zero, so I want the difference."
+  },
+  {
+    "id": "grams-from-ounces",
+    "field": "kitchen measurement",
+    "task": "My scale only does grams. The recipe calls for 8.5 ounces of chocolate. How many grams is that, rounded to the nearest gram?"
+  },
+  {
+    "id": "mean-quiz-scores",
+    "field": "quick statistics",
+    "task": "My six quiz scores are 14, 3, 9, 22, 7, and 11. What is the mean?"
+  },
+  {
+    "id": "grocery-percent-rise",
+    "field": "percent math",
+    "task": "Our family grocery bill went from $412 a month last year to $447 a month now. What is the percent increase, to one decimal place?"
+  },
+  {
+    "id": "run-pace-per-km",
+    "field": "running pace",
+    "task": "I ran 10 km in 48 minutes 30 seconds. What was my average pace per km, in minutes and seconds?"
+  },
+  {
+    "id": "planet-day-length",
+    "field": "astronomy lookup",
+    "task": "Here are rotation periods (length of one day): Jupiter 9h 56m, Saturn 10h 33m, Uranus 17h 14m, Neptune 16h 6m. Which planet has the shortest day?"
+  },
+  {
+    "id": "compound-growth-ten-years",
+    "field": "investing math",
+    "task": "If I put $5,000 into an account paying 4 percent a year compounded once per year and leave it alone for 10 years, what is the balance at the end, to the cent?"
+  },
+  {
+    "id": "cups-to-ml",
+    "field": "unit conversion",
+    "task": "A recipe needs 2.5 US cups of milk. How many milliliters is that? Use 236.588 mL per cup and round to the nearest mL."
+  },
+  {
+    "id": "attendance-rate",
+    "field": "school admin",
+    "task": "Our class has 27 students and 23 were present today. What is the attendance rate as a percent, to one decimal place?"
+  },
+  {
+    "id": "carpet-cost-room",
+    "field": "home budgeting",
+    "task": "The bedroom is 12 feet by 14 feet. Carpet costs $2.10 per square foot installed, no extra for waste. What is the total?"
+  },
+  {
+    "id": "job-offer-compare",
+    "field": "career decision",
+    "task": "I have two offers. A: $78,000 base, 10 percent bonus target, 15 days PTO, hybrid with 2 days in office, 35 minute commute, company of 40 people, and I'd be the only data person. B: $71,000 base, 5 percent bonus, 22 days PTO, fully remote, company of 900 people with a real data team, but the role is a year-old pipeline I'd mostly maintain. I'm 29, I want to get better at modeling, and I have $30,000 of student loans at 5.5 percent. Which would you take and why?"
+  },
+  {
+    "id": "brake-squeal-diagnosis",
+    "field": "car troubleshooting",
+    "task": "2014 Honda Civic, 88,000 miles. Front brakes squeal only on the first few stops in the morning when cold, then it goes quiet. I had the pads replaced 6 months ago at 80,000 miles. Pedal feels normal, no vibration, no pulling. What are the likely causes and what should I ask the shop before I pay for anything?"
+  },
+  {
+    "id": "ceiling-stain-leak",
+    "field": "home repair diagnosis",
+    "task": "There's a yellow-brown ring stain on my bathroom ceiling, about 14 inches across, that showed up after last winter. The bathroom is directly above the living room. The exhaust fan is loud and I think it vents into the attic instead of outside. The stain is dry on top but the edge feels damp when I press it. What should I check first, and what could this be?"
+  },
+  {
+    "id": "mcat-ten-week-plan",
+    "field": "study planning",
+    "task": "I have 10 weeks until the MCAT. My first full practice test was 498 overall: chem/phys 118, CARS 125, bio/biochem 129, psych/soc 126. I work 30 hours a week and can study 15 hours on weekdays and 8 on weekends. Give me a rough split of study hours across the four sections for the 10 weeks, and tell me what to cut first if I fall behind."
+  },
+  {
+    "id": "laptop-designer-pick",
+    "field": "tech purchase",
+    "task": "Budget is $1,400. I use Figma, Illustrator, and light Premiere editing with a few 4K exports a week. Options: MacBook Air M4 with 16GB and 512GB at $1,199; Windows laptop with Ryzen 7, 32GB, RTX 4060, 1TB at $1,349, weighs 4.2 lb; MacBook Pro 14 with M4 Pro at $1,999. I travel about one week a month with it. Which one should I buy?"
+  },
+  {
+    "id": "pagination-off-by-one",
+    "field": "debugging",
+    "task": "My Python script pulls from a paginated API. Page numbers start at 1, each page returns up to 50 items, and the total is 237 items. My code does pages = total // per_page and then for p in range(1, pages + 1). I keep missing the last 37 items. Explain the bug, give me the fix, and say whether the fix still works if the total is exactly 250."
+  },
+  {
+    "id": "db-index-choice",
+    "field": "database design",
+    "task": "Postgres table orders has 40 million rows. Query is SELECT * FROM orders WHERE customer_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 20. It takes 1.9 seconds. There's an index on customer_id only. Status has 4 values and about 3 percent of rows are open. Should I add (customer_id, status, created_at) or something else? Explain the tradeoff and write the statement."
+  },
+  {
+    "id": "translator-rate-counter",
+    "field": "freelance pricing",
+    "task": "I'm a freelance Spanish to English translator. A client offered $0.07 per word for a 6,400-word legal document due in 3 days. My normal rate is $0.11 per word, and I normally add 50 percent for rush jobs under 3 days. Should I take it? If not, what counter-offer should I send, with the exact numbers?"
+  },
+  {
+    "id": "solar-payback-check",
+    "field": "energy decision",
+    "task": "Quote for a 6.4 kW rooftop solar system is $17,920 before incentives. The 30 percent federal credit applies. Our electricity costs 19 cents per kWh. The system should produce 8,200 kWh a year and we use about 11,000 kWh a year. Panels have a 25-year warranty but I'd need to remove the system if I replace the roof in 8 years. Compute the simple payback and tell me whether to sign, showing the math."
+  },
+  {
+    "id": "cat-lethargy-triage",
+    "field": "pet health",
+    "task": "My 9-year-old indoor cat has been sleeping much more for 3 days, eating about half her usual food, drinking a lot more water, and she peed outside the litter box twice. Her weight was 11.2 lb at her March checkup and I don't have a new one. Our vet is closed until Monday. What should I do tonight, and what would make this an emergency right now?"
+  },
+  {
+    "id": "gutter-bid-pick",
+    "field": "contractor selection",
+    "task": "Three bids to replace 180 linear feet of gutters with seamless aluminum and new downspouts. A: $3,300, 2-year workmanship warranty, starts in 3 weeks, references were fine. B: $2,600, 1-year warranty, starts in 5 weeks, one reference never called back. C: $2,950, 3-year warranty, starts in 8 weeks, uses vinyl instead of aluminum without saying so in the bid summary. Which would you pick and what would you verify before signing?"
+  },
+  {
+    "id": "social-security-claim-age",
+    "field": "retirement planning",
+    "task": "I was born in 1965, so my full retirement age is 67. Estimated benefit: $2,450 a month at 67, $1,715 at 62, $3,042 at 70. My health is fair, my parents lived to 84 and 86. I plan to work part-time until 65 at $30,000 a year and have $540,000 in a 401(k). Should I claim at 62, 67, or 70? Show the breakeven age for 62 versus 67."
+  },
+  {
+    "id": "startup-runway-cut",
+    "field": "startup finance",
+    "task": "We have $420,000 in the bank. Monthly burn is $48,000, of which $36,000 is salaries for 4 people. Revenue is $11,500 a month and grows 6 percent a month. Option 1: cut the $6,000 a month marketing budget. Option 2: let one contractor go, saving $9,000 a month. We expect to raise money in 9 months. Which cut gives more runway at 12 months, and what would you actually do?"
+  },
+  {
+    "id": "deposit-deduction-dispute",
+    "field": "tenancy dispute",
+    "task": "I moved out of an apartment where I paid a $1,800 deposit. The landlord kept $1,150: $600 carpet cleaning, $450 paint touch-up in two rooms, $100 for a broken blind. I lived there 2 years. I have move-in photos showing faint wall marks and some carpet wear. The lease says normal wear can't be deducted. The state requires an itemized list within 30 days, and I got it on day 34. How strong is my position and what should I send?"
+  },
+  {
+    "id": "scope-cut-deadline",
+    "field": "project management",
+    "task": "Our app launch is in 9 working days. We have 2 developers, so 18 dev-days of capacity. Remaining work: Google login 3 days, dark mode 2 days, CSV export 2 days, push notifications 4 days, onboarding tour 1.5 days, two bug fixes 1 day total, Stripe billing 5 days. That's 18.5 dev-days, and one dev is out for 1 of those days. Which items should we cut or move and why?"
+  },
+  {
+    "id": "wedding-venue-vs-backyard",
+    "field": "event budgeting",
+    "task": "Budget is $22,000 for 110 guests. Option A: venue rental $6,500 with tables and chairs included, catering $48 a head, tent and extra rentals $2,800. Option B: backyard wedding with tent and rentals $5,200, same catering at $48 a head, restroom trailer $900, generator $400. Our yard is 2,000 square feet with a big tree. Total each option and recommend one."
+  },
+  {
+    "id": "hardware-store-markup",
+    "field": "small business pricing",
+    "task": "I run a small hardware store. We price fasteners at a 40 percent markup over cost. A supplier raised the cost of a 100-count box of drywall screws from $6.20 to $7.10. Right now it sells for $9.99. A competitor down the road is at $10.49. What price would you set, and what would you tell a loyal customer who asks why it went up?"
+  },
+  {
+    "id": "property-line-survey",
+    "field": "neighbor property",
+    "task": "My neighbor and I disagree about the property line. The 2009 survey puts the line 2.4 feet inside where my neighbor's shed sits. I found a survey pin about 3 feet from the corner of the shed, by my rough estimate. My neighbor says the shed has been there 15 years and is the line. The city requires a new survey before any building changes. What should I do first, and what should I say to my neighbor?"
+  },
+  {
+    "id": "teen-insurance-addon",
+    "field": "insurance decision",
+    "task": "My 16-year-old just got a learner's permit and will be added to our auto policy. Current premium is $2,140 a year for two cars. The agent estimates adding a teen driver costs $1,180 more a year. Option 1: a telematics app that can cut up to 12 percent if the teen drives well. Option 2: raise the deductible from $500 to $1,000, saving $160 a year. Which combination would you pick, and what would you ask the agent?"
+  },
+  {
+    "id": "violin-recital-plan",
+    "field": "music practice",
+    "task": "I'm 14 and have a violin recital in 6 weeks. I can practice 45 minutes a day, 6 days a week. Pieces: Bach Gavotte in G minor (2 min 40 sec), Kreisler Liebesleid (3 min), and two scales. The Gavotte is stuck at bars 22 to 30 with shifting problems, Liebesleid is mostly learned but my vibrato is inconsistent. Make me a week-by-week plan with minutes for each item."
+  },
+  {
+    "id": "office-lunch-quantity",
+    "field": "event catering",
+    "task": "Office lunch for 85 people. Every guest gets one 8-inch sub. 60 percent also want a side. Chips come one bag per 3 people among those who want a side. Cookies: 1 per person for half of all guests. How many subs, bags of chips, and cookies should I order? Round up sensibly and tell me the assumptions."
+  },
+  {
+    "id": "water-heater-replacement",
+    "field": "home appliance decision",
+    "task": "Our 12-year-old 50-gallon gas water heater is leaking at the base. Gas bill is $68 a month. Family of 4 with 2 bathrooms. Quotes: same-size gas tank $1,650 installed; 50-gallon electric heat pump $3,900 installed with a $1,000 utility rebate; tankless gas $3,600 installed. We have no gas capacity issues. Which should we buy and why?"
+  },
+  {
+    "id": "bike-lane-claim",
+    "field": "fact checking",
+    "task": "A press release says our city's bike lane network grew 60 percent since 2022. City data says 24.5 miles of lanes in 2022 and 36.2 miles in 2026. Is the 60 percent claim right? Compute the actual change and tell me how to phrase a headline that's accurate."
+  },
+  {
+    "id": "survey-sample-size",
+    "field": "research methods",
+    "task": "We want to estimate what share of our 4,200 customers would use a new feature. We want a margin of error of plus or minus 5 percentage points at 95 percent confidence, using the worst case p = 0.5. Apply the finite population correction. What sample size do we need, with the formula? If only 30 percent of invitees respond, how many invitations should we send?"
+  },
+  {
+    "id": "canceled-train-night",
+    "field": "travel disruption",
+    "task": "My 6:10 pm train from Boston to New York got canceled. Options: 7:05 pm arriving 11:02 pm; 8:30 pm arriving 12:25 am with a transfer in Providence; or the 6:00 am train. I have a nonrefundable $180 hotel near Penn Station tonight and a 9:00 am meeting in Manhattan tomorrow. A one-way rental car is $95 plus a $35 drop fee. Which should I pick and what's my backup?"
+  },
+  {
+    "id": "checkout-rollback-call",
+    "field": "incident response",
+    "task": "Checkout broke 20 minutes after the 2:05 pm deploy. Error rate on /api/checkout went from 0.2 percent to 31 percent. The deploy changed a currency rounding function. Rolling back takes 6 minutes. A hotfix takes about 40 minutes including review. We handle 1,200 orders an hour at an average of $54. Should we roll back or hotfix, and what should the team tell customers?"
+  },
+  {
+    "id": "portuguese-spend-mix",
+    "field": "language learning",
+    "task": "I have $300 a month for learning Portuguese. Options: an iTalki tutor at $18 per 30-minute session, one session a week; Duolingo Max at $30 a month for daily practice; or a local class at $95 a month for two 90-minute evenings a week. I'm about 4 months into Duolingo and have a trip to Lisbon in 5 months. What mix would you recommend, and how many total hours a month would I study?"
+  },
+  {
+    "id": "podcast-episode-order",
+    "field": "creative prioritization",
+    "task": "I want to publish 4 podcast episodes in 4 weeks for an audience of 2,300. Candidates: (a) interview with a local bakery owner, 2 hours of recording, guest confirmed; (b) solo episode on an industry trend, 45 minutes, I can record it today; (c) interview with a known author, 1 hour, not confirmed, maybe in 3 weeks; (d) listener Q&A, 30 minutes, need a week to collect questions; (e) remote guest who needs a script approved first. Give me the order for weeks 1 to 4 and why."
+  },
+  {
+    "id": "accounting-reclass-ethics",
+    "field": "workplace ethics",
+    "task": "I'm a staff accountant. My manager wants me to reclassify $340,000 of Q3 marketing expenses as capital assets so the quarter looks $340,000 better. I think that's wrong, but he says it's standard practice. Close is in 2 weeks. Lay out what I should do, in order, including who to talk to, what to write down, and what I should not do."
+  },
+  {
+    "id": "thermostat-setback-savings",
+    "field": "energy savings",
+    "task": "Our house is 1,850 square feet with a gas furnace. We keep the thermostat at 70 degrees all day and night, and winter heating costs about $210 a month. Proposed: 66 degrees from 11 pm to 6:30 am, and 64 degrees from 8 am to 5 pm on weekdays when nobody's home. Using the rule of thumb that an 8-hour setback of 1 degree saves about 1 percent of heating cost, estimate the monthly savings and say whether the lifestyle trade-off is worth it."
+  }
+]
