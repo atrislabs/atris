@@ -9360,7 +9360,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
     `- ${memberIdentityLine(mission.owner)} Your member files are preloaded above; open atris/team/${mission.owner}/MEMBER.md only if that copy is marked truncated. Work in that identity, inside its scope and stop rules. Atris writes your member log from your receipt, so end the receipt with one \`learned: <one line>\` line instead of editing the log.`,
-    `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
+    `- Start with the job: inspect the files or state directly relevant to the objective, then do the smallest useful action. Skip workspace boot and start-of-session routines, including brain activation, general Atris or task listings, and reading MAP, persona, or skill files solely for startup. Inspect mission or task state only if the job requires it.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,
     `- Edit / run / research as needed for the lane.`,
