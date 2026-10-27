@@ -217,6 +217,9 @@ test('picked terra: a real read goes to codex with that model, read-only, with n
   const args = calls[0].args;
   assert.equal(args[args.indexOf('-m') + 1], 'gpt-5.6-terra');
   assert.ok(args.includes('read-only'));
+  // no shell for it to look around with: every fact is in the prompt
+  assert.ok(args.includes('features.shell_tool=false') && args.includes('features.shell_snapshot=false'));
+  assert.match(args[args.length - 1], /Everything you need is in this message\. Do not run any command/);
   assert.equal(calls[0].key, null, 'no api key in its environment');
 });
 
@@ -375,4 +378,14 @@ test('/model: the link key and the page\'s own origin are required; a post sets 
     server.closeAllConnections();
     await new Promise(r => server.close(r));
   }
+});
+
+test('a login check that runs out of time on a busy computer keeps the last answer; with none, the tool is not offered', async () => {
+  orbModel.forgetSignedIn();
+  const slow = async () => ({ status: 1, stdout: '', timed_out: true });
+  assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: slow, fresh: true }), false);
+  assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: async () => ({ status: 0, stdout: 'Logged in as someone\n' }), fresh: true }), true);
+  assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: slow, fresh: true }), true);
+  assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: async () => ({ status: 1, stdout: 'Not logged in\n' }), fresh: true }), false);
+  orbModel.forgetSignedIn();
 });
