@@ -520,6 +520,13 @@ function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) 
 // a closed credit window is credit out. Never throws into the tick.
 function missionTickRunOutcome(result, verifierResult, maxSeconds) {
   if (result && result.status === 'ran') {
+    const review = verifierResult?.referee;
+    if (verifierResult?.passed === false && verifierResult.status === 0 && !verifierResult.timed_out
+      && review?.mode === 'engine-unavailable' && review.reason !== 'code changed during review') {
+      return { outcome: 'review unavailable', detail: review.timed_out
+        ? 'the build check passed, but the second review timed out'
+        : 'the build check passed, but the second review was unavailable' };
+    }
     return verifierResult && verifierResult.passed === false
       ? { outcome: 'failed', detail: 'the verifier failed' }
       : { outcome: 'landed' };
@@ -11103,7 +11110,8 @@ async function executeMissionRunTicksPhase(context) {
         next_push: result.next_push || undefined,
         engine: result.engine_id || runtimeMission.runner || mission.runner || null,
         task_type: 'executor',
-        verified_passed: verifierResult && typeof verifierResult.passed === 'boolean' ? verifierResult.passed : undefined,
+        verified_passed: missionTickRunOutcome(result, verifierResult).outcome === 'review unavailable'
+          ? undefined : verifierResult && typeof verifierResult.passed === 'boolean' ? verifierResult.passed : undefined,
         duration_ms: Math.max(0, (Date.parse(finishedAt) || 0) - (Date.parse(tickStart) || 0)),
       }).mission;
       if (rotateSessionForContext) {
