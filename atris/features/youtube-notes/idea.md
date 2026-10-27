@@ -40,6 +40,8 @@ scripts/det/ytnotes (bash)
         |        anything else      -> print the paid command
         |
         |-- writer (auto): Gemini Flash (agy) -> Haiku (claude) -> codex -> cursor-agent
+        |                 Gemini starts during the caption download once signed in
+        |                 the first two writers run together; first good notes win
         |
         |-- scripts/det/ytquote-repair.js
         |        exact quote   -> kept
@@ -91,6 +93,8 @@ Since 2026-10-25 the fetch goes through YouTube's iOS client first and skips the
 YouTube refuses some audio downloads at random (HTTP 403), so the download retries 3 times. `ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0` turns local transcription off.
 
 **Writers.** The default, `auto`, uses the fastest writer installed: Gemini Flash through the `agy` CLI, then Haiku through `claude`, then `codex`, then `cursor-agent`. Gemini writes notes for an 85-minute transcript in about 8 seconds, where Haiku takes 30 to 42.
+
+Gemini needs about 3 seconds to start, so it starts while the captions are still downloading and gets the transcript when it lands. It starts only after the sign-in check prints a model, which only a signed-in agy does, so it never opens a Google login. Since 2026-10-25 the first two writers run at the same time and the first good notes win (Gemini wins a tie). A 1 second head start for Gemini only held Haiku back: 7.80s against 8.47s over 8 paired runs.
 
 Pin one writer with the second argument (`atris youtube notes <url> haiku`) or with `ATRIS_YTNOTES_ENGINE`.
 
