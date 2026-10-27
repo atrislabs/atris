@@ -310,3 +310,20 @@ test('wording checks never follow a tracked symlink outside the checkout', async
   assert.equal(fs.readFileSync(external, 'utf8'), `outside ${DASH} unchanged\n`);
   assertMainUntouched(r);
 });
+
+test('map repair refuses a symlink to a file outside the checkout', async (t) => {
+  const r = room(t, { map: GOOD_MAP });
+  const external = path.join(r.base, 'external-map.md');
+  fs.writeFileSync(external, MOVED_MAP);
+  const seed = path.join(r.base, 'seed');
+  fs.rmSync(path.join(seed, 'atris', 'MAP.md'));
+  fs.symlinkSync(external, path.join(seed, 'atris', 'MAP.md'));
+  git(seed, ['add', 'atris/MAP.md']);
+  git(seed, ['commit', '-qm', 'link map']);
+  git(seed, ['push', '-q', 'origin', 'master']);
+  const out = await rsiLoop.runLoop({ workspace: r.root });
+  assert.equal(out.stop_reason, 'error');
+  assert.match(out.error, /symlink/);
+  assert.equal(fs.readFileSync(external, 'utf8'), MOVED_MAP);
+  assert.deepEqual(remoteBranches(r.remote), []);
+});
