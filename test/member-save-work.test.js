@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { saveLeftoverMemberWork } = require('../lib/member-save-work');
+const { TRAILER } = require('../commands/sign');
 
 function git(args, cwd) {
   const r = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
@@ -39,6 +40,9 @@ test('loose work in a member checkout is committed on its branch, atris state le
     assert.deepEqual(saved.files.sort(), ['answers.json', 'app.js']);
     assert.equal(git(['show', 'navigator-job:answers.json'], main), '{"line":3}');
     assert.match(git(['log', '-1', '--format=%s', 'navigator-job'], main), /^navigator: find the bug line\.$/);
+    const message = git(['log', '-1', '--format=%B', 'navigator-job'], main);
+    assert.equal(message.split('\n').filter((line) => /^co-authored-by:/i.test(line)).join('\n'), TRAILER);
+    assert.ok(message.endsWith(TRAILER));
     assert.ok(fs.existsSync(path.join(side, '.atris', 'state', 'engines.json')));
     assert.equal(git(['status', '--porcelain', '--', '.atris'], side), '?? .atris/');
   } finally {
