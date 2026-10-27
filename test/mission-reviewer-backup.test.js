@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { engineVerifierLineup } = require('../commands/mission');
-const { setEngineHealth } = require('../lib/engine-registry');
+const { engineVerifierLineup, runEngineVerifier } = require('../commands/mission');
+const { setEngineHealth, readEngineRegistry } = require('../lib/engine-registry');
 
 // Member lab 10/26: codex hung on every review and each job waited out the
 // full five minutes. The roster's review backup now steps in, a benched
@@ -48,6 +48,46 @@ test('the review backup steps in, never as the builder grading itself', () => {
     if (previous === undefined) delete process.env.ATRIS_MACHINE_ROSTER_PATH;
     else process.env.ATRIS_MACHINE_ROSTER_PATH = previous;
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('a reviewer timeout is shared across projects and a successful review clears it', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-review-shared-'));
+  const projectA = path.join(home, 'project-a');
+  const projectB = path.join(home, 'project-b');
+  const previous = { HOME: process.env.HOME, ATRIS_MACHINE_ROSTER_PATH: process.env.ATRIS_MACHINE_ROSTER_PATH, ATRIS_RUNNER_COMMAND_TEMPLATE: process.env.ATRIS_RUNNER_COMMAND_TEMPLATE };
+  try {
+    process.env.HOME = home;
+    process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.atris', 'ROSTER.md'), '# roster\n\n## review\n- codex, model: gpt-6.1-sol\n- claude code, model: opus 5.5\n');
+    for (const project of [projectA, projectB]) {
+      fs.mkdirSync(path.join(project, 'atris'), { recursive: true });
+      spawnSync('git', ['init', '-q'], { cwd: project });
+      setEngineHealth('codex', 'ready', project);
+      setEngineHealth('claude', 'ready', project);
+    }
+    const runner = path.join(home, 'reviewer.js');
+    fs.writeFileSync(runner, "if (process.env.REVIEW_TEST_PASS) console.log('VERDICT: PASS'); else setTimeout(() => {}, 10000);\n");
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = `node ${runner}`;
+    const mission = { id: 'review-test', runner: 'claude', model: 'claude-sonnet-5-5', objective: 'check work' };
+    const lineup = () => engineVerifierLineup(mission, projectB).map((entry) => entry.engine);
+    assert.deepEqual(lineup(), ['codex', 'claude']);
+    const timedOut = await runEngineVerifier(mission, { cwd: projectA, refereeEngine: 'codex', timeoutMs: 100 });
+    assert.equal(timedOut.timed_out, true);
+    assert.equal(readEngineRegistry(projectA, { persist: false }).engines.find((entry) => entry.id === 'codex').health.status, 'cooling');
+    assert.deepEqual(lineup(), ['claude']);
+    process.env.REVIEW_TEST_PASS = '1';
+    const passed = await runEngineVerifier(mission, { cwd: projectA, refereeEngine: 'codex', timeoutMs: 5000 });
+    assert.equal(passed.passed, true);
+    assert.equal(readEngineRegistry(projectA, { persist: false }).engines.find((entry) => entry.id === 'codex').health.status, 'ready');
+    assert.deepEqual(lineup(), ['codex', 'claude']);
+  } finally {
+    delete process.env.REVIEW_TEST_PASS;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
     fs.rmSync(home, { recursive: true, force: true });
   }
 });

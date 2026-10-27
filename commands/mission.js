@@ -10082,6 +10082,16 @@ function engineHealthRoot(cwd) {
   return dir && path.basename(dir) === '.git' ? path.dirname(dir) : cwd;
 }
 
+function reviewerHealthRoot(engine) {
+  return path.join(require('../lib/state-home').atrisHome(), 'reviewer-health', engine);
+}
+
+function reviewerCooling(engine, registry) {
+  const saved = registry.readEngineRegistry(reviewerHealthRoot(engine), { persist: false })
+    .engines.find((entry) => entry.id === engine);
+  return saved?.health?.status === 'cooling' && !registry.engineReadyAt(saved);
+}
+
 // Every spelling and version of one model family counts as the same model,
 // with or without the long-context tag. Unknown counts as same.
 function reviewerMayBeSameModel(a, b) {
@@ -10109,12 +10119,12 @@ function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) 
     const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
     const workerModel = resolveMissionTickRunnerModel(mission);
     const team = registry.resolveEngineForRoleRanked('validator', root, { job: 'review', quiet: true }).team || [];
-    const backup = team.find((engine) => engine && engine.id !== primary
+    const backup = team.find((engine) => engine && engine.id !== primary && !reviewerCooling(engine.id, registry)
       && !(engine.id === workerEngine && reviewerMayBeSameModel(engine.roster_model, workerModel)));
     if (!backup) return lineup;
     lineup.push({ engine: backup.id, model: backup.roster_model || '' });
     const saved = registry.readEngineRegistry(root, { persist: false }).engines.find((engine) => engine.id === primary);
-    if (saved && !registry.engineReadyAt(saved)) lineup.shift();
+    if ((saved && !registry.engineReadyAt(saved)) || reviewerCooling(primary, registry)) lineup.shift();
   } catch {}
   return lineup;
 }
@@ -10134,7 +10144,7 @@ async function runEngineVerifier(mission, options = {}) {
         sessionId: crypto.randomUUID(),
         cwd,
         signal: options.signal,
-        timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+        timeoutMs: options.timeoutMs || ENGINE_VERIFY_TIMEOUT_MS,
         prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
           timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
           checkPassed: options.checkPassed || '',
@@ -10147,11 +10157,16 @@ async function runEngineVerifier(mission, options = {}) {
       restoreRunnerProfile();
     }
     verdict = engineVerifierResultFromRun(engineResult, engine);
+    if (engineResult?.ok && !engineResult?.timedOut && !engineResult?.aborted) {
+      try { setEngineHealth(engine, 'ready', healthRoot); } catch {}
+      try { setEngineHealth(engine, 'ready', reviewerHealthRoot(engine)); } catch {}
+    }
     if (verdict.mode !== 'engine-unavailable' || engineResult?.aborted) return verdict;
     // Member lab 10/26: codex hung on every review, and each job waited out
     // the full five minutes. Bench it so the next review starts on the backup.
     if (engineResult?.timedOut) {
       try { setEngineHealth(engine, 'cooling', healthRoot); } catch {}
+      try { setEngineHealth(engine, 'cooling', reviewerHealthRoot(engine)); } catch {}
     }
   }
   return verdict;
@@ -13007,6 +13022,7 @@ module.exports = {
   receiptLearnedLine,
   tickTouchedCheckDefinition,
   engineVerifierLineup,
+  runEngineVerifier,
   claudeRunnerMcpArgs,
   crystallizeMemberSkillLesson,
   listSiblingWorkspaceMissionHints,
