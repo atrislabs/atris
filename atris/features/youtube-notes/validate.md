@@ -35,6 +35,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 - **Rerun live on 2026-10-16** from the youtube-lead branch with the head start and quota memory in place: exit 0 in 26.3 seconds at machine load 7, saved copy present, quotes 4 kept, 1 repaired, 0 dropped, `notes by Haiku`. The run printed that Gemini's quota was used up on a recent run and skipped it, so no second Gemini request went out. The 20-second bar still fails on this 85-minute video until Gemini is back.
 - **Rerun live on 2026-10-17** with Gemini back: passes. Two runs, exit 0 in 10.83 and 11.66 seconds at machine load about 3, saved copy present both times, `notes by Gemini`, quotes 4 kept, 1 repaired, 0 dropped, then 4 kept, 0 repaired, 0 dropped.
 - **Rerun live on 2026-10-21** from the youtube-lead branch with fresh captions: passes. Exit 0 in 12.81 seconds at machine load about 2.4, saved copy present, `notes by Gemini`, quotes 4 kept, 1 repaired, 0 dropped. The run also warned that yt-dlp is 62 days old, and the Sunday update job is not loaded on this Mac and has no log folder, so nothing has upgraded it since August.
+- **Rerun live on 2026-10-27** from the youtube-lead branch after the Oct 25-27 speed changes (iOS caption route, skipped player script, earlier Gemini start), each run in a fresh empty `TMPDIR`: passes. Two runs, exit 0 in 15.85 and 9.67 seconds at machine load 6.4 to 7, saved copy present both times, `notes by Gemini`, quotes 4 kept, 0 repaired, 0 dropped, then 5 kept, 0 repaired, 0 dropped.
 
 ### Step 2: Video with no captions
 
