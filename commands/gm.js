@@ -30,7 +30,8 @@ function showHelp() {
   console.log('       atris gm replay [--since 12h|2d|last-seen] [--speed N] [--plain] [--league]');
   console.log('       atris gm card <member> [--json]  one member\'s profile page');
   console.log('       atris gm target [--landed N] [--max-abandoned N] [--max-stuck N] [--clear]');
-  console.log('       atris gm phone [--port 7777] [--send] [--new-link]  decision cards on your phone');
+  console.log('       atris gm phone [--port 7777] [--send] [--new-link] [--model <name>]  decision cards on your phone');
+  console.log('       atris gm phone model ["<tool> <model>"] [--json]  the model the orb thinks with');
   console.log('       atris gm walk [--real-copy <workspace>] [--votes 3] [--no-browser]  check every stage of the phone orb');
   console.log('       atris gm --json           machine-readable state');
   console.log('       atris gm --watch [--interval 10]');
@@ -122,6 +123,20 @@ function showHelp() {
   console.log('  tap. Every tap is logged to ~/.atris/state/gm-phone-actions.jsonl.');
   console.log('  --send texts the link to the number saved with atris autoland on --to.');
   console.log('');
+  console.log('  The orb thinks with claude opus unless you pick another model. Tap the');
+  console.log('  model at the bottom of the page, or run atris gm phone model to list');
+  console.log('  every model on every tool signed in here, grouped by tool (claude: opus,');
+  console.log('  sonnet, haiku and the current versions; codex: the gpt models codex');
+  console.log('  offers; cursor, devin, antigravity when signed in), and');
+  console.log('  atris gm phone model "<tool> <model>" to pick one, for example');
+  console.log('  "codex gpt-5.6-terra" (or just terra), "claude sonnet", "opus 5.5".');
+  console.log('  A pick must be on that list. Only subscription logins count, checked');
+  console.log('  with each tool\'s own status command; never an api key, and never grok.');
+  console.log('  The pick is saved per workspace in .atris/state/orb-model.json and kept');
+  console.log('  across restarts. It is asked first; if it fails or does not answer, the');
+  console.log('  next model signed in here answers. --json prints the same fields as the');
+  console.log('  page\'s /model address, which a post with the link key can also set.');
+  console.log('');
   console.log('  atris gm walk starts the phone page on a made-up workspace with a temp');
   console.log('  home, walks every stage of the orb (the idea, an answer, the weekly');
   console.log('  number, the team, a swap, the job deck, a yes card, Esc, the small and');
@@ -148,6 +163,7 @@ function showHelp() {
   console.log('  --port <n>        gm phone port. Defaults to 7777.');
   console.log('  --send            gm phone: text the link to your saved number.');
   console.log('  --new-link        gm phone: make a new link; the old one stops working.');
+  console.log('  --model <name>    gm phone: save the orb\'s model first ("codex gpt-5.6-terra").');
   console.log('  --no-seed         Do not create a starter player mission.');
   console.log('  --json            Print machine-readable mode state.');
   console.log('  --help, -h        Show this help.');
@@ -1514,7 +1530,41 @@ function gmTargetCommand(args = []) {
 // gm phone: serve the decision cards to a phone on the same wifi. The link
 // carries a random token; every request without it gets 403. Ctrl-C stops it.
 // Commands started from the phone keep running on their own after that.
+// gm phone model: which model the orb thinks with in this workspace. With no
+// name it lists every model signed in here, by tool, and marks the pick; with
+// one it saves that pick, only when it is on the list. --json prints the same
+// fields the page's /model address reads.
+async function gmPhoneModel(args = []) {
+  const orbModel = require('../lib/orb-model');
+  const workspaceRoot = boardWorkspaceRoot(args);
+  const at = args.indexOf('model');
+  const name = positional(args.slice(at + 1)).join(' ').trim() || null;
+  const json = hasExactFlag(args, '--json');
+  if (name) {
+    const out = await orbModel.setPick(workspaceRoot, name, { fresh: true });
+    if (json) console.log(JSON.stringify(out.ok ? { ...out, ...(await orbModel.publicStatus(workspaceRoot)) } : out, null, 2));
+    else console.log(out.ok ? out.line : out.message);
+    if (!out.ok) process.exitCode = 1;
+    return undefined;
+  }
+  const s = await orbModel.publicStatus(workspaceRoot, { fresh: true });
+  if (json) {
+    console.log(JSON.stringify(s, null, 2));
+    return undefined;
+  }
+  console.log(`the models signed in on this computer, for the orb in ${path.basename(workspaceRoot)}:`);
+  if (!s.groups.length) console.log('  none yet. sign in to claude or codex with your subscription first.');
+  for (const g of s.groups) {
+    console.log(`  ${g.label}`);
+    for (const m of g.models) console.log(`    ${m.current ? '>' : ' '} ${m.label}${m.current ? ', now' : ''}`);
+  }
+  if (s.line) console.log(s.line);
+  console.log('switch: atris gm phone model "<tool> <model>" (for example: codex gpt-5.6-terra, claude sonnet, terra), or tap the model at the bottom of the orb page.');
+  return undefined;
+}
+
 async function gmPhone(args = []) {
+  if (positional(args)[0] === 'model') return gmPhoneModel(args);
   const http = require('http');
   const phone = require('../lib/gm-phone');
   const { phonePage } = require('../lib/gm-phone-page');
@@ -1527,6 +1577,16 @@ async function gmPhone(args = []) {
     console.error('--port takes a whole number from 1 to 65535');
     process.exitCode = 2;
     return undefined;
+  }
+  // --model <name>: save the orb's model for this workspace, then open the page
+  const modelRaw = flag(args, '--model');
+  if (modelRaw != null) {
+    const set = await require('../lib/orb-model').setPick(workspaceRoot, modelRaw, { fresh: true });
+    if (!set.ok) {
+      console.error(set.message);
+      process.exitCode = 2;
+      return undefined;
+    }
   }
   const lan = phone.lanAddress();
   const addresses = [...new Set([lan, '127.0.0.1'].filter(Boolean))];
@@ -1622,6 +1682,11 @@ async function gmPhone(args = []) {
   if (rotated) console.log('this is a new link. the old link is dead now, even in a phone page that is still open.');
   else console.log(reused ? 'this is the same link as last time.' : 'this is a new link.');
   console.log('anyone with this link can act for you while this runs. ctrl-c stops it. a new link: atris gm phone --new-link');
+  // the login checks run once now, in the background, so the model card opens at once later
+  require('../lib/orb-model').offer(workspaceRoot).then((thinks) => {
+    const on = thinks.groups.flatMap(g => g.models.filter(m => m.current).map(m => `${g.label} ${m.label}`))[0];
+    console.log(thinks.line || `the orb thinks with ${on}. switch it on the page, or: atris gm phone model <name>`);
+  }, () => { /* the page still opens; the model card says the same */ });
 
   if (hasExactFlag(args, '--send')) {
     const autoland = require('../lib/autoland');

@@ -3498,7 +3498,13 @@ const SWAP_CHOICES = {
     ] },
   ],
 };
-const TEAM_DEPS = { loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }), engineChoices: () => SWAP_CHOICES };
+// the models the orb could think with, as lib/orb-model.js offers them; no login check runs in a test
+const ORB_GROUPS = [
+  { engine: 'claude', label: 'claude', models: [{ engine: 'claude', model: 'opus', label: 'opus', current: true }, { engine: 'claude', model: 'sonnet', label: 'sonnet', current: false }] },
+  { engine: 'codex', label: 'codex', models: [{ engine: 'codex', model: '', label: 'its default', current: false }, { engine: 'codex', model: 'gpt-5.6-terra', label: 'gpt-5.6-terra', current: false }] },
+];
+const ORB_MODEL = { offer: async () => ({ groups: ORB_GROUPS, line: null }), setPick: async () => ({ ok: true, changed: true, line: 'the orb thinks with codex gpt-5.6-terra now. if it does not answer, the next model signed in here does.' }), pickLabel: () => 'opus' };
+const TEAM_DEPS = { loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }), engineChoices: () => SWAP_CHOICES, orbModel: ORB_MODEL };
 const ASKS_BACK = async () => ({ ok: true, kind: 'question', reply: 'no problem. does the overnight run feel like it is helping you, or is it still hard to tell?', suggestions: ['it is still hard to tell', 'it is helping', 'show me last night\'s changes'] });
 const EXPLAINS = async () => ({ ok: true, kind: 'question', reply: 'it is the one number you check each week to see if this is going well.' });
 
@@ -3594,6 +3600,10 @@ async function everyCard() {
   const back = await acted(crew.d, { card_id: m.card.id, option_id: 'back' });
   const sw = keep('swap', await acted(crew.d, { card_id: back.card.id, option_id: 'swap:builder' }));
   keep('swap with more models', await acted(crew.d, { card_id: sw.card.id, option_id: 'more' }));
+  // the model the orb thinks with, opened from the team
+  const t2 = await acted(crew.d, { card_id: crew.d.state.served.id, open: 'team' });
+  const orb = keep('thinker', await acted(crew.d, { card_id: t2.card.id, option_id: 'thinker' }));
+  assert.equal(orb.card.kind, 'thinker');
   const d1 = keep('deck with a yes', await acted(crew.d, { card_id: crew.d.state.served.id, open: 'deck' }));
   assert.equal(d1.card.kind, 'deck');
   const runRoot = workspace();
