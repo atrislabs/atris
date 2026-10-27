@@ -1,6 +1,6 @@
 # Atris roadmap: mission run to Valhalla
 
-Owner: Keshav. Read this before picking overnight work. This is the goal the loop pursues.
+Owner: Keshav. Read this before picking work. This is the goal the loop pursues. The ranked plan is in "The plan, finalized 2026-10-26".
 
 ## What we seek
 
@@ -75,48 +75,152 @@ escalate to Keshav.
 - onboarding that is alive, not a static MAP/TODO wall: show the 3 next moves, human approves or kills, it suggests. seed of proactiveness.
 - multiplayer, when the base is solid.
 
-## The 2026-07-10 slate (25 items, one day, receipts or it did not happen)
+## The plan, finalized 2026-10-26
 
-Sol (GPT-5.6) arrives today. Fable judges, Sol grinds, engines fan out.
-Each item names its receipt. Owner in parens.
+Everything below is ranked. Each item names an owner, a done check that someone
+other than the worker runs, and a kill rule. The July slate and status live in
+git history (`git show b061f1fbc:ROADMAP.md`). A codex review attacked the first
+draft; this version takes its fixes.
 
-Sol onboarding
-1. Sol's first flight: the till brief (atris/briefs/2026-07-10-the-till.md). Protected lane, no self-landing, orchestrator reviews the diff. (sol + orb)
-2. Calibrate Sol on the agents-v1 25-task bench before trusting it; scorecard on the leaderboard next to claude 25/25 and cursor 24/25. (orb)
-3. Register Sol as a first-class engine: dispatch contract, fallback order updated, engines skill entry. (executor)
-4. Mechanize judge-not-worker across engines: every dispatch prompt names its post-merge judge, judge is never the builder. Written into routing doctrine. (orb)
+The one number this season: the first $1,000 from strangers. Baseline on 10-22:
+29 repo visitors in 14 days, 71 stars, and every dollar so far came from Keshav
+selling directly to businesses paying thousands a month or per project (DoorDash,
+Pallet), not from small online purchases. The buyer is a business with no
+engineers that has never seen what agents can do. So the offer and the payment
+path come before anything internal.
 
-Money
-5. The till live end to end: payment link on /book, read-only money-arrived adapter, `atris till check` exits 0/1, hermetic tests, CI run id cited. (sol)
-6. First real dollar: Keshav pays $1 through a test booking page; the system notices by itself and renders the first civilian receipt. (keshav + till)
-7. Rainmaker pitch kit: the custody promise in 3 niche-specific linkedin openers, each naming a metric with a floor; passes atris slop. (linguist)
-8. Meet golden path proven cold: fresh temp HOME, stranger to live /book link in under 5 minutes, screen recording is the receipt. (validator)
-9. Ten linkedin connects sent with the rainmaker opener. Human action, kit prepared. (keshav)
+How we know the season is won: a stranger with no prior tie to Keshav has paid at
+least $1,000 in total, the bank deposit matches the payment, and the buyer says the
+promised result arrived. That is Keshav's number, since a buyer's choice is
+outside the team's control. Everything ranked below is what the team controls.
 
-Suite organs
-10. Postgres runner v1: psql subprocess det-script, read-only, plain-english question returns real rows rendered as a blocks table, live round trip observed. (codex)
-11. Runnable query cell v0 in the blocks doc: one cell executes against postgres and pins a timestamped chart block. Cross-project task filed to atrisos-web. (cross-project-architect)
-12. The paper-cut tap v1: keshav fires friction reports at random moments in any words; each becomes a live repro + bounded fix task + regression test, 100% capture, before/after shown back. (executor + linguist, INSPIRATION entry 4)
-13. atris.ai/rainmaker page live: the promise with a named metric, live receipts, one button into the meet interview. Filed to atrisos-web. (cross-project-architect, INSPIRATION entry 5)
+Two lanes:
+- **build lane**: the path is known. The roster takes it (opus 5.5 builds, codex
+  reviews), proof attached, merged whole.
+- **fable lane**: the path is unknown, or a wrong move costs money or trust.
+  Fable 5.5 leads (arrives 2026-10-27), splits the job, hands known-path pieces to
+  the build lane, and judges the result. It never grades its own pieces.
 
-Loop and infrastructure
-14. Land or reject grok's member-switches build after independent verification; verdict recorded on the engine leaderboard. (orb)
-15. Wish-discharge launch card ships: a closing wish auto-renders its on-brand receipt image. (cursor)
-16. CI-green law mechanized: a receipt claiming green without a CI run id is rejected at the autoland gate. (executor)
-17. Mission wall-clock fixed: verifier no longer killed at 15 minutes mid-suite; stranger-pays mission reruns 4 clean ticks. (executor)
-18. Alpha judge pass 2: sweep INSPIRATION.md, dispatch the top ripened combo, escalate any new true gap. (orb)
-19. Roadmap-fed autonomy proven: inbox empty, loop pulls from this slate on its own, receipt shows the pull. (mission runtime)
+### Now (this week: something a stranger can buy)
 
-Ship and comms
-20. atris 3.36.0 on npm: meet, avail fix, hermetic CI fixes, member switches. Tag, CI publish, npm view verified. (keshav flips, agents stage)
-21. Launch post + reel for meet: onboard anyone in one sitting. (linguist + reel)
-22. Day loop live: morning card mirrors this slate, evening operator email reports receipts against it. (housekeeper)
-23. MAP.md updated and brain recompiled after every landing; drift check passes at day end. (validator)
+1. **The offer.** One page: which business, the painful job, the outcome we
+   promise, the price, and how they hear about it. Start from what already paid:
+   businesses paying thousands for work done, not $30 wishes. Owner: customer
+   lead drafts from the partner and invoice records; Keshav sets the price. Done:
+   Keshav approves the page, three named target businesses from the partner list
+   are attached with why each fits, and the offer's price can be paid through the
+   payment path in item 2. Kill: if no job is common to at least two
+   past buyers, pick one buyer type and say so.
+2. **Paying starts the right work.** The 10-22 trial found the wish page turns any
+   typed budget into a charge, shows "your wish is in" even when no checkout
+   happened, and after payment runs a fixed starter that never sees the buyer's
+   words. The fixes are known: show the minimum, stop the false receipt, carry the
+   buyer's words into the job, and have something pick up paid wishes. Owner:
+   build lane, Fable reviews. Done: in payment test mode, the validator (not the
+   builder) shows a paid wish starts a job holding the buyer's words and that job
+   runs to a delivered result; a wish under the minimum, a buyer who leaves
+   checkout, and a failed payment each show no receipt and start no job; and a
+   repeated payment starts one job. Kill: until all four pass, the wish page takes no money.
+3. **A stranger gets a useful answer alone.** A non-engineer, not Keshav and not
+   the builder, goes from the offer page to an installed, signed-in orb answering
+   one task card written before the run (for example: "read this week's inbox and
+   name the three decisions only I can make"). Owner: validator runs it, build lane
+   fixes every stuck step. Done: a recording under 15 minutes with no help, plus a
+   weekly clean-machine run of the same steps. Kill: if they get stuck twice at the
+   same step, fix that step before any page copy.
+4. **Put the offer in front of the three businesses.** Owner: customer lead
+   writes one note per business in its own words, saved as drafts; Keshav sends
+   them, since sending waits on him. Done: three drafts ready in his inbox, each
+   naming the job and the price. Kill: if a business has no reachable person,
+   swap in the next name from the list.
+5. **The desktop app keeps itself current.** Keshav's app sat at 0.1.47 while 0.1.66
+   was live, so the Orb tab never appeared. A demo machine on an old app is a lost
+   demo. Owner: build lane; fable lane if the cause is not found in a day. Done: an
+   old signed build, launched for real, updates to the newest version after one
+   restart.
+6. **Pick the orb's model.** The orb page lists every model signed in on this
+   computer (claude, gpt through codex including terra, the rest of the roster),
+   saved per project, opus by default, falls back if the pick fails. Owner: build
+   lane, in flight. Done: on npm and visible in the desktop Orb tab, with opus and
+   terra timed on 10 real orb questions. Terra becomes the suggested pick only if
+   it is faster and a blind judge on a third model prefers or ties its answers on 8
+   of 10.
 
-Big swings
-24. Last night's interview task accepted and the wish-label wart fixed (the "yo can you" phrasing no longer shortened). (validator)
-25. Investor evidence pack updated with the week's story: the red-CI discovery, the green law, meet, the till. Honest numbers only. (orb)
-26. Blocks spine day 1 (see "The blocks plan" below): receipt block, verifier block, intake block, serial, plus one thin fixture pack (rainmaker-thin) compiling through all three with a live receipt. (sol + codex, brief: atris/briefs/2026-07-10-blocks.md)
+### Keep the floor (small, build lane, this week)
+
+- **Green on the first try.** The orb animation test failed on CI on 10-25 and
+  10-26 and passed on rerun. Done: 20 CI runs in a row pass, and the check stays
+  as strict. Kill: if the stutter is real on slow machines, fix the animation.
+- **The "go bigger" line stops widening exact jobs.** With it, claude passed an
+  exact JSON task 5 of 33 times; without it, 10 of 12. Keshav picks the wording.
+  Done: that task passes at least 10 of 12, and the four-lines judge still passes.
+- **One clean queue.** 20 tasks in review, many of them the same three themes
+  filed several times, and 23 open CLI changes, some from September. Done: review
+  queue at 5 or fewer, each theme filed once, every change older than 7 days
+  merged or closed with a reason.
+
+### Next (the selling machine)
+
+7. **See every loop.** One card on the orb page: every mission and member running,
+   what each landed last, what each is stuck on. Owner: build lane. Done: on a
+   real night, the card matches the mission log and task list line for line.
+8. **A try page for strangers.** Try the orb from a link with no install. The
+   mission for it stopped on 10-25. Owner: fable lane (public use on
+   subscription-only engines, cost and abuse limits). Done: a stranger's link gets
+   a real answer, and a test proves the daily cost cap holds. Kill: if
+   subscription-only rules make it impossible, ship a recorded demo and say so.
+9. **Finish the proof rule.** It cut hidden test results by more than half, but
+   its mock and self-grading parts were never tested. Owner: build lane. Done: 12
+   tasks that tempt mocks or self-grading, 48 blind runs per side as before; keep
+   each part only if it cuts the bad behavior by at least a third and the pass
+   rate is within 2 tasks of 48 of the old rule.
+
+### Later
+
+- Capital: map investors and intros, every no-equity grant and credit, a fund deck.
+- Big science: the cancer lab rung (an engine change to beat the ~21% ceiling is
+  running now); Fable reviews the result and picks the next rung.
+- Joy: music, DJ tools, the artist profile, in their own folders.
+- The cloud loop (gate 6), multiplayer, and voice on the orb, once strangers pay.
+
+### The fable queue (for 2026-10-27)
+
+In order. Each ends with pieces handed to the build lane and a result Fable did
+not grade alone.
+
+- **F1. Seat Fable 5.5.** The roster already has a fable engine and a "fable" name
+  (`lib/engine-registry.js`, spellings in `lib/model-names.js`). On arrival,
+  confirm the real model id, point "fable" at it in `lib/model-names.js`, and run
+  the member lab head to head against opus 5.5 on the hardest tasks. Done: lab
+  numbers attached; Fable keeps the hard-problem seat only if it wins or ties.
+- **F2. Review the payment path** (item 2) and design the piece that picks up paid
+  wishes so no paid wish waits on a person.
+- **F3. A night with no revisions.** The standing goal: overnight work lands itself
+  and holds up. Collapse the duplicate "members work for hours" tasks into this.
+  Done: one night with at least 10 landings, each with proof, checked by a second
+  model and by Keshav, and zero revisions.
+- **F4. The try page** (item 8).
+- **F5. Desktop updates** (item 5), only if the build lane did not find the cause.
+- **F6. The cancer lab next rung**, once the current run reports.
+
+### Waiting on Keshav
+
+- The price on the offer (item 1).
+- The wording of the "go bigger" line.
+- The research campaign's spending limit: built and waiting for his approval
+  (task CLI-1455).
+- Allowing remote automation in Safari's developer settings, so desktop Safari can
+  be tested.
+
+### Stop doing
+
+- Plan files that compete with this one: `atris/features/endstate/endgame.md`
+  (a six-day horizon from April) now opens with a pointer here. The workspace
+  `atris/now.md` one folder up (last updated 06-12) needs the same line.
+- The old task database on Keshav's Mac (`.atris/state/tasks.db`, last written
+  06-28) disagrees with the live task list. The live list wins.
+- 102 stopped missions sit in the mission log. Archive them so the loop card
+  stays honest.
 
 ## The unlock (why the blocks are the whole bet)
 
@@ -179,64 +283,9 @@ rainmaker: money verification precedes outreach promises. No parallel fleet
 on shared runtime files; engines serialize on the spine, parallelize only on
 packs once the compiler exists.
 
-## Open loop items
-
-Small, bounded tasks the loop pulls one at a time when idle (top first), and
-`atris moves` surfaces. Keep each executable in one plan -> do -> review cycle.
-Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
-cycle never chases something too vague to finish.
-
-
-- Restore green means green for real: make the two CI-only failures hermetic
-  (bench-agents merge-conflict fixture, wish-bench floor) and right-size the CI
-  job timeout. A receipt may only claim green by citing the CI run, never a
-  local pass. (codex flight in the air 2026-07-09)
-- Per-member wake and sleep switches (member + gm + loops combo, open wish)
-- Wish-discharge launch card: when a wish closes, auto-render the on-brand
-  receipt image (wish + card + recap combo)
-- atris meet follow-through: golden-path test from a stranger's empty laptop to
-  a live /book link (flight in the air 2026-07-09)
-
-(Shipped items are pruned on completion; git history is the archive.)
-
-## Big jobs (epics, not loop-seedable)
-
-Too coarse for one autonomous cycle. Break into bounded open-loop items first.
-
-- Set up anything fast / integrations on demand: messy input becomes a working setup; build the integration if one does not exist. Needs atrisos-backend.
-- Real `--cloud`: run the loop on remote computers via atrisos-backend (`--overnight` today is a local OS-cron heartbeat).
-- Weekly report + data-answer output blocks (card, reel, deck, site already ship).
-
-## The gate (do this before anything on top)
-
-Foundation first. Dynamic onboarding, the clarity interview, and reports all sit on top of these two.
-
-1. **Green means green.** Kill the flaky tests so an unattended run is trustable. A full-suite pass must be deterministic, not "passes alone, flakes under the live fleet."
-2. **One dead-simple start a loop.** Collapse loop / autopilot / run / mission / improve into one obvious entry, local and cloud. Pick the spine; the rest defer to it.
 
 ## Leash (current)
 
-Stage-only. The overnight loop may fix, build, test, and prepare a release, and leave a tag ready. It does **not** push a publish tag to npm unattended. Keshav publishes in the morning after reviewing. Flip to full auto-publish only on explicit say-so.
-
-Also: no junk commits. Every commit message must say what changed in plain English. The "fix: overnight loop tick N" pattern is banned.
-
-## Status (updated by the loop, last: 2026-07-09)
-
-- master is at v3.35.0. The old `feat/pulse-self-improve-loop` divergence is resolved: loop/moves/clarity all route on master, and `atris run`/`autopilot` front doors sit on the mission runtime.
-- Foundation gate 1 (green means green): REGRESSED the day it was declared.
-  GitHub Actions on master went red 2026-07-05 and stayed red for 60+ runs while
-  local receipts kept claiming green (two CI-only test failures plus a 15-minute
-  job timeout). Discovered 2026-07-09 by the stranger-pays mission; fix flight
-  in the air. New law: green claims must cite the CI run id, not a local pass.
-- 2026-07-09: stranger-pays mission live (first tick resurrected the dead
-  `atris avail` /book front door). Alpha judge born: combinations self-build,
-  gaps escalate. `atris meet` dispatched. PR 317 killed: mission self-landing lives.
-- Foundation gate 1 (green means green): the 2026-07-05 local receipt was real. `npm test` in a fresh worktree exits 0 with 1988/1988; the old "green" was `| tail` masking exit codes: verify gates now run unpiped. But see the regression note above: local green and CI green are different claims.
-- Foundation gate 2 (one front door): `atris loop` is the entry; run/autopilot help converge on it.
-- Autonomy live: autoland accepts certified work, `atris land` enforces merged-or-salvaged, `atris mission run --fleet` dispatches parallel engines, and every dispatched engine prompt now carries the fable-method kernel (unpiped verify, receipts, caller sweeps, smallest diff).
-- Open loop items above are the seedable queue; when it runs dry, the loop stalls: keep it stocked.
-
-### archived detail
-
-Older per-task status narratives (flake forensics, loop front-door build log, clarity slices) were pruned 2026-07-05; they live in git history and atris/logs.
-
+Reviewed and green work merges and releases without asking (standing yes from
+Keshav, 2026-10-22). Spending, sending to people, and anything public outside npm
+still wait for Keshav. Every commit says what changed in plain English.

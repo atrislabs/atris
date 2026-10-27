@@ -1,3 +1,5 @@
+> Superseded: the current ranked plan is in ROADMAP.md, "The plan, finalized 2026-10-26". This file is kept as history.
+
 # Project Endstate: Endgame
 
 HORIZON
