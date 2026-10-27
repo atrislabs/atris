@@ -159,3 +159,31 @@ test('review of PR 1650: the first job word names the job, and renamed researche
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Member lab 10/26: two code jobs went to members that never change code. One
+// told a story about a reviewer timing out ("on its first review"), one named
+// a script but no job word. A review is asked for, not mentioned.
+test('a review word inside the story names no job; a review asked for still does', () => {
+  const root = workspace();
+  try {
+    for (const name of ['validator', 'executor', 'navigator', 'customer-lead', 'task-planner', 'researcher', 'mission-lead', 'auto-improver']) {
+      writeMember(root, name, name === 'mission-lead' ? 'Coordinates bounded mission runs from state to proof.\n' : '');
+    }
+    const cases = [
+      ['executor', 'When a second reviewer times out, runEngineVerifier in commands/mission.js benches it in that project only. Every other project still waited the full five minutes on its first review. Done looks like: a later successful review clears it.'],
+      ['executor', 'node scripts/member-lab.js --help starts a real lab run instead of printing usage. Stop when that is checked.'],
+      ['navigator', 'Find the line that causes the crash in src/range.js. Do not edit any file; write the file and line to answers.json.'],
+      ['customer-lead', 'Draft a reply email to the customer and add the pricing link.'],
+      ['task-planner', 'Write a plan for adding offline mode to the app.'],
+      ['researcher', 'Research how competitors update their pricing pages.'],
+      ['validator', 'Review PR 1674 and say if it is safe to merge.'],
+      ['validator', 'The PR is up. Please review it before merge.'],
+      ['validator', 'PR 1680 is open. Code review it and say if it is safe.'],
+      ['validator', 'review the bug fix in parser.js'],
+      ['auto-improver', 'fix the review page so the button works'],
+    ];
+    for (const [member, text] of cases) assert.equal(pickMemberForIdea(text, root).member, member, text);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
