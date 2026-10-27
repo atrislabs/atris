@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.4.0
+version: 1.5.1
 tags:
   - method
   - values
@@ -41,6 +41,15 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 - **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
 - **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
 - **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
+- **Check the answer before finishing.** Include a short, task-specific instruction in the rewritten prompt to check for the failures relevant to this task, silently before delivering it:
+  - Generic advice or hedging: give the actual recommendation, procedure, or words the person can use, with the necessary specifics.
+  - Missing math or contradictions: calculate with the given numbers, check units and assumptions, and make the conclusion match the calculation.
+  - Invented facts or unjustified certainty: distinguish known facts from assumptions, and do not invent dates, people, figures, sources, or constraints.
+  - Padding or bad extras: remove unnecessary options, diagnostics, caveats, and claims that do not help the asked-for result. Check any retained advice for correctness and practicality.
+  - Missed ask: make sure each requested detail is present and any material ambiguity is handled accurately.
+  For a judgment task, tell the worker to answer the actual question first with a practical, proportionate recommendation. Use the supplied facts as the baseline; do not build a detailed schedule, calculation, or confident decision on invented dates, figures, or conditions. If a missing fact could change the answer, say how, without making the user do unnecessary work. Check that every step is needed and matches the problem's scale. Where quantities drive a decision, show the calculation and the assumption that could change it. Where a source or label controls a practical instruction, follow it rather than guessing.
+
+  Choose only checks that fit the task. They are not extra deliverables and must not appear in the finished answer. Do not add them to a pass-through.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
 ## Output shape
