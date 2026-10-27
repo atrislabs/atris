@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.4.0
+version: 1.5.0
 tags:
   - method
   - values
