@@ -1,0 +1,16 @@
+{
+  "id": "tire-psi-conversion",
+  "field": "auto maintenance",
+  "task": "The tire placard says 35 psi, but the air pump at the gas station only shows bar. Convert 35 psi to bar and kPa so I can set it right.",
+  "made": {
+    "base": "5d739c581289dcfa",
+    "skill": "234624351c3b1cb6"
+  },
+  "rewrite": "deeper task:\nThe tire placard says 35 psi, but the air pump at the gas station only shows bar. Convert 35 psi to bar and kPa so I can set it right.",
+  "deeper": "The tire placard says 35 psi, but the air pump at the gas station only shows bar. Convert 35 psi to bar and kPa so I can set it right.",
+  "answers": {
+    "plain": "35 psi is about **2.41 bar** or **241 kPa**.\n\nThe conversion factors are 1 psi = 0.0689476 bar and 1 psi = 6.89476 kPa.\n\nIf the pump only shows bar, set it to about 2.4 bar. Most pumps read in 0.1 or 0.05 steps, so 2.4 is close enough. It's only about 0.2 psi under the placard value.",
+    "nudge": "**35 psi = 2.413 bar = 241.3 kPa**\n\nConversion factors: 1 psi = 6.894757 kPa = 0.06894757 bar.\n- 35 × 6.894757 = 241.316 kPa\n- 241.316 kPa ÷ 100 = 2.413 bar\n\n**What to set on the pump:**\n- If it reads in bar with two decimals, set **2.41 bar**.\n- If it only has 0.1 steps, **2.4 bar** is about 34.8 psi, which is fine. 2.5 bar is about 36.3 psi, which is slightly over.\n\n**Practical points:**\n- **Cold pressure:** the placard value is for cold tires. That means parked for 3 hours or more, or driven less than about 1 mile. After driving, pressure reads 2–6 psi (0.15–0.4 bar) higher. If you check at the station after a drive, don't deflate to hit 35. Inflate to about 35 psi when the tires are cold, or add a little extra and recheck at home.\n- **Gauge accuracy:** gas station gauges are often off by a few psi. Check the result with your own gauge if you can.\n- **Which number to use:** the placard is on the driver's door jamb. Front and rear pressures can differ, so check both. Use the placard, not the max pressure on the tire sidewall.\n- **Units:** some pumps label kPa as \"KPA\" and some show bar as \"BAR\". A reading near 240 is kPa and a reading near 2.4 is bar. Don't confuse either with kgf/cm², where 35 psi is 2.46.",
+    "skill": "35 psi is about:\n\n- **2.41 bar** (35 × 0.0689476)\n- **241 kPa** (35 × 6.89476)\n\nSet the pump to about 2.4 bar. If it lets you go finer, aim for 2.41."
+  }
+}

@@ -1,7 +1,7 @@
 ---
 name: ambitious
 description: Turn a task into the deeper version a top professional would do, before any work starts. Answers four questions tied to the four values (ambition, agency, acceleration, accuracy), then rewrites the task. Deeper, not bigger. Triggers on be ambitious, ambitious, go deeper, deepen this, four As, 4A, what would a pro do.
-version: 1.4.0
+version: 1.5.0
 tags:
   - method
   - values
@@ -20,6 +20,12 @@ Most asks do not. Pass the task through unchanged, with no questions answered, w
 
 Deepen only when the result depends on judgment: a plan, a decision, a design, code that will run on real data, advice where the obvious answer has a known trap, or prose someone will send. If unsure, pass it through.
 
+## The named expert
+
+For a task needing judgment, name the precise working role best suited to this job, such as a grant writer for a school library or a guitar teacher explaining capo shapes. Name the concrete standard that person must meet for this particular recipient: what the result must let them do, decide, or understand. Use a role, not a famous person or a claim of credentials. Put both the role and standard in the rewritten prompt, and instruct the worker to answer as that expert.
+
+A professional earns trust by solving the actual problem with the facts at hand. Do not invent evidence, numbers, priorities, or constraints. Do not dictate a solution before checking it. Keep practical instructions proportional to the situation, address the main request directly, and include a caveat only when it changes the decision. For a message asking someone to act, make the requested action and response clear without presuming agreement.
+
 ## The four questions
 
 Answer each one for the task's own field, in one to three concrete lines. Name real things: a named method, a named tool, a named source, a named check. Generic answers ("be thorough", "use best practices") fail the question.
@@ -34,7 +40,7 @@ Answer each one for the task's own field, in one to three concrete lines. Name r
 
 ## The rewrite
 
-Then rewrite the task as one prompt that folds in the answers. Rules:
+Then rewrite the task as one prompt that folds in the answers and names the expert and their task-specific standard. Let the worker choose the solution; do not turn guesses into required facts or prescribe unnecessary steps. Rules:
 
 - **Deeper, not bigger.** Same deliverable, same audience, same size of ask. If the rewrite adds a second deliverable, cut it. The test: would the person recognize this as their task, done properly?
 - **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
