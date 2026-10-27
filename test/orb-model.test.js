@@ -16,6 +16,10 @@ const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'orb-model-home-'));
 process.env.HOME = HOME;
 process.env.ATRIS_HOME = path.join(HOME, '.atris');
 delete process.env.ATRIS_TOKEN;
+// codex's own model list, as codex keeps it on disk
+const CODEX_CACHE = path.join(HOME, 'models_cache.json');
+fs.writeFileSync(CODEX_CACHE, JSON.stringify({ models: ['gpt-6.1-sol', 'gpt-5.6-sol', 'gpt-5.6-terra', 'codex-auto-review'].map(slug => ({ slug })) }));
+process.env.ATRIS_CODEX_MODELS_CACHE_PATH = CODEX_CACHE;
 
 const orbModel = require('../lib/orb-model');
 const gmBet = require('../lib/gm-bet');
@@ -127,9 +131,21 @@ test('a pick is saved per workspace, survives a fresh read, and must be on the l
   // a pair from the page must match a listed pair exactly
   assert.equal((await orbModel.setPick(root, { engine: 'codex', model: 'gpt-5.6-terra' }, o)).ok, true);
   assert.equal((await orbModel.setPick(root, { engine: 'grok', model: 'grok 4.7' }, o)).ok, false);
-  // a file edited by hand to name grok counts as no pick
-  fs.writeFileSync(orbModel.orbModelFile(root), JSON.stringify({ engine: 'grok', model: 'grok 4.7' }));
-  assert.equal(orbModel.leadFor(root), null);
+  // a file edited by hand to name grok, a flag, or a model the tool does not offer counts as no pick
+  for (const raw of [{ engine: 'grok', model: 'grok 4.7' }, { engine: 'codex', model: '--dangerously-bypass-approvals-and-sandbox' }, { engine: 'codex', model: 'gpt-9-made-up' }, { engine: 'claude', model: '--tools' }, { engine: 'nope', model: '' }]) {
+    fs.writeFileSync(orbModel.orbModelFile(root), JSON.stringify(raw));
+    assert.equal(orbModel.leadFor(root), null, JSON.stringify(raw));
+  }
+  // a tool that signed out since the list was read is asked again when picked
+  let gone = false;
+  const signedOut = opts({ run: async bin => (bin === 'codex' && gone ? { status: 1, stdout: 'Not logged in\n' } : LOGINS[bin] || { status: 127 }) });
+  orbModel.forgetSignedIn();
+  await orbModel.offer(root, { ...signedOut, fresh: false });
+  gone = true;
+  const late = await orbModel.setPick(root, 'terra', { ...signedOut, fresh: false });
+  assert.equal(late.ok, false);
+  assert.match(late.message, /not signed in on this computer any more/);
+  orbModel.forgetSignedIn();
 });
 
 test('a saved pick whose tool is not signed in here: the list says which model thinks instead, in plain words', async () => {
@@ -174,6 +190,7 @@ const fs = require('fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(path.join(dir, 'calls.jsonl'))}, JSON.stringify({ tool: ${JSON.stringify(name)}, args, key: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || null }) + '\\n');
 if (${JSON.stringify(mode)} === 'fail') { process.stderr.write('not signed in\\n'); process.exit(1); }
+if (${JSON.stringify(mode)} === 'hang') { setInterval(() => {}, 1000); return; }
 const text = '{"kind": "question", "reply": "answered by ${name}"}';
 if (${stream}) {
   process.stdout.write(JSON.stringify({ type: 'stream_event', event: { type: 'message_start' } }) + '\\n');
@@ -208,7 +225,7 @@ test('picked terra: a real read goes to codex with that model, read-only, with n
   const t = fakeTools();
   await withPath(t.dir, async () => {
     gmBet.forgetThinkers(root);
-    const r = await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' } });
+    const r = await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 60000 });
     assert.deepEqual(r, { ok: true, kind: 'question', reply: 'answered by codex' });
   });
   const calls = t.calls();
@@ -229,9 +246,9 @@ test('picked terra, codex fails: claude answers the same call, and codex sits ou
   const t = fakeTools({ codex: 'fail' });
   await withPath(t.dir, async () => {
     gmBet.forgetThinkers(root);
-    const r = await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' } });
+    const r = await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 60000 });
     assert.deepEqual(r, { ok: true, kind: 'question', reply: 'answered by claude' });
-    const again = await gmBet.readSaid({ text: 'and why?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' } });
+    const again = await gmBet.readSaid({ text: 'and why?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 60000 });
     assert.equal(again.reply, 'answered by claude');
   });
   assert.deepEqual(t.calls().map(c => c.tool), ['codex', 'claude', 'claude']);
@@ -241,13 +258,29 @@ test('picked terra, codex fails: claude answers the same call, and codex sits ou
   assert.equal(t.calls()[1].key, null);
 });
 
+test('picked terra, codex hangs: the call that waited on it ends, and the next call goes to claude', async () => {
+  const root = ws();
+  orbModel.writePick(root, { engine: 'codex', model: 'gpt-5.6-terra' });
+  const t = fakeTools({ codex: 'hang' });
+  await withPath(t.dir, async () => {
+    gmBet.forgetThinkers(root);
+    // the lineup is found first (it looks for every tool once), so the wait below is all the model's
+    assert.equal(gmBet.thinkerOrder(root)[0].id, 'codex');
+    const first = await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 8000 });
+    assert.equal(first.ok, false);
+    const next = await gmBet.readSaid({ text: 'and why?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 60000 });
+    assert.equal(next.reply, 'answered by claude');
+  });
+  assert.deepEqual(t.calls().map(c => c.tool), ['codex', 'claude']);
+});
+
 test('picked claude sonnet: the orb\'s own calls run on sonnet; quick reads keep their fast model', async () => {
   const root = ws();
   orbModel.writePick(root, { engine: 'claude', model: 'sonnet' });
   const t = fakeTools();
   await withPath(t.dir, async () => {
     gmBet.forgetThinkers(root);
-    await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' } });
+    await gmBet.readSaid({ text: 'what do you mean?', card: READ_CARD, workspaceRoot: root, deps: { readerModel: () => 'haiku' }, timeoutMs: 60000 });
     const out = await gmBet.generateScoreboardChoices({ workspaceRoot: root, bundle: { sources: {}, facts: [] }, deps: { readContext: () => 'a shop' } }).catch(err => ({ err }));
     assert.ok(out, 'it ran');
   });
@@ -382,6 +415,11 @@ test('/model: the link key and the page\'s own origin are required; a post sets 
 
 test('a login check that runs out of time on a busy computer keeps the last answer; with none, the tool is not offered', async () => {
   orbModel.forgetSignedIn();
+  // "not logged in" is never read as logged in
+  assert.equal(orbModel.LOGIN_CHECKS.cursor.ok('Not logged in\n'), false);
+  assert.equal(orbModel.LOGIN_CHECKS.devin.ok('Not logged in. Run devin auth login\n'), false);
+  assert.equal(orbModel.LOGIN_CHECKS.devin.ok('Logged in (via Devin).\n'), true);
+  assert.equal(orbModel.LOGIN_CHECKS.cursor.ok('Logged in with an API key\n'), false);
   const slow = async () => ({ status: 1, stdout: '', timed_out: true });
   assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: slow, fresh: true }), false);
   assert.equal(await orbModel.signedIn('cursor', 'cursor-agent', { run: async () => ({ status: 0, stdout: 'Logged in as someone\n' }), fresh: true }), true);
