@@ -38,8 +38,9 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 
 - **Deeper, not bigger.** Same deliverable, same audience, same size of ask. If the rewrite adds a second deliverable, cut it. The test: would the person recognize this as their task, done properly?
 - **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
-- **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
-- **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
+- **Show the work that matters.** When a judgment task includes quantities, use the actual figures to calculate the answer, show the short arithmetic and units, and give a concrete recommendation when the evidence supports one. Check the math and its meaning. Do not invent inputs, budget splits, dates, people, or precision; label necessary assumptions and keep them separate from known facts. Do not force numbers into prose or tasks that do not need them.
+- **Name a proportionate check.** Choose the smallest check that catches a consequential error in the requested result. Perform it silently where possible, rather than adding a separate checklist or asking the person to gather data.
+- **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here and states only assumptions needed to make the answer usable. Mention missing material only if it would materially change the answer. Ask a question first only when the answer would change everything.
 - **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
