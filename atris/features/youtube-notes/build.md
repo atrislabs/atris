@@ -154,6 +154,27 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 ---
 
+### Step 9: Faster captions and an earlier Gemini (2026-10-25 to 2026-10-27)
+
+**File:** `scripts/det/ytnotes` (`fetch_captions`, `captions_landed`, `start_warm_gemini`, `run_auto`)
+
+**What it does:**
+- The writer list looked up at the start of a run is saved in `$AGY_WARM.writers`, so `run_auto` no longer runs that lookup (a node start, about 0.2s) again after the captions land.
+- The caption fetch passes `player_skip=js`. Solving the player script in deno took about 1.1s and only unlocks video streams the notes never download. Captions came out byte-identical on both bench videos.
+- Captions come through the iOS client first (`player_client=ios`, `player_skip=js,webpage`), which skips the webpage download. When no English track lands, `captions_landed` fails and the fetch runs again the old way, so a video never reads as captionless by mistake. Caption-only runs, old against new: 2.52/1.92, 2.26/1.93, 2.58/1.63, 2.23/1.72.
+- The early Gemini starts on the first model line the sign-in check prints, about 0.7s before the check exits. Only a signed-in agy prints model lines, so a signed-out agy still never starts. Paired runs: 8.7 to 9.2s (4 runs) against a 12.5s median (5 runs).
+
+**Where the time goes now (2026-10-27):**
+- Five fresh quick-bench runs: median 11.4s (10.2 to 15.3), all passing. Captions are ready near 4s.
+- On a cold run Gemini waits for the sign-in check (2.5 to 4s), then needs 3 to 5s to start (spikes to 17s), then writes in about 3.5s. Overlapping the check with Gemini's startup is the one lever left, and it could open a Google login for a signed-out user, so it waits on the owner.
+- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs; agy has no MCP servers or plugins to skip), a shorter transcript (already about 22 KB, and trimming risks the verbatim quote check), starting Haiku early (its fixed cost is about 2s against 10 to 15s of writing), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`, so it never sees the memory).
+
+**Validation:**
+- `node --test --test-name-pattern 'iOS client' test/ytnotes.test.js` runs the two caption fallback tests; removing the fallback line fails the first one.
+- `node scripts/det/ytrail-bench.js --quick` five times is the live check for the median.
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests
