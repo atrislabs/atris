@@ -43,6 +43,19 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 - **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
+## Examples of deeper rewrites
+
+These show the level of detail to add, not a template to copy. Preserve the original facts and constraints in full.
+
+Before: A mostly seasoned cast iron pan has a few rust spots. How can I save it with kitchen supplies?
+After: Give a practical spot-cleaning and drying sequence using ordinary kitchen supplies, preserving the intact seasoning where possible. Explain when to use a stronger scrub and how to apply a thin coat of oil. Check that the rust is gone and the pan is dry before oiling.
+
+Before: Five engineers share weekly on-call shifts including weekends; one is away for two weeks. How should we rotate fairly and cover the gap?
+After: Propose a five-person round robin and a fair way to cover the two weeks and balance the extra shifts over time. Use placeholders for people and weeks without inventing dates or assignments. Check that each week has coverage and the long-run shift counts are balanced.
+
+Before: Write a grant email requesting $12,000 for 800 replacement books and a reading nook, noting 340 weekly library users.
+After: Write the requested email with the amount and both uses clear, connect them to the readers, and invite a conversation. Use the supplied numbers without implying the weekly count is the total number served or inventing a per-person cost.
+
 ## Output shape
 
 For a pass-through:
