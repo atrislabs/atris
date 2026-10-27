@@ -123,8 +123,8 @@ function showHelp() {
   console.log('  tap. Every tap is logged to ~/.atris/state/gm-phone-actions.jsonl.');
   console.log('  --send texts the link to the number saved with atris autoland on --to.');
   console.log('');
-  console.log('  The orb thinks with claude opus unless you pick another model. Tap the');
-  console.log('  model at the bottom of the page, or run atris gm phone model to list');
+  console.log('  The orb thinks with claude opus unless you pick another model. On the');
+  console.log('  page, open the team and tap "the orb thinks with", or run atris gm phone model to list');
   console.log('  every model on every tool signed in here, grouped by tool (claude: opus,');
   console.log('  sonnet, haiku and the current versions; codex: the gpt models codex');
   console.log('  offers; cursor, devin, antigravity when signed in), and');
@@ -134,7 +134,9 @@ function showHelp() {
   console.log('  with each tool\'s own status command; never an api key, and never grok.');
   console.log('  The pick is saved per workspace in .atris/state/orb-model.json and kept');
   console.log('  across restarts. It is asked first; if it fails or does not answer, the');
-  console.log('  next model signed in here answers. --json prints the same fields as the');
+  console.log('  next model signed in here answers (a pick that hangs sits out, and the next');
+  console.log('  call goes to the next model). With a claude pick, the short read of what');
+  console.log('  you type on a card stays on claude\'s fast model. --json prints the same fields as the');
   console.log('  page\'s /model address, which a post with the link key can also set.');
   console.log('');
   console.log('  atris gm walk starts the phone page on a made-up workspace with a temp');
@@ -1530,6 +1532,17 @@ function gmTargetCommand(args = []) {
 // gm phone: serve the decision cards to a phone on the same wifi. The link
 // carries a random token; every request without it gets 403. Ctrl-C stops it.
 // Commands started from the phone keep running on their own after that.
+// The words of a gm phone command, without its flags; only these flags take a value.
+const PHONE_VALUE_FLAGS = new Set(['--workspace', '--root', '--port', '--model']);
+function phoneWords(args = []) {
+  const words = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (PHONE_VALUE_FLAGS.has(args[i])) { i += 1; continue; }
+    if (!args[i].startsWith('--')) words.push(args[i]);
+  }
+  return words;
+}
+
 // gm phone model: which model the orb thinks with in this workspace. With no
 // name it lists every model signed in here, by tool, and marks the pick; with
 // one it saves that pick, only when it is on the list. --json prints the same
@@ -1537,8 +1550,7 @@ function gmTargetCommand(args = []) {
 async function gmPhoneModel(args = []) {
   const orbModel = require('../lib/orb-model');
   const workspaceRoot = boardWorkspaceRoot(args);
-  const at = args.indexOf('model');
-  const name = positional(args.slice(at + 1)).join(' ').trim() || null;
+  const name = phoneWords(args).slice(1).join(' ').trim() || null;
   const json = hasExactFlag(args, '--json');
   if (name) {
     const out = await orbModel.setPick(workspaceRoot, name, { fresh: true });
@@ -1559,12 +1571,12 @@ async function gmPhoneModel(args = []) {
     for (const m of g.models) console.log(`    ${m.current ? '>' : ' '} ${m.label}${m.current ? ', now' : ''}`);
   }
   if (s.line) console.log(s.line);
-  console.log('switch: atris gm phone model "<tool> <model>" (for example: codex gpt-5.6-terra, claude sonnet, terra), or tap the model at the bottom of the orb page.');
+  console.log('switch: atris gm phone model "<tool> <model>" (for example: codex gpt-5.6-terra, claude sonnet, terra), or on the orb page open the team and tap "the orb thinks with".');
   return undefined;
 }
 
 async function gmPhone(args = []) {
-  if (positional(args)[0] === 'model') return gmPhoneModel(args);
+  if (phoneWords(args)[0] === 'model') return gmPhoneModel(args);
   const http = require('http');
   const phone = require('../lib/gm-phone');
   const { phonePage } = require('../lib/gm-phone-page');
