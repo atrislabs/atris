@@ -1,0 +1,152 @@
+[
+  {
+    "id": "kayak-buy-vs-rent",
+    "field": "outdoor recreation",
+    "task": "We go kayaking about 6 times a summer, and rentals at the lake are $45 a session. A used tandem kayak is listed for $650, and I'd guess we'd need about $80 for a paddle, vests, and a roof rack. Over a 3-year horizon, is buying worth it, or should we keep renting?"
+  },
+  {
+    "id": "bike-tire-bar-to-psi",
+    "field": "cycling maintenance",
+    "task": "The sidewall on my road tires says max 110 psi, but my pump gauge reads in bar and I'm at 7.5 bar right now. Am I over the limit, and what's 6.5 bar in psi?"
+  },
+  {
+    "id": "rsvp-headcount-formula",
+    "field": "event planning",
+    "task": "I have an RSVP sheet with columns Name, Attending, Guests, where Attending is Y, N, or ?. Here are the rows: Ana,Y,2 | Ben,N,0 | Cy,Y,1 | Dee,?,0 | Eli,Y,0. Give me a formula that totals headcount, counting the person plus their guests only when Attending is Y."
+  },
+  {
+    "id": "sourdough-hydration-math",
+    "field": "baking",
+    "task": "My recipe calls for 500 g of flour and I want 75% hydration. How many grams of water do I need, and with 10 g of salt added, what's the total dough weight not counting the starter?"
+  },
+  {
+    "id": "photo-shoot-quote",
+    "field": "freelance photography",
+    "task": "A local bakery wants a 3-hour product shoot and 40 edited final images delivered within 5 days. My shooting rate is $120 an hour and my editing rate is $75 an hour, and I think editing will take about 1.5 minutes per image. How should I structure the quote so it doesn't end up underpaying me?"
+  },
+  {
+    "id": "pool-shock-dose",
+    "field": "pool maintenance",
+    "task": "My pool holds about 15,000 gallons and free chlorine is at 0.5 ppm. I want it at 3 ppm. The label on my shock says 1 lb per 10,000 gallons raises chlorine about 1 ppm. How many ounces of shock should I add?"
+  },
+  {
+    "id": "protein-target-split",
+    "field": "strength training",
+    "task": "I'm 82 kg and I lift 4 days a week, mostly for strength. How many grams of protein should I aim for per day, and how should I split that across 4 meals?"
+  },
+  {
+    "id": "emergency-fund-months",
+    "field": "personal finance",
+    "task": "Here are my typical monthly essentials: rent $1,450, utilities $180, groceries $420, car insurance $140, phone $60, minimum debt payments $230. I'm a freelancer with irregular income and have $6,800 saved. How many months of expenses does that cover, and how big should my target be?"
+  },
+  {
+    "id": "oncall-rotation-design",
+    "field": "engineering team",
+    "task": "Our team has 5 engineers and we're doing a weekly on-call rotation that includes weekends. One person is out for 2 weeks in November, and we want weekend shifts spread evenly so nobody gets stuck with them every time. How would you structure the rotation and handle the vacation gap?"
+  },
+  {
+    "id": "trail-hike-hydration",
+    "field": "hiking",
+    "task": "I'm 70 kg and planning a 12 km hike with about 600 m of elevation gain. It'll be 28°C and I expect to take around 4 hours. How much water and electrolytes should I bring, and how often should I drink?"
+  },
+  {
+    "id": "cast-iron-rust-restore",
+    "field": "cookware care",
+    "task": "I left my cast iron skillet in the sink overnight and now it has some orange rust spots, though the seasoning is still mostly there. Can I save it with stuff I already have in the kitchen, and what steps should I follow?"
+  },
+  {
+    "id": "fence-post-picket-count",
+    "field": "fencing",
+    "task": "My fence line is 62 feet long. I want posts every 8 feet on center, and the pickets are 5.5 inches wide with a 0.5-inch gap between them. How many posts do I need including both ends, and how many pickets?"
+  },
+  {
+    "id": "poster-print-dpi",
+    "field": "graphic design",
+    "task": "My logo file is 1800 x 1200 px and I want to print it as a poster. What's the largest print size in inches at 300 DPI, and what's the size at 150 DPI, without upscaling?"
+  },
+  {
+    "id": "tire-psi-conversion",
+    "field": "auto maintenance",
+    "task": "The tire placard says 35 psi, but the air pump at the gas station only shows bar. Convert 35 psi to bar and kPa so I can set it right."
+  },
+  {
+    "id": "hsa-receipt-tally",
+    "field": "benefits admin",
+    "task": "Here are my receipts for HSA reimbursement this year: Pharmacy copay $25, Vision exam $150, Gym membership $480, Prescription glasses $210, Dental cleaning $120, Protein powder $45. Total the eligible ones and list the ones you'd leave out with a reason. I'm not sure about the gym one."
+  },
+  {
+    "id": "capo-chord-shift",
+    "field": "guitar teaching",
+    "task": "I'm playing a song with the chords G, C, D, and Em, and I want to put a capo on fret 3. What shape do I play for each chord, and what key am I singing in?"
+  },
+  {
+    "id": "seating-chart",
+    "field": "wedding planning",
+    "task": "We have 40 guests for 5 tables of 8. The Okafors and Lindqvists should not sit together, Grandma needs a table near the restroom, and the four college friends should be together. How would you arrange them, and what's the layout reasoning?"
+  },
+  {
+    "id": "kid-carpool-rota",
+    "field": "parenting logistics",
+    "task": "Three families share school drop-off and pickup, Monday through Friday, for two weeks. The Chens can't do Tuesdays, the Ruiz family can't do Fridays, and I can't do Wednesday mornings. Draft a rota that spreads the load fairly and tell me what to do if someone is sick."
+  },
+  {
+    "id": "rental-car-insurance",
+    "field": "business travel",
+    "task": "I'm renting a car for a 5-day work trip. My company's travel policy covers collision if I book through them, and my credit card has secondary rental coverage, but the counter is pushing a $29/day waiver. Should I take it, and what should I check before I decline?"
+  },
+  {
+    "id": "logo-placement",
+    "field": "social media design",
+    "task": "I'm putting my square logo on a photo of a mountain sunrise for an Instagram post. The top-left has a bright sky and the bottom-right is dark rock. Where should I place the logo and what size and color should I use so it stays readable?"
+  },
+  {
+    "id": "wedding-best-man-toast",
+    "field": "Event planning",
+    "task": "I'm the best man at my brother Dan's wedding Saturday and need a 2-minute toast. We met in college, he's always been the one who fixes things for everyone, and he proposed on a frozen lake in Minnesota. Keep it warm, a little funny, and not too long."
+  },
+  {
+    "id": "city-pothole-letter",
+    "field": "Civic affairs",
+    "task": "Write a letter to my city council about the pothole on Maple Ave between 4th and 5th that has been there since March. It's the size of a bathtub, two cars have damaged tires, and I've called public works three times with no fix. Make it firm but polite and ask for a repair date."
+  },
+  {
+    "id": "three-bed-home-listing",
+    "field": "Real estate",
+    "task": "I need a listing description for a house I'm selling. Specs: 3 bed, 2 bath, 1,640 sq ft, built 1958, renovated kitchen with quartz counters, new roof 2023, big backyard with a shed, quiet street near the elementary school, asking $489,000. Keep it under 150 words and don't oversell."
+  },
+  {
+    "id": "vet-tech-linkedin-bio",
+    "field": "Veterinary medicine",
+    "task": "Write a LinkedIn About section for me. I'm a certified veterinary technician with 9 years in emergency and critical care, I'm strongest with anesthesia monitoring and ICU nursing, and I'm now looking to move into a practice management role. Write it in first person, around 120 words."
+  },
+  {
+    "id": "offsite-cancelled-budget",
+    "field": "Startup management",
+    "task": "As CTO of a 40-person startup, I need to tell everyone that the December offsite in Austin is cancelled because of budget cuts after our funding round came in smaller than planned. We're going to do a virtual holiday lunch instead and I want to acknowledge people were excited about it. Write the Slack announcement, about 150 words, direct but not cold."
+  },
+  {
+    "id": "library-grant-request",
+    "field": "Nonprofit fundraising",
+    "task": "Write a grant request email to the Harlow Family Foundation on behalf of the Eastside Elementary library. We need $12,000 to replace 800 outdated books and add a reading nook for kids in grades K-2, and 340 students use the library each week. Our contact is Marisol Ortega, and the program director's name is Ben Adeyemi."
+  },
+  {
+    "id": "venue-booking-inquiry",
+    "field": "Music booking",
+    "task": "I'm the booking contact for a 4-piece indie folk band called The Larkins. Write an email to the Copper Room, which holds about 200 people, asking if they have a Friday night open in March or April. Mention our two albums, that we bring a draw of about 120 from our mailing list, and that we're flexible on guarantee versus door split."
+  },
+  {
+    "id": "coworker-condolence-note",
+    "field": "Workplace relations",
+    "task": "A coworker, Priya, lost her father last week. I want to write a short handwritten card for the team to sign, something warm and sincere that doesn't sound generic. Her dad was a retired machinist who she often mentioned visiting on weekends. About 60 to 80 words please."
+  },
+  {
+    "id": "piano-schedule-change",
+    "field": "Music education",
+    "task": "Write a note to my daughter's piano teacher, Mrs. Chen, asking to move Lily's Thursday 4pm lesson to Tuesday 4:30pm starting next week, since she has a new soccer practice. Tell her Lily is really enjoying the Clementi sonatina and we'd appreciate it if we could keep the same lesson length. Keep it polite and brief."
+  },
+  {
+    "id": "gallery-docent-intro",
+    "field": "Museum education",
+    "task": "I'm a volunteer docent at the Riverside Art Museum and I need a spoken 2-minute intro for my tour of the Early American gallery. The tour covers three works: a Hudson River School landscape from 1851, a portrait of a Boston merchant, and a quilt from 1830s Vermont. Write it conversationally so I can read it aloud comfortably."
+  }
+]

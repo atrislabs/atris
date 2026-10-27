@@ -1,0 +1,1442 @@
+[
+  {
+    "id": "bike-tire-bar-to-psi",
+    "a": "nudge",
+    "b": "plain",
+    "key": "507529baff2346da",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both conversions are correct, but X better serves the rider by flagging that gauge error could erase the narrow margin and that the rim’s pressure limit may be lower than the tire’s.",
+      "Both conversions are correct, but Y adds the crucial rim pressure and compatibility check, especially for hookless rims, while giving a clearer next step for a reading so close to the tire limit."
+    ]
+  },
+  {
+    "id": "capo-chord-shift",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e6c1f6b99c72c5b2",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y leads with the usual interpretation, gives the correct shapes and sounding key, and handles the alternate reading more concisely.",
+      "Y leads with the likely chord-chart interpretation—E, A, B, and C♯m shapes sounding in G major—while clearly covering the alternative if G, C, D, and Em are the shapes being played."
+    ]
+  },
+  {
+    "id": "cast-iron-rust-restore",
+    "a": "nudge",
+    "b": "plain",
+    "key": "8bd772faa96eb457",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better preserves the existing seasoning by treating rust spots locally, limiting vinegar exposure, and specifying how to avoid a sticky oil layer, despite some unnecessary extras.",
+      "Y better preserves the intact seasoning by treating only the rusty spots and gives clearer checks for when to stop scrubbing and dry the pan."
+    ]
+  },
+  {
+    "id": "emergency-fund-months",
+    "a": "nudge",
+    "b": "plain",
+    "key": "ee7500d09677d0a2",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct coverage and a practical target with the key missing-expense caveat, while X adds speculative figures and arbitrary rules that could mislead the person.",
+      "Both calculate 2.7 months and a six-month target correctly, but X gives the useful next steps more concisely while Y adds unsupported tax percentages, an invented lower expense figure, and questionable claims about the debt."
+    ]
+  },
+  {
+    "id": "fence-post-picket-count",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9075b3b80437f261",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct counts and a workable layout for the leftover half inch, while Y incorrectly suggests eight posts could cover the line with an extra six feet of fence; X also expands into rail and installation advice.",
+      "Both give the right counts, but Y offers a workable equal-bay layout and practical measurement check, while X incorrectly suggests that eight posts can cover the line with an extra six feet of fence."
+    ]
+  },
+  {
+    "id": "kayak-buy-vs-rent",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3efbbb182bdbb89f",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X tests the fragile $80 gear estimate, accounts for resale and upkeep, and gives concrete storage, transport, and used-boat checks before buying.",
+      "Y better tests the decision against realistic tandem gear, transport, storage, and resale costs, though its opening savings estimate is more confident than its own scenarios support."
+    ]
+  },
+  {
+    "id": "hsa-receipt-tally",
+    "a": "nudge",
+    "b": "plain",
+    "key": "1f9adfc6199877e2",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the $505 total and adds useful checks for prior reimbursement and HSA opening date, while Y’s suggested $985 total makes the gym exception sound too easy to claim.",
+      "Y gives the correct $505 total and adds essential checks on HSA opening dates, out-of-pocket costs, and duplicate reimbursement, though its claim that only gym costs above ordinary fitness spending qualify is unsupported by [IRS guidance](https://www.irs.gov/individuals/frequently-asked-questions-about-medical-expenses-related-to-nutrition-wellness-and-general-health)."
+    ]
+  },
+  {
+    "id": "kid-carpool-rota",
+    "a": "nudge",
+    "b": "plain",
+    "key": "5b52355c6f047bc2",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both rotas meet the constraints, but X spreads runs more evenly across days and gives a safer sick-day plan; Y’s fallback could assign a family on a day they cannot drive.",
+      "Y gives an equally fair rota with a better balance of morning and afternoon runs and a clearer sick-day process, though its last-minute fallback should still respect each family's availability."
+    ]
+  },
+  {
+    "id": "logo-placement",
+    "a": "nudge",
+    "b": "plain",
+    "key": "334b0297de75c047",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives more useful checks for rock texture, logo detail, and phone-scale readability, with a practical fallback if the dark corner does not work.",
+      "Y better handles the difference between a single-color mark and a square logo tile, and gives practical checks for rock texture, phone readability, and composition."
+    ]
+  },
+  {
+    "id": "oncall-rotation-design",
+    "a": "nudge",
+    "b": "plain",
+    "key": "f3d4611eb99cd723",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a specific swap rule that preserves equal weekend coverage, avoids consecutive weeks, and shows how to apply it to the November schedule.",
+      "Y gives a concrete swap rule and worked November example, plus checks for adjacent shifts and holiday fairness that make the rotation easier to implement safely."
+    ]
+  },
+  {
+    "id": "photo-shoot-quote",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6924d6cf24178184",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X better protects the photographer by pricing setup, culling, revisions, and delivery and by defining usage and shoot scope, though its three-tier proposal expands the requested quote.",
+      "Y’s quote accounts for setup, travel, revisions, and usage rights that X discusses but largely leaves out of its price, giving the photographer a stronger floor against underpayment."
+    ]
+  },
+  {
+    "id": "pool-shock-dose",
+    "a": "nudge",
+    "b": "plain",
+    "key": "c13bc83fa366c42b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate 60 oz from the stated label rate, but Y gives concise, label-dependent application advice while X adds questionable claims about shock strength and prescribes pre-dissolving regardless of the label.",
+      "Both calculate 60 oz from the stated label rate, but X is more useful because Y incorrectly calls that rate typical of 65–73% cal-hypo, which is far stronger and could make 60 oz a substantial overdose."
+    ]
+  },
+  {
+    "id": "poster-print-dpi",
+    "a": "nudge",
+    "b": "plain",
+    "key": "40dc52ea182da7df",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct sizes and useful vector advice, but Y answers the question directly while X adds excessive print guidance and speculative viewing-distance claims.",
+      "X gives both correct sizes and the key vector-file option without Y’s lengthy, less reliable printing advice."
+    ]
+  },
+  {
+    "id": "protein-target-split",
+    "a": "nudge",
+    "b": "plain",
+    "key": "a0c4566de3c32441",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the same useful 150 g daily target and roughly 35–40 g per meal with less padding and fewer unnecessary rules.",
+      "X gives a sound daily target and a four-meal split directly, while Y adds unnecessary detail and contradicts its own 2.0 g/kg ceiling."
+    ]
+  },
+  {
+    "id": "rental-car-insurance",
+    "a": "nudge",
+    "b": "plain",
+    "key": "67f69d97f71aea09",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the key coverage checks, including deductibles and authorized drivers, while X overstates the waiver’s benefits and too readily recommends buying it without confirmation.",
+      "X gives a more careful conditional recommendation; Y assumes the company policy is primary and recommends buying the waiver too categorically when coverage is uncertain."
+    ]
+  },
+  {
+    "id": "rsvp-headcount-formula",
+    "a": "nudge",
+    "b": "plain",
+    "key": "30f22b2a8f88fa26",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a correct, clear formula and verifies the total of 6, while X adds unnecessary sheet setup and a questionable formula that could confuse the user.",
+      "X gives a correct formula and verifies the total of 6; Y adds unnecessary sheet setup and a questionable cross-platform formula."
+    ]
+  },
+  {
+    "id": "seating-chart",
+    "a": "nudge",
+    "b": "plain",
+    "key": "84f2f01555b35a29",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a usable five-table layout, explains the placement of each group, and identifies the room and guest-list details needed to finalize it.",
+      "Y gives a usable provisional floor plan, states its assumptions, and checks access and circulation, while X leaves the remaining guests concentrated at an undefined Table 5."
+    ]
+  },
+  {
+    "id": "sourdough-hydration-math",
+    "a": "nudge",
+    "b": "plain",
+    "key": "4f3fe7cc381a291d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct 375 g of water and 885 g dough weight with a useful starter caveat, while X adds unnecessary detail and a misleading claim about whole grain dough.",
+      "X gives the correct 375 g of water and 885 g dough total with a relevant starter caveat, while Y adds unnecessary calculations and advice beyond the requested result."
+    ]
+  },
+  {
+    "id": "tire-psi-conversion",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6dc7edb16a5d1d31",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both convert correctly, but X gives the right pump setting and relevant cold-tire and placard checks that help the person use it safely.",
+      "Both give the correct conversion, but Y provides the pump setting and relevant cold-tire guidance that helps avoid adjusting a warm tire to the wrong pressure."
+    ]
+  },
+  {
+    "id": "trail-hike-hydration",
+    "a": "nudge",
+    "b": "plain",
+    "key": "e174fe9fd1f96755",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a better water margin for a four-hour hot hike and tells the hiker to check tablet sodium content; Y’s one or two half-strength tablets may fall well short of its own sodium target.",
+      "Y gives a more useful carrying margin for a hot, climbing hike and clearer ways to check sodium content and adjust intake, though its sodium figures are inconsistent."
+    ]
+  },
+  {
+    "id": "city-pothole-letter",
+    "a": "nudge",
+    "b": "plain",
+    "key": "ff336bf2a22d3ac2",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a concise, firm letter focused on securing a repair date, while X adds an unsolicited advocacy campaign, excessive advice, and unsupported details.",
+      "X provides a focused, usable letter asking for a repair date, while Y adds unsupported details and turns a single-letter request into an extensive advocacy checklist."
+    ]
+  },
+  {
+    "id": "coworker-condolence-note",
+    "a": "nudge",
+    "b": "plain",
+    "key": "2f9f3a8e4f0fff66",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a usable, personal card with brief practical notes, while X adds substantial explanation that does little to improve the card.",
+      "X offers a warmer, more natural card grounded in Priya’s weekend visits, while Y adds lengthy commentary and makes a stronger assumption about her father’s character."
+    ]
+  },
+  {
+    "id": "gallery-docent-intro",
+    "a": "nudge",
+    "b": "plain",
+    "key": "eb0bb37e20be80ee",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y is closer to a ready-to-read two-minute introduction and invites visitors to observe and participate, though the docent should verify its claims about the specific works before using it.",
+      "X offers a more natural spoken introduction and a useful thread connecting the three works, though a docent should verify its claims about visible details and the quilt’s maker before reading it aloud."
+    ]
+  },
+  {
+    "id": "library-grant-request",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3adb58e282b78752",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a more actionable draft and flags the budget, evidence, measurement, and application requirements to verify before sending, while Y presents several unsupported claims as facts.",
+      "Y better identifies the budget, evidence, and foundation requirements to verify before sending, though its $35-per-student claim and assumptions about who benefits should be removed."
+    ]
+  },
+  {
+    "id": "offsite-cancelled-budget",
+    "a": "nudge",
+    "b": "plain",
+    "key": "66234549cafef4cd",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a direct, empathetic announcement while clearly marking unconfirmed details as placeholders and flagging practical checks before posting; Y states meal coverage as fact despite treating it as an assumption.",
+      "Y gives a direct, empathetic announcement while marking unconfirmed details as placeholders and adding useful checks before posting."
+    ]
+  },
+  {
+    "id": "piano-schedule-change",
+    "a": "nudge",
+    "b": "plain",
+    "key": "9a3b9f408bba7941",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "Y provides a brief, ready-to-send note with every requested detail, while X adds an unnecessary second version and unsupported claims about Lily’s practice.",
+      "X is a polite, brief note that includes every requested detail, while Y adds an unsolicited second version and claims about Lily that the parent did not provide."
+    ]
+  },
+  {
+    "id": "three-bed-home-listing",
+    "a": "nudge",
+    "b": "plain",
+    "key": "6dc84d552c2396a7",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "nudge": true,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a stronger, more specific listing, though its extra portal version expands the request; Y unnecessarily suggests the home needs updates.",
+      "X delivers one restrained description under 150 words, while Y adds an unrequested second version and claims such as “well-kept” and a major expense being taken care of that the supplied facts do not establish."
+    ]
+  },
+  {
+    "id": "venue-booking-inquiry",
+    "a": "nudge",
+    "b": "plain",
+    "key": "3e0f6b8ac653cdf0",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a more sendable inquiry with the year, music links, and a useful check that the 120-person draw is supported by past sales, despite its excess notes.",
+      "Y is more useful to a booker because it identifies the intended year, includes music and live-video links, and advises checking the actual draw and offering specific available Fridays, though its extra notes are longer than necessary."
+    ]
+  },
+  {
+    "id": "vet-tech-linkedin-bio",
+    "a": "nudge",
+    "b": "plain",
+    "key": "c66d3f50c32bed3c",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "X makes a credible case for moving from clinical work into practice management, while Y claims training and protocol experience the person did not provide.",
+      "Y connects the stated clinical experience to practice management without inventing accomplishments, while X claims training and protocol work the person did not provide."
+    ]
+  },
+  {
+    "id": "wedding-best-man-toast",
+    "a": "nudge",
+    "b": "plain",
+    "key": "95fb63cc78032b3a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "nudge": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y catches the ambiguity about who met in college, while X incorrectly states that Dan met his partner there and adds unsupported details about the proposal.",
+      "X handles the unclear college detail more carefully, while Y builds the toast around an unsupported claim that Dan met his partner there and adds several invented proposal details."
+    ]
+  },
+  {
+    "id": "bike-tire-bar-to-psi",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5b29132433c4bfff",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both conversions are correct, but Y adds the crucial check that the rim’s pressure limit, especially for hookless rims, may be lower than the tire’s 110 psi limit.",
+      "Both conversions are correct, but X adds the crucial check that the rim’s pressure limit may be lower than the tire’s, especially with hookless rims."
+    ]
+  },
+  {
+    "id": "bike-tire-bar-to-psi",
+    "a": "skill",
+    "b": "plain",
+    "key": "a178bcb73e43e7e1",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both conversions are correct, but X gives a cautious answer near the limit without Y’s unsupported pressure recommendation for an unspecified tire, rim, and rider.",
+      "Both conversions are correct, but Y gives a useful margin warning without X’s unsupported pressure recommendation for an unspecified tire and rider."
+    ]
+  },
+  {
+    "id": "capo-chord-shift",
+    "a": "skill",
+    "b": "nudge",
+    "key": "fbe0998fc9e06987",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives the correct shapes and sounding keys for both interpretations more clearly, while X includes an incorrect chord-shape description and a confusing correction.",
+      "X correctly handles both meanings of the chord names and gives usable shapes and keys, while Y includes a wrong capo-4 row and misidentifies the B shape."
+    ]
+  },
+  {
+    "id": "capo-chord-shift",
+    "a": "skill",
+    "b": "plain",
+    "key": "08324d66451b6da1",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives the correct shapes and sounding key for both interpretations without X’s contradictory capo advice or its misleading claim that a capo changes vocal range while keeping the song in G.",
+      "Both handle the two possible meanings of the chord names, but X gives the correct shapes and sounding keys more clearly, while Y includes a wrong capo recommendation that it later retracts and misleading advice about vocal range."
+    ]
+  },
+  {
+    "id": "cast-iron-rust-restore",
+    "a": "skill",
+    "b": "nudge",
+    "key": "3f52a43ae1d48438",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a focused spot repair with a brief vinegar fallback and a stovetop option, while Y’s longer vinegar soak and advice to fully strip a deeply rusted pan are unnecessarily aggressive for this skillet.",
+      "X gives a more reliable way to remove stubborn spots while preserving the remaining seasoning; Y unnecessarily rules out spot use of steel wool and gives a less reliable stovetop seasoning method."
+    ]
+  },
+  {
+    "id": "cast-iron-rust-restore",
+    "a": "skill",
+    "b": "plain",
+    "key": "b98e3f1521e66277",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X targets the small rust spots while preserving intact seasoning and gives a clear recovery check; Y’s whole-pan vinegar soak risks stripping seasoning unnecessarily.",
+      "Y better preserves the intact seasoning by treating only the rusty spots, limiting vinegar exposure, and giving clear checks for dryness and remaining rust."
+    ]
+  },
+  {
+    "id": "city-pothole-letter",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5c838104743fd995",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a firm, polite letter requesting a repair date, while Y adds unsupported details and expands a single-letter request into a broader campaign.",
+      "Y provides a concise, usable letter that requests a repair date, while X adds unsupported details and turns the request into a broader advocacy campaign."
+    ]
+  },
+  {
+    "id": "city-pothole-letter",
+    "a": "skill",
+    "b": "plain",
+    "key": "c99320a87c587d5a",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a firm, polite request for a repair date without inventing Public Works’ responses, as Y does.",
+      "Y gives a usable, polite request for a written repair date without X’s unsupported claim that Public Works promised to address the pothole."
+    ]
+  },
+  {
+    "id": "coworker-condolence-note",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5773abc5503136f9",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y offers a warmer, more natural card grounded in Priya’s weekend visits, while X awkwardly labels her father by his occupation and promises work coverage the team may not be able to provide.",
+      "X offers a warmer, more personal card grounded in Priya’s weekend visits, while Y awkwardly inserts her father’s occupation and promises workplace coverage the team may not be able to guarantee."
+    ]
+  },
+  {
+    "id": "coworker-condolence-note",
+    "a": "skill",
+    "b": "plain",
+    "key": "4569eb5a3d9e117f",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a warmer, more natural card tied to Priya’s weekend visits and offers useful ways to personalize it, though its closing may be too familiar for some teams.",
+      "X offers a warmer, more natural card that uses Priya’s weekend visits and her father’s work personally, while Y’s machinist reference feels awkwardly inserted."
+    ]
+  },
+  {
+    "id": "emergency-fund-months",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e8afc510c3bbbaee",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct coverage and a sensible freelancer target with the key tax caveat, while Y expands into an unsolicited savings plan and makes several unsupported assumptions.",
+      "Both calculate 2.7 months correctly, but Y gives a suitable freelancer target and checks whether the $6,800 includes tax money, while X adds unsupported assumptions and potentially misleading savings and debt guidance."
+    ]
+  },
+  {
+    "id": "emergency-fund-months",
+    "a": "skill",
+    "b": "plain",
+    "key": "d82f6274710b979c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct coverage and freelancer target while clearly accounting for missing essential costs and tax savings that may make the $6,800 unavailable.",
+      "Y gives the correct coverage and target, tailors the range to income stability, and checks whether money reserved for taxes reduces the savings actually available."
+    ]
+  },
+  {
+    "id": "fence-post-picket-count",
+    "a": "skill",
+    "b": "nudge",
+    "key": "ac2ccadda260e046",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct counts and a usable layout with clear assumptions, while Y adds unnecessary installation advice and an inconsistent post-depth recommendation.",
+      "Y gives the correct counts and a practical layout, while X adds unrequested rail and post-setting specifications that depend on missing site details."
+    ]
+  },
+  {
+    "id": "fence-post-picket-count",
+    "a": "skill",
+    "b": "plain",
+    "key": "0dce369ed581fb7b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives the correct quantities and a workable uniform post layout; Y’s suggestion that eight posts could serve the full 62-foot line with eight-foot spans is misleading.",
+      "Both get the nominal counts, but X flags that post width can change the picket count, while Y treats 124 as a firm purchase quantity despite measuring the run between post centers."
+    ]
+  },
+  {
+    "id": "gallery-docent-intro",
+    "a": "skill",
+    "b": "nudge",
+    "key": "4423913918ebbba6",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X is easier to read aloud and makes fewer unsupported claims about the specific works; Y invents visual details and interpretations a docent should verify first.",
+      "Y is easier to deliver aloud and makes fewer unsupported claims about the specific works, while X invents details about the merchant, landscape, and quilt."
+    ]
+  },
+  {
+    "id": "gallery-docent-intro",
+    "a": "skill",
+    "b": "plain",
+    "key": "4dd3117dcd2d5c60",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is closer to a comfortable two-minute spoken introduction and makes fewer unsupported claims about works the docent has not described.",
+      "Y is easier to read aloud and avoids several unsupported claims in X about the merchant’s wealth and the quilt’s maker, materials, and working habits."
+    ]
+  },
+  {
+    "id": "hsa-receipt-tally",
+    "a": "skill",
+    "b": "nudge",
+    "key": "261c18858eace8ae",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X better handles the uncertain pharmacy copay and gym expense; Y incorrectly suggests gym dues are generally eligible to the extent they exceed ordinary fitness spending.",
+      "Y flags the pharmacy copay assumption and applies the normal-food cost limit to protein powder, though its $1,030 hypothetical overstates what medical-necessity letters alone would establish."
+    ]
+  },
+  {
+    "id": "hsa-receipt-tally",
+    "a": "skill",
+    "b": "plain",
+    "key": "afb90a86aef5386a",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X better qualifies the pharmacy copay and flags prior reimbursement and HSA establishment dates, though its gym and protein exceptions need tighter wording.",
+      "Y gives the correct $505 total and adds useful checks for the pharmacy copay, prior reimbursement, and whether each expense arose after the HSA was established."
+    ]
+  },
+  {
+    "id": "kayak-buy-vs-rent",
+    "a": "skill",
+    "b": "nudge",
+    "key": "935301b3ad669ec6",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y better serves the buyer by questioning the $80 gear estimate and checking resale, storage, transport, and kayak condition, though its opening savings estimate overstates its own base case.",
+      "X gives a more useful three-year comparison by checking gear, resale, storage, transport, and boat condition, while Y assumes without evidence that the $45 rental price is per person."
+    ]
+  },
+  {
+    "id": "kayak-buy-vs-rent",
+    "a": "skill",
+    "b": "plain",
+    "key": "6306c2a50e8c8dbb",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X checks whether $45 is per person or per tandem and shows how that changes the decision, while Y recommends buying despite only an $80 margin under the stated rental price and a likely low gear estimate.",
+      "Y identifies whether $45 covers one paddler or the tandem boat, a pricing detail that changes the three-year decision, and calculates both cases, though its per-person assumption needs verification."
+    ]
+  },
+  {
+    "id": "kid-carpool-rota",
+    "a": "skill",
+    "b": "nudge",
+    "key": "5bfcdf2b162a0b82",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both rotas are fair and respect the constraints, but Y gives more useful sick-day contingencies and checks the pickup authorization, contacts, and car seats needed to carry out the plan safely.",
+      "Both rotas meet the constraints and split runs fairly, but X gives a clearer backup process and checks pickup authorization and car seats, which matter when a family is sick."
+    ]
+  },
+  {
+    "id": "kid-carpool-rota",
+    "a": "skill",
+    "b": "plain",
+    "key": "d2d75783b1715c5b",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both rotas are fair and respect the constraints, but Y offers a more practical backup plan and checks pickup authorization and car seats; X suggests a taxi without addressing child safety.",
+      "Both rotas are balanced and respect the stated constraints, but X better addresses sick children, pickup authorization, and car seats while giving a clearer backup plan."
+    ]
+  },
+  {
+    "id": "library-grant-request",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2aacab9b90de3039",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a usable request while flagging the unclear contact roles; Y adds unsupported claims about students and the collection, treats 340 weekly visits as distinct beneficiaries, and leaves key budget figures blank.",
+      "X makes a clearer, more persuasive funding case and identifies details to verify before sending, though its recipient, impact claims, and cost-per-student figure need checking."
+    ]
+  },
+  {
+    "id": "library-grant-request",
+    "a": "skill",
+    "b": "plain",
+    "key": "084100b14d8d20c0",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X keeps the request grounded in the supplied facts and flags the unclear contact roles, while Y assumes who should sign and adds unverified claims about the collection and its impact.",
+      "X makes a clearer case for the $12,000 request and gives the reader a concrete response path, though Marisol’s and Ben’s roles should be verified before sending."
+    ]
+  },
+  {
+    "id": "logo-placement",
+    "a": "skill",
+    "b": "nudge",
+    "key": "1a03a9e4d24d8622",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a clear placement, size, and color while stating its format assumption; Y’s claim that a 6% inset clears the grid crop may fail for a square post.",
+      "Y gives a clear placement, size, color, and crop check with less distraction; X adds a misleading claim about Reels overlays to advice for a photo post."
+    ]
+  },
+  {
+    "id": "offsite-cancelled-budget",
+    "a": "skill",
+    "b": "nudge",
+    "key": "51f73e55640518bc",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a direct, empathetic announcement and adds useful checks for the meal budget, financial wording, and leadership alignment before posting.",
+      "X gives a clear, empathetic announcement and useful checks to prevent unconfirmed promises and prepare leaders for questions."
+    ]
+  },
+  {
+    "id": "logo-placement",
+    "a": "skill",
+    "b": "plain",
+    "key": "9c005a48f2d8e69e",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives precise placement and useful contrast checks for different logo types, while Y’s white-tile suggestion could leave a white logo unreadable.",
+      "Y gives a clear placement and size, handles different logo treatments, and includes practical readability and crop checks without expanding the job."
+    ]
+  },
+  {
+    "id": "offsite-cancelled-budget",
+    "a": "skill",
+    "b": "plain",
+    "key": "4bd617461df9488f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X is ready to send and acknowledges the disappointment without adding Y’s unconfirmed promises to cover meals or discuss concerns at an all-hands.",
+      "Y is ready to post, acknowledges the disappointment, and avoids X’s unconfirmed promise to cover meals."
+    ]
+  },
+  {
+    "id": "oncall-rotation-design",
+    "a": "skill",
+    "b": "nudge",
+    "key": "69f007327c3b01e0",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y’s one-for-one swap preserves equal weekend counts without creating a coverage debt; X’s cover-and-payback approach creates avoidable imbalance, though Y’s claim that a two-week absence forces two extra shifts is incorrect.",
+      "X’s one-for-one swap preserves weekend balance immediately and gives a workable vacation example, while Y’s cover-and-payback approach leaves an extra weekend with one engineer until an uncertain future adjustment."
+    ]
+  },
+  {
+    "id": "oncall-rotation-design",
+    "a": "skill",
+    "b": "plain",
+    "key": "c01d89416c038d5a",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a concise weekly rotation and a concrete swap that preserves weekend balance, while X adds unnecessary examples and leaves the extra weekend as an unresolved debt.",
+      "X gives a simpler fair rotation and a direct swap that preserves workload, while Y's example leaves one engineer with an extra weekend and relies on later payback."
+    ]
+  },
+  {
+    "id": "photo-shoot-quote",
+    "a": "skill",
+    "b": "nudge",
+    "key": "afeb743e88e429d7",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a more accurate labor estimate and a concise flat-fee structure with clear limits on setups, revisions, usage, and extras, while X is repetitive and leaves revision labor out of its sample price.",
+      "X budgets for revisions and delivery, caps the number of setups, and gives a defensible package price; Y’s sample quote includes a revision round without pricing its labor and changes the requested five-day deadline to five business days."
+    ]
+  },
+  {
+    "id": "photo-shoot-quote",
+    "a": "skill",
+    "b": "plain",
+    "key": "19b804ebff536f27",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a more usable quote that accounts for setup, travel, licensing, and product and setup limits; Y rounds editing time down and leaves those costs largely unpriced.",
+      "Y gives a usable quote and checks the product count, setups, styling, usage, and approval timing that could otherwise erode the fee, though its sample must be corrected from five business days to the requested five days."
+    ]
+  },
+  {
+    "id": "piano-schedule-change",
+    "a": "skill",
+    "b": "nudge",
+    "key": "600fd0a76e375f9d",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X provides a polite, brief note with every requested detail, while Y adds an unrequested text version and commentary and invents details about Lily’s practicing.",
+      "Y provides one polite, brief note covering every request, while X adds an unrequested second version and commentary."
+    ]
+  },
+  {
+    "id": "piano-schedule-change",
+    "a": "skill",
+    "b": "plain",
+    "key": "2d48f1de2658c51d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y includes every requested detail in a polite, briefer note, while X adds unnecessary discussion of alternatives.",
+      "X includes every requested detail in a polite, brief note, while Y adds unnecessary length."
+    ]
+  },
+  {
+    "id": "pool-shock-dose",
+    "a": "skill",
+    "b": "nudge",
+    "key": "30f826dba26ea82f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both calculate 60 oz correctly from the stated label rate, but X is more useful and concise; Y incorrectly claims that rate is typical of 65–73% cal-hypo, which is far stronger.",
+      "Y gives the correct label-based dose and useful handling checks; X adds distracting advice and incorrectly suggests that the stated label rate is typical of 65–73% cal-hypo."
+    ]
+  },
+  {
+    "id": "pool-shock-dose",
+    "a": "skill",
+    "b": "plain",
+    "key": "7f3a466aeff6a4c3",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both calculate 60 oz correctly, but Y gives safer handling guidance by making pre-dissolving conditional on the product label and specifying that shock goes into water.",
+      "Both calculate 60 ounces correctly, but Y adds useful guidance on retesting, protecting the pool surface, and checking the label before swimming."
+    ]
+  },
+  {
+    "id": "poster-print-dpi",
+    "a": "skill",
+    "b": "nudge",
+    "key": "d3812abde0b79dac",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives the correct sizes and the key vector-file advice concisely, while Y adds lengthy print-production guidance and a questionable 100 DPI recommendation.",
+      "Y gives the correct sizes and the relevant vector option concisely; X expands a simple calculation into an unnecessary print-preparation workflow and makes overly broad quality claims."
+    ]
+  },
+  {
+    "id": "poster-print-dpi",
+    "a": "skill",
+    "b": "plain",
+    "key": "5560bd0b340289e3",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct sizes, but Y makes clear that 6 × 4 inches is not poster size and gives the practical next step of requesting the original vector logo.",
+      "Both give the correct sizes, but X offers the more practical next step of requesting the original vector logo before considering recreation."
+    ]
+  },
+  {
+    "id": "protein-target-split",
+    "a": "skill",
+    "b": "nudge",
+    "key": "6982548adae43361",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a sound daily target and a simple four-meal split; Y adds unnecessary detail and contradicts its stated 2.0 g/kg ceiling.",
+      "Y gives a sound, immediately usable target and four-meal split without X’s excess detail and inconsistent upper limits."
+    ]
+  },
+  {
+    "id": "protein-target-split",
+    "a": "skill",
+    "b": "plain",
+    "key": "ce80635123f8438d",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a sound daily target and four-meal split, with useful adjustments for calorie intake and practical food examples; X overstates that 40 g maximizes muscle protein synthesis for everyone.",
+      "X gives an adequate 150 g target, a four-meal split, and useful adjustments for calorie intake and protein sources, while Y adds unnecessarily prescriptive workout timing."
+    ]
+  },
+  {
+    "id": "rental-car-insurance",
+    "a": "skill",
+    "b": "nudge",
+    "key": "2bea4851c163eae2",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives more useful business-trip checks and counter steps, while X’s suggestion that the waiver can often be canceled at return or refunded could leave the traveler paying for it unnecessarily.",
+      "X gives a clearer decision rule based on confirming company coverage, while Y’s suggestion that the waiver can often be canceled at return or refunded could lead the traveler to pay for coverage they cannot recover."
+    ]
+  },
+  {
+    "id": "rental-car-insurance",
+    "a": "skill",
+    "b": "plain",
+    "key": "05b11ca8d1204432",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a tighter check of company coverage and liability, while X assumes the company coverage is primary and suggests a waiver may be refundable at return, which could mislead the renter.",
+      "X gives a more reliable conditional recommendation and key coverage checks; Y assumes the company policy is primary and suggests the waiver may be refundable at return, which could mislead the traveler."
+    ]
+  },
+  {
+    "id": "rsvp-headcount-formula",
+    "a": "skill",
+    "b": "nudge",
+    "key": "380ae0172aa86094",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "X gives a correct, reusable formula and verifies the total of 6, while Y adds unnecessary sheet setup and a questionable robust formula.",
+      "Y gives a correct formula that works in Excel and Google Sheets, verifies the total of 6, and avoids X’s distracting extra deliverables and questionable robust formula."
+    ]
+  },
+  {
+    "id": "rsvp-headcount-formula",
+    "a": "skill",
+    "b": "plain",
+    "key": "58e101a41c859493",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a correct formula, verifies the total of 6, and covers future rows without X’s unnecessary detail.",
+      "X gives a correct formula, verifies the headcount of 6, and covers added rows without Y’s unnecessary detail."
+    ]
+  },
+  {
+    "id": "seating-chart",
+    "a": "skill",
+    "b": "nudge",
+    "key": "e1efa6acb5518b93",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable room layout while acknowledging the missing family sizes; X’s complete seat count depends on inventing eight members in each family and a companion for Grandma.",
+      "Y provides a capacity-checked plan for all 40 guests, places Grandma near the restroom and the college friends together, and explicitly checks that the families are separated; its assumed family sizes are clearly labeled."
+    ]
+  },
+  {
+    "id": "seating-chart",
+    "a": "skill",
+    "b": "plain",
+    "key": "6c01d993ce6172bc",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X provides a capacity-checked 40-seat template and checks the actual room layout; Y leaves table capacities unresolved and assumes a buffer based only on table numbers.",
+      "Y provides a complete 40-seat template, checks table capacity and family separation, and accounts for Grandma’s walking route while clearly flagging the assumptions that need checking."
+    ]
+  },
+  {
+    "id": "sourdough-hydration-math",
+    "a": "skill",
+    "b": "nudge",
+    "key": "19989c11feaf1452",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives both correct figures and the relevant starter caveat concisely, while Y adds unnecessary detail and a questionable claim about whole-grain dough being especially slack.",
+      "Both give the correct 375 g of water and 885 g total, but Y answers directly while X adds unnecessary detail and a questionable claim about whole-grain dough."
+    ]
+  },
+  {
+    "id": "sourdough-hydration-math",
+    "a": "skill",
+    "b": "plain",
+    "key": "682b5b252cc0714b",
+    "winner": "tie",
+    "split": true,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both give the correct 375 g of water and 885 g total, but X states the starter caveat more clearly.",
+      "Both give the correct 375 g of water and 885 g total; X more accurately flags that counting starter flour and water would change the calculation, while Y assumes the hydration change would be slight."
+    ]
+  },
+  {
+    "id": "three-bed-home-listing",
+    "a": "skill",
+    "b": "nudge",
+    "key": "4d946fb19b2d15fd",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y provides a usable, restrained listing, while X invents the consequential claim that nothing beyond the kitchen and roof has been updated; Y grows scope by adding a second version and extensive commentary.",
+      "X provides a usable description grounded in the supplied facts, while Y invents that the rest of the house has not been updated; X also adds an unrequested second version and commentary."
+    ]
+  },
+  {
+    "id": "three-bed-home-listing",
+    "a": "skill",
+    "b": "plain",
+    "key": "822b128fc98f586c",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y gives a usable, restrained listing, while X makes unsupported claims that the rest of the house has not been updated and that the price reflects that.",
+      "X stays closer to the supplied facts, while Y asserts without evidence that the rest of the house has not been updated."
+    ]
+  },
+  {
+    "id": "tire-psi-conversion",
+    "a": "skill",
+    "b": "nudge",
+    "key": "0aefef396a5c129a",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Both conversions are correct, but Y gives clearer pump settings and useful guidance for checking tire pressure after driving.",
+      "Both conversions are correct, but X gives the pump setting and useful guidance for checking tire pressure after driving and following the placard’s front and rear values."
+    ]
+  },
+  {
+    "id": "tire-psi-conversion",
+    "a": "skill",
+    "b": "plain",
+    "key": "ed2bf8e76d8b6cb9",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Both conversions are correct, but X adds the relevant reminder to check tire pressure when the tires are cold.",
+      "Both conversions are correct, but Y adds the useful cold-tire check while staying focused on setting the pump."
+    ]
+  },
+  {
+    "id": "trail-hike-hydration",
+    "a": "skill",
+    "b": "nudge",
+    "key": "ecdfcaaafb7cc980",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y gives a usable 3 L carry plan with a real buffer, a moderate drinking target, and a way to estimate personal sweat loss; X calls 3 L a buffer even though its upper drinking target would use all of it.",
+      "X gives a more coherent carry amount, drinking plan, and way to adjust for personal sweat rate, while Y’s 3 L recommendation may leave no stated safety buffer at its upper drinking rate."
+    ]
+  },
+  {
+    "id": "trail-hike-hydration",
+    "a": "skill",
+    "b": "plain",
+    "key": "03c11e8512b6306f",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X gives a safer water reserve for a warm climb, tells the hiker to check sodium labels, and treats possible hyponatremia as needing medical attention; Y suggests salty food for confusion after overdrinking.",
+      "Y gives a practical 3 L carry target with a buffer and explains how to check sodium on electrolyte labels, though its drinking schedule is too rigid."
+    ]
+  },
+  {
+    "id": "venue-booking-inquiry",
+    "a": "skill",
+    "b": "nudge",
+    "key": "21cb30dda9838ad8",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": true
+    },
+    "reasons": [
+      "Y gives a stronger booking email with music links and specific details to verify before sending, though its extended booking advice goes beyond the requested email.",
+      "X gives the buyer music and live-performance links and prompts the sender to verify the claimed draw, making its booking email more useful despite its extra length."
+    ]
+  },
+  {
+    "id": "venue-booking-inquiry",
+    "a": "skill",
+    "b": "plain",
+    "key": "95d6c7536042948c",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X specifies the relevant year, asks for available dates and terms, and avoids Y’s unsupported claim that the band is actively touring.",
+      "Y specifies the next March–April window, asks for available dates and terms, and avoids X’s unsupported claim that the band is actively touring."
+    ]
+  },
+  {
+    "id": "vet-tech-linkedin-bio",
+    "a": "skill",
+    "b": "nudge",
+    "key": "f3a877fe7c220257",
+    "winner": "nudge",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "Y stays close to the requested length and connects clinical experience to specific practice management priorities without claiming unprovided management experience.",
+      "X stays closer to the requested length and makes the move into practice management more concrete through staffing, protocols, and technician retention."
+    ]
+  },
+  {
+    "id": "wedding-best-man-toast",
+    "a": "skill",
+    "b": "nudge",
+    "key": "050ad385ae2e41b5",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "nudge": false
+    },
+    "reasons": [
+      "X gives a warm, usable toast based on the supplied facts, while Y misreads who met in college and invents proposal details that could embarrass the speaker.",
+      "Y gives a concise, usable toast that keeps the college detail tied to the speaker and Dan, while X incorrectly assigns it to Dan and his partner and invents proposal details."
+    ]
+  },
+  {
+    "id": "vet-tech-linkedin-bio",
+    "a": "skill",
+    "b": "plain",
+    "key": "c141b9e872841d44",
+    "winner": "skill",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "X runs long, but Y invents training and protocol work that the person did not claim, making it risky to use as a LinkedIn bio.",
+      "Y makes a clearer, credible connection between clinical experience and practice management, while X claims training and protocol work the person never mentioned."
+    ]
+  },
+  {
+    "id": "wedding-best-man-toast",
+    "a": "skill",
+    "b": "plain",
+    "key": "21ccf92fa95ace19",
+    "winner": "plain",
+    "split": false,
+    "grew": {
+      "skill": false,
+      "plain": false
+    },
+    "reasons": [
+      "Y catches the brother-and-college ambiguity and gives useful timing guidance, though its invented anecdotes and ice-safety details should be removed before delivery.",
+      "X provides a usable toast and flags the brother-versus-college inconsistency, while Y resolves it by assuming Dan is not the speaker’s biological brother."
+    ]
+  }
+]
