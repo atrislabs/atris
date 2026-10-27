@@ -16,32 +16,22 @@ Adapted from a prompt shared by Felix Rieseberg (Anthropic), via Attention Heads
 
 ## First, does it need deepening?
 
-Most asks do not. Pass the task through unchanged, with no questions answered, when it is quick and exact: a calculation, a formula, a conversion, a lookup, extracting items from pasted text, a short fix, or anything with one right answer the person already framed. Extra checks and caveats make those answers worse.
+Default to passing the original task through word for word. This includes quick and exact asks, ordinary instructions, practical advice, writing, plans, and code. A competent answer can supply normal judgment without a rewrite.
 
-Deepen only when the result depends on judgment: a plan, a decision, a design, code that will run on real data, advice where the obvious answer has a known trap, or prose someone will send. If unsure, pass it through.
+Deepen only if you can identify a specific omission in this particular ask that is likely to cause a materially wrong or unusable result, and can name a small, concrete instruction that prevents it. Do not deepen for a merely possible improvement, an unspecified best practice, or a concern the worker can handle normally. If unsure, pass through. Never change a quick exact ask.
 
 ## The four questions
 
-Answer each one for the task's own field, in one to three concrete lines. Name real things: a named method, a named tool, a named source, a named check. Generic answers ("be thorough", "use best practices") fail the question.
+For a task that passes that threshold, answer each in one short line. Use only what is relevant to this particular omission. Say "none needed" when a question has no useful answer. Do not invent facts, data, sources, methods, constraints, or requirements.
 
-1. **Ambition. What would a top professional do here that the person is not asking for?** Picture the best practitioner in this exact field taking this exact job. Name the one or two moves they would make by default that the ask leaves out. Pick moves that make the same result better, not moves that add new deliverables.
-
-2. **Agency. What is the rawest material they would start from?** Not a summary, a dashboard, or someone's take. The source: the actual logs, the receipts, the customer's own words, the primary paper, the code path, the till tape. Say where it lives and how to get it. If it is not in reach right now, say what you will assume instead.
-
-3. **Acceleration. Which specific methods and tools would they use?** Name them. Prefer what already exists and is proven in this workspace or field over inventing something. The right named method is the shortcut.
-
-4. **Accuracy. What, other than you or the model, would show the result is right?** A test that fails before and passes after, a real run, a number that reconciles with a bank statement, a customer reply, a second reviewer on a different model. If nothing outside the model can check it, say so and name the closest proxy.
+1. **Ambition:** What specific omission could make the requested result wrong or unusable? How can it be addressed within the same deliverable?
+2. **Agency:** Is a particular available source essential? If unavailable, what assumption or limitation is necessary?
+3. **Acceleration:** Is there a specific method needed to address the omission? If not, leave it to the worker.
+4. **Accuracy:** Is there a specific check that would catch the error? If so, make it proportionate and use it silently when possible.
 
 ## The rewrite
 
-Then rewrite the task as one prompt that folds in the answers. Rules:
-
-- **Deeper, not bigger.** Same deliverable, same audience, same size of ask. If the rewrite adds a second deliverable, cut it. The test: would the person recognize this as their task, done properly?
-- **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
-- **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
-- **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
-- **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
-- **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
+Keep the entire original request and its constraints. Add only the smallest instruction needed to address the identified omission. Keep the same deliverable, audience, and size. Do not prescribe an answer, add a schedule or other deliverable, demand missing materials, invent details, or mandate a check or source when it does not help. Do the work with the information available; state a material assumption only where needed. For prose meant to be sent or spoken, return only the requested words. If no small addition clearly helps, pass the original through unchanged.
 
 ## Output shape
 
