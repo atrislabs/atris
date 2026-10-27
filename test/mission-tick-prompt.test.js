@@ -4,6 +4,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildTickPrompt, extractLayerFromReceiptText } = require('../commands/mission');
 
+test('worker starts on the job while keeping identity and boundaries', () => {
+  const prompt = buildTickPrompt({ id: 'job', objective: 'Fix the greeting', owner: 'builder', cadence: 'manual', status: 'running', stop_condition: 'greeting works' }, 1, 1, { lane: 'workspace', verifier: 'node check.js' });
+  assert.match(prompt, /Start with the job: inspect the files or state directly relevant to the objective/);
+  assert.match(prompt, /Skip workspace boot and start-of-session routines/);
+  assert.doesNotMatch(prompt, /FIRST: inspect current mission\/task state/);
+  assert.match(prompt, /You are the member "builder"/);
+  assert.match(prompt, /\*\*Stop condition:\*\* greeting works/);
+  assert.match(prompt, /Lane = workspace: stay inside that lane/);
+  assert.match(prompt, /After that one verify step, STOP/);
+});
+
 test('buildTickPrompt keeps frozen verifier line', () => {
   const prompt = buildTickPrompt(
     {
