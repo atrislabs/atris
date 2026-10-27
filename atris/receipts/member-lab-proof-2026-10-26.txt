@@ -1,0 +1,20 @@
+Member lab summary calculations are tested without starting a lab.
+
+Command: node --test test/member-lab.test.js
+Exit: 0
+Output: 1 passed, 0 failed; duration 670.507375 ms.
+
+Command: node scripts/member-lab.js --tasks 06 --label proof
+Exit: 0
+Final output:
+FAIL member r1 06-fix-failing-test 31s side-branch exit=1 ::  | > test | > node --test checks/*.js
+
+proof:
+member: 0/1 passed (0%), avg 31s, avg tokens in null, first call null, tool calls 0; opened: none
+member round 1: build median unavailable, average unavailable; code lines changed: 06-fix-failing-test 0
+
+The lab command exited successfully but its sample task failed. Its log shows a native Codex goal request after the member launched; it does not show a completed build.
+Results: system temporary directory, atris-member-lab/results/proof.jsonl and proof.summary.json.
+next_push: Trace why the launched member stops at native goal setup before completing the sample task.
+learned: A successful lab process exit does not mean its sample task passed.
+layer: capabilities
