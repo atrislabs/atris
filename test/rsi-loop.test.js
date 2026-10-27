@@ -295,3 +295,18 @@ test('a failed fetch does not start work or push a stale branch', async (t) => {
   assert.deepEqual(remoteBranches(r.remote), []);
   assertMainUntouched(r);
 });
+
+test('wording checks never follow a tracked symlink outside the checkout', async (t) => {
+  const r = room(t, { map: GOOD_MAP });
+  const external = path.join(r.base, 'external.md');
+  fs.writeFileSync(external, `outside ${DASH} unchanged\n`);
+  const seed = path.join(r.base, 'seed');
+  fs.symlinkSync(external, path.join(seed, 'atris', 'linked.md'));
+  git(seed, ['add', 'atris/linked.md']);
+  git(seed, ['commit', '-qm', 'add linked file']);
+  git(seed, ['push', '-q', 'origin', 'master']);
+  const out = await rsiLoop.runLoop({ workspace: r.root });
+  assert.equal(out.stop_reason, 'nothing_to_do', out.error);
+  assert.equal(fs.readFileSync(external, 'utf8'), `outside ${DASH} unchanged\n`);
+  assertMainUntouched(r);
+});
