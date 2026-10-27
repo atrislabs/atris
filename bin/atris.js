@@ -669,7 +669,7 @@ function showHelpAll() {
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  caretaker  - Classify open pull requests on origin (scan only; no fix, comment, or merge)');
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
-  console.log('  rsi        - Read the Dream-RSI attempt ledger (trees, attempts, policy, dreams)');
+  console.log('  rsi        - Read the Dream-RSI attempt ledger; rsi loop ships notebook fixes with no mission');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
   console.log('  link       - What two things could become together: one line, why, a first thing to make, who makes it');
