@@ -134,7 +134,12 @@ start_warm_gemini() {
   fi
   case "$lead" in agy\|*) ;; *) echo none > "$AGY_WARM.pid"; return 0 ;; esac
   IFS='|' read -r _ model effort _ <<< "$lead"
-  while kill -0 "$AGY_PROBE_PID" 2>/dev/null; do sleep 0.05; done
+  # Only a signed-in agy prints its model list (id, tab, name), about 0.4s
+  # before the probe exits, so start on the first model line.
+  while kill -0 "$AGY_PROBE_PID" 2>/dev/null; do
+    grep -q $'^[A-Za-z0-9._-]*\t' "$WORK/agy_probe.$$" 2>/dev/null && break
+    sleep 0.05
+  done
   probe=$(cat "$WORK/agy_probe.$$" 2>/dev/null) || probe="sign in"
   if printf '%s' "$probe" | grep -qi 'sign in'; then echo none > "$AGY_WARM.pid"; return 0; fi
   model="${ATRIS_YTNOTES_GEMINI_MODEL:-${model:-gemini-3.8-flash}}"
