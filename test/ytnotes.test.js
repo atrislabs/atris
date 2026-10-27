@@ -1102,12 +1102,16 @@ test('ytnotes ATRIS_YTNOTES_AUDIO_CLIENTS sets the client order', () => {
   assert.doesNotMatch(calls.join('\n'), /web_embedded/);
 });
 
+// Gemini and the backup start together, so a backup that answers at once can
+// beat an instant Gemini on a busy machine. Tests where Gemini must win use this.
+const SLOW_BACKUP = '#!/bin/sh\ncat > /dev/null\nsleep 2\nprintf "%s\\n" "# No Caption Talk" "" "Spoken only in audio."\n';
+
 test('ytnotes auto writer uses Gemini through agy when it answers', () => {
   const { result, dir } = runNoCaptionNotes('auto1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
-    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n', claude: SLOW_BACKUP },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -1180,7 +1184,7 @@ test('ytnotes auto writer takes the early Gemini answer as soon as its result li
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
-    extraBins: { agy: lingerAgy },
+    extraBins: { agy: lingerAgy, claude: SLOW_BACKUP },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -1245,7 +1249,7 @@ test('ytnotes auto writer tries Gemini again once a remembered quota wall has pa
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', TMPDIR: tmpdir },
-    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n', claude: SLOW_BACKUP },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -1482,7 +1486,7 @@ test('ytnotes falls back to the built-in order when the roster lookup fails, is 
       withWhisper: true,
       whisperVtt: LOCAL_VTT,
       extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '1', ATRIS_YTNOTES_RESOLVE_CMD: cmd },
-      extraBins: { agy: recordingWriter('agy', 'From Gemini') },
+      extraBins: { agy: recordingWriter('agy', 'From Gemini'), claude: SLOW_BACKUP },
     });
     assert.equal(result.status, 0, `${label}: ${result.stderr}`);
     assert.match(fs.readFileSync(path.join(dir, `yt_${label}.md`), 'utf8'), /# From Gemini/, label);
