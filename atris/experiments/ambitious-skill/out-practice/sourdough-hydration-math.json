@@ -1,0 +1,16 @@
+{
+  "id": "sourdough-hydration-math",
+  "field": "baking",
+  "task": "My recipe calls for 500 g of flour and I want 75% hydration. How many grams of water do I need, and with 10 g of salt added, what's the total dough weight not counting the starter?",
+  "made": {
+    "base": "84c005e98cf822b1",
+    "skill": "408194e831d02470"
+  },
+  "rewrite": "deeper task:\nMy recipe calls for 500 g of flour and I want 75% hydration. How many grams of water do I need, and with 10 g of salt added, what's the total dough weight not counting the starter?",
+  "deeper": "My recipe calls for 500 g of flour and I want 75% hydration. How many grams of water do I need, and with 10 g of salt added, what's the total dough weight not counting the starter?",
+  "answers": {
+    "plain": "- **Water:** 500 g × 0.75 = **375 g**\n- **Total dough weight (flour + water + salt, no starter):** 500 + 375 + 10 = **885 g**\n\nIf your starter is counted in the flour and water (as in baker's percentages), the totals will shift once you add it.",
+    "nudge": "**Water:** 500 g × 0.75 = **375 g**\n\n**Total dough weight (no starter):** 500 + 375 + 10 = **885 g**\n\n**What a professional would add:**\n\n- **Salt percentage:** 10 g is 2% of the flour weight. That's the standard for bread, which usually falls between 1.8% and 2.2%.\n- **Starter changes the numbers.** You said not to count it, but it will shift your real hydration and total weight. Starter at 100% hydration contributes equal parts flour and water. For example, 100 g of starter adds 50 g flour and 50 g water. The dough would then be:\n  - Flour: 550 g\n  - Water: 425 g\n  - Hydration: 425 / 550 ≈ 77%\n  - Total: 100 + 500 + 375 + 10 = 985 g\n\n  If you want 75% overall hydration with that starter, reduce the added water so total water ÷ total flour = 0.75. In this example, that means 362.5 g of water in the mix, since total flour is 550 g and total water needs to be 412.5 g, with 50 g already in the starter.\n- **Practical tip:** At 75% hydration the dough will be fairly slack, especially with whole grain or lower-protein flour. If it's too sticky, start with about 350 g of water and add the rest after the first fold (the bassinage method).\n- **Yield:** 885 g makes one small loaf. Bakers typically scale to about 800 to 900 g for a 750 g baked loaf. Weight loss from baking is about 12 to 15%.\n\nI can scale this for a different loaf size or work out the exact water amount for a specific starter weight and hydration if you give me those.",
+    "skill": "**Water:** 500 g × 0.75 = **375 g**\n\n**Total dough weight (without starter):** 500 g flour + 375 g water + 10 g salt = **885 g**"
+  }
+}

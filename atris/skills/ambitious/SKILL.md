@@ -38,9 +38,10 @@ Then rewrite the task as one prompt that folds in the answers. Rules:
 
 - **Deeper, not bigger.** Same deliverable, same audience, same size of ask. If the rewrite adds a second deliverable, cut it. The test: would the person recognize this as their task, done properly?
 - **Keep what they said.** Every constraint in the original survives the rewrite word for word in meaning.
-- **Name the check in the prompt.** The rewrite ends with how the result will be shown right (answer 4).
-- **Do the work now.** The deeper task never waits on material that is not in reach. It uses what is here, states its assumptions, and ends by naming the one piece of raw material that would sharpen it. Ask a question first only when the answer would change everything.
+- **Use the check in proportion.** Include a practical check only when it helps this task. Do not ask for a separate verification section or extra work by default.
+- **Do the work now.** Use what is here. Do not invent facts, dates, people, measurements, or sources to fill gaps. Use a clearly marked placeholder or conditional answer when needed. Ask a question first only when the answer would change everything.
 - **Words for a person stay words.** When the deliverable is prose someone will send or say (a note, a toast, a post, an email, a bio, a job ad), the deliverable is only the words. This replaces the two rules above: the check and the missing material shape your choices silently and never appear as steps, sections, or notes. Write it complete, at the length asked. Leave a blank only for a fact only the person knows, like a name, and never invent one.
+- **Draft, critique, improve.** For a task that needs judgment, include this instruction in the deeper task: "Privately draft the answer, then critique it as a top professional in this field. Check that it directly answers the request, preserves every constraint, uses only supported facts, and makes the most useful specific choices. Look for errors, misleading assumptions, unnecessary detail, missing practical guidance, and any added work the person did not ask for. Fix the consequential flaws, then deliver only the improved answer. Do not show the draft or critique." Tailor the critique to the task and keep it proportionate. Do not add this to a pass-through.
 - **Scale to the task.** A two-minute task gets a two-line rewrite. Do not turn a quick fix into a project.
 
 ## Output shape
