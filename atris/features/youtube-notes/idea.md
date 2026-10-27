@@ -2,7 +2,7 @@
 
 > **Status:** complete (the `atris youtube bench` scorecard is shipped; the full bench passed 5 of 5 live on 2026-10-21)
 > **Created:** 2026-08-15
-> **Last Updated:** 2026-10-21
+> **Last Updated:** 2026-10-27
 
 ---
 
@@ -31,6 +31,8 @@ atris youtube notes <url>
 scripts/det/ytnotes (bash)
         |
         |-- captions:     yt-dlp asks for en-orig first (the real English track)
+        |                 through the iOS client, skipping the webpage and player script
+        |                 no English track? fetch again the old way, then decide
         |                 --ignore-errors keeps going if plain "en" is blocked
         |
         |-- no captions?
@@ -79,6 +81,8 @@ A person on a fresh computer is told what to install, instead of being told the 
 ## Technical Notes
 
 **Captions.** yt-dlp, the free YouTube downloader, asks for `en-orig` first, which is the English track the speaker actually said. Plain `en` is YouTube's machine translation and often gets refused with HTTP 429 (too many requests), which used to stop the whole fetch.
+
+Since 2026-10-25 the fetch goes through YouTube's iOS client first and skips the webpage and the player script, which only unlock video streams the notes never download. That cut the caption step from about 2.4 to 1.8 seconds. If no English track lands, the fetch runs again the old way, so a captioned video is never mistaken for one without captions.
 
 `commands/youtube.js` also tries up to 4 caption tracks in order, so one blocked track falls through to the next.
 
