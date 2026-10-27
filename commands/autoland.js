@@ -449,7 +449,7 @@ function wishSweepSummaryLine(summary, error = null) {
   return line;
 }
 
-function evaluateQueue(root, { strictVerify, acceptAll }) {
+function evaluateQueue(root, { strictVerify, acceptAll, includeProtected }) {
   return readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
@@ -458,7 +458,7 @@ function evaluateQueue(root, { strictVerify, acceptAll }) {
     .map((task) => {
       const evaluation = evaluateAutoAccept(
         { ...task, workspace_root: root },
-        { strictVerify, acceptAll, executeVerify: false },
+        { strictVerify, acceptAll, includeProtected, executeVerify: false },
       );
       return {
         ...evaluation,
@@ -472,6 +472,7 @@ function protectedReviewWaiting(root, policy = {}, waiting = []) {
   return evaluateQueue(root, {
     strictVerify: policy.strict_verify !== false,
     acceptAll: Boolean(policy.accept_all),
+    includeProtected: Boolean(policy.accept_protected),
   })
     .filter((row) => /^denied_tag_/.test(String(row.reason || '')))
     .filter((row) => !alreadyWaiting.has(row.ref));
@@ -487,7 +488,8 @@ function showStatus(root, args, deps = {}) {
   const enabled = Boolean(policy && policy.enabled);
   const strictVerify = policy ? policy.strict_verify !== false : true;
   const acceptAll = Boolean(policy && policy.accept_all);
-  const results = evaluateQueue(root, { strictVerify, acceptAll })
+  const includeProtected = Boolean(policy && policy.accept_protected);
+  const results = evaluateQueue(root, { strictVerify, acceptAll, includeProtected })
     .filter((r) => r.reason !== 'not_in_review');
   const readyForRecheck = results.filter((r) => r.action === 'would_accept');
   const wouldLand = readyForRecheck.filter((r) => r.verification_pending !== true);
@@ -525,7 +527,8 @@ function showStatus(root, args, deps = {}) {
       : `on (flipped by ${policyOwner}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})`)
     : 'off - everything waits for you';
   console.log(`  policy: ${policyText}`);
-  if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
+  if (enabled && includeProtected) console.log('  bar: protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
+  else if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
   console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, policy)}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
@@ -634,6 +637,7 @@ function turnOn(root, args) {
     alarm_hours: Number.isFinite(alarmHours) && alarmHours > 0 ? alarmHours : autoland.DEFAULT_ALARM_HOURS,
     strict_verify: !args.includes('--no-strict-verify'),
     accept_all: acceptAll,
+    accept_protected: args.includes('--include-protected'),
     daily_experiment: previous.daily_experiment !== false,
   });
   const cronOk = autoland.installCron(root);
@@ -644,9 +648,11 @@ function turnOn(root, args) {
   });
   console.log('');
   console.log('autoland is on.');
-  if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner}; only the protected lanes wait.`);
+  if (acceptAll && policy.accept_protected) console.log(`  everything in review now lands itself, accepted as ${owner}.`);
+  else if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner}; only the protected lanes wait.`);
   else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
-  console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
+  if (policy.accept_protected) console.log('  protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
+  else console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
   console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`);
   if (policy.imessage_to) {
     console.log(`  daily message to ${policy.imessage_to} at ${policy.digest_hour}:00; anything waiting on you past ${policy.alarm_hours}h pings you.`);
@@ -1020,6 +1026,14 @@ function digestSentToday(state, now = new Date()) {
   return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
 }
 
+function acceptCommandArgs(policy) {
+  const args = ['task', 'auto-accept-certified', '--json', '--certify-first'];
+  if (policy.accept_protected) args.push('--include-protected');
+  if (policy.accept_all) args.push('--all');
+  else if (policy.strict_verify === false) args.push('--no-strict-verify');
+  return args;
+}
+
 async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
 
   try {
@@ -1044,9 +1058,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   refreshLandingRefs(root);
-  const cliArgs =['task', 'auto-accept-certified', '--json', '--certify-first'];
-  if (policy.accept_all) cliArgs.push('--all');
-  else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
+  const cliArgs = acceptCommandArgs(policy);
   const pendingReviewRows = readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
@@ -1442,7 +1454,7 @@ function showHelp() {
   console.log('');
   console.log('finished work that passed its checks and two independent reviews lands');
   console.log('automatically with a receipt. money, deploys, security, customer, and');
-  console.log('outward-facing work always waits for you.');
+  console.log('outward-facing work waits for you unless you include protected work.');
   console.log('');
   console.log('recommended agent flight checks:');
   console.log('  fast suite: npm run test:fast');
@@ -1456,6 +1468,7 @@ function showHelp() {
   console.log('  atris autoland on --all            lower the bar: everything lands except');
   console.log('                                     the protected lanes; a failing recorded');
   console.log('                                     check still blocks');
+  console.log('  atris autoland on --include-protected  include protected work in the policy');
   console.log('  atris autoland off                 back to approving every item');
   console.log('  atris autoland digest [--send]     the daily message, now');
   console.log('  atris autoland tick [--json]       one heartbeat (what the hourly cron runs)');
@@ -1501,6 +1514,7 @@ module.exports = {
   hasAgentJargon,
   runEngineAnswerValidation,
   runTickBody,
+  acceptCommandArgs,
   runSshAgentSweep,
   sshAgentSweepNote,
   showStatus,

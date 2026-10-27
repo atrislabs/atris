@@ -31,6 +31,7 @@ const {
   parseVerifyCommand,
   runVerifyCommand,
   DENIED_TAGS,
+  protectedLaneOf,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
 const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
@@ -10247,6 +10248,7 @@ function cmdCertifyVerified(args, options = {}) {
   const asJson = wantsJson(args);
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
+  const includeProtected = options.includeProtected === true;
   const actor = String(flag(args, '--as') || 'autoland-verifier');
   const limitRaw = flag(args, '--limit');
   const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 6) : 6;
@@ -10284,7 +10286,7 @@ function cmdCertifyVerified(args, options = {}) {
       continue;
     }
     const tag = String(task.tag || '').toLowerCase();
-    if (DENIED_TAGS.has(tag)) {
+    if (!includeProtected && DENIED_TAGS.has(tag)) {
       results.push({ ref, action: 'skipped', reason: `denied_tag_${tag}` });
       continue;
     }
@@ -10302,7 +10304,7 @@ function cmdCertifyVerified(args, options = {}) {
     // second time per row before the real run. executeVerify: false as well,
     // an untrusted trust tier re-enables the strict block internally even
     // with strictVerify off, which is how this probe spawned a verify per row.
-    const evaluation = evaluateAutoAccept(task, { strictVerify: false, executeVerify: false });
+    const evaluation = evaluateAutoAccept(task, { strictVerify: false, includeProtected, executeVerify: false });
     if (evaluation.eligible) {
       results.push({ ref, action: 'skipped', reason: 'already_landable' });
       continue;
@@ -10415,6 +10417,7 @@ function cmdLanding(args) {
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const acceptAll = hasFlag(args, '--all');
+  const includeProtected = hasFlag(args, '--include-protected');
   const certifyFirst = hasFlag(args, '--certify-first');
   const strictVerify = !hasFlag(args, '--no-strict-verify') && !acceptAll;
   const actorFlag = flag(args, '--as');
@@ -10479,7 +10482,7 @@ function cmdAutoAcceptCertified(args) {
   // never persisted: a later heartbeat must prove the checkout again.
   const verifyCache = new Map();
   const certification = certifyFirst && !dryRun
-    ? cmdCertifyVerified([], { verifyCache, silent: true })
+    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected })
     : null;
 
   const taskDb = getTaskDb();
@@ -10514,7 +10517,7 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...proofBoundary, action: 'skipped' });
       continue;
     }
-    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, verifyCache });
+    const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, includeProtected, verifyCache });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
@@ -10547,7 +10550,9 @@ function cmdAutoAcceptCertified(args) {
     }
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor,
-      proof: evaluation.proof,
+      proof: includeProtected && protectedLaneOf(task)
+        ? `${evaluation.proof}\nprotected lane accepted by owner policy (${protectedLaneOf(task)})`
+        : evaluation.proof,
       reward: parsedReward.value,
       lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
       nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
@@ -10632,7 +10637,17 @@ function autoAcceptSweepNormalizedTokens(value) {
   return [normalized, ...normalized.split(/[^a-z0-9-]+/).filter(Boolean)];
 }
 
-function autoAcceptSweepDeniedReason(task) {
+function autoAcceptSweepLane(task) {
+  for (const value of autoAcceptSweepLabelValues(task)) {
+    for (const token of autoAcceptSweepNormalizedTokens(value)) {
+      const lane = [...SWEEP_AUTO_ACCEPT_PROTECTED].find((denied) => token === denied || token.replace(/s$/, '') === denied);
+      if (lane) return lane;
+    }
+  }
+  return null;
+}
+
+function autoAcceptSweepDeniedReason(task, includeProtected = false) {
   for (const value of autoAcceptSweepLabelValues(task)) {
     const tokens = autoAcceptSweepNormalizedTokens(value);
     for (const token of tokens) {
@@ -10642,7 +10657,7 @@ function autoAcceptSweepDeniedReason(task) {
       const protectedLane = [...SWEEP_AUTO_ACCEPT_PROTECTED].find((denied) =>
         token === denied || token.replace(/s$/, '') === denied
       );
-      if (protectedLane) return 'protected_lane';
+      if (protectedLane && !includeProtected) return 'protected_lane';
     }
   }
   return null;
@@ -10689,7 +10704,7 @@ function autoAcceptSweepHappened(task) {
   );
 }
 
-function evaluateSweepAutoAccept(task, root) {
+function evaluateSweepAutoAccept(task, root, includeProtected = false) {
   const ref = taskRef(task);
   if (!task) return { eligible: false, ref, reason: 'task_not_found' };
   if (task.status !== 'review') return { eligible: false, ref, reason: 'not_in_review' };
@@ -10698,7 +10713,7 @@ function evaluateSweepAutoAccept(task, root) {
   const approval = String(review.approval_status || metadata.approval_status || 'pending').toLowerCase();
   if (approval !== 'pending') return { eligible: false, ref, reason: `approval_${approval}` };
   if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
-  const denied = autoAcceptSweepDeniedReason(task);
+  const denied = autoAcceptSweepDeniedReason(task, includeProtected);
   if (denied) return { eligible: false, ref, reason: denied };
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
@@ -10819,14 +10834,17 @@ function cmdSweep(args) {
   for (const item of pendingReview) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
-    const evaluation = evaluateSweepAutoAccept(task, root);
+    const includeProtected = hasFlag(args, '--include-protected');
+    const evaluation = evaluateSweepAutoAccept(task, root, includeProtected);
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped', task_id: task?.id || item.id || null });
       continue;
     }
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor,
-      proof: evaluation.proof,
+      proof: includeProtected && (protectedLaneOf(task) || autoAcceptSweepLane(task))
+        ? `${evaluation.proof}\nprotected lane accepted by owner policy (${protectedLaneOf(task) || autoAcceptSweepLane(task)})`
+        : evaluation.proof,
       reward: parsedReward.value,
       lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
       nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
