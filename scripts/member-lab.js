@@ -21,7 +21,8 @@
 //            Every (task, arm, rep) run is queued in a seeded shuffle so arms
 //            alternate in time, and folder names are random ids, so the agent
 //            cannot tell which arm it is in from its path.
-// Common:    [--lab /tmp/x] [--tasks 06,09,...|all] [--jobs 3] [--timeout 600]
+// Common:    [--lab /tmp/x] [--bench /path/to/tasks] [--extra "member flags"]
+//            [--tasks 06,09,...|all] [--jobs 3] [--timeout 600]
 //            [--clean-home] [--seed 1] [--rescore] [--summary] [--keep-api-keys]
 //            [--codex-model gpt-6.1-sol] [--codex-effort medium]
 //
@@ -44,7 +45,7 @@ function flag(name, fallback) {
 const has = (name) => process.argv.includes(`--${name}`);
 
 const REPO = path.resolve(__dirname, '..');
-const BENCH = path.join(REPO, 'atris', 'benchmarks', 'agents-v1');
+const BENCH = path.resolve(flag('bench', process.env.LAB_BENCH || path.join(REPO, 'atris', 'benchmarks', 'agents-v1')));
 const LAB = path.resolve(flag('lab', path.join(os.tmpdir(), 'atris-member-lab')));
 const defaultCli = flag('cli', path.join(REPO, 'bin', 'atris.js'));
 const engine = flag('engine', 'claude');
@@ -53,6 +54,7 @@ const timeoutSec = Number(flag('timeout', 600));
 const reps = Math.max(1, Number(flag('reps', 1)));
 const seed = Number(flag('seed', 1));
 const cleanHome = has('clean-home');
+const extra = String(flag('extra', '')).split(/\s+/).filter(Boolean);
 const tasksFlag = String(flag('tasks', '02,06,08,09,11,12,15,16,19,27'));
 
 // Arm specs: name=kind[:cli]. Single-arm mode keeps the old --arm flag.
@@ -135,7 +137,7 @@ function makeCtx(workspace, fixtureDir) {
 }
 
 function agentCommand(arm, prompt) {
-  if (arm.kind === 'member') return [process.execPath, [arm.cli, 'member', 'run', prompt]];
+  if (arm.kind === 'member') return [process.execPath, [arm.cli, 'member', 'run', prompt, ...extra]];
   if (engine === 'codex') {
     return ['codex', ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', prompt]];
   }
@@ -150,9 +152,23 @@ function runAgent(arm, prompt, cwd, logPath) {
     const out = fs.openSync(logPath, 'w');
     const childEnv = { ...env, PWD: cwd };
     if (CODEX_HOME && arm.kind !== 'member') childEnv.CODEX_HOME = CODEX_HOME;
-    const child = spawn(cmd, args, { cwd, env: childEnv, stdio: ['ignore', out, out], detached: true });
+    const started = Date.now();
+    const child = spawn(cmd, args, { cwd, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const capture = (stream) => {
+      let pending = '';
+      stream.setEncoding('utf8');
+      const write = (line) => fs.writeSync(out, `[${((Date.now() - started) / 1000).toFixed(1)}s] ${line}\n`);
+      stream.on('data', (chunk) => {
+        const lines = (pending + chunk).split('\n');
+        pending = lines.pop();
+        for (const line of lines) write(line);
+      });
+      stream.on('end', () => { if (pending) write(pending); });
+    };
+    capture(child.stdout);
+    capture(child.stderr);
     const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, timeoutSec * 1000);
-    child.on('exit', (code, signal) => { clearTimeout(timer); fs.closeSync(out); resolve({ code, signal }); });
+    child.on('close', (code, signal) => { clearTimeout(timer); fs.closeSync(out); resolve({ code, signal }); });
   });
 }
 
@@ -187,8 +203,9 @@ function readAgentLog(arm, logPath, logEngine = engine) {
   try { text = fs.readFileSync(logPath, 'utf8'); } catch { return stats; }
   const calls = [];
   for (const line of text.split('\n')) {
-    if (!line.startsWith('{')) continue;
-    let e; try { e = JSON.parse(line); } catch { continue; }
+    const jsonLine = line.replace(/^\[\s*[\d.]+s\] /, '');
+    if (!jsonLine.startsWith('{')) continue;
+    let e; try { e = JSON.parse(jsonLine); } catch { continue; }
     // The engine itself failed and did not recover. The summary leaves such
     // runs out unless they passed anyway. Claude reports its outcome once, in
     // the final result line; Codex can fail a turn and then finish another.
@@ -310,6 +327,27 @@ async function runTask({ dir, arm, rep }) {
     g(['checkout', '--', '.']);
     g(['-c', 'user.email=lab@atris', '-c', 'user.name=lab', 'merge', '--no-edit', '-q', '-X', 'theirs', mergedSide]);
   }
+  // Include tracked changes and untracked project files, but never the Atris desk.
+  const excludes = [...atrisOwned].map((name) => `:(exclude)${name}`);
+  const diff = g(['diff', '--numstat', baseHead, '--', '.', ...excludes]).stdout;
+  let codeLines = diff.split('\n').reduce((sum, line) => {
+    const [added, removed] = line.split('\t');
+    return sum + (Number(added) || 0) + (Number(removed) || 0);
+  }, 0);
+  const untracked = g(['ls-files', '--others', '--exclude-standard', '-z', '--', '.', ...excludes]).stdout.split('\0').filter(Boolean);
+  for (const file of untracked) {
+    const data = fs.readFileSync(path.join(ws, file));
+    if (!data.includes(0)) codeLines += data.length ? data.toString('utf8').split('\n').length - (data[data.length - 1] === 10 ? 1 : 0) : 0;
+  }
+  const buildSeconds = [];
+  try {
+    for (const line of fs.readFileSync(path.join(ws, '.atris/state/roster_runs.jsonl'), 'utf8').split('\n')) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.job === 'build' && typeof entry.seconds === 'number' && Number.isFinite(entry.seconds) && entry.seconds >= 0) buildSeconds.push(entry.seconds);
+      } catch {}
+    }
+  } catch {}
   const scoreDir = `${ws}.score`;
   fs.rmSync(scoreDir, { recursive: true, force: true });
   fs.mkdirSync(scoreDir);
@@ -329,7 +367,7 @@ async function runTask({ dir, arm, rep }) {
   const stats = readAgentLog(arm, logPath);
   const row = {
     label, arm: arm.name, kind: arm.kind, engine: arm.kind === 'member' ? 'member' : engine, rep, task: dir,
-    passed, landed, merged_side: mergedSide, secs, exit: agent.code, signal: agent.signal, failure,
+    passed, landed, merged_side: mergedSide, secs, build_seconds: buildSeconds, code_lines_changed: codeLines, exit: agent.code, signal: agent.signal, failure,
     ...stats, folder: path.relative(runsRoot, ws), at: new Date().toISOString(),
   };
   fs.appendFileSync(resultsPath, `${JSON.stringify(row)}\n`);
@@ -347,6 +385,23 @@ function shuffle(list, s) {
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
+}
+
+function roundSummaries(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = JSON.stringify([row.arm, row.rep]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.values()].map((round) => {
+    const times = round.flatMap((r) => r.build_seconds || []).sort((a, b) => a - b);
+    const middle = Math.floor(times.length / 2);
+    return { arm: round[0].arm, rep: round[0].rep,
+      build_median_seconds: times.length ? (times.length % 2 ? times[middle] : (times[middle - 1] + times[middle]) / 2) : null,
+      build_average_seconds: times.length ? times.reduce((a, b) => a + b, 0) / times.length : null,
+      tasks: round.map((r) => ({ task: r.task, code_lines_changed: r.code_lines_changed ?? null })) };
+  });
 }
 
 function summarize(rows) {
@@ -367,6 +422,10 @@ function summarize(rows) {
     const openedText = Object.entries(opened).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${p} ${n}`).join(', ') || 'none';
     lines.push(`${name}: ${pass}/${scored} passed (${Math.round(100 * pass / Math.max(1, scored))}%)${infra ? `, ${infra} engine failures left out` : ''}, avg ${avg('secs')}s, avg tokens in ${avg('tokens_in')}, first call ${avg('first_call_in')}, tool calls ${avg('tool_calls')}; opened: ${openedText}`);
   }
+  for (const round of roundSummaries(rows)) {
+    const changes = round.tasks.map((r) => `${r.task} ${r.code_lines_changed ?? 'unknown'}`).join(', ');
+    lines.push(`${round.arm} round ${round.rep}: build median ${round.build_median_seconds == null ? 'unavailable' : `${round.build_median_seconds}s`}, average ${round.build_average_seconds == null ? 'unavailable' : `${round.build_average_seconds}s`}; code lines changed: ${changes}`);
+  }
   return lines.join('\n');
 }
 
@@ -382,6 +441,7 @@ function summarize(rows) {
       if (!('infra_error' in r)) Object.assign(r, fresh);
       else r.infra_error = fresh.infra_error;
     }
+    fs.writeFileSync(path.join(LAB, 'results', `${label}.summary.json`), `${JSON.stringify(roundSummaries(rows), null, 2)}\n`);
     console.log(summarize(rows));
     return;
   }
@@ -400,5 +460,6 @@ function summarize(rows) {
       try { rows.push(await runTask(item)); } catch (err) { console.log(`ERROR ${item.arm.name} r${item.rep} ${item.dir} ${err.message.slice(0, 200)}`); }
     }
   }));
+  fs.writeFileSync(path.join(LAB, 'results', `${label}.summary.json`), `${JSON.stringify(roundSummaries(rows), null, 2)}\n`);
   console.log(`\n${label}:\n${summarize(rows)}`);
 })();
