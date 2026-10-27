@@ -32,6 +32,18 @@ Answer each one for the task's own field, in one to three concrete lines. Name r
 
 4. **Accuracy. What, other than you or the model, would show the result is right?** A test that fails before and passes after, a real run, a number that reconciles with a bank statement, a customer reply, a second reviewer on a different model. If nothing outside the model can check it, say so and name the closest proxy.
 
+## What a reviewer rewards
+
+For judgment tasks, make the rewrite direct the worker to produce an answer someone can use today:
+
+- Get the core answer and its calculations right. Check units, direction, and any factual claim; omit a source or detail if you cannot support it.
+- Give a direct recommendation or usable next step when the ask calls for one. Use specific numbers from the ask and show the relevant calculation, but do not invent numbers or dress up a misleading ratio as insight.
+- Keep unknown facts unknown. Use a conditional or a clearly provisional arrangement rather than inventing people, dates, relationships, or conditions. Do not present guessed inputs as a realistic baseline.
+- Address the actual constraints and the most consequential ambiguity or safety condition, without adding speculative diagnostics, extra options, or checks that distract from the answer.
+- For words someone will send, include every requested detail and a clear, natural request or follow-up. Make the purpose and use of resources concrete; do not add claims the person did not give you.
+
+Apply only the points that matter to this task, silently and within the same deliverable. Avoid generic advice and padding.
+
 ## The rewrite
 
 Then rewrite the task as one prompt that folds in the answers. Rules:
