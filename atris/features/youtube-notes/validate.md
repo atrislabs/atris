@@ -42,6 +42,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 - **Action:** `time atris youtube notes 'https://www.youtube.com/watch?v=6DRlX5vIOE0'` on an Apple silicon Mac with `mlx_whisper`
 - **Expect:** A line saying it is transcribing on this computer, then notes and a quote tally. Measured at 59 seconds. Rerun live on 2026-10-15: exit 0 in 49 seconds. Gemini did not answer, so the notes said so and switched to Haiku; quotes 5 kept, 0 repaired, 0 dropped. Rerun live on 2026-10-17 with Gemini back: exit 0 in 16.12 seconds at load about 3, the transcribing line printed, `notes by Gemini`, 172 words, quotes 5 kept, 0 repaired, 0 dropped.
 - **Rerun live on 2026-10-21** from the youtube-lead branch with no cached transcript: passes. Exit 0 in 20.88 seconds at machine load about 1.8, the transcribing line printed, `notes by Gemini`, quotes 5 kept, 0 repaired, 0 dropped, saved copy present. That is about 5 seconds slower than on Oct 17, and the run warned that yt-dlp is 62 days old.
+- **Rerun live on 2026-10-27** from the youtube-lead branch after the Oct 25-27 speed changes, in a fresh empty `TMPDIR`: passes. Exit 0 in 37.78 seconds at machine load about 8.4 (the Oct 21 run was 20.88 seconds at load 1.8), the transcribing line printed, `notes by Gemini`, quotes 6 kept, 0 repaired, 0 dropped, saved copy present. The video is a 1:41 BBC News Swahili clip, so the notes come out in Swahili, matching the speech.
 
 ### Step 3: Stranger with no downloader
 
