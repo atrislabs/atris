@@ -77,7 +77,7 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 ## 3. Regression Check
 
 - [ ] `atris youtube process <url>` still charges 5 credits and refunds on failure. Only run this with a human's go, because it spends credits.
-- [x] `ATRIS_YTNOTES_ENGINE=haiku atris youtube notes <url>` still pins Haiku. Rerun live on 2026-10-14 with `Z3JyAqh4ixg`: exit 0 in 16 seconds, "notes by haiku", quotes 5 kept, 0 repaired, 0 dropped.
+- [x] `ATRIS_YTNOTES_ENGINE=haiku atris youtube notes <url>` still pins Haiku. Rerun live on 2026-10-14 with `Z3JyAqh4ixg`: exit 0 in 16 seconds, "notes by haiku", quotes 5 kept, 0 repaired, 0 dropped. Rerun live on 2026-10-28 from the youtube-lead branch after Haiku began starting during the caption download, at load about 4.5: exit 0 in 7.27 seconds, "notes by haiku", quotes 5 kept, 1 repaired, 0 dropped.
 - [x] `ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0` on a no-caption video prints the paid command instead of transcribing. Rerun live on 2026-10-14 with `6DRlX5vIOE0`: exit 2 in 3 seconds, "No English captions found" plus the 5-credit paid command, no notes or transcript left behind.
 - [x] A sign-in wall on the caption fetch says YouTube is blocking caption downloads, not that the video has no captions, and a bare 429 still says no captions. Run `node --test --test-name-pattern 'sign-in wall|only a 429' test/ytnotes.test.js`: 2 pass on 2026-10-14. The live block lifted before it could be rerun, so this one is proven with a fake downloader only.
 
