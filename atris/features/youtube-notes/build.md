@@ -1,3 +1,9 @@
+**Where the time goes now (2026-10-28):**
+- Captions land in about 1.3s. The writer is about 80% of a run: four live auto runs took 8.5 to 10.0s, and Haiku won every race. Alone on the short bench video, Haiku took 9.5 to 15.1s and Gemini 10.7 to 13.8s.
+- The agy sign-in check takes up to 11s to exit, but its model list shows up at 1.5 to 1.8s and the early Gemini starts on that line, so the slow exit costs nothing.
+- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs), a shorter transcript (trimming risks the verbatim quote check), starting Haiku early (it sends its request 30ms after the prompt arrives and its first word takes about 1.2s, so the head start is under 0.5s), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`).
+- The lever left is shorter notes (fewer beats or quotes), which changes the product and waits on the owner.
+
 # YouTube Notes: Build Plan
 
 > **For Executor Agent.** This describes the feature as it stands on 2026-10-21. Use it to find the code before changing it.
@@ -162,6 +168,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 - The writer list looked up at the start of a run is saved in `$AGY_WARM.writers`, so `run_auto` no longer runs that lookup (a node start, about 0.2s) again after the captions land.
 - The caption fetch passes `player_skip=js`. Solving the player script in deno took about 1.1s and only unlocks video streams the notes never download. Captions came out byte-identical on both bench videos.
 - Captions come through the iOS client first (`player_client=ios`, `player_skip=js,webpage`), which skips the webpage download. When no English track lands, `captions_landed` fails and the fetch runs again the old way, so a video never reads as captionless by mistake. Caption-only runs, old against new: 2.52/1.92, 2.26/1.93, 2.58/1.63, 2.23/1.72.
+- The iOS fetch also skips the initial data request (`player_skip=...,initial_data`), about 0.5s. That request was the only place yt-dlp found the channel name, so a `curl` to YouTube's oEmbed lookup (about 0.2s) runs beside the caption fetch and fills in the `NA`. When the channel is already there, the lookup is stopped unused. Caption-only runs, old against new, warm: 1.81/1.09, 1.72/1.35; captions byte-identical. Score check 12.6s base to 8.2s branch (commit ea3ba0ef9).
 - The early Gemini starts on the first model line the sign-in check prints, about 0.7s before the check exits. Only a signed-in agy prints model lines, so a signed-out agy still never starts. Paired runs: 8.7 to 9.2s (4 runs) against a 12.5s median (5 runs).
 
 **Where the time goes now (2026-10-27):**
@@ -171,6 +178,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 **Validation:**
 - `node --test --test-name-pattern 'iOS client' test/ytnotes.test.js` runs the two caption fallback tests; removing the fallback line fails the first one.
+- `node --test --test-name-pattern 'oEmbed' test/ytnotes.test.js` checks that an `NA` channel is filled from oEmbed and the lookup file is cleaned up.
 - `node scripts/det/ytrail-bench.js --quick` five times is the live check for the median.
 
 ---

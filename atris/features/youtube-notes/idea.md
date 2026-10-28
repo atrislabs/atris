@@ -32,6 +32,7 @@ scripts/det/ytnotes (bash)
         |
         |-- captions:     yt-dlp asks for en-orig first (the real English track)
         |                 through the iOS client, skipping the webpage and player script
+        |                 oEmbed fetches the channel name beside it
         |                 no English track? fetch again the old way, then decide
         |                 --ignore-errors keeps going if plain "en" is blocked
         |
@@ -85,6 +86,8 @@ A person on a fresh computer is told what to install, instead of being told the 
 **Captions.** yt-dlp, the free YouTube downloader, asks for `en-orig` first, which is the English track the speaker actually said. Plain `en` is YouTube's machine translation and often gets refused with HTTP 429 (too many requests), which used to stop the whole fetch.
 
 Since 2026-10-25 the fetch goes through YouTube's iOS client first and skips the webpage and the player script, which only unlock video streams the notes never download. That cut the caption step from about 2.4 to 1.8 seconds. If no English track lands, the fetch runs again the old way, so a captioned video is never mistaken for one without captions.
+
+Since 2026-10-28 the iOS fetch also skips YouTube's initial data request, about half a second more. That request was the only source of the channel name, so YouTube's small oEmbed lookup fetches it at the same time as the captions, in about 0.2 seconds, and the notes still open with the right channel.
 
 `commands/youtube.js` also tries up to 4 caption tracks in order, so one blocked track falls through to the next.
 
