@@ -259,11 +259,34 @@ captions_landed() {
 # the others list none without it. Its file drops the word timing tags, but
 # the cleaned words come out the same. When it lands no English captions,
 # fetch again the full way, so a missing iOS track never reads as no captions.
+# The iOS fetch also skips the initial data request (about 0.5s), the only
+# place yt-dlp finds the channel name, so YouTube's oEmbed lookup (about 0.2s)
+# fetches it beside the captions and fills in the NA.
 : > "yt_captions.$$.err"
-fetch_captions "youtube:skip=hls,dash;player_skip=js,webpage;player_client=ios"
+CHANNEL_PID=""
+if command -v curl >/dev/null 2>&1; then
+  curl -s -m 3 -G --data-urlencode "url=$URL" -d format=json "https://www.youtube.com/oembed" \
+    >"yt_channel.$$.json" 2>/dev/null </dev/null &
+  CHANNEL_PID=$!
+fi
+fetch_captions "youtube:skip=hls,dash;player_skip=js,webpage,initial_data;player_client=ios"
 captions_landed || fetch_captions "youtube:skip=hls,dash;player_skip=js"
 META=$(cat "yt_meta.$$.out" 2>/dev/null) || true
 rm -f "yt_meta.$$.out"
+if [ -n "$CHANNEL_PID" ]; then
+  case "$META" in
+    *'|NA|'*)
+      wait "$CHANNEL_PID" 2>/dev/null || true
+      META=$(printf '%s\n' "$META" | perl -MJSON::PP -e '
+        my $ch = eval { local $/; open my $f, "<", shift or die; decode_json(<$f>)->{author_name} } // "";
+        $ch =~ s/[|\r\n]+/ /g;
+        while (<STDIN>) { s/\|NA\|([^|\n]*)$/|$ch|$1/ if length $ch; print }
+      ' "yt_channel.$$.json") || true
+      ;;
+    *) kill "$CHANNEL_PID" 2>/dev/null || true; wait "$CHANNEL_PID" 2>/dev/null || true ;;
+  esac
+fi
+rm -f "yt_channel.$$.json"
 # A sign-in wall on the caption fetch is a blocked connection, not a video
 # without captions. A bare 429 is not: the auto "en" track 429s on its own.
 CAPTIONS_BLOCKED=0

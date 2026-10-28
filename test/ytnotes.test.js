@@ -272,6 +272,41 @@ test('ytnotes fetches captions once when the iOS client has them', () => {
   assert.match(fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntios2.md'), 'utf8'), /caption words/);
 });
 
+test('ytnotes fills in the channel from oEmbed when the iOS fetch leaves it NA', () => {
+  const tmp = tmpDir('atris-ytnotes-oembed-');
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    'printf "%s\\n" "ntoemb1|Oembed Route|NA|0:02"',
+    'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The caption words are here." > yt_ntoemb1.en-orig.vtt',
+    '',
+  ].join('\n'));
+  writeExec(path.join(bin, 'curl'), [
+    '#!/bin/sh',
+    'printf "%s" \'{"title":"Oembed Route","author_name":"Rock \\u0026 Roll Talks"}\'',
+    '',
+  ].join('\n'));
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    `printf "%s\\n" "$*" > "${tmp}/prompt"`,
+    'printf "%s\\n" "# Oembed Route" "" "The caption words are here."',
+    '',
+  ].join('\n'));
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntoemb1'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH || '/usr/bin'}`, TMPDIR: work },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const prompt = fs.readFileSync(path.join(tmp, 'prompt'), 'utf8');
+  assert.match(prompt, /\(Oembed Route\|Rock & Roll Talks\|0:02\)/);
+  assert.deepEqual(fs.readdirSync(path.join(work, 'ytnotes')).filter((f) => f.startsWith('yt_channel.')), []);
+});
+
 test('ytnotes atris-fast says why a refused engine run wrote no notes, with no stack trace', () => {
   const tmp = tmpDir('atris-ytnotes-fastrefused-');
   const bin = path.join(tmp, 'bin');
