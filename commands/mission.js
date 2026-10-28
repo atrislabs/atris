@@ -1477,9 +1477,9 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
   try {
     here = fs.realpathSync(baseRoot);
   } catch { /* keep raw path */ }
-  let entries = [];
+  let dir;
   try {
-    entries = fs.readdirSync(parent, { withFileTypes: true });
+    dir = fs.opendirSync(parent);
   } catch {
     return [];
   }
@@ -1488,29 +1488,36 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
   // hundreds of thousands of folders, and resolving each one took a "not
   // found" answer from 1s to 40s. Check for a mission store first, resolve
   // only folders that have one, and stop after SIBLING_HINT_SCAN_MAX folders.
+  // Read entries one at a time: listing that whole parent up front took 25s.
   let scanned = 0;
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    if (++scanned > SIBLING_HINT_SCAN_MAX) break;
-    const candidateRoot = path.join(parent, entry.name);
-    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
-    let candidateReal = candidateRoot;
-    try {
-      candidateReal = fs.realpathSync(candidateRoot);
-    } catch {
-      continue;
+  try {
+    for (let entry = dir.readSync(); entry; entry = dir.readSync()) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      if (++scanned > SIBLING_HINT_SCAN_MAX) break;
+      const candidateRoot = path.join(parent, entry.name);
+      if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
+      let candidateReal = candidateRoot;
+      try {
+        candidateReal = fs.realpathSync(candidateRoot);
+      } catch {
+        continue;
+      }
+      if (candidateReal === here) continue;
+      const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
+      if (!mission) continue;
+      hints.push({
+        id: mission.id,
+        status: mission.status,
+        objective: mission.objective,
+        workspace_root: candidateRoot,
+        command: `cd ${shellQuote(candidateRoot)} && atris mission status ${mission.id}`,
+      });
+      if (hints.length >= limit) break;
     }
-    if (candidateReal === here) continue;
-    const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
-    if (!mission) continue;
-    hints.push({
-      id: mission.id,
-      status: mission.status,
-      objective: mission.objective,
-      workspace_root: candidateRoot,
-      command: `cd ${shellQuote(candidateRoot)} && atris mission status ${mission.id}`,
-    });
-    if (hints.length >= limit) break;
+  } catch {
+    // a folder that stops reading midway keeps the hints found so far
+  } finally {
+    dir.closeSync();
   }
   return hints;
 }
