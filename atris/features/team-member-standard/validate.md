@@ -1,15 +1,15 @@
 ---
 last_compiled: 2026-07-25
 sources:
-  - commands/member.js:8933-9072 (member command dispatch and help)
-  - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
-  - test/commands.test.js:154 (member create, goal, wake, loop, status coverage starts here)
+  - commands/member.js:9551-9705 (member command dispatch and help)
+  - commands/mission.js:1788-1828 (renderMemberNowMarkdown, member now.md rendering)
+  - test/commands.test.js:187 (member create, goal, wake, loop, status coverage starts here)
 ---
 
-# Team Member Standard — Validation
+# Team Member Standard: Validation
 
 > **Status:** implemented and re-verified (local-first member runtime)
-> **Validated:** 2026-07-25
+> **Validated:** 2026-07-25, re-run 2026-10-28
 
 ## Checks
 
@@ -42,3 +42,5 @@ node bin/atris.js member --help
 node bin/atris.js member list
 node bin/atris.js clean --dry-run --json
 ```
+
+Result, 2026-10-28: every command above exited 0. The member tests passed 65 of 65, the three syntax checks passed, member help lists every command in the checklist, and member list shows the team. The cleanup dry run reports ok false only because it would heal 51 drifted map references. The two open items above are still open.
