@@ -186,6 +186,38 @@ case "$ENGINE" in
     ;;
 esac
 
+# Haiku spends about 2s starting before it reads a prompt. Started early with
+# streamed input, it answered a 21-minute video in 2.7-3.9s from the prompt,
+# against 5.3-8.7s started cold (three paired runs). Its startup overlaps the
+# caption download, and run_haiku sends the prompt. Nothing is sent, so
+# nothing is spent, unless a writer asks for Haiku.
+HAIKU_WARM="$WORK/haiku_warm.$$"
+start_warm_haiku() {
+  { while [ ! -e "$HAIKU_WARM.msg" ] && kill -0 $$ 2>/dev/null; do sleep 0.05; done
+    cat "$HAIKU_WARM.msg" 2>/dev/null || true; } |
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 perl -e 'alarm 240; exec @ARGV' claude -p \
+      --input-format stream-json --output-format stream-json --verbose \
+      --model claude-haiku-5-5 --effort low --tools "" --strict-mcp-config --setting-sources "" \
+      --no-session-persistence --disable-slash-commands >"$HAIKU_WARM.out" 2>/dev/null &
+  echo "$!" > "$HAIKU_WARM.pid"
+}
+
+stop_warm_haiku() {
+  local pid=""
+  read -r pid 2>/dev/null < "$HAIKU_WARM.pid" || read -r pid 2>/dev/null < "$HAIKU_WARM.used" || true
+  [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+  rm -f "$HAIKU_WARM".*
+}
+
+case "$ENGINE" in
+  auto|haiku)
+    if command -v claude >/dev/null 2>&1; then
+      start_warm_haiku
+      if [ -n "${AGY_LAUNCHER_PID:-}" ]; then trap 'stop_agy; stop_warm_haiku' EXIT; else trap stop_warm_haiku EXIT; fi
+    fi
+    ;;
+esac
+
 # Printed metadata and a written English VTT are a hit even when yt-dlp exits 429.
 # A leaked WARNING|ERROR print line is not the video id.
 # Manual English is --write-subs. Auto English is often en-orig / en-US / en-GB.
@@ -638,10 +670,41 @@ run_grok() {
 # Low effort took Haiku from about 15.7s to 12.7s on a 21-minute video (four
 # paired runs, quotes still checked), so low is the default, like Gemini's.
 run_haiku() {
+  warm_haiku "${1:-claude-haiku-5-5}" "${2:-low}" && return 0
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
   run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
     --effort "${2:-low}" --tools "" --strict-mcp-config --setting-sources "" \
     --no-session-persistence --disable-slash-commands </dev/null
+}
+
+# Send the prompt to the Haiku started early, if it runs the same model and
+# effort and no writer took it yet. Any miss (not started, other model, error,
+# empty answer) returns 1 and run_haiku starts Haiku the normal way.
+warm_haiku() {
+  local pid
+  [ "$1" = claude-haiku-5-5 ] && [ "$2" = low ] || return 1
+  mv "$HAIKU_WARM.pid" "$HAIKU_WARM.used" 2>/dev/null || return 1
+  read -r pid < "$HAIKU_WARM.used" && kill -0 "$pid" 2>/dev/null || return 1
+  printf '%s' "$PROMPT" | node -e '
+    const content = require("fs").readFileSync(0, "utf8");
+    process.stdout.write(JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n");
+  ' > "$HAIKU_WARM.msg.tmp" && mv "$HAIKU_WARM.msg.tmp" "$HAIKU_WARM.msg" || return 1
+  while kill -0 "$pid" 2>/dev/null; do
+    grep -q '^{"type":"result"' "$HAIKU_WARM.out" 2>/dev/null && [ -z "$(tail -c 1 "$HAIKU_WARM.out")" ] && break
+    sleep 0.05
+  done
+  node -e '
+    const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
+    for (const line of lines.reverse()) {
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type !== "result") continue;
+      if (ev.is_error || !/[A-Za-z0-9]/.test(ev.result || "")) process.exit(1);
+      process.stdout.write(ev.result + "\n");
+      process.exit(0);
+    }
+    process.exit(1);
+  ' "$HAIKU_WARM.out" 2>/dev/null
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
