@@ -1433,7 +1433,7 @@ test('ytnotes auto names the writer that wrote the notes', () => {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
-    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n', claude: SLOW_BACKUP },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
