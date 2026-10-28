@@ -40,6 +40,7 @@ node --test test/self-driving-mission.test.js test/mission-status.test.js test/f
 
 - **Expect:** Exit code 0.
 - **Required simulation:** one destination reaches verified arrival after an injected primary-engine failure, with completed proof preserved and a different eligible engine recorded for recovery.
+- **Result, 2026-10-28:** the command above ran bare and exited 0, 259 of 259 tests passed in 86s. The required simulation is not written yet: `test/self-driving-mission.test.js` has 7 tests, all for destinations and routes, and none injects an engine failure or reaches arrival. Runtime stays pending until that test exists and passes.
 
 ---
 
