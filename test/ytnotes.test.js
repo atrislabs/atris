@@ -1539,3 +1539,54 @@ test('ytnotes with ATRIS_YTNOTES_ROSTER=0 never asks the roster', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(path.join(path.dirname(dir), 'asked')), false);
 });
+
+// Haiku starts while the captions download and gets the prompt as streamed
+// input once the transcript is ready. A silent fallback to the normal start
+// still writes notes, so this fake answers differently on each path.
+test('ytnotes sends the prompt to the Haiku started early', () => {
+  const tmp = tmpDir('atris-ytnotes-warmhaiku-');
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntwarm1.en-orig.vtt',
+    'printf "%s\\n" "ntwarm1|Warm Clip|Chan|0:02"',
+    '',
+  ].join('\n'));
+
+  const streamed = [
+    'const fs = require("fs");',
+    'const msg = JSON.parse(fs.readFileSync(0, "utf8").trim().split("\\n")[0]);',
+    'fs.writeFileSync(process.env.TMPDIR + "/warm.prompt", msg.message.content);',
+    'console.log(JSON.stringify({ type: "system", subtype: "init" }));',
+    'console.log(JSON.stringify({ type: "result", is_error: false, result: "# From Early Haiku\\n\\nThe omakase model has 80 people." }));',
+  ].join(' ');
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'case " $* " in',
+    `  *" --input-format stream-json "*) exec node -e '${streamed}' ;;`,
+    'esac',
+    'printf "%s\\n" "# From Normal Haiku" "" "The omakase model has 80 people."',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntwarm1', 'haiku'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const notes = fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntwarm1.md'), 'utf8');
+  assert.match(notes, /From Early Haiku/);
+  assert.match(fs.readFileSync(path.join(work, 'warm.prompt'), 'utf8'), /omakase model has 80 people/);
+  assert.match(result.stderr, /quotes: /);
+});
