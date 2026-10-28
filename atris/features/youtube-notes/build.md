@@ -1,12 +1,12 @@
 **Where the time goes now (2026-10-28):**
-- Captions land in about 1.3s. The writer is about 80% of a run: four live auto runs took 8.5 to 10.0s, and Haiku won every race. Alone on the short bench video, Haiku took 9.5 to 15.1s and Gemini 10.7 to 13.8s.
+- Captions land in about 1.3s. Since Haiku now starts during the caption download (Step 10), the live full bench took 7.4s on the short captioned video and 8.5s on the long one, and the speed check measured 7.3s against 8.4s on the shared base.
 - The agy sign-in check takes up to 11s to exit, but its model list shows up at 1.5 to 1.8s and the early Gemini starts on that line, so the slow exit costs nothing.
-- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs), a shorter transcript (trimming risks the verbatim quote check), starting Haiku early (it sends its request 30ms after the prompt arrives and its first word takes about 1.2s, so the head start is under 0.5s), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`).
+- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs), a shorter transcript (trimming risks the verbatim quote check), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`).
 - The lever left is shorter notes (fewer beats or quotes), which changes the product and waits on the owner.
 
 # YouTube Notes: Build Plan
 
-> **For Executor Agent.** This describes the feature as it stands on 2026-10-21. Use it to find the code before changing it.
+> **For Executor Agent.** This describes the feature as it stands on 2026-10-28. Use it to find the code before changing it.
 
 ---
 
@@ -174,12 +174,28 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 **Where the time goes now (2026-10-27):**
 - Five fresh quick-bench runs: median 11.4s (10.2 to 15.3), all passing. Captions are ready near 4s.
 - On a cold run Gemini waits for the sign-in check (2.5 to 4s), then needs 3 to 5s to start (spikes to 17s), then writes in about 3.5s. Overlapping the check with Gemini's startup is the one lever left, and it could open a Google login for a signed-out user, so it waits on the owner.
-- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs; agy has no MCP servers or plugins to skip), a shorter transcript (already about 22 KB, and trimming risks the verbatim quote check), starting Haiku early (its fixed cost is about 2s against 10 to 15s of writing), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`, so it never sees the memory).
+- Ruled out: agy `--disable-slash-commands` (same 7.8s median over 7 pairs; agy has no MCP servers or plugins to skip), a shorter transcript (already about 22 KB, and trimming risks the verbatim quote check), and remembering a passed sign-in check between runs (the bench gives every run a fresh `TMPDIR`, so it never sees the memory).
 
 **Validation:**
 - `node --test --test-name-pattern 'iOS client' test/ytnotes.test.js` runs the two caption fallback tests; removing the fallback line fails the first one.
 - `node --test --test-name-pattern 'oEmbed' test/ytnotes.test.js` checks that an `NA` channel is filled from oEmbed and the lookup file is cleaned up.
 - `node scripts/det/ytrail-bench.js --quick` five times is the live check for the median.
+
+---
+
+### Step 10: Haiku starts while the captions download (2026-10-28)
+
+**File:** `scripts/det/ytnotes` (`start_warm_haiku`, `warm_haiku`, `stop_warm_haiku`, `run_haiku`)
+
+**What it does:**
+- In `auto` and `haiku` mode, when `claude` is installed, Haiku starts with streamed input at the top of the run, so its startup of about 2s overlaps the caption download. Nothing is sent, so nothing is spent, unless a writer asks for Haiku.
+- `run_haiku` hands the prompt to that early Haiku once the transcript is ready, if it runs the same model and effort and no writer took it yet. Any miss (not started, another model, an error, or an empty answer) falls back to the normal start.
+- The early Haiku is stopped when the run ends, on success or failure.
+- Three paired runs on the short bench video: 2.7 to 3.9s from the prompt, against 5.3 to 8.7s started cold. Score check 15.8s to 7.8s (commit c4ff16928). This had been ruled out on 2026-10-27 from a smaller timing; the paired runs showed the real cost was the 2s start.
+
+**Validation:**
+- `node --test --test-name-pattern 'Haiku started early' test/ytnotes.test.js` fails if Haiku quietly takes the normal start instead.
+- `ATRIS_YTNOTES_ENGINE=haiku atris youtube notes <url>` live: 7.27s on the short bench video on 2026-10-28, against 16s on 2026-10-14.
 
 ---
 
