@@ -38,13 +38,13 @@ test(`a real config lock during ${phase} retries and completes with metadata`, (
   const lock = path.join(root, '.git', 'config.lock');
   fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
 const fs = require('node:fs');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (${phase === 'add' ? "args[0] === 'worktree' && args[1] === 'add'" : "args[0] === 'config' && args[1].endsWith('.atris-base')"}) {
-  if (!fs.existsSync(${JSON.stringify(marker)})) {
-    fs.writeFileSync(${JSON.stringify(lock)}, 'another writer');
-    spawn(process.execPath, ['-e', ${JSON.stringify(`setTimeout(() => require('node:fs').unlinkSync(${JSON.stringify(lock)}), 250)`)}], { stdio: 'ignore' }).unref();
-  }
+  // The other writer holds the lock for the first try and lets go before the
+  // retry. A timer here raced slow CI machines and expired before the first try.
+  if (!fs.existsSync(${JSON.stringify(marker)})) fs.writeFileSync(${JSON.stringify(lock)}, 'another writer');
+  else fs.rmSync(${JSON.stringify(lock)}, { force: true });
   fs.appendFileSync(${JSON.stringify(marker)}, 'add\\n');
 }
 const run = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
