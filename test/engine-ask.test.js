@@ -170,6 +170,32 @@ test('claude and fable ask spawn env pins USER to the OS username when a parent 
 });
 
 test('Fable defaults to the real model and gets a deep-reasoning timeout', () => {
+  // Fable is a spend-gated model: it runs only with the owner's yes for that id.
+  const previousSpendOk = process.env.ATRIS_SPEND_OK;
+  process.env.ATRIS_SPEND_OK = 'claude-fable-5-1';
+  try {
+    fableDefaultsCheck();
+  } finally {
+    if (previousSpendOk === undefined) delete process.env.ATRIS_SPEND_OK;
+    else process.env.ATRIS_SPEND_OK = previousSpendOk;
+  }
+});
+
+test('Fable without the owner yes asks on the cheap model', () => {
+  const previousSpendOk = process.env.ATRIS_SPEND_OK;
+  delete process.env.ATRIS_SPEND_OK;
+  const realWrite = process.stderr.write;
+  process.stderr.write = () => true;
+  try {
+    const invocation = buildReadOnlyEngineInvocation('fable', 'find the real cause');
+    assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-haiku-5-5']);
+  } finally {
+    process.stderr.write = realWrite;
+    if (previousSpendOk !== undefined) process.env.ATRIS_SPEND_OK = previousSpendOk;
+  }
+});
+
+function fableDefaultsCheck() {
   const parsed = parseEngineAskArgs(['find the real cause', '--engine', 'fable']);
   assert.equal(parsed.jobs[0].model, 'claude-fable-5-1');
   assert.equal(parsed.timeoutMs, 10 * 60 * 1000);
@@ -181,7 +207,7 @@ test('Fable defaults to the real model and gets a deep-reasoning timeout', () =>
   assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5-1']);
   assert.equal(invocation.args[invocation.args.indexOf('--permission-mode') + 1], 'plan');
   assert.ok(!invocation.args.includes('--safe-mode'));
-});
+}
 
 test('engine claude --model "opus 5.5" hands the claude cli the id, not the display name', () => {
   for (const [engine, typed, id] of [

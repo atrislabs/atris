@@ -125,12 +125,19 @@ test('each engine gets its model and effort flags only when they are pinned', ()
     ['cursor', 'gpt-5', '', /^cursor-agent --trust --model gpt-5 -p /, /^cursor-agent --trust -p /],
     ['agy', 'gemini-3.8-flash-high', 'high', /--add-dir "\$PWD" --model gemini-3\.8-flash-high --effort high -p /, /--add-dir "\$PWD" -p /],
     ['opencode', 'anthropic/claude-opus-5-5', 'max', /^opencode run --model anthropic\/claude-opus-5-5 --variant max "\$\(cat/, /^opencode run "\$\(cat/],
-    ['claude', 'claude-opus-5-5', 'xhigh', /^claude -p .* --model claude-opus-5-5 --effort xhigh --allowedTools /, /^claude -p .* --model claude-opus-5-5 --allowedTools /],
+    ['claude', 'claude-opus-5-5', 'xhigh', /^claude -p .* --model claude-opus-5-5 --effort xhigh --allowedTools /, /^claude -p .* --model claude-haiku-5-5 --allowedTools /],
     ['grok', 'grok-4.7', 'low', /^grok --always-approve --model grok-4\.7 --reasoning-effort low -p /, /^grok --always-approve -p /],
     ['devin', 'swe-2-max', '', /^devin -p --permission-mode dangerous --model swe-2-max -- /, /^devin -p --permission-mode dangerous -- /],
   ];
   for (const [engine, model, effort, pinned, bare] of cases) {
-    const withPin = fleet.buildEngineCommand(engine, '/tmp/p.md', { model, effort });
+    // A pinned opus launches only with the owner's yes for that exact model.
+    process.env.ATRIS_SPEND_OK = model;
+    let withPin;
+    try {
+      withPin = fleet.buildEngineCommand(engine, '/tmp/p.md', { model, effort });
+    } finally {
+      delete process.env.ATRIS_SPEND_OK;
+    }
     const without = fleet.buildEngineCommand(engine, '/tmp/p.md');
     assert.match(withPin, pinned, engine);
     assert.match(without, bare, engine);
@@ -255,11 +262,11 @@ test('the owner\'s roster shows the real model and its source on every line, in 
 
 test('with no pin, each engine names where its model comes from', () => withRoom(() => {
   assert.equal(engineRunsView('codex').text, 'codex (its own default)');
-  assert.equal(engineRunsView('claude').text, 'claude (opus 5.5, atris default)');
+  assert.equal(engineRunsView('claude').text, 'claude (haiku 5.5, atris default)');
   assert.equal(engineRunsView('haiku').text, 'haiku (haiku 5.5, atris default)');
   assert.equal(engineRunsView('grok').text, 'grok (its own default)');
   assert.equal(engineRunsView('devin').text, 'devin (its own default)');
-  assert.equal(engineRunsView('claude', { effort: 'high' }).text, 'claude (opus 5.5 by atris default, high)');
+  assert.equal(engineRunsView('claude', { effort: 'high' }).text, 'claude (haiku 5.5 by atris default, high)');
   assert.equal(engineRunsView('codex', { model: 'gpt-6-astra', effort: 'medium' }).text, 'codex (gpt-6-astra, medium)');
 }));
 

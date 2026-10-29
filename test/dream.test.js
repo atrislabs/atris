@@ -9,7 +9,6 @@ const path = require('node:path');
 const dream = require('../commands/dream');
 const nextMoves = require('../lib/next-moves');
 const { nextCommand } = require('../commands/next');
-const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 
 const { makeTempDir: makeFixtureDir, cleanupTempDir: cleanup } = createTaskHelpFixture('atris-dream-');
 const tmp = () => makeFixtureDir();
@@ -131,7 +130,7 @@ test('malformed dream output exits cleanly and leaves a noop row', async () => {
   }
 });
 
-test('spawn failure retries once and writes a noop row', async () => {
+test('spawn failure writes a noop row and never retries on a pricier model', async () => {
   const root = tmp();
   try {
     writeJournal(root, '2099-01-01', '# Log 2099-01-01\n\n## Notes\n\n- today had work\n');
@@ -145,7 +144,9 @@ test('spawn failure retries once and writes a noop row', async () => {
 
     assert.equal(result.code, 0);
     assert.match(result.stdout, /^No dreams tonight: model could not start/m);
-    assert.deepEqual(models, ['claude-haiku-5-5', DEFAULT_CLAUDE_RUNNER_MODEL]);
+    // The old retry fell back to the default model; that default is now haiku too,
+    // so there is one cheap try and no costlier second one.
+    assert.deepEqual(models, ['claude-haiku-5-5']);
     const rows = readDreamRows(root);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, 'dream_noop');

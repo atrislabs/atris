@@ -91,8 +91,8 @@ test('a pinned grok or devin mission tick keeps its own model flag', () => {
 
 test('an unpinned claude mission tick still pins the default model', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'claude' }, () => {
-    assert.match(tickCommand({ runner: 'claude' }), /--model claude-opus-5-5/);
-    assert.equal(resolveMissionTickRunnerModel({ runner: 'manual' }), 'claude-opus-5-5');
+    assert.match(tickCommand({ runner: 'claude' }), /--model claude-haiku-5-5/);
+    assert.equal(resolveMissionTickRunnerModel({ runner: 'manual' }), 'claude-haiku-5-5');
   });
 });
 
