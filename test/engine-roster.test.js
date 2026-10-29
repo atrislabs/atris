@@ -326,14 +326,14 @@ test('the pinned model reaches one-lap builds and reviews and missions that alre
   // The roster pin reaches the launch only with the owner's yes for that model.
   const spawnWithoutYes = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
   assert.match(spawnWithoutYes, /--model claude-haiku-5-5 /);
-  const previousSpendOk = process.env.ATRIS_SPEND_OK;
-  process.env.ATRIS_SPEND_OK = 'claude-opus-5-5';
+  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
+  process.env.ATRIS_CLAUDE_SPEND_OK = 'claude-opus-5-5';
   let spawn;
   try {
     spawn = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
   } finally {
-    if (previousSpendOk === undefined) delete process.env.ATRIS_SPEND_OK;
-    else process.env.ATRIS_SPEND_OK = previousSpendOk;
+    if (previousSpendOk === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
+    else process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
   }
   assert.match(spawn, /--model claude-opus-5-5 /);
   const preferred = resolveMissionTickRunner({ runner: 'auto', preferred_engine: 'claude' }, root, { now: NOW }).mission;

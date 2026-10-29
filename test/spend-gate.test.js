@@ -1,7 +1,7 @@
 'use strict';
 
 // The spend gate: nothing unattended runs on Opus, Fable or Sonnet without the
-// owner's yes, given as ATRIS_SPEND_OK=<that exact model id>. Without it the run
+// owner's yes, given as ATRIS_CLAUDE_SPEND_OK=<that exact model id>. Without it the run
 // drops to the cheap model and says so on stderr, once.
 
 const { test } = require('node:test');
@@ -23,7 +23,7 @@ const ENV_KEYS = [
   'ATRIS_CLAUDE_MODEL',
   'ATRIS_CLAUDE_BIN',
   'ATRIS_CLAUDE_COMMAND_TEMPLATE',
-  'ATRIS_SPEND_OK',
+  'ATRIS_CLAUDE_SPEND_OK',
 ];
 
 // Runs fn with a clean runner env plus `values`, and returns what it wrote to stderr.
@@ -65,12 +65,12 @@ test('opus without the owner yes falls back to haiku and says so once', () => {
   });
   assert.equal(
     stderr,
-    "atris: unattended run on claude-opus-5-5 needs the owner's yes; running on claude-haiku-5-5. To allow it for this run: ATRIS_SPEND_OK=claude-opus-5-5\n"
+    "atris: unattended run on claude-opus-5-5 needs the owner's yes; running on claude-haiku-5-5. To allow it for this run: ATRIS_CLAUDE_SPEND_OK=claude-opus-5-5\n"
   );
 });
 
-test('opus with ATRIS_SPEND_OK naming it runs opus, quietly', () => {
-  const stderr = gated({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5', ATRIS_SPEND_OK: 'claude-opus-5-5' }, () => {
+test('opus with ATRIS_CLAUDE_SPEND_OK naming it runs opus, quietly', () => {
+  const stderr = gated({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5', ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
     assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-opus-5-5$/);
   });
@@ -78,7 +78,7 @@ test('opus with ATRIS_SPEND_OK naming it runs opus, quietly', () => {
 });
 
 test('a yes for another model does not unlock opus', () => {
-  const stderr = gated({ ATRIS_SPEND_OK: 'claude-sonnet-5-5' }, () => {
+  const stderr = gated({ ATRIS_CLAUDE_SPEND_OK: 'claude-sonnet-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-haiku-5-5');
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-sonnet-5-5' }), 'claude-sonnet-5-5');
   });
@@ -88,7 +88,7 @@ test('a yes for another model does not unlock opus', () => {
 
 test('a yes of 1 or a prefix unlocks nothing', () => {
   for (const yes of ['1', 'true', 'opus', 'claude-opus']) {
-    gated({ ATRIS_SPEND_OK: yes }, () => {
+    gated({ ATRIS_CLAUDE_SPEND_OK: yes }, () => {
       assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-haiku-5-5');
     });
   }
@@ -112,7 +112,7 @@ test('the fable profile and the legacy env both go through the gate', () => {
   gated({ ATRIS_CLAUDE_MODEL: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-haiku-5-5');
   });
-  gated({ ATRIS_RUNNER_PROFILE: 'fable', ATRIS_SPEND_OK: 'claude-fable-5-1' }, () => {
+  gated({ ATRIS_RUNNER_PROFILE: 'fable', ATRIS_CLAUDE_SPEND_OK: 'claude-fable-5-1' }, () => {
     assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-fable-5-1$/);
   });
 });
@@ -131,7 +131,7 @@ test('haiku always runs, with or without a yes', () => {
   gated({ ATRIS_RUNNER_MODEL: 'claude-haiku-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-haiku-5-5');
   });
-  const stderr = gated({ ATRIS_SPEND_OK: 'claude-opus-5-5' }, () => {
+  const stderr = gated({ ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-haiku-5-5' }), 'claude-haiku-5-5');
   });
   assert.equal(stderr, '');

@@ -131,12 +131,12 @@ test('each engine gets its model and effort flags only when they are pinned', ()
   ];
   for (const [engine, model, effort, pinned, bare] of cases) {
     // A pinned opus launches only with the owner's yes for that exact model.
-    process.env.ATRIS_SPEND_OK = model;
+    process.env.ATRIS_CLAUDE_SPEND_OK = model;
     let withPin;
     try {
       withPin = fleet.buildEngineCommand(engine, '/tmp/p.md', { model, effort });
     } finally {
-      delete process.env.ATRIS_SPEND_OK;
+      delete process.env.ATRIS_CLAUDE_SPEND_OK;
     }
     const without = fleet.buildEngineCommand(engine, '/tmp/p.md');
     assert.match(withPin, pinned, engine);

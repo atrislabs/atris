@@ -171,19 +171,19 @@ test('claude and fable ask spawn env pins USER to the OS username when a parent 
 
 test('Fable defaults to the real model and gets a deep-reasoning timeout', () => {
   // Fable is a spend-gated model: it runs only with the owner's yes for that id.
-  const previousSpendOk = process.env.ATRIS_SPEND_OK;
-  process.env.ATRIS_SPEND_OK = 'claude-fable-5-1';
+  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
+  process.env.ATRIS_CLAUDE_SPEND_OK = 'claude-fable-5-1';
   try {
     fableDefaultsCheck();
   } finally {
-    if (previousSpendOk === undefined) delete process.env.ATRIS_SPEND_OK;
-    else process.env.ATRIS_SPEND_OK = previousSpendOk;
+    if (previousSpendOk === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
+    else process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
   }
 });
 
 test('Fable without the owner yes asks on the cheap model', () => {
-  const previousSpendOk = process.env.ATRIS_SPEND_OK;
-  delete process.env.ATRIS_SPEND_OK;
+  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
+  delete process.env.ATRIS_CLAUDE_SPEND_OK;
   const realWrite = process.stderr.write;
   process.stderr.write = () => true;
   try {
@@ -191,7 +191,7 @@ test('Fable without the owner yes asks on the cheap model', () => {
     assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-haiku-5-5']);
   } finally {
     process.stderr.write = realWrite;
-    if (previousSpendOk !== undefined) process.env.ATRIS_SPEND_OK = previousSpendOk;
+    if (previousSpendOk !== undefined) process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
   }
 });
 

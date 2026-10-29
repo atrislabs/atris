@@ -35,11 +35,11 @@ test('the review backup steps in, never as the builder grading itself', () => {
     // The builder runs the model the spend gate lets it run, so each builder
     // model here carries the owner's yes for that exact model.
     const withYes = (yes, fn) => {
-      const before = process.env.ATRIS_SPEND_OK;
-      process.env.ATRIS_SPEND_OK = yes;
+      const before = process.env.ATRIS_CLAUDE_SPEND_OK;
+      process.env.ATRIS_CLAUDE_SPEND_OK = yes;
       try { return fn(); } finally {
-        if (before === undefined) delete process.env.ATRIS_SPEND_OK;
-        else process.env.ATRIS_SPEND_OK = before;
+        if (before === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
+        else process.env.ATRIS_CLAUDE_SPEND_OK = before;
       }
     };
     assert.deepEqual(withYes('claude-sonnet-5-5', () => lineup({ runner: 'claude', model: 'claude-sonnet-5-5' })), ['codex', 'claude claude-opus-5-5']);

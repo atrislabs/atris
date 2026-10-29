@@ -14,7 +14,7 @@ const { buildRunnerCommand } = require('../lib/runner-command');
 
 const RUNNER_ENV = [
   'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
-  'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_SPEND_OK',
+  'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_SPEND_OK',
 ];
 
 function withProfile(profile, fn, env = {}) {
@@ -118,7 +118,7 @@ test('a dropped model takes a literal model flag in a grok template with it', ()
 // runs its own vendor's models alone drops it.
 test('engines that can run claude models keep a claude pin', () => {
   for (const runner of ['agy', 'cursor', 'devin', 'opencode']) {
-    assert.match(tickCommand({ runner, model: 'claude-opus-5-5' }, { ATRIS_SPEND_OK: 'claude-opus-5-5' }), /--model claude-opus-5-5 /, runner);
+    assert.match(tickCommand({ runner, model: 'claude-opus-5-5' }, { ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }), /--model claude-opus-5-5 /, runner);
   }
 });
 

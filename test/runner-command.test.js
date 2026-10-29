@@ -22,7 +22,7 @@ const {
 } = require('../lib/runner-command');
 
 const RUNNER_ENV_KEYS = [
-  'ATRIS_SPEND_OK',
+  'ATRIS_CLAUDE_SPEND_OK',
   'ATRIS_RUNNER_PROFILE',
   'ATRIS_RUNNER_MODEL',
   'ATRIS_RUNNER_BIN',
@@ -67,12 +67,12 @@ function testResolution(name, env, check) {
   test(name, () => withRunnerEnv(env, check));
 }
 
-testResolution('resolveClaudeRunnerModel honors explicit model first', { ATRIS_CLAUDE_MODEL: 'sonnet', ATRIS_SPEND_OK: 'claude-opus-5-5' }, () => {
+testResolution('resolveClaudeRunnerModel honors explicit model first', { ATRIS_CLAUDE_MODEL: 'sonnet', ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }, () => {
   assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
   assert.equal(resolveClaudeRunnerModel({ model: 'opus 5.5' }), 'claude-opus-5-5');
 });
 
-testResolution('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', { ATRIS_CLAUDE_MODEL: 'sonnet', ATRIS_SPEND_OK: 'sonnet' }, () => {
+testResolution('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', { ATRIS_CLAUDE_MODEL: 'sonnet', ATRIS_CLAUDE_SPEND_OK: 'sonnet' }, () => {
   assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
   assert.equal(resolveClaudeRunnerModel({ model: null }), 'sonnet');
   assert.equal(resolveClaudeRunnerModel(null), 'sonnet');
@@ -208,7 +208,7 @@ test('compat runner profiles resolve to concrete runner configs', () => {
   ];
   for (const entry of cases) {
     // fable is a gated model: its profile runs it only with the owner's yes.
-    withRunnerEnv({ ATRIS_RUNNER_PROFILE: entry.profile, ATRIS_SPEND_OK: DEFAULT_FABLE_RUNNER_MODEL }, () => {
+    withRunnerEnv({ ATRIS_RUNNER_PROFILE: entry.profile, ATRIS_CLAUDE_SPEND_OK: DEFAULT_FABLE_RUNNER_MODEL }, () => {
       assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS[entry.profile]);
       assert.equal(resolveClaudeRunnerBin(), entry.bin);
       assert.equal(resolveClaudeRunnerModel({}), entry.model);
@@ -315,7 +315,7 @@ test('buildRunnerCommand always emits --model', () => {
 });
 
 test('buildRunnerCommand uses ATRIS_CLAUDE_BIN without changing call sites', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly', ATRIS_SPEND_OK: 'opus' }, () => {
+  withRunnerEnv({ ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly', ATRIS_CLAUDE_SPEND_OK: 'opus' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
     assert.match(cmd, /^\/opt\/atris\/bin\/claude-nightly -p/);
     assert.match(cmd, /--model opus\b/);
@@ -343,7 +343,7 @@ test('buildRunnerCommand can replace the claude -p command shape by template', (
   withRunnerEnv({
     ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly',
     ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}',
-    ATRIS_SPEND_OK: 'sonnet',
+    ATRIS_CLAUDE_SPEND_OK: 'sonnet',
   }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet', allowedTools: 'Bash,Read' });
     assert.equal(cmd, "/opt/atris/bin/claude-nightly --print-file /tmp/p.tmp --model sonnet --allowedTools 'Bash,Read'");
@@ -365,7 +365,7 @@ test('buildRunnerCommand can target a GLM-style runner through ATRIS_RUNNER_*', 
 });
 
 test('buildRunnerCommand template supports prompt substitution and optional tools', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --prompt {prompt} {modelFlag} {allowedToolsFlag}', ATRIS_SPEND_OK: 'opus' }, () => {
+  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --prompt {prompt} {modelFlag} {allowedToolsFlag}', ATRIS_CLAUDE_SPEND_OK: 'opus' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
     assert.equal(cmd, 'claude --prompt "$(cat /tmp/p.tmp)" --model opus');
   });
@@ -375,7 +375,7 @@ test('buildRunnerCommand template shell-quotes substituted values', () => {
   withRunnerEnv({
     ATRIS_CLAUDE_BIN: '/Applications/Claude Nightly/bin/claude',
     ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --file {promptFile} {modelFlag}',
-    ATRIS_SPEND_OK: 'opus',
+    ATRIS_CLAUDE_SPEND_OK: 'opus',
   }, () => {
     const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
     assert.equal(cmd, "'/Applications/Claude Nightly/bin/claude' --file '/tmp/it'\\''s.tmp' --model opus");
@@ -407,7 +407,7 @@ test('buildRunnerCommand requires a promptFile', () => {
 
 test('the fable profile runs Fable 5.1, not the stale claude-fable-5', () => {
   assert.equal(RUNNER_PROFILE_DEFS.fable.model, 'claude-fable-5-1');
-  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'fable', ATRIS_SPEND_OK: 'claude-fable-5-1' }, () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'fable', ATRIS_CLAUDE_SPEND_OK: 'claude-fable-5-1' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp' });
     assert.match(cmd, /--model claude-fable-5-1(\s|$)/);
     assert.doesNotMatch(cmd, /claude-fable-5(\s|$)/);
@@ -425,7 +425,7 @@ test('a display name with a space becomes the id the claude cli accepts', () => 
   ]) {
     assert.equal(runnerModelFor('claude', typed), id, typed);
     assert.equal(runnerModelFor('', typed), id, typed);
-    withRunnerEnv({ ATRIS_SPEND_OK: id }, () => {
+    withRunnerEnv({ ATRIS_CLAUDE_SPEND_OK: id }, () => {
       assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: typed }), new RegExp(`--model '?${id.replace(/[[\]]/g, '\\$&')}'?(\\s|$)`), typed);
     });
   }
@@ -444,7 +444,7 @@ test('ids, aliases and other engines model names pass through unchanged', () => 
   // an engine that is not the claude cli never reads "opus 5.5" as a claude id
   assert.equal(runnerModelFor('devin', 'opus 5.5'), 'opus 5.5');
   assert.equal(runnerModelFor('cursor', 'sonnet 5'), 'sonnet 5');
-  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin', ATRIS_SPEND_OK: 'opus 5.5' }, () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin', ATRIS_CLAUDE_SPEND_OK: 'opus 5.5' }, () => {
     assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus 5.5' }), /--model 'opus 5\.5'/);
   });
 });
@@ -453,7 +453,7 @@ test('a roster pick or mission model still saved as claude-fable-5 runs as Fable
   assert.equal(runnerModelFor('fable', 'claude-fable-5'), 'claude-fable-5-1');
   assert.equal(runnerModelFor('claude', 'claude-fable-5[1m]'), 'claude-fable-5-1[1m]');
   assert.equal(runnerModelFor('claude', 'claude-fable-5-1'), 'claude-fable-5-1');
-  withRunnerEnv({ ATRIS_SPEND_OK: 'claude-fable-5-1' }, () => {
+  withRunnerEnv({ ATRIS_CLAUDE_SPEND_OK: 'claude-fable-5-1' }, () => {
     assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-fable-5' }), /--model claude-fable-5-1(\s|$)/);
   });
 });
