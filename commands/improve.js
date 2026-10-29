@@ -453,7 +453,7 @@ function collectImproveVitals(options = {}, deps = {}) {
     return fs.existsSync(plistPath);
   })();
   const installed = launchdInstalled || legacyCronInstalled;
-  const installNudge = installed ? null : 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5';
+  const installNudge = installed ? null : 'the scheduled improve loop is off. turn it on: atris pulse install';
 
   const experimentsPath = path.join(root, '.atris', 'state', 'experiments-daily.json');
   const experiments = readJsonFile(experimentsPath, {});

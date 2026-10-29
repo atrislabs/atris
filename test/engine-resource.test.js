@@ -1422,7 +1422,7 @@ test('compile builds record paired readings on success, SIGKILL and startup fail
     assert.equal(lines[5].signal, undefined);
     assert.match(lines[5].error, /not found|No such file/i);
     assert.doesNotMatch(failed.error.message, /killed \(/);
-    console.log(`compile build readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`compile build readings: ${JSON.stringify([lines[3]])}`);
 
     // The real command prints the cause where the operator reads it.
     const cli = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'compile', 'build', 'demo'], {
@@ -2319,8 +2319,8 @@ test('dream launches record paired readings and name the cause of a SIGKILL', ()
     assert.match(ok.stdout, /Dreamed 2 cards/);
     assert.equal(killed.status, 0, killed.stderr);
     const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
-    // One launch for the clean dream; the killed dream tries each model once.
-    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    // One launch for the clean dream; the killed dream tries its one cheap model once.
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
     for (let i = 0; i < lines.length; i += 2) {
       assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
       assert.equal(lines[i + 1].run_id, lines[i].run_id);
@@ -2331,12 +2331,12 @@ test('dream launches record paired readings and name the cause of a SIGKILL', ()
     }
     assert.equal(lines[1].signal, undefined);
     assert.equal(lines[1].error, undefined);
-    for (const line of [lines[3], lines[5]]) {
+    for (const line of [lines[3]]) {
       assert.equal(line.signal, 'SIGKILL');
       assert.match(line.cause, /^killed \((machine memory low|cause unknown)\)$/);
     }
     // The line the operator reads names the cause.
-    assert.ok(killed.stdout.includes(lines[5].cause), killed.stdout);
+    assert.ok(killed.stdout.includes(lines[3].cause), killed.stdout);
     console.log(`dream readings: ${JSON.stringify([lines[3], lines[5]])}`);
     console.log(`dream kill line: ${killed.stdout.split('\n')[0]}`);
   } finally {

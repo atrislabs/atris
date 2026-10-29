@@ -72,7 +72,7 @@ test('the roster view marks ends in 3 days, ends today, ended yesterday, and lea
   assert.equal(view.exit, 0, view.err);
   const lines = view.out.split('\n');
   const buildAt = lines.findIndex((line) => line.startsWith('build '));
-  assert.match(lines[buildAt], /^build +claude · opus 5\.5 +codex.* \(until oct 24\) +- +2026-09-27 +ends in 3 days$/);
+  assert.match(lines[buildAt], /^build +claude · haiku 5\.5 +codex.* \(until oct 24\) +- +2026-09-27 +ends in 3 days$/);
   // Every backup stays in view, one per line under the first.
   assert.match(lines[buildAt + 1], /^ +cursor · own default \(ended sep 23\)$/);
   const review = lines.find((line) => line.startsWith('review'));
@@ -116,7 +116,7 @@ test('a worker 30 days out gets no heads-up, and confirm clears the warning', ()
   writeRoster(root, '## build\n- claude code, until 2026-10-24\n- codex\n');
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  assert.match(view.out, /^build +claude · opus 5\.5 +codex.* +- +2026-10-24 +-$/m);
+  assert.match(view.out, /^build +claude · haiku 5\.5 +codex.* +- +2026-10-24 +-$/m);
   assert.doesNotMatch(view.out, /heads up|ends in|ends today/);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   assert.deepEqual(json.expiring, []);
@@ -127,7 +127,7 @@ test('a worker 30 days out gets no heads-up, and confirm clears the warning', ()
   assert.match(command(root, ['roster']).out, /heads up: claude.* on build ends in 4 days/);
   const confirmed = command(root, ['roster', 'confirm']);
   assert.equal(confirmed.exit, 0, confirmed.err);
-  assert.match(confirmed.out, /^build +claude · opus 5\.5 +codex.* +- +2026-10-24 +-$/m);
+  assert.match(confirmed.out, /^build +claude · haiku 5\.5 +codex.* +- +2026-10-24 +-$/m);
   assert.doesNotMatch(confirmed.out, /heads up/);
 }));
 
@@ -136,7 +136,7 @@ test('a lead that ended yesterday reads ended and skipped, and falls to its back
   writeRoster(root, '## build\n- claude code, until 2026-09-23\n- codex\n');
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  assert.match(view.out, /^build +claude · opus 5\.5 +codex.* +- +2026-09-23 +ended sep 23, using backup$/m);
+  assert.match(view.out, /^build +claude · haiku 5\.5 +codex.* +- +2026-09-23 +ended sep 23, using backup$/m);
   assert.doesNotMatch(view.out, /heads up/);
   const build = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((row) => row.job === 'build');
   assert.equal(build.ends_in_days, -1);

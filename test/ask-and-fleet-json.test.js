@@ -115,8 +115,9 @@ test('a bare ask with only a search line runs the engine default, not the search
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
     assert.equal(code, 0, logs.join('\n'));
     const args = argsOf(bin, 'claude');
-    assert.match(args, /\n--model\nclaude-opus-5-5\n/);
-    assert.doesNotMatch(args, /haiku/);
+    assert.match(args, /\n--model\nclaude-haiku-5-5\n/);
+    // The search line pinned the bare alias "haiku"; the ask runs the engine default instead.
+    assert.doesNotMatch(args, /\n--model\nhaiku\n/);
     assert.doesNotMatch(args, /\n--effort\n/);
     const rows = runs(root);
     assert.equal(rows.length, 1);
@@ -144,7 +145,7 @@ test('an ask job that lists another engine leaves this one unpinned', async () =
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
     assert.equal(code, 0, logs.join('\n'));
     const args = argsOf(bin, 'claude');
-    assert.match(args, /\n--model\nclaude-opus-5-5\n/);
+    assert.match(args, /\n--model\nclaude-haiku-5-5\n/);
     assert.doesNotMatch(args, /\n--effort\n/);
   }, { roster });
 });

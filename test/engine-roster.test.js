@@ -248,7 +248,7 @@ test('an until date that is not a real YYYY-MM-DD day counts as expired; the unt
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 24, 23, 59)), false);
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 25, 0, 1)), true);
   const roster = command(root, ['roster']);
-  assert.match(roster.out, /^build +claude · opus 5\.5 +none +- +2026-09-23 +ended sep 23, router decides: codex$/m);
+  assert.match(roster.out, /^build +claude · haiku 5\.5 +none +- +2026-09-23 +ended sep 23, router decides: codex$/m);
 }));
 
 test('an all-projects pick applies where the project has none', () => withRoom((root, machineFile) => {
@@ -323,7 +323,18 @@ test('the pinned model reaches one-lap builds and reviews and missions that alre
     model: 'claude-opus-5-5',
     validatorModels: { haiku: 'claude-haiku-5-5' },
   });
-  const spawn = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
+  // The roster pin reaches the launch only with the owner's yes for that model.
+  const spawnWithoutYes = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
+  assert.match(spawnWithoutYes, /--model claude-haiku-5-5 /);
+  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
+  process.env.ATRIS_CLAUDE_SPEND_OK = 'claude-opus-5-5';
+  let spawn;
+  try {
+    spawn = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
+  } finally {
+    if (previousSpendOk === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
+    else process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
+  }
   assert.match(spawn, /--model claude-opus-5-5 /);
   const preferred = resolveMissionTickRunner({ runner: 'auto', preferred_engine: 'claude' }, root, { now: NOW }).mission;
   assert.equal(preferred.runner, 'claude');
@@ -576,7 +587,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
   assert.match(view.out, /^small build +devin · swe-2-max +grok · own default +- +2026-10-24 +from all projects$/m);
-  assert.match(view.out, /^quick fixes +claude · opus 5\.5 +none +- +- +-$/m);
+  assert.match(view.out, /^quick fixes +claude · haiku 5\.5 +none +- +- +-$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
   assert.equal(json.length, 6);
   const row = json.find((entry) => entry.job === 'small build');

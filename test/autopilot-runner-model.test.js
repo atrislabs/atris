@@ -14,6 +14,7 @@ const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), '
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
 
 const RUNNER_ENV_KEYS = [
+  'ATRIS_CLAUDE_SPEND_OK',
   'ATRIS_RUNNER_PROFILE',
   'ATRIS_RUNNER_MODEL',
   'ATRIS_RUNNER_BIN',
@@ -128,17 +129,17 @@ test('console claude launcher uses the configured runner binary', () => {
 
 // --- T3: every spawn injects a resolved --model by default ---
 
-test('default heartbeat spawn carries pinned Opus 5.5', () => {
+test('default heartbeat spawn carries pinned Haiku 5.5', () => {
   withRunnerEnv({}, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
-    assert.match(cmd, /--model claude-opus-5-5\b/);
+    assert.match(cmd, /--model claude-haiku-5-5\b/);
   });
 });
 
 // --- T4: a future claude -p change is a one-line config switch (env) ---
 
 test('ATRIS_CLAUDE_MODEL flips the spawned model without touching code', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
+  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet', ATRIS_CLAUDE_SPEND_OK: 'sonnet' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
     assert.match(cmd, /--model sonnet\b/);
   });
@@ -152,7 +153,7 @@ test('ATRIS_RUNNER_MODEL flips the spawned model without touching code', () => {
 });
 
 test('ATRIS_CLAUDE_COMMAND_TEMPLATE flips the command shape without touching code', () => {
-  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}' }, () => {
+  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}', ATRIS_CLAUDE_SPEND_OK: 'opus' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus', allowedTools: 'Bash,Read' });
     assert.equal(cmd, "claude --print-file /tmp/p.tmp --model opus --allowedTools 'Bash,Read'");
     assert.doesNotMatch(cmd, / -p /);

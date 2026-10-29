@@ -206,6 +206,9 @@ test('validation writes the verdict receipt and flat jsonl row from a fake refer
 test('referee engine override reaches the ask machinery', async () => {
   const root = tempRoot();
   let launchedJob;
+  // Fable is spend-gated: the referee runs it only with the owner's yes.
+  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
+  process.env.ATRIS_CLAUDE_SPEND_OK = 'claude-fable-5-1';
   try {
     writeAskReceipt(root, 'engine-ask-source.json', { at: '2026-08-12T20:00:00.000Z' });
     const code = await runEngineValidateCommand(['latest', '--engine', 'fable'], root, {
@@ -222,6 +225,8 @@ test('referee engine override reaches the ask machinery', async () => {
     assert.equal(launchedJob.engine, 'fable');
     assert.equal(launchedJob.model, 'claude-fable-5-1');
   } finally {
+    if (previousSpendOk === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
+    else process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
