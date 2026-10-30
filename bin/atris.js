@@ -555,7 +555,7 @@ function helpCatalog() {
     { name: 'learn', summary: 'structured project learnings', json: false, interactive_risk: 'low' },
     { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
     { name: 'status', summary: 'local work and completions', json: true, interactive_risk: 'low' },
-    { name: 'engine', summary: 'engine roster, ask, validate, dispatch', json: true, interactive_risk: 'low' },
+    { name: 'engine', summary: 'engine roster, ask, codex sessions, validate, dispatch', json: true, interactive_risk: 'low' },
     { name: 'help', summary: 'this help (default short; --all full)', json: true, interactive_risk: 'none' },
   ];
 }
@@ -671,7 +671,7 @@ function showHelpAll() {
   console.log('  drive      - One self-driving tick: mission doctor -> auto-fix -> count disengagements');
   console.log('  rsi        - Read the Dream-RSI attempt ledger; rsi loop ships notebook fixes with no mission');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
-  console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
+  console.log('  engine     - engine registry, asks, warm codex sessions, answer validation, dispatch flights, and live progress');
   console.log('  link       - What two things could become together: one line, why, a first thing to make, who makes it');
   console.log('  ci         - run github actions jobs locally with runs-on: atris');
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
