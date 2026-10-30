@@ -616,7 +616,7 @@ test('over http: the team is a card, and a word to a member goes through the sam
     const team = (await post({ open: 'team' })).json.card;
     assert.equal(team.kind, 'team');
     assert.deepEqual(team.table.columns, ['member', 'role', 'ovr', 'engine', 'status']);
-    assert.deepEqual(team.table.rows, [['builder', 'builder', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes']]);
+    assert.deepEqual(team.table.rows, [['builder', 'builder', '69', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes']]);
     assert.deepEqual(team.options.map(o => o.id), ['talk:builder', 'swap:builder', 'deck', 'back']);
     const talk = (await post({ card_id: team.id, option_id: 'talk:builder' })).json.card;
     assert.deepEqual([talk.kind, talk.title, talk.input.action], ['member', 'builder', 'talk']);
@@ -653,7 +653,7 @@ test('over http: the job deck is a card through the same token check, one card p
     assert.equal(deck.body, 'builder is working on it. nothing needs you here.');
     // the time is said once, on its own line under the table
     assert.ok(deck.time && !deck.body.includes(deck.time), `${deck.body} | ${deck.time}`);
-    assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '89', engine: 'claude opus 5.5' });
+    assert.deepEqual(deck.job, { member: 'builder', role: 'builder', ovr: '67', engine: 'claude opus 5.5' });
     // a job with no yes waiting has no yes on its card: a yes posted there does nothing
     const odd = await post({ card_id: deck.id, option_id: 'yes', confirm: true });
     assert.deepEqual([odd.status, odd.json.reason], [409, 'bad_option']);

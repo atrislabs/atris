@@ -170,7 +170,7 @@ test('boot shows which tool and model leads each built-in job', () => {
     const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
     assert.equal(boot.status, 0, boot.stderr);
     // The custom job does not fit on the line, so it stops at the built-ins.
-    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 · review codex gpt-6-astra · search haiku 5.5']);
+    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 (86 ovr) · review codex gpt-6-astra · search haiku 5.5']);
   } finally {
     cleanupTempDir(dir);
   }

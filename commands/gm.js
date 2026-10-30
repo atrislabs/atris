@@ -41,7 +41,9 @@ function showHelp() {
   console.log('  what is up next. Every job a member takes in the last 30 days ends');
   console.log('  landed (accepted or merged), dropped (claim let go), sent back, or');
   console.log('  abandoned (archived without landing). Jobs in review are pending.');
-  console.log('  ovr = round(60 + 39 * landed / finished), rookie under 3 finished.');
+  console.log('  ovr = the Atris Rating of landed over finished, 25 to 99: 99 means 99');
+  console.log('  of every 100 and each halving of misses is worth about 6 (atris rating).');
+  console.log('  Rookie under 3 finished.');
   console.log('  Drops and abandons count, so this is stricter than the website rating.');
   console.log('  "on a job" means the claimed task moved in the last 6 hours; a claim');
   console.log('  that sat longer shows as stuck, with its age and task id.');
@@ -936,8 +938,8 @@ function renderBoardLines(board, { interactive = false, width = termWidth(), bor
   }
   lines.push('');
 
-  lines.push(`key: ovr 60 to 99 = share of finished jobs landed, ${boxed ? 'new' : 'rookie'} under 3 finished,`);
-  lines.push('     stricter than the website rating on purpose (drops and abandons count)');
+  lines.push(`key: ovr = the Atris Rating of finished jobs landed, 25 to 99, ${boxed ? 'new' : 'rookie'} under 3 finished.`);
+  lines.push('     99 means 99 of every 100. drops and abandons count (atris rating)');
   if (boxed) lines.push('     ·· = nothing to show yet: no finished job, no role, or no pinned model');
   else lines.push('     form: last 5, newest right: k landed, d dropped, x sent back, a abandoned');
   lines.push('     hours: claim to result. on a job: moved in the last 6h. review: pending');

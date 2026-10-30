@@ -2420,8 +2420,8 @@ test('team table: every member with a few words of role, the board rating, the e
   readyEngines(root, 'claude', 'codex');
   const NAGO = m => new Date(NOW - m * 60000).toISOString();
   const missions = { m1: { id: 'm1', owner: 'builder', status: 'running', objective: 'Write the try page.', created_at: NAGO(10), last_tick_at: NAGO(1), human_asks: [] } };
-  // builder: 4 landed, 1 dropped is round(60 + 39 * 4 / 5) = 91. validator:
-  // 3 landed, 1 sent back is 89. launcher has 2 finished, a rookie. linguist
+  // builder: 4 landed, 1 dropped rates 69 on the Atris Rating. validator:
+  // 3 landed, 1 sent back rates 67. launcher has 2 finished, a rookie. linguist
   // only claimed a job and finished none, so it has no rating yet.
   // researcher has no plays at all.
   const season = seasonOf({
@@ -2434,16 +2434,16 @@ test('team table: every member with a few words of role, the board rating, the e
   const rows = h.d.teamTable().rows;
   // a role that only repeats the member's name gives its description instead
   assert.deepEqual(rows.map(r => [r.member, r.role, r.ovr, r.engine, r.sentence]), [
-    ['builder', 'writes and tests the code', '91', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
+    ['builder', 'writes and tests the code', '69', 'claude opus 5.5', 'working: write the try page, at it for 10 minutes'],
     ['designer', 'draws the screens by hand', '··', 'person', 'idle: no work in the last day'],
     ['launcher', 'writes posts, pages, and launch copy', 'new', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
     ['linguist', 'linguist, operator language and understanding', '··', 'claude opus 5.5', 'idle: no work in the last day'],
     ['researcher', 'deep researcher', '··', 'claude haiku 5.5', 'idle: no work in the last day'],
-    ['validator', 'reviewer', '89', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
+    ['validator', 'reviewer', '67', 'codex gpt-6.1-sol', 'idle: no work in the last day'],
   ]);
   // the board says the same numbers for the same plays
   const board = require('../lib/gm-season').rosterRows({ outcomes: season.outcomes, now: NOW });
-  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, [r.ovr, r.finished]])), { builder: [91, 5], validator: [89, 4], launcher: [null, 2], linguist: [null, 0] });
+  assert.deepEqual(Object.fromEntries(board.map(r => [r.name, [r.ovr, r.finished]])), { builder: [69, 5], validator: [67, 4], launcher: [null, 2], linguist: [null, 0] });
   // the working count and the talk card still read the same status
   assert.equal(h.d.view().team_working, 1);
   assert.deepEqual(rows[0].status, 'working');
@@ -2514,7 +2514,7 @@ test('job deck: one card per running job, needs you first, with a divided row of
     assert.deepEqual([c.rows[0].role, c.rows[0].ovr, c.rows[0].engine], [t.role, t.ovr, t.engine]);
   }
   assert.deepEqual(deck.cards[0].rows[0].ovr, '\u00b7\u00b7', 'no rating is two dots');
-  assert.deepEqual(deck.cards[1].rows[0].ovr, '91');
+  assert.deepEqual(deck.cards[1].rows[0].ovr, '69');
   assert.deepEqual(deck.cards[1].rows[0].engine, 'claude opus 5.5');
   assert.deepEqual(deck.cards[1].rows[0].work, 'Launch a try page for any public repo');
   for (const c of deck.cards) assert.doesNotMatch(JSON.stringify(c.rows), gmBet.OWNER_BANNED);

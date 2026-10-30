@@ -36,17 +36,18 @@ test('ovr is rookie under three finished jobs; took does not count', () => {
   assert.equal(season.ovr([]), null);
   const two = [play('a', 'took', 1), play('a', 'took', 2), play('a', 'took', 3), play('a', 'landed', 4), play('a', 'dropped', 5)];
   assert.equal(season.ovr(two), null);
-  assert.equal(season.ovr([...two, play('a', 'sent_back', 6)]), Math.round(60 + 39 / 3));
+  // the Atris Rating of 1 landed in 3 finished
+  assert.equal(season.ovr([...two, play('a', 'sent_back', 6)]), 55);
 });
 
 test('ovr counts drops and send backs against landed', () => {
   const landed = Array.from({ length: 8 }, (_, i) => play('a', 'landed', i));
   const dropped = Array.from({ length: 15 }, (_, i) => play('a', 'dropped', 100 + i));
   const back = [play('a', 'sent_back', 200)];
-  assert.equal(season.ovr([...landed, ...dropped, ...back]), Math.round(60 + 39 * 8 / 24));
-  assert.equal(season.ovr([...landed, ...dropped, ...back]), 73);
-  assert.equal(season.ovr(landed), 99);
-  assert.equal(season.ovr(dropped), 60);
+  assert.equal(season.ovr([...landed, ...dropped, ...back]), 53);
+  // 8 in a row is not a 99: the top takes a long clean run
+  assert.equal(season.ovr(landed), 84);
+  assert.equal(season.ovr(dropped), 29);
 });
 
 test('abandoned jobs count against ovr and in jobs; took does not', () => {
@@ -55,8 +56,7 @@ test('abandoned jobs count against ovr and in jobs; took does not', () => {
     ...Array.from({ length: 31 }, (_, i) => play('integrator', 'abandoned', 100 + i)),
     ...Array.from({ length: 10 }, (_, i) => play('integrator', 'took', 200 + i)),
   ];
-  assert.equal(season.ovr(rows), Math.round(60 + 39 * 44 / 75));
-  assert.equal(season.ovr(rows), 83);
+  assert.equal(season.ovr(rows), 62);
   const [row] = season.rosterRows({ outcomes: rows });
   assert.deepEqual([row.landed, row.abandoned, row.jobs, row.took], [44, 31, 75, 10]);
 });
@@ -266,8 +266,8 @@ test('roster sorts by ovr with rookies last and shows landed of took', () => {
     now: NOW,
   });
   assert.deepEqual(roster.map(r => r.name), ['clean', 'sloppy', 'new', 'waiting']);
-  assert.deepEqual([roster[0].ovr, roster[0].landed, roster[0].took, roster[0].status], [99, 3, 3, 'on a job']);
-  assert.deepEqual([roster[1].ovr, roster[1].landed, roster[1].took, roster[1].form, roster[1].status], [73, 1, 4, 'kdd', 'asleep']);
+  assert.deepEqual([roster[0].ovr, roster[0].landed, roster[0].took, roster[0].status], [76, 3, 3, 'on a job']);
+  assert.deepEqual([roster[1].ovr, roster[1].landed, roster[1].took, roster[1].form, roster[1].status], [55, 1, 4, 'kdd', 'asleep']);
   assert.equal(roster[2].ovr, null);
   assert.equal(roster[2].status, 'idle');
   assert.equal(roster[3].took, 0);
@@ -343,7 +343,7 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.equal(lines[0], 'front office | demo | week of oct 19');
   assert.equal(lines[1], 'this week: 1 landed by autoland, 1 by you, 1 sent back, 1 dropped, 1 abandoned, 0 waiting on review, 1 stuck');
   assert.equal(lines[2], 'since you looked (2d ago): 2 landed, 1 dropped, 1 sent back, 1 abandoned');
-  assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
+  assert.match(text, /^ {2}builder +59 +akkd +landed 2 of 4 +on a job$/m);
   assert.match(text, /^ {2}scout +rookie +x +landed 0 of 1 +asleep$/m);
   assert.match(text, /^ {2}mapper +rookie +- +landed 0 of 0 +stuck 4d$/m);
   assert.match(text, /^stuck with the player, claimed with no move for 6h or more$/m);
@@ -353,7 +353,7 @@ test('board renders one lowercase screen with recap, stuck, last plays, and key'
   assert.match(text, /^ {2}8:00 am +builder +abandoned +5h +old idea$/m);
   assert.doesNotMatch(text, /box scores/);
   assert.match(text, /^ {2}CLI-7 +write the docs$/m);
-  assert.match(text, /stricter than the website rating on purpose \(drops and abandons count\)/);
+  assert.match(text, /99 means 99 of every 100\. drops and abandons count \(atris rating\)/);
   assert.match(text, /k landed, d dropped, x sent back, a abandoned/);
   assert.match(text, /run atris gm in a terminal to play/);
   assert.doesNotMatch(text, /\bnew$/m);
@@ -535,7 +535,7 @@ test('gm --board reads a real task db and prints honest records', () => {
     assert.match(res.stdout, /, 1 abandoned, 1 waiting on review,\n {2}1 stuck$/m);
     assert.match(res.stdout, /^since you looked \(2d ago\): 2 landed, 1 dropped, 0 sent back, 1 abandoned$/m);
     // T1 and T7 landed, T4 dropped, T6 abandoned, T8 is in review and pending
-    assert.match(res.stdout, /^ {2}builder +80 +kadk +landed 2 of 4 +waiting on review 2h$/m);
+    assert.match(res.stdout, /^ {2}builder +59 +kadk +landed 2 of 4 +waiting on review 2h$/m);
     // T8 handed in a proof: it waits on review, it is not stuck with the player
     assert.match(res.stdout, /^waiting on review, age since the proof$/m);
     assert.match(res.stdout, /^ {2}builder +2h +[A-Z0-9]+-\d+ +still in review$/m);
@@ -680,13 +680,13 @@ test('league rows rate each club over all its jobs and name the best non-rookie'
     lastEventAt: NOW - 20 * 60 * 1000,
   })], NOW);
   assert.equal(row.club, 'alpha');
-  assert.equal(row.ovr, Math.round(60 + 39 * 5 / 7));
+  assert.equal(row.ovr, 66);
   assert.equal(row.landed_week, 5);
   assert.equal(row.landed_30d, 5);
   assert.equal(row.dropped_30d, 2);
   assert.equal(row.stuck, 1);
   assert.equal(row.last_play, '20m');
-  assert.deepEqual(row.best_player, { name: 'ace', ovr: 99 });
+  assert.deepEqual(row.best_player, { name: 'ace', ovr: 76 });
 });
 
 test('league sorts by landed this week, then ovr with rookies last, then recent activity', () => {
@@ -733,7 +733,7 @@ test('league renders a header, one row per club, a cap, and the key', () => {
   const text = lines.join('\n');
   assert.equal(lines[0], 'league | 30 days | 25 clubs');
   assert.match(text, /^ {2}club +ovr +week +30d +drop +aband +stuck +last +best player$/m);
-  assert.match(text, /^ {2}project-obelisk +99 +3 +3 +0 +0 +0 +4m +integrator 99$/m);
+  assert.match(text, /^ {2}project-obelisk +76 +3 +3 +0 +0 +0 +4m +integrator 76$/m);
   assert.match(text, /^ {2}quiet-0 +rookie +0 +0 +0 +0 +0 +1d +-$/m);
   assert.match(text, /and 5 more clubs/);
   assert.ok(lines.length <= 40, `league is ${lines.length} rows`);
@@ -800,7 +800,7 @@ test('league hides clubs under 3 finished jobs and says how many', () => {
   const text = renderLeagueLines(board).join('\n');
   assert.match(text, /^league \| 30 days \| 1 clubs$/m);
   assert.match(text, /^ {2}2 quiet clubs hidden \(under 3 finished jobs in 30 days\)$/m);
-  assert.match(text, /^ {2}busy +73 +1 +1 +1 +1 +0 /m);
+  assert.match(text, /^ {2}busy +55 +1 +1 +1 +1 +0 /m);
 });
 
 test('gm --league --board prints the league once and exits 0', () => {
@@ -1047,7 +1047,7 @@ test('weekly ratings use the honest formula per monday-to-monday week, oldest fi
     play('a', 'took', at(9, 15)),
     play('a', 'landed', new Date(2026, 9, 19, 0, 0).getTime()),
   ];
-  assert.deepEqual(season.weeklyRatings(rows, NOW), [null, null, null, 86, 99, null]);
+  assert.deepEqual(season.weeklyRatings(rows, NOW), [null, null, null, 64, 76, null]);
   assert.equal(season.weeklyRatings(rows, NOW, 2).length, 2);
 });
 
@@ -1097,7 +1097,7 @@ test('a member card holds status, ovr, weekly line, record, median, scouting, an
   const card = season.memberCard('builder', cardSeason(), { role: 'Builder', engine: null, now: NOW });
   assert.equal(card.awake, false);
   assert.deepEqual(card.status, { state: 'stuck 3d', title: 'map the old flags' });
-  assert.equal(card.ovr, 86);
+  assert.equal(card.ovr, 64);
   assert.deepEqual(card.record_30d, { landed: 2, dropped: 1, sent_back: 0, abandoned: 0 });
   assert.equal(card.median_landing_hours, 6);
   assert.equal(card.scouting, 'drops jobs: 1 of last 4 finished');
@@ -1109,7 +1109,7 @@ test('a member card holds status, ovr, weekly line, record, median, scouting, an
   const text = lines.join('\n');
   assert.equal(lines[0], 'card | builder | demo');
   assert.equal(lines[1], 'role: Builder | asleep | stuck 3d: map the old flags');
-  assert.match(text, /^ovr 86 \| last 6 weeks, oldest first: - - - - - 86$/m);
+  assert.match(text, /^ovr 64 \| last 6 weeks, oldest first: - - - - - 64$/m);
   assert.match(text, /^record 30d: 2 landed, 1 dropped, 0 sent back, 0 abandoned \| median 6h from claim to landing$/m);
   assert.match(text, /^engine: not recorded$/m);
   assert.match(text, /^scouting: drops jobs: 1 of last 4 finished$/m);
@@ -1357,8 +1357,8 @@ test('every board, league, card, and replay line fits the terminal width', () =>
   ], NOW);
   const league = renderLeagueLines({ now: NOW, days: 30, rows: leagueRows, hidden: 0 }, { width: 100 });
   assert.ok(league.every(l => widthOf(l) <= 100), league.find(l => widthOf(l) > 100));
-  assert.match(league.join('\n'), / 99$/m, 'the best player rating always shows');
-  assert.match(league.join('\n'), /\.\.\. 99$/m, 'a long best player name gives way first');
+  assert.match(league.join('\n'), / 76$/m, 'the best player rating always shows');
+  assert.match(league.join('\n'), /\.\.\. 76$/m, 'a long best player name gives way first');
 
   const card = season.memberCard(LONG, { ...cardSeason(), outcomes: [play(LONG, 'abandoned', NOW - HOUR, { title: LONG_TITLE })] }, { now: NOW });
   const cardLines = renderCardLines(card, { width: 80 });
@@ -1425,7 +1425,7 @@ test('board roster wraps to fit an 80 column terminal and keeps the plain column
   const noCells = renderBoardLines(fixtureBoard(), { width: 140, bordered: true }).join('\n');
   for (const text of [narrow, piped, noCells]) assert.doesNotMatch(text, /│/);
   for (const text of [piped, noCells]) {
-    assert.match(text, /^ {2}builder +80 +akkd +landed 2 of 4 +on a job$/m);
+    assert.match(text, /^ {2}builder +59 +akkd +landed 2 of 4 +on a job$/m);
     assert.match(text, /rookie under 3 finished/);
   }
 });
@@ -1457,7 +1457,7 @@ test('team cells: role words from MEMBER.md, the engine the runner would pick, t
     assert.equal(runner.engine.id, 'codex');
     const ratings = season.memberRatings(['landed', 'landed', 'dropped'].map((kind, i) => ({ member: 'builder', kind, at: NOW - i * HOUR })));
     const cells = teamCells(root, ['builder', 'designer', 'ghost', '../escape'], { ratings });
-    assert.deepEqual(cells.get('builder'), { role: 'ships features', ovr: '86', engine: `codex ${runner.model}`, parked: false });
+    assert.deepEqual(cells.get('builder'), { role: 'ships features', ovr: '64', engine: `codex ${runner.model}`, parked: false });
     assert.equal(cells.get('designer').engine, 'person');
     for (const name of ['ghost', '../escape']) assert.deepEqual(cells.get(name), { role: '··', ovr: '··', engine: '··', parked: false });
   } finally {

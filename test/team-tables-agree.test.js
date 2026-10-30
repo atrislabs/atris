@@ -73,8 +73,8 @@ function workspace() {
     if (end === 'dropped') addEvent.run(`${id}-e`, id, 2, ws, member, 'claim_released', JSON.stringify({ previous_claimed_by: member }), at + HOUR);
     if (end === 'sent_back') addEvent.run(`${id}-e`, id, 2, ws, 'reviewer', 'revision_requested', '{}', at + HOUR);
   };
-  // builder: 4 landed, 1 dropped is round(60 + 39 * 4 / 5) = 91. validator:
-  // 3 landed, 1 sent back is 89. launcher has 2 finished, so it is new.
+  // builder: 4 landed, 1 dropped rates 69 on the Atris Rating. validator:
+  // 3 landed, 1 sent back rates 67. launcher has 2 finished, so it is new.
   // researcher only claimed a job, and designer has no plays at all.
   for (const end of ['landed', 'landed', 'landed', 'landed', 'dropped']) job('builder', end);
   for (const end of ['landed', 'landed', 'landed', 'sent_back']) job('validator', end);
@@ -115,14 +115,14 @@ test('the orb team table, the board roster, and the standup read the same rating
     });
     const orb = Object.fromEntries(desk.teamTable().rows.map(r => [r.member, [r.role, r.ovr, r.engine]]));
     assert.deepEqual(Object.fromEntries(Object.entries(orb).map(([name, cells]) => [name, cells[1]])), {
-      builder: '91', designer: '··', launcher: 'new', researcher: '··', scribe: 'new', validator: '89',
+      builder: '69', designer: '··', launcher: 'new', researcher: '··', scribe: 'new', validator: '67',
     });
     assert.equal(orb.scribe[0], SCRIBE_CELL);
 
     // the board: the CLI's loader gives the one memberRatings Map
     const { board, ratings } = loadSeasonBoard(ws);
     assert.ok(ratings instanceof Map, 'the board reads the same Map the orb reads');
-    assert.deepEqual(ratings.get('builder'), { ovr: 91, finished: 5 });
+    assert.deepEqual(ratings.get('builder'), { ovr: 69, finished: 5 });
     const boardLines = renderBoardLines(board, { bordered: true, width: 160, cells: boardCells(board, ws, ratings) });
     const onBoard = boxCells(boardLines);
     assert.deepEqual(Object.keys(onBoard).sort(), ['builder', 'launcher', 'researcher', 'scribe', 'validator']);
