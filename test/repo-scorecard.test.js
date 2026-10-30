@@ -174,8 +174,55 @@ test('finding tasks keeps only changes their own tests grade, with no AI', async
   assert.equal(task.ask, 'add a subtract function to lib/math that returns a minus b');
   assert.deepEqual(task.hidden, ['test/math.test.js']);
   assert.equal(task.runner.kind, 'node');
+  assert.deepEqual(task.names, [{ file: 'lib/math.js', new: false, names: ['subtract'] }]);
   assert.equal(found.skipped.no_tests, 1);
   assert.equal(found.skipped.passes_before, 1);
+});
+
+test('the ask names what the tests call that the change added, and nothing else', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scorecard-names-'));
+  git(repo, 'init', '-q');
+  const base = commit(repo, {
+    'lib/math.js': 'function add(a, b) { return a + b; }\nfunction helper() {}\nmodule.exports = { add };\n',
+    'tools/clock.py': 'def now():\n    return 1\n',
+  }, 'start');
+  const fix = commit(repo, {
+    'lib/math.js': 'function add(a, b) { return a + b; }\nfunction helper() {}\nfunction subtract(a, b) { return a - b; }\n'
+      + 'module.exports = {\n  // math\n  add,\n  subtract,\n  helper,\n};\n',
+    'lib/greet.js': 'exports.greet = (name) => `hi ${name}`;\nexports.unused = 1;\n',
+    'tools/clock.py': 'LIMIT = 3\n\ndef now():\n    return 1\n\nclass Timer:\n    def __init__(self):\n        self.on = True\n\n'
+      + '    def stop(self):\n        return 0\n',
+    'test/math.test.js': "const { add, subtract } = require('../lib/math');\nconst { greet } = require('../lib/greet');\n"
+      + "add(1, 2); subtract(3, 2); greet('a');\n",
+    'tests/test_clock.py': 'from tools.clock import now, Timer\nimport tools.clock as clock\n\n'
+      + 'def test_it():\n    assert clock.LIMIT == 3\n    assert Timer().stop() == now() - 1\n',
+  }, 'math, greetings and a timer');
+  const status = git(repo, 'diff', '--name-status', '-M', base, fix).split('\n');
+  const names = sc.namesFor(repo, { base, fix, status, ...sc.classifyChange(status) });
+  assert.deepEqual(names, [
+    { file: 'lib/greet.js', new: true, names: ['greet'] },
+    { file: 'lib/math.js', new: false, names: ['subtract'] },
+    { file: 'tools/clock.py', new: false, names: ['Timer', 'LIMIT', 'stop'] },
+  ]);
+  assert.equal(sc.askText({ ask: 'do it', names }), [
+    'do it',
+    '',
+    'The checks for this change call these names, so use them exactly:',
+    '- lib/greet.js (a new file): greet',
+    '- lib/math.js: subtract',
+    '- tools/clock.py: Timer, LIMIT, stop',
+  ].join('\n'));
+  assert.equal(sc.askText({ ask: 'do it', names: [] }), 'do it');
+});
+
+test('a result counts only for the ask it was given', () => {
+  const bare = { id: 't1', fix: 'a'.repeat(40), ask: 'one', hidden: [] };
+  const named = { ...bare, names: [{ file: 'lib/a.js', new: true, names: ['a'] }] };
+  const old = { id: 't1', model: 'claude-haiku-5-5', n: 0, passed: true, cost_usd: 0.05, minutes: 2 };
+  assert.equal(sc.summarize([bare], [old], ['claude-haiku-5-5']).models[0].passes, 1);
+  const summary = sc.summarize([named], [old], ['claude-haiku-5-5']);
+  assert.equal(summary.models[0].tries, 0);
+  assert.equal(summary.named, 1);
 });
 
 test('a try works in a sealed copy on the plan login and is graded by the hidden tests', async () => {
@@ -201,6 +248,8 @@ test('a try works in a sealed copy on the plan login and is graded by the hidden
   assert.equal(seen.env.GIT_CONFIG_KEY_0, 'url.no-push://atris-scorecard-blocked/.pushInsteadOf');
   assert.equal(seen.remotes.trim(), '');
   assert.ok(seen.prompt.startsWith('add a subtract function to lib/math'));
+  assert.ok(seen.prompt.includes('call these names, so use them exactly:\n- lib/math.js: subtract\n'));
+  assert.equal(row.ask_key.length, 12);
   assert.ok(!seen.visibleTest.includes('subtract'), 'the grading test was visible to the AI');
   assert.equal(row.billing, 'plan');
   assert.ok(seen.argv.includes('--no-session-persistence'));
@@ -226,6 +275,7 @@ test('a try that changes nothing fails and shows up as not done', async () => {
   assert.match(summary.no_model[0].reason, /subtract is not a function/);
   const text = sc.renderScorecard(summary, { repo: 'demo', plan: 'Claude max plan' });
   assert.match(text, /not done from what was written/);
+  assert.match(text, /1 of 1 also name the new files and functions their tests call/);
   assert.match(text, /the tests wanted: .*subtract is not a function/);
   assert.match(text, /billed \$0/);
 });
@@ -240,10 +290,15 @@ test('a plan that runs out stops the run, and finished tries are not run again',
   assert.equal(limited.rows.length, 1);
   assert.equal(limited.rows[0].engine_error, true);
 
-  const done = [{ id: tasks[0].id, model: 'claude-haiku-5-5', n: 0, passed: true }];
+  const done = [{ id: tasks[0].id, model: 'claude-haiku-5-5', n: 0, ask_key: limited.rows[0].ask_key, passed: true }];
   const again = await sc.runAll(repo, tasks, { models: ['claude-haiku-5-5'], tries: 1, done, env, workDir: work });
   assert.equal(again.planned, 0);
   assert.equal(again.rows.length, 0);
+
+  // a result saved before this ask named the tests' names was for a different ask
+  const older = [{ id: tasks[0].id, model: 'claude-haiku-5-5', n: 0, passed: true }];
+  const rerun = await sc.runAll(repo, tasks, { models: ['claude-haiku-5-5'], tries: 1, done: older, env, workDir: work });
+  assert.equal(rerun.planned, 1);
 });
 
 test('a run about to bill a key instead of the plan is stopped before it works', async () => {

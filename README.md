@@ -453,6 +453,7 @@ atris scorecard run --models haiku,opus    # compare models; past Haiku needs AT
 ```
 
 - A past change becomes a task when its tests fail before it and pass after it. The ask is what your team wrote for that change.
+- The ask also names what the change's tests call that the change added: a new file, function or export, found with no AI. A good ticket names these; a commit message rarely does, and no model can guess a name nobody wrote down.
 - Each try starts from the change's parent in a throwaway copy with no remote. The change's own tests stay hidden until they grade the try.
 - Every try runs on your Claude plan login. Pay-per-use keys are removed, a try stops the moment Claude Code reports any other billing source, and nothing starts with extra usage on unless you pass `--allow-extra-usage`.
 - The scorecard shows how many changes each model did, how long it took, what the same runs would cost on pay-per-use, and which changes no model could do from what was written.
