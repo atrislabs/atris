@@ -129,6 +129,10 @@ test('a failing run names what the tests wanted', () => {
   assert.equal(sc.failureReason(node), "Cannot find module '../lib/rsi-loop'");
   const assertion = 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n500 !== 503\n';
   assert.equal(sc.failureReason(assertion), 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 500 !== 503');
+  const collection = 'E   ImportError: cannot import name \'guard\' from \'config\'\nERROR tests/test_guard.py\n';
+  assert.equal(sc.failureReason(collection), "ImportError: cannot import name 'guard' from 'config'");
+  assert.equal(sc.failureReason("code: 'MODULE_NOT_FOUND',"), 'a module the tests load does not exist yet');
+  assert.equal(sc.failureReason("    expected: /Start with the job/,\n    operator: 'match',"), 'expected /Start with the job/');
   assert.equal(sc.failureReason('all good'), '');
 });
 
