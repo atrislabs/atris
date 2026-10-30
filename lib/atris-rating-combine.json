@@ -1,0 +1,77 @@
+{
+ "bench": "Loop Bench",
+ "rated": "2026-10-29",
+ "tasks": 80,
+ "unseen": 32,
+ "engines": [
+  {
+   "model": "claude-opus-5-5",
+   "tasks": 80,
+   "finished": 77.0,
+   "python": {
+    "finished": 35.0,
+    "tasks": 36
+   },
+   "javascript": {
+    "finished": 42.0,
+    "tasks": 44
+   },
+   "unseen": {
+    "finished": 31.0,
+    "tasks": 32
+   },
+   "tries": 83,
+   "broke": 1,
+   "timed_out": 1,
+   "minutes_cap": 20,
+   "median_minutes": 2.23,
+   "cost_per_finish": 0.914
+  },
+  {
+   "model": "claude-sonnet-5-5",
+   "tasks": 79,
+   "finished": 73.0,
+   "python": {
+    "finished": 33.6,
+    "tasks": 35
+   },
+   "javascript": {
+    "finished": 39.4,
+    "tasks": 44
+   },
+   "unseen": {
+    "finished": 27.0,
+    "tasks": 32
+   },
+   "tries": 140,
+   "broke": 3,
+   "timed_out": 5,
+   "minutes_cap": 10,
+   "median_minutes": 1.46,
+   "cost_per_finish": 0.428
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "tasks": 80,
+   "finished": 70.5,
+   "python": {
+    "finished": 30.8,
+    "tasks": 36
+   },
+   "javascript": {
+    "finished": 39.8,
+    "tasks": 44
+   },
+   "unseen": {
+    "finished": 27.2,
+    "tasks": 32
+   },
+   "tries": 545,
+   "broke": 8,
+   "timed_out": 87,
+   "minutes_cap": 10,
+   "median_minutes": 2.48,
+   "cost_per_finish": 0.082
+  }
+ ]
+}

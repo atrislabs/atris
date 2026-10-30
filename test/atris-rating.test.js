@@ -53,17 +53,33 @@ test('the combine rates every engine, best first, and nobody is a 99', () => {
   assert.equal(rating.combineCardFor(''), null);
 });
 
+test('the combine file is what the bench script prints, and nothing can change it', () => {
+  const data = rating.COMBINE;
+  assert.equal(data.bench, 'Loop Bench');
+  assert.match(data.rated, /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(data.engines.length >= 1);
+  for (const row of data.engines) {
+    for (const key of ['model', 'tasks', 'finished', 'python', 'javascript', 'unseen', 'tries', 'broke', 'timed_out', 'minutes_cap', 'median_minutes', 'cost_per_finish']) {
+      assert.ok(key in row, `${row.model} has ${key}`);
+    }
+    assert.ok(row.finished <= row.tasks && row.unseen.tasks <= data.unseen);
+    assert.ok(Math.abs(row.python.finished + row.javascript.finished - row.finished) < 0.15);
+  }
+  assert.ok(Object.isFrozen(data.engines[0].python));
+  assert.throws(() => { data.engines[0].finished = 80; });
+});
+
 test('the league and a card say what each number means', () => {
   const text = rating.renderCombine();
   assert.match(text, /^how much real work a teammate finishes, 25 to 99\. 99 means 99 of every 100\.$/m);
-  assert.match(text, /^ {2}86 +opus 5\.5 +77 of 80 +87 +84 +86 +94 +2\.3 min +91¢$/m);
+  assert.match(text, /^ {2}86 +opus 5\.5 +77 of 80 +87 +84 +86 +94 +2\.2 min +91¢$/m);
   assert.match(text, /^ {2}76 +haiku 5\.5 +70\.5 of 80 /m);
   assert.match(text, /^no engine is a 99 yet\.$/m);
   assert.match(text, /^opus 5\.5 gets 20 minutes a task, the others 10\.$/m);
   const card = rating.renderCard(rating.combineCardFor('haiku'));
   assert.match(card, /^haiku 5\.5, builder +76 ovr$/m);
   assert.match(card, /^ {2}clean +95 +broke another test on 8 of 545 tries$/m);
-  assert.match(card, /^ {2}14¢ per finished task on pay-per-use$/m);
+  assert.match(card, /^ {2}8¢ per finished task on pay-per-use$/m);
   for (const line of [...text.split('\n'), ...card.split('\n')]) assert.ok(line.length <= 80, line);
   assert.doesNotMatch(text + card, /—/);
 });
