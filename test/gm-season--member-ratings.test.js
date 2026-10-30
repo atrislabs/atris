@@ -40,11 +40,11 @@ test('memberRatings scores active members and counts finished jobs across multip
   assert.ok(ratings instanceof Map);
   assert.strictEqual(ratings.size, 3);
 
-  // alice: 3 landed of 3 finished -> ovr 99, finished 3
-  assert.deepStrictEqual(ratings.get('alice'), { ovr: 99, finished: 3 });
+  // alice: 3 landed of 3 finished -> the Atris Rating 76, finished 3 (3 in a row is not a 99)
+  assert.deepStrictEqual(ratings.get('alice'), { ovr: 76, finished: 3 });
 
-  // bob: 1 landed, 1 dropped, 1 sent_back, 1 abandoned -> 1/4 landed -> 60 + 39 * 0.25 = 70, finished 4
-  assert.deepStrictEqual(ratings.get('bob'), { ovr: 70, finished: 4 });
+  // bob: 1 landed, 1 dropped, 1 sent_back, 1 abandoned -> 1 of 4 landed rates 52, finished 4
+  assert.deepStrictEqual(ratings.get('bob'), { ovr: 52, finished: 4 });
 
   // carol: 2 landed (< 3 finished threshold) -> rookie ovr null, finished 2
   assert.deepStrictEqual(ratings.get('carol'), { ovr: null, finished: 2 });
@@ -56,12 +56,12 @@ test('memberRatings handles edge cases: rookie threshold, non-finished plays, an
     { member: 'dave', kind: 'took', at: 500 },
     { member: 'dave', kind: 'took', at: 600 },
 
-    // eve: exactly 3 finished, all dropped -> 0/3 landed -> ovr 60, finished 3
+    // eve: exactly 3 finished, all dropped -> 0 of 3 landed rates 42, finished 3
     { member: 'eve', kind: 'dropped', at: 1000 },
     { member: 'eve', kind: 'dropped', at: 2000 },
     { member: 'eve', kind: 'dropped', at: 3000 },
 
-    // frank: exactly 3 finished (1 landed, 2 abandoned) -> 60 + 39 * 1/3 = 73, finished 3
+    // frank: exactly 3 finished (1 landed, 2 abandoned) -> 1 of 3 rates 55, finished 3
     { member: 'frank', kind: 'landed', at: 1000 },
     { member: 'frank', kind: 'abandoned', at: 2000 },
     { member: 'frank', kind: 'abandoned', at: 3000 },
@@ -78,8 +78,8 @@ test('memberRatings handles edge cases: rookie threshold, non-finished plays, an
 
   assert.strictEqual(ratings.size, 3);
   assert.deepStrictEqual(ratings.get('dave'), { ovr: null, finished: 0 });
-  assert.deepStrictEqual(ratings.get('eve'), { ovr: 60, finished: 3 });
-  assert.deepStrictEqual(ratings.get('frank'), { ovr: 73, finished: 3 });
+  assert.deepStrictEqual(ratings.get('eve'), { ovr: 42, finished: 3 });
+  assert.deepStrictEqual(ratings.get('frank'), { ovr: 55, finished: 3 });
 });
 
 test('memberRatings handles empty inputs and missing arguments', () => {
