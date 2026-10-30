@@ -174,12 +174,12 @@ test('finding tasks keeps only changes their own tests grade, with no AI', async
   assert.equal(task.ask, 'add a subtract function to lib/math that returns a minus b');
   assert.deepEqual(task.hidden, ['test/math.test.js']);
   assert.equal(task.runner.kind, 'node');
-  assert.deepEqual(task.names, [{ file: 'lib/math.js', new: false, names: ['subtract'] }]);
+  assert.deepEqual(task.names, [{ file: 'lib/math.js', new: false, names: ['subtract(a, b)'] }]);
   assert.equal(found.skipped.no_tests, 1);
   assert.equal(found.skipped.passes_before, 1);
 });
 
-test('the ask names what the tests call that the change added, and nothing else', () => {
+test('the ask names what the tests call that the change added or changed, and nothing else', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scorecard-names-'));
   git(repo, 'init', '-q');
   const base = commit(repo, {
@@ -189,28 +189,29 @@ test('the ask names what the tests call that the change added, and nothing else'
   const fix = commit(repo, {
     'lib/math.js': 'function add(a, b) { return a + b; }\nfunction helper() {}\nfunction subtract(a, b) { return a - b; }\n'
       + 'module.exports = {\n  // math\n  add,\n  subtract,\n  helper,\n};\n',
-    'lib/greet.js': 'exports.greet = (name) => `hi ${name}`;\nexports.unused = 1;\n',
-    'tools/clock.py': 'LIMIT = 3\n\ndef now():\n    return 1\n\nclass Timer:\n    def __init__(self):\n        self.on = True\n\n'
-      + '    def stop(self):\n        return 0\n',
+    'lib/greet.js': "const SIZE = (2 * 8);\nclass Greeter {\n  run() {\n    this.wave(1);\n  }\n\n  wave(times) {\n    return times;\n  }\n}\n"
+      + 'exports.greet = (name) => `hi ${name}`;\nexports.unused = 1;\nmodule.exports.SIZE = SIZE;\nexports.Greeter = Greeter;\n',
+    'tools/clock.py': 'LIMIT = 3\n\ndef now(tz=None) -> int:\n    return 1\n\nclass Timer:\n    def __init__(self):\n        self.on = True\n\n'
+      + '    def stop(self, *, hard=False):\n        return 0\n',
     'test/math.test.js': "const { add, subtract } = require('../lib/math');\nconst { greet } = require('../lib/greet');\n"
-      + "add(1, 2); subtract(3, 2); greet('a');\n",
+      + "add(1, 2); subtract(3, 2); greet('a');\nconst g = require('../lib/greet');\nnew g.Greeter().wave(g.SIZE);\n",
     'tests/test_clock.py': 'from tools.clock import now, Timer\nimport tools.clock as clock\n\n'
       + 'def test_it():\n    assert clock.LIMIT == 3\n    assert Timer().stop() == now() - 1\n',
   }, 'math, greetings and a timer');
   const status = git(repo, 'diff', '--name-status', '-M', base, fix).split('\n');
   const names = sc.namesFor(repo, { base, fix, status, ...sc.classifyChange(status) });
   assert.deepEqual(names, [
-    { file: 'lib/greet.js', new: true, names: ['greet'] },
-    { file: 'lib/math.js', new: false, names: ['subtract'] },
-    { file: 'tools/clock.py', new: false, names: ['Timer', 'LIMIT', 'stop'] },
+    { file: 'lib/greet.js', new: true, names: ['greet(name)', 'Greeter', 'SIZE'] },
+    { file: 'lib/math.js', new: false, names: ['subtract(a, b)'] },
+    { file: 'tools/clock.py', new: false, names: ['now(tz=None) -> int', 'Timer', 'LIMIT', 'stop(*, hard=False)'] },
   ]);
   assert.equal(sc.askText({ ask: 'do it', names }), [
     'do it',
     '',
-    'The checks for this change call these names, so use them exactly:',
-    '- lib/greet.js (a new file): greet',
-    '- lib/math.js: subtract',
-    '- tools/clock.py: Timer, LIMIT, stop',
+    'The checks for this change call these, so match them exactly:',
+    '- lib/greet.js (a new file): greet(name), Greeter, SIZE',
+    '- lib/math.js: subtract(a, b)',
+    '- tools/clock.py: now(tz=None) -> int, Timer, LIMIT, stop(*, hard=False)',
   ].join('\n'));
   assert.equal(sc.askText({ ask: 'do it', names: [] }), 'do it');
 });
@@ -248,7 +249,7 @@ test('a try works in a sealed copy on the plan login and is graded by the hidden
   assert.equal(seen.env.GIT_CONFIG_KEY_0, 'url.no-push://atris-scorecard-blocked/.pushInsteadOf');
   assert.equal(seen.remotes.trim(), '');
   assert.ok(seen.prompt.startsWith('add a subtract function to lib/math'));
-  assert.ok(seen.prompt.includes('call these names, so use them exactly:\n- lib/math.js: subtract\n'));
+  assert.ok(seen.prompt.includes('call these, so match them exactly:\n- lib/math.js: subtract(a, b)\n'));
   assert.equal(row.ask_key.length, 12);
   assert.ok(!seen.visibleTest.includes('subtract'), 'the grading test was visible to the AI');
   assert.equal(row.billing, 'plan');
