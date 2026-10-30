@@ -50,6 +50,6 @@ Unknowns, left unknown:
 - `node --test test/codex-daemon.test.js test/codex-session.test.js`: exit 0, 28 tests, 28 pass. Both files now sit in `test/fast-tests.txt`.
 - `npm run test:fast`: exit 0, 2433 tests, 2433 pass (2405 before the two files were added, also exit 0).
 - The 78 engine, codex, help, known-commands, readme, runner-command, and first-minute test files: exit 0, 808 tests, 808 pass.
-- Run on Node 25.6.1 only; CI runs Node 24 on Linux and was not run locally.
+- Local runs used Node 25.6.1. CI (Node 24, Linux) failed once in unit shard 8: `test/repo-hygiene.test.js` caught four exports nothing else named (`CLIENT_NOTIFICATIONS`, `CONNECT_TIMEOUT_MS`, `websocketKey`, `sessionUsage`). The local selection above had missed that file. After the export entries were dropped, `node --test test/repo-hygiene.test.js` passed locally, `node scripts/ci-test-shard.js 8/8` passed locally (exit 0, 1354 pass), and every CI check passed.
 - `atris slop detect` on the new files and `--diff`: exit 0, clean.
 - `atris doc-health`: refs 1866 ok (18 new, all ok), 40 moved and 4 ambiguous, the same set flagged before this change. The one in a touched file, `commands/engine.js:2354` (`unread`), already pointed about 66 lines from its symbol on origin/master. Refs into `lib/engine-ask.js` that this change shifted by 13 lines were moved to the same code; the 1-line shifts in `commands/engine.js` stay inside doc-health's 3-line window.
