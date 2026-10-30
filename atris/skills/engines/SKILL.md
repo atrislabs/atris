@@ -1,7 +1,7 @@
 ---
 name: engines
-description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build."
-version: 1.7.0
+description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build, codex session, codex repl, codex computer use."
+version: 1.8.0
 tags:
   - engines
   - claude
@@ -55,6 +55,18 @@ The first worker that is ready and not expired leads; the rest are backups in or
 - ask: `atris engine <name> "<question>"`; pin a model with `atris engine <name> --model <model> "<question>"`
 - build: `atris engine <name> <task-id>`
 - switch: `atris engine <name>`
+
+## Warm codex: sessions, a repl, computer use
+
+`atris engine codex "<question>"` is a cold one-shot `codex exec`: read-only, isolated, without the owner's codex config. For back and forth, use the owner's shared Codex app-server daemon instead (verified 2026-10-29, codex-cli 0.166.0):
+
+- `atris engine codex --session <name> "<prompt>"` starts or continues a named thread with the owner's codex config, model, and plugins, read-only. Names map to thread ids in `.atris/state/codex-sessions.json`, per workspace.
+- `atris engine codex --session <name> --interactive` reads one turn per line from stdin on that thread; `/exit` or ctrl-d ends it, ctrl-c stops the running turn.
+- `atris engine codex --computer-use "<task>"` keeps the owner's codex sandbox so codex can act on the computer; model and effort come from the roster job `computer use`. A read-only session never becomes a computer-use one; that takes a new name.
+
+`reply with the word OK`, wall time on this Mac (2026-10-29): cold `codex exec` 4.7 to 5.8s median, a new daemon session 3.7s, the next turn on the same thread 1.5s. A new thread pays the owner's MCP server startup; later turns do not.
+
+Read-only sessions still load the owner's plugins and MCP servers, computer use included: the codex sandbox covers shell commands and file edits, not MCP tools, so the thread is told to stay read-only. With no daemon, the turn runs as a one-shot `codex exec` after one plain line, and it is not saved to the session.
 
 ## FABLE: use the Atris profile
 

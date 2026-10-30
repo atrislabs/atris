@@ -424,6 +424,18 @@ Ride a different engine for one run only, without changing the default. `--engin
 atris mission run "fix the flaky login test" --engine codex
 ```
 
+### Warm Codex sessions
+
+`atris engine codex "<question>"` is a one-shot, read-only `codex exec` that ignores your codex config. When a Codex app-server daemon runs on this machine (`codex app-server daemon start`), a session talks to it instead: no cold start, and your codex config, model, and plugins come along.
+
+```bash
+atris engine codex --session review "what does lib/fleet.js do?"      # start or continue a named thread
+atris engine codex --session review --interactive                     # one turn per line, same thread
+atris engine codex --computer-use "check the battery level in settings"  # codex acts on this computer
+```
+
+Sessions are read-only unless they start with `--computer-use`, which keeps your codex sandbox and takes its model and effort from the roster job `computer use`. Session names live in `.atris/state/codex-sessions.json`. With no daemon, the turn runs as a one-shot `codex exec` and says so.
+
 ### Fleet Flight
 
 `atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks: one mission per task, one worktree per engine. Builds run in parallel; arrivals land serially with rebase-before-ship, so a rebase conflict pauses that landing (never auto-resolved) and keeps its worktree instead of orphaning work. Each flight writes a receipt to `atris/runs/fleet-<stamp>.json`.
