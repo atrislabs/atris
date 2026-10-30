@@ -128,7 +128,10 @@ test('a failing run names what the tests wanted', () => {
   const node = "Error: Cannot find module '../lib/rsi-loop'\nRequire stack:";
   assert.equal(sc.failureReason(node), "Cannot find module '../lib/rsi-loop'");
   const assertion = 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n500 !== 503\n';
-  assert.equal(sc.failureReason(assertion), 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 500 !== 503');
+  assert.equal(sc.failureReason(assertion), 'AssertionError: Expected values to be strictly equal: 500 !== 503');
+  assert.equal(sc.failureReason('  TypeError [Error]: m.subtract is not a function'), 'TypeError: m.subtract is not a function');
+  const tap = "  failureType: 'testCodeFailure'\n  error: 'm.subtract is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'";
+  assert.equal(sc.failureReason(tap), 'TypeError: m.subtract is not a function');
   const collection = 'E   ImportError: cannot import name \'guard\' from \'config\'\nERROR tests/test_guard.py\n';
   assert.equal(sc.failureReason(collection), "ImportError: cannot import name 'guard' from 'config'");
   assert.equal(sc.failureReason("code: 'MODULE_NOT_FOUND',"), 'a module the tests load does not exist yet');
