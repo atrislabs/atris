@@ -122,6 +122,16 @@ test('the ask drops trailers, merge lines and pull request numbers', () => {
   assert.equal(sc.cleanMessage(text), 'add a flag');
 });
 
+test('a failing run names what the tests wanted', () => {
+  const pytest = 'lots of output\nFAILED tests/test_hire.py::test_keeps_hires - assert 500 == 503\n1 failed in 0.8s';
+  assert.equal(sc.failureReason(pytest), 'assert 500 == 503');
+  const node = "Error: Cannot find module '../lib/rsi-loop'\nRequire stack:";
+  assert.equal(sc.failureReason(node), "Cannot find module '../lib/rsi-loop'");
+  const assertion = 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n500 !== 503\n';
+  assert.equal(sc.failureReason(assertion), 'AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 500 !== 503');
+  assert.equal(sc.failureReason('all good'), '');
+});
+
 test('billing keys and switches never reach a child, the plan token does', () => {
   const env = sc.stripBilling({
     ANTHROPIC_API_KEY: 'k', ANTHROPIC_AUTH_TOKEN: 't', ANTHROPIC_BASE_URL: 'u', OPENAI_API_KEY: 'k',
@@ -206,8 +216,10 @@ test('a try that changes nothing fails and shows up as not done', async () => {
   const summary = sc.summarize(tasks, rows, ['claude-haiku-5-5']);
   assert.equal(summary.models[0].passes, 0);
   assert.equal(summary.no_model.length, 1);
+  assert.match(summary.no_model[0].reason, /subtract is not a function/);
   const text = sc.renderScorecard(summary, { repo: 'demo', plan: 'Claude max plan' });
   assert.match(text, /not done from what was written/);
+  assert.match(text, /the tests wanted: .*subtract is not a function/);
   assert.match(text, /billed \$0/);
 });
 
