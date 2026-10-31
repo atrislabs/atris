@@ -19,6 +19,8 @@ Run `atris google accounts` to see connected accounts and defaults. Use `atris g
 
 For direct api calls, pass `account_id` as a query parameter on reads and deletes, or in the json body on writes. Pass the business id or slug in the `X-Business-Id` header when working for a business. Calendar reads without an account include all accounts; `account_id=all` also requests all calendars. Calendar writes need one account. The old sign-in and api examples below still work on older servers.
 
+For example, run `atris calendar today --account work --business <slug>` for one account in a business. Scoped calendar commands stop if the server cannot honor the choice. For `atris calendar search <query> --json`, check `partial`, `accounts`, and `errors` before treating the result as a complete schedule. Cached results keep these fields too.
+
 ## Bootstrap (ALWAYS Run First)
 
 Before any calendar operation, run this bootstrap to ensure everything is set up:
