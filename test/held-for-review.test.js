@@ -18,6 +18,7 @@ const fleet = require('../lib/fleet');
 const { loadSeason, rosterRows } = require('../lib/gm-season');
 const { readRosterRuns, summarizeRuns, OUTCOMES } = require('../lib/roster-runs');
 const { attachStaleModels } = require('../lib/roster-stale');
+const { ratingCommand } = require('../commands/rating');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
@@ -61,29 +62,43 @@ function shipSetup(t, { tag = 'feedback', todoTags = [] } = {}) {
   fs.writeFileSync(path.join(primary, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
     tasks: [{ display_id: 'BCK-1934', tag, metadata: { todo_tags: todoTags } }],
   }));
-  // `gh pr view` answers the way the real one does. With no setup the branch has
-  // no pull request yet: exit 1 and say so on stderr. A test can give the branch
-  // an open pull request, make gh fail, or make it print something that is not
-  // JSON. Creating a pull request prints its link. Every call is written down
-  // so a test can say what was never asked for.
-  const viewSetup = path.join(root, 'pr-view.json');
+  // `gh` answers the way the real one does. A test gives the branch its pull
+  // requests, makes gh fail, or makes it print something that is not JSON.
+  // `pr view` shows ONE pull request for the branch (an open one first), as the
+  // real one does even when several are open; `pr list` shows every one that
+  // matches --head and --state. With no pull request, view exits 1 and says so
+  // on stderr, and list prints an empty list. Creating a pull request prints
+  // its link. Every call is written down so a test can say what was never asked
+  // for.
+  const prsSetup = path.join(root, 'prs.json');
   fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(ghLog)}, args.join(' ') + '\\n');
-if (args[0] === 'pr' && args[1] === 'view') {
-  const setup = fs.existsSync(${JSON.stringify(viewSetup)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(viewSetup)}, 'utf8')) : null;
-  if (!setup) { console.error('no pull requests found for branch "bck-1934-fix"'); process.exit(1); }
+const setup = fs.existsSync(${JSON.stringify(prsSetup)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(prsSetup)}, 'utf8')) : {};
+const prs = setup.prs || [];
+const isOpen = (pr) => String(pr.state || 'OPEN').toUpperCase() === 'OPEN';
+const after = (flag) => args[args.indexOf(flag) + 1];
+if (args[0] === 'pr' && (args[1] === 'view' || args[1] === 'list')) {
   if (setup.fail) { console.error(setup.fail); process.exit(1); }
   if (setup.raw !== undefined) { process.stdout.write(setup.raw); process.exit(0); }
-  if (args.includes('--jq')) console.log(setup.pr.number + ' ' + setup.pr.url + ' ' + setup.pr.state);
-  else console.log(JSON.stringify(setup.pr));
+}
+if (args[0] === 'pr' && args[1] === 'view') {
+  const shown = prs.find(isOpen) || prs[0];
+  if (!shown) { console.error('no pull requests found for branch "bck-1934-fix"'); process.exit(1); }
+  if (args.includes('--jq')) console.log(shown.number + ' ' + shown.url + ' ' + shown.state);
+  else console.log(JSON.stringify(shown));
+  process.exit(0);
+}
+if (args[0] === 'pr' && args[1] === 'list') {
+  const listed = prs.filter((pr) => (pr.headRefName || 'bck-1934-fix') === after('--head') && (after('--state') !== 'open' || isOpen(pr)));
+  console.log(JSON.stringify(listed.map(({ headRefName, state, ...shown }) => shown)));
   process.exit(0);
 }
 if (args[0] === 'pr' && args[1] === 'create') { console.log(${JSON.stringify(PR_URL)}); process.exit(0); }
 process.exit(1);
 `, { mode: 0o755 });
-  const prView = (setup) => fs.writeFileSync(viewSetup, JSON.stringify(setup));
+  const setPrs = (setup) => fs.writeFileSync(prsSetup, JSON.stringify(setup));
   const ship = (...extra) => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'Fix the form (BCK-1934, built by codex)', '--no-map-refresh', ...extra], {
     cwd: work,
     encoding: 'utf8',
@@ -92,7 +107,7 @@ process.exit(1);
   });
   const onRemote = () => git(['--git-dir', remote, 'show-ref', '--verify', '--quiet', 'refs/heads/bck-1934-fix'], root).status === 0;
   const ghCalls = () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').split('\n').filter(Boolean) : []);
-  return { ship, onRemote, ghCalls, prView, work };
+  return { ship, onRemote, ghCalls, setPrs, work };
 }
 
 test('without --merge a protected-lane branch is pushed and its pull request is opened for a person', (t) => {
@@ -145,84 +160,130 @@ test('a safe-lane branch is not slowed down by the gate', (t) => {
 // A pull request with GitHub auto-merge on merges itself the moment its checks
 // pass, and a push is all it takes to feed it. Work that shipped earlier with
 // --merge and was retagged into a protected lane since would land with no person.
+// One branch can have several open pull requests (one per base), and a single
+// push feeds every one of them, so every one is asked about. `gh pr view` shows
+// only one of them.
 
 const AUTO_MERGE_ON = { enabledAt: '2026-10-30T10:00:00Z', mergeMethod: 'MERGE' };
-const openPullRequest = (autoMergeRequest) => ({ pr: { number: 77, url: PR_URL, state: 'OPEN', autoMergeRequest } });
+const pullRequestAt = (number) => `https://github.example/repo/pull/${number}`;
+const pullRequest = (number, baseRefName, autoMergeRequest = null, state = 'OPEN') => ({ number, url: pullRequestAt(number), baseRefName, state, autoMergeRequest });
+const openPullRequest = (autoMergeRequest) => ({ prs: [pullRequest(77, 'master', autoMergeRequest)] });
+const LIST_CALL = 'pr list --head bck-1934-fix --state open --json number,url,baseRefName,autoMergeRequest';
+const noHarm = (run, { onRemote, ghCalls }, label = '') => {
+  assert.doesNotMatch(run.stdout, /push:|pr:|done: worktree shipped/, label);
+  assert.equal(onRemote(), false, `${label}: the branch never reached the remote`);
+  assert.equal(ghCalls().some((call) => call.startsWith('pr create ') || call.startsWith('pr merge')), false, label);
+};
 
 test('a protected-lane push is refused when the branch already has an open pull request with auto-merge on, and nothing is pushed', (t) => {
-  const { ship, onRemote, ghCalls, prView } = shipSetup(t);
-  prView(openPullRequest(AUTO_MERGE_ON));
-  const run = ship();
+  const setup = shipSetup(t);
+  setup.setPrs(openPullRequest(AUTO_MERGE_ON));
+  const run = setup.ship();
   assert.equal(run.status, 2, `${run.stdout}${run.stderr}`);
-  assert.equal(run.stderr.trim(), `blocked: pull request ${PR_URL} has auto-merge on, so pushing bck-1934-fix would land it with no person; turn auto-merge off first (gh pr merge 77 --disable-auto), then ship again`);
-  assert.doesNotMatch(run.stdout, /push:|pr:|done: worktree shipped/);
-  assert.equal(onRemote(), false, 'the branch never reached the remote');
-  assert.equal(ghCalls().some((call) => call.startsWith('pr create ') || call.startsWith('pr merge')), false);
+  assert.equal(run.stderr.trim(), `blocked: pull request ${pullRequestAt(77)} (into master) has auto-merge on, so pushing bck-1934-fix would land it with no person; turn auto-merge off first (gh pr merge 77 --disable-auto), then ship again`);
+  noHarm(run, setup);
 });
 
-test('a protected-lane push that cannot be checked is refused too: gh fails, or answers with something that is not JSON', (t) => {
+test('every open pull request for the branch is checked, so one with auto-merge on is found even when gh pr view would show another', (t) => {
+  // Two open pull requests from the same branch, to different bases. `gh pr view`
+  // shows the first (auto-merge off) and the push was allowed; the second would
+  // have merged itself the moment the push landed.
+  const setup = shipSetup(t);
+  setup.setPrs({ prs: [pullRequest(78, 'release', null), pullRequest(77, 'master', AUTO_MERGE_ON)] });
+  const run = setup.ship();
+  assert.equal(run.status, 2, `${run.stdout}${run.stderr}`);
+  assert.equal(run.stderr.trim(), `blocked: pull request ${pullRequestAt(77)} (into master) has auto-merge on, so pushing bck-1934-fix would land it with no person; turn auto-merge off first (gh pr merge 77 --disable-auto), then ship again`);
+  assert.doesNotMatch(run.stderr, /pull\/78/, 'only the one that would land is named');
+  noHarm(run, setup);
+  const asked = setup.ghCalls().filter((call) => call.startsWith(LIST_CALL));
+  assert.equal(asked.length, 1, `the list was asked for once:\n${setup.ghCalls().join('\n')}`);
+
+  // The one that has auto-merge on may come first too, and may be the only one.
+  const first = shipSetup(t);
+  first.setPrs({ prs: [pullRequest(77, 'master', AUTO_MERGE_ON), pullRequest(78, 'release', null)] });
+  assert.equal(first.ship().status, 2);
+  assert.equal(first.onRemote(), false);
+});
+
+test('when several open pull requests have auto-merge on, all of them are named', (t) => {
+  const setup = shipSetup(t);
+  setup.setPrs({ prs: [pullRequest(78, 'release', AUTO_MERGE_ON), pullRequest(79, 'staging', null), pullRequest(77, 'master', AUTO_MERGE_ON)] });
+  const run = setup.ship();
+  assert.equal(run.status, 2, `${run.stdout}${run.stderr}`);
+  assert.equal(run.stderr.trim(), `blocked: pull requests ${pullRequestAt(78)} (into release) and ${pullRequestAt(77)} (into master) have auto-merge on, so pushing bck-1934-fix would land them with no person; turn auto-merge off on each first (gh pr merge 78 --disable-auto, gh pr merge 77 --disable-auto), then ship again`);
+  noHarm(run, setup);
+});
+
+test('a protected-lane push that cannot be checked is refused too: gh fails, or answers with something that is not a list of pull requests', (t) => {
   for (const [label, setup, said] of [
     ['gh is not signed in', { fail: 'HTTP 401: Bad credentials (https://api.github.com/graphql)' }, /Bad credentials/],
     ['gh prints nonsense', { raw: 'this is not json' }, /gh's answer could not be read/],
     ['gh answers with nothing', { raw: '' }, /gh's answer could not be read/],
+    ['gh answers with one pull request, not a list', { raw: JSON.stringify(pullRequest(77, 'master', null)) }, /gh's answer could not be read/],
+    ['gh lists something that is not a pull request', { raw: '[null]' }, /gh's answer could not be read/],
+    ['gh leaves out whether auto-merge is on', { raw: JSON.stringify([{ number: 77, url: pullRequestAt(77), baseRefName: 'master' }]) }, /gh's answer could not be read/],
   ]) {
-    const { ship, onRemote, ghCalls, prView } = shipSetup(t);
-    prView(setup);
-    const run = ship();
+    const harness = shipSetup(t);
+    harness.setPrs(setup);
+    const run = harness.ship();
     assert.equal(run.status, 2, `${label}: ${run.stdout}${run.stderr}`);
     assert.match(run.stderr, /^blocked: cannot tell whether bck-1934-fix has a pull request with auto-merge on/, label);
     assert.match(run.stderr, said, label);
     assert.match(run.stderr, /nothing was pushed/, label);
-    assert.doesNotMatch(run.stdout, /push:|pr:|done: worktree shipped/, label);
-    assert.equal(onRemote(), false, label);
-    assert.equal(ghCalls().some((call) => call.startsWith('pr create ')), false, label);
+    noHarm(run, harness, label);
   }
 });
 
 test('the auto-merge check only guards protected-lane pushes, and only when auto-merge is really on', (t) => {
-  // No pull request yet, which is what gh says on a first push: ship goes on.
+  // No pull request yet, which is what an empty list says on a first push: ship goes on.
   const first = shipSetup(t);
   assert.equal(first.ship().status, 0);
   assert.equal(first.onRemote(), true);
+  assert.ok(first.ghCalls().some((call) => call.startsWith(LIST_CALL)), 'a protected-lane push asks for the list');
 
-  // An open pull request with auto-merge off is the ordinary re-push.
+  // An open pull request with auto-merge off is the ordinary re-push, and so are
+  // two of them, one to each base.
   const off = shipSetup(t);
-  off.prView(openPullRequest(null));
+  off.setPrs(openPullRequest(null));
   const repush = off.ship();
   assert.equal(repush.status, 0, repush.stderr || repush.stdout);
   assert.match(repush.stdout, /^push: origin bck-1934-fix$/m);
   assert.equal(off.onRemote(), true);
+  const two = shipSetup(t);
+  two.setPrs({ prs: [pullRequest(78, 'release', null), pullRequest(77, 'master', null)] });
+  assert.equal(two.ship().status, 0);
+  assert.equal(two.onRemote(), true);
 
   // A pull request that already merged does not stop a new one, and neither does
-  // a closed one that still reports an old auto-merge request.
+  // a closed one that still reports an old auto-merge request: gh lists open ones only.
   const merged = shipSetup(t);
-  merged.prView({ pr: { number: 70, url: 'https://github.example/repo/pull/70', state: 'MERGED', autoMergeRequest: null } });
+  merged.setPrs({ prs: [pullRequest(70, 'master', null, 'MERGED')] });
   assert.equal(merged.ship().status, 0);
   const closed = shipSetup(t);
-  closed.prView({ pr: { number: 71, url: 'https://github.example/repo/pull/71', state: 'closed', autoMergeRequest: AUTO_MERGE_ON } });
+  closed.setPrs({ prs: [pullRequest(71, 'master', AUTO_MERGE_ON, 'CLOSED')] });
   assert.equal(closed.ship().status, 0);
 
-  // An answer in a shape nobody expected, with auto-merge on, is not let through.
-  const odd = shipSetup(t);
-  odd.prView({ pr: { number: 72, url: 'https://github.example/repo/pull/72', state: 'REOPENED_SOMEHOW', autoMergeRequest: AUTO_MERGE_ON } });
-  assert.equal(odd.ship().status, 2);
-  assert.equal(odd.onRemote(), false);
+  // A pull request from some other branch is not this branch's business.
+  const other = shipSetup(t);
+  other.setPrs({ prs: [{ ...pullRequest(72, 'master', AUTO_MERGE_ON), headRefName: 'some-other-branch' }] });
+  assert.equal(other.ship().status, 0);
 
   // A safe-lane branch is never held up by it, whatever gh says.
   const safe = shipSetup(t, { tag: 'code' });
-  safe.prView(openPullRequest(AUTO_MERGE_ON));
+  safe.setPrs(openPullRequest(AUTO_MERGE_ON));
   assert.equal(safe.ship().status, 0);
   assert.equal(safe.onRemote(), true);
+  assert.equal(safe.ghCalls().some((call) => call.startsWith('pr list')), false, 'a safe lane is not even asked about');
 
   // A person who lands it on written order is not asked either.
   const ordered = shipSetup(t);
-  ordered.prView(openPullRequest(AUTO_MERGE_ON));
+  ordered.setPrs(openPullRequest(AUTO_MERGE_ON));
   const allowed = ordered.ship('--allow-denied-lane');
   assert.equal(allowed.status, 0, allowed.stderr || allowed.stdout);
   assert.equal(ordered.onRemote(), true);
 });
 
-test('without gh, or with a gh that hangs, the auto-merge check refuses instead of guessing', () => {
+test('without gh, with a gh that hangs, or with a list that may have been cut short, the auto-merge check refuses instead of guessing', () => {
   const { protectedPushRefusal } = require('../commands/worktree');
   const gone = () => ({ error: Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), status: null, stdout: '', stderr: '' });
   const refusal = protectedPushRefusal(os.tmpdir(), 'bck-1934-fix', gone);
@@ -231,14 +292,21 @@ test('without gh, or with a gh that hangs, the auto-merge check refuses instead 
   const slow = () => ({ error: Object.assign(new Error('spawnSync gh ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, stdout: '', stderr: '' });
   assert.match(protectedPushRefusal(os.tmpdir(), 'bck-1934-fix', slow), /^blocked: cannot tell whether bck-1934-fix has a pull request with auto-merge on \(gh took longer than a minute to answer\); nothing was pushed$/);
   let asked = null;
-  protectedPushRefusal(os.tmpdir(), 'x', (command, args, options) => { asked = { command, args, options }; return { status: 1, stdout: '', stderr: 'no pull requests found for branch "x"' }; });
+  assert.equal(protectedPushRefusal(os.tmpdir(), 'x', (command, args, options) => { asked = { command, args, options }; return { status: 0, stdout: '[]', stderr: '' }; }), '');
   assert.equal(asked.command, 'gh');
-  assert.deepEqual(asked.args.slice(0, 3), ['pr', 'view', 'x']);
+  assert.deepEqual(asked.args.slice(0, 6), ['pr', 'list', '--head', 'x', '--state', 'open']);
+  assert.equal(asked.args[asked.args.indexOf('--json') + 1], 'number,url,baseRefName,autoMergeRequest');
   assert.ok(asked.options.timeout > 0 && asked.options.timeout <= 120000, 'the lookup has a time limit');
-  // Both spellings of "no pull request yet" are a clear.
-  for (const stderr of ['no pull requests found for branch "x"', 'no open pull requests found for branch "x"']) {
-    assert.equal(protectedPushRefusal(os.tmpdir(), 'x', () => ({ status: 1, stdout: '', stderr })), '');
+  // A failed lookup is never a clear, whatever it says, so no wording of "none found" can let a push through.
+  for (const stderr of ['no pull requests found for branch "x"', 'no open pull requests in atrislabs/atris', '']) {
+    assert.match(protectedPushRefusal(os.tmpdir(), 'x', () => ({ status: 1, stdout: '', stderr })), /^blocked: cannot tell whether x has a pull request with auto-merge on/, stderr);
   }
+  // gh stops at its limit: a full page may be only part of the list, so it is not a clear.
+  const limit = Number(asked.args[asked.args.indexOf('--limit') + 1]);
+  assert.ok(limit >= 30, `the limit is ${limit}`);
+  const page = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ number: i + 1, url: `https://github.example/repo/pull/${i + 1}`, baseRefName: 'master', autoMergeRequest: null })));
+  assert.equal(protectedPushRefusal(os.tmpdir(), 'x', () => ({ status: 0, stdout: page(limit - 1), stderr: '' })), '');
+  assert.match(protectedPushRefusal(os.tmpdir(), 'x', () => ({ status: 0, stdout: page(limit), stderr: '' })), /may have been cut short/);
 });
 
 // ---------------------------------------------------------------------------
@@ -462,6 +530,23 @@ test('the release reason carries only the first line of the save error, and a re
   assert.ok(logs.some((line) => /could not release the claim/.test(line)), logs.join('\n'));
 });
 
+test('the release of an unsaved held proof carries the pull request and a kind as fields, so the rating never has to read the words', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK, { readyStatus: 1 });
+  await flyWith(t, plane);
+  const [release] = callsTo(plane, 'task', 'release');
+  assert.equal(flagValue(release, '--kind'), 'proof_not_saved');
+  assert.equal(flagValue(release, '--pr-url'), PR_URL);
+  assert.equal(flagValue(release, '--pr-number'), '77');
+  assert.match(flagValue(release, '--reason'), new RegExp(`^PR ${PR_URL.replace(/[.]/g, '\\.')} is open but its proof could not be saved`), 'the reason still leads with the link');
+
+  // Every other release a flight makes is an ordinary drop and says so by carrying no kind.
+  const noLink = planeFor(FEEDBACK_TASK, { shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' });
+  await flyWith(t, noLink);
+  const [plain] = callsTo(noLink, 'task', 'release');
+  assert.ok(plain, 'that flight let its claim go');
+  for (const flag of ['--kind', '--pr-url', '--pr-number']) assert.equal(plain.includes(flag), false, flag);
+});
+
 test('a protected-lane ship with no pull request link pauses at ship and says why, instead of pretending', async (t) => {
   for (const [shipOutput, wanted] of [
     ['pr: skipped (no commits ahead of base)\npr: \ndone: worktree shipped\n', 'no commits ahead of base, so there was no pull request to open'],
@@ -639,6 +724,174 @@ test('sending a held job back to open drops the pull request on its row, so the 
 });
 
 // ---------------------------------------------------------------------------
+// A claim let go because saving the proof failed. The builder did the work and a
+// pull request is open for a person; only the record failed. That is neither a
+// landing nor a miss, and the rating has to know it from a field, not from the words.
+
+const landedJob = (db, dir, n, builder = 'fleet-codex') => {
+  const { id } = tasks.addTask(db, { title: `Landed job ${n}`, workspaceRoot: dir });
+  assert.equal(tasks.claimTask(db, { id, claimedBy: builder }).claimed, true);
+  assert.equal(tasks.readyTask(db, { id, actor: builder, proof: 'Merged.', merge: { merge_commit: `${n}`.repeat(40).slice(0, 40), number: String(100 + n), url: `https://github.example/repo/pull/${100 + n}`, merged_at: '2026-10-31T02:10:45Z' } }).ready, true);
+  return id;
+};
+const unsavedJob = (db, dir, { title = 'Fix the feedback form', builder = 'fleet-codex', release = {} } = {}) => {
+  const { id } = tasks.addTask(db, { title, tag: 'feedback', workspaceRoot: dir });
+  assert.equal(tasks.claimTask(db, { id, claimedBy: builder }).claimed, true);
+  const released = tasks.releaseTask(db, {
+    id,
+    actor: builder,
+    reason: `PR ${PR_URL} is open but its proof could not be saved: database is locked`,
+    kind: 'proof_not_saved',
+    pullRequest: { number: 77, url: PR_URL },
+    ...release,
+  });
+  assert.equal(released.released, true, JSON.stringify(released));
+  return id;
+};
+const releaseEvents = (db, id) => db.prepare("SELECT payload FROM task_events WHERE task_id = ? AND event_type = 'claim_released' ORDER BY version").all(id).map((row) => JSON.parse(row.payload));
+
+test('a release can say its proof was not saved, with the pull request, as fields on the event; a plain release says nothing of the kind', (t) => {
+  const { dir, db } = sandboxDb(t);
+  const id = unsavedJob(db, dir);
+  assert.deepEqual(releaseEvents(db, id), [{
+    released_by: 'fleet-codex',
+    previous_claimed_by: 'fleet-codex',
+    reason: `PR ${PR_URL} is open but its proof could not be saved: database is locked`,
+    kind: 'proof_not_saved',
+    pull_request: { state: 'open', number: 77, url: PR_URL },
+  }]);
+  assert.equal(tasks.getTask(db, id).status, 'open', 'the claim is let go all the same');
+
+  const plain = tasks.addTask(db, { title: 'plain', workspaceRoot: dir }).id;
+  tasks.claimTask(db, { id: plain, claimedBy: 'fleet-codex' });
+  tasks.releaseTask(db, { id: plain, actor: 'fleet-codex', reason: 'paused at ship: blocked' });
+  assert.deepEqual(releaseEvents(db, plain), [{ released_by: 'fleet-codex', previous_claimed_by: 'fleet-codex', reason: 'paused at ship: blocked' }]);
+
+  // Only one kind exists, and it needs a real link: anything else leaves the claim held.
+  for (const [label, extra] of [
+    ['an unknown kind', { kind: 'looks_fine' }],
+    ['no pull request', { pullRequest: undefined }],
+    ['a link that is not a link', { pullRequest: { url: 'javascript:alert(1)' } }],
+    ['a pull request with no kind', { kind: undefined }],
+  ]) {
+    const odd = tasks.addTask(db, { title: label, workspaceRoot: dir }).id;
+    tasks.claimTask(db, { id: odd, claimedBy: 'fleet-codex' });
+    const refused = tasks.releaseTask(db, { id: odd, actor: 'fleet-codex', kind: 'proof_not_saved', pullRequest: { url: PR_URL }, ...extra });
+    assert.equal(refused.released, false, label);
+    assert.equal(refused.reason, 'invalid_release_marker', label);
+    assert.equal(tasks.getTask(db, odd).status, 'claimed', label);
+    assert.deepEqual(releaseEvents(db, odd), [], label);
+  }
+});
+
+test('the rating reads a release as waiting on a person only from the fields, and only when they are whole', () => {
+  const { isProofNotSaved } = require('../lib/release-kind');
+  const open = { state: 'open', number: 77, url: PR_URL };
+  const whole = { released_by: 'fleet-codex', reason: 'anything at all', kind: 'proof_not_saved', pull_request: open };
+  assert.equal(isProofNotSaved(whole), true);
+  assert.equal(isProofNotSaved({ ...whole, pull_request: { state: 'open', number: 77 } }), true, 'a number is enough');
+  assert.equal(isProofNotSaved({ ...whole, pull_request: { state: 'OPEN', url: PR_URL } }), true, 'a link is enough, in any case');
+  for (const [label, payload] of [
+    ['nothing', null],
+    ['a list', [whole]],
+    ['the same words and no fields', { released_by: 'fleet-codex', reason: `PR ${PR_URL} is open but its proof could not be saved: nope` }],
+    ['another kind', { ...whole, kind: 'looks_fine' }],
+    ['no kind', { reason: 'x', pull_request: open }],
+    ['no pull request', { kind: 'proof_not_saved' }],
+    ['a pull request that is only a link in a string', { kind: 'proof_not_saved', pull_request: PR_URL }],
+    ['a merged pull request', { ...whole, pull_request: { ...open, state: 'merged' } }],
+    ['no link and no number', { ...whole, pull_request: { state: 'open' } }],
+    ['a link that is not a link', { ...whole, pull_request: { state: 'open', url: 'javascript:alert(1)' } }],
+  ]) assert.equal(isProofNotSaved(payload), false, label);
+});
+
+test('a claim let go because its proof was not saved is neither a landing nor a miss on the rating, and it is the field that says so, not the words', (t) => {
+  const { dir, dbPath, db } = sandboxDb(t);
+  for (const n of [1, 2, 3]) landedJob(db, dir, n);
+  const before = memberRow(seasonOf(dir, dbPath), 'fleet-codex');
+  assert.deepEqual([before.landed, before.dropped, before.finished], [3, 0, 3]);
+
+  const unsaved = unsavedJob(db, dir);
+  // The same words in the reason with no field: that is a plain drop.
+  const wordsOnly = unsavedJob(db, dir, { title: 'Same words, no field', release: { kind: undefined, pullRequest: undefined } });
+  const season = seasonOf(dir, dbPath);
+  assert.deepEqual(playsOf(season, unsaved).map((o) => o.kind), ['took', 'held']);
+  assert.deepEqual(playsOf(season, wordsOnly).map((o) => o.kind), ['took', 'dropped']);
+
+  const row = memberRow(season, 'fleet-codex');
+  assert.deepEqual([row.took, row.landed, row.dropped, row.sent_back, row.abandoned], [5, 3, 1, 0, 0]);
+  assert.equal(row.held, 1);
+  assert.equal(row.finished, 4, 'only the plain drop is a finished job beside the three landings');
+  // Take the plain drop away and the rating is exactly what it was before the held one.
+  const withoutWords = season.outcomes.filter((o) => o.task_id !== wordsOnly);
+  const clean = rosterRows({ outcomes: withoutWords, limit: 99 }).find((r) => r.name === 'fleet-codex');
+  assert.equal(clean.ovr, before.ovr, 'a held job moves the rating by nothing');
+  assert.equal(clean.finished, 3);
+  assert.equal(clean.held, 1);
+  assert.ok(row.ovr < clean.ovr, 'the plain drop still costs');
+});
+
+test('a held play shows on the board by its own word and takes no place in a member\'s form, hours, or rating', () => {
+  const { form, lastPlays, memberRatings } = require('../lib/gm-season');
+  const HOUR = 3600000;
+  const play = (kind, n) => ({ event_id: `e${n}`, task_id: `t${n}`, member: 'delta', title: `Job ${n}`, kind, at: n * HOUR, claimed_at: (n - 1) * HOUR });
+  const plays = [1, 2, 3, 4, 5].map((n) => play('landed', n)).concat([play('held', 6)]);
+  // Five landings and then a held job: the form is still all five landings.
+  assert.equal(form(plays), 'kkkkk');
+  const [newest, before] = lastPlays(plays, 2);
+  assert.equal(newest.kind, 'held');
+  assert.equal(newest.play, 'held');
+  assert.equal(newest.hours, null, 'a held job did not finish, so it has no hours');
+  assert.equal(before.hours, 1, 'a finished job still does');
+  assert.deepEqual(memberRatings(plays).get('delta').finished, 5);
+});
+
+test('a held release stays held when a person later accepts the job: the claim it closed is not reopened for credit', (t) => {
+  const { dir, dbPath, db } = sandboxDb(t);
+  const id = unsavedJob(db, dir);
+  // A person lands the pull request and closes the job by hand.
+  assert.equal(tasks.doneTask(db, { id, status: 'done', actor: 'keshav', allowReview: true, action: 'accepted' }).updated, true);
+  const season = seasonOf(dir, dbPath);
+  assert.deepEqual(playsOf(season, id).map((o) => o.kind), ['took', 'held']);
+  assert.equal(season.outcomes.some((o) => o.kind === 'landed' || o.kind === 'dropped'), false);
+});
+
+test('atris rating shows jobs waiting on a pull request on their own line, outside the finished count and the miss reasons', (t) => {
+  const { dir, dbPath, db } = sandboxDb(t);
+  for (const n of [1, 2, 3]) landedJob(db, dir, n, 'alpha');
+  for (const n of [4, 5, 6]) landedJob(db, dir, n, 'beta');
+  unsavedJob(db, dir, { title: 'Held one', builder: 'alpha' });
+  unsavedJob(db, dir, { title: 'Held two', builder: 'alpha' });
+  unsavedJob(db, dir, { title: 'Only held', builder: 'gamma' });
+  const season = seasonOf(dir, dbPath);
+  const ask = (...args) => {
+    let out = '';
+    assert.equal(ratingCommand(args, { root: dir, season, lineup: null, write: (s) => { out += s; } }), 0);
+    return out;
+  };
+
+  const text = ask('alpha');
+  assert.match(text, /landed 3 of 3 finished jobs/);
+  assert.match(text, /waiting on a pull request: 2 \(the work is done and a person has to land it, so they do not count either way\)/);
+  assert.doesNotMatch(text, /top miss reasons/, 'the held release is not a miss reason');
+  assert.doesNotMatch(text, /could not be saved/);
+  const member = JSON.parse(ask('alpha', '--json')).member;
+  assert.equal(member.held, 2);
+  assert.equal(member.finished, 3);
+  assert.equal(member.miss_reasons, undefined);
+
+  // A member whose only job is waiting on a pull request still has somewhere to see it.
+  const gamma = ask('gamma');
+  assert.match(gamma, /landed 0 of 0 finished jobs/);
+  assert.match(gamma, /waiting on a pull request: 1 \(the work is done and a person has to land it, so it does not count either way\)/);
+  assert.equal(JSON.parse(ask('gamma', '--json')).member.finished, 0);
+
+  // A member with nothing waiting has no such line and no such field.
+  assert.doesNotMatch(ask('beta'), /waiting on a pull request/);
+  assert.equal('held' in JSON.parse(ask('beta', '--json')).member, false);
+});
+
+// ---------------------------------------------------------------------------
 // The real command line: what the flight sends is accepted as it is written.
 
 function cliWorkspace(t) {
@@ -702,6 +955,47 @@ test('the real task ready takes the flight\'s held proof as written, parks the j
   assert.equal(JSON.parse(run(['task', 'show', stranded, '--json']).stdout).status, 'open');
 });
 
+test('the flight\'s own release command, replayed on the real task plane, is saved with its fields and rated as waiting, not dropped', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK, { readyStatus: 1 });
+  await flyWith(t, plane);
+  const sent = callsTo(plane, 'task', 'release')[0];
+  assert.ok(sent, 'the flight sent task release');
+
+  const { dir, dbPath, run } = cliWorkspace(t);
+  const ref = JSON.parse(run(['task', 'new', 'Fix the feedback form', '--tag', 'feedback', '--json']).stdout).task.display_id;
+  run(['task', 'claim', ref, '--as', 'fleet-codex']);
+  const released = JSON.parse(run(['task', 'release', ref, ...sent.slice(3), '--json']).stdout);
+  assert.equal(released.ok, true);
+  assert.equal(released.kind, 'proof_not_saved');
+  assert.deepEqual(released.pull_request, { state: 'open', number: 77, url: PR_URL });
+
+  const reader = new DatabaseSync(dbPath, { readOnly: true });
+  let id;
+  try {
+    id = reader.prepare('SELECT id FROM tasks WHERE title = ?').get('Fix the feedback form').id;
+    const [payload] = reader.prepare("SELECT payload FROM task_events WHERE task_id = ? AND event_type = 'claim_released'").all(id).map((row) => JSON.parse(row.payload));
+    assert.equal(payload.kind, 'proof_not_saved');
+    assert.deepEqual(payload.pull_request, { state: 'open', number: 77, url: PR_URL });
+    assert.match(payload.reason, /^PR https:\/\/github\.example\/repo\/pull\/77 is open but its proof could not be saved/);
+  } finally {
+    reader.close();
+  }
+  assert.deepEqual(playsOf(seasonOf(dir, dbPath), id).map((o) => o.kind), ['took', 'held']);
+
+  // The flags are for that one case: a bare link, or a kind nobody defined, is refused and the claim stays.
+  const other = JSON.parse(run(['task', 'new', 'Another job', '--json']).stdout).task.display_id;
+  run(['task', 'claim', other, '--as', 'fleet-codex']);
+  for (const extra of [['--pr-url', PR_URL], ['--kind', 'looks_fine', '--pr-url', PR_URL], ['--kind', 'proof_not_saved']]) {
+    const result = spawnSync(process.execPath, [CLI, 'task', 'release', other, '--as', 'fleet-codex', ...extra, '--json'], {
+      cwd: dir, encoding: 'utf8', timeout: 30000,
+      env: { ...scrubAgentEnv(), ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    assert.notEqual(result.status, 0, extra.join(' '));
+    assert.equal(JSON.parse(result.stdout).ok, false, extra.join(' '));
+  }
+  assert.equal(JSON.parse(run(['task', 'show', other, '--json']).stdout).status, 'claimed');
+});
+
 // ---------------------------------------------------------------------------
 // Auto-approval. `atris task auto-accept-certified --all --include-protected`
 // lands every review that has an independent look and a passing check. A held
@@ -747,6 +1041,190 @@ test('auto-approval with --all --include-protected leaves a job whose pull reque
   // the next step the refusal names.
   run(['task', 'accept', id, '--as', 'keshav', '--json']);
   assert.equal(statusOf(), 'done');
+});
+
+// The sweep is a second way to auto-accept: `atris task sweep --auto-accept` runs the
+// job's stored check and accepts on a pass. It must read the open pull request the same
+// way, or a held job whose stored check passes is completed with nobody having landed it.
+
+test('task sweep --auto-accept --include-protected leaves a job whose pull request is still open, even with a passing stored check, and still accepts an ordinary job', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK);
+  await flyWith(t, plane);
+  const sent = callsTo(plane, 'task', 'ready')[0];
+  assert.ok(sent, 'the flight sent task ready');
+
+  const { dir, dbPath, run } = cliWorkspace(t);
+  fs.writeFileSync(path.join(dir, 'app.js'), 'module.exports = 1;\n');
+  const create = (title, ...extra) => JSON.parse(run(['task', 'new', title, '--verify', 'node --check app.js', ...extra, '--json']).stdout).task.display_id;
+  const held = create('Fix the feedback form so people stop retyping', '--tag', 'feedback');
+  const ordinary = create('Tidy the notes page');
+  for (const ref of [held, ordinary]) run(['task', 'claim', ref, '--as', 'fleet-codex']);
+  // The builder's handoff for the held job, exactly as the flight writes it.
+  run(['task', 'ready', held, ...sent.slice(3)]);
+  run(['task', 'ready', ordinary, '--proof', 'Reran the check: node --check app.js exited 0. Verify output: # tests 3 # pass 3 # fail 0. Receipt saved at atris/runs/notes.json.', '--result', 'Operators can trust the notes page because the change was checked again.', '--as', 'fleet-codex']);
+  const show = (ref) => JSON.parse(run(['task', 'show', ref, '--json']).stdout);
+  assert.equal(show(held).status, 'review');
+  assert.equal(show(ordinary).status, 'review');
+
+  const swept = JSON.parse(run(['task', 'sweep', '--auto-accept', '--include-protected', '--json']).stdout);
+  const outcomeOf = (ref) => swept.results.find((row) => row.ref === ref);
+  assert.equal(outcomeOf(held).action, 'skipped', JSON.stringify(swept.results));
+  assert.equal(outcomeOf(held).reason, 'pull_request_open');
+  assert.deepEqual(outcomeOf(held).pull_request, { state: 'open', number: 77, url: PR_URL });
+  assert.match(outcomeOf(held).next_action, /a person lands the pull request/);
+  assert.equal(show(held).status, 'review', 'the job is still waiting for a person');
+  assert.equal(show(held).claimed_by, 'fleet-codex');
+  assert.deepEqual(playsOf(seasonOf(dir, dbPath), show(held).id).map((o) => o.kind), ['took'], 'the rating sees no landing');
+
+  // The gate is the open pull request and nothing wider: the other job in the same sweep is accepted.
+  assert.equal(outcomeOf(ordinary).action, 'accepted', JSON.stringify(swept.results));
+  assert.equal(show(ordinary).status, 'done');
+  assert.equal(swept.accepted, 1);
+  assert.equal(swept.skipped, 1);
+
+  // Running it again changes nothing for the held job.
+  const again = JSON.parse(run(['task', 'sweep', '--auto-accept', '--include-protected', '--json']).stdout);
+  assert.equal(again.accepted, 0);
+  assert.equal(show(held).status, 'review');
+
+  // A person's own accept is untouched, which is the next step the refusal names.
+  run(['task', 'accept', held, '--as', 'keshav', '--json']);
+  assert.equal(show(held).status, 'done');
+});
+
+test('the sweep refuses an open pull request before it runs any check, and the same job with none is eligible', (t) => {
+  const { evaluateSweepAutoAccept } = require('../commands/task');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'held-sweep-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'app.js'), 'module.exports = 1;\n');
+  const PROOF = `Built by codex engine. Pull request ${PR_URL} waits for a person to land it. The declared verifier passed (exit 0).`;
+  const job = ({ pullRequest = null, verify = 'node --check app.js', events = [], tag = 'feedback' } = {}) => ({
+    id: 'task-held-1',
+    display_id: 'HC-1',
+    status: 'review',
+    tag,
+    workspace_root: root,
+    metadata: { approval_status: 'pending', verify, latest_agent_proof: PROOF, ...(pullRequest ? { pull_request: pullRequest } : {}) },
+    review: { approval_status: 'pending', proof: PROOF },
+    events,
+  });
+  const open = { state: 'open', number: 77, url: PR_URL };
+
+  // The reviewer's scenario: the stored check passes, and the job is still not accepted.
+  const control = evaluateSweepAutoAccept(job(), root, true);
+  assert.equal(control.eligible, true, JSON.stringify(control));
+  assert.equal(control.reason, 'verified_command');
+  const held = evaluateSweepAutoAccept(job({ pullRequest: open }), root, true);
+  assert.deepEqual(held, {
+    eligible: false,
+    ref: 'HC-1',
+    reason: 'pull_request_open',
+    pull_request: open,
+    next_action: 'a person lands the pull request, then accepts the job with `atris task accept <ref> --as <human>`',
+  });
+
+  // It answers before the stored check is run: a check that would fail still reports the pull request.
+  assert.equal(evaluateSweepAutoAccept(job({ verify: 'node --check missing.js' }), root, true).reason, 'verify_failed');
+  assert.equal(evaluateSweepAutoAccept(job({ pullRequest: open, verify: 'node --check missing.js' }), root, true).reason, 'pull_request_open');
+
+  // The sweep's own protected lanes (money, deploy, ...) are still refused first, so the
+  // "waiting on you" list reads the same. Its lane list does not include feedback, so there
+  // the open pull request is what stops a held job, with or without --include-protected.
+  assert.equal(evaluateSweepAutoAccept(job({ pullRequest: open, tag: 'deploy' }), root, false).reason, 'protected_lane');
+  assert.equal(evaluateSweepAutoAccept(job({ pullRequest: open }), root, false).reason, 'pull_request_open');
+
+  // The same rules as the other auto-accept: the history is read when the row names none, only
+  // from the attempt that is still going; a merge on the row frees the job.
+  const proofReady = (pull_request) => ({ event_type: 'proof_ready', actor: 'fleet-codex', payload: pull_request ? { pull_request } : {} });
+  const reopened = { event_type: 'reopened', actor: 'keshav', payload: { previous_status: 'review' } };
+  assert.equal(evaluateSweepAutoAccept(job({ events: [proofReady(open)] }), root, true).reason, 'pull_request_open');
+  assert.equal(evaluateSweepAutoAccept(job({ events: [proofReady(open), reopened, proofReady(null)] }), root, true).eligible, true);
+  assert.equal(evaluateSweepAutoAccept(job({ pullRequest: { state: 'merged', number: 77, url: PR_URL, merge_commit: COMMIT } }), root, true).eligible, true);
+});
+
+test('the shared acceptor is the last door: handed a job whose pull request is open, it refuses to complete it for the machine, and writes nothing', (t) => {
+  const { acceptReviewTask } = require('../commands/task');
+  const { dir, db } = sandboxDb(t);
+  const id = heldJob(db, dir);
+  const before = tasks.getTask(db, id);
+  const refused = acceptReviewTask(tasks, db, id, { actor: 'orb-autoaccept', proof: 'The stored check passed.', reward: 1, autoAccepted: true });
+  assert.deepEqual(refused, { ok: false, reason: 'pull_request_open', pull_request: { state: 'open', number: 77, url: PR_URL } });
+  const after = tasks.getTask(db, id);
+  assert.equal(after.status, 'review');
+  assert.equal(after.updated_at, before.updated_at, 'the row was not touched');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM task_events WHERE task_id = ? AND event_type = 'completed'").get(id).n, 0);
+  assert.deepEqual(playsOf(seasonOf(dir, path.join(dir, 'tasks.db')), id).map((o) => o.kind), ['took']);
+});
+
+// A held job whose pull request is closed without merging is sent back to open. The next
+// attempt may name no pull request at all. The old open one, still in the job's history,
+// must not block it.
+
+test('after a held job is reopened and tried again with no pull request, auto-approval no longer sees the old open one', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK);
+  await flyWith(t, plane);
+  const sent = callsTo(plane, 'task', 'ready')[0];
+  assert.ok(sent, 'the flight sent task ready');
+
+  const { dir, dbPath, run } = cliWorkspace(t);
+  fs.writeFileSync(path.join(dir, 'app.js'), 'module.exports = 1;\n');
+  const id = JSON.parse(run(['task', 'new', 'Fix the feedback form so people stop retyping', '--tag', 'feedback', '--verify', 'node --check app.js', '--json']).stdout).task.display_id;
+  const show = () => JSON.parse(run(['task', 'show', id, '--json']).stdout);
+  const rowPullRequest = () => {
+    const reader = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      return JSON.parse(reader.prepare('SELECT metadata FROM tasks WHERE id = ?').get(show().id).metadata).pull_request;
+    } finally {
+      reader.close();
+    }
+  };
+  // The flight's own ready arguments, naming the pull request it opened.
+  const heldReady = (number = 77, url = PR_URL) => {
+    const args = sent.slice(3);
+    args[args.indexOf('--pr-number') + 1] = String(number);
+    args[args.indexOf('--pr-url') + 1] = url;
+    return args;
+  };
+  const independentLook = () => run(['task', 'ready', id,
+    '--proof', 'Independent review of the diff. Reran the check: node --check app.js exited 0. Verify output: # tests 3 # pass 3 # fail 0. Receipt saved at atris/runs/review.json.',
+    '--result', 'Operators can trust the form fix because a second reader confirmed the change.',
+    '--as', 'claude']);
+  const preview = () => {
+    const out = JSON.parse(run(['task', 'auto-accept-certified', '--all', '--include-protected', '--dry-run', '--json']).stdout);
+    assert.equal(out.results.length, 1, JSON.stringify(out.results));
+    return out.results[0];
+  };
+
+  // The held case: an open pull request, so auto-approval keeps its hands off.
+  run(['task', 'claim', id, '--as', 'fleet-codex']);
+  run(['task', 'ready', id, ...heldReady()]);
+  independentLook();
+  assert.equal(preview().reason, 'pull_request_open');
+  assert.deepEqual(rowPullRequest(), { state: 'open', number: 77, url: PR_URL });
+
+  // Its pull request is closed without merging and a person sends the job back.
+  run(['task', 'reopen', id, '--as', 'keshav', '--reason', 'the pull request was closed without merging']);
+  assert.equal(show().status, 'open');
+  assert.equal(rowPullRequest(), undefined, 'the reopen cleared the row');
+
+  // The next attempt names no pull request, and gets a second look.
+  run(['task', 'claim', id, '--as', 'fleet-codex']);
+  run(['task', 'ready', id, '--proof', 'Redid the form fix on a fresh branch. Reran the check: node --check app.js exited 0. Verify output: # tests 3 # pass 3 # fail 0. Receipt saved at atris/runs/redo.json.', '--result', 'Operators can trust the form fix because it was redone and checked again.', '--as', 'fleet-codex']);
+  independentLook();
+  assert.equal(show().status, 'review');
+
+  const now = preview();
+  assert.notEqual(now.reason, 'pull_request_open', JSON.stringify(now));
+  assert.equal(now.action, 'would_accept', JSON.stringify(now));
+
+  // And a new attempt that opens a pull request of its own is held again.
+  run(['task', 'reopen', id, '--as', 'keshav', '--reason', 'try once more']);
+  run(['task', 'claim', id, '--as', 'fleet-codex']);
+  run(['task', 'ready', id, ...heldReady(78, 'https://github.example/repo/pull/78')]);
+  independentLook();
+  const reheld = preview();
+  assert.equal(reheld.reason, 'pull_request_open');
+  assert.equal(reheld.pull_request.number, 78);
 });
 
 // ---------------------------------------------------------------------------

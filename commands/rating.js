@@ -39,9 +39,10 @@ function readHere(deps = {}) {
   }
   if (!played || played.error || played.no_history) return null;
   const { rosterRows } = require('../lib/gm-season');
-  // A member whose only misses were later confirmed not needed has no finished
-  // job, but still shows, so the confirmed jobs have somewhere to be counted.
-  const rows = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.finished > 0 || row.not_needed > 0);
+  // A member whose only misses were later confirmed not needed, or whose only jobs
+  // wait on a pull request, has no finished job, but still shows, so those jobs
+  // have somewhere to be counted.
+  const rows = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.finished > 0 || row.not_needed > 0 || row.held > 0);
   if (!rows.length) return null;
   let lineup = deps.lineup;
   if (lineup === undefined) lineup = require('../lib/team-lineup').readLineupSafe(root);
@@ -56,7 +57,7 @@ function readHere(deps = {}) {
     }
     const miss_reasons = [...reasons].map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 3);
-    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
+    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
   });
   const buildJob = ((lineup && lineup.ok && lineup.jobs) || []).find((row) => row.job === 'build' && !row.key);
   const buildModel = buildJob && buildJob.now_runs ? buildJob.now_runs.model : null;
@@ -114,6 +115,7 @@ function renderMember(m, card) {
     `  landed ${m.landed} of ${m.finished} finished jobs in the last 30 days`,
   ];
   if (m.not_needed) lines.push(`  not needed: ${m.not_needed} (confirmed by someone else, so ${m.not_needed === 1 ? 'it does' : 'they do'} not count either way)`);
+  if (m.held) lines.push(`  waiting on a pull request: ${m.held} (the work is done and a person has to land it, so ${m.held === 1 ? 'it does' : 'they do'} not count either way)`);
   if (m.ovr == null) lines.push('  rated once it has 3 finished jobs');
   if (m.miss_reasons && m.miss_reasons.length) {
     lines.push('  top miss reasons:');

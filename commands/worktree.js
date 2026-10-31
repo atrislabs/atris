@@ -859,31 +859,49 @@ function deniedLaneForShip(root, branch, message) {
 // already has a pull request with GitHub auto-merge on: that request merges
 // itself the moment its checks pass, and the push is what feeds it. A branch
 // that shipped earlier with --merge and was retagged into a protected lane since
-// would land with no person. Returns the words to refuse with, or '' when the
-// push is safe. It fails closed: if gh cannot say, nothing is pushed.
+// would land with no person. One branch can have several open pull requests (one
+// per base), and a single push feeds every one of them, so this asks for the whole
+// list: `gh pr view` shows just one, and it may be the one without auto-merge.
+// Returns the words to refuse with, or '' when the push is safe. It fails closed:
+// if gh cannot say, or the list may be incomplete, nothing is pushed.
+const OPEN_PR_LIST_LIMIT = 100;
+
 function protectedPushRefusal(root, branch, run = spawnSync) {
   const unknown = (why) => `blocked: cannot tell whether ${branch} has a pull request with auto-merge on (${why}); nothing was pushed`;
   // A minute is plenty for one lookup; a gh that hangs must not hang the ship.
-  const viewed = run('gh', ['pr', 'view', branch, '--json', 'number,url,state,autoMergeRequest'], { cwd: root, encoding: 'utf8', timeout: 60000 });
-  if (viewed.error) {
-    return unknown(viewed.error.code === 'ETIMEDOUT' ? 'gh took longer than a minute to answer' : `gh did not run: ${viewed.error.message}`);
+  const listed = run('gh', [
+    'pr', 'list', '--head', branch, '--state', 'open',
+    '--json', 'number,url,baseRefName,autoMergeRequest',
+    '--limit', String(OPEN_PR_LIST_LIMIT),
+  ], { cwd: root, encoding: 'utf8', timeout: 60000 });
+  if (listed.error) {
+    return unknown(listed.error.code === 'ETIMEDOUT' ? 'gh took longer than a minute to answer' : `gh did not run: ${listed.error.message}`);
   }
-  if (viewed.status !== 0) {
-    const said = `${viewed.stderr || ''}\n${viewed.stdout || ''}`;
-    // A branch nobody has opened a pull request for is the ordinary first push.
-    if (/no (?:open )?pull requests? found/i.test(said)) return '';
+  if (listed.status !== 0) {
+    // No branch has an empty answer to read as "none": an empty list is an
+    // exit 0, so a failed lookup is never taken for a clear.
+    const said = `${listed.stderr || ''}\n${listed.stdout || ''}`;
     const firstLine = said.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-    return unknown(firstLine || `gh exited ${viewed.status}`);
+    return unknown(firstLine || `gh exited ${listed.status}`);
   }
-  let pr;
-  try { pr = JSON.parse(String(viewed.stdout || '')); } catch { pr = null; }
-  if (!pr || typeof pr !== 'object') return unknown("gh's answer could not be read");
-  // A merged or closed pull request cannot land anything more. Any other state
-  // with auto-merge on is treated as open, so an odd answer never lets it through.
-  const over = ['MERGED', 'CLOSED'].includes(String(pr.state || '').toUpperCase());
-  if (over || !pr.autoMergeRequest) return '';
-  const name = pr.url || (pr.number ? `#${pr.number}` : branch);
-  return `blocked: pull request ${name} has auto-merge on, so pushing ${branch} would land it with no person; turn auto-merge off first (gh pr merge ${pr.number || pr.url || branch} --disable-auto), then ship again`;
+  let open;
+  try { open = JSON.parse(String(listed.stdout || '')); } catch { open = null; }
+  // Every entry must say whether auto-merge is on (null means off), or the
+  // answer is not one this check can lean on.
+  const readable = Array.isArray(open)
+    && open.every((pr) => pr && typeof pr === 'object' && !Array.isArray(pr) && Object.prototype.hasOwnProperty.call(pr, 'autoMergeRequest'));
+  if (!readable) return unknown("gh's answer could not be read");
+  // gh stops at its limit without saying so: a full page may be only part of the list.
+  if (open.length >= OPEN_PR_LIST_LIMIT) return unknown(`${open.length} open pull requests may have been cut short`);
+  const armed = open.filter((pr) => pr.autoMergeRequest);
+  if (!armed.length) return '';
+  const name = (pr) => `${pr.url || (pr.number ? `#${pr.number}` : branch)}${pr.baseRefName ? ` (into ${pr.baseRefName})` : ''}`;
+  const off = (pr) => `gh pr merge ${pr.number || pr.url || branch} --disable-auto`;
+  if (armed.length === 1) {
+    return `blocked: pull request ${name(armed[0])} has auto-merge on, so pushing ${branch} would land it with no person; turn auto-merge off first (${off(armed[0])}), then ship again`;
+  }
+  const names = armed.map(name);
+  return `blocked: pull requests ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} have auto-merge on, so pushing ${branch} would land them with no person; turn auto-merge off on each first (${armed.map(off).join(', ')}), then ship again`;
 }
 
 function findPrimaryRoot(root) {

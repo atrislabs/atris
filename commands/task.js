@@ -27,6 +27,7 @@ const {
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
+  openPullRequestRefusal,
   parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
@@ -227,6 +228,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            list tasks in this workspace; --everywhere spans workspaces
   atris task claim <id> [--as <owner>]     Atomic claim
   atris task release <id> [--as <owner>] [--reason "<why>"]   Release your own mistaken claim back to open
+    add --kind proof_not_saved --pr-url <url> [--pr-number <n>] only when the work is done and its open pull request waits for a person, but the proof could not be saved: the rating then keeps it out of both landed and missed
   atris task capabilities [--json]         Read-only task CLI/API capability contract
   atris task capabilities-check [--json]   Verify task capability contract conformance
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
@@ -6356,6 +6358,11 @@ function cmdRelease(args) {
   }
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const reasonFlag = flag(args, '--reason');
+  // A release that must not read as a drop names its kind and its open pull request
+  // as fields. Both go together; the task db refuses half of them.
+  const kindFlag = textFlag(args, ['--kind']);
+  const prNumber = textFlag(args, ['--pr-number']);
+  const prUrl = textFlag(args, ['--pr-url']);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task release');
@@ -6363,11 +6370,21 @@ function cmdRelease(args) {
     id: taskId,
     actor: String(owner),
     reason: typeof reasonFlag === 'string' ? reasonFlag : undefined,
+    kind: kindFlag || undefined,
+    pullRequest: prNumber || prUrl ? { number: prNumber, url: prUrl } : undefined,
   });
+  if (result.reason === 'invalid_release_marker') {
+    failTask(
+      'atris task release',
+      'invalid_release_marker',
+      '--kind proof_not_saved goes with the open pull request (--pr-url <link>, or --pr-number <n>), and the pull request flags go only with that kind; nothing was released',
+    );
+  }
   if (result.released) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     const task = compactTaskFromProjection(projection, taskId);
-    const keptReason = result.event && result.event.payload && result.event.payload.reason || null;
+    const keptPayload = result.event && result.event.payload || {};
+    const keptReason = keptPayload.reason || null;
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -6375,6 +6392,7 @@ function cmdRelease(args) {
         task_id: taskId,
         owner: String(owner),
         reason: keptReason,
+        ...(keptPayload.kind ? { kind: keptPayload.kind, pull_request: keptPayload.pull_request } : {}),
         projection_path: outPath,
         task,
         event_version: result.event && result.event.version || null,
@@ -10116,6 +10134,13 @@ function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '', autoAccepted = false }) {
   const task = taskDetail(taskDb, db, taskId);
+  // The last door for the machine: whatever decided this job was eligible, a job
+  // whose pull request is still open is never completed without a person. A
+  // person's own accept (autoAccepted false) is untouched.
+  if (autoAccepted) {
+    const pullRequestOpen = openPullRequestRefusal(task, taskId);
+    if (pullRequestOpen) return { ok: false, reason: pullRequestOpen.reason, pull_request: pullRequestOpen.pull_request };
+  }
   const missionXpIssue = missionXpEndToEndProofIssue(task, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     return { ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue };
@@ -10799,6 +10824,10 @@ function evaluateSweepAutoAccept(task, root, includeProtected = false) {
   if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
   const denied = autoAcceptSweepDeniedReason(task, includeProtected);
   if (denied) return { eligible: false, ref, reason: denied };
+  // A job whose pull request is still open has not landed, whatever its stored check
+  // says: the same refusal as auto-accept-certified, before any check is run.
+  const pullRequestOpen = openPullRequestRefusal(task, ref);
+  if (pullRequestOpen) return pullRequestOpen;
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
   const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
@@ -13407,4 +13436,6 @@ module.exports = {
   certifyVerifyCandidate,
   landingProofVerify,
   stampAutoAcceptMetadata,
+  acceptReviewTask,
+  evaluateSweepAutoAccept,
 };
