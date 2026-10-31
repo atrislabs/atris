@@ -26,6 +26,7 @@
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson: rawApiRequestJson } = require('../utils/api');
 const { AsyncLocalStorage } = require('async_hooks');
+const { createHash } = require('crypto');
 const { resolveBusiness } = require('../lib/business-target');
 const googleContext = new AsyncLocalStorage();
 
@@ -39,7 +40,7 @@ function apiRequestJson(url, options = {}) {
       url += `${url.includes('?') ? '&' : '?'}account_id=${encodeURIComponent(context.calendarAccount)}`;
     } else next.body = { ...(options.body || {}), account_id: context.calendarAccount };
   }
-  if (context.business && context.serverDefaults && !context.mailAccount && url.startsWith('/integrations/gmail/') && !/\/accounts|\/start/.test(url)) {
+  if (context.serverDefaults && !context.mailAccount && url.startsWith('/integrations/gmail/') && !/\/accounts|\/start/.test(url)) {
     const parts = url.split('?');
     if (parts[1]) { const q = new URLSearchParams(parts[1]); q.delete('account_id'); url = parts[0] + (q.toString() ? `?${q}` : ''); }
     if (next.body && Object.hasOwn(next.body, 'account_id')) { next.body = { ...next.body }; delete next.body.account_id; }
@@ -243,6 +244,52 @@ function writeGmailStickyAccount(accountId) {
   fs.writeFileSync(filePath, `${JSON.stringify({ account_id: accountId }, null, 2)}\n`, 'utf8');
 }
 
+function mailMigrationRecord(auth) {
+  const markerPath = `${gmailAccountStatePath()}.migrated`;
+  let subject = '';
+  try { subject = JSON.parse(Buffer.from(auth.token.split('.')[1], 'base64url').toString()).sub || ''; } catch {}
+  const owner = auth.userId || (auth.email !== 'unknown' ? auth.email.toLowerCase() : subject || auth.token);
+  const identity = createHash('sha256').update(owner).digest('hex');
+  let migrated = {};
+  try { migrated = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch {}
+  if (!migrated || typeof migrated !== 'object' || Array.isArray(migrated)) migrated = {};
+  return { markerPath, identity, migrated };
+}
+
+function markMailMigration(record) {
+  record.migrated[record.identity] = true;
+  fs.mkdirSync(path.dirname(record.markerPath), { recursive: true });
+  fs.writeFileSync(record.markerPath, `${JSON.stringify(record.migrated)}\n`, { mode: 0o600 });
+}
+
+async function prepareMailDefaults(context) {
+  const auth = await getAuth();
+  const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token: auth.token });
+  if (result.status === 404) return;
+  if (!result.ok) return googleFailure(result, 'resolve mail account');
+  let data = result.data;
+  if (!data || !Array.isArray(data.accounts) || !data.defaults || !Object.hasOwn(data.defaults, 'gmail') || !data.resolved || !Object.hasOwn(data.resolved, 'gmail')) {
+    throw new Error('could not resolve mail account: the server returned an incomplete account list');
+  }
+  const record = mailMigrationRecord(auth);
+  if (!record.migrated[record.identity]) {
+    const sticky = readGmailStickyAccount();
+    if (sticky && data.defaults.gmail == null) {
+      const saved = await rawApiRequestJson('/integrations/google/defaults', {
+        method: 'PUT', token: auth.token, body: { account_id: sticky, products: ['gmail'] },
+      });
+      if (!saved.ok) return googleFailure(saved, 'move the saved mail default');
+      const refreshed = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token: auth.token });
+      if (!refreshed.ok) return googleFailure(refreshed, 'refresh mail account');
+      data = refreshed.data;
+      if (!data || !data.resolved || !Object.hasOwn(data.resolved, 'gmail')) throw new Error('could not refresh mail account');
+    }
+    markMailMigration(record);
+  }
+  context.serverDefaults = true;
+  context.resolvedMail = data.resolved.gmail || null;
+}
+
 function resolveGmailAccountId(explicitId) {
   const trimmed = String(explicitId || '').trim();
   if (trimmed) return trimmed;
@@ -302,7 +349,7 @@ async function fetchGmailAccounts(token, options = {}) {
 
 function findGmailAccount(accounts, accountId) {
   const wanted = String(accountId || '').trim().toLowerCase();
-  return accounts.find((account) => gmailAccountIdentity(account).id.toLowerCase() === wanted) || null;
+  return accounts.find((account) => { const identity = gmailAccountIdentity(account); return identity.id.toLowerCase() === wanted || identity.email === wanted; }) || null;
 }
 
 function findGmailAccountForUse(accounts, selector) {
@@ -337,7 +384,7 @@ async function getAuth() {
     }
     process.exit(1);
   }
-  return { token: creds.token, email: creds.email || 'unknown' };
+  return { token: creds.token, email: creds.email || 'unknown', userId: creds.user_id || null };
 }
 
 async function getAuthToken() {
@@ -843,7 +890,8 @@ async function gmailAccounts() {
 }
 
 async function gmailUse(accountId, deps = {}) {
-  const token = await getAuthToken();
+  const auth = await getAuth();
+  const token = auth.token;
   const accounts = await fetchGmailAccounts(token);
   let selector = String(accountId || '').trim();
 
@@ -890,7 +938,7 @@ async function gmailUse(accountId, deps = {}) {
     ? await rawApiRequestJson(`/business/${encodeURIComponent(business)}/integrations/google`, { method: 'PUT', token, headers: { 'X-Business-Id': business }, body: { account_id: id } })
     : await apiRequestJson('/integrations/google/defaults', { method: 'PUT', token, body: { account_id: id, products: ['gmail'] } });
   if (!saved.ok && saved.status !== 404) { console.error(`could not save gmail default: ${saved.error || 'request failed'}`); process.exit(1); }
-  if (saved.status === 404 && !deps.quietOldServer) console.log('calendar and drive accounts need the newest atris server.');
+  if (!business && saved.ok) markMailMigration(mailMigrationRecord(auth));
   if (!business || saved.status === 404) writeGmailStickyAccount(id);
   console.log(`now using ${name} (${email || 'email pending'})`);
 }
@@ -925,7 +973,7 @@ async function googleConnect(name, products, business, deps = {}) {
   const token = await getAuthToken();
   const before = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
   if (before.status === 404) {
-    console.log(googleOldServer);
+    if (!deps.quietOldServer) console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
     return;
   }
@@ -937,7 +985,7 @@ async function googleConnect(name, products, business, deps = {}) {
   if (business) body.business_id = business;
   const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
   if (result.status === 404) {
-    console.log(googleOldServer);
+    if (!deps.quietOldServer) console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
     return;
   }
@@ -947,12 +995,44 @@ async function googleConnect(name, products, business, deps = {}) {
   if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) console.log(`open this url in your browser: ${url}`);
   console.log('waiting for google sign-in...');
   const interval = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
-  const count = Math.max(1, Math.ceil((deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS) / interval));
+  const timeout = deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS;
+  const count = Math.max(1, Math.ceil(timeout / interval));
+  const now = deps.now || Date.now;
+  const deadline = now() + timeout;
   const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const id = result.data?.account_id || name;
-  for (let i = 0; i < count; i += 1) {
-    await sleep(interval);
-    const list = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+  let state = result.data?.state || '';
+  for (let i = 0; i < count && now() < deadline; i += 1) {
+    await sleep(Math.min(interval, Math.max(0, deadline - now())));
+    if (now() >= deadline) break;
+    const pollOptions = { method: 'GET', token, timeoutMs: Math.max(1, Math.min(interval, deadline - now())), retries: 0 };
+    if (state) {
+      const check = await apiRequestJson(`/integrations/google/start/${encodeURIComponent(state)}`, pollOptions);
+      if (check.status === 404) state = '';
+      else if (!check.ok) {
+        if (check.status === 401 || check.status === 403) return googleFailure(check, 'check google sign-in');
+        continue;
+      } else {
+        const status = check.data || {};
+        if (status.status === 'pending') continue;
+        if (status.status === 'error') {
+          const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
+          console.error(`google sign-in failed: ${reason}`);
+          process.exit(1);
+        }
+        if (status.status === 'connected') {
+          const accountId = status.account_id || id || 'account';
+          const identity = status.email || accountId;
+          const granted = Array.isArray(status.products) ? status.products : [];
+          const missing = Array.isArray(status.missing) ? status.missing : [];
+          console.log(`connected ${identity} as ${accountId}${granted.length ? `: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}` : ''}`);
+          if (missing.length) console.log(`google did not grant: ${missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
+          return;
+        }
+        continue;
+      }
+    }
+    const list = await apiRequestJson('/integrations/google/accounts', pollOptions);
     if (list.status === 404) { console.log(googleOldServer); return; }
     if (!list.ok) continue;
     const accounts = list.data?.accounts || [];
@@ -968,6 +1048,15 @@ async function googleConnect(name, products, business, deps = {}) {
   }
   console.error(`connection could not be confirmed. finish in your browser and check atris google: ${url}`);
   process.exit(1);
+}
+
+async function gmailConnectUnified(name, deps = {}) {
+  const id = String(name || 'default').trim();
+  if (!/^[a-z0-9-]{1,32}$/.test(id)) {
+    console.error('invalid gmail account name. use 1 to 32 lowercase letters, numbers, or hyphens.');
+    process.exit(1);
+  }
+  return googleConnect(id, ['gmail'], googleContext.getStore()?.business || null, { ...deps, quietOldServer: true });
 }
 
 async function googleCommand(subcommand, ...args) {
@@ -995,7 +1084,8 @@ async function googleCommand(subcommand, ...args) {
     }
     if (action !== 'accounts' && !positional[0]) throw new Error(`usage: atris google ${action} <name or email>`);
     if (action === 'disconnect' && !approved) throw new Error('disconnect needs --approved after the account and products are confirmed');
-    const token = await getAuthToken();
+    const auth = await getAuth();
+    const token = auth.token;
     if (action === 'accounts') {
       const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
       if (result.status === 404) { console.log(googleOldServer); return gmailAccounts(); }
@@ -1051,7 +1141,10 @@ async function googleCommand(subcommand, ...args) {
     if (!result.ok) return googleFailure(result, 'save google default');
     const products = only || googleProductNames;
     googleCache(Object.fromEntries(products.map((p) => [p, id])), context.business);
-    if (products.includes('gmail') && !context.business) writeGmailStickyAccount(id);
+    if (products.includes('gmail') && !context.business) {
+      markMailMigration(mailMigrationRecord(auth));
+      writeGmailStickyAccount(id);
+    }
     console.log(`using ${id}${context.business ? ' for this business' : ''}: ${products.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
   });
 }
@@ -1059,13 +1152,16 @@ async function googleCommand(subcommand, ...args) {
 async function gmailCommand(subcommand, ...args) {
   const context = takeContext(args);
   return googleContext.run(context, async () => {
-    if (context.business && !context.mailAccount && ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice'].includes(subcommand) && (subcommand !== 'send' || context.rest.includes('--approved') || context.rest.includes('--confirm-approved'))) {
-      const token = await getAuthToken();
-      const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
-      if (result.status === 404) console.log(googleOldServer);
-      else if (!result.ok) return googleFailure(result, 'resolve business account');
-      else { context.serverDefaults = true; context.resolvedMail = result.data?.resolved?.gmail || null; }
+    const needsDefault = ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice', 'accounts'].includes(subcommand);
+    const hasVoiceAccount = subcommand === 'voice' && context.rest.some((arg) => !String(arg).startsWith('--'));
+    let valid = true;
+    if (subcommand === 'send') {
+      const parsed = parseGmailSendArgs(context.rest);
+      valid = parsed.approved;
+    } else if (subcommand === 'read' || subcommand === 'archive') {
+      valid = context.rest.some((arg) => !String(arg).startsWith('--'));
     }
+    if (needsDefault && valid && !context.mailAccount && !hasVoiceAccount) await prepareMailDefaults(context);
     return gmailCommandInner(subcommand, ...context.rest);
   });
 }
@@ -1109,7 +1205,7 @@ async function gmailCommandInner(subcommand, ...args) {
       break;
     }
     case 'connect':
-      await gmailConnect(args[0]);
+      await gmailConnectUnified(args[0]);
       break;
     case 'accounts':
       await gmailAccounts();
@@ -2650,6 +2746,7 @@ async function integrationsStatus(args = []) {
 module.exports = {
   googleCommand,
   googleConnect,
+  gmailConnectUnified,
   gmailCommand,
   gmailConnect,
   gmailVoice,

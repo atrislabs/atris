@@ -50,7 +50,8 @@ function withMockedIntegrations(apiRequestJson, { stickyAccountId = null } = {})
     id: apiPath,
     filename: apiPath,
     loaded: true,
-    exports: { apiRequestJson },
+    exports: { apiRequestJson: (pathname, options) => pathname === '/integrations/google/accounts'
+      ? Promise.resolve({ ok: false, status: 404 }) : apiRequestJson(pathname, options) },
   };
 
   const integrations = require('../commands/integrations');

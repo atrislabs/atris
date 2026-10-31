@@ -69,7 +69,7 @@ test('old server falls back to mail accounts', async () => fixture(async (cli, {
 }, (url) => url === '/integrations/google/accounts' ? { ok: false, status: 404 } : ok([{ account_id: 'work', email_address: 'work@example.com' }])));
 
 test('google connect requests selected products and waits for the account', async () => fixture(async (cli, { calls, lines }) => {
-  await cli.googleConnect('work', ['gmail', 'calendar'], null, { openAuthUrl: () => true, sleep: async () => {}, pollIntervalMs: 1, timeoutMs: 1 });
+  await cli.googleConnect('work', ['gmail', 'calendar'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });
   assert.deepEqual(calls[1].options.body, { account_id: 'work', products: ['gmail', 'calendar'] });
   assert.match(lines.join('\n'), /connected/);
 }, (() => { let polls = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work' }) : ok({ accounts: ++polls === 1 ? [] : [account] }); })()));
@@ -88,7 +88,7 @@ test('business mail uses the server choice and sends the business header', async
   const sent = calls.find((call) => call.url === '/integrations/gmail/send');
   assert.equal(sent.options.headers['X-Business-Id'], 'shop');
   assert.equal(Object.hasOwn(sent.options.body, 'account_id'), false);
-}, (url) => url === '/integrations/google/accounts' ? ok({ resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: 'work' }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
 
 test('calendar add sends the selected account in the body', async () => fixture(async (cli, { calls, lines }) => {
   await cli.calendarCommand('add', 'meeting', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z', '--account', 'work');
@@ -134,3 +134,151 @@ test('gmail use saves its mail default on the server', async () => fixture(async
   assert.deepEqual(saved.options.body, { account_id: 'work' });
   assert.equal(saved.options.headers['X-Business-Id'], 'shop');
 }, (url) => url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({})));
+
+test('personal mail follows the server default without sending a selector', async () => fixture(async (cli, { root, calls, lines }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'old' }));
+  await cli.gmailCommand('inbox');
+  const read = calls.find((call) => call.url.startsWith('/integrations/gmail/messages?'));
+  assert.equal(new URLSearchParams(read.url.split('?')[1]).has('account_id'), false);
+  assert.match(lines.join('\n'), /work@example.com/);
+  assert.equal(calls.some((call) => call.url === '/integrations/google/defaults'), false);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: 'work' }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ messages: [] })));
+
+test('moves the old mail choice once only when the server has no saved default', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'work' }));
+  await cli.gmailCommand('inbox');
+  await cli.gmailCommand('inbox');
+  const saves = calls.filter((call) => call.url === '/integrations/google/defaults');
+  assert.equal(saves.length, 1);
+  assert.deepEqual(saves[0].options.body, { account_id: 'work', products: ['gmail'] });
+  assert.equal(saves[0].options.headers, undefined);
+  const reads = calls.filter((call) => call.url.startsWith('/integrations/gmail/messages?'));
+  assert.ok(reads.every((call) => !new URLSearchParams(call.url.split('?')[1]).has('account_id')));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: null }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ messages: [] })));
+
+test('mail sends use the server choice while an explicit account still wins', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved');
+  await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved', '--account', 'work');
+  const sent = calls.filter((call) => call.url === '/integrations/gmail/send');
+  assert.equal(Object.hasOwn(sent[0].options.body, 'account_id'), false);
+  assert.equal(sent[1].options.body.account_id, 'work');
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: 'work' }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
+
+test('old server keeps the local mail selector without extra output', async () => fixture(async (cli, { root, calls, lines }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'work' }));
+  await cli.gmailCommand('inbox');
+  assert.match(calls.find((call) => call.url.startsWith('/integrations/gmail/messages?')).url, /account_id=work/);
+  assert.doesNotMatch(lines.join('\n'), /newest atris server/);
+}, (url) => url === '/integrations/google/accounts' ? { ok: false, status: 404 } : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ messages: [] })));
+
+test('connect waits for its state and reports the products Google did not grant', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.googleConnect('work', ['gmail', 'calendar', 'drive'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 2 });
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/start/state%2F1').length, 2);
+  assert.match(lines.join('\n'), /connected work@example.com/);
+  assert.match(lines.join('\n'), /did not grant: drive/);
+}, (() => { let polls = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'state/1' }) : url.startsWith('/integrations/google/start/') ? ok(++polls === 1 ? { status: 'pending' } : { status: 'connected', account_id: 'work', email: 'work@example.com', products: ['gmail', 'calendar'], missing: ['drive'] }) : ok({ accounts: [account] }); })()));
+
+test('connect reports a denied sign-in without claiming success', async () => fixture(async (cli, { lines }) => {
+  const exit = process.exit, error = console.error, errors = [];
+  process.exit = () => { throw new Error('stopped'); }; console.error = (...parts) => errors.push(parts.join(' '));
+  try { await assert.rejects(() => cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 }), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  assert.match(errors.join('\n'), /denied/);
+  assert.doesNotMatch(lines.join('\n'), /^connected/m);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'state1' }) : url.startsWith('/integrations/google/start/') ? ok({ status: 'error', error: 'access_denied' }) : ok({ accounts: [] })));
+
+test('business mail migration refreshes the server choice before displaying and sending', async () => fixture(async (cli, { root, calls, lines }) => {
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'work' }));
+  await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved');
+  const sent = calls.find((call) => call.url === '/integrations/gmail/send');
+  assert.equal(Object.hasOwn(sent.options.body, 'account_id'), false);
+  assert.match(lines.join('\n'), /work@example.com/);
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/accounts').length, 2);
+}, (() => { let saved = false; return (url) => {
+  if (url === '/integrations/google/defaults') { saved = true; return ok({ defaults: { gmail: 'work' } }); }
+  if (url === '/integrations/google/accounts') return ok({ accounts: [account], defaults: { gmail: saved ? 'work' : null }, resolved: { gmail: saved ? 'work' : 'old' }, business: { business_id: 'shop', account_id: null } });
+  if (url === '/integrations/gmail/accounts') return ok([{ account_id: 'work', email_address: 'work@example.com' }, { account_id: 'old', email_address: 'old@example.com' }]);
+  return ok({ sent: true });
+}; })()));
+
+test('a saved server default wins even if it is later cleared', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'old' }));
+  await cli.gmailCommand('inbox');
+  await cli.gmailCommand('inbox');
+  assert.equal(calls.some((call) => call.url === '/integrations/google/defaults'), false);
+}, (() => { let seen = 0; return (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: ++seen === 1 ? 'work' : null }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ messages: [] }); })()));
+
+test('a missing sign-in status route falls back to account changes', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/start/old-state').length, 1);
+  assert.match(lines.join('\n'), /connected work@example.com/);
+}, (() => { let count = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'old-state' }) : url === '/integrations/google/start/old-state' ? { ok: false, status: 404 } : ok({ accounts: ++count === 1 ? [] : [account] }); })()));
+
+test('gmail combined sign-in polls its state', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.gmailConnectUnified('work', { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });
+  assert.deepEqual(calls.find((call) => call.url === '/integrations/google/start').options.body.products, ['gmail']);
+  assert.match(lines.join('\n'), /connected work@example.com/);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'gmail-state' }) : url === '/integrations/google/start/gmail-state' ? ok({ status: 'connected', account_id: 'work', email: 'work@example.com', products: ['gmail'], missing: [] }) : ok({ accounts: [account] })));
+
+test('calendar without a selector lets the server choose', async () => fixture(async (cli, { calls }) => {
+  await cli.calendarCommand('week');
+  await cli.calendarCommand('add', 'meeting', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z');
+  assert.equal(new URLSearchParams(calls[0].url.split('?')[1]).has('account_id'), false);
+  assert.equal(Object.hasOwn(calls[1].options.body, 'account_id'), false);
+}, () => ok({ events: [] })));
+
+test('a failed default migration stops mail before it can choose the wrong account', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'work' }));
+  const exit = process.exit, error = console.error;
+  process.exit = () => { throw new Error('stopped'); }; console.error = () => {};
+  try { await assert.rejects(() => cli.gmailCommand('inbox'), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  assert.equal(calls.some((call) => call.url.startsWith('/integrations/gmail/')), false);
+  assert.equal(fs.existsSync(path.join(root, 'mail.json.migrated')), false);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: null }, resolved: { gmail: 'work' } }) : { ok: false, status: 503 }));
+
+test('gmail combined sign-in keeps the old sign-in on an old server', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.gmailConnectUnified('work', { openAuthUrl: () => true, sleep: async () => {}, pollIntervalMs: 1, timeoutMs: 1 });
+  assert.equal(calls[1].url, '/integrations/gmail/start');
+  assert.match(lines.join('\n'), /connected work@example.com/);
+  assert.doesNotMatch(lines.join('\n'), /newest atris server/);
+}, (url) => url === '/integrations/google/accounts' ? { ok: false, status: 404 } : url === '/integrations/gmail/start' ? ok({ auth_url: 'https://example.test' }) : ok({ accounts: [{ account_id: 'work', email_address: 'work@example.com' }] })));
+
+test('sign-in status stops after its time limit', async () => fixture(async (cli, { calls }) => {
+  const exit = process.exit, error = console.error;
+  let time = 0;
+  process.exit = () => { throw new Error('stopped'); }; console.error = () => {};
+  try { await assert.rejects(() => cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async (ms) => { time += ms; }, now: () => time, pollIntervalMs: 2, timeoutMs: 5 }), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  assert.equal(time, 5);
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/start/state1').length, 2);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'pending' }) : ok({ accounts: [] })));
+
+test('a newly saved local copy is not migrated after the server default is cleared', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  await cli.googleCommand('use', 'work', '--only', 'mail');
+  await cli.gmailCommand('inbox');
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/defaults').length, 1);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: null }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ defaults: { gmail: 'work' }, messages: [] })));
+
+test('mail read and archive let the server select an account', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  await cli.gmailCommand('read', 'message-1');
+  await cli.gmailCommand('archive', 'message-1');
+  const read = calls.find((call) => call.url.startsWith('/integrations/gmail/messages/message-1'));
+  const archive = calls.find((call) => call.url === '/integrations/gmail/messages/batch-archive');
+  assert.equal(new URLSearchParams(read.url.split('?')[1] || '').has('account_id'), false);
+  assert.equal(Object.hasOwn(archive.options.body, 'account_id'), false);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: 'work' }, resolved: { gmail: 'work' } }) : url.includes('batch-archive') ? ok({ archived: 1 }) : ok({ body: 'hello' })));
+
+test('an explicit email selector is accepted for sending', async () => fixture(async (cli, { root, calls }) => {
+  fs.unlinkSync(path.join(root, '.atris', 'business.json'));
+  await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved', '--account', 'work@example.com');
+  assert.equal(calls.find((call) => call.url === '/integrations/gmail/send').options.body.account_id, 'work@example.com');
+}, (url) => url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
