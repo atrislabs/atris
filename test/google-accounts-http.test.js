@@ -47,6 +47,73 @@ const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
 
+test('legacy reconnect with an unchanged account remains unconfirmed', async () => fixture((call) => {
+  if (call.path.endsWith('/google/accounts')) return missing;
+  if (call.path.endsWith('/gmail/start')) return ok({ auth_url: 'https://example.test/unfinished' });
+  if (call.path.endsWith('/gmail/accounts')) return ok({ accounts: [{ account_id: 'work', email_address: 'work@example.test', connected: false, reauth_required: true }] });
+}, async ({ cli, calls }) => {
+  const result = await cli('google', 'connect', 'work', '--only', 'mail');
+  assert.equal(result.code, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /^connected /m);
+  assert.match(result.stdout, /not confirmed yet/);
+  assert.match(result.stdout, /atris gmail accounts/);
+  assert.ok(calls.some((call) => call.path.endsWith('/gmail/start')));
+}, { business: true }));
+
+for (const scenario of ['new account', 'reconnected account', 'renamed account', 'unknown prior account', 'still disconnected']) {
+  test(`legacy sign-in checks the prior account before reporting ${scenario}`, async () => {
+    let lists = 0;
+    await fixture((call) => {
+      if (call.path.endsWith('/google/accounts')) return missing;
+      if (call.path.endsWith('/gmail/start')) return ok({ auth_url: 'https://example.test/sign-in' });
+      if (call.path.endsWith('/gmail/accounts')) {
+        lists += 1;
+        if (scenario === 'unknown prior account' && lists === 1) return [503, { detail: 'offline' }];
+        if (scenario === 'new account' && lists === 1) return ok({ accounts: [] });
+        const prior = lists === 1;
+        const row = { account_id: 'work', email_address: 'work@example.test' };
+        if (scenario === 'reconnected account') Object.assign(row, { connected: !prior, reauth_required: prior });
+        if (scenario === 'renamed account') row.display_name = prior ? 'before' : 'after';
+        if (scenario === 'still disconnected') Object.assign(row, { connected: false, reauth_required: true });
+        return ok({ accounts: [row] });
+      }
+    }, async ({ cli, calls }) => {
+      const result = await cli('google', 'connect', 'work', '--only', 'mail');
+      assert.equal(result.code, 0, result.stderr);
+      if (['new account', 'reconnected account'].includes(scenario)) assert.match(result.stdout, /^connected work@example.test as work/m);
+      else { assert.doesNotMatch(result.stdout, /^connected /m); assert.match(result.stdout, /not confirmed yet/); }
+      const before = calls.findIndex((call) => call.path.endsWith('/gmail/accounts'));
+      const start = calls.findIndex((call) => call.path.endsWith('/gmail/start'));
+      assert.ok(before >= 0 && before < start);
+    }, { business: true });
+  });
+}
+
+test('reconnect commands from text and json run in a personal project', async () => {
+  let requested = [];
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok({ ...roster, business: null, accounts: [{ ...work, products: Object.fromEntries(['gmail', 'calendar', 'drive'].map((product) => [product, { connected: false, reauth_required: true }])) }] });
+    if (call.path.endsWith('/google/start')) { requested = call.body.products; return ok({ auth_url: 'https://example.test', state: 'reconnect-state' }); }
+    if (call.path.endsWith('/google/start/reconnect-state')) return ok({ status: 'connected', account_id: 'work', email: 'work@example.test', products: requested, missing: [] });
+  }, async ({ cli, calls }) => {
+    const listing = await cli('google', 'accounts'); assert.equal(listing.code, 0, listing.stderr);
+    const json = await cli('google', 'accounts', '--json'); assert.equal(json.code, 0, json.stderr);
+    const products = JSON.parse(json.stdout).accounts[0].products;
+    for (const [key, label] of [['gmail', 'mail'], ['calendar', 'calendar'], ['drive', 'drive']]) {
+      const textCommand = listing.stdout.split('\n').find((line) => line.trim().startsWith(`reconnect ${label}: `)).split(': ').slice(1).join(': ');
+      for (const command of [textCommand, products[key].reconnect]) {
+        const words = command.trim().split(/\s+/); assert.equal(words.shift(), 'atris');
+        const result = await cli(...words); assert.equal(result.code, 0, result.stderr);
+        assert.match(result.stdout, /^connected /m);
+        const start = calls.filter((call) => call.path.endsWith('/google/start')).at(-1);
+        assert.deepEqual(start.body.products, [key]);
+        assert.equal(Object.hasOwn(start.body, 'business_id'), false);
+        assert.equal(start.business, null);
+      }
+    }
+  });
+});
+
 for (const command of ['google', 'gmail']) test(`${command} sign-in with expired state never claims an unrelated account change`, async () => {
   let lists = 0;
   await fixture((call) => {
@@ -76,7 +143,7 @@ test('google account json and text show each reconnecting product', async () => 
   for (const args of [['google', 'accounts', '--json'], ['google', '--json']]) {
     const result = await cli(...args); assert.equal(result.code, 0, result.stderr);
     const data = JSON.parse(result.stdout);
-    assert.equal(data.accounts[0].products.gmail.reconnect, 'atris google connect work --only mail');
+    assert.equal(data.accounts[0].products.gmail.reconnect, 'atris google connect work --only mail --account');
     assert.equal(data.accounts[0].products.calendar.reauth_required, true);
     assert.equal(data.accounts[0].products.drive.connected, false);
   }

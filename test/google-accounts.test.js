@@ -60,7 +60,7 @@ test('google accounts json includes reconnect state and commands for all expired
   for (const [key, label] of [['gmail', 'mail'], ['calendar', 'calendar'], ['drive', 'drive']]) {
     assert.equal(products[key].reauth_required, true);
     assert.equal(products[key].connected, false);
-    assert.equal(products[key].reconnect, `atris google connect work --only ${label}`);
+    assert.equal(products[key].reconnect, `atris google connect work --only ${label} --account`);
   }
   assert.equal(data.defaults.gmail, 'work');
 }, () => ok({ accounts: [{ ...account, products: Object.fromEntries(['gmail', 'calendar', 'drive'].map((key) => [key, { connected: false, reauth_required: true }])) }], defaults: { gmail: 'work' }, resolved: {} })));
@@ -267,7 +267,7 @@ test('a modern sign-in without state cannot claim a connection', async () => fix
 test('a missing modern start route uses the old gmail sign-in', async () => fixture(async (cli, { calls, lines }) => {
   await cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, pollIntervalMs: 1, timeoutMs: 1 });
   assert.ok(calls.some((call) => call.url === '/integrations/gmail/start'));
-  assert.match(lines.join('\n'), /connected work@example.com/);
+  assert.match(lines.join('\n'), /not confirmed yet/);
   assert.match(lines.join('\n'), /newest atris server/);
 }, (url) => url === '/integrations/google/start' ? { ok: false, status: 404 } : url === '/integrations/gmail/start' ? ok({ auth_url: 'https://example.test' }) : url === '/integrations/gmail/accounts' ? ok({ accounts: [{ account_id: 'work', email: 'work@example.com' }] }) : ok({ accounts: [account] })));
 
@@ -299,8 +299,8 @@ test('a failed default migration stops mail before it can choose the wrong accou
 
 test('gmail combined sign-in keeps the old sign-in on an old server', async () => fixture(async (cli, { calls, lines }) => {
   await cli.gmailConnectUnified('work', { openAuthUrl: () => true, sleep: async () => {}, pollIntervalMs: 1, timeoutMs: 1 });
-  assert.equal(calls[1].url, '/integrations/gmail/start');
-  assert.match(lines.join('\n'), /connected work@example.com/);
+  assert.ok(calls.some((call) => call.url === '/integrations/gmail/start'));
+  assert.match(lines.join('\n'), /not confirmed yet/);
   assert.doesNotMatch(lines.join('\n'), /newest atris server/);
 }, (url) => url === '/integrations/google/accounts' ? { ok: false, status: 404 } : url === '/integrations/gmail/start' ? ok({ auth_url: 'https://example.test' }) : ok({ accounts: [{ account_id: 'work', email_address: 'work@example.com' }] })));
 

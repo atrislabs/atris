@@ -856,6 +856,10 @@ async function gmailConnect(accountName, deps = {}) {
   }
 
   const token = await getAuthToken();
+  const previousResult = await apiRequestJson('/integrations/gmail/accounts', { method: 'GET', token, retries: 0 });
+  const previousAccounts = previousResult.ok ? (previousResult.data?.accounts || previousResult.data) : null;
+  const previousKnown = Array.isArray(previousAccounts);
+  const previous = previousKnown ? resolveAccountSelector(previousAccounts, accountId) : null;
   const result = await apiRequestJson('/integrations/gmail/start', {
     method: 'POST',
     token,
@@ -875,37 +879,33 @@ async function gmailConnect(accountName, deps = {}) {
   }
 
   const openAuthUrl = deps.openAuthUrl || openGmailAuthUrl;
-  if (!openAuthUrl(authUrl, deps)) {
+  const opened = openAuthUrl(authUrl, deps);
+  if (!opened) {
     console.log(`open this url in your browser: ${authUrl}`);
   }
 
-  console.log(`waiting for gmail account ${accountId}...`);
-
   const pollIntervalMs = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
-  const timeoutMs = deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS;
   const sleep = deps.sleep || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  const maxPolls = Math.max(1, Math.ceil(timeoutMs / pollIntervalMs));
-
-  for (let poll = 0; poll < maxPolls; poll += 1) {
+  if (previousKnown) {
     await sleep(pollIntervalMs);
     const accountsResult = await apiRequestJson('/integrations/gmail/accounts', {
-      method: 'GET',
-      token,
+      method: 'GET', token, retries: 0,
     });
     const accounts = accountsResult.ok
       ? (accountsResult.data?.accounts || accountsResult.data || [])
       : [];
     const match = Array.isArray(accounts) ? resolveAccountSelector(accounts, accountId) : null;
     const email = match ? gmailAccountIdentity(match).email.trim() : '';
-    if (email && email !== 'unknown') {
+    const priorState = previous?.products?.gmail || previous;
+    const nextState = match?.products?.gmail || match;
+    const appeared = !previous && match && nextState?.connected !== false && nextState?.reauth_required !== true;
+    const reconnected = priorState?.reauth_required === true && nextState?.connected === true && nextState?.reauth_required !== true;
+    if ((appeared || reconnected) && email && email !== 'unknown') {
       console.log(`connected ${email} as ${accountId}`);
       return;
     }
   }
-
-  console.error(`connection timed out. finish in your browser: ${authUrl}`);
-  console.error(`or connect from settings: https://atris.ai/dashboard/settings?connect=gmail&account=${accountId}`);
-  process.exit(1);
+  console.log(`${opened ? 'sign-in opened' : 'sign-in link is ready to open'}. it is not confirmed yet. finish in your browser and check with atris gmail accounts.`);
 }
 
 async function gmailAccounts() {
@@ -1142,7 +1142,7 @@ async function googleCommand(subcommand, ...args) {
       const data = capability.data;
       const accounts = data.accounts.map((row) => ({ ...row, products: Object.fromEntries(Object.entries(row.products || {}).map(([product, value]) => {
         const reconnect = value?.reauth_required && googleProductNames.includes(product)
-          ? `atris google connect ${row.account_id} --only ${product === 'gmail' ? 'mail' : product}` : null;
+          ? `atris google connect ${row.account_id} --only ${product === 'gmail' ? 'mail' : product} --account` : null;
         return [product, reconnect ? { ...value, reconnect } : value];
       })) }));
       if (json) { console.log(JSON.stringify({ ...data, accounts }, null, 2)); return; }
