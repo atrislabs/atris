@@ -151,6 +151,7 @@ test/update-check-install-state.test.js
 test/update-self.test.js
 test/verify-task-id-escaping.test.js
 test/worktree-disk-guard.test.js
+test/could-not-start.test.js
 test/worktree-ship-help.test.js
 test/worktree-space.test.js
 test/write.test.js

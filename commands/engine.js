@@ -87,7 +87,7 @@ const {
   setEngineOverrides,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { DISPATCH_CAPABLE, runDispatchFlight } = require('../lib/fleet');
+const { DISPATCH_CAPABLE, runDispatchFlight, flightExitCode } = require('../lib/fleet');
 const {
   buildReadOnlyEngineInvocation,
   runEngineAskCommand,
@@ -2366,7 +2366,7 @@ function runDispatchCommand(args, root) {
     ...(pin.roster_prep ? { prep: pin.roster_prep } : {}),
   }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
-    return flight.paused.length ? 1 : 0;
+    return flightExitCode(flight);
   });
 }
 

@@ -24,6 +24,12 @@ function rated(n) {
   return `${/^(8|11$|18$)/.test(String(n)) ? 'an' : 'a'} ${n}`;
 }
 
+// Jobs the build machine could not start (no room on the disk, a build copy that would not open) were let
+// go before any engine ran. They are no member's miss and not finished, and they say so in a line of their own.
+function couldNotStartLine(n) {
+  return `${n} ${n === 1 ? 'job' : 'jobs'} could not start on this machine. ${n === 1 ? 'It doesn\'t' : 'They don\'t'} count against anyone.`;
+}
+
 // Members rated on the last 30 days of jobs here, best first, each with the
 // job and model the roster gives it, plus the build line: what the build
 // engine rates in the combine and what members doing build landed here.
@@ -40,9 +46,9 @@ function readHere(deps = {}) {
   if (!played || played.error || played.no_history) return null;
   const { rosterRows } = require('../lib/gm-season');
   // A member whose only misses were later confirmed not needed, or whose only jobs
-  // wait on a pull request, has no finished job, but still shows, so those jobs
-  // have somewhere to be counted.
-  const rows = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.finished > 0 || row.not_needed > 0 || row.held > 0);
+  // wait on a pull request or could not start, has no finished job, but still shows,
+  // so those jobs have somewhere to be counted.
+  const rows = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.finished > 0 || row.not_needed > 0 || row.held > 0 || row.could_not_start > 0);
   if (!rows.length) return null;
   let lineup = deps.lineup;
   if (lineup === undefined) lineup = require('../lib/team-lineup').readLineupSafe(root);
@@ -57,7 +63,7 @@ function readHere(deps = {}) {
     }
     const miss_reasons = [...reasons].map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 3);
-    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
+    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), ...(row.could_not_start ? { could_not_start: row.could_not_start } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
   });
   const buildJob = ((lineup && lineup.ok && lineup.jobs) || []).find((row) => row.job === 'build' && !row.key);
   const buildModel = buildJob && buildJob.now_runs ? buildJob.now_runs.model : null;
@@ -65,9 +71,11 @@ function readHere(deps = {}) {
   const builders = members.filter((m) => m.job === 'build');
   const landed = builders.reduce((sum, m) => sum + m.landed, 0);
   const finished = builders.reduce((sum, m) => sum + m.finished, 0);
+  const couldNotStart = members.reduce((sum, m) => sum + (m.could_not_start || 0), 0);
   return {
     workspace: played.workspace_name || null,
     members,
+    ...(couldNotStart ? { could_not_start: couldNotStart } : {}),
     build: card && finished ? { model: buildModel, combine_ovr: card.ovr, landed, finished, ovr: rating.atrisRating(landed, finished) } : null,
   };
 }
@@ -98,6 +106,7 @@ function renderHere(here) {
     lines.push('', `${head}${shown.join(', ')}${rest ? `, and ${rest} more` : ''}`);
   }
   lines.push('landed: accepted or merged. drops and abandons count against a member.');
+  if (here.could_not_start) lines.push(couldNotStartLine(here.could_not_start));
   if (here.build) {
     const b = here.build;
     lines.push('', `build runs ${modelLabel(b.model)}, ${rated(b.combine_ovr)} in the combine.`,
@@ -116,6 +125,7 @@ function renderMember(m, card) {
   ];
   if (m.not_needed) lines.push(`  not needed: ${m.not_needed} (confirmed by someone else, so ${m.not_needed === 1 ? 'it does' : 'they do'} not count either way)`);
   if (m.held) lines.push(`  waiting on a pull request: ${m.held} (the work is done and a person has to land it, so ${m.held === 1 ? 'it does' : 'they do'} not count either way)`);
+  if (m.could_not_start) lines.push(`  ${couldNotStartLine(m.could_not_start)}`);
   if (m.ovr == null) lines.push('  rated once it has 3 finished jobs');
   if (m.miss_reasons && m.miss_reasons.length) {
     lines.push('  top miss reasons:');
