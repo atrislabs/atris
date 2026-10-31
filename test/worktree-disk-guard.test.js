@@ -63,6 +63,13 @@ function backdateCopy(copy, hours) {
   }
 }
 
+// Recent branch work (a commit or checkout) without touching the folder.
+function touchBranch(copy) {
+  const gitDir = path.resolve(copy, git(copy, ['rev-parse', '--git-dir']));
+  const now = new Date();
+  fs.utimesSync(path.join(gitDir, 'HEAD'), now, now);
+}
+
 // A build copy under <ws>/.agent-worktrees/<repo>/<name>.
 function addCopy(root, name, { commit = false, hoursOld = 3, start = 'origin/master', at } = {}) {
   const copy = at || path.join(path.dirname(root), '.agent-worktrees', path.basename(root), name);
@@ -124,13 +131,12 @@ test('start below the reap line but above the floor reaps and then proceeds', (t
   const other = makeRepo(ws, 'other');
   const finished = addCopy(other, 'finished');
   const justDone = addCopy(other, 'just-done');
-  fs.writeFileSync(path.join(justDone, '.codex-last-message.txt'), 'done\n');
-  backdateCopy(justDone, 3);
+  touchBranch(justDone);
   const created = start(app, 'some room', { spaceGuard: true, freeSpace: () => 20e9 });
   assert.equal(created.space.removed.length, 1);
   assert.equal(created.space.free, 20e9);
   assert.equal(fs.existsSync(finished), false);
-  assert.equal(fs.existsSync(justDone), true, 'a copy whose engine just finished keeps its last message');
+  assert.equal(fs.existsSync(justDone), true, 'a copy with work in the last ten minutes stays');
   assert.equal(fs.existsSync(created.path), true);
 });
 
@@ -179,41 +185,37 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   assert.deepEqual(scoped.removed.map((item) => item.path), [chosen]);
   assert.ok(scoped.kept.some((item) => item.path === other && item.reason === 'out_of_scope'));
 
-  const ended = addCopy(app, 'ended', { commit: true });
-  const output = path.join(ended, '.codex-last-message.txt');
-  fs.writeFileSync(output, 'done\n');
-  backdate(output, 2);
-  const keepUnmerged = cleanupWorktrees({ root: app, base: 'origin/master', activeCwds: [], reapUnmerged: false });
-  assert.ok(keepUnmerged.kept.some((item) => item.path === ended && item.reason === 'unmerged'));
-  assert.ok(!keepUnmerged.candidates.some((item) => item.path === ended));
-
-  const building = addCopy(app, 'building');
-  fs.mkdirSync(path.join(building, '.next'));
-  // Only the build output is fresh; the folder itself is past the start grace.
-  backdate(building, 3);
-  const paced = cleanupWorktrees({ root: app, base: 'origin/master', activeCwds: [], idleMs: 2 * 60 * 60 * 1000, onlyPaths: [building, other] });
-  assert.ok(paced.kept.some((item) => item.path === building && item.reason === 'recent_activity'));
+  const working = addCopy(app, 'working');
+  // Only the branch moved recently; the folder itself is past the start grace.
+  touchBranch(working);
+  const paced = cleanupWorktrees({ root: app, base: 'origin/master', activeCwds: [], idleMs: 2 * 60 * 60 * 1000, onlyPaths: [working, other] });
+  assert.ok(paced.kept.some((item) => item.path === working && item.reason === 'recent_activity'));
   assert.ok(paced.candidates.some((item) => item.path === other));
 
   const fresh = addCopy(app, 'fresh', { hoursOld: 0 });
   assert.ok(cleanupWorktrees({ root: app, base: 'origin/master', activeCwds: [], onlyPaths: [fresh] }).kept.some((item) => item.reason === 'fresh_worktree_grace'));
-  const seen = [];
-  const shipped = cleanupWorktrees({
-    root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [fresh], freshGraceMs: 0,
-    keepInstalls: (copy) => seen.push([copy, fs.existsSync(copy)]),
-  });
+  const shipped = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [fresh], freshGraceMs: 0 });
   assert.deepEqual(shipped.removed.map((item) => item.path), [fresh]);
-  assert.deepEqual(seen, [[fresh, true]], 'the install is saved before the folder goes');
+
+  // Files git ignores may be local data, so they keep a merged copy for review.
+  const holding = addCopy(app, 'holding');
+  fs.mkdirSync(path.join(holding, 'node_modules'));
+  backdateCopy(holding, 3);
+  const review = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [holding] });
+  assert.ok(review.kept.some((item) => item.path === holding && item.reason === 'ignored_data'));
+  assert.equal(fs.existsSync(holding), true);
 });
 
-test('the sweep removes merged idle copies in every repo, clears build output it keeps, and keeps the rest', (t) => {
+test('the sweep removes merged idle copies in every repo, clears webpack caches in copies it keeps, and keeps the rest', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app');
   const other = makeRepo(ws, 'other');
   const local = makeRepo(ws, 'local', { origin: false });
   const merged = addCopy(app, 'merged');
   const idleUnmerged = addCopy(app, 'idle-unmerged', { commit: true });
-  fs.mkdirSync(path.join(idleUnmerged, '.next', 'cache'), { recursive: true });
+  const packs = path.join(idleUnmerged, '.next', 'cache', 'webpack');
+  fs.mkdirSync(path.join(packs, 'client-production'), { recursive: true });
+  fs.writeFileSync(path.join(packs, 'client-production', '0.pack'), 'rebuildable');
   backdate(path.join(idleUnmerged, '.next'), 3);
   backdateCopy(idleUnmerged, 3);
   const changed = addCopy(app, 'changed');
@@ -227,16 +229,20 @@ test('the sweep removes merged idle copies in every repo, clears build output it
   const dry = sweepWorkspace({ workspace: ws, activeCwds: [busy], freeSpace: () => 5e9 });
   const appDry = dry.repos.find((repo) => repo.name === 'app');
   assert.deepEqual(appDry.candidates.map((item) => item.path), [merged]);
-  assert.deepEqual(appDry.cacheCandidates.map((item) => item.path), [path.join(idleUnmerged, '.next')]);
+  assert.deepEqual(appDry.cacheCandidates.map((item) => [item.path, item.reason]), [
+    [path.join(idleUnmerged, '.next'), 'manual_review_required'],
+    [packs, 'generated_webpack_cache'],
+  ]);
   assert.equal(fs.existsSync(merged), true, 'a dry run removes nothing');
 
   const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [busy] });
   assert.equal(fs.existsSync(merged), false);
   assert.equal(fs.existsSync(idleUnmerged), true);
-  assert.equal(fs.existsSync(path.join(idleUnmerged, '.next')), false, 'build output in an idle kept copy is cleared');
+  assert.equal(fs.existsSync(packs), false, 'webpack packs in an idle kept copy are cleared');
+  assert.equal(fs.existsSync(path.join(idleUnmerged, '.next')), true, 'the rest of the build output waits for review');
   for (const keptCopy of [changed, busy, recent, outside, localCopy]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
   const reasons = (name) => applied.repos.find((repo) => repo.name === name).kept.map((item) => item.reason).sort();
-  assert.deepEqual(reasons('app'), ['dirty', 'unmerged']);
+  assert.deepEqual(reasons('app'), ['dirty', 'ignored_data']);
   assert.deepEqual(reasons('other'), ['active_process', 'recent_activity']);
   assert.match(applied.repos.find((repo) => repo.name === 'local').skipped, /no origin/);
   assert.equal(typeof applied.before, 'number');
@@ -313,7 +319,6 @@ test('the waiter removes a shipped copy once nothing runs in it, and stops on ch
   assert.deepEqual(freed.sleeps, [600000, 60000, 60000]);
   const options = freed.seen[0];
   assert.equal(options.apply, true);
-  assert.equal(options.reapUnmerged, false);
   assert.equal(options.freshGraceMs, 0);
   assert.equal(options.idleMs, 600000);
   assert.deepEqual(options.onlyPaths, ['/w/.agent-worktrees/app/c1']);

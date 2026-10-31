@@ -44,20 +44,20 @@ test('combines canonical current folders with absolute command argument paths', 
 
 test('keeps both the first token and remainder for an unquoted path with spaces', () => {
   withCommands(({ root, command }) => {
-    command('lsof', '');
+    command('lsof', `n${root}\n`);
     command('ps', `node ${root}/folder with spaces/script.js\n`);
 
     assert.deepStrictEqual(listActiveProcessPaths(), [
-      `${root}/folder`, `${root}/folder with spaces/script.js`,
+      root, `${root}/folder`, `${root}/folder with spaces/script.js`,
     ]);
   });
 });
 
-test('returns an empty array when both scans succeed without paths', () => {
+test('keeps folders when the open-file scan yields no usable paths', () => {
   withCommands(({ command }) => {
     command('lsof', 'p123\nf cwd\n');
     command('ps', 'node relative.js\n');
-    assert.deepStrictEqual(listActiveProcessPaths(), []);
+    assert.strictEqual(listActiveProcessPaths(), null);
   });
 });
 
@@ -70,11 +70,11 @@ test('returns null when the current-folder scan fails or cannot launch', () => {
   });
 });
 
-test('retains current folders when the argument scan fails or cannot launch', () => {
+test('keeps folders when the argument scan fails or cannot launch', () => {
   withCommands(({ root, command }) => {
     command('lsof', `n${root}\n`);
-    assert.deepStrictEqual(listActiveProcessPaths(), [root]);
+    assert.strictEqual(listActiveProcessPaths(), null);
     command('ps', `node ${root}/discarded.js\n`, 1);
-    assert.deepStrictEqual(listActiveProcessPaths(), [root]);
+    assert.strictEqual(listActiveProcessPaths(), null);
   });
 });

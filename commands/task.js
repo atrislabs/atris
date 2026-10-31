@@ -208,6 +208,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task auto-accept-certified --dry-run [--strict-verify] [--all] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task sweep --auto-accept [--json]   Auto-accept verified Review rows; protected lanes wait for human
+  atris task sweep [--json] [--stale-days N] [--claimer NAME] [--dry-run]   Release expired claims
   atris task audit [--limit <n>] [--revise] re-run stored verifies for newest accepted tasks; report-only unless --revise
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
@@ -6252,7 +6253,10 @@ function cmdClaim(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task claim');
-  const result = taskDb.claimTask(db, { id: taskId, claimedBy: String(owner) });
+  const leaseMinutes = flag(args, '--lease-minutes');
+  const leasePid = flag(args, '--lease-pid');
+  if (leaseMinutes != null && (!Number.isFinite(Number(leaseMinutes)) || Number(leaseMinutes) <= 0 || !Number.isInteger(Number(leasePid)) || Number(leasePid) <= 0)) throw new Error('invalid claim lease');
+  const result = taskDb.claimTask(db, { id: taskId, claimedBy: String(owner), ...(leaseMinutes == null ? {} : { leaseMinutes: Number(leaseMinutes), leasePid: Number(leasePid) }) });
   if (result.claimed) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
@@ -10801,11 +10805,23 @@ function evaluateSweepAutoAccept(task, root, includeProtected = false) {
 
 function cmdSweep(args) {
   if (!hasFlag(args, '--auto-accept')) {
-    failTask(
-      'atris task sweep',
-      'missing_auto_accept',
-      'atris task sweep currently requires --auto-accept for the explicit verified accept policy',
-    );
+    const taskDb = getTaskDb();
+    const staleRaw = flag(args, '--stale-days');
+    if (staleRaw === true || (staleRaw != null && (!Number.isFinite(Number(staleRaw)) || Number(staleRaw) < 0))) throw new Error('stale days must be a nonnegative number');
+    const claimer = flag(args, '--claimer');
+    if (claimer === true) throw new Error('claimer requires a name');
+    const dryRun = hasFlag(args, '--dry-run');
+    const options = { staleDays: staleRaw == null ? undefined : Number(staleRaw), claimer };
+    const tasks = dryRun ? taskDb.previewExpiredLeases(options) : taskDb.expireLeases(taskDb.open(), options);
+    const groups = {};
+    for (const task of tasks) (groups[task.claimed_by] ||= []).push(task);
+    if (wantsJson(args)) printJson({ dry_run: dryRun, groups, tasks });
+    else if (!tasks.length) console.log(dryRun ? 'no claims would be released' : 'no claims released');
+    else for (const [name, entries] of Object.entries(groups)) {
+      console.log(`${name}: ${entries.length} ${dryRun ? 'would be released' : 'released'}`);
+      for (const entry of entries) console.log(`  ${entry.title}: ${entry.reason}`);
+    }
+    return;
   }
   // Sweep has no dry-run implementation: every successful invocation can
   // write accepts, even when an unrecognized --dry-run flag is supplied.
@@ -13076,6 +13092,11 @@ function cmdServe(args) {
 
 async function runTaskCommand(args) {
   const raw = args || [];
+  // A dry run must not mutate even already-expired leases.
+  if (!raw.includes('--dry-run') && !(raw[0] === 'sweep' && !raw.includes('--auto-accept'))) {
+    const taskDb = getTaskDb();
+    taskDb.sweepExpiredLeases();
+  }
   if (raw.includes('--help') || raw.includes('-h')) return help();
   const first = raw[0];
   if (!first) return cmdFirstMinute();
@@ -13273,7 +13294,7 @@ async function run(args) {
     return;
   }
   const result = await runTaskCommand(raw);
-  const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
+  const skipsRender = hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
   return result;
 }

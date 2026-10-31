@@ -643,8 +643,7 @@ test('two claims in the same millisecond credit the later claim by version', () 
     assert.equal(landed.member, 'beta');
     assert.equal(landed.claim_id, 'A-beta-claim');
     assert.equal(landed.claimed_at, at);
-    const dropped = loaded.outcomes.find(o => o.kind === 'dropped');
-    assert.equal(dropped.claim_id, 'Z-alpha-claim');
+    assert.equal(loaded.outcomes.some(o => o.kind === 'dropped'), false);
   });
 });
 

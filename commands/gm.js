@@ -1895,6 +1895,8 @@ function wakeableMember(args) {
 }
 
 async function gmCommand(...args) {
+  const leaseDb = require('../lib/task-db');
+  try { leaseDb.sweepExpiredLeases(); } catch (_) { /* Existing views report unreadable databases. */ }
   // the walk has its own help
   if (positional(args)[0] === 'walk') {
     const at = args.indexOf('walk');

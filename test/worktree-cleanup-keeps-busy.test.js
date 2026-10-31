@@ -81,6 +81,27 @@ test('a real program running inside the work folder keeps it', async () => {
   }
 });
 
+test('an open file keeps its work folder even when the program runs elsewhere', async () => {
+  const repo = initRepoWithOldWorktree('open-file');
+  const child = spawn(process.execPath, ['-e', "require('fs').openSync(process.env.TEST_OPEN_FILE, 'r'); console.log('ready'); setInterval(() => {}, 1000)"], {
+    cwd: os.tmpdir(), env: { ...process.env, TEST_OPEN_FILE: path.join(repo.worktree, 'README.md') }, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      child.stdout.once('data', resolve);
+      child.once('error', reject);
+      child.once('exit', (code) => reject(new Error(`child exited ${code} before opening file`)));
+    });
+    const result = runCleanup(repo.root);
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.find((item) => item.path === repo.worktree)?.reason, 'active_process');
+    assert.equal(fs.existsSync(repo.worktree), true);
+  } finally {
+    child.kill('SIGKILL');
+    cleanupAll(repo);
+  }
+});
+
 test('a failed process scan keeps every work folder', () => {
   const repo = initRepoWithOldWorktree('scanfail');
   const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-keeps-busy-bin-'));
@@ -92,6 +113,38 @@ test('a failed process scan keeps every work folder', () => {
     assert.equal(fs.existsSync(repo.worktree), true);
     const kept = result.kept.find((item) => fs.realpathSync(item.path) === repo.worktree);
     assert.equal(kept && kept.reason, 'process_scan_failed');
+  } finally {
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    cleanupAll(repo);
+  }
+});
+
+test('a failed command-line scan also keeps every work folder', () => {
+  const repo = initRepoWithOldWorktree('psfail');
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-keeps-busy-ps-'));
+  try {
+    fs.writeFileSync(path.join(fakeBin, 'ps'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${fakeBin}${path.delimiter}${process.env.PATH}` };
+    const result = runCleanup(repo.root, env);
+    assert.equal(result.removed.length, 0);
+    assert.equal(fs.existsSync(repo.worktree), true);
+    assert.equal(result.kept.find((item) => item.path === repo.worktree)?.reason, 'process_scan_failed');
+  } finally {
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    cleanupAll(repo);
+  }
+});
+
+test('a hung command-line scan times out and keeps the work folder', () => {
+  const repo = initRepoWithOldWorktree('pshang');
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-keeps-busy-hang-'));
+  try {
+    fs.writeFileSync(path.join(fakeBin, 'ps'), '#!/bin/sh\nexec /bin/sleep 30\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${fakeBin}${path.delimiter}${process.env.PATH}` };
+    const result = runCleanup(repo.root, env);
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.find((item) => item.path === repo.worktree)?.reason, 'process_scan_failed');
+    assert.equal(fs.existsSync(repo.worktree), true);
   } finally {
     fs.rmSync(fakeBin, { recursive: true, force: true });
     cleanupAll(repo);

@@ -162,18 +162,6 @@ test('a copy is left to install on its own when nothing matches or git would see
   assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);
 });
 
-test('a finished copy leaves its install in the shared store before it is removed', (t) => {
-  const ws = tempDir(t, 'keep');
-  const copy = path.join(ws, '.agent-worktrees', 'app', 'done');
-  writeLock(copy);
-  writeInstall(copy);
-  fs.mkdirSync(path.join(copy, 'node_modules', '.cache', 'next'), { recursive: true });
-  const kept = space.keepInstallBeforeRemoval({ copyPath: copy, workspace: ws, repoName: 'app', clone: copyClone });
-  assert.ok(kept, 'the install was stored');
-  assert.equal(fs.existsSync(path.join(kept, 'left', 'index.js')), true);
-  assert.equal(fs.existsSync(path.join(kept, '.cache')), false, 'build caches stay out of the store');
-});
-
 test('the shared store keeps the three most recent installs and drops stale partial entries', (t) => {
   const ws = tempDir(t, 'prune');
   const dir = path.join(ws, '.agent-worktrees', '.deps', 'app');
