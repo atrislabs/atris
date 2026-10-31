@@ -44,10 +44,10 @@ test('google lists products, defaults and business', async () => fixture(async (
 
 test('google use saves the server default and local cache', async () => fixture(async (cli, { calls, root }) => {
   await cli.googleCommand('use', 'work', '--business', 'shop');
-  assert.deepEqual(calls[0].options.body, { account_id: 'work' });
-  assert.equal(calls[0].url, '/business/shop/integrations/google');
+  const saved = calls.find((call) => call.url === '/business/shop/integrations/google');
+  assert.deepEqual(saved.options.body, { account_id: 'work' });
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.atris', 'google-accounts.json'))).businesses.shop.gmail, 'work');
-}, () => ok({})));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : ok({})));
 
 test('google disconnect chooses products and requires approval', async () => fixture(async (cli, { calls }) => {
   await cli.googleCommand('disconnect', 'work', '--only', 'mail,drive', '--approved');
@@ -57,10 +57,11 @@ test('google disconnect chooses products and requires approval', async () => fix
 
 test('calendar reads a selected account and sorts and labels merged events', async () => fixture(async (cli, { calls, lines }) => {
   await cli.calendarCommand('week', '--account', 'all');
-  assert.match(calls[0].url, /account_id=all/);
-  assert.equal(calls[0].options.headers['X-Business-Id'], 'shop');
+  const read = calls.find((call) => call.url.startsWith('/integrations/google-calendar/events'));
+  assert.match(read.url, /account_id=all/);
+  assert.equal(read.options.headers['X-Business-Id'], 'shop');
   const output = lines.join('\n'); assert.ok(output.indexOf('early') < output.indexOf('late')); assert.match(output, /one/); assert.match(output, /two/);
-}, () => ok({ events: [{ summary: 'late', start: '2026-10-31T12:00:00Z', account_id: 'two' }, { summary: 'early', start: '2026-10-31T10:00:00Z', account_id: 'one' }] })));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : ok({ events: [{ summary: 'late', start: '2026-10-31T12:00:00Z', account_id: 'two' }, { summary: 'early', start: '2026-10-31T10:00:00Z', account_id: 'one' }] })));
 
 test('old server falls back to mail accounts', async () => fixture(async (cli, { lines, calls }) => {
   await cli.googleCommand('accounts');
@@ -77,11 +78,11 @@ test('google connect requests selected products and waits for the account', asyn
 test('personal google use saves selected products and the mail cache', async () => fixture(async (cli, { root, calls }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
   await cli.googleCommand('use', 'work', '--only', 'mail,calendar');
-  assert.equal(calls[0].url, '/integrations/google/defaults');
-  assert.deepEqual(calls[0].options.body, { account_id: 'work', products: ['gmail', 'calendar'] });
+  const saved = calls.find((call) => call.url === '/integrations/google/defaults');
+  assert.deepEqual(saved.options.body, { account_id: 'work', products: ['gmail', 'calendar'] });
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mail.json'))).account_id, 'work');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.atris', 'google-accounts.json'))).defaults.calendar, 'work');
-}, () => ok({ defaults: { gmail: 'work', calendar: 'work' } })));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : ok({ defaults: { gmail: 'work', calendar: 'work' } })));
 
 test('business mail uses the server choice and sends the business header', async () => fixture(async (cli, { calls }) => {
   await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved');
@@ -92,10 +93,11 @@ test('business mail uses the server choice and sends the business header', async
 
 test('calendar add sends the selected account in the body', async () => fixture(async (cli, { calls, lines }) => {
   await cli.calendarCommand('add', 'meeting', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z', '--account', 'work');
-  assert.equal(calls[0].options.body.account_id, 'work');
-  assert.equal(calls[0].options.headers['X-Business-Id'], 'shop');
+  const created = calls.find((call) => call.url === '/integrations/google-calendar/events');
+  assert.equal(created.options.body.account_id, 'work');
+  assert.equal(created.options.headers['X-Business-Id'], 'shop');
   assert.match(lines.join('\n'), /work@example.com/);
-}, () => ok({ summary: 'meeting', account_id: 'work', account_email: 'work@example.com' })));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : ok({ summary: 'meeting', account_id: 'work', account_email: 'work@example.com' })));
 
 test('disconnect refuses before calling the server without approval', async () => fixture(async (cli, { calls }) => {
   await assert.rejects(() => cli.googleCommand('disconnect', 'work'), /needs --approved/);
@@ -133,7 +135,7 @@ test('gmail use saves its mail default on the server', async () => fixture(async
   const saved = calls.find((call) => call.url === '/business/shop/integrations/google');
   assert.deepEqual(saved.options.body, { account_id: 'work' });
   assert.equal(saved.options.headers['X-Business-Id'], 'shop');
-}, (url) => url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({})));
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({})));
 
 test('personal mail follows the server default without sending a selector', async () => fixture(async (cli, { root, calls, lines }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
@@ -228,9 +230,11 @@ test('gmail combined sign-in polls its state', async () => fixture(async (cli, {
 test('calendar without a selector lets the server choose', async () => fixture(async (cli, { calls }) => {
   await cli.calendarCommand('week');
   await cli.calendarCommand('add', 'meeting', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z');
-  assert.equal(new URLSearchParams(calls[0].url.split('?')[1]).has('account_id'), false);
-  assert.equal(Object.hasOwn(calls[1].options.body, 'account_id'), false);
-}, () => ok({ events: [] })));
+  const read = calls.find((call) => call.url.startsWith('/integrations/google-calendar/events?'));
+  const created = calls.find((call) => call.url === '/integrations/google-calendar/events');
+  assert.equal(new URLSearchParams(read.url.split('?')[1]).has('account_id'), false);
+  assert.equal(Object.hasOwn(created.options.body, 'account_id'), false);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : ok({ events: [] })));
 
 test('a failed default migration stops mail before it can choose the wrong account', async () => fixture(async (cli, { root, calls }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
@@ -280,5 +284,5 @@ test('mail read and archive let the server select an account', async () => fixtu
 test('an explicit email selector is accepted for sending', async () => fixture(async (cli, { root, calls }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
   await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved', '--account', 'work@example.com');
-  assert.equal(calls.find((call) => call.url === '/integrations/gmail/send').options.body.account_id, 'work@example.com');
-}, (url) => url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
+  assert.equal(calls.find((call) => call.url === '/integrations/gmail/send').options.body.account_id, 'work');
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account] }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ sent: true })));
