@@ -345,7 +345,7 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
     assert.equal(verifyCalls[0].command, 'node --test test/widget.test.js');
     assert.equal(verifyCalls[0].cwd, '/wt/dispatch-cli-900');
 
-    assert.ok(calls.some((c) => c === 'task claim CLI-900 --as fleet-cursor'));
+    assert.ok(calls.some((c) => c === `task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
     assert.ok(calls.some((c) => c.startsWith('worktree start --agent cursor --task dispatch-cli-900')));
     const readyCall = calls.find((c) => c.startsWith('task ready CLI-900'));
     assert.ok(readyCall, 'task ready must be called on a landed task');
@@ -1201,7 +1201,7 @@ test('runDispatchFlight stops before worktree creation when the atomic claim fai
     assert.equal(dispatchCalled, false);
     assert.deepEqual(calls, [
       'task show CLI-900 --json',
-      'task claim CLI-900 --as fleet-cursor',
+      `task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`,
     ]);
     assert.deepEqual(flight.results, []);
     assert.deepEqual(flight.ready, []);
@@ -1263,9 +1263,9 @@ test('runDispatchFlight releases the claim when worktree start refuses before th
 
     assert.equal(dispatchCalled, false);
     assert.equal(taskStatus, 'open');
-    assert.ok(calls.includes('task claim CLI-900 --as fleet-cursor'));
+    assert.ok(calls.includes(`task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
     assert.ok(calls.includes('task release CLI-900 --as fleet-cursor'));
-    assert.ok(calls.indexOf('task release CLI-900 --as fleet-cursor') > calls.indexOf('task claim CLI-900 --as fleet-cursor'));
+    assert.ok(calls.indexOf('task release CLI-900 --as fleet-cursor') > calls.indexOf(`task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
     assert.equal(flight.results.length, 0);
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].task, 'CLI-900');

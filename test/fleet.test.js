@@ -629,7 +629,7 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
       lander: ({ entry }) => { landed.push(entry.task.display_id); return { ok: true, stage: 'shipped' }; },
     });
     // claims + worktrees per staffed task
-    assert.ok(cliCalls.some((c) => c.startsWith('task claim F-1 --as fleet-codex')));
+    assert.ok(cliCalls.some((c) => c === `task claim F-1 --as fleet-codex --lease-minutes 60 --lease-pid ${process.pid}`));
     assert.ok(cliCalls.some((c) => c.startsWith('worktree start --agent cursor')));
     // failed build pauses with the worktree kept; good build lands + task ready
     assert.deepEqual(landed, ['F-1']);
