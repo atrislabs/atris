@@ -89,6 +89,10 @@ async function keepsScriptFolder(folderSuffix) {
     await new Promise((resolve) => child.once('exit', resolve));
     child = null;
 
+    // Ignored files are protected even after the program exits. Remove this
+    // test-owned script explicitly before checking the clean-folder control.
+    fs.unlinkSync(script);
+    backdate(worktree, 2);
     const after = cleanupWorktrees({ root, base: 'HEAD', apply: true });
     assert.equal(after.removed.length, 1, JSON.stringify(after));
     assert.equal(fs.existsSync(worktree), false);
