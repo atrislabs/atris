@@ -60,6 +60,7 @@ test('agent environment scrubbing removes agent identity and preserves its froze
     ATRIS_AGENT_ID: 'test',
     ATRIS_MISSION_DRIVER_DETACHED: '1',
     ATRIS_MISSION_DRIVER_PARENT_PID: '123',
+    ATRIS_DISPATCH_DEPTH: '1',
     HOME: '/kept-home',
     PATH: '/kept-bin',
     NODE_TEST_CONTEXT: 'kept-context',

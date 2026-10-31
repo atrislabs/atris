@@ -27,6 +27,7 @@ const {
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
+  openPullRequestRefusal,
   parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
@@ -226,7 +227,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task list [--all] [--everywhere] [--status <s>]
                                            list tasks in this workspace; --everywhere spans workspaces
   atris task claim <id> [--as <owner>]     Atomic claim
-  atris task release <id> [--as <owner>]   Release your own mistaken claim back to open
+  atris task release <id> [--as <owner>] [--reason "<why>"]   Release your own mistaken claim back to open
   atris task capabilities [--json]         Read-only task CLI/API capability contract
   atris task capabilities-check [--json]   Verify task capability contract conformance
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
@@ -252,9 +253,12 @@ atris task - durable local task state (SQLite, gitignored)
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
   atris task done <id> --proof "..."       Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
-  atris task archive <id> --reason "..." [--from-failed]
+  atris task archive <id> --reason "..." [--from-failed] [--not-needed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
+                                           --not-needed: a person confirms the job did not need doing, so a
+                                           drop on it stops counting against the member (needs --reason;
+                                           refused inside an agent session or a dispatched worker)
   atris task reopen <id> [--reason "..."]  Send a done, waiting, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
@@ -364,6 +368,28 @@ function agentProofOnlyMode() {
   if (explicit === '1') return true;
   if (explicit === '0') return false;
   return AGENT_ENV_MARKERS.some((marker) => String(process.env[marker] || '').trim() !== '');
+}
+
+// Everything an engine process carries: what the engine tools export in the
+// shells they run, and what a mission flight sets on the drivers and engines it
+// starts. ATRIS_AGENT_ID is left out on purpose: it is the owner's own id, which
+// a person may export. The fleet's own dispatch adds no marker of its own, so
+// it relies on the engine tool's.
+const WORKER_ENV_MARKERS = [
+  ...AGENT_ENV_MARKERS,
+  'CODEX_THREAD_ID',
+  'CODEX_SESSION_ID',
+  'ATRIS_MISSION_DRIVER_DETACHED',
+  'ATRIS_MISSION_DRIVER_PARENT_PID',
+  'ATRIS_DISPATCH_DEPTH',
+];
+
+// The first worker marker set in this shell, or ''. Unlike agentProofOnlyMode
+// it cannot be switched off with ATRIS_AGENT_PROOF_ONLY=0.
+function workerEnvMarker(env = process.env) {
+  const found = WORKER_ENV_MARKERS.find((marker) => String(env[marker] || '').trim() !== '');
+  if (found) return found;
+  return String(env.ATRIS_AGENT_PROOF_ONLY || '').trim() === '1' ? 'ATRIS_AGENT_PROOF_ONLY' : '';
 }
 
 function failAgentProofOnly(label, detail) {
@@ -575,15 +601,18 @@ function landingFlags(args) {
   };
 }
 
-// The pull request and commit a flight merged on its own, so the job record
-// names what landed. Only a merge commit makes it count.
+// The pull request a flight opened or merged, so the job record names it.
+// Only a merge commit makes it count as landed. A number or link alone is an
+// open pull request still waiting for a person to land it.
 function readyMergeFlags(args) {
   const commit = textFlag(args, ['--merge-commit']);
-  if (!commit) return null;
+  const number = textFlag(args, ['--pr-number']);
+  const url = textFlag(args, ['--pr-url']);
+  if (!commit && !number && !url) return null;
   return {
     merge_commit: commit,
-    number: textFlag(args, ['--pr-number']),
-    url: textFlag(args, ['--pr-url']),
+    number,
+    url,
     merged_at: textFlag(args, ['--merged-at']),
     self_landed: hasFlag(args, '--self-landed'),
   };
@@ -751,13 +780,18 @@ function positional(args) {
   });
 }
 
+// options.root is for a caller that is not the command line, the dispatch flight: it
+// keeps the list for its own workspace instead of for the directory this process is in.
 function writeDefaultProjection(taskDb, db, options = {}) {
-  const workspaceRoot = scopedWorkspaceRoot(taskDb, [], options);
+  const root = options.root ? path.resolve(options.root) : null;
+  const workspaceRoot = root
+    ? (taskScopeEverywhere([], options) ? null : taskDb.workspaceRoot(root))
+    : scopedWorkspaceRoot(taskDb, [], options);
   const projection = enrichTaskProjection(taskDb.taskProjection(db, {
     workspaceRoot,
     limit: options.all ? null : 500,
   }));
-  const outPath = path.resolve(path.join('.atris', 'state', 'tasks.projection.json'));
+  const outPath = path.resolve(root || process.cwd(), '.atris', 'state', 'tasks.projection.json');
   const output = JSON.stringify(projection, null, 2) + '\n';
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   let shouldWrite = true;
@@ -6327,26 +6361,39 @@ function cmdRelease(args) {
     failTask('atris task release', 'missing_id', 'id required');
   }
   const owner = flag(args, '--as') || DEFAULT_OWNER;
+  const reasonFlag = flag(args, '--reason');
+  // This command takes no kind and no pull request. A release that says its work is
+  // waiting on a person would keep a miss out of the rating, and any worker holding a
+  // failed job could type that to excuse itself. Only the dispatch flight, which
+  // opened the pull request itself, records that release, in its own process through
+  // releaseTask. Flags this command does not know are ignored, so a release that still
+  // passes them is a plain release and is rated as a drop.
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task release');
-  const result = taskDb.releaseTask(db, { id: taskId, actor: String(owner) });
+  const result = taskDb.releaseTask(db, {
+    id: taskId,
+    actor: String(owner),
+    reason: typeof reasonFlag === 'string' ? reasonFlag : undefined,
+  });
   if (result.released) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     const task = compactTaskFromProjection(projection, taskId);
+    const keptReason = result.event && result.event.payload && result.event.payload.reason || null;
     if (wantsJson(args)) {
       printJson({
         ok: true,
         action: 'released',
         task_id: taskId,
         owner: String(owner),
+        reason: keptReason,
         projection_path: outPath,
         task,
         event_version: result.event && result.event.version || null,
       });
       return;
     }
-    console.log(`released ${taskRef(task)} from ${owner}`);
+    console.log(`released ${taskRef(task)} from ${owner}${keptReason ? ` (${keptReason})` : ''}`);
     console.log(`Next: atris task next --as ${owner}`);
     return;
   }
@@ -9251,9 +9298,27 @@ function cmdArchive(args) {
   if (!id) {
     failTask('atris task archive', 'missing_id', 'id required');
   }
+  const notNeeded = hasFlag(args, '--not-needed');
+  // The note clears a drop off the member's record, and --as is only a name. A
+  // worker that dropped the job could name someone else and clear its own miss,
+  // so inside an agent session or a dispatched worker it is refused outright.
+  const workerMarker = notNeeded ? workerEnvMarker() : '';
+  if (workerMarker) {
+    failTask(
+      'atris task archive',
+      'not_needed_needs_a_person',
+      `atris task archive --not-needed is for a person to confirm, and this shell looks like an agent session or a dispatched worker (${workerMarker} is set). Run it from a plain terminal.`,
+    );
+  }
   const reason = textFlag(args, ['--reason']);
   if (!reason) {
-    failTask('atris task archive', 'missing_reason', 'atris task archive requires --reason "<why this is being swept, not failed>"');
+    failTask(
+      'atris task archive',
+      'missing_reason',
+      notNeeded
+        ? 'atris task archive --not-needed requires --reason "<why this job did not need doing>"'
+        : 'atris task archive requires --reason "<why this is being swept, not failed>"',
+    );
   }
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -9263,8 +9328,13 @@ function cmdArchive(args) {
   // loop-tick orphans fail-closed before 'archived' existed). Without the
   // flag, failed rows stay failed; done rows are never archivable.
   const fromFailed = hasFlag(args, '--from-failed');
-  const result = taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
-  if (result.archived) {
+  // --not-needed also writes who said so, which clears a dropped job off the
+  // member's record when it is someone other than the member. A job that is
+  // already archived only gets that note.
+  const result = notNeeded
+    ? taskDb.archiveNotNeeded(db, { id: taskId, actor, reason, fromFailed })
+    : taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
+  if (result.archived || result.recorded) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
       printJson({
@@ -9272,6 +9342,7 @@ function cmdArchive(args) {
         action: 'archived',
         task_id: taskId,
         reason,
+        ...(notNeeded ? { not_needed: true, not_needed_by: actor, already_archived: !result.archived } : {}),
         archived_from: result.row && result.row.metadata && result.row.metadata.archived_from || null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
@@ -9281,7 +9352,12 @@ function cmdArchive(args) {
     const fromNote = result.row && result.row.metadata && result.row.metadata.archived_from
       ? ` (was ${result.row.metadata.archived_from})`
       : '';
-    console.log(`archived ${taskRef(compactTaskFromProjection(projection, taskId))}${fromNote}: ${reason}`);
+    const ref = taskRef(compactTaskFromProjection(projection, taskId));
+    if (notNeeded && !result.archived) {
+      console.log(`${ref} was already archived; recorded as not needed by ${actor}: ${reason}`);
+    } else {
+      console.log(`archived ${ref}${fromNote}${notNeeded ? ' as not needed' : ''}: ${reason}`);
+    }
   } else {
     const hint = result.reason === 'already_failed'
       ? ' (use --from-failed to archive a fail-closed duplicate/off-roadmap row)'
@@ -10052,6 +10128,13 @@ function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '', autoAccepted = false }) {
   const task = taskDetail(taskDb, db, taskId);
+  // The last door for the machine: whatever decided this job was eligible, a job
+  // whose pull request is still open is never completed without a person. A
+  // person's own accept (autoAccepted false) is untouched.
+  if (autoAccepted) {
+    const pullRequestOpen = openPullRequestRefusal(task, taskId);
+    if (pullRequestOpen) return { ok: false, reason: pullRequestOpen.reason, pull_request: pullRequestOpen.pull_request };
+  }
   const missionXpIssue = missionXpEndToEndProofIssue(task, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     return { ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue };
@@ -10735,6 +10818,10 @@ function evaluateSweepAutoAccept(task, root, includeProtected = false) {
   if (metadata.auto_accepted_at) return { eligible: false, ref, reason: 'already_auto_accepted' };
   const denied = autoAcceptSweepDeniedReason(task, includeProtected);
   if (denied) return { eligible: false, ref, reason: denied };
+  // A job whose pull request is still open has not landed, whatever its stored check
+  // says: the same refusal as auto-accept-certified, before any check is run.
+  const pullRequestOpen = openPullRequestRefusal(task, ref);
+  if (pullRequestOpen) return pullRequestOpen;
   const proof = autoAcceptSweepLatestProof(task);
   if (!proof) return { eligible: false, ref, reason: 'no_proof' };
   const storedVerify = typeof metadata.verify === 'string' ? metadata.verify.trim() : '';
@@ -13343,4 +13430,7 @@ module.exports = {
   certifyVerifyCandidate,
   landingProofVerify,
   stampAutoAcceptMetadata,
+  acceptReviewTask,
+  evaluateSweepAutoAccept,
+  writeDefaultProjection,
 };

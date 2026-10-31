@@ -907,6 +907,8 @@ function shipHelp() {
   console.log('');
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
+  console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
+  console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
@@ -914,7 +916,7 @@ function shipHelp() {
 
 function deniedLaneForShip(root, branch, message) {
   try {
-    const { DENIED_TAGS } = require('../lib/fleet');
+    const { protectedLaneOfTask } = require('../lib/fleet');
     const refs = new Set();
     for (const source of [String(branch || ''), String(message || '')]) {
       for (const m of source.toUpperCase().matchAll(/([A-Z]{2,6}-\d+)/g)) refs.add(m[1]);
@@ -927,14 +929,62 @@ function deniedLaneForShip(root, branch, message) {
     for (const task of projection.tasks || []) {
       const ids = [task.display_id, task.legacy_ref].filter(Boolean).map(v => String(v).toUpperCase());
       if (!ids.some(id => refs.has(id))) continue;
-      const tags = [task.tag, ...(task.metadata?.todo_tags || [])].filter(Boolean).map(t => String(t).toLowerCase());
-      const hit = tags.find(t => DENIED_TAGS.includes(t));
+      const hit = protectedLaneOfTask(task);
       if (hit) return { taskId: ids[0], tag: hit };
     }
     return null;
   } catch {
     return null;
   }
+}
+
+// Pushing a protected-lane branch for review lands nothing, unless the branch
+// already has a pull request with GitHub auto-merge on: that request merges
+// itself the moment its checks pass, and the push is what feeds it. A branch
+// that shipped earlier with --merge and was retagged into a protected lane since
+// would land with no person. One branch can have several open pull requests (one
+// per base), and a single push feeds every one of them, so this asks for the whole
+// list: `gh pr view` shows just one, and it may be the one without auto-merge.
+// Returns the words to refuse with, or '' when the push is safe. It fails closed:
+// if gh cannot say, or the list may be incomplete, nothing is pushed.
+const OPEN_PR_LIST_LIMIT = 100;
+
+function protectedPushRefusal(root, branch, run = spawnSync) {
+  const unknown = (why) => `blocked: cannot tell whether ${branch} has a pull request with auto-merge on (${why}); nothing was pushed`;
+  // A minute is plenty for one lookup; a gh that hangs must not hang the ship.
+  const listed = run('gh', [
+    'pr', 'list', '--head', branch, '--state', 'open',
+    '--json', 'number,url,baseRefName,autoMergeRequest',
+    '--limit', String(OPEN_PR_LIST_LIMIT),
+  ], { cwd: root, encoding: 'utf8', timeout: 60000 });
+  if (listed.error) {
+    return unknown(listed.error.code === 'ETIMEDOUT' ? 'gh took longer than a minute to answer' : `gh did not run: ${listed.error.message}`);
+  }
+  if (listed.status !== 0) {
+    // No branch has an empty answer to read as "none": an empty list is an
+    // exit 0, so a failed lookup is never taken for a clear.
+    const said = `${listed.stderr || ''}\n${listed.stdout || ''}`;
+    const firstLine = said.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+    return unknown(firstLine || `gh exited ${listed.status}`);
+  }
+  let open;
+  try { open = JSON.parse(String(listed.stdout || '')); } catch { open = null; }
+  // Every entry must say whether auto-merge is on (null means off), or the
+  // answer is not one this check can lean on.
+  const readable = Array.isArray(open)
+    && open.every((pr) => pr && typeof pr === 'object' && !Array.isArray(pr) && Object.prototype.hasOwnProperty.call(pr, 'autoMergeRequest'));
+  if (!readable) return unknown("gh's answer could not be read");
+  // gh stops at its limit without saying so: a full page may be only part of the list.
+  if (open.length >= OPEN_PR_LIST_LIMIT) return unknown(`${open.length} open pull requests may have been cut short`);
+  const armed = open.filter((pr) => pr.autoMergeRequest);
+  if (!armed.length) return '';
+  const name = (pr) => `${pr.url || (pr.number ? `#${pr.number}` : branch)}${pr.baseRefName ? ` (into ${pr.baseRefName})` : ''}`;
+  const off = (pr) => `gh pr merge ${pr.number || pr.url || branch} --disable-auto`;
+  if (armed.length === 1) {
+    return `blocked: pull request ${name(armed[0])} has auto-merge on, so pushing ${branch} would land it with no person; turn auto-merge off first (${off(armed[0])}), then ship again`;
+  }
+  const names = armed.map(name);
+  return `blocked: pull requests ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} have auto-merge on, so pushing ${branch} would land them with no person; turn auto-merge off on each first (${armed.map(off).join(', ')}), then ship again`;
 }
 
 function findPrimaryRoot(root) {
@@ -1057,11 +1107,19 @@ function shipWorktree(args) {
   // Denied lanes are checked at dispatch, but a flight that was staffed
   // before a task entered a denied lane (or killed mid-flight) could still
   // ship: a payments command self-landed twice this way on 2026-07-26. The
-  // ship gate is the last door, so it re-checks.
+  // ship gate is the last door, so it re-checks. It guards landing only:
+  // pushing the branch and opening a pull request lands nothing, and that is
+  // how protected work reaches a person to review. The one exception is a
+  // pull request that already has auto-merge on, which a push would feed.
   if (!hasFlag(args, '--allow-denied-lane')) {
     const denied = deniedLaneForShip(root, branch, message);
-    if (denied) {
+    if (denied && (merge || localMode)) {
       console.error(`blocked: this branch carries ${denied.taskId} which sits in the protected ${denied.tag} lane; a human lands it (or pass --allow-denied-lane on written order)`);
+      return 2;
+    }
+    const refusal = denied ? protectedPushRefusal(root, branch) : '';
+    if (refusal) {
+      console.error(refusal);
       return 2;
     }
   }
@@ -2088,6 +2146,7 @@ module.exports = {
   mergePrWithRetry,
   createAgentWorktree,
   deniedLaneForShip,
+  protectedPushRefusal,
   createOrFindPr,
   cleanupWorktrees,
   reapShippedCopy,

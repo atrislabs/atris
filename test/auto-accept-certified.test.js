@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { evaluateAutoAccept, isAutoCertifyVerifyCommandAllowed, parseVerifyChain, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, isAutoCertifyVerifyCommandAllowed, openPullRequestRefusal, parseVerifyChain, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
 
 let isolatedVerifyRoot;
 
@@ -256,6 +256,142 @@ test('allows merged proof that explains the rejected PR boundary terms', () => {
   }));
   assert.equal(result.eligible, true);
   assert.equal(result.policy, 'strict_verify');
+});
+
+// A flight leaves a protected-lane fix as an open pull request for a person, and
+// task ready writes that pull request onto the row: state open, no merge commit.
+// The proof says "not merged: ... waits for a person", which the text check above
+// does not read as an unmerged pull request, so the row's own field decides.
+const HELD_URL = 'https://github.example/repo/pull/77';
+const HELD_PROOF = `Built by codex engine via atris engine dispatch. This task sits in the protected feedback lane, so it was not merged: pull request ${HELD_URL} waits for a person to land it. The declared verifier passed (exit 0). Verify output: # tests 3 # pass 3 # fail 0. Receipt saved at atris/runs/dispatch.json.`;
+const OPEN_PULL_REQUEST = { state: 'open', number: 77, url: HELD_URL };
+const MERGED_PULL_REQUEST = { state: 'merged', number: 77, url: HELD_URL, merge_commit: '93b6d4bcf66276bbd6a53aebe72ab48bf9a7b136', merged_at: '2026-10-31T02:10:45Z' };
+
+function heldTask(pullRequest, { tag = 'feedback', proof = HELD_PROOF, events } = {}) {
+  return reviewTask({
+    tag,
+    metadata: { latest_agent_proof: proof, ...(pullRequest ? { pull_request: pullRequest } : {}) },
+    review: { proof },
+    ...(events ? { events } : {}),
+  });
+}
+
+const EVERY_MODE = [
+  ['certified, protected lane allowed', { includeProtected: true }],
+  ['accept-all, protected lane allowed', { acceptAll: true, includeProtected: true }],
+];
+
+test('a job whose pull request is still open never auto-accepts, in any mode, and its proof text alone would not have said so', () => {
+  // The same job with no pull request on the row is landable: the proof text is not what blocks it.
+  for (const [label, options] of EVERY_MODE) {
+    const control = evaluateAutoAccept(heldTask(null), { ...options, executeVerify: false });
+    assert.equal(control.eligible, true, `${label}: ${JSON.stringify(control)}`);
+  }
+  for (const [label, options] of EVERY_MODE) {
+    const result = evaluateAutoAccept(heldTask(OPEN_PULL_REQUEST), { ...options, executeVerify: false });
+    assert.equal(result.eligible, false, label);
+    assert.equal(result.reason, 'pull_request_open', label);
+    assert.deepEqual(result.pull_request, OPEN_PULL_REQUEST, label);
+    assert.match(result.next_action, /a person lands the pull request/, label);
+  }
+  // A safe lane gets the same answer.
+  const safe = evaluateAutoAccept(heldTask(OPEN_PULL_REQUEST, { tag: 'self-improve' }), { acceptAll: true, executeVerify: false });
+  assert.equal(safe.reason, 'pull_request_open');
+});
+
+test('an open pull request on the row beats a proof that reads as merged; a merge record on the row frees it', () => {
+  const mergedLooking = 'Merged PR #78 at origin/master commit 7944f271. git diff --check passed. npm run test:team-overall passed.';
+  const stillOpen = evaluateAutoAccept(heldTask(OPEN_PULL_REQUEST, { proof: mergedLooking }), { acceptAll: true, includeProtected: true, executeVerify: false });
+  assert.equal(stillOpen.reason, 'pull_request_open');
+  // The state is read in any case, whichever tool wrote it.
+  const shouting = evaluateAutoAccept(heldTask({ ...OPEN_PULL_REQUEST, state: 'OPEN' }), { acceptAll: true, includeProtected: true, executeVerify: false });
+  assert.equal(shouting.reason, 'pull_request_open');
+
+  for (const merged of [MERGED_PULL_REQUEST, { ...OPEN_PULL_REQUEST, merge_commit: MERGED_PULL_REQUEST.merge_commit }, { ...OPEN_PULL_REQUEST, merged_at: MERGED_PULL_REQUEST.merged_at }]) {
+    const result = evaluateAutoAccept(heldTask(merged), { acceptAll: true, includeProtected: true, executeVerify: false });
+    assert.equal(result.eligible, true, JSON.stringify(merged));
+  }
+});
+
+test('the open pull request is read from the newest proof event when the row has none, and the protected lane still reports first', () => {
+  const proofReady = (pull_request) => ({ event_type: 'proof_ready', actor: 'fleet-codex', payload: pull_request ? { pull_request } : {} });
+  const reviewed = { event_type: 'reviewed', actor: 'validator' };
+  const options = { acceptAll: true, includeProtected: true, executeVerify: false };
+
+  // A row written before the row kept it: the proof event names it.
+  const fromEvents = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), reviewed] }), options);
+  assert.equal(fromEvents.reason, 'pull_request_open');
+  // A later review pass that names none leaves the pull request on file open.
+  const afterReview = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), proofReady(null), reviewed] }), options);
+  assert.equal(afterReview.reason, 'pull_request_open');
+  // The newest word wins: a recorded merge after the open one.
+  const merged = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), proofReady(MERGED_PULL_REQUEST), reviewed] }), options);
+  assert.equal(merged.eligible, true, JSON.stringify(merged));
+
+  // Without --include-protected the lane is still what the "waiting on you" list reads.
+  const lane = evaluateAutoAccept(heldTask(OPEN_PULL_REQUEST), { acceptAll: true, executeVerify: false });
+  assert.equal(lane.reason, 'denied_tag_feedback');
+});
+
+// A held job can be sent back to open when its pull request is closed without merging.
+// Reopening wipes the row's pull request and starts the job over, so what the event
+// history said before the latest reopen is about an attempt that is over.
+const REOPENED = { event_type: 'reopened', actor: 'keshav', payload: { previous_status: 'review', reason: 'the pull request was closed without merging' } };
+const OTHER_PULL_REQUEST = { state: 'open', number: 78, url: 'https://github.example/repo/pull/78' };
+
+test('after a held job is reopened, a new proof that names no pull request is judged on its own, not on the old open one', () => {
+  const proofReady = (pull_request) => ({ event_type: 'proof_ready', actor: 'fleet-codex', payload: pull_request ? { pull_request } : {} });
+  const reviewed = { event_type: 'reviewed', actor: 'validator' };
+  const options = { acceptAll: true, includeProtected: true, executeVerify: false };
+
+  // The original held case is still held: the open pull request, no reopen, so the old word stands.
+  const held = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), reviewed] }), options);
+  assert.equal(held.reason, 'pull_request_open');
+
+  // Reopened, then a new proof with no pull request: the old open one is not this attempt's.
+  const afterReopen = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), REOPENED, proofReady(null), reviewed] }), options);
+  assert.equal(afterReopen.eligible, true, JSON.stringify(afterReopen));
+  // The reopen alone is enough: before any new proof there is nothing to hold it.
+  const justReopened = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), REOPENED, reviewed] }), options);
+  assert.equal(justReopened.eligible, true, JSON.stringify(justReopened));
+
+  // A new attempt that opens its own pull request is held again, by the new one.
+  const reheld = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), REOPENED, proofReady(OTHER_PULL_REQUEST), reviewed] }), options);
+  assert.equal(reheld.reason, 'pull_request_open');
+  assert.deepEqual(reheld.pull_request, OTHER_PULL_REQUEST);
+  // Only the latest reopen counts, however many came before it.
+  const reopenedTwice = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), REOPENED, proofReady(OTHER_PULL_REQUEST), REOPENED, proofReady(null), reviewed] }), options);
+  assert.equal(reopenedTwice.eligible, true, JSON.stringify(reopenedTwice));
+
+  // The row is newer than any reopen (a reopen clears it), so a pull request on the row always holds.
+  const rowWins = evaluateAutoAccept(heldTask(OTHER_PULL_REQUEST, { events: [proofReady(OPEN_PULL_REQUEST), REOPENED, proofReady(OTHER_PULL_REQUEST), reviewed] }), options);
+  assert.equal(rowWins.reason, 'pull_request_open');
+  assert.deepEqual(rowWins.pull_request, OTHER_PULL_REQUEST);
+
+  // A send-back for changes is not a reopen: the pull request is still open, and the old word stands.
+  const revision = { event_type: 'revision_requested', actor: 'keshav', payload: { note: 'tighten the copy' } };
+  const revised = evaluateAutoAccept(heldTask(null, { events: [proofReady(OPEN_PULL_REQUEST), revision, proofReady(null), reviewed] }), options);
+  assert.equal(revised.reason, 'pull_request_open');
+});
+
+test('one refusal for an open pull request is shared by every path that accepts without a person', () => {
+  const ref = 'OBL-TEST';
+  const refusal = openPullRequestRefusal(heldTask(OPEN_PULL_REQUEST), ref);
+  assert.deepEqual(refusal, {
+    eligible: false,
+    ref,
+    reason: 'pull_request_open',
+    pull_request: OPEN_PULL_REQUEST,
+    next_action: 'a person lands the pull request, then accepts the job with `atris task accept <ref> --as <human>`',
+  });
+  // It is the very answer the evaluator gives.
+  const evaluated = evaluateAutoAccept(heldTask(OPEN_PULL_REQUEST), { acceptAll: true, includeProtected: true, executeVerify: false });
+  assert.deepEqual(evaluated, refusal);
+  // Nothing open, nothing to refuse: no pull request, a merged one, or one that names a merge.
+  assert.equal(openPullRequestRefusal(heldTask(null), ref), null);
+  assert.equal(openPullRequestRefusal(heldTask(MERGED_PULL_REQUEST), ref), null);
+  assert.equal(openPullRequestRefusal(heldTask({ ...OPEN_PULL_REQUEST, merged_at: MERGED_PULL_REQUEST.merged_at }), ref), null);
+  assert.equal(openPullRequestRefusal(null, ref), null);
 });
 
 test('rejects single actor with only two passes', () => {
