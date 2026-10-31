@@ -1237,17 +1237,18 @@ function canonicalPath(value) {
 
 // null means the scan failed: we cannot tell who is inside, so callers keep
 // every folder. An empty list would read as "nobody is here" and delete.
-function listActiveProcessCwds() {
-  const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
+function listActiveProcessFiles() {
+  const result = spawnSync('lsof', ['-n', '-F', 'n'], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
   });
-  if (result.error || result.status !== 0) return null;
-  return String(result.stdout || '')
+  if (result.error || result.status !== 0 || String(result.stderr || '').trim()) return null;
+  const paths = String(result.stdout || '')
     .split(/\r?\n/)
-    .filter((line) => line.startsWith('n'))
+    .filter((line) => line.startsWith('n/'))
     .map((line) => canonicalPath(line.slice(1)))
     .filter(Boolean);
+  return paths.length ? paths : null;
 }
 
 // Absolute paths named on each program's command line, including flag values
@@ -1275,16 +1276,17 @@ function listActiveProcessArgPaths() {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
   });
-  if (result.error || result.status !== 0) return [];
+  if (result.error || result.status !== 0) return null;
   return parseProcessArgPaths(result.stdout);
 }
 
-// Everything a running program is anchored to: its current folder plus any
-// script path on its command line.
+// Open files and working folders, plus script paths on command lines.
 function listActiveProcessPaths() {
-  const cwds = listActiveProcessCwds();
-  if (!Array.isArray(cwds)) return cwds;
-  return cwds.concat(listActiveProcessArgPaths());
+  const files = listActiveProcessFiles();
+  if (!Array.isArray(files)) return null;
+  const args = listActiveProcessArgPaths();
+  if (!Array.isArray(args)) return null;
+  return files.concat(args);
 }
 
 function worktreeHasActiveProcess(worktreePath, activeCwds) {
@@ -1311,7 +1313,44 @@ function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reaso
   } catch {}
 }
 
-function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
+// Only webpack's disposable pack files have a sufficiently narrow contract
+// for unattended cleanup. Unknown files or links turn the folder into review.
+function webpackCacheSnapshot(worktreePath) {
+  try {
+    const root = fs.realpathSync(worktreePath);
+    let current = root;
+    for (const part of ['.next', 'cache', 'webpack']) {
+      current = path.join(current, part);
+      const stat = fs.lstatSync(current);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) return null;
+    }
+    if (fs.realpathSync(current) !== current) return null;
+    const entries = [];
+    function walk(dir) {
+      for (const name of fs.readdirSync(dir).sort()) {
+        const file = path.join(dir, name);
+        const stat = fs.lstatSync(file);
+        if (stat.isSymbolicLink()) return false;
+        if (stat.isDirectory()) {
+          entries.push([file, 'd', stat.ino, stat.mtimeMs]);
+          if (!walk(file)) return false;
+        } else if (stat.isFile() && /^(?:index|\d+)\.pack(?:\.gz|\.old)?$/.test(name)) {
+          entries.push([file, 'f', stat.ino, stat.size, stat.mtimeMs]);
+        } else return false;
+      }
+      return true;
+    }
+    if (!walk(current)) return null;
+    const size = spawnSync('du', ['-sk', current], { encoding: 'utf8' });
+    const match = size.status === 0 && String(size.stdout || '').match(/^(\d+)\s/);
+    if (!match) return null;
+    return { path: current, kib: Number(match[1]), fingerprint: JSON.stringify(entries) };
+  } catch {
+    return null;
+  }
+}
+
+function pruneGeneratedWorktreeCaches(worktreePath, { apply = false, budget } = {}) {
   const candidates = [];
   const pruned = [];
   for (const relative of GENERATED_WORKTREE_CACHE_DIRS) {
@@ -1319,14 +1358,31 @@ function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
     if (!fs.existsSync(target)) continue;
     const ignored = runGit(['check-ignore', '-q', '--', relative], { cwd: worktreePath, check: false });
     if (ignored.status !== 0) continue;
-    const item = { worktree: worktreePath, path: target, relative };
+    const item = { worktree: worktreePath, path: target, relative, reason: 'manual_review_required' };
     candidates.push(item);
-    if (!apply) continue;
-    try {
-      fs.rmSync(target, { recursive: true, force: true });
-      pruned.push(item);
-    } catch (error) {
-      item.error = String((error && error.message) || error);
+  }
+  const relative = '.next/cache/webpack';
+  const ignored = runGit(['check-ignore', '-q', '--', relative], { cwd: worktreePath, check: false });
+  const snapshot = ignored.status === 0 ? webpackCacheSnapshot(worktreePath) : null;
+  if (snapshot) {
+    const item = { worktree: worktreePath, path: snapshot.path, relative, kib: snapshot.kib, reason: 'generated_webpack_cache' };
+    candidates.push(item);
+    if (apply && budget && budget.count < 20 && budget.kib + snapshot.kib <= 10 * 1024 * 1024) {
+      const active = listActiveProcessPaths();
+      const fresh = webpackCacheSnapshot(worktreePath);
+      const stillIgnored = runGit(['check-ignore', '-q', '--', relative], { cwd: worktreePath, check: false });
+      if (Array.isArray(active) && !worktreeHasActiveProcess(worktreePath, active)
+          && stillIgnored.status === 0 && fresh && fresh.path === snapshot.path
+          && fresh.kib === snapshot.kib && fresh.fingerprint === snapshot.fingerprint) {
+        try {
+          fs.rmSync(snapshot.path, { recursive: true });
+          budget.count += 1;
+          budget.kib += snapshot.kib;
+          pruned.push(item);
+        } catch (error) {
+          item.error = String((error && error.message) || error);
+        }
+      }
     }
   }
   return { candidates, pruned };
@@ -1344,9 +1400,10 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const removed = [];
   const cacheCandidates = [];
   const cachePruned = [];
+  const cacheBudget = { count: 0, kib: 0 };
   const pruneCachesForKept = (wtPath) => {
     if (worktreeWithinReapGrace(wtPath)) return;
-    const caches = pruneGeneratedWorktreeCaches(wtPath, { apply });
+    const caches = pruneGeneratedWorktreeCaches(wtPath, { apply, budget: cacheBudget });
     cacheCandidates.push(...caches.candidates);
     cachePruned.push(...caches.pruned);
   };
@@ -1375,7 +1432,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     const rawCounts = statusCounts(wt.path);
-    const counts = statusCounts(wt.path, { ignoreAny: isConductorArtifact });
+    const counts = statusCounts(wt.path, { ignoreUntracked: isConductorArtifact });
     if (!rawCounts || !counts) {
       kept.push({ ...item, reason: 'missing_or_unreadable' });
       continue;
@@ -1383,6 +1440,18 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     if (counts.staged || counts.unstaged || counts.untracked) {
       pruneCachesForKept(wtPath);
       kept.push({ ...item, reason: 'dirty', staged: counts.staged, unstaged: counts.unstaged, untracked: counts.untracked });
+      continue;
+    }
+    // Git removes ignored files along with a worktree. They may include local
+    // state, credentials, or user data, so a clean status is not enough proof.
+    const ignored = runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { cwd: wt.path, check: false });
+    if (ignored.status !== 0 || ignored.error) {
+      kept.push({ ...item, reason: 'ignored_scan_failed' });
+      continue;
+    }
+    if (ignored.stdout) {
+      pruneCachesForKept(wtPath);
+      kept.push({ ...item, reason: 'ignored_data' });
       continue;
     }
     if (!wt.head) {
@@ -1396,6 +1465,10 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     );
     const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
     if (!merged) {
+      if (wt.branch === 'detached') {
+        kept.push({ ...item, reason: 'detached_unmerged' });
+        continue;
+      }
       const completedAgeMs = completedAgentOutputAgeMs(wtPath);
       if (completedAgeMs === null || completedAgeMs < COMPLETED_UNMERGED_REAP_MS) {
         pruneCachesForKept(wtPath);
@@ -1465,10 +1538,13 @@ function cleanup(args) {
   for (const item of result.apply ? result.removed : result.candidates) {
     console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);
   }
-  const cacheAction = result.apply ? 'cache_pruned' : 'cache_candidate';
-  console.log(`${cacheAction}s: ${result.apply ? result.cachePruned.length : result.cacheCandidates.length}`);
-  for (const item of result.apply ? result.cachePruned : result.cacheCandidates) {
-    console.log(`${cacheAction}: ${item.path}`);
+  const review = result.cacheCandidates.filter((item) => item.reason === 'manual_review_required');
+  const safe = result.apply ? result.cachePruned : result.cacheCandidates.filter((item) => item.reason === 'generated_webpack_cache');
+  console.log(`cache ${result.apply ? 'removed' : 'candidate'}s: ${safe.length}`);
+  for (const item of safe) console.log(`cache: ${item.path} size_kib=${item.kib}`);
+  console.log(`cache review needed: ${review.length}`);
+  for (const item of review) {
+    console.log(`review: ${item.path} reason=${item.reason}`);
   }
   console.log(`kept: ${result.kept.length}`);
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
@@ -1524,7 +1600,7 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
-  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and ignored build caches');
+  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
 }
 
 function worktreeCommand(args = []) {
