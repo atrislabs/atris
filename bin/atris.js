@@ -778,6 +778,7 @@ function showHelpAll() {
   console.log('  supabase  - supabase cli wrapper (doctor, auth, status/db/functions)');
   console.log('  linear    - linear cli wrapper (doctor, auth, issue list/create/view/update)');
   console.log('  stripe    - stripe cli wrapper (doctor, auth, listen/trigger/products)');
+  console.log('  google     - manage google accounts and defaults');
   console.log('  gmail      - email commands (connect, inbox, read, archive, accounts, use)');
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
@@ -3067,6 +3068,15 @@ if (command === 'guide') {
       .then(() => exitAfterStdoutDrain(process.exitCode || 0))
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
+} else if (command === 'google') {
+  const raw = process.argv.slice(3);
+  const helpOnly = raw.some((arg) => ['--help', '-h', 'help'].includes(arg));
+  const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw, { read: !raw[0] || raw[0] === 'accounts' });
+  if (!gate.ok) { process.exit(refuseAccountGlobal()); return; }
+  const { googleCommand } = require('../commands/integrations');
+  googleCommand(gate.args[0], ...gate.args.slice(1))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
+    .catch((err) => { console.error(err.message || err); process.exit(1); });
 } else if (command === 'calendar') {
   const { calendarCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];

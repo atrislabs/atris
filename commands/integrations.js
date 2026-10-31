@@ -24,7 +24,48 @@
  */
 
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
-const { apiRequestJson } = require('../utils/api');
+const { apiRequestJson: rawApiRequestJson } = require('../utils/api');
+const { AsyncLocalStorage } = require('async_hooks');
+const { resolveBusiness } = require('../lib/business-target');
+const googleContext = new AsyncLocalStorage();
+
+function apiRequestJson(url, options = {}) {
+  const context = googleContext.getStore();
+  if (!context || !/^\/integrations\/(gmail|google-calendar|google)(?:\/|$)/.test(url)) return rawApiRequestJson(url, options);
+  const next = { ...options };
+  if (context.business) next.headers = { ...(options.headers || {}), 'X-Business-Id': context.business };
+  if (context.calendarAccount && url.startsWith('/integrations/google-calendar/')) {
+    if ((options.method || 'GET') === 'GET' || options.method === 'DELETE') {
+      url += `${url.includes('?') ? '&' : '?'}account_id=${encodeURIComponent(context.calendarAccount)}`;
+    } else next.body = { ...(options.body || {}), account_id: context.calendarAccount };
+  }
+  if (context.business && context.serverDefaults && !context.mailAccount && url.startsWith('/integrations/gmail/') && !/\/accounts|\/start/.test(url)) {
+    const parts = url.split('?');
+    if (parts[1]) { const q = new URLSearchParams(parts[1]); q.delete('account_id'); url = parts[0] + (q.toString() ? `?${q}` : ''); }
+    if (next.body && Object.hasOwn(next.body, 'account_id')) { next.body = { ...next.body }; delete next.body.account_id; }
+  }
+  return rawApiRequestJson(url, next);
+}
+
+function takeContext(args) {
+  const rest = []; let businessFlag; let calendarAccount; let mailAccount;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    if (arg === '--business' || arg.startsWith('--business=')) {
+      businessFlag = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++i];
+      if (!businessFlag || String(businessFlag).startsWith('--')) throw new Error('--business needs a business slug or id');
+    } else if (arg === '--account' || arg.startsWith('--account=')) {
+      const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++i];
+      if (!value || String(value).startsWith('--')) throw new Error('--account needs an account name or email');
+      calendarAccount = mailAccount = String(value);
+      rest.push('--account', String(value));
+    } else rest.push(args[i]);
+  }
+  const business = resolveBusiness(businessFlag === undefined ? {} : { business: businessFlag });
+  if (business && business.error) throw new Error(business.error);
+  return { rest, business: business && business.id, calendarAccount, mailAccount };
+}
+
 const {
   assertOutboundSendAllowedOrExit,
   extractOutboundGateOptions,
@@ -205,6 +246,8 @@ function writeGmailStickyAccount(accountId) {
 function resolveGmailAccountId(explicitId) {
   const trimmed = String(explicitId || '').trim();
   if (trimmed) return trimmed;
+  const context = googleContext.getStore();
+  if (context?.resolvedMail) return context.resolvedMail;
   const sticky = readGmailStickyAccount();
   if (sticky) return sticky;
   return 'default';
@@ -842,11 +885,175 @@ async function gmailUse(accountId, deps = {}) {
   }
 
   const { id, name, email } = gmailAccountIdentity(match);
+  const business = googleContext.getStore()?.business;
+  const saved = business
+    ? await rawApiRequestJson(`/business/${encodeURIComponent(business)}/integrations/google`, { method: 'PUT', token, headers: { 'X-Business-Id': business }, body: { account_id: id } })
+    : await apiRequestJson('/integrations/google/defaults', { method: 'PUT', token, body: { account_id: id, products: ['gmail'] } });
+  if (!saved.ok && saved.status !== 404) { console.error(`could not save gmail default: ${saved.error || 'request failed'}`); process.exit(1); }
+  if (saved.status === 404) console.log('calendar and drive accounts need the newest atris server.');
   writeGmailStickyAccount(id);
   console.log(`now using ${name} (${email || 'email pending'})`);
 }
 
+const GOOGLE_OLD_SERVER = 'calendar and drive accounts need the newest atris server.';
+const GOOGLE_PRODUCTS = ['gmail', 'calendar', 'drive'];
+
+function googleProducts(value) {
+  if (value == null) return null;
+  const products = String(value).split(',').map((part) => part.trim().toLowerCase() === 'mail' ? 'gmail' : part.trim().toLowerCase());
+  if (!products.length || products.some((part) => !GOOGLE_PRODUCTS.includes(part)) || new Set(products).size !== products.length) throw new Error('--only needs mail, calendar, or drive');
+  return products;
+}
+
+function googleCache(defaults, business) {
+  const file = path.join(stateHome(), '.atris', 'google-accounts.json');
+  let cache = {};
+  try { cache = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  if (business) cache.businesses = { ...(cache.businesses || {}), [business]: defaults };
+  else cache.defaults = { ...(cache.defaults || {}), ...defaults };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(cache, null, 2)}\n`, 'utf8');
+}
+
+function googleFailure(result, action) {
+  console.error(`could not ${action}: ${result.error || result.data?.detail || 'request failed'}`);
+  process.exit(1);
+}
+
+async function googleConnect(name, products, business, deps = {}) {
+  if (name && (!/^[a-z0-9-]{1,32}$/.test(name) || name === 'all')) throw new Error('invalid google account name. use 1 to 32 lowercase letters, numbers, or hyphens');
+  const token = await getAuthToken();
+  const before = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+  if (before.status === 404) {
+    console.log(GOOGLE_OLD_SERVER);
+    if (!products || products.includes('gmail')) return gmailConnect(name, deps);
+    return;
+  }
+  if (!before.ok) return googleFailure(before, 'list google accounts');
+  const previous = new Map((before.data?.accounts || []).map((row) => [row.account_id, JSON.stringify(row)]));
+  const body = {};
+  if (name) body.account_id = name;
+  if (products) body.products = products;
+  if (business) body.business_id = business;
+  const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
+  if (result.status === 404) {
+    console.log(GOOGLE_OLD_SERVER);
+    if (!products || products.includes('gmail')) return gmailConnect(name, deps);
+    return;
+  }
+  if (!result.ok) return googleFailure(result, 'start google connection');
+  const url = result.data?.auth_url;
+  if (!url) throw new Error('the server did not return a sign-in url');
+  if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) console.log(`open this url in your browser: ${url}`);
+  console.log('waiting for google sign-in...');
+  const interval = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
+  const count = Math.max(1, Math.ceil((deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS) / interval));
+  const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const id = result.data?.account_id || name;
+  for (let i = 0; i < count; i += 1) {
+    await sleep(interval);
+    const list = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+    if (list.status === 404) { console.log(GOOGLE_OLD_SERVER); return; }
+    if (!list.ok) continue;
+    const accounts = list.data?.accounts || [];
+    const changed = accounts.filter((row) => previous.get(row.account_id) !== JSON.stringify(row));
+    const found = id ? changed.find((row) => row.account_id === id) : changed.length === 1 ? changed[0] : null;
+    if (!found || !found.email) continue;
+    const wanted = products || GOOGLE_PRODUCTS;
+    const granted = wanted.filter((product) => found.products?.[product]?.connected);
+    const missing = wanted.filter((product) => !found.products?.[product]?.connected);
+    console.log(`connected ${found.email} as ${found.account_id}: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ') || 'no products'}`);
+    if (missing.length) console.log(`google did not grant: ${missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
+    return;
+  }
+  console.error(`connection could not be confirmed. finish in your browser and check atris google: ${url}`);
+  process.exit(1);
+}
+
+async function googleCommand(subcommand, ...args) {
+  const context = takeContext(args);
+  return googleContext.run(context, async () => {
+    const rest = context.rest;
+    let only; let approved = false; const positional = [];
+    for (let i = 0; i < rest.length; i += 1) {
+      if (rest[i] === '--only') { if (!rest[i + 1] || String(rest[i + 1]).startsWith('--')) throw new Error('--only needs mail, calendar, or drive'); only = googleProducts(rest[++i]); }
+      else if (rest[i].startsWith('--only=')) only = googleProducts(rest[i].slice(7));
+      else if (rest[i] === '--approved' || rest[i] === '--confirm-approved') approved = true;
+      else if (rest[i].startsWith('-')) throw new Error(`unknown option ${rest[i]}`);
+      else positional.push(rest[i]);
+    }
+    const action = subcommand || 'accounts';
+    if (action === 'connect') return googleConnect(positional[0], only, context.business);
+    if (!['accounts', 'use', 'disconnect'].includes(action)) {
+      console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]'); return;
+    }
+    if (action !== 'accounts' && !positional[0]) throw new Error(`usage: atris google ${action} <name or email>`);
+    if (action === 'disconnect' && !approved) throw new Error('disconnect needs --approved after the account and products are confirmed');
+    const token = await getAuthToken();
+    if (action === 'accounts') {
+      const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+      if (result.status === 404) { console.log(GOOGLE_OLD_SERVER); return gmailAccounts(); }
+      if (!result.ok) return googleFailure(result, 'list google accounts');
+      const data = result.data || {};
+      if (!data.accounts?.length) console.log('no connected accounts.');
+      for (const row of data.accounts || []) {
+        const products = GOOGLE_PRODUCTS.filter((p) => row.products?.[p]?.connected).map((p) => p === 'gmail' ? 'mail' : p);
+        console.log(`${row.account_id}: ${row.email || 'email pending'} (${products.join(', ') || 'no products'})`);
+      }
+      for (const product of GOOGLE_PRODUCTS) console.log(`${product === 'gmail' ? 'mail' : product} default: ${data.defaults?.[product] || 'automatic'}`);
+      if (data.business) console.log(`business account: ${data.business.account_id || 'automatic'}`);
+      return;
+    }
+    const id = positional[0];
+    if (action === 'use' && context.business && only && only.length !== 3) throw new Error('a business has one account for all products, leave off --only');
+    if (action === 'disconnect') {
+      const suffix = only ? `?${new URLSearchParams({ products: only.join(',') })}` : '';
+      const result = await apiRequestJson(`/integrations/google/accounts/${encodeURIComponent(id)}${suffix}`, { method: 'DELETE', token });
+      if (result.status === 404) {
+        const probe = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+        if (probe.status !== 404) return googleFailure(result, 'disconnect google account');
+        console.log(GOOGLE_OLD_SERVER);
+        if (only && !only.includes('gmail')) return;
+        const accounts = await fetchGmailAccounts(token);
+        const match = findGmailAccountForUse(accounts, id);
+        if (!match) throw new Error('unknown gmail account');
+        const mailId = gmailAccountIdentity(match).id;
+        const removed = await apiRequestJson(`/integrations/gmail?account_id=${encodeURIComponent(mailId)}`, { method: 'DELETE', token });
+        if (!removed.ok) return googleFailure(removed, 'disconnect mail');
+        console.log(`disconnected mail for ${mailId}`); return;
+      }
+      if (!result.ok) return googleFailure(result, 'disconnect google account');
+      console.log(`disconnected ${id}: ${(result.data?.removed || only || GOOGLE_PRODUCTS).map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`); return;
+    }
+    const url = context.business ? `/business/${encodeURIComponent(context.business)}/integrations/google` : '/integrations/google/defaults';
+    const body = context.business ? { account_id: id } : { account_id: id, ...(only ? { products: only } : {}) };
+    const options = { method: 'PUT', token, body };
+    if (context.business) options.headers = { 'X-Business-Id': context.business };
+    const result = await rawApiRequestJson(url, options);
+    if (result.status === 404) { console.log(GOOGLE_OLD_SERVER); if (!only || only.includes('gmail')) return gmailUse(id); return; }
+    if (!result.ok) return googleFailure(result, 'save google default');
+    const products = only || GOOGLE_PRODUCTS;
+    googleCache(Object.fromEntries(products.map((p) => [p, id])), context.business);
+    if (products.includes('gmail') && !context.business) writeGmailStickyAccount(id);
+    console.log(`using ${id}${context.business ? ' for this business' : ''}: ${products.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
+  });
+}
+
 async function gmailCommand(subcommand, ...args) {
+  const context = takeContext(args);
+  return googleContext.run(context, async () => {
+    if (context.business && !context.mailAccount && ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice'].includes(subcommand)) {
+      const token = await getAuthToken();
+      const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+      if (result.status === 404) console.log(GOOGLE_OLD_SERVER);
+      else if (!result.ok) return googleFailure(result, 'resolve business account');
+      else { context.serverDefaults = true; context.resolvedMail = result.data?.resolved?.gmail || null; }
+    }
+    return gmailCommandInner(subcommand, ...context.rest);
+  });
+}
+
+async function gmailCommandInner(subcommand, ...args) {
   switch (subcommand) {
     case 'inbox':
     case 'list': {
@@ -968,11 +1175,13 @@ function formatCalendarEvents(label, events) {
 
   console.log('─'.repeat(50));
 
+  const multipleAccounts = new Set(events.map((event) => event.account_id).filter(Boolean)).size > 1;
   for (const event of events) {
     const time = formatCalendarTimeRange(event);
     const title = event.summary || '(no title)';
 
-    console.log(`${time}  ${title}`);
+    const account = multipleAccounts ? ` (${event.account_email || event.account_id || 'unknown'})` : '';
+    console.log(`${time}  ${title}${account}`);
     if (event.location) {
       console.log(`        📍 ${event.location}`);
     }
@@ -1052,6 +1261,8 @@ function compactCalendarEvent(event = {}) {
     summary: event.summary || event.title || '(no title)',
     location: event.location || '',
     htmlLink: event.htmlLink || event.link || '',
+    ...(event.account_id ? { account_id: event.account_id } : {}),
+    ...(event.account_email ? { account_email: event.account_email } : {}),
   };
 }
 
@@ -1167,7 +1378,8 @@ async function calendarRange(label, { timeMin, timeMax, days } = {}) {
     process.exit(1);
   }
 
-  const events = result.data?.events || result.data || [];
+  const events = [...(result.data?.events || (Array.isArray(result.data) ? result.data : []))].sort((a, b) => calendarEventTimeValue(a.start || a.start_time || a.startTime).localeCompare(calendarEventTimeValue(b.start || b.start_time || b.startTime)));
+  for (const error of result.data?.errors || []) console.error(`calendar ${error.account_id || 'account'}: ${error.message || error.code || 'could not read events'}`);
   writeCalendarEventsCache(events, { source: 'calendarRange', days: days || null });
   formatCalendarEvents(label.toLowerCase(), events);
 }
@@ -1195,7 +1407,7 @@ async function calendarSearch(args = []) {
 
   if (!result.ok) {
     const cache = readCalendarEventsCache();
-    if (json && cache.ok) {
+    if (json && cache.ok && !googleContext.getStore()?.calendarAccount && !googleContext.getStore()?.business) {
       const matches = filterCalendarEventsForSearch(cache.events, query, limit);
       formatCalendarSearchResults(query, matches, {
         json,
@@ -1219,7 +1431,8 @@ async function calendarSearch(args = []) {
     return;
   }
 
-  const events = result.data?.events || result.data || [];
+  const events = [...(result.data?.events || (Array.isArray(result.data) ? result.data : []))].sort((a, b) => calendarEventTimeValue(a.start || a.start_time || a.startTime).localeCompare(calendarEventTimeValue(b.start || b.start_time || b.startTime)));
+  for (const error of result.data?.errors || []) console.error(`calendar ${error.account_id || 'account'}: ${error.message || error.code || 'could not read events'}`);
   writeCalendarEventsCache(events, { source: 'calendarSearch', days });
   const matches = filterCalendarEventsForSearch(events, query, limit);
   formatCalendarSearchResults(query, matches, { json, total: events.length, source: 'live', liveOk: true });
@@ -1291,12 +1504,21 @@ async function calendarAdd(args) {
   }
 
   const created = result.data || {};
-  console.log(`Created: ${created.summary || summary}`);
+  const createdAccount = created.account_email || created.account_id || googleContext.getStore()?.calendarAccount;
+  console.log(`Created: ${created.summary || summary}${createdAccount ? ` (${createdAccount})` : ''}`);
+  if (!createdAccount && googleContext.getStore()?.business) console.log('account not reported by the server.');
   if (created.htmlLink) console.log(`Link: ${created.htmlLink}`);
   console.log(`Verified on calendar: ${created.verified ? 'yes' : 'no'}`);
 }
 
 async function calendarCommand(subcommand, ...args) {
+  const context = takeContext(args);
+  if ((subcommand === 'add' || subcommand === 'create') && context.calendarAccount === 'all') throw new Error('calendar writes need one account');
+  const clean = context.rest.filter((arg, index, array) => arg !== '--account' && array[index - 1] !== '--account');
+  return googleContext.run(context, () => calendarCommandInner(subcommand, ...clean));
+}
+
+async function calendarCommandInner(subcommand, ...args) {
   switch (subcommand) {
     case 'today':
       await calendarToday();
@@ -2409,6 +2631,8 @@ async function integrationsStatus(args = []) {
 }
 
 module.exports = {
+  googleCommand,
+  googleConnect,
   gmailCommand,
   gmailConnect,
   gmailVoice,
