@@ -3077,7 +3077,7 @@ if (command === 'guide') {
   if (!gate.ok) { process.exit(refuseAccountGlobal()); return; }
   const { googleCommand } = require('../commands/integrations');
   googleCommand(gate.args[0], ...gate.args.slice(1))
-    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
+    .then((status) => exitAfterStdoutDrain(status || process.exitCode || 0))
     .catch((err) => { console.error(err.message || err); process.exit(1); });
 } else if (command === 'calendar') {
   const { calendarCommand } = require('../commands/integrations');

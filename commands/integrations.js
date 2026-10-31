@@ -864,18 +864,24 @@ async function gmailConnect(accountName, deps = {}) {
 
   if (!result.ok) {
     const detail = String(result.error || 'request failed').toLowerCase();
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', http_status: result.status || 0, ...(result.data || {}), error: detail }, null, 2)); return 1; }
     console.error(`could not start gmail connection: ${detail}`);
     process.exit(1);
   }
 
   const authUrl = String(result.data?.auth_url || result.data?.url || '').trim();
   if (!authUrl) {
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', ...(result.data || {}), error: 'the server did not return a sign-in url' }, null, 2)); return 1; }
     console.error('could not start gmail connection: the server did not return an auth url.');
     process.exit(1);
   }
 
   const openAuthUrl = deps.openAuthUrl || openGmailAuthUrl;
   const opened = openAuthUrl(authUrl, deps);
+  if (deps.json) {
+    console.log(JSON.stringify({ ok: false, status: 'unconfirmed', auth_url: authUrl, opened, notice: googleOldServer }, null, 2));
+    return 1;
+  }
   if (!opened) {
     console.log(`open this url in your browser: ${authUrl}`);
   }
@@ -998,13 +1004,42 @@ async function saveGoogleDefault(auth, selector, products, business, { mailAccou
   return { id, legacy: false };
 }
 
+function googleSignInErrorLines(status, business) {
+  const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
+  const lines = [status.error === 'superseded'
+    ? 'a newer google sign-in replaced this attempt.'
+    : `google sign-in did not finish: ${reason}.`];
+  if (status.account_id) lines.push(`account: ${status.account_id}.`);
+  if (Array.isArray(status.products)) {
+    const products = status.products.map((p) => p === 'gmail' ? 'mail' : p);
+    lines.push(products.length ? `products still connected: ${products.join(', ')}.` : 'no products remain connected.');
+  } else lines.push('which products remain connected is unknown.');
+  if (Array.isArray(status.failed) && status.failed.length) {
+    const failed = status.failed.map((p) => p === 'gmail' ? 'mail' : p === 'result' ? 'saving the sign-in result' : p);
+    lines.push(`could not finish: ${failed.join(', ')}.`);
+  }
+  if (Array.isArray(status.missing) && status.missing.length) lines.push(`google did not grant: ${status.missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}.`);
+  if (status.cleanup_incomplete) lines.push('some changes could not be undone.');
+  if (status.business_assignment_unknown) lines.push('the business account choice may not have been saved.');
+  const check = business ? `atris google accounts --business ${business}` : 'atris google accounts --account';
+  lines.push(`check ${check} before ${status.error === 'superseded' ? 'finishing the newer sign-in' : 'trying again'}.`);
+  return lines;
+}
+
 async function googleConnect(name, products, business, deps = {}) {
   if (name && (!/^[a-z0-9-]{1,32}$/.test(name) || name === 'all')) throw new Error('invalid google account name. use 1 to 32 lowercase letters, numbers, or hyphens');
   const token = await getAuthToken();
-  const before = await googleAccountsCapability(token);
+  let before;
+  try { before = await googleAccountsCapability(token); }
+  catch (error) {
+    if (!deps.json) throw error;
+    console.log(JSON.stringify({ ok: false, status: 'error', error: error.message, http_status: error.status || 0 }, null, 2));
+    return 1;
+  }
   if (!before.supported) {
-    if (!deps.quietOldServer) console.log(googleOldServer);
+    if (!deps.quietOldServer && !deps.json) console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: googleOldServer })); return 1; }
     return;
   }
   const body = {};
@@ -1013,17 +1048,24 @@ async function googleConnect(name, products, business, deps = {}) {
   if (business) body.business_id = business;
   const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
   if (result.status === 404) {
-    if (!deps.quietOldServer) console.log(googleOldServer);
+    if (!deps.quietOldServer && !deps.json) console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: googleOldServer })); return 1; }
     return;
   }
-  if (!result.ok) return googleFailure(result, 'start google connection');
+  if (!result.ok) {
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', http_status: result.status || 0, ...(result.data || {}), error: result.data?.error || result.error || 'could not start google connection' }, null, 2)); return 1; }
+    return googleFailure(result, 'start google connection');
+  }
   const url = result.data?.auth_url;
-  if (!url) throw new Error('the server did not return a sign-in url');
   const state = result.data?.state;
-  if (!state) throw new Error('the server did not return a sign-in state. start again with atris google connect.');
-  if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) console.log(`open this url in your browser: ${url}`);
-  console.log('waiting for google sign-in...');
+  const missing = !url ? 'the server did not return a sign-in url' : !state ? 'the server did not return a sign-in state. start again with atris google connect.' : '';
+  if (missing) {
+    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', ...(result.data || {}), error: missing }, null, 2)); return 1; }
+    throw new Error(missing);
+  }
+  if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) (deps.json ? console.error : console.log)(`open this url in your browser: ${url}`);
+  if (!deps.json) console.log('waiting for google sign-in...');
   const interval = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
   const timeout = deps.timeoutMs ?? GMAIL_CONNECT_TIMEOUT_MS;
   const count = Math.max(1, Math.ceil(timeout / interval));
@@ -1037,21 +1079,26 @@ async function googleConnect(name, products, business, deps = {}) {
     const pollOptions = { method: 'GET', token, timeoutMs: Math.max(1, Math.min(interval, deadline - now())), retries: 0 };
     const check = await apiRequestJson(`/integrations/google/start/${encodeURIComponent(state)}`, pollOptions);
     if (check.status === 404) {
-      const retry = ['atris google connect', name, products && `--only ${products.map((p) => p === 'gmail' ? 'mail' : p).join(',')}`, business && `--business ${business}`].filter(Boolean).join(' ');
+      const retry = ['atris google connect', name, products && `--only ${products.map((p) => p === 'gmail' ? 'mail' : p).join(',')}`, business ? `--business ${business}` : '--account'].filter(Boolean).join(' ');
+      if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: 'sign_in_expired', retry }, null, 2)); return 1; }
       console.error(`google sign-in expired. start again with ${retry}.`);
       process.exit(1);
     }
     if (!check.ok) {
-      if (check.status === 401 || check.status === 403) return googleFailure(check, 'check google sign-in');
+      if (check.status === 401 || check.status === 403) {
+        if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: check.error || 'could not check google sign-in', http_status: check.status }, null, 2)); return 1; }
+        return googleFailure(check, 'check google sign-in');
+      }
       continue;
     }
     const status = check.data || {};
     if (status.status === 'error') {
-      const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
-      console.error(`google sign-in failed: ${reason}`);
+      if (deps.json) { console.log(JSON.stringify({ ok: false, ...status }, null, 2)); return 1; }
+      for (const line of googleSignInErrorLines(status, business)) console.error(line);
       process.exit(1);
     }
     if (status.status === 'connected') {
+      if (deps.json) { console.log(JSON.stringify({ ok: true, ...status }, null, 2)); return; }
       const accountId = status.account_id || id || 'account';
       const identity = status.email || accountId;
       const granted = Array.isArray(status.products) ? status.products : [];
@@ -1061,6 +1108,7 @@ async function googleConnect(name, products, business, deps = {}) {
       return;
     }
   }
+  if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'pending', error: 'sign_in_unconfirmed', auth_url: url }, null, 2)); return 1; }
   console.error(`connection could not be confirmed. finish in your browser and check atris google: ${url}`);
   process.exit(1);
 }
@@ -1077,7 +1125,7 @@ async function gmailConnectUnified(name, deps = {}) {
 async function googleCommand(subcommand, ...args) {
   if ([subcommand, ...args].some((arg) => ['help', '--help', '-h'].includes(arg))) {
     console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]');
-    console.log('list accounts as json with atris google accounts --json.');
+    console.log('use --json to list accounts or report a sign-in result.');
     console.log('disconnect requires --approved.');
     return;
   }
@@ -1095,8 +1143,8 @@ async function googleCommand(subcommand, ...args) {
       else positional.push(rest[i]);
     }
     const action = subcommand || 'accounts';
-    if (json && action !== 'accounts') throw new Error('--json is available for google accounts');
-    if (action === 'connect') return googleConnect(positional[0], only, context.explicitBusiness ? context.business : null);
+    if (json && !['accounts', 'connect'].includes(action)) throw new Error('--json is available for google accounts and connect');
+    if (action === 'connect') return googleConnect(positional[0], only, context.explicitBusiness ? context.business : null, { json });
     if (!['accounts', 'use', 'disconnect'].includes(action)) {
       console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]'); return;
     }

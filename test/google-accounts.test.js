@@ -236,6 +236,41 @@ test('connect reports a denied sign-in without claiming success', async () => fi
   assert.doesNotMatch(lines.join('\n'), /^connected/m);
 }, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'state1' }) : url.startsWith('/integrations/google/start/') ? ok({ status: 'error', error: 'access_denied' }) : ok({ accounts: [] })));
 
+test('unfinished google sign-in names the account and remaining products and business uncertainty', async () => fixture(async (cli) => {
+  const exit = process.exit, error = console.error, errors = [];
+  process.exit = () => { throw new Error('stopped'); }; console.error = (...parts) => errors.push(parts.join(' '));
+  try { await assert.rejects(() => cli.googleConnect('work', null, 'shop', { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 }), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  const output = errors.join('\n');
+  assert.match(output, /fresh/); assert.match(output, /drive.*(remain|still|stayed)|(?:remain|still|stayed).*drive/i);
+  assert.match(output, /business.*(may|unknown|uncertain)/i);
+  assert.match(output, /atris google accounts --business shop/);
+  assert.match(output, /could not finish: business/);
+  assert.match(output, /could not be undone/);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'error', error: 'connection_failed', account_id: 'fresh', products: ['drive'], failed: ['business'], cleanup_incomplete: true, business_assignment_unknown: true }) : ok({ accounts: [] })));
+
+test('a superseded google sign-in explains unknown products and what to do next', async () => fixture(async (cli) => {
+  const exit = process.exit, error = console.error, errors = [];
+  process.exit = () => { throw new Error('stopped'); }; console.error = (...parts) => errors.push(parts.join(' '));
+  try { await assert.rejects(() => cli.googleConnect('work', null, null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 }), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  const output = errors.join('\n');
+  assert.doesNotMatch(output, /superseded/i);
+  assert.match(output, /newer|another/i); assert.match(output, /products.*unknown|unknown.*products/i);
+  assert.match(output, /business.*(may|unknown|uncertain)/i); assert.match(output, /atris google accounts/);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'error', error: 'superseded', cleanup_incomplete: true, business_assignment_unknown: true }) : ok({ accounts: [] })));
+
+for (const products of [null, []]) test(`unfinished sign-in distinguishes ${products === null ? 'unknown' : 'no'} remaining products`, async () => fixture(async (cli) => {
+  const exit = process.exit, error = console.error, errors = [];
+  process.exit = () => { throw new Error('stopped'); }; console.error = (...parts) => errors.push(parts.join(' '));
+  try { await assert.rejects(() => cli.googleConnect('work', null, null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 }), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  const output = errors.join('\n');
+  assert.match(output, products === null ? /products.*unknown|unknown.*products/i : /no products.*(remain|still)|(?:remain|still).*no products/i);
+  assert.match(output, /fresh/); assert.match(output, /mail/);
+  assert.doesNotMatch(output, /business.*may/i);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'error', error: 'connection_failed', account_id: 'fresh', products, failed: ['gmail'], cleanup_incomplete: true }) : ok({ accounts: [] })));
+
 test('business mail migration refreshes the server choice before displaying and sending', async () => fixture(async (cli, { root, calls, lines }) => {
   fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: 'work' }));
   await cli.gmailCommand('send', 'friend@example.com', 'hello', 'message', '--approved');

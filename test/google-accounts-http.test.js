@@ -47,6 +47,79 @@ const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
 
+test('google connect json preserves unfinished sign-in fields and exits nonzero', async () => {
+  const answer = { status: 'error', error: 'connection_failed', account_id: 'fresh', products: ['drive'], failed: ['business'], cleanup_incomplete: true, business_assignment_unknown: true, additional_detail: { retained: true } };
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok(roster);
+    if (call.path.endsWith('/google/start')) return ok({ auth_url: 'https://example.test', state: 'state1' });
+    if (call.path.endsWith('/google/start/state1')) return ok(answer);
+  }, async ({ cli, calls }) => {
+    const result = await cli('google', 'connect', 'work', '--business', 'shop', '--json');
+    assert.equal(result.code, 1, result.stderr);
+    const packet = JSON.parse(result.stdout);
+    for (const [key, value] of Object.entries(answer)) assert.deepEqual(packet[key], value);
+    assert.equal(packet.ok, false);
+    assert.equal(calls.filter((call) => call.path.endsWith('/google/start/state1')).length, 1);
+  });
+});
+
+test('google connect json preserves connected result fields', async () => {
+  const answer = { status: 'connected', account_id: 'fresh', email: 'fresh@example.test', products: ['gmail'], missing: ['drive'], additional_detail: { retained: true } };
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok(roster);
+    if (call.path.endsWith('/google/start')) return ok({ auth_url: 'https://example.test', state: 'state1' });
+    if (call.path.endsWith('/google/start/state1')) return ok(answer);
+  }, async ({ cli }) => {
+    const result = await cli('google', 'connect', 'work', '--json', '--account');
+    assert.equal(result.code, 0, result.stderr);
+    const packet = JSON.parse(result.stdout);
+    for (const [key, value] of Object.entries(answer)) assert.deepEqual(packet[key], value);
+    assert.equal(packet.ok, true);
+  });
+});
+
+test('google connect json preserves superseded uncertainty without inventing an account', async () => {
+  const answer = { status: 'error', error: 'superseded', products: null, cleanup_incomplete: true, business_assignment_unknown: true };
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok(roster);
+    if (call.path.endsWith('/google/start')) return ok({ auth_url: 'https://example.test', state: 'state1' });
+    if (call.path.endsWith('/google/start/state1')) return ok(answer);
+  }, async ({ cli }) => {
+    const result = await cli('google', 'connect', 'work', '--json', '--account');
+    assert.equal(result.code, 1, result.stderr);
+    const packet = JSON.parse(result.stdout);
+    for (const [key, value] of Object.entries(answer)) assert.deepEqual(packet[key], value);
+    assert.equal(Object.hasOwn(packet, 'account_id'), false); assert.equal(packet.ok, false);
+  });
+});
+
+test('older-server json sign-in remains unconfirmed and provides the browser link', async () => fixture((call) => {
+  if (call.path.endsWith('/google/accounts')) return missing;
+  if (call.path.endsWith('/gmail/start')) return ok({ auth_url: 'https://example.test/sign-in' });
+}, async ({ cli }) => {
+  const result = await cli('google', 'connect', 'work', '--only', 'mail', '--json', '--account');
+  assert.equal(result.code, 1, result.stderr);
+  const packet = JSON.parse(result.stdout);
+  assert.equal(packet.status, 'unconfirmed'); assert.equal(packet.ok, false);
+  assert.equal(packet.auth_url, 'https://example.test/sign-in');
+}));
+
+test('google connect json reports capability and start failures without printing a success', async () => {
+  for (const failure of ['capability', 'start', 'missing state', 'legacy start']) await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return failure === 'capability' ? [403, { detail: 'business access required' }] : failure === 'legacy start' ? missing : ok(roster);
+    if (call.path.endsWith('/google/start')) return failure === 'start' ? [403, { detail: 'business admin access required' }] : ok({ auth_url: 'https://example.test' });
+    if (call.path.endsWith('/gmail/start')) return [403, { detail: 'not allowed' }];
+  }, async ({ cli, calls }) => {
+    const result = await cli('google', 'connect', 'work', '--only', 'mail', '--json', '--account');
+    assert.equal(result.code, 1, result.stderr);
+    const packet = JSON.parse(result.stdout);
+    assert.equal(packet.ok, false); assert.equal(packet.status, 'error');
+    assert.equal(calls.some((call) => call.path.includes('/google/start/')), false);
+    if (failure === 'missing state') assert.match(packet.error, /state/);
+    else assert.match(packet.error, /access|required|allowed/i);
+  });
+});
+
 test('legacy sign-in never treats a recovered account lookup as completion', async () => {
   let reads = 0;
   const prior = { accounts: [], count: 0 };
