@@ -169,3 +169,4 @@ test/idea-timer.test.js
 test/idea-ledger.test.js
 test/task-lease.test.js
 test/rating-episodes.test.js
+test/ready-merge-credit.test.js
