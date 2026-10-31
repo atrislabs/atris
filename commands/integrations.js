@@ -266,7 +266,11 @@ async function googleAccountsCapability(token, { refresh = false } = {}) {
   const context = googleContext.getStore();
   if (!refresh && context?.googleCapability) return context.googleCapability;
   const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
-  if (!result.ok && result.status !== 404) return googleFailure(result, 'check google accounts');
+  if (!result.ok && result.status !== 404) {
+    const error = new Error(`could not check google accounts: ${result.error || result.data?.detail || 'request failed'}`);
+    error.status = result.status || 0;
+    throw error;
+  }
   if (result.ok && !Array.isArray(result.data?.accounts)) throw new Error('could not check google accounts: the server returned an incomplete account list');
   const capability = { supported: result.ok, data: result.data || {} };
   if (context) context.googleCapability = capability;
@@ -372,10 +376,19 @@ async function fetchGmailAccounts(token, options = {}) {
 function resolveAccountSelector(accounts, selector, { displayName = false } = {}) {
   const wanted = String(selector || '').trim().toLowerCase();
   if (!wanted) return null;
-  return accounts.find((account) => {
+  const exact = accounts.filter((account) => {
     const identity = gmailAccountIdentity(account);
-    return identity.id.toLowerCase() === wanted || identity.email === wanted || (displayName && identity.name === wanted);
-  }) || null;
+    return identity.id.toLowerCase() === wanted || identity.email === wanted;
+  });
+  const matches = exact.length || !displayName ? exact : accounts.filter((account) => gmailAccountIdentity(account).name === wanted);
+  if (matches.length > 1) {
+    const labels = matches.map((account) => {
+      const { id, email } = gmailAccountIdentity(account);
+      return `${id} (${email || 'email pending'})`;
+    });
+    throw new Error(`ambiguous account "${selector}": ${labels.join(', ')}. use an account name or email.`);
+  }
+  return matches[0] || null;
 }
 
 async function promptForGmailAccount(deps = {}) {
@@ -1699,9 +1712,20 @@ async function calendarCommand(subcommand, ...args) {
   const clean = context.rest.filter((arg, index, array) => arg !== '--account' && array[index - 1] !== '--account');
   return googleContext.run(context, async () => {
     if ((context.business || context.calendarAccount) && ['today', 'yesterday', 'yday', 'week', 'date', 'search', 'add', 'create'].includes(subcommand)) {
-      const token = await getAuthToken();
-      const capability = await googleAccountsCapability(token);
-      if (!capability.supported) throw new Error(googleOldServer);
+      try {
+        const token = await getAuthToken();
+        const capability = await googleAccountsCapability(token);
+        if (!capability.supported) {
+          const error = new Error(googleOldServer);
+          error.status = 404;
+          throw error;
+        }
+      } catch (error) {
+        if (subcommand !== 'search' || !clean.includes('--json')) throw error;
+        const { query } = parseCalendarSearchArgs(clean);
+        formatCalendarSearchError(query, error.message, { json: true, status: error.status || 0 });
+        return 1;
+      }
     }
     return calendarCommandInner(subcommand, ...clean);
   });

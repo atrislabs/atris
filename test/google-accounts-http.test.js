@@ -11,10 +11,11 @@ const work = { account_id: 'work', email: 'work@example.test', products: { gmail
 const roster = { accounts: [work], defaults: { gmail: 'work', calendar: 'work', drive: null }, resolved: { gmail: 'work', calendar: 'work', drive: null }, business: { business_id: 'shop', account_id: 'work' } };
 const oldMail = [{ account_id: 'work', email_address: 'work@example.test' }];
 
-async function fixture(handler, run, { business = false, sticky } = {}) {
+async function fixture(handler, run, { business = false, sticky, provisioned = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'google-http-test-'));
   fs.mkdirSync(path.join(root, 'atris')); fs.mkdirSync(path.join(root, '.atris')); fs.mkdirSync(path.join(root, 'bin'));
   if (business) fs.writeFileSync(path.join(root, '.atris', 'business.json'), JSON.stringify({ business_id: 'shop' }));
+  if (provisioned) fs.writeFileSync(path.join(root, '.atris', 'agent-token.json'), '{}');
   if (sticky) fs.writeFileSync(path.join(root, 'mail.json'), JSON.stringify({ account_id: sticky }));
   for (const command of ['open', 'xdg-open']) { const file = path.join(root, 'bin', command); fs.writeFileSync(file, '#!/bin/sh\nexit 1\n'); fs.chmodSync(file, 0o755); }
   const calls = [];
@@ -31,17 +32,126 @@ async function fixture(handler, run, { business = false, sticky } = {}) {
   const token = `${part({ alg: 'none' })}.${part({ type: 'agent_access', sub: 'test-person', exp: 4102444800 })}.test`;
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ATRIS_')));
   Object.assign(env, { HOME: root, USERPROFILE: root, PATH: `${path.join(root, 'bin')}${path.delimiter}${env.PATH}`, ATRIS_TOKEN: token, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_GMAIL_ACCOUNT_FILE: path.join(root, 'mail.json'), ATRIS_SKIP_UPDATE_CHECK: '1', TERM_SESSION_ID: 'google-http-test' });
-  const cli = (...args) => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), ...args], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const runCli = (input, args) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), ...args], { cwd: root, env, stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '', stderr = ''; child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
+    if (input !== null) child.stdin.end(input);
     child.on('error', reject); child.on('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
-  try { await run({ root, calls, cli }); }
+  const cli = (...args) => runCli(null, args);
+  const cliInput = (input, ...args) => runCli(input, args);
+  try { await run({ root, calls, cli, cliInput }); }
   finally { await new Promise((resolve) => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true }); }
 }
 const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
+
+for (const selectorType of ['name', 'email']) for (const reversed of [false, true]) for (const target of ['business', 'personal', 'legacy']) {
+  test(`exact ${selectorType} wins over a display label for ${target}, reversed ${reversed}`, async () => {
+    const selector = selectorType === 'name' ? 'work' : 'work@example.test';
+    const personal = { account_id: 'default', email: 'personal@example.test', display_name: selector, products: { gmail: { connected: true } } };
+    const selected = { ...work, display_name: 'company' };
+    const accounts = reversed ? [selected, personal] : [personal, selected];
+    await fixture((call) => {
+      if (call.path.endsWith('/gmail/accounts')) return ok(accounts);
+      if (call.path.endsWith('/google/accounts')) return target === 'legacy' ? missing : ok({ ...roster, accounts });
+      if (call.method === 'PUT') return ok({ account_id: 'work' });
+    }, async ({ cli, calls, root }) => {
+      const result = await cli('gmail', 'use', selector);
+      assert.equal(result.code, 0, result.stderr);
+      if (target === 'legacy') {
+        assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mail.json'))).account_id, 'work');
+      } else {
+        const saved = calls.find((call) => call.method === 'PUT');
+        assert.equal(saved.body.account_id, 'work');
+        const cache = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'google-accounts.json')));
+        if (target === 'business') assert.equal(cache.businesses.shop.gmail, 'work');
+        else { assert.equal(cache.defaults.gmail, 'work'); assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mail.json'))).account_id, 'work'); }
+      }
+    }, { business: target === 'business', provisioned: target !== 'business' });
+  });
+}
+
+test('ambiguous display labels refuse to change a choice and list the matches', async () => {
+  const accounts = [
+    { account_id: 'one', email: 'one@example.test', display_name: 'team' },
+    { account_id: 'two', email: 'two@example.test', display_name: 'team' },
+  ];
+  for (const legacy of [false, true]) await fixture((call) => {
+    if (call.path.endsWith('/gmail/accounts')) return ok(accounts);
+    if (call.path.endsWith('/google/accounts')) return legacy ? missing : ok({ ...roster, accounts });
+    if (call.method === 'PUT') return ok({});
+  }, async ({ cli, calls, root }) => {
+    const result = await cli('gmail', 'use', 'team');
+    assert.notEqual(result.code, 0); assert.match(result.stderr, /ambiguous/i);
+    assert.match(result.stderr, /one@example\.test/); assert.match(result.stderr, /two@example\.test/);
+    assert.equal(calls.some((call) => call.method === 'PUT'), false);
+    assert.equal(fs.existsSync(path.join(root, 'mail.json')), false);
+  }, { provisioned: true });
+});
+
+test('the interactive gmail selection saves the chosen row despite a display collision', async () => {
+  const accounts = [
+    { account_id: 'default', email: 'personal@example.test', display_name: 'work' },
+    { ...work, display_name: 'company' },
+  ];
+  await fixture((call) => {
+    if (call.path.endsWith('/gmail/accounts')) return ok(accounts);
+    if (call.path.endsWith('/google/accounts')) return ok({ ...roster, accounts });
+    if (call.method === 'PUT') return ok({});
+  }, async ({ cliInput, calls }) => {
+    const result = await cliInput('2\n', 'gmail', 'use');
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.find((call) => call.method === 'PUT').body.account_id, 'work');
+  }, { provisioned: true });
+});
+
+test('legacy google use resolves exact selectors before colliding display labels', async () => {
+  for (const selector of ['work', 'work@example.test']) for (const reverse of [false, true]) {
+    const accounts = [
+      { account_id: 'default', email: 'personal@example.test', display_name: selector },
+      { ...work, display_name: 'company' },
+    ];
+    if (reverse) accounts.reverse();
+    await fixture((call) => {
+      if (call.path.endsWith('/google/accounts')) return missing;
+      if (call.path.endsWith('/gmail/accounts')) return ok(accounts);
+    }, async ({ cli, root }) => {
+      const result = await cli('google', 'use', selector, '--account');
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mail.json'))).account_id, 'work');
+    });
+  }
+});
+
+test('legacy google use refuses ambiguous display labels', async () => fixture((call) => {
+  if (call.path.endsWith('/google/accounts')) return missing;
+  if (call.path.endsWith('/gmail/accounts')) return ok([
+    { account_id: 'one', email: 'one@example.test', display_name: 'team' },
+    { account_id: 'two', email: 'two@example.test', display_name: 'team' },
+  ]);
+}, async ({ cli, root }) => {
+  const result = await cli('google', 'use', 'team', '--account');
+  assert.notEqual(result.code, 0); assert.match(result.stderr, /ambiguous/);
+  assert.match(result.stderr, /one@example\.test/); assert.match(result.stderr, /two@example\.test/);
+  assert.equal(fs.existsSync(path.join(root, 'mail.json')), false);
+}));
+
+for (const status of [403, 404]) {
+  test(`scoped calendar search prints a json error when preflight returns ${status}`, async () => fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return [status, { detail: status === 403 ? 'not a business member' : 'not found' }];
+    return ok({ events: [] });
+  }, async ({ cli, calls }) => {
+    const result = await cli('calendar', 'search', 'meeting', '--json', '--account', 'work');
+    assert.notEqual(result.code, 0);
+    const packet = JSON.parse(result.stdout);
+    assert.equal(packet.ok, false); assert.equal(packet.query, 'meeting'); assert.equal(packet.status, status);
+    assert.match(packet.error, status === 403 ? /not a business member/ : /newest atris server/);
+    assert.deepEqual(packet.matches, []);
+    assert.equal(calls.some((call) => call.path.endsWith('/google-calendar/events')), false);
+  }));
+}
 
 test('legacy scoped calendar writes refuse before creating an event', async () => {
   for (const business of [false, true]) await fixture((call) => call.path.endsWith('/google/accounts') ? missing : ok({ summary: 'private appointment', verified: true }), async ({ calls, cli }) => {

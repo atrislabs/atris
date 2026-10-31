@@ -3084,7 +3084,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   calendarCommand(subcommand, ...args)
-    .then(() => exitAfterStdoutDrain(0))
+    .then((status) => exitAfterStdoutDrain(status || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'twitter') {
   {
