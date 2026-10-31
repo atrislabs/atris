@@ -210,6 +210,7 @@ atris task - durable local task state (SQLite, gitignored)
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task sweep --auto-accept [--json]   Auto-accept verified Review rows; protected lanes wait for human
   atris task sweep [--json] [--stale-days N] [--claimer NAME] [--dry-run]   Release expired claims
+  atris task sweep --held [--everywhere] [--dry-run] [--json]   Check held jobs against GitHub: credit a merge, release a closed pull request
   atris task audit [--limit <n>] [--revise] re-run stored verifies for newest accepted tasks; report-only unless --revise
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
@@ -400,8 +401,10 @@ function failAgentProofOnly(label, detail) {
   );
 }
 
-function printJson(value) {
-  const buffer = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+// Write straight to stdout and wait until it is all out, so a command that exits right after
+// printing (process.exit drops whatever a pipe still holds) never loses the end of its output.
+function writeStdoutSync(text) {
+  const buffer = Buffer.from(text, 'utf8');
   const retryWait = new Int32Array(new SharedArrayBuffer(4));
   let offset = 0;
   while (offset < buffer.length) {
@@ -415,6 +418,10 @@ function printJson(value) {
       throw err;
     }
   }
+}
+
+function printJson(value) {
+  writeStdoutSync(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 function refreshCareerXpProjection(workspaceRoot) {
@@ -9743,6 +9750,9 @@ function cmdReady(args) {
   const merge = readyMergeFlags(args);
   guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  // The others who built the work with --as, by name, comma apart: a flight that ran for a member
+  // hands in under the member's name and names the engines that ran here. Only a hand-in uses it.
+  const builtWith = textFlag(args, ['--built-with']).split(',').map((name) => name.trim()).filter(Boolean);
   const resultFields = {
     changed: textFlag(args, ['--changed', '--done']),
     checked: textFlag(args, ['--checked', '--check', '--verified']),
@@ -9790,6 +9800,7 @@ function cmdReady(args) {
     landing,
     merge,
     result: resultSentence,
+    builtWith,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -10419,10 +10430,12 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: evaluation.reason });
       continue;
     }
-    // judge != worker: the re-run only counts as an independent check when
-    // its actor is not the builder of the row it is judging.
+    // judge != worker: the re-run only counts as an independent check when its actor never built
+    // the row it is judging: not its builder now, and not anyone who built it before (the store
+    // reads the whole history, so a job sent back, let go or reopened does not forget its builders).
     const builder = reviewIntegrity.taskBuilder(task);
-    if (builder && reviewIntegrity.normalizeActor(actor) === builder) {
+    const verifier = reviewIntegrity.normalizeActor(actor);
+    if (verifier && ((builder && verifier === builder) || taskDb.authorsOfTask(db, task).has(verifier))) {
       results.push({ ref, action: 'skipped', reason: 'verifier_is_builder' });
       continue;
     }
@@ -10906,7 +10919,61 @@ function evaluateSweepAutoAccept(task, root, includeProtected = false) {
   return { eligible: false, ref, reason: verifier.reason, evidence: verifier.evidence };
 }
 
+// atris task sweep --held: ask GitHub about each job waiting on an open pull request and write
+// down what happened (lib/held-pull-requests.js). Anyone may run it, agents included: GitHub is
+// the only source and the run grants nothing, so the agent block that guards --auto-accept does
+// not apply here. It takes none of the expired-claims flags.
+function cmdSweepHeld(args) {
+  for (const name of ['--auto-accept', '--stale-days', '--claimer']) {
+    if (hasFlag(args, name)) {
+      failTask('atris task sweep', 'held_flags_conflict', `atris task sweep: --held cannot be combined with ${name}`);
+    }
+  }
+  const named = flag(args, '--as');
+  if (named === true) failTask('atris task sweep', 'missing_actor', 'atris task sweep: --as needs a name');
+  guardExplicitActor('atris task sweep', named);
+  const actor = String(named || DEFAULT_OWNER);
+  const dryRun = hasFlag(args, '--dry-run');
+  const json = wantsJson(args);
+  const taskDb = getTaskDb();
+  const workspaceRoot = scopedWorkspaceRoot(taskDb, args);
+  const { sweepHeldJobs, describeHeldSweep } = require('../lib/held-pull-requests');
+
+  // A dry run only reads: it opens the task list read only and never creates one.
+  let db = null;
+  let reader = null;
+  if (!dryRun) {
+    db = taskDb.open();
+  } else if (fs.existsSync(taskDb.getDbPath())) {
+    const { DatabaseSync } = require('node:sqlite');
+    reader = new DatabaseSync(taskDb.getDbPath(), { readOnly: true });
+    db = reader;
+  }
+  let report;
+  try {
+    report = sweepHeldJobs(taskDb, db, { workspaceRoot, actor, dryRun });
+  } finally {
+    if (reader) reader.close();
+  }
+
+  const changed = report.summary.landed + report.summary.released > 0;
+  const projectionPath = changed ? writeDefaultProjection(taskDb, db).outPath : null;
+  if (json) printJson({ ...report, ...(projectionPath ? { projection_path: projectionPath } : {}) });
+  else writeStdoutSync(`${describeHeldSweep(report).join('\n')}\n`);
+  if (report.ok) return;
+
+  // GitHub could not be reached, so the rest were not asked and nothing more changed. Whatever
+  // was settled before that is still refreshed on the task list.
+  if (changed) autoRenderTodoFromDb();
+  if (!json) {
+    const left = report.summary.not_asked;
+    console.error(`stopped: ${report.outage.detail}${left ? `. ${left} held ${left === 1 ? 'job was' : 'jobs were'} not asked` : ''}`);
+  }
+  process.exit(1);
+}
+
 function cmdSweep(args) {
+  if (hasFlag(args, '--held')) return cmdSweepHeld(args);
   if (!hasFlag(args, '--auto-accept')) {
     const taskDb = getTaskDb();
     const staleRaw = flag(args, '--stale-days');

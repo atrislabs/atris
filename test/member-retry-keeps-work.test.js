@@ -142,3 +142,118 @@ test('a resumed retry also starts with everything the main line gained since', (
   assert.equal(fs.readFileSync(path.join(retry.path, 'other.txt'), 'utf8'), 'unrelated\n');
   assert.equal(setup.git(['rev-list', '--count', 'HEAD..origin/main'], retry.path), '0');
 });
+
+// Flights used to name a job by the display id a person reads (dispatch-feed-12) and now name it by
+// the row id (dispatch-01k8...). The older name is not an identity: display names repeat across
+// workspaces and change when the task list changes, so a branch under one can belong to another job.
+// A retry that is told the older name never starts from such a branch. It only says where unfinished
+// work under that name may be, in one line, and the run starts from the job's own name.
+const OLD_NAME = 'dispatch-feed-12';
+const NEW_NAME = 'dispatch-01k8x3m2q4abcdefghjkmnpqrs';
+const retryAt = (setup, task, formerTasks, now = new Date('2026-10-14T12:00:00Z')) => createAgentWorktree({
+  root: setup.root, member: 'builder', task, base: 'origin/main', now, ...(formerTasks ? { formerTasks } : {}),
+});
+// What the start printed to stderr, as lines, from now on.
+function stderrLines(t) {
+  const lines = [];
+  t.mock.method(console, 'error', (...parts) => { lines.push(parts.join(' ')); });
+  return lines;
+}
+const aboutOlderWork = (lines) => lines.filter((line) => /older unfinished work/.test(line));
+
+test('a retry under a job\'s new name never starts from the unfinished run its older name left behind, and says where that run is', (t) => {
+  const told = room(t);
+  const older = firstRun(told, OLD_NAME, 'progress.txt');
+  const said = stderrLines(t);
+
+  const retry = retryAt(told, NEW_NAME, [OLD_NAME]);
+
+  assert.equal(retry.resumedFrom, null);
+  assert.equal(fs.existsSync(path.join(retry.path, 'progress.txt')), false, 'a display name is not an identity, so the work under it is not the starting point');
+  assert.match(retry.branch, new RegExp(`^codex/builder-${NEW_NAME}-\\d{8}-\\d{6}$`), 'the new run is named for the new name');
+  const sidecar = JSON.parse(fs.readFileSync(path.join(retry.path, '.atris', 'agent-worktree.json'), 'utf8'));
+  assert.equal(sidecar.resumed_from, null);
+  assert.deepEqual(aboutOlderWork(said), [`note: older unfinished work may be on ${older.branch}; starting fresh`]);
+  assert.equal(told.git(['show', `${older.branch}:progress.txt`]), 'half done', 'the older branch keeps its commits');
+
+  // Told no older name, it has nothing to say and does the same.
+  const untold = room(t);
+  firstRun(untold, OLD_NAME, 'progress.txt');
+  said.length = 0;
+  const fresh = retryAt(untold, NEW_NAME);
+  assert.equal(fresh.resumedFrom, null);
+  assert.equal(fs.existsSync(path.join(fresh.path, 'progress.txt')), false);
+  assert.deepEqual(aboutOlderWork(said), []);
+});
+
+test('a retry still continues from the run under the job\'s own name, whichever run is newer, and says the older name has unfinished work too', (t) => {
+  const said = stderrLines(t);
+  for (const [label, ownAt, olderAt] of [
+    ['the older name\'s run is older', '2026-10-14T11:00:00Z', '2026-10-14T10:00:00Z'],
+    ['the older name\'s run is newer', '2026-10-14T10:00:00Z', '2026-10-14T11:00:00Z'],
+  ]) {
+    const setup = room(t);
+    const older = firstRun(setup, OLD_NAME, 'old.txt', new Date(olderAt));
+    const own = firstRun(setup, NEW_NAME, 'new.txt', new Date(ownAt));
+    said.length = 0;
+
+    const retry = retryAt(setup, NEW_NAME, [OLD_NAME]);
+
+    assert.equal(retry.resumedFrom, own.branch, label);
+    assert.equal(fs.existsSync(path.join(retry.path, 'new.txt')), true, label);
+    assert.equal(fs.existsSync(path.join(retry.path, 'old.txt')), false, label);
+    assert.deepEqual(aboutOlderWork(said), [`note: older unfinished work may be on ${older.branch}; continuing from ${own.branch} instead`], label);
+  }
+});
+
+test('only that member\'s unfinished runs under exactly the older name are mentioned: not another job that starts with it, not another member\'s run, not one that already landed', (t) => {
+  const setup = room(t);
+  firstRun(setup, 'dispatch-feed-120', 'other-job.txt', new Date('2026-10-14T10:00:00Z'));
+  const stranger = createAgentWorktree({ root: setup.root, member: 'reviewer', task: OLD_NAME, base: 'origin/main', now: new Date('2026-10-14T10:30:00Z') });
+  fs.writeFileSync(path.join(stranger.path, 'stranger.txt'), 'not yours\n');
+  setup.git(['add', 'stranger.txt'], stranger.path);
+  setup.git(['commit', '-qm', 'stranger'], stranger.path);
+  setup.git(['worktree', 'remove', '--force', stranger.path]);
+  const said = stderrLines(t);
+
+  const retry = retryAt(setup, NEW_NAME, [OLD_NAME, '', null]);
+
+  assert.equal(retry.resumedFrom, null);
+  assert.equal(fs.existsSync(path.join(retry.path, 'other-job.txt')), false);
+  assert.equal(fs.existsSync(path.join(retry.path, 'stranger.txt')), false);
+  assert.deepEqual(aboutOlderWork(said), []);
+
+  // A run under the older name that already landed has no unfinished work to point at.
+  const landed = room(t);
+  const done = firstRun(landed, OLD_NAME, 'progress.txt');
+  landed.git(['merge', '-q', '--ff-only', done.branch]);
+  landed.git(['push', '-q', 'origin', 'main']);
+  const after = retryAt(landed, NEW_NAME, [OLD_NAME]);
+  assert.equal(after.resumedFrom, null);
+  assert.deepEqual(aboutOlderWork(said), []);
+});
+
+test('the job\'s own name given as its older name says nothing: its own unfinished run is simply continued', (t) => {
+  const setup = room(t);
+  const own = firstRun(setup, NEW_NAME, 'new.txt');
+  const said = stderrLines(t);
+
+  const retry = retryAt(setup, NEW_NAME, [NEW_NAME, ` ${NEW_NAME.toUpperCase()} `]);
+
+  assert.equal(retry.resumedFrom, own.branch);
+  assert.deepEqual(aboutOlderWork(said), []);
+});
+
+test('a blank older name means no older name: it is not read as a job called "task"', (t) => {
+  const setup = room(t);
+  // A blank name is slugged to the fallback "task", so a run of a job actually called that is the
+  // one a careless blank would pick up.
+  firstRun(setup, 'task', 'someone-elses.txt', new Date('2026-10-14T10:00:00Z'));
+  const said = stderrLines(t);
+
+  const retry = retryAt(setup, NEW_NAME, ['', '   ', null, undefined]);
+
+  assert.equal(retry.resumedFrom, null);
+  assert.equal(fs.existsSync(path.join(retry.path, 'someone-elses.txt')), false);
+  assert.deepEqual(aboutOlderWork(said), []);
+});

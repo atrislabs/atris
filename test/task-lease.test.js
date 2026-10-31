@@ -115,12 +115,20 @@ test('claimer filters expired leases as well as stale claims', (t) => {
   assert.equal(tasks.getTask(db, bob).status, 'claimed');
 });
 
+// The store's handle with one change: right before a guarded write, another writer gets in. Everything else is the
+// real handle's, the calls that open and close a transaction included: the hand-in writes its row and its entry in one.
 function raceOnUpdate(db, change) {
-  return { prepare(sql) {
-    const statement = db.prepare(sql);
-    if (!/UPDATE tasks SET metadata = \?|UPDATE tasks\s+SET status = 'review'/.test(sql)) return statement;
-    return { run(...args) { change(); return statement.run(...args); } };
-  } };
+  return new Proxy(db, {
+    get(target, name) {
+      const member = target[name];
+      if (name !== 'prepare') return typeof member === 'function' ? member.bind(target) : member;
+      return (sql) => {
+        const statement = target.prepare(sql);
+        if (!/UPDATE tasks SET metadata = \?|UPDATE tasks\s+SET status = 'review'/.test(sql)) return statement;
+        return { run(...args) { change(); return statement.run(...args); } };
+      };
+    },
+  });
 }
 test('renewal cannot overwrite a reclaimed lease', (t) => {
   const db = setup(t), id = claimed(db, 'alice');
