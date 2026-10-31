@@ -252,9 +252,11 @@ atris task - durable local task state (SQLite, gitignored)
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
   atris task done <id> --proof "..."       Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
-  atris task archive <id> --reason "..." [--from-failed]
+  atris task archive <id> --reason "..." [--from-failed] [--not-needed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
+                                           --not-needed: a person confirms the job did not need doing, so a
+                                           drop on it stops counting against the member (needs --reason)
   atris task reopen <id> [--reason "..."]  Send a done, waiting, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
@@ -9261,9 +9263,16 @@ function cmdArchive(args) {
   if (!id) {
     failTask('atris task archive', 'missing_id', 'id required');
   }
+  const notNeeded = hasFlag(args, '--not-needed');
   const reason = textFlag(args, ['--reason']);
   if (!reason) {
-    failTask('atris task archive', 'missing_reason', 'atris task archive requires --reason "<why this is being swept, not failed>"');
+    failTask(
+      'atris task archive',
+      'missing_reason',
+      notNeeded
+        ? 'atris task archive --not-needed requires --reason "<why this job did not need doing>"'
+        : 'atris task archive requires --reason "<why this is being swept, not failed>"',
+    );
   }
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -9273,8 +9282,13 @@ function cmdArchive(args) {
   // loop-tick orphans fail-closed before 'archived' existed). Without the
   // flag, failed rows stay failed; done rows are never archivable.
   const fromFailed = hasFlag(args, '--from-failed');
-  const result = taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
-  if (result.archived) {
+  // --not-needed also writes who said so, which clears a dropped job off the
+  // member's record when it is someone other than the member. A job that is
+  // already archived only gets that note.
+  const result = notNeeded
+    ? taskDb.archiveNotNeeded(db, { id: taskId, actor, reason, fromFailed })
+    : taskDb.archiveTask(db, { id: taskId, actor, reason, fromFailed });
+  if (result.archived || result.recorded) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
       printJson({
@@ -9282,6 +9296,7 @@ function cmdArchive(args) {
         action: 'archived',
         task_id: taskId,
         reason,
+        ...(notNeeded ? { not_needed: true, not_needed_by: actor, already_archived: !result.archived } : {}),
         archived_from: result.row && result.row.metadata && result.row.metadata.archived_from || null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
@@ -9291,7 +9306,12 @@ function cmdArchive(args) {
     const fromNote = result.row && result.row.metadata && result.row.metadata.archived_from
       ? ` (was ${result.row.metadata.archived_from})`
       : '';
-    console.log(`archived ${taskRef(compactTaskFromProjection(projection, taskId))}${fromNote}: ${reason}`);
+    const ref = taskRef(compactTaskFromProjection(projection, taskId));
+    if (notNeeded && !result.archived) {
+      console.log(`${ref} was already archived; recorded as not needed by ${actor}: ${reason}`);
+    } else {
+      console.log(`archived ${ref}${fromNote}${notNeeded ? ' as not needed' : ''}: ${reason}`);
+    }
   } else {
     const hint = result.reason === 'already_failed'
       ? ' (use --from-failed to archive a fail-closed duplicate/off-roadmap row)'
