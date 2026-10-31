@@ -322,6 +322,48 @@ test('protectedLaneOfTask reads the tag and the todo tags, in any case', () => {
   for (const tag of fleet.DENIED_TAGS) assert.equal(fleet.protectedLaneOfTask({ tag }), tag);
 });
 
+// One function decides protection everywhere. Staffing (isSafeLane), the ship gate and the flight's
+// landing all ask protectedLaneOfTask, which reads a task's tag, its tags list, the tags
+// `atris task tag` adds later (metadata.tags), hashtags in its title, and the tags it was imported
+// with from TODO.md (metadata.todo_tags). A task staffed as safe that the landing read as protected
+// would be built and then stuck; the other way round, a protected task would be merged.
+test('staffing and landing decide protection with the same function', () => {
+  const { taskTagTokens } = require('../lib/task-decision');
+  for (const [task, lane] of [
+    [{ tag: 'code', metadata: { tags: ['security'] } }, 'security'],
+    [{ tag: 'code', metadata: { tags: ['docs', 'Deploy'] } }, 'deploy'],
+    [{ tag: 'code', tags: ['payments'] }, 'payments'],
+    [{ tag: 'code', title: 'Rotate the signing keys #security' }, 'security'],
+    [{ tag: 'code', title: '#customer Reply to the angry email' }, 'customer'],
+    [{ title: 'No tag at all, but #money' }, 'money'],
+    [{ tag: 'code', metadata: { todo_tags: ['security'] } }, 'security'],
+    [{ tag: 'code', metadata: { todo_tags: ['Docs', 'External'] } }, 'external'],
+  ]) {
+    assert.equal(fleet.isSafeLane(task), false, `staffing treats ${JSON.stringify(task)} as protected`);
+    assert.equal(fleet.protectedLaneOfTask(task), lane, JSON.stringify(task));
+  }
+  // A hashtag counts here because the staffing check counts it: both read it through taskTagTokens.
+  assert.ok(taskTagTokens({ title: 'Rotate the signing keys #security' }).includes('security'));
+  assert.ok(taskTagTokens({ title: 'Rotate the signing keys #docs' }).includes('docs'));
+
+  // Todo tags still count. With two lanes the first found wins, a task's own tags before its todo tags.
+  assert.equal(fleet.protectedLaneOfTask({ tag: 'code', metadata: { tags: ['ui'], todo_tags: ['security'] } }), 'security');
+  assert.equal(fleet.protectedLaneOfTask({ tag: 'billing', metadata: { tags: ['deploy'], todo_tags: ['security'] } }), 'billing');
+
+  // Nothing protected stays unprotected, and staffing agrees. Words in a title are not tags.
+  for (const task of [
+    {},
+    { tag: 'code' },
+    { title: 'Fix the login page' },
+    { tag: 'code', tags: ['docs'], metadata: { tags: ['ui'] }, title: 'Tidy the docs #docs' },
+    { tag: 'code', metadata: { todo_tags: ['docs', 'cleanup'] } },
+    { tag: 'code', title: 'Tighten security checks on the billing page' },
+  ]) {
+    assert.equal(fleet.protectedLaneOfTask(task), null, JSON.stringify(task));
+    assert.equal(fleet.isSafeLane(task), true, JSON.stringify(task));
+  }
+});
+
 test('shipPullRequest reads the link ship printed, and nothing when no pull request was opened', () => {
   assert.deepEqual(fleet.shipPullRequest(`push: origin x\npr: https://github.com/atrislabs/atris/pull/1700\ndone: worktree shipped\n`),
     { url: 'https://github.com/atrislabs/atris/pull/1700', number: 1700 });
@@ -480,9 +522,14 @@ async function withEnv(vars, run) {
   }
 }
 
+// Every place the staffing check reads a tag, the landing reads it too: a lane the task got after it
+// was made (`atris task tag` writes metadata.tags) or in its title is still a lane a person lands.
 for (const [label, task] of [
   ['its tag', FEEDBACK_TASK],
   ['a todo tag', { ...FEEDBACK_TASK, tag: 'code', metadata: { todo_tags: ['billing'] } }],
+  ['a tag added later with atris task tag', { ...FEEDBACK_TASK, tag: 'code', metadata: { tags: ['billing'] } }],
+  ['its tags list', { ...FEEDBACK_TASK, tag: 'code', tags: ['billing'] }],
+  ['a hashtag in its title', { ...FEEDBACK_TASK, tag: 'code', title: `#billing ${FEEDBACK_TASK.title}` }],
 ]) {
   test(`a fix in a protected lane (by ${label}) is shipped without --merge and waits in Review with its pull request`, async (t) => {
     const plane = planeFor(task);
@@ -536,6 +583,89 @@ for (const [label, task] of [
     assert.equal(receipt.result.held_for_review, 1);
   });
 }
+
+// A yolo builder is handed a brief that says what the flight says about protected work: a person
+// lands it. The builder commits and stops, so the flight is the only one that ships. If the builder
+// shipped too, its pull request would open before the flight's own check, and a flight whose check
+// or ship then failed would let go of the claim with that pull request open and unrecorded.
+//
+// The stand-in engine does what its brief orders: it commits and pushes nothing. The self-land check
+// gives the stage the real check gives a commit that is not on master (self_land_missing). The flight
+// then sends the commit through the same landing as any other protected fix: rebase, run the check
+// again, ship once without --merge, and wait in Review with the pull request.
+test('a protected-lane fix built in yolo mode is committed by the engine, shipped once without --merge by the flight, and waits in Review with its pull request', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK);
+  const entries = [];
+  const rebased = [];
+  const { flight, logs, receipt } = await flyWith(t, plane, {
+    options: {
+      yolo: true,
+      startCommitReader: () => 'base-commit',
+      dispatcher: (entry) => {
+        entries.push(entry);
+        return Promise.resolve({ exitCode: 0, report: 'committed on the branch' });
+      },
+      rebase: (args) => {
+        rebased.push(args);
+        return { ok: true, stage: 'rebased' };
+      },
+      selfLandCheck: () => ({ ok: false, stage: 'self_land_missing', target: 'origin/master', detail: 'HEAD is not an ancestor of origin/master' }),
+    },
+  });
+
+  // The engine keeps yolo, so its checks keep the network, but its brief orders a commit and no ship.
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].yolo, true);
+  const brief = entries[0].prompt;
+  assert.match(brief, /protected feedback lane/);
+  assert.match(brief, /a person lands it/);
+  assert.match(brief, /Do not push, do not run `atris worktree ship`, and do not create branches/);
+  assert.doesNotMatch(brief, /--merge|--verify|then run:|PR URL/);
+
+  // The engine never shipped. The one ship is the flight's own, and it does not merge.
+  const ships = callsTo(plane, 'worktree', 'ship');
+  assert.equal(ships.length, 1, 'only the flight ships');
+  assert.equal(ships[0].includes('--target'), true, 'the one ship is the flight\'s, with its landing target');
+  assert.equal(ships[0].includes('--merge'), false, `a ship merged protected work: ${ships[0].join(' ')}`);
+
+  // The commit was not pushed, so the flight rebased it onto the target it ships to, then shipped.
+  assert.equal(rebased.length, 1, 'an unpushed commit is rebased before it ships');
+  assert.equal(rebased[0].targetRef, flagValue(ships[0], '--target'));
+
+  // The flight does not call it landed, and does not pause or drop it.
+  assert.ok(logs.includes('    BCK-1934 is committed but not landed; landing it now'), logs.join('\n'));
+  assert.equal(logs.some((line) => /self-landed|✓ landed/.test(line)), false);
+  assert.deepEqual(flight.landed, []);
+  assert.deepEqual(flight.paused, []);
+  assert.equal(flight.status, 'completed');
+  assert.equal(flight.held_for_review.length, 1);
+  const [held] = flight.held_for_review;
+  assert.equal(held.task, 'BCK-1934');
+  assert.equal(held.lane, 'feedback');
+  assert.deepEqual(held.pull_request, { url: PR_URL, number: 77 });
+  assert.equal(held.review_recorded, true);
+  assert.equal(held.verifier_result.passed, true);
+
+  // The job goes to Review under the builder with the open pull request and no merge commit, and the
+  // claim stays: no release, so the rating sees good work waiting, not a drop.
+  const [ready] = callsTo(plane, 'task', 'ready');
+  assert.equal(ready[2], 'BCK-1934');
+  assert.equal(flagValue(ready, '--as'), 'fleet-codex');
+  assert.equal(flagValue(ready, '--pr-url'), PR_URL);
+  assert.equal(flagValue(ready, '--pr-number'), '77');
+  for (const flag of ['--merge-commit', '--self-landed', '--merged-at']) assert.equal(ready.includes(flag), false, flag);
+  assert.match(flagValue(ready, '--proof'), /not merged: pull request https:\/\/github\.example\/repo\/pull\/77 waits for a person to land it/);
+  assert.deepEqual(callsTo(plane, 'task', 'release'), []);
+
+  assert.ok(logs.includes(`    ⏸ BCK-1934 waits for a person to land it: ${PR_URL}`), logs.join('\n'));
+  assert.equal(receipt.status, 'completed');
+  assert.equal(receipt.yolo, true);
+  assert.deepEqual(receipt.landed, []);
+  assert.equal(receipt.held_for_review.length, 1);
+  assert.equal(receipt.held_for_review[0].pull_request.url, PR_URL);
+  assert.equal(receipt.result.kind, 'dispatch_held_for_review');
+  assert.equal(receipt.result.passed, true);
+});
 
 test('a safe-lane fix is still merged and counted as landed, with no held row', async (t) => {
   const task = { ...FEEDBACK_TASK, tag: 'code' };
