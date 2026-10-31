@@ -14,6 +14,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
 const tasks = require('../lib/task-db');
+const realClaimTask = tasks.claimTask;
 const fleet = require('../lib/fleet');
 const { loadSeason, rosterRows } = require('../lib/gm-season');
 const { readRosterRuns, summarizeRuns, OUTCOMES } = require('../lib/roster-runs');
@@ -414,8 +415,11 @@ function tempRoot(t) {
 // show, claim, ready, release and worktreeStart are for a test that needs one task command to
 // be answered some other way than the stand-in answers it (the real command, a refusal, a
 // failure), each given the arguments the flight sent. afterShow runs once the task command has
-// answered, which is when a list can change before the flight's next command.
-function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, readyError = 'ready failed: nope', releaseStatus = 0, show = null, claim = null, ready = null, release = null, worktreeStart = null, afterShow = null }) {
+// answered, which is when a list can change before the flight's next command. The flight
+// claims a job its store holds in its own process, not through the task command, so claim only
+// answers for a job the store has no row for; afterClaim is what runs once the store has
+// answered the flight's claim, which is when a task command writes the list again.
+function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, readyError = 'ready failed: nope', releaseStatus = 0, show = null, claim = null, ready = null, release = null, worktreeStart = null, afterShow = null, afterClaim = null }) {
   const calls = [];
   const cli = (args) => {
     calls.push(args);
@@ -440,13 +444,27 @@ function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, read
     }
     return { status: 0, stdout: '', stderr: '' };
   };
-  return { cli, calls };
+  return { cli, calls, afterClaim };
+}
+
+// Record the claims the flight makes in its own process (the row ids it claims, in order), and
+// run afterClaim once the store has answered each. The claim itself is the real one.
+function watchClaims(t, plane, afterClaim = plane.afterClaim) {
+  plane.storeClaims = plane.storeClaims || [];
+  if (tasks.claimTask.mock) tasks.claimTask.mock.restore();
+  t.mock.method(tasks, 'claimTask', (db, args) => {
+    plane.storeClaims.push(args.id);
+    const answer = realClaimTask(db, args);
+    if (afterClaim) afterClaim();
+    return answer;
+  });
 }
 
 // options go to the dispatch flight as they are, for a test that needs it to run another way
 // (review only, with no engine of its own).
 async function flyWith(t, plane, { root = tempRoot(t), options = {} } = {}) {
   const logs = [];
+  watchClaims(t, plane);
   const flight = await fleet.runDispatchFlight({
     root,
     taskIds: [plane.task.display_id],
@@ -465,21 +483,28 @@ const planeFor = (task, options = {}) => ({ task, ...fakeTaskPlane({ task, shipO
 const callsTo = (plane, ...words) => plane.calls.filter((args) => words.every((word, i) => args[i] === word));
 const flagValue = (args, flag) => args[args.indexOf(flag) + 1];
 
-// The flight lets an unsaved held proof go itself, in its own process, through the
-// task store it already holds its claim leases in. So the store needs the claim the
-// flight would hold: a real job, claimed by the builder, with the same name and
-// lease the command line would have given it. The task the fake plane shows is what the
-// task command shows for that job: its real id, the display id a person would read, and the
-// workspace it sits in.
+// The flight claims a job the store holds in its own process, and lets an unsaved held proof
+// go itself the same way, through the task store it already holds its claim leases in. So the
+// store needs a real job for it to claim: open, in the flight's workspace, which the flight
+// claims as the builder with the lease the command line would have given it. The task the fake
+// plane shows is what the task command shows for that job: its real id, the display id a person
+// would read, and the workspace it sits in. builder is the name the flight will claim under.
 function claimedForFlight(t, { builder = 'fleet-codex' } = {}) {
   const root = tempRoot(t);
   const workspace = tasks.workspaceRoot(root);
   const db = tasks.open();
   const { id } = tasks.addTask(db, { title: FEEDBACK_TASK.title, tag: 'feedback', workspaceRoot: workspace });
-  assert.equal(tasks.claimTask(db, { id, claimedBy: builder, leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   const [shown] = tasks.withTaskDisplayRefs(tasks.listTasks(db, { workspaceRoot: workspace }));
   assert.notEqual(shown.display_id, id, 'a person reads the display id, which is not the row id');
   return { root, workspace, db, id, dbPath: process.env.ATRIS_TASKS_DB, task: { ...FEEDBACK_TASK, id, display_id: shown.display_id, workspace_root: workspace } };
+}
+
+// The job held by a builder before the flight starts, for a test whose flight cannot name the row
+// it claims (so its claim does not reach the store) and then looks at what the store says.
+function heldBy(seeded, builder) {
+  const claim = tasks.claimTask(seeded.db, { id: seeded.id, claimedBy: builder, leaseMinutes: 60, leasePid: process.pid });
+  assert.equal(claim.claimed, true);
+  return claim;
 }
 
 // A job nobody holds yet, in the flight's own workspace, for a test whose claim is real.
@@ -819,6 +844,8 @@ test('a flight with no row id for the job does not release it, and the row says 
   const seeded = claimedForFlight(t);
   const { id, ...withoutId } = seeded.task;
   assert.ok(id);
+  // The task command's claim by display id is what holds the job; the stand-in plane has no store to write to.
+  heldBy(seeded, 'fleet-codex');
   const plane = planeFor(withoutId, { readyStatus: 1 });
   const { flight, logs, receipt } = await flyWith(t, plane, { root: seeded.root });
 
@@ -836,6 +863,7 @@ test('a flight with no row id for the job does not release it, and the row says 
 test('a row id the store does not know is not looked up again by display id', async (t) => {
   // The display id would find the held job. The row id the flight carries does not exist.
   const seeded = claimedForFlight(t);
+  heldBy(seeded, 'fleet-codex');
   const plane = planeFor({ ...seeded.task, id: 'no-such-row' }, { readyStatus: 1 });
   const { flight, logs } = await flyWith(t, plane, { root: seeded.root });
 
@@ -871,7 +899,7 @@ const jobNow = (db, id, was) => {
     released: releaseEvents(db, id).length,
   };
 };
-const claimRefs = (plane) => callsTo(plane, 'task', 'claim').map((args) => args[2]);
+const claimRefs = (plane) => [...callsTo(plane, 'task', 'claim').map((args) => args[2]), ...(plane.storeClaims || [])];
 const readyRefs = (plane) => callsTo(plane, 'task', 'ready').map((args) => args[2]);
 const releaseRefs = (plane) => callsTo(plane, 'task', 'release').map((args) => args[2]);
 
@@ -920,7 +948,7 @@ for (const held of [false, true]) {
     writeList(other.workspace);
     assert.deepEqual(named(), [other.id], 'when the task command is asked, the list names the other workspace\'s job');
     // Once the task command has answered, the list is written again and names this workspace's job.
-    const plane = planeFor(other.task, { readyStatus: 1, claim: realCommand(local.root), afterShow: () => writeList(local.workspace) });
+    const plane = planeFor(other.task, { readyStatus: 1, afterShow: () => writeList(local.workspace), afterClaim: () => writeList(local.workspace) });
     const { leased, result: { flight, logs, receipt } } = await leasing(() => flyWith(t, plane, { root: local.root }));
     const shown = other.task.display_id;
     assert.deepEqual(named(), [local.id], 'by the time of the claim, the list names this workspace\'s own open job under that display id');
@@ -962,7 +990,7 @@ for (const [label, workspace_root] of [['shows none', undefined], ['shows an emp
   test(`a job the task command shows with a row id and no workspace (it ${label}) is refused the same way`, async (t) => {
     const local = openForFlight(t);
     const was = eventCount(local.db, local.id);
-    const plane = planeFor({ ...local.task, workspace_root }, { claim: realCommand(local.root) });
+    const plane = planeFor({ ...local.task, workspace_root });
     const { flight } = await flyWith(t, plane, { root: local.root });
     const shown = local.task.display_id;
 
@@ -987,10 +1015,9 @@ for (const [label, workspace_root] of [['shows none', undefined], ['shows an emp
 // display id is not touched, though the list names it by the time the flight has claimed.
 test('the claim, the lease and the release all name the row the task command showed, and the other workspace\'s job that shares its display id is not touched', async (t) => {
   const { local, other, writeList, was } = twoJobsOneName(t, { held: true });
-  const run = realCommand(local.root);
   const plane = planeFor(local.task, {
     readyStatus: 1,
-    claim: (args) => { const answer = run(args); writeList(other.workspace); return answer; },
+    afterClaim: () => writeList(other.workspace),
   });
   // What the store holds for the row when the build starts.
   const atBuild = [];
@@ -1020,7 +1047,8 @@ test('the claim, the lease and the release all name the row the task command sho
     atBuild: [['claimed', 'fleet-codex']],
     leased: [[local.id, 'fleet-codex']],
     paused: [[shown, 'task_ready', true]],
-    local: { status: 'open', claimed_by: null, new_events: 2, released: 1, claimed: 1 },
+    // The claim, the mark that its build started, and the release.
+    local: { status: 'open', claimed_by: null, new_events: 3, released: 1, claimed: 1 },
     other: { ...untouched(true), claimed: 1 },
   });
   // The release is on that row, with the marker.
@@ -1038,7 +1066,7 @@ test('a claim the store refuses pauses the dispatch flight at the claim under th
   const { local, other, was } = twoJobsOneName(t, { held: false });
   assert.equal(tasks.claimTask(local.db, { id: local.id, claimedBy: 'fleet-gemini', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   was.local = eventCount(local.db, local.id);
-  const plane = planeFor(local.task, { readyStatus: 1, claim: realCommand(local.root) });
+  const plane = planeFor(local.task, { readyStatus: 1 });
   const { leased, result: { flight, logs } } = await leasing(() => flyWith(t, plane, { root: local.root }));
   const shown = local.task.display_id;
 
@@ -1075,15 +1103,18 @@ const listedAs = (job, extra = {}) => ({
 });
 
 // The fleet flight over a task list file. listed is what the file names when the flight reads
-// it. atClaim runs once the claim command has answered, which is where a task command writes
-// the list again. real names the task commands that go to the real command line; every other
-// command is a stand-in that works, unless startsWorktree is false and the worktree cannot start.
+// it. atClaim runs once the store has answered the flight's claim, which is where a task command
+// writes the list again. real names the task commands that go to the real command line (the
+// flight claims in its own process, so claim is only answered here for a job the store has no
+// row for); every other command is a stand-in that works, unless startsWorktree is false and
+// the worktree cannot start.
 async function flyFleet(t, local, { listed, atClaim = () => {}, real = [], startsWorktree = true }) {
   const file = path.join(local.root, '.atris', 'state', 'tasks.projection.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ tasks: listed }, null, 2)}\n`);
   const run = realCommand(local.root);
   const plane = { calls: [] };
+  watchClaims(t, plane, atClaim);
   const cli = (args) => {
     plane.calls.push(args);
     if (args[0] === 'task') {
@@ -1121,7 +1152,6 @@ for (const held of [false, true]) {
     const { plane, logs, leased, outcome } = await flyFleet(t, local, {
       listed: [listedAs(other)],
       atClaim: () => writeList(local.workspace),
-      real: ['claim'],
     });
 
     assert.deepEqual({
@@ -1152,7 +1182,7 @@ for (const [label, workspace_root] of [['names none', undefined], ['names an emp
   test(`a listed job with a row id and no workspace (the list ${label}) is refused too`, async (t) => {
     const local = openForFlight(t);
     const was = eventCount(local.db, local.id);
-    const { plane, outcome } = await flyFleet(t, local, { listed: [listedAs(local, { workspace_root })], real: ['claim'] });
+    const { plane, outcome } = await flyFleet(t, local, { listed: [listedAs(local, { workspace_root })] });
     const shown = local.task.display_id;
 
     assert.deepEqual({
@@ -1175,7 +1205,6 @@ test('the fleet flight claims and leases the row its own list named, even when t
   const { plane, logs, leased, outcome } = await flyFleet(t, local, {
     listed: [listedAs(local)],
     atClaim: () => writeList(other.workspace),
-    real: ['claim'],
   });
 
   // The claim and the lease are on the row the list named, which the builder now holds. The
@@ -1192,7 +1221,8 @@ test('the fleet flight claims and leases the row its own list named, even when t
     claims: [local.id],
     leased: [[local.id, 'fleet-codex']],
     landed: [shown],
-    local: { status: 'claimed', claimed_by: 'fleet-codex', new_events: 1, released: 0 },
+    // The claim, and the mark that its build started.
+    local: { status: 'claimed', claimed_by: 'fleet-codex', new_events: 2, released: 0 },
     other: untouched(false),
   });
 
@@ -1207,7 +1237,7 @@ test('a claim the store refuses pauses the fleet flight under the display id a p
   assert.equal(tasks.claimTask(local.db, { id: local.id, claimedBy: 'fleet-gemini', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   was.local = eventCount(local.db, local.id);
   const shown = local.task.display_id;
-  const { plane, logs, leased, outcome } = await flyFleet(t, local, { listed: [listedAs(local)], real: ['claim'] });
+  const { plane, logs, leased, outcome } = await flyFleet(t, local, { listed: [listedAs(local)] });
 
   assert.deepEqual({
     error: outcome.error && outcome.error.message,
@@ -1236,19 +1266,20 @@ test('a claim the store refuses pauses the fleet flight under the display id a p
 
 // The name-collision state: this workspace's own job (local) is claimed by the flight, and from
 // then on the task list file names another workspace's job (other) under the same display id. A
-// command that finds the job again by what a person reads would now land on the other job. These
-// run the real task commands, so a display id resolves the way it really does.
+// command that finds the job again by what a person reads would now land on the other job. The
+// task commands the flight still sends run for real, so a display id resolves the way it really
+// does.
 function collision(t, { held }) {
   const jobs = twoJobsOneName(t, { held });
   const run = realCommand(jobs.local.root);
   // Once the claim has gone through, the list is written for the other workspace.
   const afterClaim = () => jobs.writeList(jobs.other.workspace);
-  return { ...jobs, run, afterClaim, claim: (args) => { const answer = run(args); afterClaim(); return answer; } };
+  return { ...jobs, run, afterClaim };
 }
 
 test('task ready names the row the dispatch flight claimed, so the other workspace\'s job under the same display id gets no proof', async (t) => {
-  const { local, other, run, claim, was } = collision(t, { held: true });
-  const plane = planeFor(local.task, { claim, ready: run });
+  const { local, other, run, afterClaim, was } = collision(t, { held: true });
+  const plane = planeFor(local.task, { afterClaim, ready: run });
   const { flight } = await flyWith(t, plane, { root: local.root });
   const shown = local.task.display_id;
 
@@ -1270,44 +1301,50 @@ test('task ready names the row the dispatch flight claimed, so the other workspa
 
 for (const held of [true, false]) {
   test(`a job the dispatch flight never started is let go by its row id, so the other workspace's job under the same display id is not (the other job is ${held ? 'held' : 'open'})`, async (t) => {
-    const { local, other, run, claim, was } = collision(t, { held });
-    const plane = planeFor(local.task, { claim, release: run, worktreeStart: () => ({ status: 1, stdout: '', stderr: 'worktree start failed' }) });
+    const { local, other, run, afterClaim, was } = collision(t, { held });
+    const plane = planeFor(local.task, { afterClaim, release: run, worktreeStart: () => ({ status: 1, stdout: '', stderr: 'worktree start failed' }) });
     const { flight } = await flyWith(t, plane, { root: local.root });
     const shown = local.task.display_id;
 
+    // A job that never started is let go in the flight's own process, on the row it claimed (marked as
+    // one that could not start), so no release goes through the task command.
     assert.deepEqual({
       released: releaseRefs(plane),
       paused: flight.paused.map((row) => [row.task, row.stage, row.claim_released]),
       local: jobNow(local.db, local.id),
       other: jobNow(local.db, other.id, was.other),
     }, {
-      released: [local.id],
+      released: [],
       paused: [[shown, 'worktree_start', true]],
       local: { status: 'open', claimed_by: null, released: 1 },
       other: untouched(held),
     });
     assert.match(releaseEvents(local.db, local.id)[0].reason, /^paused at worktree start: worktree start failed$/);
+    assert.equal(releaseEvents(local.db, local.id)[0].kind, 'could_not_start');
   });
 
   test(`a paused claim with no work is let go by its row id at the end of the dispatch flight, so the other workspace's job under the same display id is not (the other job is ${held ? 'held' : 'open'})`, async (t) => {
-    const { local, other, run, claim, was } = collision(t, { held });
+    const { local, other, run, afterClaim, was } = collision(t, { held });
     // The branch is pushed but no pull request link comes back, so the flight pauses at ship.
-    const plane = planeFor(local.task, { claim, release: run, shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' });
+    const plane = planeFor(local.task, { afterClaim, release: run, shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' });
     const { flight } = await flyWith(t, plane, { root: local.root });
     const shown = local.task.display_id;
 
+    // The engine ran on this job, so it is let go in the flight's own process too, on the row and the claim it made,
+    // as an ordinary release (no kind), and no release goes through the task command.
     assert.deepEqual({
       released: releaseRefs(plane),
       paused: flight.paused.map((row) => [row.task, row.stage, row.claim_released]),
       local: jobNow(local.db, local.id),
       other: jobNow(local.db, other.id, was.other),
     }, {
-      released: [local.id],
+      released: [],
       paused: [[shown, 'ship', true]],
       local: { status: 'open', claimed_by: null, released: 1 },
       other: untouched(held),
     });
     assert.match(releaseEvents(local.db, local.id)[0].reason, /^paused at ship: /);
+    assert.equal(releaseEvents(local.db, local.id)[0].kind, undefined);
   });
 
   test(`a paused claim with no work is let go by its row id at the end of the fleet flight, so the other workspace's job under the same display id is not (the other job is ${held ? 'held' : 'open'})`, async (t) => {
@@ -1316,10 +1353,12 @@ for (const held of [true, false]) {
     const { plane, outcome } = await flyFleet(t, local, {
       listed: [listedAs(local)],
       atClaim: afterClaim,
-      real: ['claim', 'release'],
+      real: ['release'],
       startsWorktree: false,
     });
 
+    // This pause is a job that never started, so it is let go in the flight's own process, on the row it
+    // claimed, and no release goes through the task command.
     assert.deepEqual({
       error: outcome.error && outcome.error.message,
       released: releaseRefs(plane),
@@ -1328,11 +1367,12 @@ for (const held of [true, false]) {
       other: jobNow(local.db, other.id, was.other),
     }, {
       error: undefined,
-      released: [local.id],
+      released: [],
       paused: [[shown, 'worktree_start', true]],
       local: { status: 'open', claimed_by: null, released: 1 },
       other: untouched(held),
     });
+    assert.equal(releaseEvents(local.db, local.id)[0].kind, 'could_not_start');
   });
 }
 
@@ -1342,7 +1382,7 @@ test('task ready names the row the fleet flight claimed, so the other workspace\
   const { plane, outcome } = await flyFleet(t, local, {
     listed: [listedAs(local)],
     atClaim: () => writeList(other.workspace),
-    real: ['claim', 'ready'],
+    real: ['ready'],
   });
 
   assert.deepEqual({
@@ -1392,38 +1432,71 @@ for (const [label, fly] of [
   });
 }
 
+// A job the store holds a row for is claimed and let go in the flight's own process (below), so the task command
+// is asked to release only a job the store has no row for. It still names the row id the task command showed.
+for (const [label, fly] of [
+  ['the worktree could not start on a job the store holds no row for', (t, seeded) => {
+    const plane = planeFor({ ...seeded.task, id: 'row-the-store-lacks' }, { worktreeStart: () => ({ status: 1, stdout: '', stderr: 'worktree start failed' }) });
+    return flyWith(t, plane, { root: seeded.root }).then(() => plane);
+  }],
+]) {
+  test(`a release is sent with the job's row id: ${label}`, async (t) => {
+    const seeded = claimedForFlight(t);
+    const plane = await fly(t, seeded);
+    assert.deepEqual(releaseRefs(plane), [plane.task.id]);
+    assert.equal(plane.task.id, 'row-the-store-lacks');
+    const [release] = callsTo(plane, 'task', 'release');
+    assert.equal(flagValue(release, '--as'), 'fleet-codex');
+  });
+}
+
+// A claim the flight made is let go in the flight's own process, not through the task command: on the row id
+// the task command showed, by the builder that claimed it, and only if the job is still held under that very
+// claim. A job that never started (no engine ran) is marked as one that could not start.
+// The task command is not asked to release it.
 for (const [label, fly] of [
   ['the worktree could not start', (t, seeded) => {
     const plane = planeFor(seeded.task, { worktreeStart: () => ({ status: 1, stdout: '', stderr: 'worktree start failed' }) });
-    return flyWith(t, plane, { root: seeded.root }).then(() => plane);
-  }],
-  ['the sealed review sandbox could not be prepared', (t, seeded) => {
-    const plane = planeFor(seeded.task);
-    return flyWith(t, plane, { root: seeded.root, options: { ...A_PROOF_ONLY, dispatcher: null } }).then(() => plane);
-  }],
-  ['the lease could not be set', (t, seeded) => {
-    // The store has the job open, not claimed by the builder, so the lease cannot be set.
-    tasks.releaseTask(seeded.db, { id: seeded.id, actor: 'fleet-codex' });
-    const plane = planeFor(seeded.task);
-    return flyWith(t, plane, { root: seeded.root }).then(() => plane);
-  }],
-  ['the flight paused at ship and the job holds no work', (t, seeded) => {
-    const plane = planeFor(seeded.task, { shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' });
     return flyWith(t, plane, { root: seeded.root }).then(() => plane);
   }],
   ['the fleet flight could not start a worktree', async (t, seeded) => {
     const { plane } = await flyFleet(t, seeded, { listed: [listedAs(seeded)], startsWorktree: false });
     return plane;
   }],
+  // The sealed review flight builds in the temp folder, so its disk check asks about that folder with the
+  // check on: a roomy disk is given, so this test does not depend on the machine it runs on.
+  ['the sealed review sandbox could not be prepared', (t, seeded) => {
+    const plane = planeFor(seeded.task);
+    return flyWith(t, plane, { root: seeded.root, options: { ...A_PROOF_ONLY, dispatcher: null, freeSpace: () => 50e9 } }).then(() => plane);
+  }],
 ]) {
-  test(`a release is sent with the job's row id: ${label}`, async (t) => {
+  test(`a release of a job that never started lands on the job's row id, in process: ${label}`, async (t) => {
     const seeded = claimedForFlight(t);
     const plane = await fly(t, seeded);
-    assert.deepEqual(releaseRefs(plane), [seeded.id]);
-    const [release] = callsTo(plane, 'task', 'release');
-    assert.equal(flagValue(release, '--as'), 'fleet-codex');
+    assert.deepEqual(releaseRefs(plane), []);
+    const events = releaseEvents(seeded.db, seeded.id);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].released_by, 'fleet-codex');
+    assert.equal(events[0].kind, 'could_not_start');
+    assert.deepEqual(jobNow(seeded.db, seeded.id), { status: 'open', claimed_by: null, released: 1 });
   });
 }
+
+// A job the engine ran on, paused at ship with nothing to keep, is let go the same way, in process, as an ordinary
+// release: the engine started, so it is not a job that could not start.
+test('a release of a job the engine ran on lands on the job\'s row id, in process, as an ordinary release: the flight paused at ship and the job holds no work', async (t) => {
+  const seeded = claimedForFlight(t);
+  const plane = planeFor(seeded.task, { shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' });
+  await flyWith(t, plane, { root: seeded.root });
+
+  assert.deepEqual(releaseRefs(plane), []);
+  const events = releaseEvents(seeded.db, seeded.id);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].released_by, 'fleet-codex');
+  assert.equal(events[0].kind, undefined);
+  assert.match(events[0].reason, /^paused at ship: /);
+  assert.deepEqual(jobNow(seeded.db, seeded.id), { status: 'open', claimed_by: null, released: 1 });
+});
 
 // The flight's folder is compared with the job's workspace the way the store spells it, through
 // its real path. A folder reached through a link is the same workspace as the folder itself.
@@ -1467,7 +1540,6 @@ test('a job whose row sits in a git worktree linked to the flight\'s workspace i
   const workspace = tasks.workspaceRoot(linked);
   assert.notEqual(workspace, tasks.workspaceRoot(root));
   const { id } = tasks.addTask(db, { title: FEEDBACK_TASK.title, tag: 'feedback', workspaceRoot: workspace });
-  assert.equal(tasks.claimTask(db, { id, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   const plane = planeFor({ ...FEEDBACK_TASK, id, display_id: 'SIDE-1', workspace_root: workspace });
   // A flight in a git checkout builds on a local branch and stops at a proof for Review.
   const { flight } = await flyWith(t, plane, { root, options: { changeInspector: A_PROOF_ONLY.changeInspector } });
@@ -1524,12 +1596,12 @@ test('the store says a row is inside a workspace by the rule its own listing use
 });
 
 // The real task commands end to end, for a job in the flight's own workspace: the task command
-// shows it with its workspace, and the flight claims it, proves it and leaves it in Review, all by
-// its row id, without ever refusing it as another workspace's.
+// shows it with its workspace, and the flight claims it (in its own process), proves it and leaves
+// it in Review, all by its row id, without ever refusing it as another workspace's.
 test('a job in the flight\'s own workspace goes through the real task commands without being refused, by its row id', async (t) => {
   const local = openForFlight(t);
   const run = realCommand(local.root);
-  const plane = planeFor(local.task, { show: run, claim: run, ready: run, release: run });
+  const plane = planeFor(local.task, { show: run, ready: run, release: run });
   const { flight, logs } = await flyWith(t, plane, { root: local.root });
 
   const shown = JSON.parse(run(['task', 'show', local.task.display_id, '--json']).stdout);
@@ -1554,18 +1626,25 @@ test('a job in the flight\'s own workspace goes through the real task commands w
   assert.equal(logs.some((line) => line.includes(local.id)), false, 'no log line shows a row id');
 });
 
+// The worktree start a stand-in task plane answers with, after looking at something the flight has drawn by then.
+const startsAfter = (look) => (args) => {
+  look();
+  return { status: 0, stdout: `next: cd /wt/${args[args.indexOf('--task') + 1]}\n`, stderr: '' };
+};
+
 test('after the flight lets the claim go, the task list file shows the job open again, as the release command leaves it', async (t) => {
   const seeded = claimedForFlight(t);
   const file = path.join(seeded.root, '.atris', 'state', 'tasks.projection.json');
   const shown = () => JSON.parse(fs.readFileSync(file, 'utf8')).tasks.find((task) => task.id === seeded.id);
-  // The file as the claim left it.
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(tasks.taskProjection(seeded.db, { workspaceRoot: seeded.workspace, limit: 500 }), null, 2)}\n`);
-  assert.equal(shown().status, 'claimed');
-  assert.equal(shown().claimed_by, 'fleet-codex');
+  // The file as the claim leaves it: the flight draws it when it claims, as the task command's claim does, so by
+  // the time its build starts the file shows the job held by the builder.
+  let asTheClaimLeftIt = null;
+  const plane = planeFor(seeded.task, { readyStatus: 1, worktreeStart: startsAfter(() => { asTheClaimLeftIt = shown(); }) });
 
-  await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
+  await flyWith(t, plane, { root: seeded.root });
 
+  assert.equal(asTheClaimLeftIt.status, 'claimed');
+  assert.equal(asTheClaimLeftIt.claimed_by, 'fleet-codex');
   assert.equal(shown().status, 'open', 'the list file shows the released job as open again');
   assert.equal(shown().claimed_by || null, null);
 
@@ -1591,20 +1670,29 @@ const todoSection = (seeded, name) => {
   const next = lines.findIndex((line, at) => at > from && line.startsWith('## '));
   return lines.slice(from + 1, next < 0 ? undefined : next).join('\n').trim();
 };
-// TODO.md as the claim left it: the job under In Progress, held by the builder.
-function writeTodoWithTheClaim(seeded) {
+// The workspace gets an atris/ folder, which is what makes the task command draw TODO.md at all. The flight draws
+// it when it claims, as the task command's claim does: by the time its build starts, the job is under In Progress,
+// held by the builder. The look is what the plane's worktree start does, which returns the answer a start gives.
+function lookAtTodoAsTheClaimLeftIt(seeded, seen) {
   fs.mkdirSync(path.dirname(todoPath(seeded)), { recursive: true });
-  fs.writeFileSync(todoPath(seeded), drawTodo(seeded));
-  assert.match(todoSection(seeded, 'In Progress'), new RegExp(`\\[${seeded.task.display_id}\\].*fleet-codex`));
-  assert.equal(todoSection(seeded, 'Backlog'), '(Empty)');
+  return startsAfter(() => {
+    seen.todo = fs.readFileSync(todoPath(seeded), 'utf8');
+  });
+}
+function assertTodoAsTheClaimLeftIt(seeded, seen) {
+  const lines = seen.todo.split('\n');
+  const from = lines.indexOf('## In Progress');
+  assert.ok(from >= 0, 'In Progress is in TODO.md');
+  assert.match(lines.slice(from + 1, lines.findIndex((line, at) => at > from && line.startsWith('## '))).join('\n'), new RegExp(`\\[${seeded.task.display_id}\\].*fleet-codex`));
 }
 
 test('after the flight lets the claim go, atris/TODO.md in its workspace no longer shows the job as claimed', async (t) => {
   const seeded = claimedForFlight(t);
-  writeTodoWithTheClaim(seeded);
+  const seen = {};
 
-  await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
+  await flyWith(t, planeFor(seeded.task, { readyStatus: 1, worktreeStart: lookAtTodoAsTheClaimLeftIt(seeded, seen) }), { root: seeded.root });
 
+  assertTodoAsTheClaimLeftIt(seeded, seen);
   assert.equal(todoSection(seeded, 'In Progress'), '(Empty)', 'the released job is not shown as claimed');
   assert.match(todoSection(seeded, 'Backlog'), new RegExp(`\\[${seeded.task.display_id}\\]`));
   assert.equal(fs.readFileSync(todoPath(seeded), 'utf8'), drawTodo(seeded), 'it is the same picture the saved state draws');
@@ -1612,11 +1700,12 @@ test('after the flight lets the claim go, atris/TODO.md in its workspace no long
 
 test('a task list file that cannot be written does not undo a release that is already saved, nor stop TODO.md being redrawn', async (t) => {
   const seeded = claimedForFlight(t);
-  writeTodoWithTheClaim(seeded);
-  // A folder where the list file goes: the write fails, after the release is saved.
+  const seen = {};
+  // A folder where the list file goes: the write fails, after the claim and after the release are saved.
   fs.mkdirSync(path.join(seeded.root, '.atris', 'state', 'tasks.projection.json'), { recursive: true });
-  const { flight, logs, receipt } = await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
+  const { flight, logs, receipt } = await flyWith(t, planeFor(seeded.task, { readyStatus: 1, worktreeStart: lookAtTodoAsTheClaimLeftIt(seeded, seen) }), { root: seeded.root });
 
+  assertTodoAsTheClaimLeftIt(seeded, seen);
   assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'open', 'the claim is let go');
   assert.deepEqual(releaseEvents(seeded.db, seeded.id), [heldRelease()]);
   assert.equal(flight.paused[0].claim_released, true, 'the row does not say the release failed when it was saved');

@@ -10256,7 +10256,7 @@ async function parseAndValidateMissionRunPhase(args) {
   // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
   // full loop, see lib/fleet.js. --dry-run previews the staffing only.
   if (hasFlag(args, '--fleet')) {
-    const { runFleetFlight } = require('../lib/fleet');
+    const { runFleetFlight, flightExitCode } = require('../lib/fleet');
     const slots = Math.max(1, Number(readFlag(args, '--slots', '')) || 3);
     // Default: cut build worktrees from origin/master (checkoutBase). --base
     // keeps launcher-HEAD only when the operator asks for it explicitly.
@@ -10268,7 +10268,7 @@ async function parseAndValidateMissionRunPhase(args) {
       ...(baseOverride ? { checkoutBase: baseOverride } : {}),
     });
     if (asJson) console.log(JSON.stringify(flight, null, 2));
-    process.exitCode = flight.paused && flight.paused.length > 0 ? 1 : 0;
+    process.exitCode = flightExitCode(flight);
     context.handled = true;
     return context;
   }

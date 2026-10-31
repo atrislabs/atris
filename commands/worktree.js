@@ -617,9 +617,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   const shipBase = checkoutBase;
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   // A full disk stops every flight at once. Reap first; refuse before cutting.
-  const room = (spaceGuard ?? !space.isScratchPath(target))
-    ? ensureRoomForCopy({ root, target, freeSpace, env, cleanupBudget })
-    : null;
+  const room = checkRoomForCopy({ root, target, freeSpace, env, spaceGuard, cleanupBudget });
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staleBase = refreshRemoteRef(root, checkoutBase);
   // A retry of the same job starts from the last run's unlanded commits; it
@@ -762,6 +760,29 @@ function ensureRoomForCopy({ root, target, freeSpace = space.freeBytes, env = pr
     throw error;
   }
   return room;
+}
+
+// When the disk is checked before a copy is cut: spaceGuard says so, else anywhere but a temp folder.
+function checkRoomForCopy({ root, target, freeSpace, env, spaceGuard, cleanupBudget = null }) {
+  return (spaceGuard ?? !space.isScratchPath(target))
+    ? ensureRoomForCopy({ root, target, freeSpace, env, cleanupBudget })
+    : null;
+}
+
+// The question worktree start asks about the disk, asked on its own so a flight can ask it once before it
+// claims anything: the same floor, the same reaping of finished copies, the same words. null when there is
+// room, when the disk cannot be read, or when a copy would land in a temp folder. Otherwise the sentence
+// worktree start would refuse with, and the numbers behind it. Any other trouble is left for worktree start
+// to report when it runs. target names the folder the build will use when it is not worktree start's usual
+// one (a sealed review sandbox is cut in the temp folder).
+function lowDiskRefusal({ root = repoRoot(), member = '', agent = '', task = 'flight', now = new Date(), env = process.env, freeSpace = space.freeBytes, spaceGuard, target = '' } = {}) {
+  try {
+    checkRoomForCopy({ root, target: target ? path.resolve(target) : path.resolve(defaultWorktreePath(root, member || agent, task, now)), freeSpace, env, spaceGuard });
+    return null;
+  } catch (error) {
+    if (!error || error.code !== 'ATRIS_LOW_DISK') return null;
+    return { message: error.message, free: error.space.free, needs: error.space.refuseBelow };
+  }
 }
 
 function startWorktree(args) {
@@ -2150,6 +2171,7 @@ module.exports = {
   collidingFlights,
   mergePrWithRetry,
   createAgentWorktree,
+  lowDiskRefusal,
   deniedLaneForShip,
   protectedPushRefusal,
   createOrFindPr,
