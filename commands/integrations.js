@@ -1032,6 +1032,8 @@ async function googleConnect(name, products, business, deps = {}) {
         continue;
       }
     }
+    if (now() >= deadline) break;
+    pollOptions.timeoutMs = Math.max(1, Math.min(interval, deadline - now()));
     const list = await apiRequestJson('/integrations/google/accounts', pollOptions);
     if (list.status === 404) { console.log(googleOldServer); return; }
     if (!list.ok) continue;
