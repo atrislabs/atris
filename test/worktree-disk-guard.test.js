@@ -248,6 +248,52 @@ test('the sweep removes merged idle copies in every repo, clears webpack caches 
   assert.equal(typeof applied.before, 'number');
 });
 
+test('one sweep shares its twenty-copy limit across repositories', (t) => {
+  const ws = workspace(t);
+  const first = makeRepo(ws, 'app');
+  const second = makeRepo(ws, 'other');
+  for (let i = 0; i < 11; i++) {
+    addCopy(first, `app-${i}`);
+    addCopy(second, `other-${i}`);
+  }
+  const preview = sweepWorkspace({ workspace: ws, activeCwds: [] });
+  assert.equal(preview.repos.flatMap((repo) => repo.candidates || []).length, 20);
+  assert.equal(preview.repos.flatMap((repo) => repo.kept || []).filter((item) => item.reason === 'size_unknown_or_cleanup_limit').length, 2);
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [] });
+  assert.equal(applied.repos.flatMap((repo) => repo.removed || []).length, 20);
+  assert.equal(applied.repos.flatMap((repo) => repo.kept || []).filter((item) => item.reason === 'size_unknown_or_cleanup_limit').length, 2);
+});
+
+test('an applied sweep leaves shared installs and old partial entries intact', (t) => {
+  const ws = workspace(t);
+  const root = makeRepo(ws, 'app');
+  addCopy(root, 'finished');
+  const dir = path.join(ws, '.agent-worktrees', '.deps', 'app');
+  for (const name of ['old1', 'old2', 'old3', 'old4', '.partial-old']) {
+    fs.mkdirSync(path.join(dir, name), { recursive: true });
+    fs.writeFileSync(path.join(dir, name, 'local-notes.txt'), name);
+    backdate(path.join(dir, name), 3);
+  }
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [] });
+  assert.equal(applied.repos.find((repo) => repo.name === 'app').removed.length, 1);
+  for (const name of ['old1', 'old2', 'old3', 'old4', '.partial-old']) {
+    assert.equal(fs.readFileSync(path.join(dir, name, 'local-notes.txt'), 'utf8'), name);
+  }
+});
+
+test('a sweep honors the cleanup already done while starting a copy', (t) => {
+  const ws = workspace(t);
+  const first = makeRepo(ws, 'app');
+  const second = makeRepo(ws, 'other');
+  const one = addCopy(first, 'one');
+  const two = addCopy(second, 'two');
+  const budget = { count: 19, kib: 0 };
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [], cleanupBudget: budget });
+  assert.equal(applied.repos.flatMap((repo) => repo.removed || []).length, 1);
+  assert.equal([one, two].filter((copy) => fs.existsSync(copy)).length, 1);
+  assert.equal(budget.count, 20);
+});
+
 test('the sweep timer runs the sweep every few hours from launchd', (t) => {
   const home = workspace(t);
   const plan = sweepSchedulePlan({ workspace: '/w/arena', everyHours: 3, homeDir: home, platform: 'darwin', atrisBin: '/opt/atris/bin/atris.js' });
