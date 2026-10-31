@@ -589,10 +589,11 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   // Every new flight pays down completed checkout debt before adding another
   // full repo copy. Branches and commits survive worktree removal, while real
   // uncommitted changes remain protected by cleanupWorktrees.
+  const cleanupBudget = { count: 0, kib: 0 };
   let reapedBeforeStart = [];
   let cachePrunedBeforeStart = [];
   try {
-    const cleaned = cleanupWorktrees({ root, base: mainline, apply: true, by: 'atris worktree start' });
+    const cleaned = cleanupWorktrees({ root, base: mainline, apply: true, by: 'atris worktree start', cleanupBudget });
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
@@ -617,7 +618,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   // A full disk stops every flight at once. Reap first; refuse before cutting.
   const room = (spaceGuard ?? !space.isScratchPath(target))
-    ? ensureRoomForCopy({ root, target, freeSpace, env })
+    ? ensureRoomForCopy({ root, target, freeSpace, env, cleanupBudget })
     : null;
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staleBase = refreshRemoteRef(root, checkoutBase);
@@ -734,13 +735,13 @@ function seedCopyDeps({ root, target, options = {} }) {
 // the engine that just finished may still have its last message unread.
 const LOW_DISK_IDLE_MS = 10 * 60 * 1000;
 
-function ensureRoomForCopy({ root, target, freeSpace = space.freeBytes, env = process.env, by = 'atris worktree start' }) {
+function ensureRoomForCopy({ root, target, freeSpace = space.freeBytes, env = process.env, by = 'atris worktree start', cleanupBudget = null }) {
   const limits = space.spaceLimits(env);
   const before = freeSpace(target);
   const room = { before, free: before, removed: [], cleared: [], ...limits };
   if (typeof before !== 'number' || !Number.isFinite(before)) return room;
   if (before >= limits.reapBelow && before >= limits.refuseBelow) return room;
-  const swept = sweepWorkspace({ workspace: path.dirname(findPrimaryRoot(root)), apply: true, idleMs: LOW_DISK_IDLE_MS, freeSpace, by });
+  const swept = sweepWorkspace({ workspace: path.dirname(findPrimaryRoot(root)), apply: true, idleMs: LOW_DISK_IDLE_MS, freeSpace, by, cleanupBudget });
   for (const repo of swept.repos) {
     room.removed.push(...(repo.removed || []));
     room.cleared.push(...(repo.cachePruned || []));
@@ -1694,6 +1695,7 @@ function cleanupWorktrees({
   idleMs = 0,
   freshGraceMs = WORKTREE_REAP_GRACE_MS,
   now = Date.now(),
+  cleanupBudget = null,
 } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
@@ -1706,7 +1708,7 @@ function cleanupWorktrees({
   const removed = [];
   const cacheCandidates = [];
   const cachePruned = [];
-  const cacheBudget = { count: 0, kib: 0 };
+  const cacheBudget = cleanupBudget || { count: 0, kib: 0 };
   const scopePaths = Array.isArray(onlyPaths) ? onlyPaths.map(canonicalPath) : null;
   const inScope = (wtPath) => (!scopePaths || scopePaths.includes(canonicalPath(wtPath)))
     && (!onlyUnder || space.isInside(wtPath, onlyUnder));
@@ -1847,13 +1849,12 @@ function cleanupWorktrees({
 // Removes copies that pass every cleanup check (merged into origin's main
 // branch, nothing changed, untracked, or ignored, nothing running inside)
 // and are unused for idleMs; clears verified webpack caches in the idle
-// copies it keeps; trims the shared install store. Unmerged work always
-// stays.
+// copies it keeps. Shared installs and unmerged work stay for review.
 const SWEEP_IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_EVERY_HOURS = 3;
 const SWEEP_HIDDEN_KEPT = new Set(['primary_checkout', 'current_checkout', 'out_of_scope']);
 
-function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, activeCwds, freeSpace = space.freeBytes, by = 'atris worktree sweep' } = {}) {
+function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, activeCwds, freeSpace = space.freeBytes, by = 'atris worktree sweep', cleanupBudget = null } = {}) {
   const root = path.resolve(workspace);
   const before = freeSpace(root);
   const report = { workspace: root, apply, idle_ms: idleMs, before, after: before, repos: [] };
@@ -1861,6 +1862,8 @@ function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, acti
   // Without a process list nobody can tell which copies are in use.
   if (!Array.isArray(scan)) return { ...report, error: 'could not list running programs, so every copy was kept' };
   const scope = path.join(root, space.AGENT_COPIES_DIR);
+  // One limit covers the whole sweep, not each repository separately.
+  cleanupBudget = cleanupBudget || { count: 0, kib: 0 };
   for (const repo of space.agentCopyRepos(root)) {
     const entry = { name: repo.name, root: repo.root };
     try {
@@ -1872,7 +1875,7 @@ function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, acti
       // A real removal scans again per repo and right before each copy goes;
       // the shared scan only serves previews and tests.
       const shared = Array.isArray(activeCwds) || !apply ? scan : undefined;
-      const result = cleanupWorktrees({ root: repo.root, base, apply, activeCwds: shared, by, onlyUnder: scope, idleMs });
+      const result = cleanupWorktrees({ root: repo.root, base, apply, activeCwds: shared, by, onlyUnder: scope, idleMs, cleanupBudget });
       report.repos.push({
         ...entry,
         base: result.base,
@@ -1881,7 +1884,9 @@ function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, acti
         cachePruned: result.cachePruned,
         cacheCandidates: result.cacheCandidates,
         kept: result.kept.filter((item) => !SWEEP_HIDDEN_KEPT.has(item.reason)),
-        installsPruned: apply ? space.pruneDepsCache({ workspace: root, repoName: repo.name }) : [],
+        // Shared installs may be in use or contain local changes. Leave them
+        // for explicit review rather than pruning by age.
+        installsPruned: [],
       });
     } catch (error) {
       report.repos.push({ ...entry, error: String((error && error.message) || error) });

@@ -162,25 +162,42 @@ test('a copy is left to install on its own when nothing matches or git would see
   assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);
 });
 
-test('the shared store keeps the three most recent installs and drops stale partial entries', (t) => {
-  const ws = tempDir(t, 'prune');
+test('seeding preserves a mismatched shared install and its local files', (t) => {
+  const ws = tempDir(t, 'changed-store');
+  const source = path.join(ws, '.agent-worktrees', 'app', 'source');
+  const target = path.join(ws, '.agent-worktrees', 'app', 'target');
+  writeLock(source);
+  writeInstall(source);
+  writeLock(target);
+  const hash = space.lockHash(path.join(target, 'package-lock.json'));
+  const entry = space.depsCacheEntry(ws, 'app', hash);
+  fs.mkdirSync(path.join(entry, 'node_modules'), { recursive: true });
+  const personal = path.join(entry, 'local-notes.txt');
+  fs.writeFileSync(personal, 'keep this');
+  const result = space.seedNodeModules({ target, workspace: ws, repoName: 'app', sources: [source], clone: copyClone });
+  assert.equal(result.status, 'skipped');
+  assert.equal(fs.readFileSync(personal, 'utf8'), 'keep this');
+  assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);
+});
+
+test('seeding leaves older shared installs and partial entries alone', (t) => {
+  const ws = tempDir(t, 'keep-stores');
+  const source = path.join(ws, '.agent-worktrees', 'app', 'source');
+  const target = path.join(ws, '.agent-worktrees', 'app', 'target');
+  writeLock(source);
+  writeInstall(source);
+  writeLock(target);
   const dir = path.join(ws, '.agent-worktrees', '.deps', 'app');
-  const now = Date.now();
-  const names = ['a', 'b', 'c', 'd', 'e'];
-  names.forEach((name, index) => {
-    const entry = path.join(dir, name);
-    fs.mkdirSync(path.join(entry, 'node_modules'), { recursive: true });
-    const stamp = new Date(now - (names.length - index) * 60000);
-    fs.utimesSync(entry, stamp, stamp);
-  });
-  const stale = path.join(dir, '.partial-x-1-1');
-  const fresh = path.join(dir, '.partial-y-2-2');
-  fs.mkdirSync(stale);
-  fs.mkdirSync(fresh);
-  const old = new Date(now - 2 * 60 * 60 * 1000);
-  fs.utimesSync(stale, old, old);
-  space.pruneDepsCache({ workspace: ws, repoName: 'app', now });
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['.partial-y-2-2', 'c', 'd', 'e']);
+  for (const name of ['old1', 'old2', 'old3', 'old4', '.partial-old']) {
+    fs.mkdirSync(path.join(dir, name), { recursive: true });
+    fs.writeFileSync(path.join(dir, name, 'local-notes.txt'), name);
+    fs.utimesSync(path.join(dir, name), new Date(0), new Date(0));
+  }
+  const result = space.seedNodeModules({ target, workspace: ws, repoName: 'app', sources: [source], clone: copyClone });
+  assert.equal(result.status, 'cloned', result.reason);
+  for (const name of ['old1', 'old2', 'old3', 'old4', '.partial-old']) {
+    assert.equal(fs.readFileSync(path.join(dir, name, 'local-notes.txt'), 'utf8'), name);
+  }
 });
 
 test('a real clone copies the tree with its links, or reports why it cannot without leaving a copy', (t) => {
