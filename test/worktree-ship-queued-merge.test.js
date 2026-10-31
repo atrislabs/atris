@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function setup(t, mode) {
+function setup(t, mode, extraEnv = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-queued-merge-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const remote = path.join(root, 'remote.git');
@@ -53,7 +53,7 @@ else process.exit(1);
 `, { mode: 0o755 });
   const run = spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'Save the real change', '--merge', '--no-map-refresh'], {
     cwd: work, encoding: 'utf8', timeout: 20000,
-    env: { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, MERGE_TEST_MODE: mode, MERGE_TEST_REMOTE: remote, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, MERGE_TEST_MODE: mode, MERGE_TEST_REMOTE: remote, ATRIS_SKIP_UPDATE_CHECK: '1', ...extraEnv },
   });
   return { root, remote, work, git, run };
 }
@@ -87,4 +87,16 @@ test('a confirmed merged change is in the real target before its source is delet
   const record = run.stdout.match(/^merge: record (.*)$/m);
   assert.ok(record, 'ship names the pull request and commit that landed');
   assert.deepEqual(JSON.parse(record[1]), { merge_commit: head, number: 41, url: 'https://github.example/repo/pull/41', merged_at: '2026-10-16T08:00:00Z' });
+});
+
+test('a confirmed merge hands the build copy to removal, and a pending one does not', (t) => {
+  const keep = { ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
+  const merged = setup(t, 'merged', keep).run;
+  assert.equal(merged.status, 0, merged.stderr || merged.stdout);
+  assert.match(merged.stdout, /merge: merged[\s\S]*cleanup: kept this build copy \(ATRIS_WORKTREE_KEEP_AFTER_SHIP=1\)[\s\S]*done: worktree shipped/);
+  const pending = setup(t, 'pending', keep).run;
+  assert.equal(pending.status, 0, pending.stderr || pending.stdout);
+  assert.doesNotMatch(pending.stdout, /cleanup:/);
+  // Temp folders are never handed to removal, so the default prints nothing.
+  assert.doesNotMatch(setup(t, 'merged').run.stdout, /cleanup:/);
 });

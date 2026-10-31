@@ -1,14 +1,19 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
+const { installKeep, planKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorArtifact, isConductorUntracked } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
+const space = require('../lib/worktree-space');
 const close = require('./close');
+
+const ATRIS_BIN = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
 // Files atris regenerates on its own. Unstaged churn in them is restored
 // before ship commits, unless the commit message names the file. The task
@@ -571,7 +576,12 @@ function printStatus() {
 // 2026-07-04 (ship merged into the launcher's branch, never reached master).
 // --base/--target still overrides both when the caller wants a different
 // checkout point and ship target on purpose.
-function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
+//
+// spaceGuard and deps default to on outside temp folders: a low disk reaps
+// finished copies across the workspace and then refuses (ATRIS_LOW_DISK),
+// and a matching install is cloned in as node_modules. deps: false skips
+// the clone; an object passes options through to seedNodeModules.
+function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date(), env = process.env, freeSpace = space.freeBytes, spaceGuard, deps } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
   // Pin the caller's flight base, or resolve it once for this new flight.
@@ -605,6 +615,10 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   const checkoutBase = normalizeTargetRef(root, mainline);
   const shipBase = checkoutBase;
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
+  // A full disk stops every flight at once. Reap first; refuse before cutting.
+  const room = (spaceGuard ?? !space.isScratchPath(target))
+    ? ensureRoomForCopy({ root, target, freeSpace, env })
+    : null;
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staleBase = refreshRemoteRef(root, checkoutBase);
   // A retry of the same job starts from the last run's unlanded commits; it
@@ -689,7 +703,64 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     discardFailedStart();
     throw error;
   }
-  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, skippedResume, owner, reapedBeforeStart, cachePrunedBeforeStart };
+  const seedDeps = deps !== false && env.ATRIS_WORKTREE_NO_DEP_CLONE !== '1' && (deps ?? !space.isScratchPath(target));
+  const depsResult = seedDeps ? seedCopyDeps({ root, target, options: deps && typeof deps === 'object' ? deps : {} }) : null;
+  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, skippedResume, owner, reapedBeforeStart, cachePrunedBeforeStart, space: room, deps: depsResult };
+}
+
+// node_modules as a clone of a matching install (see lib/worktree-space.js),
+// so a web copy costs 12 MB and 2 seconds instead of npm ci.
+function seedCopyDeps({ root, target, options = {} }) {
+  try {
+    const primaryRoot = findPrimaryRoot(root);
+    return space.seedNodeModules({
+      target,
+      workspace: path.dirname(primaryRoot),
+      repoName: path.basename(primaryRoot),
+      sources: [primaryRoot, ...listWorktrees(root).map((wt) => wt.path)],
+      isIgnored: (dir) => runGit(['check-ignore', '-q', '--', 'node_modules/'], { cwd: dir, check: false }).status === 0,
+      ...options,
+    });
+  } catch (error) {
+    return { status: 'skipped', reason: `could not clone installs: ${String((error && error.message) || error)}` };
+  }
+}
+
+// When the disk runs low, reaps finished copies of every repo in the
+// workspace (merged, clean, nothing running inside, past the fresh-copy
+// grace). Below the floor it refuses with ATRIS_LOW_DISK, before any copy
+// is cut. Limits: ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB.
+// Even when the disk is low, a copy touched in the last ten minutes stays:
+// the engine that just finished may still have its last message unread.
+const LOW_DISK_IDLE_MS = 10 * 60 * 1000;
+
+function ensureRoomForCopy({ root, target, freeSpace = space.freeBytes, env = process.env, by = 'atris worktree start' }) {
+  const limits = space.spaceLimits(env);
+  const before = freeSpace(target);
+  const room = { before, free: before, removed: [], cleared: [], ...limits };
+  if (typeof before !== 'number' || !Number.isFinite(before)) return room;
+  if (before >= limits.reapBelow && before >= limits.refuseBelow) return room;
+  const swept = sweepWorkspace({ workspace: path.dirname(findPrimaryRoot(root)), apply: true, idleMs: LOW_DISK_IDLE_MS, freeSpace, by });
+  for (const repo of swept.repos) {
+    room.removed.push(...(repo.removed || []));
+    room.cleared.push(...(repo.cachePruned || []));
+  }
+  const after = freeSpace(target);
+  room.free = typeof after === 'number' && Number.isFinite(after) ? after : before;
+  if (limits.refuseBelow > 0 && room.free < limits.refuseBelow) {
+    const count = room.removed.length;
+    const reaped = count
+      ? `Removed ${count} finished build ${count === 1 ? 'copy' : 'copies'} first, and that was not enough.`
+      : 'No finished build copies were safe to remove.';
+    const error = new Error(
+      `only ${space.formatGb(room.free)} free on this disk, and a new build copy needs at least ${space.formatGb(limits.refuseBelow)}. ${reaped} `
+      + 'Free some space and retry; `atris worktree sweep` shows what is left, and ATRIS_WORKTREE_MIN_FREE_GB=0 skips this check.'
+    );
+    error.code = 'ATRIS_LOW_DISK';
+    error.space = room;
+    throw error;
+  }
+  return room;
 }
 
 function startWorktree(args) {
@@ -699,7 +770,7 @@ function startWorktree(args) {
   const owner = member || agent;
   const task = readFlag(args, '--task');
   if (!owner || !task) {
-    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim] [--force]');
+    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim] [--force] [--no-deps]');
     return 2;
   }
   const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
@@ -736,6 +807,7 @@ function startWorktree(args) {
       branch: readFlag(args, '--branch'),
       path: readFlag(args, '--path'),
       base: readFlag(args, '--base') || readFlag(args, '--target'),
+      ...(hasFlag(args, '--no-deps') ? { deps: false } : {}),
     });
   } catch (e) {
     console.error(`refusing: ${e.message}`);
@@ -748,6 +820,17 @@ function startWorktree(args) {
   }
   if (created.cachePrunedBeforeStart.length) {
     console.log(`cleanup: pruned ${created.cachePrunedBeforeStart.length} generated ${created.cachePrunedBeforeStart.length === 1 ? 'cache' : 'caches'}`);
+  }
+  if (created.space && created.space.removed.length) {
+    const count = created.space.removed.length;
+    console.log(`space: disk was low, removed ${count} finished build ${count === 1 ? 'copy' : 'copies'} across the workspace; ${space.formatGb(created.space.free)} free now`);
+  } else if (created.space && created.space.free !== null && created.space.free < created.space.reapBelow) {
+    console.log(`space: ${space.formatGb(created.space.free)} free; no finished build copies were safe to remove`);
+  }
+  if (created.deps && created.deps.status === 'cloned') {
+    console.log(`deps: cloned node_modules from a matching install in ${(created.deps.ms / 1000).toFixed(1)}s; skip npm ci`);
+  } else if (created.deps && created.deps.reason !== 'no package-lock.json') {
+    console.log(`deps: ${created.deps.reason}`);
   }
 
   const counts = statusCounts(root);
@@ -1072,6 +1155,8 @@ function shipWorktree(args) {
   }
   console.log(`merge_check: ${targetRef} clean`);
 
+  // Set once the change is confirmed merged; the build copy then goes away.
+  let landedOn = '';
   if (localMode) {
     console.log('push: skipped (local mode)');
     if (merge) {
@@ -1094,10 +1179,12 @@ function shipWorktree(args) {
         }
         runGit(['merge', '--no-ff', branch, '-m', `Merge ${branch}`], { cwd: primary });
         console.log('merge: merged (local mode)');
+        landedOn = `refs/heads/${targetBranch}`;
       }
     }
     console.log('pr: skipped (local mode)');
     if (merge && !dryRun) runShipHealthCheck(primary || root);
+    if (landedOn) announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: landedOn }));
     console.log('done: worktree shipped');
     return 0;
   }
@@ -1145,6 +1232,7 @@ function shipWorktree(args) {
         // and commit landed. The rating only counts a landing it can point at.
         const record = shipMergeRecord(state);
         if (record) console.log(`merge: record ${JSON.stringify(record)}`);
+        landedOn = targetRef;
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
         if (deleted.status === 0) {
           console.log(`merge: remote branch deleted ${branch}`);
@@ -1165,8 +1253,104 @@ function shipWorktree(args) {
     }, { worktree: root });
   } catch {}
   if (merge && !dryRun) runShipHealthCheck(primary || root);
+  if (landedOn) announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: landedOn }));
   console.log('done: worktree shipped');
   return 0;
+}
+
+// A shipped build copy is dead weight, but the engine that shipped it is
+// still inside and writes its last message there on exit. A detached
+// `atris worktree reap-shipped` waits until nothing has run in the copy for
+// SHIP_SETTLE_MS, then removes it if it is still merged and clean.
+const SHIP_SETTLE_MS = 10 * 60 * 1000;
+const SHIP_REAP_POLL_MS = 60 * 1000;
+const SHIP_REAP_GIVE_UP_MS = 6 * 60 * 60 * 1000;
+// Right after a merge the local copy of the target can lag; allow a short
+// wait before treating the copy as unmerged and leaving it for the sweep.
+const SHIP_REAP_UNMERGED_GRACE_MS = 15 * 60 * 1000;
+// Reasons that can clear on their own: someone is still inside, or the
+// main branch moved or could not be reached during the check.
+const SHIP_REAP_RETRY_REASONS = new Set([
+  'active_process', 'process_scan_failed', 'recent_activity', 'base_refresh_failed', 'base_unverified',
+  'ignored_scan_failed', 'changed_or_active_during_verification',
+]);
+
+function shippedCopyRemovalPlan({ root, primary, env = process.env, atrisBin = ATRIS_BIN }) {
+  const copy = path.resolve(root);
+  if (env.ATRIS_WORKTREE_KEEP_AFTER_SHIP === '1') return { skip: 'ATRIS_WORKTREE_KEEP_AFTER_SHIP=1', announce: true };
+  if (!primary || canonicalPath(copy) === canonicalPath(primary)) return { skip: 'primary checkout' };
+  if (!space.isAgentCopyPath(copy)) return { skip: 'not an agent build copy' };
+  if (space.isScratchPath(copy)) return { skip: 'temp folder' };
+  // The removal runs this same atris; one that lives in the copy would delete itself.
+  if (space.isInside(atrisBin, copy)) return { skip: 'this atris runs from inside the copy', announce: true };
+  return { copy };
+}
+
+function scheduleShippedCopyRemoval({ root, primary, branch, base, env = process.env, spawnProcess = spawn }) {
+  const plan = shippedCopyRemovalPlan({ root, primary, env });
+  if (plan.skip) return plan;
+  try {
+    // The copy rides in the environment, not the arguments, so the process
+    // scan does not count this waiter as someone working in the copy.
+    const child = spawnProcess(process.execPath, [ATRIS_BIN, 'worktree', 'reap-shipped'], {
+      cwd: primary,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_REAP_WORKTREE: plan.copy, ATRIS_REAP_BRANCH: branch || '', ATRIS_REAP_BASE: base || '' },
+    });
+    if (child && typeof child.on === 'function') child.on('error', () => {});
+    if (child && typeof child.unref === 'function') child.unref();
+    return { ...plan, scheduled: true };
+  } catch (error) {
+    return { skip: `could not start the removal: ${String((error && error.message) || error)}`, announce: true };
+  }
+}
+
+function announceShippedCopyRemoval(plan) {
+  if (plan.scheduled) {
+    console.log(`cleanup: this build copy is removed once nothing has run in it for ${Math.round(SHIP_SETTLE_MS / 60000)} minutes`);
+  } else if (plan.announce) {
+    console.log(`cleanup: kept this build copy (${plan.skip})`);
+  }
+}
+
+function reapShippedCopy({
+  root,
+  target,
+  base = '',
+  settleMs = SHIP_SETTLE_MS,
+  pollMs = SHIP_REAP_POLL_MS,
+  giveUpMs = SHIP_REAP_GIVE_UP_MS,
+  unmergedGraceMs = SHIP_REAP_UNMERGED_GRACE_MS,
+  sleep = sleepSync,
+  clock = Date.now,
+  cleanup: cleanupFn = cleanupWorktrees,
+} = {}) {
+  const startedAt = clock();
+  sleep(settleMs);
+  for (;;) {
+    const result = cleanupFn({
+      root, base, apply: true, onlyPaths: [target], freshGraceMs: 0, idleMs: settleMs, by: 'atris worktree ship', now: clock(),
+    });
+    if (result.removed.length) return { removed: true, reason: result.removed[0].reason };
+    const entry = result.kept.find((item) => canonicalPath(item.path) === canonicalPath(target));
+    if (!entry) return { removed: false, reason: 'not_registered' };
+    const waited = clock() - startedAt;
+    const retry = SHIP_REAP_RETRY_REASONS.has(entry.reason) || (entry.reason === 'unmerged' && waited < unmergedGraceMs);
+    if (!retry || waited >= giveUpMs) return { removed: false, reason: entry.reason };
+    sleep(pollMs);
+  }
+}
+
+function reapShipped() {
+  const target = process.env.ATRIS_REAP_WORKTREE || '';
+  if (!target) {
+    console.error('reap-shipped: ATRIS_REAP_WORKTREE is not set');
+    return 2;
+  }
+  const result = reapShippedCopy({ root: process.cwd(), target, base: process.env.ATRIS_REAP_BASE || '' });
+  console.log(`reap-shipped: ${result.removed ? 'removed' : 'kept'} ${target} (${result.reason})`);
+  return result.removed ? 0 : 1;
 }
 
 // The landed pull request from `gh pr view --json`, or null without a merge commit.
@@ -1224,12 +1408,33 @@ const GENERATED_WORKTREE_CACHE_DIRS = [
   'node_modules/.cache',
 ];
 
-function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
+function worktreeWithinReapGrace(worktreePath, now = Date.now(), graceMs = WORKTREE_REAP_GRACE_MS) {
   try {
-    return now - fs.statSync(worktreePath).mtimeMs < WORKTREE_REAP_GRACE_MS;
+    return now - fs.statSync(worktreePath).mtimeMs < graceMs;
   } catch {
     return false;
   }
+}
+
+// Newest sign of work in a copy: its folder, its branch tip and reflog, web
+// build output, and the engine's last message. The index is left out on
+// purpose: a plain `git status` rewrites it.
+function lastCopyActivityMs(worktreePath) {
+  const marks = [worktreePath, path.join(worktreePath, '.next'), path.join(worktreePath, '.codex-last-message.txt')];
+  try {
+    const pointer = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(path.join(worktreePath, '.git'), 'utf8'));
+    if (pointer) {
+      const gitDir = path.resolve(worktreePath, pointer[1].trim());
+      marks.push(path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD'));
+    }
+  } catch {}
+  let newest = 0;
+  for (const mark of marks) {
+    try {
+      newest = Math.max(newest, fs.statSync(mark).mtimeMs);
+    } catch {}
+  }
+  return newest;
 }
 
 function canonicalPath(value) {
@@ -1415,7 +1620,23 @@ function originBaseIsCurrent(root, base) {
     && match[2] === `refs/heads/${branch}` && local.stdout.trim() === match[1];
 }
 
-function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride, by = 'atris worktree cleanup' } = {}) {
+// Scope and pace options, all off by default:
+//   onlyUnder / onlyPaths  touch only copies inside that folder / those paths
+//   idleMs                 keep merged copies with work newer than this, and
+//                          leave their caches alone
+//   freshGraceMs           how long a merged copy is kept after its start
+function cleanupWorktrees({
+  root = repoRoot(),
+  base: baseOverride = '',
+  apply = false,
+  activeCwds: activeCwdsOverride,
+  by = 'atris worktree cleanup',
+  onlyUnder = '',
+  onlyPaths = null,
+  idleMs = 0,
+  freshGraceMs = WORKTREE_REAP_GRACE_MS,
+  now = Date.now(),
+} = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
@@ -1428,8 +1649,13 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const cacheCandidates = [];
   const cachePruned = [];
   const cacheBudget = { count: 0, kib: 0 };
+  const scopePaths = Array.isArray(onlyPaths) ? onlyPaths.map(canonicalPath) : null;
+  const inScope = (wtPath) => (!scopePaths || scopePaths.includes(canonicalPath(wtPath)))
+    && (!onlyUnder || space.isInside(wtPath, onlyUnder));
+  const recentlyUsed = (wtPath) => Boolean(idleMs) && now - lastCopyActivityMs(wtPath) < idleMs;
   const pruneCachesForKept = (wtPath) => {
-    if (worktreeWithinReapGrace(wtPath)) return;
+    if (worktreeWithinReapGrace(wtPath, now)) return;
+    if (recentlyUsed(wtPath)) return;
     const caches = pruneGeneratedWorktreeCaches(wtPath, { apply, budget: cacheBudget });
     cacheCandidates.push(...caches.candidates);
     cachePruned.push(...caches.pruned);
@@ -1444,6 +1670,10 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
     if (wtPath === current) {
       kept.push({ ...item, reason: 'current_checkout' });
+      continue;
+    }
+    if (!inScope(wtPath)) {
+      kept.push({ ...item, reason: 'out_of_scope' });
       continue;
     }
     if (wt.locked) {
@@ -1495,8 +1725,12 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: wt.branch === 'detached' ? 'detached_unmerged' : 'unmerged' });
       continue;
     }
-    if (worktreeWithinReapGrace(wtPath)) {
+    if (freshGraceMs > 0 && worktreeWithinReapGrace(wtPath, now, freshGraceMs)) {
       kept.push({ ...item, reason: 'fresh_worktree_grace' });
+      continue;
+    }
+    if (recentlyUsed(wtPath)) {
+      kept.push({ ...item, reason: 'recent_activity' });
       continue;
     }
     if (!originBaseIsCurrent(root, base)) {
@@ -1549,6 +1783,190 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   }
 
   return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
+}
+
+// The sweep: cleanup for every repo with build copies in the workspace.
+// Removes copies that pass every cleanup check (merged into origin's main
+// branch, nothing changed, untracked, or ignored, nothing running inside)
+// and are unused for idleMs; clears verified webpack caches in the idle
+// copies it keeps; trims the shared install store. Unmerged work always
+// stays.
+const SWEEP_IDLE_MS = 2 * 60 * 60 * 1000;
+const SWEEP_EVERY_HOURS = 3;
+const SWEEP_HIDDEN_KEPT = new Set(['primary_checkout', 'current_checkout', 'out_of_scope']);
+
+function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, activeCwds, freeSpace = space.freeBytes, by = 'atris worktree sweep' } = {}) {
+  const root = path.resolve(workspace);
+  const before = freeSpace(root);
+  const report = { workspace: root, apply, idle_ms: idleMs, before, after: before, repos: [] };
+  const scan = Array.isArray(activeCwds) ? activeCwds.map(canonicalPath) : listActiveProcessPaths();
+  // Without a process list nobody can tell which copies are in use.
+  if (!Array.isArray(scan)) return { ...report, error: 'could not list running programs, so every copy was kept' };
+  const scope = path.join(root, space.AGENT_COPIES_DIR);
+  for (const repo of space.agentCopyRepos(root)) {
+    const entry = { name: repo.name, root: repo.root };
+    try {
+      const base = defaultMainlineBase(repo.root);
+      if (!base.startsWith('origin/')) {
+        report.repos.push({ ...entry, skipped: 'no origin main branch to compare against' });
+        continue;
+      }
+      // A real removal scans again per repo and right before each copy goes;
+      // the shared scan only serves previews and tests.
+      const shared = Array.isArray(activeCwds) || !apply ? scan : undefined;
+      const result = cleanupWorktrees({ root: repo.root, base, apply, activeCwds: shared, by, onlyUnder: scope, idleMs });
+      report.repos.push({
+        ...entry,
+        base: result.base,
+        removed: result.removed,
+        candidates: result.candidates,
+        cachePruned: result.cachePruned,
+        cacheCandidates: result.cacheCandidates,
+        kept: result.kept.filter((item) => !SWEEP_HIDDEN_KEPT.has(item.reason)),
+        installsPruned: apply ? space.pruneDepsCache({ workspace: root, repoName: repo.name }) : [],
+      });
+    } catch (error) {
+      report.repos.push({ ...entry, error: String((error && error.message) || error) });
+    }
+  }
+  report.after = freeSpace(root);
+  return report;
+}
+
+const SWEEP_KEPT_LABELS = {
+  active_process: 'in use',
+  process_scan_failed: 'in use (could not check)',
+  dirty: 'with changes',
+  unmerged: 'not merged',
+  detached_unmerged: 'not merged',
+  ignored_data: 'holding files git ignores (kept for review)',
+  ignored_scan_failed: 'unreadable',
+  fresh_worktree_grace: 'new',
+  recent_activity: 'used recently',
+  locked: 'locked',
+  protected_branch: 'on a main branch',
+  missing_or_unreadable: 'unreadable',
+  missing_head: 'without a commit',
+  remove_failed: 'failed to remove',
+  base_refresh_failed: 'main branch unreachable',
+  base_unverified: 'main branch moved during the check',
+  path_not_canonical: 'behind a link',
+  size_unknown_or_cleanup_limit: 'over the per-run limit',
+  changed_or_active_during_verification: 'changed during the check',
+};
+
+function plural(count, one, many) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+// The folder that holds .agent-worktrees: this folder if it has one, else
+// the one above the repo's main checkout.
+function defaultSweepWorkspace(cwd = process.cwd()) {
+  if (fs.existsSync(path.join(cwd, space.AGENT_COPIES_DIR))) return cwd;
+  try {
+    return path.dirname(findPrimaryRoot(repoRoot(cwd)));
+  } catch {
+    return cwd;
+  }
+}
+
+function sweepSchedulePlan({ workspace, everyHours = SWEEP_EVERY_HOURS, homeDir = os.homedir(), platform = process.platform, atrisBin = ATRIS_BIN, envPath = process.env.PATH || '' }) {
+  return planKeep({
+    root: workspace,
+    home: path.join(homeDir, '.atris', 'worktree-sweep'),
+    platform,
+    homeDir,
+    atrisBin,
+    envPath,
+    job: {
+      name: 'worktree-sweep',
+      args: ['worktree', 'sweep', '--apply', '--workspace', workspace],
+      every_seconds: Math.round(everyHours * 3600),
+      marker: 'ATRIS_WORKTREE_SWEEP',
+    },
+  });
+}
+
+function sweepSchedule(args, workspace) {
+  const everyHours = Number(readFlag(args, '--every', String(SWEEP_EVERY_HOURS)));
+  if (!Number.isFinite(everyHours) || everyHours <= 0) {
+    console.error('Usage: atris worktree sweep --install [--every <hours>] [--workspace <dir>]');
+    return 2;
+  }
+  const plan = sweepSchedulePlan({ workspace, everyHours });
+  if (hasFlag(args, '--uninstall')) {
+    const removed = removeKeep(plan);
+    if (!removed.ok) {
+      console.error(`refusing: ${removed.error}`);
+      return 1;
+    }
+    console.log(`sweep timer: ${removed.removed === false ? 'was not on' : 'off'} for ${workspace}`);
+    return 0;
+  }
+  // The timer runs this atris file every few hours; a copy or temp folder vanishes.
+  if (space.isAgentCopyPath(ATRIS_BIN) || space.isScratchPath(ATRIS_BIN)) {
+    console.error(`refusing: this atris runs from ${path.dirname(path.dirname(ATRIS_BIN))}, a folder that gets removed; install the timer from a lasting atris install`);
+    return 2;
+  }
+  const installed = installKeep(plan);
+  if (!installed.ok) {
+    console.error(`refusing: ${installed.error}`);
+    return 1;
+  }
+  console.log(`sweep timer: on for ${workspace}, every ${everyHours} ${everyHours === 1 ? 'hour' : 'hours'}`);
+  console.log(`log: ${plan.log_path}`);
+  return 0;
+}
+
+function sweep(args) {
+  const workspace = path.resolve(readFlag(args, '--workspace') || defaultSweepWorkspace());
+  if (hasFlag(args, '--install') || hasFlag(args, '--uninstall')) return sweepSchedule(args, workspace);
+  const idleHours = Number(readFlag(args, '--idle-hours', String(SWEEP_IDLE_MS / 3600000)));
+  if (!Number.isFinite(idleHours) || idleHours < 0) {
+    console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>]');
+    return 2;
+  }
+  const apply = hasFlag(args, '--apply');
+  const report = sweepWorkspace({ workspace, apply, idleMs: idleHours * 3600000 });
+  if (hasFlag(args, '--json')) {
+    console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
+    return report.error ? 1 : 0;
+  }
+  console.log(`sweep: ${apply ? 'applied' : 'dry run'} in ${workspace}, ${space.formatGb(report.before)} free`);
+  if (report.error) {
+    console.error(`refusing: ${report.error}`);
+    return 1;
+  }
+  let removedTotal = 0;
+  let clearedTotal = 0;
+  let reviewTotal = 0;
+  for (const repo of report.repos) {
+    if (repo.error || repo.skipped) {
+      console.log(`${repo.name}: skipped (${repo.error || repo.skipped})`);
+      continue;
+    }
+    const gone = apply ? repo.removed : repo.candidates;
+    const cleared = apply ? repo.cachePruned : repo.cacheCandidates.filter((item) => item.reason === 'generated_webpack_cache');
+    removedTotal += gone.length;
+    clearedTotal += cleared.length;
+    reviewTotal += repo.cacheCandidates.filter((item) => item.reason === 'manual_review_required').length;
+    const counts = {};
+    for (const item of repo.kept) {
+      const label = SWEEP_KEPT_LABELS[item.reason] || item.reason;
+      counts[label] = (counts[label] || 0) + 1;
+    }
+    const keptText = Object.entries(counts).map(([label, count]) => `${count} ${label}`).join(', ');
+    console.log(`${repo.name}: ${apply ? 'removed' : 'would remove'} ${plural(gone.length, 'finished copy', 'finished copies')}, ${apply ? 'cleared' : 'would clear'} ${plural(cleared.length, 'webpack cache', 'webpack caches')}; kept ${repo.kept.length}${keptText ? ` (${keptText})` : ''}`);
+    for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path}`);
+    for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
+  }
+  if (reviewTotal) console.log(`review: ${plural(reviewTotal, 'other build folder waits', 'other build folders wait')} for a person; \`atris worktree cleanup\` in each repo lists them`);
+  if (apply) {
+    console.log(`free: ${space.formatGb(report.before)} before, ${space.formatGb(report.after)} after`);
+  } else if (removedTotal || clearedTotal) {
+    console.log('next: atris worktree sweep --apply');
+  }
+  return 0;
 }
 
 function cleanup(args) {
@@ -1606,22 +2024,28 @@ function guide() {
   console.log('   --target <ref> overrides the default landing target (default: branch atris-base, else origin default branch)');
   console.log('   recommended verify: npm run test:fast && node --test <focused files>');
   console.log('');
-  console.log('5. Cleanup is part of creation and the janitor; run it directly any time:');
+  console.log('5. Cleanup is part of creation, shipping, and the sweep; run it directly any time:');
   console.log('   atris worktree cleanup');
   console.log('   atris worktree cleanup --apply');
+  console.log('   atris worktree sweep --apply              every repo in the workspace');
+  console.log('   atris worktree sweep --install            run the sweep every 3 hours');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
-  console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes, skips live work, and prunes only ignored build caches.');
+  console.log('Start reaps completed checkouts first. Cleanup preserves branches, source changes, and files git ignores, skips live work, and prunes only verified webpack caches.');
+  console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
+  console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
+  console.log('A copy shipped with --merge is removed once nothing has run in it for 10 minutes (ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
 
 function help() {
-  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup>');
+  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup|sweep>');
   console.log('');
   console.log('  atris worktree guide');
-  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim] [--force]');
+  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim] [--force] [--no-deps]');
   console.log('    --force         start even when another recent flight shares a task word');
+  console.log('    --no-deps       do not clone node_modules from a matching install');
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
@@ -1631,6 +2055,8 @@ function help() {
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
+  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2]  reap merged, idle copies in every repo');
+  console.log('  atris worktree sweep --install [--every 3] | --uninstall  run the sweep on a timer');
 }
 
 function worktreeCommand(args = []) {
@@ -1650,6 +2076,8 @@ function worktreeCommand(args = []) {
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
   if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
+  if (sub === 'sweep') return sweep(rest);
+  if (sub === 'reap-shipped') return reapShipped();
   help();
   return 2;
 }
@@ -1662,6 +2090,11 @@ module.exports = {
   deniedLaneForShip,
   createOrFindPr,
   cleanupWorktrees,
+  reapShippedCopy,
+  scheduleShippedCopyRemoval,
+  shippedCopyRemovalPlan,
+  sweepSchedulePlan,
+  sweepWorkspace,
   defaultMainlineBase,
   defaultStartBase,
   gitFailureDetail,
