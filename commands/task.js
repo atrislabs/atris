@@ -5654,10 +5654,10 @@ function cmdStatus(args) {
   if (history) console.log(`history feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
 }
 
-function readProjectionFile(workspaceRoot, cwd = process.cwd()) {
+function readProjectionFile(workspaceRoot) {
   const candidatePaths = [
     workspaceRoot ? path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json') : null,
-    path.resolve(cwd, '.atris', 'state', 'tasks.projection.json'),
+    path.resolve('.atris', 'state', 'tasks.projection.json'),
   ].filter(Boolean);
   for (const candidate of candidatePaths) {
     try {
@@ -5671,17 +5671,15 @@ function readProjectionFile(workspaceRoot, cwd = process.cwd()) {
   return null;
 }
 
-// options.root is for a caller that is not the command line, the dispatch flight: a
-// display id is read against its own workspace, not the directory this process is in.
-function resolveTaskRef(taskDb, db, ref, { root } = {}) {
+function resolveTaskRef(taskDb, db, ref) {
   const token = String(ref || '').trim();
   if (!token) return { ok: false, reason: 'missing' };
   const exact = db ? taskDb.getTask(db, token) : null;
   if (exact) return { ok: true, id: exact.id, row: exact };
   const normalized = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(token) : token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot(root || undefined) : (root || process.cwd());
+  const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot() : process.cwd();
 
-  const proj = readProjectionFile(wsRoot, root || process.cwd());
+  const proj = readProjectionFile(wsRoot);
   if (proj && Array.isArray(proj.tasks)) {
     const seen = new Set();
     const matches = proj.tasks.filter(r => {
@@ -13434,6 +13432,5 @@ module.exports = {
   stampAutoAcceptMetadata,
   acceptReviewTask,
   evaluateSweepAutoAccept,
-  resolveTaskRef,
   writeDefaultProjection,
 };

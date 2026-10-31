@@ -581,18 +581,85 @@ test('the same release is recorded when the flight inherits an agent session, a 
   assert.equal(memberRow(season, 'fleet-codex').held, 1);
 });
 
-test('the flight hands the release the display id a person reads, and the store finds the job', async (t) => {
-  // No row id in what the task command showed, so only the display id is left to go on.
+// The display id a person reads is not a key: the same folder name in another place gives
+// the same ids. So the flight lets go of the exact row it claimed, the row id the task
+// command showed it before the claim, and never looks the job up by what a person reads.
+const eventCount = (db, id) => db.prepare('SELECT COUNT(*) AS n FROM task_events WHERE task_id = ?').get(id).n;
+
+// The same folder name in another place gives the same display ids, so that workspace's
+// first job reads the same to a person as the flight's own. It is held by the same name.
+function claimedInAnotherWorkspace(t, seeded) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'held-other-'));
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  const root = path.join(parent, path.basename(seeded.root));
+  fs.mkdirSync(root);
+  const workspace = tasks.workspaceRoot(root);
+  assert.notEqual(workspace, seeded.workspace);
+  const { id } = tasks.addTask(seeded.db, { title: 'Fix the invoice page', tag: 'feedback', workspaceRoot: workspace });
+  assert.equal(tasks.claimTask(seeded.db, { id, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
+  const [shown] = tasks.withTaskDisplayRefs(tasks.listTasks(seeded.db, { workspaceRoot: workspace }));
+  assert.equal(shown.display_id, seeded.task.display_id, 'a person cannot tell the two jobs apart by their display ids');
+  return { id, workspace, root };
+}
+
+test('the flight lets go of the exact job it claimed, not another workspace\'s job that shares its display id', async (t) => {
+  const seeded = claimedForFlight(t);
+  const other = claimedInAnotherWorkspace(t, seeded);
+  // The task list file as `atris task status --everywhere` can leave it in the flight's
+  // folder: it names the other workspace's job and not this one.
+  const file = path.join(seeded.root, '.atris', 'state', 'tasks.projection.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(tasks.taskProjection(seeded.db, { workspaceRoot: other.workspace, limit: 500 }), null, 2)}\n`);
+  const listed = JSON.parse(fs.readFileSync(file, 'utf8')).tasks;
+  assert.deepEqual(listed.map((task) => task.id), [other.id]);
+  assert.equal(listed[0].display_id, seeded.task.display_id);
+  const otherEventsBefore = eventCount(seeded.db, other.id);
+
+  const { flight, logs } = await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
+
+  // Its own job is let go, with the marker, and rates as waiting.
+  assert.equal(flight.paused[0].claim_released, true, logs.join('\n'));
+  const own = tasks.getTask(seeded.db, seeded.id);
+  assert.equal(own.status, 'open');
+  assert.equal(own.claimed_by, null);
+  assert.deepEqual(releaseEvents(seeded.db, seeded.id), [heldRelease()]);
+  assert.deepEqual(playsOf(seasonOf(seeded.workspace, seeded.dbPath), seeded.id).map((o) => o.kind), ['took', 'held']);
+
+  // The other workspace's job is still held by the same name, and nothing was written to it.
+  const theirs = tasks.getTask(seeded.db, other.id);
+  assert.equal(theirs.status, 'claimed');
+  assert.equal(theirs.claimed_by, 'fleet-codex');
+  assert.deepEqual(releaseEvents(seeded.db, other.id), []);
+  assert.equal(eventCount(seeded.db, other.id), otherEventsBefore, 'no new event on the other workspace\'s job');
+});
+
+test('a flight with no row id for the job does not release it, and the row says so', async (t) => {
+  // What the task command showed carries no row id, so there is no exact row to let go of.
   const seeded = claimedForFlight(t);
   const { id, ...withoutId } = seeded.task;
   assert.ok(id);
   const plane = planeFor(withoutId, { readyStatus: 1 });
-  const { flight } = await flyWith(t, plane, { root: seeded.root });
+  const { flight, logs, receipt } = await flyWith(t, plane, { root: seeded.root });
 
   assert.equal(flight.paused[0].task, seeded.task.display_id);
-  assert.equal(flight.paused[0].claim_released, true);
-  assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'open');
-  assert.deepEqual(releaseEvents(seeded.db, seeded.id), [heldRelease()]);
+  assert.equal(flight.paused[0].claim_released, false);
+  assert.equal(receipt.paused[0].claim_released, false);
+  assert.ok(logs.some((line) => /could not release the claim on \S+: the flight has no row id for it/.test(line)), logs.join('\n'));
+  assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'claimed', 'it stays held until its lease runs out');
+  assert.deepEqual(releaseEvents(seeded.db, seeded.id), []);
+  assert.deepEqual(callsTo(plane, 'task', 'release'), [], 'nothing is sent through the command line by display id instead');
+});
+
+test('a row id the store does not know is not looked up again by display id', async (t) => {
+  // The display id would find the held job. The row id the flight carries does not exist.
+  const seeded = claimedForFlight(t);
+  const plane = planeFor({ ...seeded.task, id: 'no-such-row' }, { readyStatus: 1 });
+  const { flight, logs } = await flyWith(t, plane, { root: seeded.root });
+
+  assert.equal(flight.paused[0].claim_released, false);
+  assert.ok(logs.some((line) => /could not release the claim on \S+: release failed: not_found/.test(line)), logs.join('\n'));
+  assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'claimed');
+  assert.deepEqual(releaseEvents(seeded.db, seeded.id), []);
 });
 
 test('after the flight lets the claim go, the task list file shows the job open again, as the release command leaves it', async (t) => {
@@ -617,8 +684,43 @@ test('after the flight lets the claim go, the task list file shows the job open 
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).tasks, JSON.parse(written).tasks);
 });
 
-test('a task list file that cannot be written does not undo a release that is already saved', async (t) => {
+// atris/TODO.md is a picture of the saved task state. `atris task release` redraws it after
+// every release (the task command's own step for every change), so the flight does the same
+// for its own workspace; a job it let go must not stay in In Progress.
+const todoPath = (seeded) => path.join(seeded.root, 'atris', 'TODO.md');
+const drawTodo = (seeded) => tasks.renderTodoMarkdown(
+  tasks.listTasks(seeded.db, { workspaceRoot: seeded.workspace, limit: 500 }),
+  { refRows: tasks.listTasks(seeded.db, { workspaceRoot: seeded.workspace }) },
+);
+const todoSection = (seeded, name) => {
+  const lines = fs.readFileSync(todoPath(seeded), 'utf8').split('\n');
+  const from = lines.indexOf(`## ${name}`);
+  assert.ok(from >= 0, `${name} is in TODO.md`);
+  const next = lines.findIndex((line, at) => at > from && line.startsWith('## '));
+  return lines.slice(from + 1, next < 0 ? undefined : next).join('\n').trim();
+};
+// TODO.md as the claim left it: the job under In Progress, held by the builder.
+function writeTodoWithTheClaim(seeded) {
+  fs.mkdirSync(path.dirname(todoPath(seeded)), { recursive: true });
+  fs.writeFileSync(todoPath(seeded), drawTodo(seeded));
+  assert.match(todoSection(seeded, 'In Progress'), new RegExp(`\\[${seeded.task.display_id}\\].*fleet-codex`));
+  assert.equal(todoSection(seeded, 'Backlog'), '(Empty)');
+}
+
+test('after the flight lets the claim go, atris/TODO.md in its workspace no longer shows the job as claimed', async (t) => {
   const seeded = claimedForFlight(t);
+  writeTodoWithTheClaim(seeded);
+
+  await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
+
+  assert.equal(todoSection(seeded, 'In Progress'), '(Empty)', 'the released job is not shown as claimed');
+  assert.match(todoSection(seeded, 'Backlog'), new RegExp(`\\[${seeded.task.display_id}\\]`));
+  assert.equal(fs.readFileSync(todoPath(seeded), 'utf8'), drawTodo(seeded), 'it is the same picture the saved state draws');
+});
+
+test('a task list file that cannot be written does not undo a release that is already saved, nor stop TODO.md being redrawn', async (t) => {
+  const seeded = claimedForFlight(t);
+  writeTodoWithTheClaim(seeded);
   // A folder where the list file goes: the write fails, after the release is saved.
   fs.mkdirSync(path.join(seeded.root, '.atris', 'state', 'tasks.projection.json'), { recursive: true });
   const { flight, logs, receipt } = await flyWith(t, planeFor(seeded.task, { readyStatus: 1 }), { root: seeded.root });
@@ -629,6 +731,7 @@ test('a task list file that cannot be written does not undo a release that is al
   assert.equal(receipt.paused[0].claim_released, true);
   assert.ok(logs.includes(`    released the claim on ${seeded.task.display_id} with the pull request link as the reason`), logs.join('\n'));
   assert.equal(logs.some((line) => /could not release/.test(line)), false, logs.join('\n'));
+  assert.equal(todoSection(seeded, 'In Progress'), '(Empty)', 'the other file is still redrawn');
 });
 
 test('a release the store refuses or fails on is tried once and the row says so; a job the store does not know is said plainly', async (t) => {
@@ -655,7 +758,7 @@ test('a release the store refuses or fails on is tried once and the row says so;
   const unknown = planeFor(FEEDBACK_TASK, { readyStatus: 1 });
   const { flight, logs } = await flyWith(t, unknown);
   assert.equal(flight.paused[0].claim_released, false);
-  assert.ok(logs.some((line) => /could not release the claim on BCK-1934: task not found: BCK-1934/.test(line)), logs.join('\n'));
+  assert.ok(logs.some((line) => /could not release the claim on BCK-1934: the flight has no row id for it/.test(line)), logs.join('\n'));
   assert.deepEqual(callsTo(unknown, 'task', 'release'), [], 'nothing is sent through the command line instead');
 });
 
