@@ -25,6 +25,7 @@ test('real event history scores one result per claim, handoffs, expiry dates, an
     }
     const at = now - day;
     task('handoff', [['claimed','alpha',{},at], ['claim_released','alpha',{reason:'handoff'},at+1], ['claimed','beta',{},at+2], ['proof_ready','beta',{landing:{merge_commit:'abcdef123456'}},at+3], ['archived','auto',{reason:'old'},at+4]]);
+    task('accepted-after-revision', [['claimed','beta',{},at], ['revision_requested','reviewer',{reason:'redo'},at+1], ['completed','reviewer',{action:'accepted'},at+2]]);
     task('repeat', [['claimed','alpha',{},at], ['revision_requested','reviewer',{reason:'redo'},at+1], ['reopened','reviewer',{reason:'redo'},at+2], ['archived','auto',{reason:'old'},at+3]]);
     task('old-expiry', [['claimed','alpha',{},now-40*day], ['claim_expired','auto',{claimed_by:'alpha',lease_until:now-35*day,reason:'lease'},at]]);
     task('iso-expiry', [['claimed','alpha',{},now-40*day], ['claim_expired','auto',{claimed_by:'alpha',lease_until:new Date(now-35*day).toISOString(),reason:'lease'},at]]);
@@ -40,6 +41,7 @@ test('real event history scores one result per claim, handoffs, expiry dates, an
     const finished = season.outcomes.filter(x => x.kind !== 'took');
     const results = name => finished.filter(x => x.task_id === name);
     assert.deepEqual(results('handoff').map(x => [x.member,x.kind]), [['beta','landed']]);
+    assert.deepEqual(results('accepted-after-revision').map(x => x.kind), ['landed']);
     assert.deepEqual(results('repeat').map(x => x.kind), ['sent_back']);
     assert.equal(results('old-expiry').length, 0);
     assert.equal(results('iso-expiry').length, 0);

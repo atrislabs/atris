@@ -92,14 +92,68 @@ test('sweep command previews and filters without changing claims', (t) => {
   const old = Date.now() - 10 * 86400000;
   db.prepare('UPDATE task_events SET created_at = ? WHERE task_id IN (?, ?)').run(old, fleet, person);
   const { spawnSync } = require('node:child_process');
-  const run = (...args) => spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'task', 'sweep', '--json', '--stale-days', '7', ...args], { env: { ...process.env, ATRIS_TASKS_DB: db.location() }, encoding: 'utf8' });
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-cwd-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const run = (...args) => spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'task', 'sweep', '--json', '--stale-days', '7', ...args], { cwd, env: { ...process.env, ATRIS_TASKS_DB: db.location() }, encoding: 'utf8' });
   const preview = run('--dry-run');
   assert.equal(preview.status, 0, preview.stderr);
   assert.deepEqual(JSON.parse(preview.stdout).tasks.map(x => x.id), [fleet]);
   assert.equal(tasks.getTask(db, fleet).status, 'claimed');
+  assert.deepEqual(fs.readdirSync(cwd), []);
   const selected = run('--claimer', 'person-cli');
   assert.equal(selected.status, 0, selected.stderr);
   assert.deepEqual(JSON.parse(selected.stdout).tasks.map(x => x.id), [person]);
   assert.equal(tasks.getTask(db, person).status, 'open');
   assert.equal(tasks.getTask(db, fleet).status, 'claimed');
+});
+
+test('claimer filters expired leases as well as stale claims', (t) => {
+  const db = setup(t), alice = claimed(db, 'alice'), bob = claimed(db, 'bob');
+  tasks.setLease(db, { id: alice, holder: 'alice', now: 0 });
+  tasks.setLease(db, { id: bob, holder: 'bob', now: 0 });
+  assert.deepEqual(tasks.expireLeases(db, { now: 3600001, claimer: 'alice', isAlive: () => false }).map(x => x.id), [alice]);
+  assert.equal(tasks.getTask(db, bob).status, 'claimed');
+});
+
+function raceOnUpdate(db, change) {
+  return { prepare(sql) {
+    const statement = db.prepare(sql);
+    if (!/UPDATE tasks SET metadata = \?|UPDATE tasks\s+SET status = 'review'/.test(sql)) return statement;
+    return { run(...args) { change(); return statement.run(...args); } };
+  } };
+}
+test('renewal cannot overwrite a reclaimed lease', (t) => {
+  const db = setup(t), id = claimed(db, 'alice');
+  tasks.setLease(db, { id, holder: 'alice', pid: 1 });
+  const raced = raceOnUpdate(db, () => {
+    db.prepare("UPDATE tasks SET claimed_at = claimed_at + 1, metadata = ? WHERE id = ?").run(JSON.stringify({ lease: { holder: 'alice', pid: 2, minutes: 60 } }), id);
+  });
+  assert.equal(tasks.renewLease(raced, { id, holder: 'alice', pid: 1 }), false);
+  assert.equal(tasks.getTask(db, id).metadata.lease.pid, 2);
+});
+test('proof cannot move a new claim into review', (t) => {
+  const db = setup(t), id = claimed(db, 'alice');
+  const raced = raceOnUpdate(db, () => {
+    db.prepare("UPDATE tasks SET claimed_by = 'bob', claimed_at = claimed_at + 1, metadata = ? WHERE id = ?").run(JSON.stringify({ lease: { holder: 'bob', pid: 2 } }), id);
+  });
+  assert.deepEqual(tasks.readyTask(raced, { id, actor: 'alice', proof: 'checked' }), { ready: false, reason: 'claim changed hands' });
+  assert.equal(tasks.getTask(db, id).metadata.lease.holder, 'bob');
+});
+
+test('other dry runs do not sweep expired leases', (t) => {
+  const db = setup(t), id = claimed(db, 'alice');
+  tasks.setLease(db, { id, holder: 'alice', pid: 99999999, now: 0 });
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dry-run-cwd-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const result = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'task', 'clear-done', '--dry-run'], { cwd, env: { ...process.env, ATRIS_TASKS_DB: db.location() }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(tasks.getTask(db, id).status, 'claimed');
+  assert.deepEqual(fs.readdirSync(cwd), []);
+});
+test('sweep preview does not create a missing database', (t) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-empty-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const result = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'task', 'sweep', '--dry-run'], { cwd, env: { ...process.env, ATRIS_TASKS_DB: path.join(cwd, 'missing.db') }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(fs.readdirSync(cwd), []);
 });

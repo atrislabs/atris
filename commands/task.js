@@ -10811,7 +10811,8 @@ function cmdSweep(args) {
     const claimer = flag(args, '--claimer');
     if (claimer === true) throw new Error('claimer requires a name');
     const dryRun = hasFlag(args, '--dry-run');
-    const tasks = taskDb.expireLeases(taskDb.open(), { staleDays: staleRaw == null ? undefined : Number(staleRaw), claimer, dryRun });
+    const options = { staleDays: staleRaw == null ? undefined : Number(staleRaw), claimer };
+    const tasks = dryRun ? taskDb.previewExpiredLeases(options) : taskDb.expireLeases(taskDb.open(), options);
     const groups = {};
     for (const task of tasks) (groups[task.claimed_by] ||= []).push(task);
     if (wantsJson(args)) printJson({ dry_run: dryRun, groups, tasks });
@@ -13092,7 +13093,7 @@ function cmdServe(args) {
 async function runTaskCommand(args) {
   const raw = args || [];
   // A dry run must not mutate even already-expired leases.
-  if (!(raw[0] === 'sweep' && !raw.includes('--auto-accept'))) {
+  if (!raw.includes('--dry-run') && !(raw[0] === 'sweep' && !raw.includes('--auto-accept'))) {
     const taskDb = getTaskDb();
     taskDb.sweepExpiredLeases();
   }
@@ -13293,7 +13294,7 @@ async function run(args) {
     return;
   }
   const result = await runTaskCommand(raw);
-  const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
+  const skipsRender = hasFlag(raw, '--dry-run');
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
   return result;
 }
