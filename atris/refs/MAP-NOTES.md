@@ -2541,5 +2541,5 @@ Computer messages: `commands/computer.js:3550` treats an explicit message as one
 ## google account commands
 
 - Account request context and business header: `commands/integrations.js:33`; capability checks: `commands/integrations.js:265`; mail default migration: `commands/integrations.js:280`; selector resolution: `commands/integrations.js:376` checks exact names and emails before display labels and refuses ambiguous matches.
-- Google account cache, sign-in and commands: `commands/integrations.js:982`, `commands/integrations.js:997`, `commands/integrations.js:1026`, `commands/integrations.js:1102`. Sign-in relies on its own status; account lists show reconnect commands in text and json.
+- Google account cache, sign-in and commands: `commands/integrations.js:982`, `commands/integrations.js:997`, `commands/integrations.js:1026`, `commands/integrations.js:1102`. Modern sign-in relies on its own status; older mail sign-in checks for a new or reconnected account once. Account lists show reconnect commands in text and json.
 - Calendar ordering, partial results and scoped search errors: `commands/integrations.js:1319`, `commands/integrations.js:1336`, `commands/integrations.js:1715`. Router: `bin/atris.js:3072`. Tests: `test/google-accounts.test.js`, `test/google-accounts-http.test.js`.

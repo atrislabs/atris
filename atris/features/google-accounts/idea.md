@@ -8,4 +8,4 @@ Calendar reads without an account include events from every account, ordered by 
 
 Mail follows the server default when no account is named. An older local mail choice moves to the server once if there is no saved default and the account still has mail. An obsolete local choice does not block the account list. Older servers keep the existing mail behavior.
 
-Sign-in checks its own status and reports connected and missing products. If the sign-in expires, start it again. Older servers use the existing mail sign-in. A personal mail sign-in in a business folder does not assign that account to the business.
+Sign-in checks its own status and reports connected and missing products. If the sign-in expires, start it again. Older servers use the existing mail sign-in. They check once for a new account or a reconnected account; otherwise the command says the sign-in is not confirmed yet. A personal mail sign-in in a business folder does not assign that account to the business.
