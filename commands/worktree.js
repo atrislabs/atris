@@ -2010,8 +2010,9 @@ function guide() {
   console.log('   recommended verify: npm run test:fast && node --test <focused files>');
   console.log('');
   console.log('5. Cleanup is part of creation, shipping, and the sweep; run it directly any time:');
-  console.log('   atris worktree cleanup [--apply]          this repo');
-  console.log('   atris worktree sweep [--apply]            every repo in the workspace');
+  console.log('   atris worktree cleanup');
+  console.log('   atris worktree cleanup --apply');
+  console.log('   atris worktree sweep --apply              every repo in the workspace');
   console.log('   atris worktree sweep --install            run the sweep every 3 hours');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
