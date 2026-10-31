@@ -349,6 +349,16 @@ test('sign-in status stops after its time limit', async () => fixture(async (cli
   assert.equal(calls.filter((call) => call.url === '/integrations/google/start/state1').length, 2);
 }, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'pending' }) : ok({ accounts: [] })));
 
+test('json sign-in retains the last polling failure when its time limit ends', async () => fixture(async (cli, { lines }) => {
+  let time = 0;
+  const code = await cli.googleConnect('work', ['gmail'], null, { json: true, openAuthUrl: () => true, sleep: async (ms) => { time += ms; }, now: () => time, pollIntervalMs: 1, timeoutMs: 2 });
+  assert.equal(code, 1);
+  const result = JSON.parse(lines.join('\n'));
+  assert.equal(result.status, 'pending'); assert.equal(result.http_status, 503);
+  assert.deepEqual(result.detail, { message: 'try later' });
+  assert.equal(result.retry, 'atris google connect work --only mail --account');
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? { ok: false, status: 503, error: 'try later', data: { detail: { message: 'try later' } } } : ok({ accounts: [] })));
+
 test('a newly saved local copy is not migrated after the server default is cleared', async () => fixture(async (cli, { root, calls }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
   await cli.googleCommand('use', 'work', '--only', 'mail');

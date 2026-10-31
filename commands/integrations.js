@@ -269,10 +269,16 @@ async function googleAccountsCapability(token, { refresh = false } = {}) {
   if (!result.ok && result.status !== 404) {
     const error = new Error(`could not check google accounts: ${result.error || result.data?.detail || 'request failed'}`);
     error.status = result.status || 0;
+    error.result = result;
     throw error;
   }
-  if (result.ok && !Array.isArray(result.data?.accounts)) throw new Error('could not check google accounts: the server returned an incomplete account list');
-  const capability = { supported: result.ok, data: result.data || {} };
+  if (result.ok && !Array.isArray(result.data?.accounts)) {
+    const error = new Error('could not check google accounts: the server returned an incomplete account list');
+    error.status = result.status || 0;
+    error.result = result;
+    throw error;
+  }
+  const capability = { supported: result.ok, data: result.data || {}, status: result.status || 0 };
   if (context) context.googleCapability = capability;
   return capability;
 }
@@ -864,14 +870,14 @@ async function gmailConnect(accountName, deps = {}) {
 
   if (!result.ok) {
     const detail = String(result.error || 'request failed').toLowerCase();
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', http_status: result.status || 0, ...(result.data || {}), error: detail }, null, 2)); return 1; }
+    if (deps.json) return googleSignInFailure(result, { error: detail, retry: deps.retry });
     console.error(`could not start gmail connection: ${detail}`);
     process.exit(1);
   }
 
   const authUrl = String(result.data?.auth_url || result.data?.url || '').trim();
   if (!authUrl) {
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', ...(result.data || {}), error: 'the server did not return a sign-in url' }, null, 2)); return 1; }
+    if (deps.json) return googleSignInFailure(result, { error: 'the server did not return a sign-in url', retry: deps.retry });
     console.error('could not start gmail connection: the server did not return an auth url.');
     process.exit(1);
   }
@@ -1004,6 +1010,16 @@ async function saveGoogleDefault(auth, selector, products, business, { mailAccou
   return { id, legacy: false };
 }
 
+function googleSignInRetry(name, products, business) {
+  return ['atris google connect', name, products && `--only ${products.map((p) => p === 'gmail' ? 'mail' : p).join(',')}`, business ? `--business ${business}` : '--account'].filter(Boolean).join(' ');
+}
+
+function googleSignInFailure(result, { error, retry, status = 'error', extra = {} } = {}) {
+  const data = result?.data && typeof result.data === 'object' && !Array.isArray(result.data) ? result.data : {};
+  console.log(JSON.stringify({ ok: false, status, http_status: result?.status || 0, error: error || result?.error || 'google sign-in did not finish', retry, ...extra, ...data }, null, 2));
+  return 1;
+}
+
 function googleSignInErrorLines(status, business) {
   const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
   const lines = [status.error === 'superseded'
@@ -1028,18 +1044,18 @@ function googleSignInErrorLines(status, business) {
 
 async function googleConnect(name, products, business, deps = {}) {
   if (name && (!/^[a-z0-9-]{1,32}$/.test(name) || name === 'all')) throw new Error('invalid google account name. use 1 to 32 lowercase letters, numbers, or hyphens');
+  const retry = googleSignInRetry(name, products, business);
   const token = await getAuthToken();
   let before;
   try { before = await googleAccountsCapability(token); }
   catch (error) {
     if (!deps.json) throw error;
-    console.log(JSON.stringify({ ok: false, status: 'error', error: error.message, http_status: error.status || 0 }, null, 2));
-    return 1;
+    return googleSignInFailure(error.result || { status: error.status }, { error: error.message, retry });
   }
   if (!before.supported) {
     if (!deps.quietOldServer && !deps.json) console.log(googleOldServer);
-    if (!products || products.includes('gmail')) return gmailConnect(name, deps);
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: googleOldServer })); return 1; }
+    if (!products || products.includes('gmail')) return gmailConnect(name, { ...deps, retry });
+    if (deps.json) return googleSignInFailure({ status: before.status, data: before.data }, { error: googleOldServer, retry });
     return;
   }
   const body = {};
@@ -1049,19 +1065,19 @@ async function googleConnect(name, products, business, deps = {}) {
   const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
   if (result.status === 404) {
     if (!deps.quietOldServer && !deps.json) console.log(googleOldServer);
-    if (!products || products.includes('gmail')) return gmailConnect(name, deps);
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: googleOldServer })); return 1; }
+    if (!products || products.includes('gmail')) return gmailConnect(name, { ...deps, retry });
+    if (deps.json) return googleSignInFailure(result, { error: googleOldServer, retry });
     return;
   }
   if (!result.ok) {
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', http_status: result.status || 0, ...(result.data || {}), error: result.data?.error || result.error || 'could not start google connection' }, null, 2)); return 1; }
+    if (deps.json) return googleSignInFailure(result, { error: result.error || 'could not start google connection', retry });
     return googleFailure(result, 'start google connection');
   }
   const url = result.data?.auth_url;
   const state = result.data?.state;
-  const missing = !url ? 'the server did not return a sign-in url' : !state ? 'the server did not return a sign-in state. start again with atris google connect.' : '';
+  const missing = !url ? `the server did not return a sign-in url. start again with ${retry}.` : !state ? `the server did not return a sign-in state. start again with ${retry}.` : '';
   if (missing) {
-    if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', ...(result.data || {}), error: missing }, null, 2)); return 1; }
+    if (deps.json) return googleSignInFailure(result, { error: missing, retry });
     throw new Error(missing);
   }
   if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) (deps.json ? console.error : console.log)(`open this url in your browser: ${url}`);
@@ -1073,27 +1089,29 @@ async function googleConnect(name, products, business, deps = {}) {
   const deadline = now() + timeout;
   const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const id = result.data?.account_id || name;
+  let lastFailure = null;
   for (let i = 0; i < count && now() < deadline; i += 1) {
     await sleep(Math.min(interval, Math.max(0, deadline - now())));
     if (now() >= deadline) break;
     const pollOptions = { method: 'GET', token, timeoutMs: Math.max(1, Math.min(interval, deadline - now())), retries: 0 };
     const check = await apiRequestJson(`/integrations/google/start/${encodeURIComponent(state)}`, pollOptions);
     if (check.status === 404) {
-      const retry = ['atris google connect', name, products && `--only ${products.map((p) => p === 'gmail' ? 'mail' : p).join(',')}`, business ? `--business ${business}` : '--account'].filter(Boolean).join(' ');
-      if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: 'sign_in_expired', retry }, null, 2)); return 1; }
+      if (deps.json) return googleSignInFailure(check, { error: 'sign_in_expired', retry });
       console.error(`google sign-in expired. start again with ${retry}.`);
       process.exit(1);
     }
     if (!check.ok) {
       if (check.status === 401 || check.status === 403) {
-        if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'error', error: check.error || 'could not check google sign-in', http_status: check.status }, null, 2)); return 1; }
+        if (deps.json) return googleSignInFailure(check, { error: check.error || 'could not check google sign-in', retry });
         return googleFailure(check, 'check google sign-in');
       }
+      lastFailure = check;
       continue;
     }
+    lastFailure = null;
     const status = check.data || {};
     if (status.status === 'error') {
-      if (deps.json) { console.log(JSON.stringify({ ok: false, ...status }, null, 2)); return 1; }
+      if (deps.json) return googleSignInFailure(check, { retry });
       for (const line of googleSignInErrorLines(status, business)) console.error(line);
       process.exit(1);
     }
@@ -1108,7 +1126,7 @@ async function googleConnect(name, products, business, deps = {}) {
       return;
     }
   }
-  if (deps.json) { console.log(JSON.stringify({ ok: false, status: 'pending', error: 'sign_in_unconfirmed', auth_url: url }, null, 2)); return 1; }
+  if (deps.json) return googleSignInFailure(lastFailure, { status: 'pending', error: 'sign_in_unconfirmed', retry, extra: { auth_url: url } });
   console.error(`connection could not be confirmed. finish in your browser and check atris google: ${url}`);
   process.exit(1);
 }

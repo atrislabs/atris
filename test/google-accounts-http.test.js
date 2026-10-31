@@ -47,6 +47,49 @@ const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
 
+for (const failure of ['missing state', 'expired']) for (const business of [false, true]) for (const json of [false, true]) {
+  test(`the ${failure} retry from ${json ? 'json' : 'text'} repeats the ${business ? 'business' : 'personal'} sign-in`, async () => {
+    let firstAttempt = true;
+    await fixture((call) => {
+      if (call.path.endsWith('/google/accounts')) return ok(roster);
+      if (call.path.endsWith('/google/start')) return ok(firstAttempt && failure === 'missing state' ? { auth_url: 'https://example.test' } : { auth_url: 'https://example.test', state: 'retry-state' });
+      if (call.path.endsWith('/google/start/retry-state')) return firstAttempt && failure === 'expired' ? [404, { detail: 'Invalid or expired Google sign-in' }] : ok({ status: 'connected', account_id: 'work', email: 'work@example.test', products: ['gmail', 'drive'], missing: [] });
+    }, async ({ cli, calls }) => {
+      const args = ['google', 'connect', 'work', '--only', 'mail,drive', ...(business ? ['--business', 'shop'] : ['--account']), ...(json ? ['--json'] : [])];
+      const result = await cli(...args); assert.equal(result.code, 1, result.stderr);
+      const retry = json ? JSON.parse(result.stdout).retry : result.stderr.match(/start again with (atris google connect[^.\n]*)/i)?.[1];
+      assert.ok(retry, `missing retry: ${result.stdout} ${result.stderr}`);
+      const words = retry.split(/\s+/); assert.equal(words.shift(), 'atris'); firstAttempt = false;
+      const repeated = await cli(...words); assert.equal(repeated.code, 0, repeated.stderr);
+      const starts = calls.filter((call) => call.path.endsWith('/google/start'));
+      assert.equal(starts.length, 2); assert.deepEqual(starts[1].body, starts[0].body);
+      assert.deepEqual(starts[1].body.products, ['gmail', 'drive']); assert.equal(starts[1].body.account_id, 'work');
+      assert.equal(starts[1].business, business ? 'shop' : null);
+      assert.equal(Object.hasOwn(starts[1].body, 'business_id'), business);
+    }, { business });
+  });
+}
+
+for (const stage of ['capability', 'start', 'legacy start', 'poll denied', 'poll expired']) {
+  test(`google connect json preserves the ${stage} http response`, async () => {
+    const status = stage === 'poll expired' ? 404 : 403;
+    const answer = { detail: stage === 'poll expired' ? 'Invalid or expired Google sign-in' : 'This sign-in belongs to another person', nested: { reason: stage }, code: 'fixture_code' };
+    await fixture((call) => {
+      if (call.path.endsWith('/google/accounts')) return stage === 'capability' ? [status, answer] : stage === 'legacy start' ? missing : ok(roster);
+      if (call.path.endsWith('/gmail/start')) return [status, answer];
+      if (call.path.endsWith('/google/start')) return stage === 'start' ? [status, answer] : ok({ auth_url: 'https://example.test', state: 'state1' });
+      if (call.path.endsWith('/google/start/state1')) return [status, answer];
+    }, async ({ cli }) => {
+      const result = await cli('google', 'connect', 'work', '--only', 'mail', '--business', 'shop', '--json');
+      assert.equal(result.code, 1, result.stderr);
+      const packet = JSON.parse(result.stdout);
+      for (const [key, value] of Object.entries(answer)) assert.deepEqual(packet[key], value);
+      assert.equal(packet.status, 'error'); assert.equal(packet.http_status, status); assert.equal(packet.ok, false);
+      assert.match(packet.retry, /^atris google connect work --only mail --business shop$/);
+    });
+  });
+}
+
 test('google connect json preserves unfinished sign-in fields and exits nonzero', async () => {
   const answer = { status: 'error', error: 'connection_failed', account_id: 'fresh', products: ['drive'], failed: ['business'], cleanup_incomplete: true, business_assignment_unknown: true, additional_detail: { retained: true } };
   await fixture((call) => {
