@@ -6,4 +6,6 @@ People can connect several google accounts and choose which account serves mail,
 
 Calendar reads without an account include events from every account, ordered by time and labeled when several accounts appear. Calendar writes can name an account. Calls made in a business folder, or with `--business`, carry that business to the server.
 
-An older server keeps the mail-only commands available and reports that calendar and drive accounts need a newer server. The sign-in check waits for the account list to change, because the server does not provide a command-line completion signal.
+Mail follows the server default when no account is named. An older local mail choice moves to the server once if there is no saved default. Older servers keep the existing mail behavior.
+
+Sign-in checks its own status and reports connected and missing products. If the status route is unavailable, it watches for an account change instead.
