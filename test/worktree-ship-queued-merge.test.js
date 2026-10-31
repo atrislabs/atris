@@ -45,7 +45,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
     const { execFileSync } = require('node:child_process');
     const head = execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
     execFileSync('git', ['--git-dir', process.env.MERGE_TEST_REMOTE, 'update-ref', 'refs/heads/master', head]);
-    console.log(JSON.stringify({state: 'MERGED', mergedAt: '2026-10-16T08:00:00Z'}));
+    console.log(JSON.stringify({state: 'MERGED', mergedAt: '2026-10-16T08:00:00Z', number: 41, url: 'https://github.example/repo/pull/41', mergeCommit: {oid: head}}));
   } else if (process.env.MERGE_TEST_MODE === 'malformed') console.log('{broken');
   else console.log(JSON.stringify({state: process.env.MERGE_TEST_MODE === 'closed' ? 'CLOSED' : 'OPEN', mergedAt: null, autoMergeRequest: {enabledAt: '2026-10-16T08:00:00Z'}}));
 } else if (args[0] === 'pr' && args[1] === 'merge') console.log('auto-merge enabled; waiting for required checks');
@@ -84,6 +84,9 @@ test('a confirmed merged change is in the real target before its source is delet
   assert.equal(git(['--git-dir', remote, 'show-ref', '--verify', '--quiet', 'refs/heads/queued-change'], root).status, 1);
   const head = git(['rev-parse', 'HEAD'], work).stdout.trim();
   assert.equal(git(['--git-dir', remote, 'merge-base', '--is-ancestor', head, 'master'], root).status, 0);
+  const record = run.stdout.match(/^merge: record (.*)$/m);
+  assert.ok(record, 'ship names the pull request and commit that landed');
+  assert.deepEqual(JSON.parse(record[1]), { merge_commit: head, number: 41, url: 'https://github.example/repo/pull/41', merged_at: '2026-10-16T08:00:00Z' });
 });
 
 test('a confirmed merge hands the build copy to removal, and a pending one does not', (t) => {

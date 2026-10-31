@@ -575,6 +575,20 @@ function landingFlags(args) {
   };
 }
 
+// The pull request and commit a flight merged on its own, so the job record
+// names what landed. Only a merge commit makes it count.
+function readyMergeFlags(args) {
+  const commit = textFlag(args, ['--merge-commit']);
+  if (!commit) return null;
+  return {
+    merge_commit: commit,
+    number: textFlag(args, ['--pr-number']),
+    url: textFlag(args, ['--pr-url']),
+    merged_at: textFlag(args, ['--merged-at']),
+    self_landed: hasFlag(args, '--self-landed'),
+  };
+}
+
 function normalizedLandingSentence(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -9650,6 +9664,7 @@ function cmdReady(args) {
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const landing = landingFlags(args);
+  const merge = readyMergeFlags(args);
   guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const resultFields = {
@@ -9697,6 +9712,7 @@ function cmdReady(args) {
     nextTask: nextTaskInput.nextTask,
     resultTrace: resultTrace && resultTrace.trace,
     landing,
+    merge,
     result: resultSentence,
   });
   if (!result.ready) {
