@@ -16,6 +16,8 @@ const { DatabaseSync } = require('node:sqlite');
 const tasks = require('../lib/task-db');
 const fleet = require('../lib/fleet');
 const { loadSeason, rosterRows } = require('../lib/gm-season');
+const { readRosterRuns, summarizeRuns, OUTCOMES } = require('../lib/roster-runs');
+const { attachStaleModels } = require('../lib/roster-stale');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
@@ -59,16 +61,29 @@ function shipSetup(t, { tag = 'feedback', todoTags = [] } = {}) {
   fs.writeFileSync(path.join(primary, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
     tasks: [{ display_id: 'BCK-1934', tag, metadata: { todo_tags: todoTags } }],
   }));
-  // No pull request exists yet; creating one prints its link. Every call is
-  // written down so a test can say what was never asked for.
+  // `gh pr view` answers the way the real one does. With no setup the branch has
+  // no pull request yet: exit 1 and say so on stderr. A test can give the branch
+  // an open pull request, make gh fail, or make it print something that is not
+  // JSON. Creating a pull request prints its link. Every call is written down
+  // so a test can say what was never asked for.
+  const viewSetup = path.join(root, 'pr-view.json');
   fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(ghLog)}, args.join(' ') + '\\n');
-if (args[0] === 'pr' && args[1] === 'view') process.exit(1);
+if (args[0] === 'pr' && args[1] === 'view') {
+  const setup = fs.existsSync(${JSON.stringify(viewSetup)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(viewSetup)}, 'utf8')) : null;
+  if (!setup) { console.error('no pull requests found for branch "bck-1934-fix"'); process.exit(1); }
+  if (setup.fail) { console.error(setup.fail); process.exit(1); }
+  if (setup.raw !== undefined) { process.stdout.write(setup.raw); process.exit(0); }
+  if (args.includes('--jq')) console.log(setup.pr.number + ' ' + setup.pr.url + ' ' + setup.pr.state);
+  else console.log(JSON.stringify(setup.pr));
+  process.exit(0);
+}
 if (args[0] === 'pr' && args[1] === 'create') { console.log(${JSON.stringify(PR_URL)}); process.exit(0); }
 process.exit(1);
 `, { mode: 0o755 });
+  const prView = (setup) => fs.writeFileSync(viewSetup, JSON.stringify(setup));
   const ship = (...extra) => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'Fix the form (BCK-1934, built by codex)', '--no-map-refresh', ...extra], {
     cwd: work,
     encoding: 'utf8',
@@ -77,7 +92,7 @@ process.exit(1);
   });
   const onRemote = () => git(['--git-dir', remote, 'show-ref', '--verify', '--quiet', 'refs/heads/bck-1934-fix'], root).status === 0;
   const ghCalls = () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').split('\n').filter(Boolean) : []);
-  return { ship, onRemote, ghCalls };
+  return { ship, onRemote, ghCalls, prView, work };
 }
 
 test('without --merge a protected-lane branch is pushed and its pull request is opened for a person', (t) => {
@@ -125,6 +140,105 @@ test('a safe-lane branch is not slowed down by the gate', (t) => {
   const run = ship('--dry-run', '--merge');
   assert.equal(run.status, 0, run.stderr || run.stdout);
   assert.match(run.stdout, /^merge: requested$/m);
+});
+
+// A pull request with GitHub auto-merge on merges itself the moment its checks
+// pass, and a push is all it takes to feed it. Work that shipped earlier with
+// --merge and was retagged into a protected lane since would land with no person.
+
+const AUTO_MERGE_ON = { enabledAt: '2026-10-30T10:00:00Z', mergeMethod: 'MERGE' };
+const openPullRequest = (autoMergeRequest) => ({ pr: { number: 77, url: PR_URL, state: 'OPEN', autoMergeRequest } });
+
+test('a protected-lane push is refused when the branch already has an open pull request with auto-merge on, and nothing is pushed', (t) => {
+  const { ship, onRemote, ghCalls, prView } = shipSetup(t);
+  prView(openPullRequest(AUTO_MERGE_ON));
+  const run = ship();
+  assert.equal(run.status, 2, `${run.stdout}${run.stderr}`);
+  assert.equal(run.stderr.trim(), `blocked: pull request ${PR_URL} has auto-merge on, so pushing bck-1934-fix would land it with no person; turn auto-merge off first (gh pr merge 77 --disable-auto), then ship again`);
+  assert.doesNotMatch(run.stdout, /push:|pr:|done: worktree shipped/);
+  assert.equal(onRemote(), false, 'the branch never reached the remote');
+  assert.equal(ghCalls().some((call) => call.startsWith('pr create ') || call.startsWith('pr merge')), false);
+});
+
+test('a protected-lane push that cannot be checked is refused too: gh fails, or answers with something that is not JSON', (t) => {
+  for (const [label, setup, said] of [
+    ['gh is not signed in', { fail: 'HTTP 401: Bad credentials (https://api.github.com/graphql)' }, /Bad credentials/],
+    ['gh prints nonsense', { raw: 'this is not json' }, /gh's answer could not be read/],
+    ['gh answers with nothing', { raw: '' }, /gh's answer could not be read/],
+  ]) {
+    const { ship, onRemote, ghCalls, prView } = shipSetup(t);
+    prView(setup);
+    const run = ship();
+    assert.equal(run.status, 2, `${label}: ${run.stdout}${run.stderr}`);
+    assert.match(run.stderr, /^blocked: cannot tell whether bck-1934-fix has a pull request with auto-merge on/, label);
+    assert.match(run.stderr, said, label);
+    assert.match(run.stderr, /nothing was pushed/, label);
+    assert.doesNotMatch(run.stdout, /push:|pr:|done: worktree shipped/, label);
+    assert.equal(onRemote(), false, label);
+    assert.equal(ghCalls().some((call) => call.startsWith('pr create ')), false, label);
+  }
+});
+
+test('the auto-merge check only guards protected-lane pushes, and only when auto-merge is really on', (t) => {
+  // No pull request yet, which is what gh says on a first push: ship goes on.
+  const first = shipSetup(t);
+  assert.equal(first.ship().status, 0);
+  assert.equal(first.onRemote(), true);
+
+  // An open pull request with auto-merge off is the ordinary re-push.
+  const off = shipSetup(t);
+  off.prView(openPullRequest(null));
+  const repush = off.ship();
+  assert.equal(repush.status, 0, repush.stderr || repush.stdout);
+  assert.match(repush.stdout, /^push: origin bck-1934-fix$/m);
+  assert.equal(off.onRemote(), true);
+
+  // A pull request that already merged does not stop a new one, and neither does
+  // a closed one that still reports an old auto-merge request.
+  const merged = shipSetup(t);
+  merged.prView({ pr: { number: 70, url: 'https://github.example/repo/pull/70', state: 'MERGED', autoMergeRequest: null } });
+  assert.equal(merged.ship().status, 0);
+  const closed = shipSetup(t);
+  closed.prView({ pr: { number: 71, url: 'https://github.example/repo/pull/71', state: 'closed', autoMergeRequest: AUTO_MERGE_ON } });
+  assert.equal(closed.ship().status, 0);
+
+  // An answer in a shape nobody expected, with auto-merge on, is not let through.
+  const odd = shipSetup(t);
+  odd.prView({ pr: { number: 72, url: 'https://github.example/repo/pull/72', state: 'REOPENED_SOMEHOW', autoMergeRequest: AUTO_MERGE_ON } });
+  assert.equal(odd.ship().status, 2);
+  assert.equal(odd.onRemote(), false);
+
+  // A safe-lane branch is never held up by it, whatever gh says.
+  const safe = shipSetup(t, { tag: 'code' });
+  safe.prView(openPullRequest(AUTO_MERGE_ON));
+  assert.equal(safe.ship().status, 0);
+  assert.equal(safe.onRemote(), true);
+
+  // A person who lands it on written order is not asked either.
+  const ordered = shipSetup(t);
+  ordered.prView(openPullRequest(AUTO_MERGE_ON));
+  const allowed = ordered.ship('--allow-denied-lane');
+  assert.equal(allowed.status, 0, allowed.stderr || allowed.stdout);
+  assert.equal(ordered.onRemote(), true);
+});
+
+test('without gh, or with a gh that hangs, the auto-merge check refuses instead of guessing', () => {
+  const { protectedPushRefusal } = require('../commands/worktree');
+  const gone = () => ({ error: Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), status: null, stdout: '', stderr: '' });
+  const refusal = protectedPushRefusal(os.tmpdir(), 'bck-1934-fix', gone);
+  assert.match(refusal, /^blocked: cannot tell whether bck-1934-fix has a pull request with auto-merge on \(gh did not run: spawn gh ENOENT\); nothing was pushed$/);
+  // A gh that hangs is cut off after a minute and refused in plain words.
+  const slow = () => ({ error: Object.assign(new Error('spawnSync gh ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, stdout: '', stderr: '' });
+  assert.match(protectedPushRefusal(os.tmpdir(), 'bck-1934-fix', slow), /^blocked: cannot tell whether bck-1934-fix has a pull request with auto-merge on \(gh took longer than a minute to answer\); nothing was pushed$/);
+  let asked = null;
+  protectedPushRefusal(os.tmpdir(), 'x', (command, args, options) => { asked = { command, args, options }; return { status: 1, stdout: '', stderr: 'no pull requests found for branch "x"' }; });
+  assert.equal(asked.command, 'gh');
+  assert.deepEqual(asked.args.slice(0, 3), ['pr', 'view', 'x']);
+  assert.ok(asked.options.timeout > 0 && asked.options.timeout <= 120000, 'the lookup has a time limit');
+  // Both spellings of "no pull request yet" are a clear.
+  for (const stderr of ['no pull requests found for branch "x"', 'no open pull requests found for branch "x"']) {
+    assert.equal(protectedPushRefusal(os.tmpdir(), 'x', () => ({ status: 1, stdout: '', stderr })), '');
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -187,14 +301,15 @@ function tempRoot(t) {
   return root;
 }
 
-function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0 }) {
+function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, readyError = 'ready failed: nope', releaseStatus = 0 }) {
   const calls = [];
   const cli = (args) => {
     calls.push(args);
     if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(task), stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd /wt/${args[args.indexOf('--task') + 1]}\n`, stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'ship') return { status: shipStatus, stdout: shipOutput, stderr: shipStatus ? 'ship failed' : '' };
-    if (args[0] === 'task' && args[1] === 'ready') return { status: readyStatus, stdout: readyStatus ? '' : 'proof ready', stderr: readyStatus ? 'ready failed: nope' : '' };
+    if (args[0] === 'task' && args[1] === 'ready') return { status: readyStatus, stdout: readyStatus ? '' : 'proof ready', stderr: readyStatus ? readyError : '' };
+    if (args[0] === 'task' && args[1] === 'release') return { status: releaseStatus, stdout: releaseStatus ? '' : 'released', stderr: releaseStatus ? 'release failed: busy' : '' };
     return { status: 0, stdout: '', stderr: '' };
   };
   return { cli, calls };
@@ -297,7 +412,7 @@ test('a safe-lane fix is still merged and counted as landed, with no held row', 
   assert.deepEqual(receipt.held_for_review, []);
 });
 
-test('if saving the proof fails, the pull request stays open, the claim is kept, and the flight says so', async (t) => {
+test('if saving the proof fails, the claim is let go at once with the pull request link as the reason, so no sweep can expire it as a drop', async (t) => {
   const plane = planeFor(FEEDBACK_TASK, { readyStatus: 1 });
   const { flight, logs, receipt } = await flyWith(t, plane);
 
@@ -309,11 +424,42 @@ test('if saving the proof fails, the pull request stays open, the claim is kept,
   assert.equal(paused.held_for_review, true);
   assert.equal(paused.landed, undefined);
   assert.match(paused.next_action, /leave the pull request open/);
+  assert.deepEqual(paused.pull_request, { url: PR_URL, number: 77 });
   assert.equal(flight.held_for_review[0].review_recorded, false);
-  assert.deepEqual(callsTo(plane, 'task', 'release'), [], 'the work is on that pull request, so the claim stays');
-  assert.equal(paused.claim_released, undefined);
-  assert.ok(logs.some((line) => /the pull request is open, but saving its proof failed/.test(line)));
+
+  // The claim would otherwise sit on its 60 minute lease and then expire as a
+  // plain drop while the pull request is open. It goes now, under the builder's
+  // own name, and the reason is where anyone finds the pull request.
+  const releases = callsTo(plane, 'task', 'release');
+  assert.equal(releases.length, 1, 'one release, made once');
+  assert.equal(releases[0][2], 'BCK-1934');
+  assert.equal(flagValue(releases[0], '--as'), 'fleet-codex');
+  assert.equal(flagValue(releases[0], '--reason'), `PR ${PR_URL} is open but its proof could not be saved: ready failed: nope`);
+  assert.equal(paused.claim_released, true);
+  assert.ok(plane.calls.indexOf(releases[0]) > plane.calls.indexOf(callsTo(plane, 'task', 'ready')[0]), 'the release follows the failed save');
+
+  assert.ok(logs.some((line) => /the pull request is open, but saving its proof failed/.test(line)), logs.join('\n'));
   assert.equal(receipt.result.passed, false);
+  assert.equal(receipt.paused[0].claim_released, true);
+  assert.deepEqual(receipt.paused[0].pull_request, { url: PR_URL, number: 77 });
+});
+
+test('the release reason carries only the first line of the save error, and a release that fails is said so and not tried again', async (t) => {
+  const multiline = planeFor(FEEDBACK_TASK, { readyStatus: 1, readyError: '\n  database is locked\n    at saveProof (task-db.js:12:3)\n' });
+  await flyWith(t, multiline);
+  assert.equal(flagValue(callsTo(multiline, 'task', 'release')[0], '--reason'), `PR ${PR_URL} is open but its proof could not be saved: database is locked`);
+
+  const long = planeFor(FEEDBACK_TASK, { readyStatus: 1, readyError: `x${'y'.repeat(500)}` });
+  await flyWith(t, long);
+  const reason = flagValue(callsTo(long, 'task', 'release')[0], '--reason');
+  assert.ok(reason.length <= 300, `${reason.length} characters`);
+  assert.ok(reason.startsWith(`PR ${PR_URL} is open but its proof could not be saved: x`), 'the link comes first, so a long error never cuts it');
+
+  const stuck = planeFor(FEEDBACK_TASK, { readyStatus: 1, releaseStatus: 1 });
+  const { flight, logs } = await flyWith(t, stuck);
+  assert.equal(callsTo(stuck, 'task', 'release').length, 1, 'the end-of-flight pass does not retry it');
+  assert.equal(flight.paused[0].claim_released, false);
+  assert.ok(logs.some((line) => /could not release the claim/.test(line)), logs.join('\n'));
 });
 
 test('a protected-lane ship with no pull request link pauses at ship and says why, instead of pretending', async (t) => {
@@ -459,6 +605,39 @@ test('the claim sweep never expires a job waiting in Review, however old', (t) =
   assert.equal(db.prepare("SELECT count(*) AS n FROM task_events WHERE task_id = ? AND event_type = 'claim_expired'").get(held).n, 0);
 });
 
+test('the row keeps the open pull request until a merge is recorded; a later review pass leaves it alone', (t) => {
+  const { dir, db } = sandboxDb(t);
+  const id = heldJob(db, dir);
+  const open = { state: 'open', number: 77, url: PR_URL };
+  assert.deepEqual(tasks.getTask(db, id).metadata.pull_request, open);
+
+  // An independent review names no pull request; the one on file stays open.
+  assert.equal(tasks.readyTask(db, { id, actor: 'claude', proof: 'Read the diff and reran the check; both are fine.' }).ready, true);
+  assert.deepEqual(tasks.getTask(db, id).metadata.pull_request, open);
+
+  // Only a recorded merge changes it.
+  const merge = { merge_commit: COMMIT, number: '77', url: PR_URL, merged_at: '2026-10-31T02:10:45Z' };
+  assert.equal(tasks.readyTask(db, { id, actor: 'claude', proof: 'Merged the pull request by hand after reading it.', merge }).ready, true);
+  assert.deepEqual(tasks.getTask(db, id).metadata.pull_request, { state: 'merged', merge_commit: COMMIT, number: 77, url: PR_URL, merged_at: '2026-10-31T02:10:45Z' });
+
+  // A job that never had a pull request carries no such field.
+  const plain = tasks.addTask(db, { title: 'plain job', workspaceRoot: dir }).id;
+  tasks.claimTask(db, { id: plain, claimedBy: 'fleet-codex' });
+  tasks.readyTask(db, { id: plain, actor: 'fleet-codex', proof: 'ready' });
+  assert.equal(tasks.getTask(db, plain).metadata.pull_request, undefined);
+});
+
+test('sending a held job back to open drops the pull request on its row, so the next attempt starts clean', (t) => {
+  const { dir, db } = sandboxDb(t);
+  const id = heldJob(db, dir);
+  assert.deepEqual(tasks.getTask(db, id).metadata.pull_request, { state: 'open', number: 77, url: PR_URL });
+  const reopened = tasks.reopenTask(db, { id, actor: 'keshav', reason: 'the pull request was closed unmerged', fromReview: true });
+  assert.equal(reopened.reopened, true, JSON.stringify(reopened));
+  const row = tasks.getTask(db, id);
+  assert.equal(row.status, 'open');
+  assert.equal(row.metadata.pull_request, undefined, 'a stale open pull request would keep auto-accept away from the next attempt');
+});
+
 // ---------------------------------------------------------------------------
 // The real command line: what the flight sends is accepted as it is written.
 
@@ -521,4 +700,115 @@ test('the real task ready takes the flight\'s held proof as written, parks the j
   assert.deepEqual(swept.tasks.map((x) => x.title), ['A worker that walked off']);
   assert.equal(JSON.parse(run(['task', 'show', held, '--json']).stdout).status, 'review');
   assert.equal(JSON.parse(run(['task', 'show', stranded, '--json']).stdout).status, 'open');
+});
+
+// ---------------------------------------------------------------------------
+// Auto-approval. `atris task auto-accept-certified --all --include-protected`
+// lands every review that has an independent look and a passing check. A held
+// job has both, and its pull request is still open: it must not be completed,
+// and so must not count as landed on the rating.
+
+test('auto-approval with --all --include-protected leaves a job whose pull request is still open in Review, and the rating sees no landing', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK);
+  await flyWith(t, plane);
+  const sent = callsTo(plane, 'task', 'ready')[0];
+  assert.ok(sent, 'the flight sent task ready');
+
+  const { dir, dbPath, run } = cliWorkspace(t);
+  fs.writeFileSync(path.join(dir, 'app.js'), 'module.exports = 1;\n');
+  const id = JSON.parse(run(['task', 'new', 'Fix the feedback form so people stop retyping', '--tag', 'feedback', '--verify', 'node --check app.js', '--json']).stdout).task.display_id;
+  run(['task', 'claim', id, '--as', 'fleet-codex']);
+  // The builder's handoff, exactly as the flight writes it...
+  run(['task', 'ready', id, ...sent.slice(3)]);
+  // ...then a second reader, who names no pull request.
+  run(['task', 'ready', id,
+    '--proof', 'Independent review of the diff. Reran the check: node --check app.js exited 0. Verify output: # tests 3 # pass 3 # fail 0. Receipt saved at atris/runs/review.json.',
+    '--result', 'Operators can trust the form fix because a second reader confirmed the change.',
+    '--as', 'claude']);
+  const statusOf = () => JSON.parse(run(['task', 'show', id, '--json']).stdout).status;
+  assert.equal(statusOf(), 'review');
+
+  const sweep = (...extra) => JSON.parse(run(['task', 'auto-accept-certified', '--all', '--include-protected', '--json', ...extra]).stdout);
+  const preview = sweep('--dry-run');
+  assert.equal(preview.would_accept, 0, JSON.stringify(preview.results));
+  assert.equal(preview.results.length, 1);
+  assert.equal(preview.results[0].eligible, false);
+  assert.equal(preview.results[0].reason, 'pull_request_open');
+  assert.deepEqual(preview.results[0].pull_request, { state: 'open', number: 77, url: PR_URL });
+
+  const live = sweep('--as', 'keshav', '--confirm-human-accept');
+  assert.equal(live.accepted, 0, JSON.stringify(live.results));
+  assert.equal(live.results[0].action, 'skipped');
+  assert.equal(live.results[0].reason, 'pull_request_open');
+  assert.equal(statusOf(), 'review', 'the job is still waiting for a person');
+  assert.deepEqual(playsOf(seasonOf(dir, dbPath), JSON.parse(run(['task', 'show', id, '--json']).stdout).id).map((o) => o.kind), ['took']);
+
+  // The gate is for the machine. A person's own accept is untouched, which is
+  // the next step the refusal names.
+  run(['task', 'accept', id, '--as', 'keshav', '--json']);
+  assert.equal(statusOf(), 'done');
+});
+
+// ---------------------------------------------------------------------------
+// The engine's run history. It counts landed runs and a landed run renews the
+// worker's verified date, so a held build, which only waits for a person, must
+// not be written down as landed.
+
+const heldRuns = (root) => readRosterRuns(root).filter((run) => run.task === 'BCK-1934');
+const PIN_VERIFIED = '2000-01-01';
+const pinReport = () => ({
+  jobs: [{
+    job: 'build',
+    from: 'all projects',
+    file: '~/.atris/ROSTER.md',
+    workers: [{
+      engine: 'codex', model: 'gpt-6.1-sol', status: 'leads', why: '', line: 7, verified: PIN_VERIFIED,
+      runs: { engine: 'codex', model: 'gpt-6.1-sol', model_source: 'roster', text: 'codex (gpt-6.1-sol)' },
+    }],
+  }],
+  team: [],
+});
+// The pin's verified date after these runs, for a worker that runs the pinned model.
+const verifiedAfter = (runs, now) => attachStaleModels(pinReport(), {
+  catalog: { codex: ['gpt-6.1-sol'] },
+  runs: runs.map((run) => ({ ...run, model: 'gpt-6.1-sol' })),
+  now,
+}).jobs[0].workers[0].pin_verified_at;
+
+test('a held attempt is written to the run history as held, not landed, and verifies nothing until a person lands it', async (t) => {
+  const { flight, root } = await flyWith(t, planeFor(FEEDBACK_TASK));
+  assert.equal(flight.held_for_review.length, 1);
+
+  const runs = heldRuns(root);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].outcome, 'held');
+  assert.equal(runs[0].engine, 'codex');
+  assert.equal(runs[0].detail, `waiting for a person to land ${PR_URL}`);
+  assert.ok(OUTCOMES.includes('held'), 'held is a recorded outcome, not coerced into a failure');
+
+  const summary = summarizeRuns(runs);
+  assert.equal(summary.landed, 0);
+  assert.equal(summary.held, 1);
+
+  // The verified date of a pinned worker moves only on a landed run.
+  const now = new Date(Date.parse(runs[0].at) + 3600000);
+  assert.equal(verifiedAfter(runs, now), PIN_VERIFIED);
+  assert.notEqual(verifiedAfter([{ ...runs[0], outcome: 'landed' }], now), PIN_VERIFIED, 'a landed run would have renewed it');
+});
+
+test('saving the proof failing does not turn a held attempt into a landing or a failure in the run history', async (t) => {
+  const { root } = await flyWith(t, planeFor(FEEDBACK_TASK, { readyStatus: 1 }));
+  const runs = heldRuns(root);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].outcome, 'held');
+  assert.equal(runs[0].detail, `pull request ${PR_URL} is open but its proof could not be saved`);
+});
+
+test('a fix that really landed is still written down as landed, and a paused one as failed', async (t) => {
+  const record = JSON.stringify({ merge_commit: COMMIT, number: 4676, url: 'https://github.example/repo/pull/4676', merged_at: '2026-10-31T02:10:45Z' });
+  const landed = await flyWith(t, planeFor({ ...FEEDBACK_TASK, tag: 'code' }, { shipOutput: `merge: merged\nmerge: record ${record}\ndone: worktree shipped\n` }));
+  assert.deepEqual(heldRuns(landed.root).map((run) => run.outcome), ['landed']);
+
+  const paused = await flyWith(t, planeFor(FEEDBACK_TASK, { shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' }));
+  assert.deepEqual(heldRuns(paused.root).map((run) => run.outcome), ['failed']);
 });

@@ -115,11 +115,13 @@ function cliWorkspace(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, 'atris'));
   const dbPath = path.join(dir, 'tasks.db');
-  const attempt = (args) => spawnSync(process.execPath, [CLI, ...args], {
+  // `inside` adds environment variables on top of a clean shell, the way an
+  // agent session or a dispatched worker would carry them.
+  const attempt = (args, inside = {}) => spawnSync(process.execPath, [CLI, ...args], {
     cwd: dir,
     encoding: 'utf8',
     timeout: 30000,
-    env: { ...scrubAgentEnv(), ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    env: { ...scrubAgentEnv(), ...inside, ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
   });
   const run = (args) => {
     const result = attempt(args);
@@ -209,6 +211,58 @@ test('end to end: a worker\'s "already fixed" drop stops counting once another p
   const text = cli.run(['rating', 'fleet-codex']).stdout;
   assert.match(text, /landed 0 of 1 finished jobs/);
   assert.match(text, /not needed: 1 \(confirmed by someone else, so it does not count either way\)/);
+});
+
+// A worker that dropped a job must not be able to wave off its own miss by
+// naming someone else with --as. A dispatched worker carries the markers of the
+// session it runs in, so the command refuses there.
+
+const WORKER_MARKERS = [
+  // set by the engine tools themselves
+  ['CLAUDECODE', '1'], ['CLAUDE_CODE_ENTRYPOINT', 'cli'], ['CODEX_SANDBOX', 'seatbelt'], ['CURSOR_AGENT', '1'], ['DEVIN_SESSION_ID', 'devin-1'],
+  ['CODEX_THREAD_ID', 'thread-1'], ['CODEX_SESSION_ID', 'session-1'],
+  // set by a mission flight and the engines it starts
+  ['ATRIS_MISSION_DRIVER_DETACHED', '1'], ['ATRIS_MISSION_DRIVER_PARENT_PID', '4242'], ['ATRIS_DISPATCH_DEPTH', '1'],
+  // an explicit agent session
+  ['ATRIS_AGENT_PROOF_ONLY', '1'],
+];
+
+test('atris task archive --not-needed refuses inside an agent session or a dispatched worker, whoever --as names, and changes nothing', (t) => {
+  const { attempt, run, create, status, countEvents } = cliWorkspace(t);
+  const id = create('Fix the form so people stop retyping');
+  for (const [name, value] of WORKER_MARKERS) {
+    const refused = attempt(['task', 'archive', id, '--not-needed', '--reason', 'already fixed', '--as', 'keshav'], { [name]: value });
+    assert.equal(refused.status, 2, `${name}: ${refused.stdout}${refused.stderr}`);
+    assert.match(refused.stderr, /--not-needed is for a person to confirm/, name);
+    assert.match(refused.stderr, new RegExp(`${name} is set`), `${name} is named so the reader can see why`);
+    assert.match(refused.stderr, /plain terminal/, name);
+  }
+  assert.equal(status(id), 'open', 'every refused call changed nothing');
+  assert.equal(countEvents('not_needed'), 0);
+  assert.equal(countEvents('archived'), 0);
+
+  // The json form says the same, in the same fields every refusal uses.
+  const json = JSON.parse(attempt(['task', 'archive', id, '--not-needed', '--reason', 'already fixed', '--as', 'keshav', '--json'], { CLAUDECODE: '1' }).stdout);
+  assert.equal(json.ok, false);
+  assert.equal(json.reason, 'not_needed_needs_a_person');
+
+  // A shell that says "not an agent" does not lift it while a marker is there.
+  const denied = attempt(['task', 'archive', id, '--not-needed', '--reason', 'already fixed', '--as', 'keshav'], { CLAUDECODE: '1', ATRIS_AGENT_PROOF_ONLY: '0' });
+  assert.equal(denied.status, 2);
+  assert.equal(status(id), 'open');
+
+  // The same command from a plain terminal works, even where a marker is exported
+  // empty (an empty value is not a session), and so does ordinary archiving from a session.
+  const empty = Object.fromEntries(WORKER_MARKERS.map(([name]) => [name, '']));
+  const fromTerminal = attempt(['task', 'archive', id, '--not-needed', '--reason', 'already fixed', '--as', 'keshav'], empty);
+  assert.equal(fromTerminal.status, 0, fromTerminal.stderr || fromTerminal.stdout);
+  assert.match(fromTerminal.stdout, /as not needed: already fixed/);
+  assert.equal(status(id), 'archived');
+  assert.equal(countEvents('not_needed'), 1);
+  const other = create('A second job');
+  const plain = attempt(['task', 'archive', other, '--reason', 'duplicate'], { CLAUDECODE: '1' });
+  assert.equal(plain.status, 0, plain.stderr || plain.stdout);
+  assert.equal(status(other), 'archived');
 });
 
 // ---------------------------------------------------------------------------
@@ -308,6 +362,32 @@ test('only another actor, only within seven days, and only after the miss can cl
   assert.deepEqual(kindsOf(season, 'before-the-miss'), ['dropped']);
   assert.deepEqual(kindsOf(season, 'someone-elses-job'), ['dropped']);
   assert.deepEqual(kindsOf(season, 'no-actor'), ['dropped'], 'an unsigned note cannot clear anything');
+});
+
+test('a note from a fleet engine identity never clears a miss, but a person\'s note beside it still does', (t) => {
+  const b = Date.now() - 20 * DAY;
+  const miss = (...rest) => [['claimed', 'alpha', {}, b], ['claim_released', 'alpha', { reason: 'engine produced no work' }, b + HOUR], ...rest];
+  const missAt = b + HOUR;
+  const { season } = seasonFrom(t, {
+    'by-fleet-codex': miss(NOTICE('fleet-codex', missAt + 1)),
+    'by-fleet-claude-spelled-differently': miss(NOTICE(' Fleet-Claude ', missAt + 1)),
+    'by-a-person': miss(NOTICE('keshav', missAt + 1)),
+    'by-fleet-then-a-person': miss(NOTICE('fleet-codex', missAt + 1), NOTICE('keshav', missAt + 2, 'confirmed by hand')),
+    'a-name-that-only-starts-alike': miss(NOTICE('fleetwood', missAt + 1)),
+  });
+  assert.deepEqual(kindsOf(season, 'by-fleet-codex'), ['dropped'], 'an engine cannot void another engine\'s miss');
+  assert.deepEqual(kindsOf(season, 'by-fleet-claude-spelled-differently'), ['dropped']);
+  assert.deepEqual(kindsOf(season, 'by-a-person'), ['not_needed']);
+  assert.deepEqual(kindsOf(season, 'by-fleet-then-a-person'), ['not_needed']);
+  assert.equal(playsOf(season, 'by-fleet-then-a-person')[0].confirmed_by, 'keshav');
+  assert.equal(playsOf(season, 'by-fleet-then-a-person')[0].reason, 'confirmed by hand');
+  assert.deepEqual(kindsOf(season, 'a-name-that-only-starts-alike'), ['not_needed'], 'only names the fleet claims under are engines');
+});
+
+test('isFleetEngineActor knows the names the fleet claims under', () => {
+  const { isFleetEngineActor } = require('../lib/review-integrity');
+  for (const name of ['fleet-codex', ' Fleet-Claude ', 'FLEET-CURSOR']) assert.equal(isFleetEngineActor(name), true, name);
+  for (const name of ['keshav', 'fleetwood', 'claude', '', null, undefined]) assert.equal(isFleetEngineActor(name), false, String(name));
 });
 
 test('a notice on one job never clears another job, and never touches landed or sent-back work', (t) => {

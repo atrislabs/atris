@@ -164,11 +164,17 @@ test('a pause where the engine never finished its turn keeps its own reason, eve
   assert.equal(reasons['BCK-8'], 'engine produced no work');
 });
 
-test('a pull request waiting for a person keeps its claim, even when saving the proof failed', (t) => {
+test('a pull request waiting for a person is released once, when its proof fails to save, and never again at the end of the flight', (t) => {
   const worktree = repoWithCommit(t, { commit: false });
-  const rows = [{ task: 'BCK-5', stage: 'task_ready', held_for_review: true, worktree }];
-  assert.deepEqual(releaseCalls(rows, { keepClaimsWithWork: false, worktree }), []);
-  assert.equal(rows[0].claim_released, undefined);
+  // The flight let that claim go at the moment saving failed, with the pull
+  // request link as the reason. The closing pass has nothing to add to it,
+  // whether that release worked or not, and never writes a second, bare one.
+  // A held row no one has tried to release yet is left alone as well.
+  for (const claim_released of [true, false, undefined]) {
+    const rows = [{ task: 'BCK-5', stage: 'task_ready', held_for_review: true, claim_released, worktree }];
+    assert.deepEqual(releaseCalls(rows, { keepClaimsWithWork: false, worktree }), []);
+    assert.equal(rows[0].claim_released, claim_released);
+  }
 });
 
 test('atris rating shows the reasons the flight gave for the claims it released', (t) => {

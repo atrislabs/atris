@@ -28,6 +28,7 @@ const MISSION_DRIVER_VARS = [
   'ATRIS_AGENT_ID',
   'ATRIS_MISSION_DRIVER_DETACHED',
   'ATRIS_MISSION_DRIVER_PARENT_PID',
+  'ATRIS_DISPATCH_DEPTH',
 ];
 
 // A codex session exports its thread id into every shell it runs, and member

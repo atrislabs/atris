@@ -256,7 +256,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
                                            --not-needed: a person confirms the job did not need doing, so a
-                                           drop on it stops counting against the member (needs --reason)
+                                           drop on it stops counting against the member (needs --reason;
+                                           refused inside an agent session or a dispatched worker)
   atris task reopen <id> [--reason "..."]  Send a done, waiting, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
@@ -366,6 +367,28 @@ function agentProofOnlyMode() {
   if (explicit === '1') return true;
   if (explicit === '0') return false;
   return AGENT_ENV_MARKERS.some((marker) => String(process.env[marker] || '').trim() !== '');
+}
+
+// Everything an engine process carries: what the engine tools export in the
+// shells they run, and what a mission flight sets on the drivers and engines it
+// starts. ATRIS_AGENT_ID is left out on purpose: it is the owner's own id, which
+// a person may export. The fleet's own dispatch adds no marker of its own, so
+// it relies on the engine tool's.
+const WORKER_ENV_MARKERS = [
+  ...AGENT_ENV_MARKERS,
+  'CODEX_THREAD_ID',
+  'CODEX_SESSION_ID',
+  'ATRIS_MISSION_DRIVER_DETACHED',
+  'ATRIS_MISSION_DRIVER_PARENT_PID',
+  'ATRIS_DISPATCH_DEPTH',
+];
+
+// The first worker marker set in this shell, or ''. Unlike agentProofOnlyMode
+// it cannot be switched off with ATRIS_AGENT_PROOF_ONLY=0.
+function workerEnvMarker(env = process.env) {
+  const found = WORKER_ENV_MARKERS.find((marker) => String(env[marker] || '').trim() !== '');
+  if (found) return found;
+  return String(env.ATRIS_AGENT_PROOF_ONLY || '').trim() === '1' ? 'ATRIS_AGENT_PROOF_ONLY' : '';
 }
 
 function failAgentProofOnly(label, detail) {
@@ -9264,6 +9287,17 @@ function cmdArchive(args) {
     failTask('atris task archive', 'missing_id', 'id required');
   }
   const notNeeded = hasFlag(args, '--not-needed');
+  // The note clears a drop off the member's record, and --as is only a name. A
+  // worker that dropped the job could name someone else and clear its own miss,
+  // so inside an agent session or a dispatched worker it is refused outright.
+  const workerMarker = notNeeded ? workerEnvMarker() : '';
+  if (workerMarker) {
+    failTask(
+      'atris task archive',
+      'not_needed_needs_a_person',
+      `atris task archive --not-needed is for a person to confirm, and this shell looks like an agent session or a dispatched worker (${workerMarker} is set). Run it from a plain terminal.`,
+    );
+  }
   const reason = textFlag(args, ['--reason']);
   if (!reason) {
     failTask(

@@ -855,6 +855,37 @@ function deniedLaneForShip(root, branch, message) {
   }
 }
 
+// Pushing a protected-lane branch for review lands nothing, unless the branch
+// already has a pull request with GitHub auto-merge on: that request merges
+// itself the moment its checks pass, and the push is what feeds it. A branch
+// that shipped earlier with --merge and was retagged into a protected lane since
+// would land with no person. Returns the words to refuse with, or '' when the
+// push is safe. It fails closed: if gh cannot say, nothing is pushed.
+function protectedPushRefusal(root, branch, run = spawnSync) {
+  const unknown = (why) => `blocked: cannot tell whether ${branch} has a pull request with auto-merge on (${why}); nothing was pushed`;
+  // A minute is plenty for one lookup; a gh that hangs must not hang the ship.
+  const viewed = run('gh', ['pr', 'view', branch, '--json', 'number,url,state,autoMergeRequest'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+  if (viewed.error) {
+    return unknown(viewed.error.code === 'ETIMEDOUT' ? 'gh took longer than a minute to answer' : `gh did not run: ${viewed.error.message}`);
+  }
+  if (viewed.status !== 0) {
+    const said = `${viewed.stderr || ''}\n${viewed.stdout || ''}`;
+    // A branch nobody has opened a pull request for is the ordinary first push.
+    if (/no (?:open )?pull requests? found/i.test(said)) return '';
+    const firstLine = said.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+    return unknown(firstLine || `gh exited ${viewed.status}`);
+  }
+  let pr;
+  try { pr = JSON.parse(String(viewed.stdout || '')); } catch { pr = null; }
+  if (!pr || typeof pr !== 'object') return unknown("gh's answer could not be read");
+  // A merged or closed pull request cannot land anything more. Any other state
+  // with auto-merge on is treated as open, so an odd answer never lets it through.
+  const over = ['MERGED', 'CLOSED'].includes(String(pr.state || '').toUpperCase());
+  if (over || !pr.autoMergeRequest) return '';
+  const name = pr.url || (pr.number ? `#${pr.number}` : branch);
+  return `blocked: pull request ${name} has auto-merge on, so pushing ${branch} would land it with no person; turn auto-merge off first (gh pr merge ${pr.number || pr.url || branch} --disable-auto), then ship again`;
+}
+
 function findPrimaryRoot(root) {
   const worktrees = listWorktrees(root);
   return worktrees[0]?.path || root;
@@ -977,11 +1008,17 @@ function shipWorktree(args) {
   // ship: a payments command self-landed twice this way on 2026-07-26. The
   // ship gate is the last door, so it re-checks. It guards landing only:
   // pushing the branch and opening a pull request lands nothing, and that is
-  // how protected work reaches a person to review.
-  if ((merge || localMode) && !hasFlag(args, '--allow-denied-lane')) {
+  // how protected work reaches a person to review. The one exception is a
+  // pull request that already has auto-merge on, which a push would feed.
+  if (!hasFlag(args, '--allow-denied-lane')) {
     const denied = deniedLaneForShip(root, branch, message);
-    if (denied) {
+    if (denied && (merge || localMode)) {
       console.error(`blocked: this branch carries ${denied.taskId} which sits in the protected ${denied.tag} lane; a human lands it (or pass --allow-denied-lane on written order)`);
+      return 2;
+    }
+    const refusal = denied ? protectedPushRefusal(root, branch) : '';
+    if (refusal) {
+      console.error(refusal);
       return 2;
     }
   }
@@ -1663,6 +1700,7 @@ module.exports = {
   mergePrWithRetry,
   createAgentWorktree,
   deniedLaneForShip,
+  protectedPushRefusal,
   createOrFindPr,
   cleanupWorktrees,
   defaultMainlineBase,
