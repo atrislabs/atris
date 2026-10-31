@@ -106,3 +106,31 @@ test('business product choices cannot misrepresent a whole business selection', 
   await assert.rejects(() => cli.googleCommand('use', 'work', '--only', 'mail'), /one account for all products/);
   assert.equal(calls.length, 0);
 }, () => ok({})));
+
+test('old server disconnect uses the named mail account only', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.googleCommand('disconnect', 'work@example.com', '--only', 'mail', '--approved');
+  assert.equal(calls.at(-1).url, '/integrations/gmail?account_id=work');
+  assert.equal(calls.at(-1).options.method, 'DELETE');
+  assert.equal(lines.filter((line) => line.includes('newest atris server')).length, 1);
+}, (url) => url.startsWith('/integrations/google/') ? { ok: false, status: 404 } : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({})));
+
+test('new server missing account does not fall back to mail deletion', async () => fixture(async (cli, { calls }) => {
+  const exit = process.exit; const error = console.error;
+  process.exit = () => { throw new Error('stopped'); }; console.error = () => {};
+  try { await assert.rejects(() => cli.googleCommand('disconnect', 'missing', '--approved'), /stopped/); }
+  finally { process.exit = exit; console.error = error; }
+  assert.equal(calls.some((call) => call.url.startsWith('/integrations/gmail?')), false);
+}, (url) => url === '/integrations/google/accounts' ? ok({ accounts: [] }) : { ok: false, status: 404 }));
+
+
+test('bare google command accepts a business option', async () => fixture(async (cli, { calls }) => {
+  await cli.googleCommand('--business', 'other');
+  assert.equal(calls[0].options.headers['X-Business-Id'], 'other');
+}, () => ok({ accounts: [], defaults: {} })));
+
+test('gmail use saves its mail default on the server', async () => fixture(async (cli, { calls }) => {
+  await cli.gmailCommand('use', 'work');
+  const saved = calls.find((call) => call.url === '/business/shop/integrations/google');
+  assert.deepEqual(saved.options.body, { account_id: 'work' });
+  assert.equal(saved.options.headers['X-Business-Id'], 'shop');
+}, (url) => url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({})));

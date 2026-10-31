@@ -890,8 +890,8 @@ async function gmailUse(accountId, deps = {}) {
     ? await rawApiRequestJson(`/business/${encodeURIComponent(business)}/integrations/google`, { method: 'PUT', token, headers: { 'X-Business-Id': business }, body: { account_id: id } })
     : await apiRequestJson('/integrations/google/defaults', { method: 'PUT', token, body: { account_id: id, products: ['gmail'] } });
   if (!saved.ok && saved.status !== 404) { console.error(`could not save gmail default: ${saved.error || 'request failed'}`); process.exit(1); }
-  if (saved.status === 404) console.log('calendar and drive accounts need the newest atris server.');
-  writeGmailStickyAccount(id);
+  if (saved.status === 404 && !deps.quietOldServer) console.log('calendar and drive accounts need the newest atris server.');
+  if (!business || saved.status === 404) writeGmailStickyAccount(id);
   console.log(`now using ${name} (${email || 'email pending'})`);
 }
 
@@ -971,6 +971,12 @@ async function googleConnect(name, products, business, deps = {}) {
 }
 
 async function googleCommand(subcommand, ...args) {
+  if ([subcommand, ...args].some((arg) => ['help', '--help', '-h'].includes(arg))) {
+    console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]');
+    console.log('disconnect requires --approved.');
+    return;
+  }
+  if (subcommand && subcommand.startsWith('-')) { args.unshift(subcommand); subcommand = undefined; }
   const context = takeContext(args);
   return googleContext.run(context, async () => {
     const rest = context.rest;
@@ -1015,7 +1021,7 @@ async function googleCommand(subcommand, ...args) {
         console.log(GOOGLE_OLD_SERVER);
         if (only && !only.includes('gmail')) return;
         const accounts = await fetchGmailAccounts(token);
-        const match = findGmailAccountForUse(accounts, id);
+        const match = findGmailAccountForUse(accounts, id) || accounts.find((account) => gmailAccountIdentity(account).email === id.toLowerCase());
         if (!match) throw new Error('unknown gmail account');
         const mailId = gmailAccountIdentity(match).id;
         const removed = await apiRequestJson(`/integrations/gmail?account_id=${encodeURIComponent(mailId)}`, { method: 'DELETE', token });
@@ -1030,7 +1036,18 @@ async function googleCommand(subcommand, ...args) {
     const options = { method: 'PUT', token, body };
     if (context.business) options.headers = { 'X-Business-Id': context.business };
     const result = await rawApiRequestJson(url, options);
-    if (result.status === 404) { console.log(GOOGLE_OLD_SERVER); if (!only || only.includes('gmail')) return gmailUse(id); return; }
+    if (result.status === 404) {
+      const probe = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
+      if (probe.status !== 404) return googleFailure(result, 'save google default');
+      console.log(GOOGLE_OLD_SERVER);
+      if (!only || only.includes('gmail')) {
+        const accounts = await fetchGmailAccounts(token);
+        const match = findGmailAccountForUse(accounts, id) || accounts.find((account) => gmailAccountIdentity(account).email === id.toLowerCase());
+        if (!match) throw new Error('unknown gmail account');
+        return gmailUse(gmailAccountIdentity(match).id, { quietOldServer: true });
+      }
+      return;
+    }
     if (!result.ok) return googleFailure(result, 'save google default');
     const products = only || GOOGLE_PRODUCTS;
     googleCache(Object.fromEntries(products.map((p) => [p, id])), context.business);
@@ -1042,7 +1059,7 @@ async function googleCommand(subcommand, ...args) {
 async function gmailCommand(subcommand, ...args) {
   const context = takeContext(args);
   return googleContext.run(context, async () => {
-    if (context.business && !context.mailAccount && ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice'].includes(subcommand)) {
+    if (context.business && !context.mailAccount && ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice'].includes(subcommand) && (subcommand !== 'send' || context.rest.includes('--approved') || context.rest.includes('--confirm-approved'))) {
       const token = await getAuthToken();
       const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
       if (result.status === 404) console.log(GOOGLE_OLD_SERVER);

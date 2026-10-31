@@ -3053,7 +3053,8 @@ if (command === 'guide') {
     // Scratch folders refuse every gmail verb the same way as slack/inbox.
     // Read verbs also run from a project folder (atris/, no business.json).
     const GMAIL_READ_VERBS = new Set(['inbox', 'list', 'read', 'triage', 'verdicts', 'accounts']);
-    const gate = requireAccountBound(
+    const scopedBusiness = mailbox.args.some((arg, index) => (arg === '--business' && mailbox.args[index + 1] && !mailbox.args[index + 1].startsWith('-')) || (arg.startsWith('--business=') && arg.length > 11));
+    const gate = scopedBusiness ? { ok: true, args: mailbox.args } : requireAccountBound(
       mailbox.args.filter((arg) => arg !== '--account'),
       { read: GMAIL_READ_VERBS.has(mailbox.args[0]) },
     );
@@ -3071,7 +3072,8 @@ if (command === 'guide') {
 } else if (command === 'google') {
   const raw = process.argv.slice(3);
   const helpOnly = raw.some((arg) => ['--help', '-h', 'help'].includes(arg));
-  const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw, { read: !raw[0] || raw[0] === 'accounts' });
+  const scopedBusiness = raw.some((arg, index) => (arg === '--business' && raw[index + 1] && !raw[index + 1].startsWith('-')) || (arg.startsWith('--business=') && arg.length > 11));
+  const gate = helpOnly || scopedBusiness ? { ok: true, args: raw } : requireAccountBound(raw, { read: !raw[0] || raw[0] === 'accounts' });
   if (!gate.ok) { process.exit(refuseAccountGlobal()); return; }
   const { googleCommand } = require('../commands/integrations');
   googleCommand(gate.args[0], ...gate.args.slice(1))
