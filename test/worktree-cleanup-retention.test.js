@@ -46,7 +46,7 @@ function backdate(target, hours) {
   fs.utimesSync(target, stamp, stamp);
 }
 
-test('cleanup removes merged worktrees dirtied only by the agent output file', () => {
+test('cleanup preserves an untracked file even when it resembles agent output', () => {
   const root = initRepo();
   const worktree = `${root}-merged-output`;
   try {
@@ -57,12 +57,11 @@ test('cleanup removes merged worktrees dirtied only by the agent output file', (
     backdate(worktree, 2);
 
     const dryRun = cleanupWorktrees({ root, base: 'HEAD' });
-    assert.equal(dryRun.candidates.length, 1);
-    assert.equal(dryRun.candidates[0].artifact_only_dirty, true);
+    assert.equal(dryRun.candidates.length, 0);
 
     const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true });
-    assert.equal(applied.removed.length, 1);
-    assert.equal(fs.existsSync(worktree), false);
+    assert.equal(applied.removed.length, 0);
+    assert.equal(fs.readFileSync(output, 'utf8'), 'finished\n');
     assert.equal(git(root, ['show-ref', '--verify', '--hash', 'refs/heads/merged-output']).length > 0, true);
   } finally {
     spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
@@ -70,23 +69,22 @@ test('cleanup removes merged worktrees dirtied only by the agent output file', (
   }
 });
 
-test('cleanup expires a completed clean unmerged checkout but preserves its branch', () => {
+test('cleanup keeps a named unmerged checkout even with an old output file', () => {
   const root = initRepo();
   const worktree = `${root}-unmerged-output`;
   try {
     git(root, ['worktree', 'add', '-q', '-b', 'unmerged-output', worktree, 'HEAD']);
     fs.writeFileSync(path.join(worktree, 'work.txt'), 'kept in branch\n');
-    git(worktree, ['add', 'work.txt']);
-    git(worktree, ['commit', '-qm', 'unmerged work']);
     const output = path.join(worktree, '.codex-last-message.txt');
     fs.writeFileSync(output, 'finished\n');
+    git(worktree, ['add', 'work.txt', '.codex-last-message.txt']);
+    git(worktree, ['commit', '-qm', 'unmerged work']);
     backdate(output, 2);
 
     const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true });
-    assert.equal(applied.removed.length, 1);
-    assert.equal(applied.removed[0].reason, 'completed_unmerged_checkout_expired');
-    assert.equal(applied.removed[0].branch_preserved, true);
-    assert.equal(fs.existsSync(worktree), false);
+    assert.equal(applied.removed.length, 0);
+    assert.equal(applied.kept.some((item) => item.reason === 'unmerged'), true);
+    assert.equal(fs.existsSync(worktree), true);
     assert.equal(git(root, ['show-ref', '--verify', '--hash', 'refs/heads/unmerged-output']).length > 0, true);
   } finally {
     spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
@@ -100,11 +98,11 @@ test('cleanup keeps a detached unmerged commit even with an old completion outpu
   try {
     git(root, ['worktree', 'add', '-q', '--detach', worktree, 'HEAD']);
     fs.writeFileSync(path.join(worktree, 'work.txt'), 'only in detached commit\n');
-    git(worktree, ['add', 'work.txt']);
-    git(worktree, ['commit', '-qm', 'detached work']);
-    const head = git(worktree, ['rev-parse', 'HEAD']);
     const output = path.join(worktree, '.codex-last-message.txt');
     fs.writeFileSync(output, 'finished\n');
+    git(worktree, ['add', 'work.txt', '.codex-last-message.txt']);
+    git(worktree, ['commit', '-qm', 'detached work']);
+    const head = git(worktree, ['rev-parse', 'HEAD']);
     backdate(output, 2);
     backdate(worktree, 2);
     const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
@@ -152,6 +150,132 @@ test('cleanup preserves ignored local data in an otherwise clean merged checkout
     assert.equal(fs.readFileSync(path.join(worktree, '.derivedData', 'local.db'), 'utf8'), 'local data');
   } finally {
     spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup keeps a checkout when its remote base cannot be refreshed', () => {
+  const root = initRepo();
+  const worktree = `${root}-unreachable-base`;
+  try {
+    git(root, ['remote', 'add', 'origin', path.join(root, 'missing-remote.git')]);
+    git(root, ['update-ref', 'refs/remotes/origin/main', git(root, ['rev-parse', 'HEAD'])]);
+    git(root, ['worktree', 'add', '-q', '-b', 'unreachable-base', worktree, 'HEAD']);
+    backdate(worktree, 2);
+    const result = cleanupWorktrees({ root, base: 'origin/main', apply: true, activeCwds: [] });
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.some((item) => item.reason === 'base_refresh_failed'), true);
+    assert.equal(fs.existsSync(worktree), true);
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup removes a merged copy after verifying the real remote base', () => {
+  const root = initRepo();
+  const worktree = `${root}-verified-base`;
+  const remote = `${root}-origin.git`;
+  try {
+    git(root, ['init', '--bare', '-q', remote]);
+    git(root, ['remote', 'add', 'origin', remote]);
+    git(root, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+    git(root, ['fetch', '-q', 'origin', 'main']);
+    git(root, ['worktree', 'add', '-q', '-b', 'verified-base', worktree, 'HEAD']);
+    backdate(worktree, 2);
+    const result = cleanupWorktrees({ root, base: 'origin/main', apply: true, activeCwds: [] });
+    assert.equal(result.removed.length, 1, JSON.stringify(result));
+    assert.equal(fs.existsSync(worktree), false);
+    assert.equal(git(root, ['show-ref', '--verify', '--hash', 'refs/heads/verified-base']).length > 0, true);
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(remote, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup does not treat an unrelated local feature branch as the base', () => {
+  const root = initRepo();
+  const worktree = `${root}-feature-base`;
+  try {
+    git(root, ['checkout', '-qb', 'feature-base']);
+    git(root, ['worktree', 'add', '-q', '-b', 'feature-copy', worktree, 'HEAD']);
+    backdate(worktree, 2);
+    const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.some((item) => item.reason === 'base_unverified'), true);
+    assert.equal(fs.existsSync(worktree), true);
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup keeps a checkout above the per-run size limit', () => {
+  const root = initRepo();
+  const worktree = `${root}-oversize`;
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cleanup-size-'));
+  const previousPath = process.env.PATH;
+  try {
+    git(root, ['worktree', 'add', '-q', '-b', 'oversize', worktree, 'HEAD']);
+    backdate(worktree, 2);
+    fs.writeFileSync(path.join(fakeBin, 'du'), '#!/bin/sh\nprintf "10485761\\t%s\\n" "$2"\n', { mode: 0o755 });
+    process.env.PATH = `${fakeBin}${path.delimiter}${previousPath}`;
+    const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.some((item) => item.reason === 'size_unknown_or_cleanup_limit'), true);
+    assert.equal(fs.existsSync(worktree), true);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup keeps local data created after the initial inspection', () => {
+  const root = initRepo();
+  const worktree = `${root}-changed-during-check`;
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cleanup-race-'));
+  const previousPath = process.env.PATH;
+  try {
+    fs.appendFileSync(path.join(root, '.gitignore'), '.env\n');
+    git(root, ['add', '.gitignore']);
+    git(root, ['commit', '-qm', 'ignore local environment']);
+    git(root, ['worktree', 'add', '-q', '-b', 'changed-during-check', worktree, 'HEAD']);
+    backdate(worktree, 2);
+    fs.writeFileSync(path.join(fakeBin, 'du'), '#!/bin/sh\n/usr/bin/du "$@"\nprintf local > "$2/.env"\n', { mode: 0o755 });
+    process.env.PATH = `${fakeBin}${path.delimiter}${previousPath}`;
+    const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.some((item) => item.reason === 'changed_or_active_during_verification'), true);
+    assert.equal(fs.readFileSync(path.join(worktree, '.env'), 'utf8'), 'local');
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup previews no more than twenty copies in one run', () => {
+  const root = initRepo();
+  const worktrees = [];
+  try {
+    for (let i = 0; i < 21; i++) {
+      const worktree = `${root}-limit-${i}`;
+      git(root, ['worktree', 'add', '-q', '-b', `limit-${i}`, worktree, 'HEAD']);
+      backdate(worktree, 2);
+      worktrees.push(worktree);
+    }
+    const result = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [] });
+    assert.equal(result.candidates.length, 20);
+    assert.equal(result.kept.filter((item) => item.reason === 'size_unknown_or_cleanup_limit').length, 1);
+    assert.equal(worktrees.every((worktree) => fs.existsSync(worktree)), true);
+  } finally {
+    for (const worktree of worktrees) spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
