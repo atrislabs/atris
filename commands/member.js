@@ -10055,7 +10055,10 @@ const IDEA_ARCHETYPE_RULES = [
   },
   {
     slugs: ['validator', 'orb'],
-    pattern: /\b(code\s+review|review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
+    // A review is asked for: the word opens a sentence or follows a request
+    // ("please review", "can you verify", "and audit"). Inside the story
+    // ("on its first review", "a later successful review") it names no job.
+    pattern: /(?:^|[.!?\n]\s*|\b(?:please|can\s+you|could\s+you|would\s+you|to|and|then|also|now)\s+)(?:code\s+review|review|audit|validate|verify|check\s+diff)\b|\b(?:quality|slop|security)\b/i,
     reason: 'reviews changes and blocks weak work before merge',
   },
   {
@@ -10104,16 +10107,23 @@ function ideaRuleFor(slug, record, text) {
 // The request's job is the first rule it matches; the list runs from
 // specific jobs to the general build job, so "where is the code" is a
 // navigator job even though "code" is also a build word.
+// A file with a code extension: work on it is code work.
+const NAMES_CODE_FILE = /\b[\w./-]+\.(?:[cm]?js|jsx|tsx?|py|go|rs|rb|java|kt|swift|sh)\b/i;
+
 function ideaJobRule(text) {
   // The job word that comes first names the job: "review the bug fix" is a
   // review, "fix the review page" is a fix. Ties keep list order.
+  const whole = String(text || '');
   let best = null;
   for (const rule of IDEA_ARCHETYPE_RULES) {
-    const match = rule.pattern.exec(text);
+    const match = rule.pattern.exec(whole);
     const index = match ? (rule.leading ? -1 : match.index) : null;
     if (match && (!best || index < best.index)) best = { rule, index };
   }
-  return best ? best.rule : null;
+  if (best) return best.rule;
+  // No job word, but a code file is named (member lab 10/26: a lab script
+  // fix went to the mission lead on shared words): that is a build job.
+  return NAMES_CODE_FILE.test(whole) ? IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes('executor')) || null : null;
 }
 
 // 3 = named in the idea, 2 = the job is the member's own, 1 = the member
