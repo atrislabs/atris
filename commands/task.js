@@ -228,7 +228,6 @@ atris task - durable local task state (SQLite, gitignored)
                                            list tasks in this workspace; --everywhere spans workspaces
   atris task claim <id> [--as <owner>]     Atomic claim
   atris task release <id> [--as <owner>] [--reason "<why>"]   Release your own mistaken claim back to open
-    add --kind proof_not_saved --pr-url <url> [--pr-number <n>] only when the work is done and its open pull request waits for a person, but the proof could not be saved: the rating then keeps it out of both landed and missed
   atris task capabilities [--json]         Read-only task CLI/API capability contract
   atris task capabilities-check [--json]   Verify task capability contract conformance
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
@@ -781,13 +780,18 @@ function positional(args) {
   });
 }
 
+// options.root is for a caller that is not the command line, the dispatch flight: it
+// keeps the list for its own workspace instead of for the directory this process is in.
 function writeDefaultProjection(taskDb, db, options = {}) {
-  const workspaceRoot = scopedWorkspaceRoot(taskDb, [], options);
+  const root = options.root ? path.resolve(options.root) : null;
+  const workspaceRoot = root
+    ? (taskScopeEverywhere([], options) ? null : taskDb.workspaceRoot(root))
+    : scopedWorkspaceRoot(taskDb, [], options);
   const projection = enrichTaskProjection(taskDb.taskProjection(db, {
     workspaceRoot,
     limit: options.all ? null : 500,
   }));
-  const outPath = path.resolve(path.join('.atris', 'state', 'tasks.projection.json'));
+  const outPath = path.resolve(root || process.cwd(), '.atris', 'state', 'tasks.projection.json');
   const output = JSON.stringify(projection, null, 2) + '\n';
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   let shouldWrite = true;
@@ -5650,10 +5654,10 @@ function cmdStatus(args) {
   if (history) console.log(`history feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
 }
 
-function readProjectionFile(workspaceRoot) {
+function readProjectionFile(workspaceRoot, cwd = process.cwd()) {
   const candidatePaths = [
     workspaceRoot ? path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json') : null,
-    path.resolve('.atris', 'state', 'tasks.projection.json'),
+    path.resolve(cwd, '.atris', 'state', 'tasks.projection.json'),
   ].filter(Boolean);
   for (const candidate of candidatePaths) {
     try {
@@ -5667,15 +5671,17 @@ function readProjectionFile(workspaceRoot) {
   return null;
 }
 
-function resolveTaskRef(taskDb, db, ref) {
+// options.root is for a caller that is not the command line, the dispatch flight: a
+// display id is read against its own workspace, not the directory this process is in.
+function resolveTaskRef(taskDb, db, ref, { root } = {}) {
   const token = String(ref || '').trim();
   if (!token) return { ok: false, reason: 'missing' };
   const exact = db ? taskDb.getTask(db, token) : null;
   if (exact) return { ok: true, id: exact.id, row: exact };
   const normalized = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(token) : token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot() : process.cwd();
+  const wsRoot = taskDb.workspaceRoot ? taskDb.workspaceRoot(root || undefined) : (root || process.cwd());
 
-  const proj = readProjectionFile(wsRoot);
+  const proj = readProjectionFile(wsRoot, root || process.cwd());
   if (proj && Array.isArray(proj.tasks)) {
     const seen = new Set();
     const matches = proj.tasks.filter(r => {
@@ -6358,11 +6364,12 @@ function cmdRelease(args) {
   }
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const reasonFlag = flag(args, '--reason');
-  // A release that must not read as a drop names its kind and its open pull request
-  // as fields. Both go together; the task db refuses half of them.
-  const kindFlag = textFlag(args, ['--kind']);
-  const prNumber = textFlag(args, ['--pr-number']);
-  const prUrl = textFlag(args, ['--pr-url']);
+  // This command takes no kind and no pull request. A release that says its work is
+  // waiting on a person would keep a miss out of the rating, and any worker holding a
+  // failed job could type that to excuse itself. Only the dispatch flight, which
+  // opened the pull request itself, records that release, in its own process through
+  // releaseTask. Flags this command does not know are ignored, so a release that still
+  // passes them is a plain release and is rated as a drop.
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task release');
@@ -6370,21 +6377,11 @@ function cmdRelease(args) {
     id: taskId,
     actor: String(owner),
     reason: typeof reasonFlag === 'string' ? reasonFlag : undefined,
-    kind: kindFlag || undefined,
-    pullRequest: prNumber || prUrl ? { number: prNumber, url: prUrl } : undefined,
   });
-  if (result.reason === 'invalid_release_marker') {
-    failTask(
-      'atris task release',
-      'invalid_release_marker',
-      '--kind proof_not_saved goes with the open pull request (--pr-url <link>, or --pr-number <n>), and the pull request flags go only with that kind; nothing was released',
-    );
-  }
   if (result.released) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     const task = compactTaskFromProjection(projection, taskId);
-    const keptPayload = result.event && result.event.payload || {};
-    const keptReason = keptPayload.reason || null;
+    const keptReason = result.event && result.event.payload && result.event.payload.reason || null;
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -6392,7 +6389,6 @@ function cmdRelease(args) {
         task_id: taskId,
         owner: String(owner),
         reason: keptReason,
-        ...(keptPayload.kind ? { kind: keptPayload.kind, pull_request: keptPayload.pull_request } : {}),
         projection_path: outPath,
         task,
         event_version: result.event && result.event.version || null,
@@ -13438,4 +13434,6 @@ module.exports = {
   stampAutoAcceptMetadata,
   acceptReviewTask,
   evaluateSweepAutoAccept,
+  resolveTaskRef,
+  writeDefaultProjection,
 };
