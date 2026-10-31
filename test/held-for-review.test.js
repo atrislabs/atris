@@ -369,11 +369,19 @@ function tempRoot(t) {
   return root;
 }
 
-function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, readyError = 'ready failed: nope', releaseStatus = 0 }) {
+// claim and afterShow are for a test that needs the claim to be real, or the list to change
+// between the task command's answer and the claim: claim answers the claim command, and
+// afterShow runs once the task command has answered.
+function fakeTaskPlane({ task, shipOutput, shipStatus = 0, readyStatus = 0, readyError = 'ready failed: nope', releaseStatus = 0, claim = null, afterShow = null }) {
   const calls = [];
   const cli = (args) => {
     calls.push(args);
-    if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(task), stderr: '' };
+    if (args[0] === 'task' && args[1] === 'show') {
+      const answer = { status: 0, stdout: JSON.stringify(task), stderr: '' };
+      if (afterShow) afterShow();
+      return answer;
+    }
+    if (args[0] === 'task' && args[1] === 'claim' && claim) return claim(args);
     if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd /wt/${args[args.indexOf('--task') + 1]}\n`, stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'ship') return { status: shipStatus, stdout: shipOutput, stderr: shipStatus ? 'ship failed' : '' };
     if (args[0] === 'task' && args[1] === 'ready') return { status: readyStatus, stdout: readyStatus ? '' : 'proof ready', stderr: readyStatus ? readyError : '' };
@@ -416,6 +424,32 @@ function claimedForFlight(t, { builder = 'fleet-codex' } = {}) {
   const [shown] = tasks.withTaskDisplayRefs(tasks.listTasks(db, { workspaceRoot: workspace }));
   assert.notEqual(shown.display_id, id, 'a person reads the display id, which is not the row id');
   return { root, workspace, db, id, dbPath: process.env.ATRIS_TASKS_DB, task: { ...FEEDBACK_TASK, id, display_id: shown.display_id } };
+}
+
+// A job nobody holds yet, in the flight's own workspace, for a test whose claim is real.
+// The folder gets an atris/ folder, which makes the real command take it as its workspace.
+function openForFlight(t) {
+  const root = tempRoot(t);
+  fs.mkdirSync(path.join(root, 'atris'));
+  const workspace = tasks.workspaceRoot(root);
+  const db = tasks.open();
+  const { id } = tasks.addTask(db, { title: FEEDBACK_TASK.title, tag: 'feedback', workspaceRoot: workspace });
+  const [shown] = tasks.withTaskDisplayRefs(tasks.listTasks(db, { workspaceRoot: workspace }));
+  return { root, workspace, db, id, dbPath: process.env.ATRIS_TASKS_DB, task: { ...FEEDBACK_TASK, id, display_id: shown.display_id } };
+}
+
+// The real claim command, run from the flight's folder against the sandbox store the way the
+// flight's own command line runs it. The rest of the task plane stays a stand-in.
+function realClaim(root) {
+  return (args) => {
+    const result = spawnSync(process.execPath, [CLI, ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...scrubAgentEnv(), ATRIS_TASKS_DB: process.env.ATRIS_TASKS_DB, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  };
 }
 
 // The shell a flight can inherit: an agent tool's marker, a mission driver's, a codex sandbox's.
@@ -587,8 +621,9 @@ test('the same release is recorded when the flight inherits an agent session, a 
 const eventCount = (db, id) => db.prepare('SELECT COUNT(*) AS n FROM task_events WHERE task_id = ?').get(id).n;
 
 // The same folder name in another place gives the same display ids, so that workspace's
-// first job reads the same to a person as the flight's own. It is held by the same name.
-function claimedInAnotherWorkspace(t, seeded) {
+// first job reads the same to a person as the flight's own. It is held by the same name
+// unless held is false. task is what the task command would print for it.
+function jobInAnotherWorkspace(t, seeded, { held = true } = {}) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'held-other-'));
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
   const root = path.join(parent, path.basename(seeded.root));
@@ -596,15 +631,16 @@ function claimedInAnotherWorkspace(t, seeded) {
   const workspace = tasks.workspaceRoot(root);
   assert.notEqual(workspace, seeded.workspace);
   const { id } = tasks.addTask(seeded.db, { title: 'Fix the invoice page', tag: 'feedback', workspaceRoot: workspace });
-  assert.equal(tasks.claimTask(seeded.db, { id, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
+  if (held) assert.equal(tasks.claimTask(seeded.db, { id, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   const [shown] = tasks.withTaskDisplayRefs(tasks.listTasks(seeded.db, { workspaceRoot: workspace }));
   assert.equal(shown.display_id, seeded.task.display_id, 'a person cannot tell the two jobs apart by their display ids');
-  return { id, workspace, root };
+  const task = { ...FEEDBACK_TASK, id, display_id: shown.display_id, ...(held ? { status: 'claimed', claimed_by: 'fleet-codex' } : {}) };
+  return { id, workspace, root, task };
 }
 
 test('the flight lets go of the exact job it claimed, not another workspace\'s job that shares its display id', async (t) => {
   const seeded = claimedForFlight(t);
-  const other = claimedInAnotherWorkspace(t, seeded);
+  const other = jobInAnotherWorkspace(t, seeded);
   // The task list file as `atris task status --everywhere` can leave it in the flight's
   // folder: it names the other workspace's job and not this one.
   const file = path.join(seeded.root, '.atris', 'state', 'tasks.projection.json');
@@ -648,6 +684,8 @@ test('a flight with no row id for the job does not release it, and the row says 
   assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'claimed', 'it stays held until its lease runs out');
   assert.deepEqual(releaseEvents(seeded.db, seeded.id), []);
   assert.deepEqual(callsTo(plane, 'task', 'release'), [], 'nothing is sent through the command line by display id instead');
+  // With no row id to name, the claim went by the display id, as it always did.
+  assert.deepEqual(callsTo(plane, 'task', 'claim').map((args) => args[2]), [seeded.task.display_id]);
 });
 
 test('a row id the store does not know is not looked up again by display id', async (t) => {
@@ -660,6 +698,232 @@ test('a row id the store does not know is not looked up again by display id', as
   assert.ok(logs.some((line) => /could not release the claim on \S+: release failed: not_found/.test(line)), logs.join('\n'));
   assert.equal(tasks.getTask(seeded.db, seeded.id).status, 'claimed');
   assert.deepEqual(releaseEvents(seeded.db, seeded.id), []);
+});
+
+// The row the task command shows the flight is the row it claims, leases, and lets go of. It
+// is named once, by its row id, because the display id a person reads is not a key and the
+// list that gives it meaning can change between two commands. The race: the task command
+// answers with another workspace's job (the list it read was last written by `atris task
+// status --everywhere`, so it named that job under the display id), and by the time the
+// flight claims, the list names this workspace's own open job under the same display id.
+// The claim here is the real command, so it resolves a display id the way it really does.
+
+// What the store says about a job now. new_events counts what it gained since `was`.
+const claimEvents = (db, id) => db.prepare("SELECT COUNT(*) AS n FROM task_events WHERE task_id = ? AND event_type = 'claimed'").get(id).n;
+const jobNow = (db, id, was) => {
+  const row = tasks.getTask(db, id);
+  return {
+    status: row.status,
+    claimed_by: row.claimed_by || null,
+    ...(was === undefined ? {} : { new_events: eventCount(db, id) - was }),
+    released: releaseEvents(db, id).length,
+  };
+};
+const claimRefs = (plane) => callsTo(plane, 'task', 'claim').map((args) => args[2]);
+
+// Run something and answer which rows the flight leased while it ran.
+async function leasing(run) {
+  const leased = [];
+  const real = tasks.setLease;
+  tasks.setLease = (db, lease) => { leased.push([lease.id, lease.holder]); return real(db, lease); };
+  try {
+    return { leased, result: await run() };
+  } finally {
+    tasks.setLease = real;
+  }
+}
+
+// Two jobs that read the same to a person: this workspace's own open one, and the other
+// workspace's, which the task command is about to show. Its list names the other one.
+function raceOverDisplayId(t, { held }) {
+  const local = openForFlight(t);
+  const other = jobInAnotherWorkspace(t, local, { held });
+  const file = path.join(local.root, '.atris', 'state', 'tasks.projection.json');
+  const writeList = (workspace) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(tasks.taskProjection(local.db, { workspaceRoot: workspace, limit: 500 }), null, 2)}\n`);
+  };
+  const named = () => JSON.parse(fs.readFileSync(file, 'utf8')).tasks.map((task) => task.id);
+  writeList(other.workspace);
+  assert.deepEqual(named(), [other.id], 'when the task command is asked, the list names the other workspace\'s job');
+  const was = { local: eventCount(local.db, local.id), other: eventCount(local.db, other.id) };
+  // Once the task command has answered, the list is written again and names this workspace's job.
+  return { local, other, named, was, options: { claim: realClaim(local.root), afterShow: () => writeList(local.workspace) } };
+}
+
+test('the flight claims the row the task command showed, so a list that changes before the claim cannot send the claim to another job', async (t) => {
+  // The job it was shown is held by the same name in another workspace.
+  const { local, other, named, was, options } = raceOverDisplayId(t, { held: true });
+  const plane = planeFor(other.task, { readyStatus: 1, ...options });
+  const { flight, logs, receipt } = await flyWith(t, plane, { root: local.root });
+  const shown = other.task.display_id;
+  assert.deepEqual(named(), [local.id], 'by the claim, the list names this workspace\'s own open job under that display id');
+
+  // The one claim named the row it was shown, and the store refused it: nothing is written to
+  // either job, and nothing else is tried, no build and no release.
+  assert.deepEqual({
+    shows: callsTo(plane, 'task', 'show').length,
+    claims: claimRefs(plane),
+    paused: flight.paused.map((row) => [row.task, row.stage]),
+    local: jobNow(local.db, local.id, was.local),
+    other: jobNow(local.db, other.id, was.other),
+    built: callsTo(plane, 'worktree', 'start').length,
+    released: callsTo(plane, 'task', 'release').length,
+  }, {
+    shows: 1,
+    claims: [other.id],
+    paused: [[shown, 'claim']],
+    local: { status: 'open', claimed_by: null, new_events: 0, released: 0 },
+    other: { status: 'claimed', claimed_by: 'fleet-codex', new_events: 0, released: 0 },
+    built: 0,
+    released: 0,
+  });
+  assert.match(flight.paused[0].detail, /claim failed: already_claimed \(held by fleet-codex\)/);
+
+  // Log lines and the receipt still say the display id a person reads.
+  assert.equal(receipt.paused[0].task, shown);
+  assert.ok(logs.includes(`    x ${shown} claim failed`), logs.join('\n'));
+});
+
+test('the claim, the lease and the release all name the row the task command showed, and the open job that shares its display id is not touched', async (t) => {
+  // The job it was shown is open in another workspace, so the claim can take it.
+  const { local, other, was, options } = raceOverDisplayId(t, { held: false });
+  const plane = planeFor(other.task, { readyStatus: 1, ...options });
+  // What the store holds for that row when the build starts.
+  const atBuild = [];
+  const inner = plane.cli;
+  plane.cli = (args) => {
+    if (args[0] === 'worktree' && args[1] === 'start') {
+      const row = tasks.getTask(local.db, other.id);
+      atBuild.push([row.status, row.claimed_by]);
+    }
+    return inner(args);
+  };
+  const { leased, result: { flight, logs, receipt } } = await leasing(() => flyWith(t, plane, { root: local.root }));
+  const shown = other.task.display_id;
+
+  // The job is shown once and named by that answer from then on: nothing is looked up again.
+  assert.deepEqual({
+    shows: callsTo(plane, 'task', 'show').length,
+    claims: claimRefs(plane),
+    atBuild,
+    leased,
+    paused: flight.paused.map((row) => [row.task, row.stage, row.claim_released]),
+    local: { ...jobNow(local.db, local.id, was.local), claimed: claimEvents(local.db, local.id) },
+    other: { ...jobNow(local.db, other.id), claimed: claimEvents(local.db, other.id) },
+  }, {
+    shows: 1,
+    claims: [other.id],
+    atBuild: [['claimed', 'fleet-codex']],
+    leased: [[other.id, 'fleet-codex']],
+    paused: [[shown, 'task_ready', true]],
+    local: { status: 'open', claimed_by: null, new_events: 0, released: 0, claimed: 0 },
+    other: { status: 'open', claimed_by: null, released: 1, claimed: 1 },
+  });
+  // The release is on that row, with the marker.
+  assert.deepEqual(releaseEvents(local.db, other.id), [heldRelease()]);
+
+  // Log lines and the receipt still say the display id a person reads.
+  assert.equal(receipt.paused[0].task, shown);
+  assert.ok(logs.includes(`    building ${shown} in dispatch-${shown.toLowerCase()}`), logs.join('\n'));
+  assert.ok(logs.includes(`    released the claim on ${shown} with the pull request link as the reason`), logs.join('\n'));
+  assert.equal(logs.some((line) => line.includes(other.id)), false, 'no log line shows a row id');
+});
+
+// The fleet flight picks its work from the task list file. Here that list names the other
+// workspace's job as open, under the display id this workspace's own open job shares, and by
+// the time the flight claims, the list has been written again and names this workspace's own
+// job. The claim is the real command; `held` says whether the store already has the other
+// job held by the builder the flight would staff.
+async function flyFleetOverList(t, { held }) {
+  const local = openForFlight(t);
+  const other = jobInAnotherWorkspace(t, local, { held });
+  const shown = local.task.display_id;
+  const file = path.join(local.root, '.atris', 'state', 'tasks.projection.json');
+  const writeList = (body) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`);
+  };
+  writeList({ tasks: [{ id: other.id, display_id: shown, status: 'open', title: 'edits lib/a.js Done: x. Check: node --test test/a.test.js.' }] });
+  const was = { local: eventCount(local.db, local.id), other: eventCount(local.db, other.id) };
+  const claim = realClaim(local.root);
+  const plane = { calls: [] };
+  const cli = (args) => {
+    plane.calls.push(args);
+    if (args[0] === 'task' && args[1] === 'claim') {
+      // By the time the flight claims, the list has been written again: it names this workspace's own open job.
+      writeList(tasks.taskProjection(local.db, { workspaceRoot: local.workspace, limit: 500 }));
+      return claim(args);
+    }
+    if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd ${local.root}/wt\n`, stderr: '' };
+    return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+  };
+  const logs = [];
+  const { leased, result: outcome } = await leasing(() => fleet.runFleetFlight({
+    root: local.root,
+    engines: ['codex'],
+    log: (line = '') => logs.push(String(line)),
+    ownCli: cli,
+    dispatcher: () => Promise.resolve({ exitCode: 0, report: 'ok', stderr: '' }),
+    lander: () => ({ ok: true, stage: 'shipped' }),
+    guardCliLink: () => ({ changed: false, ok: true }),
+  }).then((flight) => ({ flight }), (error) => ({ error })));
+  return { local, other, shown, was, plane, logs, leased, outcome };
+}
+
+test('the fleet flight claims and leases the row its own list named, even when the list is written again before the claim', async (t) => {
+  const { local, other, shown, was, plane, logs, leased, outcome } = await flyFleetOverList(t, { held: false });
+
+  // The claim and the lease are on the row the list named, which the builder now holds. This
+  // workspace's own open job, which reads the same, is not touched.
+  assert.deepEqual({
+    error: outcome.error && outcome.error.message,
+    claims: claimRefs(plane),
+    leased,
+    landed: outcome.flight && outcome.flight.landed.map((row) => row.task),
+    local: jobNow(local.db, local.id, was.local),
+    other: jobNow(local.db, other.id),
+  }, {
+    error: undefined,
+    claims: [other.id],
+    leased: [[other.id, 'fleet-codex']],
+    landed: [shown],
+    local: { status: 'open', claimed_by: null, new_events: 0, released: 0 },
+    other: { status: 'claimed', claimed_by: 'fleet-codex', released: 0 },
+  });
+
+  // Log lines still say the display id a person reads.
+  assert.ok(logs.some((line) => line.includes(`building ${shown} in `)), logs.join('\n'));
+  assert.equal(logs.some((line) => line.includes(other.id)), false, 'no log line shows a row id');
+});
+
+test('a claim the store refuses pauses the fleet flight under the display id a person reads, and nothing is leased, built or let go', async (t) => {
+  // The list says the other workspace's job is open, but the store has the builder holding it already.
+  const { local, other, shown, was, plane, logs, leased, outcome } = await flyFleetOverList(t, { held: true });
+
+  assert.deepEqual({
+    error: outcome.error && outcome.error.message,
+    claims: claimRefs(plane),
+    paused: outcome.flight && outcome.flight.paused.map((row) => [row.task, row.engine, row.stage]),
+    leased,
+    built: callsTo(plane, 'worktree', 'start').length,
+    released: callsTo(plane, 'task', 'release').length,
+    local: jobNow(local.db, local.id, was.local),
+    other: jobNow(local.db, other.id, was.other),
+  }, {
+    error: undefined,
+    claims: [other.id],
+    paused: [[shown, 'codex', 'claim']],
+    leased: [],
+    built: 0,
+    released: 0,
+    local: { status: 'open', claimed_by: null, new_events: 0, released: 0 },
+    other: { status: 'claimed', claimed_by: 'fleet-codex', new_events: 0, released: 0 },
+  });
+  assert.match(outcome.flight.paused[0].detail, /claim failed: already_claimed \(held by fleet-codex\)/);
+
+  // The flight's own line and row name the job the way a person reads it.
+  assert.ok(logs.some((line) => line.includes(`paused ${shown} at claim`)), logs.join('\n'));
 });
 
 test('after the flight lets the claim go, the task list file shows the job open again, as the release command leaves it', async (t) => {
@@ -1141,17 +1405,19 @@ function cliWorkspace(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, 'atris'));
   const dbPath = path.join(dir, 'tasks.db');
-  const run = (args, { env = {} } = {}) => {
-    const result = spawnSync(process.execPath, [CLI, ...args], {
-      cwd: dir,
-      encoding: 'utf8',
-      timeout: 30000,
-      env: { ...scrubAgentEnv(), ...env, ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
-    });
+  // attempt answers whatever the command did; run insists it worked.
+  const attempt = (args, { env = {} } = {}) => spawnSync(process.execPath, [CLI, ...args], {
+    cwd: dir,
+    encoding: 'utf8',
+    timeout: 30000,
+    env: { ...scrubAgentEnv(), ...env, ATRIS_TASKS_DB: dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const run = (args, options) => {
+    const result = attempt(args, options);
     assert.equal(result.status, 0, `${args.join(' ').slice(0, 120)}: ${result.stderr || result.stdout}`);
     return result;
   };
-  return { dir, dbPath, run };
+  return { dir, dbPath, run, attempt };
 }
 
 test('the real task ready takes the flight\'s held proof as written, parks the job in Review, and the sweep leaves it alone', async (t) => {
@@ -1258,6 +1524,57 @@ test('the release help offers a reason and nothing about a kind or a pull reques
   assert.match(lines[at], /--reason/);
   assert.doesNotMatch(lines.slice(at, at + 2).join('\n'), /proof_not_saved|--kind|--pr-url|--pr-number/);
   assert.match(lines[at + 1], /atris task capabilities/, 'the release entry is one line');
+});
+
+// The flight claims by the row id the task command showed it. For a job in the same
+// workspace the command has to do then what it does for the display id: say the same words
+// when it works and refuse for the same reasons when it does not. The one line that differs
+// is the hint that repeats whatever was typed.
+test('atris task claim by row id does what it does by display id for a job in the same workspace: the same words and the same refusals', (t) => {
+  const { run, attempt } = cliWorkspace(t);
+  const created = JSON.parse(run(['task', 'new', 'Fix the feedback form', '--tag', 'feedback', '--json']).stdout);
+  const ref = created.task.display_id;
+  const id = created.task_id;
+  assert.notEqual(ref, id, 'a person reads the display id, which is not the row id');
+  // The command as the flight sends it.
+  const claim = (how, as, ...extra) => ['task', 'claim', how, '--as', as, '--lease-minutes', '60', '--lease-pid', String(process.pid), ...extra];
+  const letGo = () => run(['task', 'release', ref, '--as', 'fleet-codex']);
+
+  // When it works: the same words in both modes, whichever way the job is named.
+  const claimed = [ref, id].map((how) => {
+    const text = run(claim(how, 'fleet-codex'));
+    letGo();
+    const json = JSON.parse(run(claim(how, 'fleet-codex', '--json')).stdout);
+    letGo();
+    return {
+      stdout: text.stdout,
+      stderr: text.stderr,
+      json: { ok: json.ok, action: json.action, task_id: json.task_id, owner: json.owner, display_id: json.task.display_id, status: json.task.status },
+    };
+  });
+  assert.deepEqual(claimed[1], claimed[0]);
+  assert.match(claimed[0].stdout, new RegExp(`^claimed ${ref} as fleet-codex$`, 'm'), 'it says the display id even when the job was named by its row id');
+  assert.equal(claimed[0].json.task_id, id);
+
+  // When it is refused: held by another builder, and a job that does not exist. The reason and
+  // the exit code are the same. Only the words that repeat what was typed differ.
+  run(claim(ref, 'fleet-codex'));
+  const whenTyped = (result, how) => ({ status: result.status, stdout: result.stdout.split(how).join('<typed>'), stderr: result.stderr.split(how).join('<typed>') });
+  for (const [label, hows, as] of [
+    ['held by another builder', [ref, id], 'fleet-gemini'],
+    ['a job that does not exist', ['NOPE-99', '00000000000000000000000000'], 'fleet-codex'],
+  ]) {
+    for (const extra of [[], ['--json']]) {
+      const refused = hows.map((how) => attempt(claim(how, as, ...extra)));
+      assert.ok(refused.every((result) => result.status !== 0), `${label}: it is refused both ways`);
+      assert.deepEqual(whenTyped(refused[1], hows[1]), whenTyped(refused[0], hows[0]), `${label}${extra.length ? ' (json)' : ''}`);
+    }
+  }
+  const held = [ref, id].map((how) => attempt(claim(how, 'fleet-gemini')));
+  for (const [result, how] of [[held[0], ref], [held[1], id]]) {
+    assert.match(result.stderr, /^claim failed: already_claimed \(held by fleet-codex\)$/m);
+    assert.match(result.stderr, new RegExp(`^Recovery: atris task release ${how} --as fleet-codex$`, 'm'), 'the hint repeats what was typed');
+  }
 });
 
 // ---------------------------------------------------------------------------
