@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const fleet = require('../lib/fleet');
 const { listWorktrees } = require('../commands/worktree');
@@ -56,7 +56,7 @@ test('parseDoneCheck extracts the task spec from board convention text', () => {
 
 test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: '/wt/x' });
-  assert.equal(prompt.split('\n')[0], 'First, run `atris worktree guard`; if it fails, stop immediately, report back, and do not edit anything. Do this before any file edit.');
+  assert.match(prompt.split('\n')[0], /`atris worktree guard`/);
   assert.match(prompt, /CLI-900/);
   assert.match(prompt, /its own git worktree at \/wt\/x/);
   assert.match(prompt, /Do not push and do not create branches; the conductor lands your commit\./);
@@ -87,6 +87,84 @@ test('buildFleetPrompt yolo asks the engine to land itself', () => {
   assert.match(prompt, /never resolve conflicts yourself/);
   assert.doesNotMatch(prompt, /Do not push/);
   assert.doesNotMatch(prompt, /NEVER push/);
+});
+
+// `atris worktree guard` refuses a checkout that has edits in it, so it can only pass at the
+// start. A builder that re-ran it in its own review step, after its edits, got exit 3, obeyed
+// "if it fails, stop immediately", and the finished work was never committed.
+test('buildFleetPrompt orders the guard once, before the first edit, and never again after editing', () => {
+  for (const yolo of [false, true]) {
+    const first = fleet.buildFleetPrompt(TASK, { worktreePath: '/wt/x', yolo }).split('\n')[0];
+    assert.match(first, /before your first edit/i, 'it runs before the first edit');
+    assert.match(first, /run `atris worktree guard` once/, 'it runs one time');
+    assert.match(first, /if it fails then, stop immediately, report back, and do not edit anything/, 'a failure at the start still stops the builder');
+    assert.match(first, /clean start/, 'it says what the guard checks');
+    assert.match(first, /fails once edits exist/, 'it says why it fails later');
+    assert.match(first, /never run it again after editing/, 'it is not a gate to re-run');
+    assert.doesNotMatch(first, /Do this before any file edit/, 'the open-ended order is gone');
+  }
+});
+
+// A protected-lane task is never shipped by its builder. Its ship would open the pull request
+// before the flight's own check, and a flight whose check or ship then failed would let go of the
+// claim with that pull request open and unrecorded. So the builder commits and stops, as it does
+// without yolo, and the flight ships the commit once, without --merge, for a person to land.
+test('buildFleetPrompt yolo has a protected-lane builder commit only, and says a person lands it', () => {
+  const prompt = fleet.buildFleetPrompt({ ...TASK, tag: 'security' }, { worktreePath: '/wt/x', yolo: true });
+  assert.match(prompt, /This task is in the protected security lane, so a person lands it, not you\./);
+  assert.match(prompt, /Commit on the current branch with a plain-English message\. Do not push, do not run `atris worktree ship`, and do not create branches; the conductor ships your commit for a person to review\./);
+  assert.doesNotMatch(prompt, /--merge/, 'a builder never merges protected work');
+  assert.doesNotMatch(prompt, /then run:/, 'there is no ship command to run');
+  assert.doesNotMatch(prompt, /--verify/, 'there is no ship command to run');
+  assert.doesNotMatch(prompt, /only push allowed/);
+  assert.doesNotMatch(prompt, /Land it yourself/);
+  assert.doesNotMatch(prompt, /PR URL/, 'it opens no pull request, so it has none to report');
+  assert.match(prompt, /Final report \(plain text\): files changed, check command \+ result, commit sha \(or say what failed and why\)\./);
+  assert.match(prompt, /Run the check bare before committing: focused node --test test\/widget\.test\.js\./);
+
+  // Without yolo the conductor lands the commit, and the brief says nothing about shipping.
+  const plain = fleet.buildFleetPrompt({ ...TASK, tag: 'security' }, { worktreePath: '/wt/x' });
+  assert.match(plain, /Do not push and do not create branches; the conductor lands your commit\./);
+  assert.doesNotMatch(plain, /atris worktree ship/);
+  assert.doesNotMatch(plain, /protected security lane/);
+});
+
+test('every protected lane gets the commit-only yolo order, wherever the task carries the lane', () => {
+  assert.ok(fleet.DENIED_TAGS.length >= 8);
+  for (const lane of fleet.DENIED_TAGS) {
+    for (const task of [
+      { ...TASK, tag: lane },
+      { ...TASK, tag: 'code', tags: ['docs', lane] },
+      { ...TASK, tag: 'code', metadata: { tags: [lane.toUpperCase()] } },
+      { ...TASK, tag: 'code', metadata: { todo_tags: ['docs', lane.toUpperCase()] } },
+      { ...TASK, tag: 'code', title: `#${lane} ${TASK.title}` },
+    ]) {
+      const prompt = fleet.buildFleetPrompt(task, { worktreePath: '/wt/x', yolo: true });
+      assert.doesNotMatch(prompt, /--merge/, `${lane} must not be merged by a builder`);
+      assert.match(prompt, new RegExp(`protected ${lane} lane`));
+      assert.match(prompt, /a person lands it/);
+      assert.match(prompt, /do not run `atris worktree ship`/);
+      assert.doesNotMatch(prompt, /PR URL/);
+    }
+  }
+});
+
+test('buildFleetPrompt yolo still orders --merge for a task outside the protected lanes', () => {
+  for (const task of [
+    TASK,
+    { ...TASK, tag: 'code' },
+    { ...TASK, tag: 'code', metadata: { todo_tags: ['docs'] } },
+    { ...TASK, tag: 'code', tags: ['docs'], metadata: { tags: ['ui'], todo_tags: ['docs'] } },
+    // A lane named in plain words is not the lane: only a tag or a hashtag is.
+    { ...TASK, tag: 'code', title: TASK.title.replace('Fix the widget', 'Fix the security widget') },
+    { ...TASK, tag: 'code', title: `#docs ${TASK.title}` },
+  ]) {
+    const prompt = fleet.buildFleetPrompt(task, { worktreePath: '/wt/x', yolo: true });
+    assert.match(prompt, /Land it yourself\./);
+    assert.match(prompt, /--verify 'focused node --test test\/widget\.test\.js\.' --merge, and report the PR URL\./);
+    assert.doesNotMatch(prompt, /a person lands it/);
+    assert.doesNotMatch(prompt, /protected \w+ lane/);
+  }
 });
 
 test('METHOD_KERNEL is exported and fully present in the prompt', () => {
@@ -401,6 +479,73 @@ test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () 
     start_commit: 'base-commit',
     head: 'new-commit',
   });
+});
+
+// A commit the engine made and did not land (a protected-lane builder only commits) is not on the
+// target: the flight lands it itself, and a protected-lane task goes to a person from there.
+test('defaultSelfLandCheck calls a committed branch that is not on the target self_land_missing', () => {
+  const calls = [];
+  const result = fleet.defaultSelfLandCheck({
+    worktreePath: '/wt',
+    targetRef: 'origin/master',
+    startCommit: 'base-commit',
+    git: (args) => {
+      calls.push(args);
+      if (args[0] === 'rev-parse') return { status: 0, stdout: 'new-commit\n', stderr: '' };
+      if (args[0] === 'diff') return { status: 1, stdout: '', stderr: '' };
+      if (args[0] === 'merge-base') return { status: 1, stdout: '', stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.deepEqual(calls[3], ['merge-base', '--is-ancestor', 'HEAD', 'origin/master']);
+  assert.deepEqual(result, {
+    ok: false,
+    stage: 'self_land_missing',
+    target: 'origin/master',
+    start_commit: 'base-commit',
+    head: 'new-commit',
+    detail: 'HEAD is not an ancestor of origin/master',
+  });
+});
+
+// The same check on real git, as a protected-lane builder leaves things: one commit on its branch and
+// nothing pushed. That is not on the target, so the flight lands it. A pushed branch that was never
+// merged is no more landed. Only a commit that reached the target reads as self-landed.
+test('defaultSelfLandCheck, on real git, calls an unpushed commit and an unmerged pushed branch self_land_missing', (t) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'self-land-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = (cwd, ...args) => {
+    const run = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    return run.stdout.trim();
+  };
+  const origin = path.join(dir, 'origin.git');
+  const work = path.join(dir, 'work');
+  git(dir, 'init', '-q', '--bare', '--initial-branch=master', origin);
+  git(dir, 'init', '-q', '--initial-branch=master', work);
+  git(work, 'remote', 'add', 'origin', origin);
+  fs.writeFileSync(path.join(work, 'a.txt'), 'before\n');
+  git(work, 'add', '.');
+  git(work, 'commit', '-qm', 'base');
+  git(work, 'push', '-q', 'origin', 'master');
+  const startCommit = git(work, 'rev-parse', 'HEAD');
+  git(work, 'checkout', '-q', '-b', 'task-branch');
+  fs.writeFileSync(path.join(work, 'a.txt'), 'after\n');
+  git(work, 'commit', '-qam', 'the fix');
+  const check = () => fleet.defaultSelfLandCheck({ worktreePath: work, targetRef: 'origin/master', startCommit });
+
+  const unpushed = check();
+  assert.equal(unpushed.ok, false);
+  assert.equal(unpushed.stage, 'self_land_missing');
+  assert.equal(unpushed.head, git(work, 'rev-parse', 'HEAD'));
+
+  git(work, 'push', '-q', 'origin', 'task-branch');
+  assert.equal(check().stage, 'self_land_missing', 'a pushed branch that was not merged is not landed');
+
+  git(work, 'push', '-q', 'origin', 'task-branch:master');
+  const merged = check();
+  assert.equal(merged.ok, true);
+  assert.equal(merged.stage, 'self_landed');
 });
 
 test('defaultSelfLandCheck refuses an unchanged head before ancestry can read as success', () => {

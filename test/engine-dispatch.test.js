@@ -1264,8 +1264,10 @@ test('runDispatchFlight releases the claim when worktree start refuses before th
     assert.equal(dispatchCalled, false);
     assert.equal(taskStatus, 'open');
     assert.ok(calls.includes(`task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
-    assert.ok(calls.includes('task release CLI-900 --as fleet-cursor'));
-    assert.ok(calls.indexOf('task release CLI-900 --as fleet-cursor') > calls.indexOf(`task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
+    // The release says why, so the rating can tell a refused start from a plain drop.
+    const releaseCall = calls.find((c) => c.startsWith('task release CLI-900 --as fleet-cursor'));
+    assert.equal(releaseCall, 'task release CLI-900 --as fleet-cursor --reason paused at worktree start: refusing: overlapping flight other-flight (3m old)');
+    assert.ok(calls.indexOf(releaseCall) > calls.indexOf(`task claim CLI-900 --as fleet-cursor --lease-minutes 60 --lease-pid ${process.pid}`));
     assert.equal(flight.results.length, 0);
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].task, 'CLI-900');
