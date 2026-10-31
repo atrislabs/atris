@@ -46,7 +46,15 @@ function readHere(deps = {}) {
   const team = new Map(((lineup && lineup.ok && lineup.team) || []).map((row) => [String(row.member || '').toLowerCase(), row]));
   const members = rows.map((row) => {
     const seat = team.get(row.name.toLowerCase()) || {};
-    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, job: seat.job || null, model: seat.model || null };
+    const reasons = new Map();
+    for (const play of played.outcomes || []) {
+      if (play.member === row.name && ['dropped', 'sent_back', 'abandoned'].includes(play.kind) && play.reason) {
+        reasons.set(play.reason, (reasons.get(play.reason) || 0) + 1);
+      }
+    }
+    const miss_reasons = [...reasons].map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 3);
+    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
   });
   const buildJob = ((lineup && lineup.ok && lineup.jobs) || []).find((row) => row.job === 'build' && !row.key);
   const buildModel = buildJob && buildJob.now_runs ? buildJob.now_runs.model : null;
@@ -104,6 +112,10 @@ function renderMember(m, card) {
     `  landed ${m.landed} of ${m.finished} finished jobs in the last 30 days`,
   ];
   if (m.ovr == null) lines.push('  rated once it has 3 finished jobs');
+  if (m.miss_reasons && m.miss_reasons.length) {
+    lines.push('  top miss reasons:');
+    for (const item of m.miss_reasons) lines.push(`  ${item.count}: ${item.reason}`);
+  }
   if (card && m.job === 'build') lines.push(`  its engine, ${card.label}, is ${rated(card.ovr)} in the combine: atris rating ${card.label.split(' ')[0]}`);
   lines.push(`  every play: atris gm card ${m.member}`);
   return lines.join('\n');
