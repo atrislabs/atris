@@ -127,7 +127,7 @@ test('gmail connect rejects invalid names before any network call', async () => 
   ]);
 });
 
-test('gmail connect confirms a new account that appears after sign-in starts', async () => {
+test('gmail connect opens sign-in without inferring success from the account list', async () => {
   const calls = [];
   let accountPolls = 0;
   const { integrations, restore } = withMockedIntegrations(async (pathname, options) => {
@@ -164,8 +164,8 @@ test('gmail connect confirms a new account that appears after sign-in starts', a
   }
 
   assert.deepEqual(opened, ['https://accounts.example.test/connect']);
-  assert.deepEqual(sleeps, [3]);
-  assert.deepEqual(lines, ['connected research@example.com as research']);
+  assert.deepEqual(sleeps, []);
+  assert.deepEqual(lines, ['sign-in opened. it is not confirmed yet. finish in your browser and check with atris google accounts --account.']);
   assert.deepEqual(calls.find((call) => call.pathname === '/integrations/gmail/start'), {
     pathname: '/integrations/gmail/start',
     options: {
@@ -174,7 +174,7 @@ test('gmail connect confirms a new account that appears after sign-in starts', a
       body: { account_id: 'research' },
     },
   });
-  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 2);
+  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 0);
 });
 
 test('gmail connect leaves an unchanged account unconfirmed with browser instructions', async () => {
@@ -210,10 +210,10 @@ test('gmail connect leaves an unchanged account unconfirmed with browser instruc
     restore();
   }
 
-  assert.deepEqual(lines, ['sign-in opened. it is not confirmed yet. finish in your browser and check with atris gmail accounts.']);
+  assert.deepEqual(lines, ['sign-in opened. it is not confirmed yet. finish in your browser and check with atris google accounts --account.']);
   assert.deepEqual(errors, []);
   assert.equal(calls.find((call) => call.pathname === '/integrations/gmail/start').options.body.account_id, 'default');
-  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 2);
+  assert.equal(calls.filter((call) => call.pathname === '/integrations/gmail/accounts').length, 0);
 });
 
 test('gmailAccountStatePath honors ATRIS_GMAIL_ACCOUNT_FILE', () => {

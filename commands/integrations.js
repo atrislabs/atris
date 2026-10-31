@@ -856,10 +856,6 @@ async function gmailConnect(accountName, deps = {}) {
   }
 
   const token = await getAuthToken();
-  const previousResult = await apiRequestJson('/integrations/gmail/accounts', { method: 'GET', token, retries: 0 });
-  const previousAccounts = previousResult.ok ? (previousResult.data?.accounts || previousResult.data) : null;
-  const previousKnown = Array.isArray(previousAccounts);
-  const previous = previousKnown ? resolveAccountSelector(previousAccounts, accountId) : null;
   const result = await apiRequestJson('/integrations/gmail/start', {
     method: 'POST',
     token,
@@ -884,28 +880,7 @@ async function gmailConnect(accountName, deps = {}) {
     console.log(`open this url in your browser: ${authUrl}`);
   }
 
-  const pollIntervalMs = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
-  const sleep = deps.sleep || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  if (previousKnown) {
-    await sleep(pollIntervalMs);
-    const accountsResult = await apiRequestJson('/integrations/gmail/accounts', {
-      method: 'GET', token, retries: 0,
-    });
-    const accounts = accountsResult.ok
-      ? (accountsResult.data?.accounts || accountsResult.data || [])
-      : [];
-    const match = Array.isArray(accounts) ? resolveAccountSelector(accounts, accountId) : null;
-    const email = match ? gmailAccountIdentity(match).email.trim() : '';
-    const priorState = previous?.products?.gmail || previous;
-    const nextState = match?.products?.gmail || match;
-    const appeared = !previous && match && nextState?.connected !== false && nextState?.reauth_required !== true;
-    const reconnected = priorState?.reauth_required === true && nextState?.connected === true && nextState?.reauth_required !== true;
-    if ((appeared || reconnected) && email && email !== 'unknown') {
-      console.log(`connected ${email} as ${accountId}`);
-      return;
-    }
-  }
-  console.log(`${opened ? 'sign-in opened' : 'sign-in link is ready to open'}. it is not confirmed yet. finish in your browser and check with atris gmail accounts.`);
+  console.log(`${opened ? 'sign-in opened' : 'sign-in link is ready to open'}. it is not confirmed yet. finish in your browser and check with atris google accounts --account.`);
 }
 
 async function gmailAccounts() {

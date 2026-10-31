@@ -47,6 +47,27 @@ const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
 
+test('legacy sign-in never treats a recovered account lookup as completion', async () => {
+  let reads = 0;
+  const prior = { accounts: [], count: 0 };
+  const later = { accounts: [{ account_id: 'work', email_address: 'work@example.test', display_name: 'work', created_at: '2026-01-01T00:00:00Z' }], count: 1 };
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return missing;
+    if (call.path.endsWith('/gmail/start')) return ok({ auth_url: 'https://example.test/not-completed' });
+    if (call.path.endsWith('/gmail/accounts')) return ok(++reads === 1 ? prior : later);
+  }, async ({ cli, calls }) => {
+    const result = await cli('google', 'connect', 'work', '--only', 'mail', '--account');
+    assert.equal(result.code, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /^connected /m);
+    assert.match(result.stdout, /not confirmed yet/);
+    assert.match(result.stdout, /atris google accounts --account/);
+    assert.equal(calls.some((call) => call.path.endsWith('/gmail/accounts')), false);
+    const check = result.stdout.match(/atris google accounts --account/)[0].split(' ').slice(1);
+    const checkResult = await cli(...check);
+    assert.equal(checkResult.code, 0, checkResult.stderr);
+  });
+});
+
 test('legacy reconnect with an unchanged account remains unconfirmed', async () => fixture((call) => {
   if (call.path.endsWith('/google/accounts')) return missing;
   if (call.path.endsWith('/gmail/start')) return ok({ auth_url: 'https://example.test/unfinished' });
@@ -56,12 +77,12 @@ test('legacy reconnect with an unchanged account remains unconfirmed', async () 
   assert.equal(result.code, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /^connected /m);
   assert.match(result.stdout, /not confirmed yet/);
-  assert.match(result.stdout, /atris gmail accounts/);
+  assert.match(result.stdout, /atris google accounts --account/);
   assert.ok(calls.some((call) => call.path.endsWith('/gmail/start')));
 }, { business: true }));
 
 for (const scenario of ['new account', 'reconnected account', 'renamed account', 'unknown prior account', 'still disconnected']) {
-  test(`legacy sign-in checks the prior account before reporting ${scenario}`, async () => {
+  test(`legacy sign-in does not infer completion from ${scenario}`, async () => {
     let lists = 0;
     await fixture((call) => {
       if (call.path.endsWith('/google/accounts')) return missing;
@@ -80,11 +101,10 @@ for (const scenario of ['new account', 'reconnected account', 'renamed account',
     }, async ({ cli, calls }) => {
       const result = await cli('google', 'connect', 'work', '--only', 'mail');
       assert.equal(result.code, 0, result.stderr);
-      if (['new account', 'reconnected account'].includes(scenario)) assert.match(result.stdout, /^connected work@example.test as work/m);
-      else { assert.doesNotMatch(result.stdout, /^connected /m); assert.match(result.stdout, /not confirmed yet/); }
-      const before = calls.findIndex((call) => call.path.endsWith('/gmail/accounts'));
-      const start = calls.findIndex((call) => call.path.endsWith('/gmail/start'));
-      assert.ok(before >= 0 && before < start);
+      assert.doesNotMatch(result.stdout, /^connected /m);
+      assert.match(result.stdout, /not confirmed yet/);
+      assert.equal(calls.some((call) => call.path.endsWith('/gmail/accounts')), false);
+      assert.ok(calls.some((call) => call.path.endsWith('/gmail/start')));
     }, { business: true });
   });
 }
