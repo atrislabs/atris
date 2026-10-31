@@ -26,6 +26,23 @@ test('a branch carrying a denied-lane task is blocked at ship', (t) => {
   assert.strictEqual(hit.tag, 'billing');
 });
 
+// The fleet's staffing check reads a task's tags from its tag, its tags list, the tags `atris task tag`
+// adds later (metadata.tags) and hashtags in its title. A task it holds back as protected has to be
+// blocked here too, or a builder could merge what staffing treats as a person's to land.
+test('a lane the task got after it was made, or in its title, is blocked at ship too', (t) => {
+  const root = repoWithProjection(t, [
+    { display_id: 'CLI-1201', tag: 'code', metadata: { tags: ['security'] } },
+    { display_id: 'CLI-1202', tag: 'code', tags: ['deploy'], metadata: {} },
+    { display_id: 'CLI-1203', tag: 'code', title: 'Rotate the keys #payments', metadata: {} },
+    { display_id: 'CLI-1204', tag: 'code', title: 'Tighten security on the billing page', metadata: { tags: ['ui'] } },
+  ]);
+  const gate = (id) => deniedLaneForShip(root, `codex/fleet-${id.toLowerCase()}`, `fix (${id})`);
+  assert.deepStrictEqual(gate('CLI-1201'), { taskId: 'CLI-1201', tag: 'security' });
+  assert.deepStrictEqual(gate('CLI-1202'), { taskId: 'CLI-1202', tag: 'deploy' });
+  assert.deepStrictEqual(gate('CLI-1203'), { taskId: 'CLI-1203', tag: 'payments' });
+  assert.strictEqual(gate('CLI-1204'), null, 'words in a title are not a lane');
+});
+
 test('a safe-lane branch ships without a block', (t) => {
   const root = repoWithProjection(t, [
     { display_id: 'CLI-1200', tag: 'health', metadata: {} },
