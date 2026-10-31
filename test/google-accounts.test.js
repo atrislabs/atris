@@ -256,7 +256,10 @@ test('a superseded google sign-in explains unknown products and what to do next'
   finally { process.exit = exit; console.error = error; }
   const output = errors.join('\n');
   assert.doesNotMatch(output, /superseded/i);
-  assert.match(output, /newer|another/i); assert.match(output, /products.*unknown|unknown.*products/i);
+  assert.match(output, /the google connection changed before sign-in finished\./);
+  assert.doesNotMatch(output, /newer|another/i);
+  assert.match(output, /check atris google accounts --account before trying again\./);
+  assert.match(output, /products.*unknown|unknown.*products/i);
   assert.match(output, /business.*(may|unknown|uncertain)/i); assert.match(output, /atris google accounts/);
 }, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', state: 'state1' }) : url.endsWith('/state1') ? ok({ status: 'error', error: 'superseded', cleanup_incomplete: true, business_assignment_unknown: true }) : ok({ accounts: [] })));
 

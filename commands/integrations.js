@@ -1023,7 +1023,7 @@ function googleSignInFailure(result, { error, retry, status = 'error', extra = {
 function googleSignInErrorLines(status, business) {
   const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
   const lines = [status.error === 'superseded'
-    ? 'a newer google sign-in replaced this attempt.'
+    ? 'the google connection changed before sign-in finished.'
     : `google sign-in did not finish: ${reason}.`];
   if (status.account_id) lines.push(`account: ${status.account_id}.`);
   if (Array.isArray(status.products)) {
@@ -1038,7 +1038,7 @@ function googleSignInErrorLines(status, business) {
   if (status.cleanup_incomplete) lines.push('some changes could not be undone.');
   if (status.business_assignment_unknown) lines.push('the business account choice may not have been saved.');
   const check = business ? `atris google accounts --business ${business}` : 'atris google accounts --account';
-  lines.push(`check ${check} before ${status.error === 'superseded' ? 'finishing the newer sign-in' : 'trying again'}.`);
+  lines.push(`check ${check} before trying again.`);
   return lines;
 }
 
