@@ -1125,7 +1125,7 @@ function shipWorktree(args) {
         }
         // A merge queue accepts the request before merging. Deleting its head
         // here closes the PR and cancels that request, so confirm the outcome.
-        const confirmation = spawnSync('gh', ['pr', 'view', mergeRef, '--json', 'state,mergedAt'], { cwd: root, encoding: 'utf8' });
+        const confirmation = spawnSync('gh', ['pr', 'view', mergeRef, '--json', 'state,mergedAt,number,url,mergeCommit'], { cwd: root, encoding: 'utf8' });
         if (confirmation.status !== 0) {
           throw new Error('could not confirm the merge; the source branch was kept');
         }
@@ -1141,6 +1141,10 @@ function shipWorktree(args) {
           throw new Error('the change was not merged; the source branch was kept');
         }
         console.log('merge: merged');
+        // One machine-readable line, so a caller can save which pull request
+        // and commit landed. The rating only counts a landing it can point at.
+        const record = shipMergeRecord(state);
+        if (record) console.log(`merge: record ${JSON.stringify(record)}`);
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
         if (deleted.status === 0) {
           console.log(`merge: remote branch deleted ${branch}`);
@@ -1163,6 +1167,17 @@ function shipWorktree(args) {
   if (merge && !dryRun) runShipHealthCheck(primary || root);
   console.log('done: worktree shipped');
   return 0;
+}
+
+// The landed pull request from `gh pr view --json`, or null without a merge commit.
+function shipMergeRecord(state) {
+  const commit = state && state.mergeCommit && typeof state.mergeCommit === 'object' ? state.mergeCommit.oid : null;
+  if (typeof commit !== 'string' || !/^[0-9a-f]{7,64}$/i.test(commit)) return null;
+  const record = { merge_commit: commit };
+  if (Number.isInteger(state.number) && state.number > 0) record.number = state.number;
+  if (typeof state.url === 'string' && state.url) record.url = state.url;
+  if (typeof state.mergedAt === 'string' && state.mergedAt) record.merged_at = state.mergedAt;
+  return record;
 }
 
 function guard(args) {
