@@ -2075,8 +2075,6 @@ module.exports = {
   deniedLaneForShip,
   createOrFindPr,
   cleanupWorktrees,
-  ensureRoomForCopy,
-  lastCopyActivityMs,
   reapShippedCopy,
   scheduleShippedCopyRemoval,
   shippedCopyRemovalPlan,
