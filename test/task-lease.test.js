@@ -51,29 +51,41 @@ test('expired leases release once with the required event', (t) => {
   const db = setup(t), old = claimed(db, 'fleet-a'), fresh = claimed(db, 'human');
   tasks.setLease(db, { id: old, holder: 'fleet-a', now: 0 });
   tasks.setLease(db, { id: fresh, holder: 'human', now: 10000000 });
-  assert.deepEqual(tasks.expireLeases(db, { now: 3600000 }), []);
-  const result = tasks.expireLeases(db, { now: 3600001 });
+  assert.deepEqual(tasks.expireLeases(db, { now: 3600000, isAlive: () => false }), []);
+  const result = tasks.expireLeases(db, { now: 3600001, isAlive: () => false });
   assert.deepEqual(result.map(x => x.id), [old]);
   assert.equal(tasks.getTask(db, old).status, 'open');
   assert.equal(tasks.getTask(db, old).metadata.lease, undefined);
   assert.equal(tasks.getTask(db, fresh).status, 'claimed');
   const event = db.prepare("SELECT payload FROM task_events WHERE task_id = ? AND event_type = 'claim_expired'").get(old);
-  assert.deepEqual(JSON.parse(event.payload), { claimed_by: 'fleet-a', lease_until: '1970-01-01T01:00:00.000Z', last_seen_at: result[0].last_seen_at, reason: 'worker went silent: no sign of life for 60 minutes' });
+  assert.deepEqual(JSON.parse(event.payload), { claimed_by: 'fleet-a', lease_until: '1970-01-01T01:00:00.000Z', last_seen_at: result[0].last_seen_at, reason: 'worker stopped without reporting back within 60 minutes' });
+  assert.deepEqual(tasks.expireLeases(db, { now: 3600001, isAlive: () => false }), []);
+});
+test('an expired lease remains claimed while its worker is alive', (t) => {
+  const db = setup(t), id = claimed(db, 'fleet-a');
+  tasks.setLease(db, { id, holder: 'fleet-a', pid: process.pid, now: 0 });
   assert.deepEqual(tasks.expireLeases(db, { now: 3600001 }), []);
+  assert.equal(tasks.getTask(db, id).status, 'claimed');
+});
+test('a lease over 12 hours past its deadline is released even if its pid is alive', (t) => {
+  const db = setup(t), id = claimed(db, 'fleet-a');
+  tasks.setLease(db, { id, holder: 'fleet-a', pid: process.pid, now: 0 });
+  assert.deepEqual(tasks.expireLeases(db, { now: 3600000 + 13 * 3600000 }).map(x => x.id), [id]);
+  assert.equal(tasks.getTask(db, id).status, 'open');
 });
 test('stale cleanup defaults to fleet, supports a named holder and dry run', (t) => {
   const db = setup(t), fleet = claimed(db, 'fleet-a'), human = claimed(db, 'person');
   const old = Date.parse('2020-01-01T00:00:00Z');
   db.prepare('UPDATE task_events SET created_at = ? WHERE task_id IN (?, ?)').run(old, fleet, human);
   const now = Date.parse('2020-01-20T00:00:00Z');
-  const preview = tasks.expireLeases(db, { now, staleDays: 7, dryRun: true });
+  const preview = tasks.expireLeases(db, { now, staleDays: 7, dryRun: true, isAlive: () => false });
   assert.deepEqual(preview.map(x => x.id), [fleet]);
   assert.equal(tasks.getTask(db, fleet).status, 'claimed');
-  const selected = tasks.expireLeases(db, { now, staleDays: 7, claimer: 'person' });
+  const selected = tasks.expireLeases(db, { now, staleDays: 7, claimer: 'person', isAlive: () => false });
   assert.deepEqual(selected.map(x => x.id), [human]);
   assert.equal(selected[0].lease_until, '2020-01-01T01:00:00.000Z');
-  assert.equal(selected[0].reason, 'stranded: no activity since 2020-01-01T00:00:00.000Z');
-  assert.deepEqual(tasks.expireLeases(db, { now, staleDays: 7 }).map(x => x.id), [fleet]);
+  assert.equal(selected[0].reason, 'stranded with no activity for over 7 days');
+  assert.deepEqual(tasks.expireLeases(db, { now, staleDays: 7, isAlive: () => false }).map(x => x.id), [fleet]);
 });
 test('sweep command previews and filters without changing claims', (t) => {
   const db = setup(t), fleet = claimed(db, 'fleet-cli'), person = claimed(db, 'person-cli');

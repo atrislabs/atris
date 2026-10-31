@@ -27,6 +27,7 @@ test('real event history scores one result per claim, handoffs, expiry dates, an
     task('handoff', [['claimed','alpha',{},at], ['claim_released','alpha',{reason:'handoff'},at+1], ['claimed','beta',{},at+2], ['proof_ready','beta',{landing:{merge_commit:'abcdef123456'}},at+3], ['archived','auto',{reason:'old'},at+4]]);
     task('repeat', [['claimed','alpha',{},at], ['revision_requested','reviewer',{reason:'redo'},at+1], ['reopened','reviewer',{reason:'redo'},at+2], ['archived','auto',{reason:'old'},at+3]]);
     task('old-expiry', [['claimed','alpha',{},now-40*day], ['claim_expired','auto',{claimed_by:'alpha',lease_until:now-35*day,reason:'lease'},at]]);
+    task('iso-expiry', [['claimed','alpha',{},now-40*day], ['claim_expired','auto',{claimed_by:'alpha',lease_until:new Date(now-35*day).toISOString(),reason:'lease'},at]]);
     task('new-expiry', [['claimed','alpha',{},at], ['claim_expired','auto',{claimed_by:'alpha',lease_until:at+10,reason:'lease'},at+20], ['archived','auto',{reason:'old'},at+30]]);
     task('merged-pr', [['claimed','beta',{},at], ['landing','beta',{pull_request:{number:42,state:'merged'}},at+1], ['archived','auto',{reason:'old'},at+2]]);
     task('fallback-expiry', [['claimed','beta',{},at], ['claim_expired','auto',{claimed_by:'beta',reason:'expired'},at+5]]);
@@ -41,6 +42,9 @@ test('real event history scores one result per claim, handoffs, expiry dates, an
     assert.deepEqual(results('handoff').map(x => [x.member,x.kind]), [['beta','landed']]);
     assert.deepEqual(results('repeat').map(x => x.kind), ['sent_back']);
     assert.equal(results('old-expiry').length, 0);
+    assert.equal(results('iso-expiry').length, 0);
+    const wider = loadSeason(dir, {dbPath, now, days: 40, lastSeen:null});
+    assert.equal(wider.outcomes.find(x => x.task_id === 'iso-expiry' && x.kind === 'dropped').at, now - 35 * day);
     assert.deepEqual(results('new-expiry').map(x => [x.member,x.at,x.reason]), [['alpha',at+10,'lease']]);
     assert.equal(results('merged-pr')[0].kind, 'landed');
     assert.equal(results('fallback-expiry')[0].at, at+5);
