@@ -171,3 +171,4 @@ test/task-lease.test.js
 test/rating-episodes.test.js
 test/ready-merge-credit.test.js
 test/release-reason.test.js
+test/held-for-review.test.js

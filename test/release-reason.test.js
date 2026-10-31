@@ -164,6 +164,13 @@ test('a pause where the engine never finished its turn keeps its own reason, eve
   assert.equal(reasons['BCK-8'], 'engine produced no work');
 });
 
+test('a pull request waiting for a person keeps its claim, even when saving the proof failed', (t) => {
+  const worktree = repoWithCommit(t, { commit: false });
+  const rows = [{ task: 'BCK-5', stage: 'task_ready', held_for_review: true, worktree }];
+  assert.deepEqual(releaseCalls(rows, { keepClaimsWithWork: false, worktree }), []);
+  assert.equal(rows[0].claim_released, undefined);
+});
+
 test('atris rating shows the reasons the flight gave for the claims it released', (t) => {
   const { dir, dbPath, db } = tempDb(t);
   const verify = 'paused at verify: widget renders twice';

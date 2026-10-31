@@ -575,15 +575,18 @@ function landingFlags(args) {
   };
 }
 
-// The pull request and commit a flight merged on its own, so the job record
-// names what landed. Only a merge commit makes it count.
+// The pull request a flight opened or merged, so the job record names it.
+// Only a merge commit makes it count as landed. A number or link alone is an
+// open pull request still waiting for a person to land it.
 function readyMergeFlags(args) {
   const commit = textFlag(args, ['--merge-commit']);
-  if (!commit) return null;
+  const number = textFlag(args, ['--pr-number']);
+  const url = textFlag(args, ['--pr-url']);
+  if (!commit && !number && !url) return null;
   return {
     merge_commit: commit,
-    number: textFlag(args, ['--pr-number']),
-    url: textFlag(args, ['--pr-url']),
+    number,
+    url,
     merged_at: textFlag(args, ['--merged-at']),
     self_landed: hasFlag(args, '--self-landed'),
   };
