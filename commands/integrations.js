@@ -1032,15 +1032,21 @@ async function googleConnect(name, products, business, deps = {}) {
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
     return;
   }
-  const previous = new Map((before.data?.accounts || []).map((row) => [row.account_id, JSON.stringify(row)]));
   const body = {};
   if (name) body.account_id = name;
   if (products) body.products = products;
   if (business) body.business_id = business;
   const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
+  if (result.status === 404) {
+    if (!deps.quietOldServer) console.log(googleOldServer);
+    if (!products || products.includes('gmail')) return gmailConnect(name, deps);
+    return;
+  }
   if (!result.ok) return googleFailure(result, 'start google connection');
   const url = result.data?.auth_url;
   if (!url) throw new Error('the server did not return a sign-in url');
+  const state = result.data?.state;
+  if (!state) throw new Error('the server did not return a sign-in state. start again with atris google connect.');
   if (!(deps.openAuthUrl || openGmailAuthUrl)(url, deps)) console.log(`open this url in your browser: ${url}`);
   console.log('waiting for google sign-in...');
   const interval = deps.pollIntervalMs ?? GMAIL_CONNECT_POLL_MS;
@@ -1050,52 +1056,35 @@ async function googleConnect(name, products, business, deps = {}) {
   const deadline = now() + timeout;
   const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const id = result.data?.account_id || name;
-  let state = result.data?.state || '';
   for (let i = 0; i < count && now() < deadline; i += 1) {
     await sleep(Math.min(interval, Math.max(0, deadline - now())));
     if (now() >= deadline) break;
     const pollOptions = { method: 'GET', token, timeoutMs: Math.max(1, Math.min(interval, deadline - now())), retries: 0 };
-    if (state) {
-      const check = await apiRequestJson(`/integrations/google/start/${encodeURIComponent(state)}`, pollOptions);
-      if (check.status === 404) state = '';
-      else if (!check.ok) {
-        if (check.status === 401 || check.status === 403) return googleFailure(check, 'check google sign-in');
-        continue;
-      } else {
-        const status = check.data || {};
-        if (status.status === 'pending') continue;
-        if (status.status === 'error') {
-          const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
-          console.error(`google sign-in failed: ${reason}`);
-          process.exit(1);
-        }
-        if (status.status === 'connected') {
-          const accountId = status.account_id || id || 'account';
-          const identity = status.email || accountId;
-          const granted = Array.isArray(status.products) ? status.products : [];
-          const missing = Array.isArray(status.missing) ? status.missing : [];
-          console.log(`connected ${identity} as ${accountId}${granted.length ? `: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}` : ''}`);
-          if (missing.length) console.log(`google did not grant: ${missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
-          return;
-        }
-        continue;
-      }
+    const check = await apiRequestJson(`/integrations/google/start/${encodeURIComponent(state)}`, pollOptions);
+    if (check.status === 404) {
+      const retry = ['atris google connect', name, products && `--only ${products.map((p) => p === 'gmail' ? 'mail' : p).join(',')}`, business && `--business ${business}`].filter(Boolean).join(' ');
+      console.error(`google sign-in expired. start again with ${retry}.`);
+      process.exit(1);
     }
-    if (now() >= deadline) break;
-    pollOptions.timeoutMs = Math.max(1, Math.min(interval, deadline - now()));
-    const list = await apiRequestJson('/integrations/google/accounts', pollOptions);
-    if (list.status === 404) { console.log(googleOldServer); return; }
-    if (!list.ok) continue;
-    const accounts = list.data?.accounts || [];
-    const changed = accounts.filter((row) => previous.get(row.account_id) !== JSON.stringify(row));
-    const found = id ? changed.find((row) => row.account_id === id) : changed.length === 1 ? changed[0] : null;
-    if (!found || !found.email) continue;
-    const wanted = products || googleProductNames;
-    const granted = wanted.filter((product) => found.products?.[product]?.connected);
-    const missing = wanted.filter((product) => !found.products?.[product]?.connected);
-    console.log(`connected ${found.email} as ${found.account_id}: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ') || 'no products'}`);
-    if (missing.length) console.log(`google did not grant: ${missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
-    return;
+    if (!check.ok) {
+      if (check.status === 401 || check.status === 403) return googleFailure(check, 'check google sign-in');
+      continue;
+    }
+    const status = check.data || {};
+    if (status.status === 'error') {
+      const reason = String(status.error || 'unknown error').replace(/_/g, ' ').toLowerCase();
+      console.error(`google sign-in failed: ${reason}`);
+      process.exit(1);
+    }
+    if (status.status === 'connected') {
+      const accountId = status.account_id || id || 'account';
+      const identity = status.email || accountId;
+      const granted = Array.isArray(status.products) ? status.products : [];
+      const missing = Array.isArray(status.missing) ? status.missing : [];
+      console.log(`connected ${identity} as ${accountId}${granted.length ? `: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}` : ''}`);
+      if (missing.length) console.log(`google did not grant: ${missing.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
+      return;
+    }
   }
   console.error(`connection could not be confirmed. finish in your browser and check atris google: ${url}`);
   process.exit(1);
@@ -1113,6 +1102,7 @@ async function gmailConnectUnified(name, deps = {}) {
 async function googleCommand(subcommand, ...args) {
   if ([subcommand, ...args].some((arg) => ['help', '--help', '-h'].includes(arg))) {
     console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]');
+    console.log('list accounts as json with atris google accounts --json.');
     console.log('disconnect requires --approved.');
     return;
   }
@@ -1120,15 +1110,17 @@ async function googleCommand(subcommand, ...args) {
   const context = takeContext(args);
   return googleContext.run(context, async () => {
     const rest = context.rest;
-    let only; let approved = false; const positional = [];
+    let only; let approved = false; let json = false; const positional = [];
     for (let i = 0; i < rest.length; i += 1) {
       if (rest[i] === '--only') { if (!rest[i + 1] || String(rest[i + 1]).startsWith('--')) throw new Error('--only needs mail, calendar, or drive'); only = googleProducts(rest[++i]); }
       else if (rest[i].startsWith('--only=')) only = googleProducts(rest[i].slice(7));
+      else if (rest[i] === '--json') json = true;
       else if (rest[i] === '--approved' || rest[i] === '--confirm-approved') approved = true;
       else if (rest[i].startsWith('-')) throw new Error(`unknown option ${rest[i]}`);
       else positional.push(rest[i]);
     }
     const action = subcommand || 'accounts';
+    if (json && action !== 'accounts') throw new Error('--json is available for google accounts');
     if (action === 'connect') return googleConnect(positional[0], only, context.explicitBusiness ? context.business : null);
     if (!['accounts', 'use', 'disconnect'].includes(action)) {
       console.log('usage: atris google [accounts|connect|use|disconnect] [name] [--only mail,calendar,drive] [--business slug]'); return;
@@ -1139,12 +1131,26 @@ async function googleCommand(subcommand, ...args) {
     const token = auth.token;
     if (action === 'accounts') {
       const capability = await googleAccountsCapability(token);
-      if (!capability.supported) { console.log(googleOldServer); return gmailAccounts(); }
+      if (!capability.supported) {
+        if (json) {
+          const accounts = await fetchGmailAccounts(token);
+          console.log(JSON.stringify({ accounts, defaults: {}, resolved: {}, business: null, legacy: true, notice: googleOldServer }, null, 2));
+          return;
+        }
+        console.log(googleOldServer); return gmailAccounts();
+      }
       const data = capability.data;
+      const accounts = data.accounts.map((row) => ({ ...row, products: Object.fromEntries(Object.entries(row.products || {}).map(([product, value]) => {
+        const reconnect = value?.reauth_required && googleProductNames.includes(product)
+          ? `atris google connect ${row.account_id} --only ${product === 'gmail' ? 'mail' : product}` : null;
+        return [product, reconnect ? { ...value, reconnect } : value];
+      })) }));
+      if (json) { console.log(JSON.stringify({ ...data, accounts }, null, 2)); return; }
       if (!data.accounts?.length) console.log('no connected accounts.');
-      for (const row of data.accounts || []) {
-        const products = googleProductNames.filter((p) => row.products?.[p]?.connected).map((p) => p === 'gmail' ? 'mail' : p);
+      for (const row of accounts) {
+        const products = googleProductNames.filter((p) => row.products?.[p]?.connected || row.products?.[p]?.reauth_required).map((p) => `${p === 'gmail' ? 'mail' : p}${row.products[p].reauth_required ? ' needs reconnecting' : ''}`);
         console.log(`${row.account_id}: ${row.email || 'email pending'} (${products.join(', ') || 'no products'})`);
+        for (const p of googleProductNames) if (row.products?.[p]?.reconnect) console.log(`  reconnect ${p === 'gmail' ? 'mail' : p}: ${row.products[p].reconnect}`);
       }
       for (const product of googleProductNames) console.log(`${product === 'gmail' ? 'mail' : product} default: ${data.defaults?.[product] || 'automatic'}`);
       if (data.business) console.log(`business account: ${data.business.account_id || 'automatic'}`);

@@ -3073,7 +3073,7 @@ if (command === 'guide') {
   const raw = process.argv.slice(3);
   const helpOnly = raw.some((arg) => ['--help', '-h', 'help'].includes(arg));
   const scopedBusiness = raw.some((arg, index) => (arg === '--business' && raw[index + 1] && !raw[index + 1].startsWith('-')) || (arg.startsWith('--business=') && arg.length > 11));
-  const gate = helpOnly || scopedBusiness ? { ok: true, args: raw } : requireAccountBound(raw, { read: !raw[0] || raw[0] === 'accounts' });
+  const gate = helpOnly || scopedBusiness ? { ok: true, args: raw } : requireAccountBound(raw, { read: !raw[0] || raw[0] === 'accounts' || raw[0] === '--json' });
   if (!gate.ok) { process.exit(refuseAccountGlobal()); return; }
   const { googleCommand } = require('../commands/integrations');
   googleCommand(gate.args[0], ...gate.args.slice(1))

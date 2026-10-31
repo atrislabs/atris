@@ -42,6 +42,49 @@ test('google lists products, defaults and business', async () => fixture(async (
   assert.equal(calls[0].options.headers['X-Business-Id'], 'shop');
 }, () => ok({ accounts: [account], defaults: { gmail: 'work', calendar: 'work', drive: null }, business: { business_id: 'shop', account_id: 'work' } })));
 
+test('google accounts shows reconnect commands for products that need sign-in', async () => fixture(async (cli, { lines }) => {
+  await cli.googleCommand('accounts');
+  const output = lines.join('\n');
+  assert.match(output, /mail.*needs reconnecting/);
+  assert.match(output, /calendar.*needs reconnecting/);
+  assert.match(output, /atris google connect work --only mail/);
+  assert.match(output, /atris google connect work --only calendar/);
+  assert.match(output, /drive/);
+  assert.doesNotMatch(output, /no products/);
+}, () => ok({ accounts: [{ ...account, products: { gmail: { connected: false, reauth_required: true }, calendar: { connected: false, reauth_required: true }, drive: { connected: true } } }], defaults: {}, resolved: {} })));
+
+test('google accounts json includes reconnect state and commands for all expired products', async () => fixture(async (cli, { lines }) => {
+  await cli.googleCommand('accounts', '--json');
+  const data = JSON.parse(lines.join('\n'));
+  const products = data.accounts[0].products;
+  for (const [key, label] of [['gmail', 'mail'], ['calendar', 'calendar'], ['drive', 'drive']]) {
+    assert.equal(products[key].reauth_required, true);
+    assert.equal(products[key].connected, false);
+    assert.equal(products[key].reconnect, `atris google connect work --only ${label}`);
+  }
+  assert.equal(data.defaults.gmail, 'work');
+}, () => ok({ accounts: [{ ...account, products: Object.fromEntries(['gmail', 'calendar', 'drive'].map((key) => [key, { connected: false, reauth_required: true }])) }], defaults: { gmail: 'work' }, resolved: {} })));
+
+test('expired products alone are never reported as no products', async () => fixture(async (cli, { lines }) => {
+  await cli.googleCommand('accounts');
+  assert.doesNotMatch(lines.join('\n'), /no products/);
+  assert.match(lines.join('\n'), /mail.*needs reconnecting/);
+}, () => ok({ accounts: [{ ...account, products: { gmail: { connected: false, reauth_required: true } } }], defaults: {}, resolved: {} })));
+
+for (const command of ['google', 'gmail']) test(`${command} connect refuses an expired sign-in even if the account changes`, async () => fixture(async (cli, { calls, lines }) => {
+  const exit = process.exit, error = console.error, errors = [];
+  process.exit = () => { throw new Error('stopped'); }; console.error = (...parts) => errors.push(parts.join(' '));
+  const deps = { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 2 };
+  try {
+    await assert.rejects(() => command === 'google' ? cli.googleConnect('work', ['gmail'], null, deps) : cli.gmailConnectUnified('work', deps), /stopped/);
+  } finally { process.exit = exit; console.error = error; }
+  assert.match(errors.join('\n'), /sign-in expired/);
+  assert.match(errors.join('\n'), /atris google connect work/);
+  assert.doesNotMatch(lines.join('\n'), /^connected/m);
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/accounts').length, 1);
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/start/expired').length, 1);
+}, (() => { let count = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'expired' }) : url.endsWith('/start/expired') ? { ok: false, status: 404 } : ok({ accounts: [{ ...account, display_name: ++count === 1 ? 'old' : 'changed' }] }); })()));
+
 test('google use saves the server default and local cache', async () => fixture(async (cli, { calls, root }) => {
   await cli.googleCommand('use', 'work', '--business', 'shop');
   const saved = calls.find((call) => call.url === '/business/shop/integrations/google');
@@ -69,11 +112,11 @@ test('old server falls back to mail accounts', async () => fixture(async (cli, {
   assert.equal(calls[1].url, '/integrations/gmail/accounts');
 }, (url) => url === '/integrations/google/accounts' ? { ok: false, status: 404 } : ok([{ account_id: 'work', email_address: 'work@example.com' }])));
 
-test('google connect requests selected products and waits for the account', async () => fixture(async (cli, { calls, lines }) => {
+test('google connect requests selected products and waits for its sign-in state', async () => fixture(async (cli, { calls, lines }) => {
   await cli.googleConnect('work', ['gmail', 'calendar'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });
   assert.deepEqual(calls[1].options.body, { account_id: 'work', products: ['gmail', 'calendar'] });
   assert.match(lines.join('\n'), /connected/);
-}, (() => { let polls = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work' }) : ok({ accounts: ++polls === 1 ? [] : [account] }); })()));
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'state1' }) : url.endsWith('/start/state1') ? ok({ status: 'connected', account_id: 'work', email: 'work@example.com', products: ['gmail', 'calendar'] }) : ok({ accounts: [account] })));
 
 test('personal google use saves selected products and the mail cache', async () => fixture(async (cli, { root, calls }) => {
   fs.unlinkSync(path.join(root, '.atris', 'business.json'));
@@ -215,11 +258,18 @@ test('a saved server default wins even if it is later cleared', async () => fixt
   assert.equal(calls.some((call) => call.url === '/integrations/google/defaults'), false);
 }, (() => { let seen = 0; return (url) => url === '/integrations/google/accounts' ? ok({ accounts: [account], defaults: { gmail: ++seen === 1 ? 'work' : null }, resolved: { gmail: 'work' } }) : url === '/integrations/gmail/accounts' ? ok([{ account_id: 'work', email_address: 'work@example.com' }]) : ok({ messages: [] }); })()));
 
-test('a missing sign-in status route falls back to account changes', async () => fixture(async (cli, { calls, lines }) => {
-  await cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });
-  assert.equal(calls.filter((call) => call.url === '/integrations/google/start/old-state').length, 1);
+test('a modern sign-in without state cannot claim a connection', async () => fixture(async (cli, { calls, lines }) => {
+  await assert.rejects(() => cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 }), /sign-in state/);
+  assert.equal(calls.filter((call) => call.url === '/integrations/google/accounts').length, 1);
+  assert.doesNotMatch(lines.join('\n'), /^connected/m);
+}, (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work' }) : ok({ accounts: [account] })));
+
+test('a missing modern start route uses the old gmail sign-in', async () => fixture(async (cli, { calls, lines }) => {
+  await cli.googleConnect('work', ['gmail'], null, { openAuthUrl: () => true, sleep: async () => {}, pollIntervalMs: 1, timeoutMs: 1 });
+  assert.ok(calls.some((call) => call.url === '/integrations/gmail/start'));
   assert.match(lines.join('\n'), /connected work@example.com/);
-}, (() => { let count = 0; return (url) => url === '/integrations/google/start' ? ok({ auth_url: 'https://example.test', account_id: 'work', state: 'old-state' }) : url === '/integrations/google/start/old-state' ? { ok: false, status: 404 } : ok({ accounts: ++count === 1 ? [] : [account] }); })()));
+  assert.match(lines.join('\n'), /newest atris server/);
+}, (url) => url === '/integrations/google/start' ? { ok: false, status: 404 } : url === '/integrations/gmail/start' ? ok({ auth_url: 'https://example.test' }) : url === '/integrations/gmail/accounts' ? ok({ accounts: [{ account_id: 'work', email: 'work@example.com' }] }) : ok({ accounts: [account] })));
 
 test('gmail combined sign-in polls its state', async () => fixture(async (cli, { calls, lines }) => {
   await cli.gmailConnectUnified('work', { openAuthUrl: () => true, sleep: async () => {}, now: () => 0, pollIntervalMs: 1, timeoutMs: 1 });

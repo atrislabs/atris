@@ -47,6 +47,51 @@ const ok = (data) => [200, data];
 const missing = [404, { detail: 'not found' }];
 const eventArgs = ['calendar', 'add', 'private appointment', '--start', '2026-10-31T10:00:00Z', '--end', '2026-10-31T11:00:00Z'];
 
+for (const command of ['google', 'gmail']) test(`${command} sign-in with expired state never claims an unrelated account change`, async () => {
+  let lists = 0;
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok({ ...roster, accounts: [{ ...work, display_name: ++lists === 1 ? 'before' : 'after' }] });
+    if (call.path.endsWith('/google/start')) return ok({ auth_url: 'https://example.test', state: 'expired', account_id: 'work' });
+    if (call.path.endsWith('/google/start/expired')) return [404, { detail: 'Invalid or expired Google sign-in' }];
+  }, async ({ cli, calls }) => {
+    const result = await cli(command, 'connect', 'work');
+    assert.equal(result.code, 1); assert.match(result.stderr, /sign-in expired/);
+    assert.match(result.stderr, /atris google connect work/); assert.doesNotMatch(result.stdout, /^connected/m);
+    assert.equal(calls.filter((call) => call.path.endsWith('/google/accounts')).length, 1);
+    assert.equal(calls.filter((call) => call.path.endsWith('/google/start/expired')).length, 1);
+  }, { provisioned: true });
+});
+
+test('google account json and text show each reconnecting product', async () => fixture((call) => {
+  if (call.path.endsWith('/google/accounts')) return ok({ ...roster, accounts: [{ ...work, products: {
+    gmail: { connected: false, reauth_required: true }, calendar: { connected: false, reauth_required: true }, drive: { connected: false, reauth_required: true },
+  } }] });
+}, async ({ cli }) => {
+  const text = await cli('google', 'accounts'); assert.equal(text.code, 0);
+  assert.doesNotMatch(text.stdout, /no products/);
+  for (const product of ['mail', 'calendar', 'drive']) {
+    assert.match(text.stdout, new RegExp(`${product} needs reconnecting`));
+    assert.match(text.stdout, new RegExp(`atris google connect work --only ${product}`));
+  }
+  for (const args of [['google', 'accounts', '--json'], ['google', '--json']]) {
+    const result = await cli(...args); assert.equal(result.code, 0, result.stderr);
+    const data = JSON.parse(result.stdout);
+    assert.equal(data.accounts[0].products.gmail.reconnect, 'atris google connect work --only mail');
+    assert.equal(data.accounts[0].products.calendar.reauth_required, true);
+    assert.equal(data.accounts[0].products.drive.connected, false);
+  }
+}));
+
+test('google accounts json keeps older-server mail fallback parseable', async () => fixture((call) => {
+  if (call.path.endsWith('/google/accounts')) return missing;
+  if (call.path.endsWith('/gmail/accounts')) return ok(oldMail);
+}, async ({ cli }) => {
+  const result = await cli('google', 'accounts', '--json'); assert.equal(result.code, 0, result.stderr);
+  const data = JSON.parse(result.stdout);
+  assert.equal(data.legacy, true); assert.equal(data.accounts[0].account_id, 'work');
+  assert.match(data.notice, /newest atris server/);
+}));
+
 for (const selectorType of ['name', 'email']) for (const reversed of [false, true]) for (const target of ['business', 'personal', 'legacy']) {
   test(`exact ${selectorType} wins over a display label for ${target}, reversed ${reversed}`, async () => {
     const selector = selectorType === 'name' ? 'work' : 'work@example.test';
