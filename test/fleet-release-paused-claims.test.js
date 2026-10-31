@@ -42,7 +42,7 @@ test('a paused worktree with only conductor litter releases its claim', (t) => {
     actorByTask: new Map([['BCK-1', 'fleet-codex']]),
     baseRef: 'HEAD',
   });
-  assert.deepEqual(calls, [['task', 'release', 'BCK-1', '--as', 'fleet-codex']]);
+  assert.deepEqual(calls, [['task', 'release', 'BCK-1', '--as', 'fleet-codex', '--reason', 'engine produced no work']]);
   assert.equal(paused[0].claim_released, true);
 });
 
@@ -104,6 +104,6 @@ test('a worktree_start pause with no worktree releases the held claim', () => {
     worktreeByTask: new Map(),
     actorByTask: new Map([['BCK-6', 'fleet-grok']]),
   });
-  assert.deepEqual(calls, [['task', 'release', 'BCK-6', '--as', 'fleet-grok']]);
+  assert.deepEqual(calls, [['task', 'release', 'BCK-6', '--as', 'fleet-grok', '--reason', 'paused at worktree start: boom']]);
   assert.equal(paused[0].claim_released, true);
 });

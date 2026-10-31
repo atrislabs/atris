@@ -215,7 +215,7 @@ test('5. a dispatch retry is not refused by its own earlier finished run', async
     assert.ok(calls.some((c) => /^worktree start .*--task dispatch-pr-2 .*--force/.test(c)), calls.join('\n'));
     // The failed flight gives its claim back, so the retry's claim can succeed.
     assert.equal(flight.paused[0].stage, 'no_work_landed');
-    assert.ok(calls.includes('task release PR-2 --as fleet-codex'), calls.join('\n'));
+    assert.ok(calls.some((c) => c.startsWith('task release PR-2 --as fleet-codex --reason ')), calls.join('\n'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

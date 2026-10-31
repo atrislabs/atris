@@ -226,7 +226,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task list [--all] [--everywhere] [--status <s>]
                                            list tasks in this workspace; --everywhere spans workspaces
   atris task claim <id> [--as <owner>]     Atomic claim
-  atris task release <id> [--as <owner>]   Release your own mistaken claim back to open
+  atris task release <id> [--as <owner>] [--reason "<why>"]   Release your own mistaken claim back to open
   atris task capabilities [--json]         Read-only task CLI/API capability contract
   atris task capabilities-check [--json]   Verify task capability contract conformance
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
@@ -6327,26 +6327,33 @@ function cmdRelease(args) {
     failTask('atris task release', 'missing_id', 'id required');
   }
   const owner = flag(args, '--as') || DEFAULT_OWNER;
+  const reasonFlag = flag(args, '--reason');
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task release');
-  const result = taskDb.releaseTask(db, { id: taskId, actor: String(owner) });
+  const result = taskDb.releaseTask(db, {
+    id: taskId,
+    actor: String(owner),
+    reason: typeof reasonFlag === 'string' ? reasonFlag : undefined,
+  });
   if (result.released) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     const task = compactTaskFromProjection(projection, taskId);
+    const keptReason = result.event && result.event.payload && result.event.payload.reason || null;
     if (wantsJson(args)) {
       printJson({
         ok: true,
         action: 'released',
         task_id: taskId,
         owner: String(owner),
+        reason: keptReason,
         projection_path: outPath,
         task,
         event_version: result.event && result.event.version || null,
       });
       return;
     }
-    console.log(`released ${taskRef(task)} from ${owner}`);
+    console.log(`released ${taskRef(task)} from ${owner}${keptReason ? ` (${keptReason})` : ''}`);
     console.log(`Next: atris task next --as ${owner}`);
     return;
   }
