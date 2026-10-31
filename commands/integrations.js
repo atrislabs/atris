@@ -895,13 +895,13 @@ async function gmailUse(accountId, deps = {}) {
   console.log(`now using ${name} (${email || 'email pending'})`);
 }
 
-const GOOGLE_OLD_SERVER = 'calendar and drive accounts need the newest atris server.';
-const GOOGLE_PRODUCTS = ['gmail', 'calendar', 'drive'];
+const googleOldServer = 'calendar and drive accounts need the newest atris server.';
+const googleProductNames = ['gmail', 'calendar', 'drive'];
 
 function googleProducts(value) {
   if (value == null) return null;
   const products = String(value).split(',').map((part) => part.trim().toLowerCase() === 'mail' ? 'gmail' : part.trim().toLowerCase());
-  if (!products.length || products.some((part) => !GOOGLE_PRODUCTS.includes(part)) || new Set(products).size !== products.length) throw new Error('--only needs mail, calendar, or drive');
+  if (!products.length || products.some((part) => !googleProductNames.includes(part)) || new Set(products).size !== products.length) throw new Error('--only needs mail, calendar, or drive');
   return products;
 }
 
@@ -925,7 +925,7 @@ async function googleConnect(name, products, business, deps = {}) {
   const token = await getAuthToken();
   const before = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
   if (before.status === 404) {
-    console.log(GOOGLE_OLD_SERVER);
+    console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
     return;
   }
@@ -937,7 +937,7 @@ async function googleConnect(name, products, business, deps = {}) {
   if (business) body.business_id = business;
   const result = await apiRequestJson('/integrations/google/start', { method: 'POST', token, body });
   if (result.status === 404) {
-    console.log(GOOGLE_OLD_SERVER);
+    console.log(googleOldServer);
     if (!products || products.includes('gmail')) return gmailConnect(name, deps);
     return;
   }
@@ -953,13 +953,13 @@ async function googleConnect(name, products, business, deps = {}) {
   for (let i = 0; i < count; i += 1) {
     await sleep(interval);
     const list = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
-    if (list.status === 404) { console.log(GOOGLE_OLD_SERVER); return; }
+    if (list.status === 404) { console.log(googleOldServer); return; }
     if (!list.ok) continue;
     const accounts = list.data?.accounts || [];
     const changed = accounts.filter((row) => previous.get(row.account_id) !== JSON.stringify(row));
     const found = id ? changed.find((row) => row.account_id === id) : changed.length === 1 ? changed[0] : null;
     if (!found || !found.email) continue;
-    const wanted = products || GOOGLE_PRODUCTS;
+    const wanted = products || googleProductNames;
     const granted = wanted.filter((product) => found.products?.[product]?.connected);
     const missing = wanted.filter((product) => !found.products?.[product]?.connected);
     console.log(`connected ${found.email} as ${found.account_id}: ${granted.map((p) => p === 'gmail' ? 'mail' : p).join(', ') || 'no products'}`);
@@ -998,15 +998,15 @@ async function googleCommand(subcommand, ...args) {
     const token = await getAuthToken();
     if (action === 'accounts') {
       const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
-      if (result.status === 404) { console.log(GOOGLE_OLD_SERVER); return gmailAccounts(); }
+      if (result.status === 404) { console.log(googleOldServer); return gmailAccounts(); }
       if (!result.ok) return googleFailure(result, 'list google accounts');
       const data = result.data || {};
       if (!data.accounts?.length) console.log('no connected accounts.');
       for (const row of data.accounts || []) {
-        const products = GOOGLE_PRODUCTS.filter((p) => row.products?.[p]?.connected).map((p) => p === 'gmail' ? 'mail' : p);
+        const products = googleProductNames.filter((p) => row.products?.[p]?.connected).map((p) => p === 'gmail' ? 'mail' : p);
         console.log(`${row.account_id}: ${row.email || 'email pending'} (${products.join(', ') || 'no products'})`);
       }
-      for (const product of GOOGLE_PRODUCTS) console.log(`${product === 'gmail' ? 'mail' : product} default: ${data.defaults?.[product] || 'automatic'}`);
+      for (const product of googleProductNames) console.log(`${product === 'gmail' ? 'mail' : product} default: ${data.defaults?.[product] || 'automatic'}`);
       if (data.business) console.log(`business account: ${data.business.account_id || 'automatic'}`);
       return;
     }
@@ -1018,7 +1018,7 @@ async function googleCommand(subcommand, ...args) {
       if (result.status === 404) {
         const probe = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
         if (probe.status !== 404) return googleFailure(result, 'disconnect google account');
-        console.log(GOOGLE_OLD_SERVER);
+        console.log(googleOldServer);
         if (only && !only.includes('gmail')) return;
         const accounts = await fetchGmailAccounts(token);
         const match = findGmailAccountForUse(accounts, id) || accounts.find((account) => gmailAccountIdentity(account).email === id.toLowerCase());
@@ -1029,7 +1029,7 @@ async function googleCommand(subcommand, ...args) {
         console.log(`disconnected mail for ${mailId}`); return;
       }
       if (!result.ok) return googleFailure(result, 'disconnect google account');
-      console.log(`disconnected ${id}: ${(result.data?.removed || only || GOOGLE_PRODUCTS).map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`); return;
+      console.log(`disconnected ${id}: ${(result.data?.removed || only || googleProductNames).map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`); return;
     }
     const url = context.business ? `/business/${encodeURIComponent(context.business)}/integrations/google` : '/integrations/google/defaults';
     const body = context.business ? { account_id: id } : { account_id: id, ...(only ? { products: only } : {}) };
@@ -1039,7 +1039,7 @@ async function googleCommand(subcommand, ...args) {
     if (result.status === 404) {
       const probe = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
       if (probe.status !== 404) return googleFailure(result, 'save google default');
-      console.log(GOOGLE_OLD_SERVER);
+      console.log(googleOldServer);
       if (!only || only.includes('gmail')) {
         const accounts = await fetchGmailAccounts(token);
         const match = findGmailAccountForUse(accounts, id) || accounts.find((account) => gmailAccountIdentity(account).email === id.toLowerCase());
@@ -1049,7 +1049,7 @@ async function googleCommand(subcommand, ...args) {
       return;
     }
     if (!result.ok) return googleFailure(result, 'save google default');
-    const products = only || GOOGLE_PRODUCTS;
+    const products = only || googleProductNames;
     googleCache(Object.fromEntries(products.map((p) => [p, id])), context.business);
     if (products.includes('gmail') && !context.business) writeGmailStickyAccount(id);
     console.log(`using ${id}${context.business ? ' for this business' : ''}: ${products.map((p) => p === 'gmail' ? 'mail' : p).join(', ')}`);
@@ -1062,7 +1062,7 @@ async function gmailCommand(subcommand, ...args) {
     if (context.business && !context.mailAccount && ['inbox', 'list', 'read', 'archive', 'triage', 'send', 'voice'].includes(subcommand) && (subcommand !== 'send' || context.rest.includes('--approved') || context.rest.includes('--confirm-approved'))) {
       const token = await getAuthToken();
       const result = await apiRequestJson('/integrations/google/accounts', { method: 'GET', token });
-      if (result.status === 404) console.log(GOOGLE_OLD_SERVER);
+      if (result.status === 404) console.log(googleOldServer);
       else if (!result.ok) return googleFailure(result, 'resolve business account');
       else { context.serverDefaults = true; context.resolvedMail = result.data?.resolved?.gmail || null; }
     }
