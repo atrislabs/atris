@@ -197,3 +197,35 @@ test('authorization errors on the account capability do not create events', asyn
   const result = await cli(...eventArgs, '--account', 'work'); assert.notEqual(result.code, 0);
   assert.equal(calls.some((call) => call.method === 'POST'), false);
 }));
+
+test('gmail use caches the whole business choice after a successful assignment', async () => fixture((call) => {
+  if (call.path.endsWith('/gmail/accounts')) return ok(oldMail);
+  if (call.path.endsWith('/google/accounts')) return ok(roster);
+  if (call.path.endsWith('/business/shop/integrations/google')) return ok({ account_id: 'work' });
+}, async ({ cli, root }) => {
+  const result = await cli('gmail', 'use', 'work'); assert.equal(result.code, 0, result.stderr);
+  const cache = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'google-accounts.json')));
+  assert.deepEqual(cache.businesses.shop, { gmail: 'work', calendar: 'work', drive: 'work' });
+}, { business: true }));
+
+test('legacy email migration saves the canonical short name on the server', async () => {
+  let saved = false;
+  await fixture((call) => {
+    if (call.path.endsWith('/google/accounts')) return ok({ ...roster, defaults: { ...roster.defaults, gmail: saved ? 'work' : null } });
+    if (call.path.endsWith('/google/defaults')) { saved = true; return ok({ defaults: { gmail: 'work' } }); }
+    if (call.path.endsWith('/gmail/accounts')) return ok(oldMail);
+    if (call.path.endsWith('/gmail/messages')) return ok({ messages: [] });
+  }, async ({ cli, calls }) => {
+    const result = await cli('gmail', 'inbox'); assert.equal(result.code, 0, result.stderr);
+    assert.equal(calls.find((call) => call.path.endsWith('/google/defaults')).body.account_id, 'work');
+  }, { sticky: 'work@example.test' });
+});
+
+test('a denied business save never falls back to a local choice', async () => fixture((call) => {
+  if (call.path.endsWith('/gmail/accounts')) return ok(oldMail);
+  if (call.path.endsWith('/google/accounts')) return ok(roster);
+  if (call.path.endsWith('/business/shop/integrations/google')) return [403, { detail: 'not allowed' }];
+}, async ({ cli, root }) => {
+  const result = await cli('gmail', 'use', 'work'); assert.notEqual(result.code, 0);
+  assert.equal(fs.existsSync(path.join(root, 'mail.json')), false); assert.doesNotMatch(result.stdout, /now using/);
+}, { business: true }));

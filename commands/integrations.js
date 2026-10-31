@@ -1002,7 +1002,7 @@ async function saveGoogleDefault(auth, selector, products, business, { mailAccou
   if (business) options.headers = { 'X-Business-Id': business };
   const saved = await rawApiRequestJson(url, options);
   if (!saved.ok) return googleFailure(saved, 'save google default');
-  googleCache(Object.fromEntries(products.map((product) => [product, id])), business);
+  googleCache(Object.fromEntries((business ? googleProductNames : products).map((product) => [product, id])), business);
   if (products.includes('gmail') && !business) {
     markMailMigration(mailMigrationRecord(auth));
     writeGmailStickyAccount(id);
