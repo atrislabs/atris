@@ -110,6 +110,8 @@ function renderMember(m, card) {
 }
 
 function ratingCommand(args = [], deps = {}) {
+  const taskDb = require('../lib/task-db');
+  taskDb.sweepExpiredLeases();
   const write = deps.write || ((text) => process.stdout.write(text));
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     write(`${USAGE}\n`);
