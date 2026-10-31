@@ -1631,22 +1631,22 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 - **Entry point:** `commands/integrations.js`
 - **Commands:**
-- `atris gmail inbox [--account <id>]` (`commands/integrations.js:451`, `gmailInbox`): lists messages and names the resolved mailbox when its email is known
-- `atris gmail triage [--account <id>] [--limit N]` (`commands/integrations.js:553`, `gmailTriage`): reads recent inbox messages, records the deterministic rule reason, and appends keep or archive verdicts without changing the mailbox
+- `atris gmail inbox [--account <id>]` (`commands/integrations.js:464`, `gmailInbox`): lists messages and names the resolved mailbox when its email is known
+- `atris gmail triage [--account <id>] [--limit N]` (`commands/integrations.js:566`, `gmailTriage`): reads recent inbox messages, records the deterministic rule reason, and appends keep or archive verdicts without changing the mailbox
 - `atris gmail verdicts --summary [--account <id>]` (`commands/integrations.js:159`, `printGmailVerdicts`): groups the full verdict log by day and account with keep and archive counts; legacy rows without reasons remain readable
-- `atris gmail send <to> <subject> <body...> [--account <id>]` (`commands/integrations.js:716`, `gmailSend`): resolves the server default mailbox, verifies it is connected, and sends the joined body or `--body-file` contents
-- `atris gmail voice [account] [--clear]` (`commands/integrations.js:794`, `gmailVoice`): edits, pipes, or clears per-account `voice_md` through the Gmail account API
-- `atris gmail connect [name]` (`commands/integrations.js:1091`, `gmailConnectUnified`): starts browser auth and polls its sign-in status; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
-- `atris gmail accounts` (`commands/integrations.js:898`, `gmailAccounts`): prints the default-first, aligned account roster and marks the active account
-- `atris gmail use [<account_id|name>]` (`commands/integrations.js:911`, `gmailUse`): picks an account interactively or resolves an id/display name and saves the choice on the server and keeps a local copy
-- Gmail dispatch and help live in `commands/integrations.js:1172` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
-- `atris calendar [today|week]` (`commands/integrations.js:1696`): Calendar events
-- `atris twitter [post <text>]` (`commands/integrations.js:1807`): Twitter posting
-- `atris slack [channels]` (`commands/integrations.js:2055`): Slack channel listing; unbound scratch folders refuse every slack verb via `requireAccountBound` before this runs
-- `atris integrations` (`commands/integrations.js:2755`): Show status of all integrations
-- **Auth:** Uses `getAuthToken()` (`commands/integrations.js:409`) from `~/.atris/credentials.json`
+- `atris gmail send <to> <subject> <body...> [--account <id>]` (`commands/integrations.js:729`, `gmailSend`): resolves the server default mailbox, verifies it is connected, and sends the joined body or `--body-file` contents
+- `atris gmail voice [account] [--clear]` (`commands/integrations.js:807`, `gmailVoice`): edits, pipes, or clears per-account `voice_md` through the Gmail account API
+- `atris gmail connect [name]` (`commands/integrations.js:1104`, `gmailConnectUnified`): starts browser auth and polls its sign-in status; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
+- `atris gmail accounts` (`commands/integrations.js:911`, `gmailAccounts`): prints the default-first, aligned account roster and marks the active account
+- `atris gmail use [<account_id|name>]` (`commands/integrations.js:924`, `gmailUse`): picks an account interactively or resolves an id/display name and saves the choice on the server and keeps a local copy
+- Gmail dispatch and help live in `commands/integrations.js:1185` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
+- `atris calendar [today|week]` (`commands/integrations.js:1709`): Calendar events
+- `atris twitter [post <text>]` (`commands/integrations.js:1831`): Twitter posting
+- `atris slack [channels]` (`commands/integrations.js:2079`): Slack channel listing; unbound scratch folders refuse every slack verb via `requireAccountBound` before this runs
+- `atris integrations` (`commands/integrations.js:2779`): Show status of all integrations
+- **Auth:** Uses `getAuthToken()` (`commands/integrations.js:422`) from `~/.atris/credentials.json`
 - **Routing:** `bin/atris.js:3047` (`command === 'gmail'`) and `bin/atris.js:3102` (`command === 'slack'`): use `requireAccountBound`, or a named business for gmail; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
-- **Help:** `bin/atris.js:1082` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:1199`
+- **Help:** `bin/atris.js:1082` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:1212`
 - **Gmail regressions:** `test/gmail-triage.test.js` (rule reasons, verdict log rows, read-only Gmail calls), `test/gmail-verdicts.test.js` (legacy rows, reason passthrough, daily account summaries), `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect`, `gmail send --account foo`, and `slack send --account foo` exit 2 with no network, lookup, or send)
 - **Regression:** `test/commands-2.test.js:1468-1483` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
@@ -2540,6 +2540,6 @@ Computer messages: `commands/computer.js:3550` treats an explicit message as one
 
 ## google account commands
 
-- Account request context and business header: `commands/integrations.js:33`; capability checks: `commands/integrations.js:265`; mail default migration: `commands/integrations.js:276`; selector resolution: `commands/integrations.js:372`.
-- Google account cache, sign-in and commands: `commands/integrations.js:969`, `commands/integrations.js:984`, `commands/integrations.js:1013`, `commands/integrations.js:1100`.
-- Calendar ordering and partial results: `commands/integrations.js:1300`, `commands/integrations.js:1317`, `commands/integrations.js:1696`. Router: `bin/atris.js:3072`. Tests: `test/google-accounts.test.js`, `test/google-accounts-http.test.js`.
+- Account request context and business header: `commands/integrations.js:33`; capability checks: `commands/integrations.js:265`; mail default migration: `commands/integrations.js:280`; selector resolution: `commands/integrations.js:376` checks exact names and emails before display labels and refuses ambiguous matches.
+- Google account cache, sign-in and commands: `commands/integrations.js:982`, `commands/integrations.js:997`, `commands/integrations.js:1026`, `commands/integrations.js:1113`.
+- Calendar ordering, partial results and scoped search errors: `commands/integrations.js:1313`, `commands/integrations.js:1330`, `commands/integrations.js:1709`. Router: `bin/atris.js:3072`. Tests: `test/google-accounts.test.js`, `test/google-accounts-http.test.js`.
