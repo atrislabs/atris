@@ -134,3 +134,19 @@ test('a failed command-line scan also keeps every work folder', () => {
     cleanupAll(repo);
   }
 });
+
+test('a hung command-line scan times out and keeps the work folder', () => {
+  const repo = initRepoWithOldWorktree('pshang');
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-keeps-busy-hang-'));
+  try {
+    fs.writeFileSync(path.join(fakeBin, 'ps'), '#!/bin/sh\nexec /bin/sleep 30\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${fakeBin}${path.delimiter}${process.env.PATH}` };
+    const result = runCleanup(repo.root, env);
+    assert.equal(result.removed.length, 0);
+    assert.equal(result.kept.find((item) => item.path === repo.worktree)?.reason, 'process_scan_failed');
+    assert.equal(fs.existsSync(repo.worktree), true);
+  } finally {
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    cleanupAll(repo);
+  }
+});

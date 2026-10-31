@@ -1241,6 +1241,8 @@ function listActiveProcessFiles() {
   const result = spawnSync('lsof', ['-n', '-F', 'n'], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+    timeout: 20000,
+    killSignal: 'SIGKILL',
   });
   if (result.error || result.status !== 0 || String(result.stderr || '').trim()) return null;
   const paths = String(result.stdout || '')
@@ -1275,6 +1277,8 @@ function listActiveProcessArgPaths() {
   const result = spawnSync('ps', ['-axww', '-o', 'args='], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+    timeout: 5000,
+    killSignal: 'SIGKILL',
   });
   if (result.error || result.status !== 0) return null;
   return parseProcessArgPaths(result.stdout);
@@ -1341,7 +1345,7 @@ function webpackCacheSnapshot(worktreePath) {
       return true;
     }
     if (!walk(current)) return null;
-    const size = spawnSync('du', ['-sk', current], { encoding: 'utf8' });
+    const size = spawnSync('du', ['-sk', current], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });
     const match = size.status === 0 && String(size.stdout || '').match(/^(\d+)\s/);
     if (!match) return null;
     return { path: current, kib: Number(match[1]), fingerprint: JSON.stringify(entries) };
