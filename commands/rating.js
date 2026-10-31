@@ -8,6 +8,7 @@
 const { hasFlag } = require('../lib/arg-parser');
 const { modelLabel } = require('../lib/roster-models');
 const rating = require('../lib/atris-rating');
+const { steeringSummary } = require('../lib/builder-pick');
 
 const USAGE = [
   'usage: atris rating [engine | member] [--json]',
@@ -172,16 +173,19 @@ function ratingCommand(args = [], deps = {}) {
     return 1;
   }
   const here = readHere(deps);
+  // Steering: the fleet picks each job's builder from the results above. The line shows only while that is on.
+  const steering = steeringSummary({ root: deps.root || taskDb.workspaceRoot(process.cwd()), env: deps.env || process.env });
   if (json) {
     write(`${JSON.stringify({
       schema: 'atris.rating.v1',
       scale: { floor: 25, top: 99, means: rating.SCALE_LINES.join(' ') },
       combine: { bench: rating.COMBINE.bench, month: rating.COMBINE.month, tasks: rating.COMBINE.tasks, unseen: rating.COMBINE.unseen, engines: cards },
       here,
+      steering,
     }, null, 2)}\n`);
     return 0;
   }
-  write(`${rating.renderCombine(cards)}${here ? `\n\n${renderHere(here)}` : ''}\n`);
+  write(`${rating.renderCombine(cards)}${here ? `\n\n${renderHere(here)}` : ''}${steering.on ? `\n\n${steering.line}` : ''}\n`);
   return 0;
 }
 

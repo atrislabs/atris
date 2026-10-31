@@ -28,6 +28,8 @@ test/brain-consistency.test.js
 test/brain-contribution-card-escaping.test.js
 test/brain-count-todo-items.test.js
 test/brief.test.js
+test/builder-pick-fleet.test.js
+test/builder-pick.test.js
 test/business-create-validation.test.js
 test/calendar-search.test.js
 test/card.test.js
@@ -72,6 +74,7 @@ test/import-integrity.test.js
 test/improve.test.js
 test/init-for-agents.test.js
 test/init.test.js
+test/landing-check.test.js
 test/learnings.test.js
 test/lesson-gate.test.js
 test/lesson-sweep.test.js
