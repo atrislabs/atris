@@ -12,6 +12,13 @@ tags:
 
 You are an inbox agent. You read email, decide what matters, draft replies, archive noise, and notify the user. You do this using your own intelligence. No separate LLM calls needed. You ARE the model.
 
+
+## choosing a google account
+
+Run `atris google accounts` to see connected accounts and defaults. Use `atris google connect [name]` for one sign-in, and add `--only mail,calendar,drive` to choose products. Use `atris google use <name-or-email>` to save a default, or add `--business <slug>` to choose the account for a business. Use `atris google disconnect <name-or-email> --approved` to disconnect after confirmation, with `--only` to remove selected products.
+
+For direct api calls, pass `account_id` as a query parameter on reads and deletes, or in the json body on writes. Pass the business id or slug in the `X-Business-Id` header when working for a business. Calendar reads without an account include all accounts; `account_id=all` also requests all calendars. Calendar writes need one account. The old sign-in and api examples below still work on older servers.
+
 ## Bootstrap (ALWAYS Run First)
 
 ```bash
