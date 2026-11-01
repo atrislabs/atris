@@ -9,6 +9,7 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { installKeep, planKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorArtifact, isConductorUntracked } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
+const { runMergeGate } = require('../lib/merge-gate');
 const { sleepSync } = require('../lib/sleep-sync');
 const space = require('../lib/worktree-space');
 const close = require('./close');
@@ -947,6 +948,8 @@ function shipHelp() {
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
+  console.log('  merge and local runs use scripts/merge-gate.sh when present');
+  console.log('  ATRIS_MERGE_GATE_TIMEOUT_MS sets its timeout in milliseconds (default 1800000)');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
@@ -1254,6 +1257,33 @@ function shipWorktree(args) {
     return 3;
   }
   console.log(`merge_check: ${targetRef} clean`);
+
+  // Run before pushing: a push can itself feed an existing auto-merge request.
+  const gatePath = path.join(root, 'scripts', 'merge-gate.sh');
+  if ((merge || localMode) && !dryRun && fs.existsSync(gatePath)) {
+    const beforeGate = statusSnapshot(root);
+    const gateHead = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
+    const result = runMergeGate(root, gatePath);
+    const afterGate = statusSnapshot(root);
+    const changed = newStatusRows(beforeGate, afterGate);
+    const headAfterGate = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
+    if (headAfterGate !== gateHead) {
+      const files = runGit(['diff', '--name-only', gateHead, headAfterGate], { cwd: root, check: false });
+      changed.push(...String(files.stdout || '').split(/\r?\n/).filter(Boolean));
+    }
+    if (result.code !== 0 || result.timedOut || result.error || changed.length || headAfterGate !== gateHead) {
+      const code = result.code === null ? (result.timedOut ? '124' : 'unavailable') : String(result.code);
+      console.error(`merge gate failed: scripts/merge-gate.sh, exit code ${code}${result.timedOut ? ' (timed out)' : ''}`);
+      if (result.error) console.error(result.error);
+      const lines = String(result.output || '').trim().split(/\r?\n/).filter(Boolean).slice(-20);
+      if (lines.length) console.error(lines.join('\n'));
+      if (changed.length) console.error(`merge gate changed files: ${changed.join(', ')}`);
+      if (headAfterGate !== gateHead) console.error('merge gate changed the commit');
+      console.error('branch was left unmerged');
+      return 3;
+    }
+    console.log('merge gate: passed');
+  }
 
   // Set once the change is confirmed merged; the build copy then goes away.
   let landedOn = '';
