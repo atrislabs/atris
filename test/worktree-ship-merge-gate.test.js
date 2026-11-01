@@ -44,8 +44,8 @@ function setup(t, gate) {
   fs.writeFileSync(path.join(work, 'app.txt'), 'changed\n');
   fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nfs.appendFileSync(process.env.GH_LOG, args.join(' ') + '\\n');\nif (args[1] === 'view' && args.includes('--jq')) console.log('41 https://example.test/pull/41 OPEN');\nelse if (args[1] === 'view') console.log(JSON.stringify({state:'OPEN', mergedAt:null}));\nelse if (args[1] !== 'merge') process.exit(1);\n`, { mode: 0o755 });
   const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: log, ATRIS_SKIP_UPDATE_CHECK: '1' };
-  function ship(args, extraEnv = {}) {
-    return spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'save change', '--verify', 'test -f app.txt', '--no-map-refresh', ...args], {
+  function ship(args, extraEnv = {}, verify = 'test -f app.txt') {
+    return spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'save change', '--verify', verify, '--no-map-refresh', ...args], {
       cwd: work, encoding: 'utf8', env: { ...env, ...extraEnv }, timeout: 15000,
     });
   }
@@ -151,4 +151,39 @@ test('a gate cannot change the checked commit', (t) => {
   assertUnmerged(ctx, result);
   assert.match(result.stderr, /changed the commit/);
   assert.match(result.stderr, /app\.txt/);
+});
+
+
+test('the gate runs only after the requested verification passes', (t) => {
+  const ctx = setup(t, '#!/bin/sh\ntest -f ../verified\n');
+  const result = ctx.ship(['--merge'], {}, 'printf ready > ../verified');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /verify:[\s\S]*merge gate: passed/);
+});
+
+test('a failed verification never starts the gate', (t) => {
+  const ctx = setup(t, '#!/bin/sh\necho started > ../gate-ran\n');
+  const result = ctx.ship(['--merge'], {}, 'exit 17');
+  assert.notEqual(result.status, 0);
+  assert.equal(fs.existsSync(path.join(ctx.dir, 'gate-ran')), false);
+  assert.equal(fs.existsSync(ctx.log), false);
+});
+
+test('a failed gate leaves an existing remote branch and pull request alone', (t) => {
+  const ctx = setup(t, '#!/bin/sh\necho fail\nexit 6\n');
+  ctx.git(['push', 'origin', 'HEAD:refs/heads/feature'], ctx.work);
+  const before = ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir);
+  const result = ctx.ship(['--merge']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /branch was left unmerged/);
+  assert.equal(ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir), before);
+  assert.equal(fs.existsSync(ctx.log), false);
+});
+
+test('timeout stops gate descendants before they can keep writing', (t) => {
+  const ctx = setup(t, '#!/bin/sh\n(sleep 2; echo survived > ../escaped) &\nwait\n');
+  const result = ctx.ship(['--merge'], { ATRIS_MERGE_GATE_TIMEOUT_MS: '100' });
+  assertUnmerged(ctx, result);
+  spawnSync('sleep', ['3']);
+  assert.equal(fs.existsSync(path.join(ctx.dir, 'escaped')), false);
 });
