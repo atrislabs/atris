@@ -1178,3 +1178,48 @@ test('an excluded origin refresh that would split copies refuses before changing
   assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
   assert.equal(fs.existsSync(c.events), false);
 });
+
+test('every positive fetch mapping is checked even outside remote refs', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  const gated = addPreferredRemoteMain(c, '#!/bin/sh\nexit 37\n');
+  c.git(['update-ref', 'refs/cache/first', c.base]);
+  c.git(['update-ref', 'refs/cache/second', gated]);
+  c.git(['update-ref', '-d', 'refs/remotes/preferred/main']);
+  c.git(['config', '--replace-all', 'remote.preferred.fetch', '+refs/heads/main:refs/cache/first']);
+  c.git(['config', '--add', 'remote.preferred.fetch', '+refs/heads/main:refs/cache/second']);
+  c.git(['config', '--add', 'remote.preferred.fetch', '^refs/heads/main']);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+test('a saved remote ref is checked even if its remote is no longer configured', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  const gated = addPreferredRemoteMain(c, '#!/bin/sh\nexit 37\n');
+  c.git(['remote', 'remove', 'preferred']);
+  c.git(['update-ref', 'refs/remotes/ghost/main', gated]);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+test('copies that split during the check refuse before creating the local branch', (t) => {
+  const gate = `#!/bin/sh\n${marker}old=$(git rev-parse refs/remotes/origin/main)\ntree=$(git rev-parse "$old^{tree}")\nnext=$(git commit-tree "$tree" -p "$old" -m changed)\ngit update-ref refs/remotes/ghost/main "$next"\n`;
+  const c = fixture(t, { gate, open: false });
+  addRemoteMain(c);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/main']), c.base);
+});
