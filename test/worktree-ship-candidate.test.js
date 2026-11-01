@@ -734,3 +734,84 @@ test('a gate that commits a new file leaves that file in place when it is refuse
   assert.equal(c.git(['rev-parse', 'feature'], c.work), c.source);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
 });
+
+function advanceRemoteOnly(c, file, content) {
+  const index = path.join(c.dir, 'remote-only-index');
+  const run = (args, input) => {
+    const result = spawnSync('git', args, { cwd: c.work, env: { ...c.env, GIT_INDEX_FILE: index }, input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  run(['read-tree', c.base]);
+  const blob = run(['hash-object', '-w', '--stdin'], content);
+  run(['update-index', '--add', '--cacheinfo', '100644', blob, file]);
+  const tree = run(['write-tree']);
+  const next = run(['commit-tree', tree, '-p', c.base, '-m', 'advance remote']);
+  c.git(['--git-dir', c.remote, 'fetch', '--no-write-fetch-head', c.primary, next], c.dir);
+  c.git(['--git-dir', c.remote, 'update-ref', 'refs/heads/master', next, c.base], c.dir);
+  return next;
+}
+
+function fetchHeadPath(c) {
+  return path.resolve(c.work, c.git(['rev-parse', '--git-path', 'FETCH_HEAD'], c.work));
+}
+
+test('local no-gate landing keeps the legacy fetch record for a stationary target', (t) => {
+  const c = fixture(t);
+  const fetchHead = fetchHeadPath(c);
+  fs.rmSync(fetchHead, { force: true });
+  const result = c.ship(localArgs, 'true');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /merge_check: origin\/master clean\npush: skipped \(local mode\)/);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), c.base);
+  assert.equal(fs.readFileSync(fetchHead, 'utf8'), `${c.base}\t\tbranch 'master' of ${c.remote.replace(/\.git$/, '')}\n`);
+});
+
+test('local no-gate landing refreshes a stale remote when it still merges cleanly', (t) => {
+  const c = fixture(t);
+  const next = advanceRemoteOnly(c, 'remote-only.txt', 'remote change\n');
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), c.base);
+  const result = c.ship(localArgs, 'true');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /merge_check: origin\/master clean\npush: skipped \(local mode\)/);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), next);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/HEAD']), next);
+  assert.equal(fs.readFileSync(fetchHeadPath(c), 'utf8'), `${next}\t\tbranch 'master' of ${c.remote.replace(/\.git$/, '')}\n`);
+  assert.notEqual(c.git(['rev-parse', 'master']), c.base);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), next);
+});
+
+test('local no-gate landing refuses a conflict with a freshly fetched remote', (t) => {
+  const c = fixture(t);
+  const next = advanceRemoteOnly(c, 'a.txt', 'conflicting remote change\n');
+  const result = c.ship(localArgs, 'true');
+  assert.equal(result.status, 3, result.stderr || result.stdout);
+  assert.match(result.stderr, /branch does not merge cleanly into origin\/master/);
+  assert.match(result.stderr, /a\.txt/);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), next);
+  assert.equal(fs.readFileSync(fetchHeadPath(c), 'utf8'), `${next}\t\tbranch 'master' of ${c.remote.replace(/\.git$/, '')}\n`);
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+  assert.equal(c.git(['rev-parse', 'feature'], c.work), c.source);
+});
+
+test('gated local landing refreshes the remote but checks the local target gate', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  const next = advanceRemoteOnly(c, 'scripts/merge-gate.sh', '#!/bin/sh\necho remote gate >&2\nexit 37\n');
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), next);
+  const landed = c.git(['rev-parse', 'master']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+  assert.notEqual(landed, c.base);
+});
+
+test('gated local landing works without any configured remote', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  c.git(['remote', 'remove', 'origin']);
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});

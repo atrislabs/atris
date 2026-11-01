@@ -1597,7 +1597,8 @@ function shipWorktree(args) {
     }
   };
 
-  // Preserve the legacy initial fetch only when a fresh read proves no gate.
+  // Local shipping keeps the legacy refresh, but reads its gate from the local target.
+  if (localMode) refreshRemoteRef(root, targetRef);
   const initialTarget = dryRun ? null : readShipTarget(root, targetRef, localMode);
   const branchHasGate = fs.existsSync(path.join(root, 'scripts', 'merge-gate.sh'));
   if (!localMode && (dryRun || (initialTarget && !initialTarget.error && !initialTarget.gate && !branchHasGate))) {
