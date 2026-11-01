@@ -1607,7 +1607,7 @@ function shipWorktree(args) {
   let targetRead = dryRun ? null : readShipTarget(root, targetRef, localMode);
   let gateOnTarget = !!(targetRead && targetRead.gate);
   const committedGate = !dryRun && runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0;
-  const gated = !dryRun && (gateOnTarget || committedGate || targetRead.error);
+  const gated = !dryRun && (gateOnTarget || committedGate || branchHasGate || targetRead.error);
   if (targetRead && targetRead.error && (merge || localMode)) {
     console.error(`blocked: could not read the target; branch was left unmerged: ${targetRead.error}`);
     return 3;
@@ -1660,7 +1660,9 @@ function shipWorktree(args) {
       console.error(`blocked: could not read the target; branch was left unmerged: ${targetRead.error}`);
       return 3;
     }
-    if (gateOnTarget || targetRead.error) {
+    const branchNowHasGate = fs.existsSync(path.join(root, 'scripts', 'merge-gate.sh'))
+      || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0;
+    if (gateOnTarget || branchNowHasGate || targetRead.error) {
       if (merge || localMode) {
         if (!proofTreeMatches('head')) return 3;
         return shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget });

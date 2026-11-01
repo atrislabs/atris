@@ -657,3 +657,24 @@ test('returning from the check preserves an ignored file created where the branc
   assert.equal(fs.readFileSync(path.join(c.work, 'notes.local'), 'utf8'), 'new-data\n');
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), base);
 });
+
+test('a gate committed by verification is checked before merging', (t) => {
+  const c = fixture(t, { open: false });
+  const verify = 'if ! test -e scripts/merge-gate.sh; then mkdir -p scripts; printf "#!/bin/sh\\necho source gate >&2\\nexit 37\\n" > scripts/merge-gate.sh; git add scripts/merge-gate.sh; git commit -qm "add source gate"; fi';
+  const result = c.ship(['--merge'], verify);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /source gate/);
+  assert.match(result.stderr, /left unmerged/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('an ignored local gate is not silently bypassed', (t) => {
+  const c = fixture(t, { open: false });
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nscripts/merge-gate.sh\n');
+  fs.mkdirSync(path.join(c.work, 'scripts'));
+  fs.writeFileSync(path.join(c.work, 'scripts', 'merge-gate.sh'), '#!/bin/sh\nexit 37\n');
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /gate.*missing|gate.*commit/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
