@@ -44,7 +44,7 @@ function readHere(deps = {}) {
     return null;
   }
   if (!played || played.error || played.no_history) return null;
-  const { rosterRows, tally } = require('../lib/gm-season');
+  const { rosterRows, tally, missReasons } = require('../lib/gm-season');
   // Jobs still in review whose pull request is open, per builder. These do not depend on the
   // last 30 days of plays: a job can wait longer than that, and its builder still has it.
   const waiting = new Map();
@@ -65,14 +65,7 @@ function readHere(deps = {}) {
   const team = new Map(((lineup && lineup.ok && lineup.team) || []).map((row) => [String(row.member || '').toLowerCase(), row]));
   const members = rows.map((row) => {
     const seat = team.get(row.name.toLowerCase()) || {};
-    const reasons = new Map();
-    for (const play of played.outcomes || []) {
-      if (play.member === row.name && ['dropped', 'sent_back', 'abandoned'].includes(play.kind) && play.reason) {
-        reasons.set(play.reason, (reasons.get(play.reason) || 0) + 1);
-      }
-    }
-    const miss_reasons = [...reasons].map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 3);
+    const miss_reasons = missReasons(played.outcomes || [], row.name);
     return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), ...(row.could_not_start ? { could_not_start: row.could_not_start } : {}), ...(waiting.has(row.name) ? { waiting_on_pull_request: waiting.get(row.name) } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
   });
   const buildJob = ((lineup && lineup.ok && lineup.jobs) || []).find((row) => row.job === 'build' && !row.key);

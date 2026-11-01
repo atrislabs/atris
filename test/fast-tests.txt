@@ -178,3 +178,4 @@ test/held-for-review.test.js
 test/task-not-needed.test.js
 test/roster-runs-held.test.js
 test/task-sweep-held.test.js
+test/brief-owner.test.js
