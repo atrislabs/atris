@@ -73,7 +73,7 @@ else process.exit(1);
 `, { mode: 0o755 });
   const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: ghLog, REMOTE: remote, PRIMARY: primary, SOURCE: source, HEAD_FILE: path.join(dir, 'pr-head'), EVENTS: events, AUTO: auto ? '1' : '0', OPEN: open ? '1' : '0', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
   const ship = (args, verify = 'printf "verify:%s\\n" "$(git rev-parse HEAD)" >> "$EVENTS"', extra = {}) => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'feature change', '--verify', verify, '--no-map-refresh', ...args], { cwd: work, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
-  return { dir, primary, work, remote, events, ghLog, git, source, base, ship };
+  return { dir, primary, work, remote, events, ghLog, git, source, base, ship, env };
 }
 
 const marker = 'printf "gate:%s\\n" "$(git rev-parse HEAD)" >> "$EVENTS"\n';
@@ -374,4 +374,27 @@ test('local landing can switch a clean primary checkout to its target', (t) => {
   assert.equal(c.git(['branch', '--show-current']), 'master');
   const landed = c.git(['rev-parse', 'master']);
   assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});
+
+
+test('a map refresh cannot change a source tree bound to independent review', (t) => {
+  const c = fixture(t, { gate: pass });
+  fs.mkdirSync(path.join(c.work, 'atris'));
+  fs.writeFileSync(path.join(c.work, 'src.js'), '\n'.repeat(10) + 'function knownSymbol() {}\n');
+  fs.writeFileSync(path.join(c.work, 'atris', 'MAP.md'), 'see `src.js:1` (`knownSymbol`)\n');
+  c.git(['add', 'src.js', 'atris/MAP.md'], c.work);
+  c.git(['commit', '-qm', 'reviewed tree'], c.work);
+  const commit = c.git(['rev-parse', 'HEAD'], c.work);
+  const tree = c.git(['rev-parse', 'HEAD^{tree}'], c.work);
+  const ref = `refs/atris/one-lap/${commit}`;
+  c.git(['update-ref', ref, commit], c.work);
+  c.git(['config', 'branch.feature.atris-proof-ref', ref], c.work);
+  fs.mkdirSync(path.join(c.work, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(c.work, '.atris', 'agent-worktree.json'), JSON.stringify({one_lap_proof:{ref,commit,tree}}));
+  const result = spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'reviewed tree', '--verify', 'true', '--merge'],
+    {cwd:c.work, env:c.env, encoding:'utf8', timeout:30000});
+  assert.equal(result.status, 3, result.stderr || result.stdout);
+  assert.match(result.stdout, /map: refreshed/);
+  assert.match(result.stderr, /one-lap head tree differs/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
 });

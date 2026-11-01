@@ -1510,6 +1510,7 @@ function shipWorktree(args) {
     }
   }
   if (gated && (merge || localMode)) {
+    if (!proofTreeMatches('head')) return 3;
     return shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget });
   }
 
@@ -1547,6 +1548,7 @@ function shipWorktree(args) {
     const targetNowHasGate = runGit(['cat-file', '-e', `${gateTarget}:scripts/merge-gate.sh`], { cwd: root, check: false }).status === 0;
     if (targetNowHasGate) {
       if (merge || localMode) {
+        if (!proofTreeMatches('head')) return 3;
         return shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget: true });
       }
       const refusal = protectedPushRefusal(root, branch);
