@@ -1260,28 +1260,34 @@ function shipWorktree(args) {
 
   // Run before pushing: a push can itself feed an existing auto-merge request.
   const gatePath = path.join(root, 'scripts', 'merge-gate.sh');
+  let checkedGateHead = '';
   if ((merge || localMode) && !dryRun && fs.existsSync(gatePath)) {
-    const beforeGate = statusSnapshot(root);
+    const gateStatus = () => runGit(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root }).stdout
+      .split(/\r?\n/).filter(Boolean);
+    const beforeGate = gateStatus();
     const gateHead = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
     const result = runMergeGate(root, gatePath);
-    const afterGate = statusSnapshot(root);
+    const afterGate = gateStatus();
     const changed = newStatusRows(beforeGate, afterGate);
+    const remaining = afterGate.filter((row) => !row.startsWith('?? ') || !isConductorUntracked(row.slice(3)));
     const headAfterGate = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
     if (headAfterGate !== gateHead) {
       const files = runGit(['diff', '--name-only', gateHead, headAfterGate], { cwd: root, check: false });
       changed.push(...String(files.stdout || '').split(/\r?\n/).filter(Boolean));
     }
-    if (result.code !== 0 || result.timedOut || result.error || changed.length || headAfterGate !== gateHead) {
+    if (result.code !== 0 || result.timedOut || result.error || changed.length || remaining.length || headAfterGate !== gateHead) {
       const code = result.code === null ? (result.timedOut ? '124' : 'unavailable') : String(result.code);
       console.error(`merge gate failed: scripts/merge-gate.sh, exit code ${code}${result.timedOut ? ' (timed out)' : ''}`);
       if (result.error) console.error(result.error);
       const lines = String(result.output || '').trim().split(/\r?\n/).filter(Boolean).slice(-20);
       if (lines.length) console.error(lines.join('\n'));
       if (changed.length) console.error(`merge gate changed files: ${changed.join(', ')}`);
+      if (remaining.length) console.error(`checkout has changes: ${remaining.join(', ')}`);
       if (headAfterGate !== gateHead) console.error('merge gate changed the commit');
       console.error('branch was left unmerged');
       return 3;
     }
+    checkedGateHead = gateHead;
     console.log('merge gate: passed');
   }
 
@@ -1307,7 +1313,7 @@ function shipWorktree(args) {
             `unstaged=${primaryCounts.unstaged} untracked=${primaryCounts.untracked}`
           );
         }
-        runGit(['merge', '--no-ff', branch, '-m', `Merge ${branch}`], { cwd: primary });
+        runGit(['merge', '--no-ff', checkedGateHead || branch, '-m', `Merge ${branch}`], { cwd: primary });
         console.log('merge: merged (local mode)');
         landedOn = `refs/heads/${targetBranch}`;
       }
@@ -1320,7 +1326,7 @@ function shipWorktree(args) {
   }
 
   console.log(`push: origin ${branch}`);
-  if (!dryRun) runGit(['push', '-u', 'origin', branch], { cwd: root });
+  if (!dryRun) runGit(['push', '-u', 'origin', checkedGateHead ? `${checkedGateHead}:refs/heads/${branch}` : branch], { cwd: root });
 
   if (!noPr || merge) {
     const title = message || branch;
@@ -1333,6 +1339,7 @@ function shipWorktree(args) {
         const mergeArgs = ['pr', 'merge'];
         if (mergeRef) mergeArgs.push(mergeRef);
         mergeArgs.push('--merge');
+        if (checkedGateHead) mergeArgs.push('--match-head-commit', checkedGateHead);
         const merged = mergePrWithRetry(mergeArgs, root);
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
         // `gh pr merge` on an already-merged PR exits 0 with a warning

@@ -65,8 +65,9 @@ test('a passing gate runs after verify at the repository root on the committed h
   const result = ctx.ship(['--merge']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /merge gate: passed/);
-  assert.match(fs.readFileSync(ctx.log, 'utf8'), /pr merge/);
-  assert.equal(ctx.git(['rev-parse', 'HEAD'], ctx.work), ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir));
+  const head = ctx.git(['rev-parse', 'HEAD'], ctx.work);
+  assert.match(fs.readFileSync(ctx.log, 'utf8'), new RegExp(`pr merge .*--match-head-commit ${head}`));
+  assert.equal(head, ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir));
 });
 
 test('a failed gate preserves the remote branch and pull request and reports its output', (t) => {
@@ -126,4 +127,28 @@ test('without a gate the existing output contains no gate messages', (t) => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.doesNotMatch(result.stdout + result.stderr, /merge gate/);
   assert.match(fs.readFileSync(ctx.log, 'utf8'), /pr merge/);
+});
+
+
+test('a passing gate permits a local landing', (t) => {
+  const ctx = setup(t, '#!/bin/sh\ntest "$(git show HEAD:app.txt)" = changed\n');
+  const result = ctx.ship(['--local', '--merge', '--target', 'master']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /merge gate: passed[\s\S]*merge: merged \(local mode\)/);
+  assert.equal(ctx.git(['show', 'master:app.txt']), 'changed');
+});
+
+test('invalid timeout cannot turn off the gate', (t) => {
+  const ctx = setup(t, '#!/bin/sh\nexit 0\n');
+  const result = ctx.ship(['--merge'], { ATRIS_MERGE_GATE_TIMEOUT_MS: '0' });
+  assertUnmerged(ctx, result);
+  assert.match(result.stderr, /invalid atris_merge_gate_timeout_ms/);
+});
+
+test('a gate cannot change the checked commit', (t) => {
+  const ctx = setup(t, '#!/bin/sh\necho altered >> app.txt\ngit add app.txt\ngit commit -qm altered\n');
+  const result = ctx.ship(['--merge']);
+  assertUnmerged(ctx, result);
+  assert.match(result.stderr, /changed the commit/);
+  assert.match(result.stderr, /app\.txt/);
 });
