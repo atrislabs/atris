@@ -926,7 +926,7 @@ test('a local landing refuses when both the local target and saved remote copy a
   assert.equal(c.git(['rev-parse', 'master']), c.base);
 });
 
-function addPreferredRemoteMain(c, gate) {
+function addPreferredRemoteMain(c, gate, { notes = null, other = null } = {}) {
   const index = path.join(c.dir, 'preferred-index');
   const run = (args, input) => {
     const result = spawnSync('git', args, { cwd: c.work, env: { ...c.env, GIT_INDEX_FILE: index }, input, encoding: 'utf8' });
@@ -934,8 +934,11 @@ function addPreferredRemoteMain(c, gate) {
     return result.stdout.trim();
   };
   run(['read-tree', c.base]);
-  const blob = run(['hash-object', '-w', '--stdin'], gate);
-  run(['update-index', '--add', '--cacheinfo', '100644', blob, 'scripts/merge-gate.sh']);
+  for (const [file, content] of [['scripts/merge-gate.sh', gate], ['notes.local', notes], ['remote-only.txt', other]]) {
+    if (content === null) continue;
+    const blob = run(['hash-object', '-w', '--stdin'], content);
+    run(['update-index', '--add', '--cacheinfo', '100644', blob, file]);
+  }
   const tree = run(['write-tree']);
   const next = run(['commit-tree', tree, '-p', c.base, '-m', 'preferred remote gate']);
   const remote = path.join(c.dir, 'preferred.git');
@@ -948,28 +951,27 @@ function addPreferredRemoteMain(c, gate) {
   return next;
 }
 
-test('a new local target checks the gate on the remote Git would select', (t) => {
+test('a gate on another saved copy refuses when copies disagree', (t) => {
   const c = fixture(t, { open: false });
   addRemoteMain(c);
   addPreferredRemoteMain(c, '#!/bin/sh\necho preferred gate refused >&2\nexit 37\n');
   const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
   assert.notEqual(result.status, 0, result.stdout);
-  assert.match(result.stderr, /preferred gate refused/);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
   assert.equal(c.git(['branch', '--show-current']), 'master');
   assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
   assert.equal(c.git(['rev-parse', 'master']), c.base);
 });
 
-test('a passing gate on the preferred remote lands the checked commit from that remote', (t) => {
+test('different gated saved copies refuse even when Git has a preferred remote', (t) => {
   const c = fixture(t, { gate: '#!/bin/sh\necho origin gate refused >&2\nexit 37\n', targetOnly: true, open: false });
   addRemoteMain(c);
-  const preferred = addPreferredRemoteMain(c, pass);
+  addPreferredRemoteMain(c, pass);
   const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const landed = c.git(['rev-parse', 'main']);
-  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
-  assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [preferred, c.source]);
-  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'preferred/main');
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(fs.existsSync(c.events), false);
 });
 
 for (const succeeds of [false, true]) {
@@ -996,3 +998,112 @@ for (const succeeds of [false, true]) {
     }
   });
 }
+
+for (const originHasGate of [false, true]) {
+  test(`excluded saved gate preserves ignored data when origin ${originHasGate ? 'has' : 'has no'} gate`, (t) => {
+    const c = fixture(t, { gate: originHasGate ? pass : null, open: false });
+    addRemoteMain(c);
+    addPreferredRemoteMain(c, '#!/bin/sh\necho mandatory gate refused >&2\nexit 37\n', { notes: 'versioned remote notes\n' });
+    c.git(['config', '--add', 'remote.preferred.fetch', '^refs/heads/main']);
+    fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+    fs.writeFileSync(path.join(c.primary, 'notes.local'), 'precious existing notes\n');
+    const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+    const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+    assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious existing notes\n');
+    assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+    assert.equal(c.git(['branch', '--show-current']), 'master');
+    assert.equal(fs.existsSync(c.events), false);
+  });
+}
+
+test('gated saved copies that disagree refuse before checking or creating the branch', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  addPreferredRemoteMain(c, pass);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+test('agreeing gated saved copies land the checked commit and track origin', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  const remote = path.join(c.dir, 'preferred.git');
+  c.git(['init', '--bare', '-q', remote]);
+  c.git(['--git-dir', remote, 'fetch', '--no-write-fetch-head', c.primary, c.base], c.dir);
+  c.git(['--git-dir', remote, 'update-ref', 'refs/heads/main', c.base], c.dir);
+  c.git(['remote', 'add', 'preferred', remote]);
+  c.git(['fetch', 'preferred', 'main'], c.work);
+  c.git(['config', 'checkout.defaultRemote', 'preferred']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'main']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+  assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [c.base, c.source]);
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/main');
+});
+
+test('disagreeing saved copies without a gate keep the old Git switch flow', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  const preferred = addPreferredRemoteMain(c, null, { other: 'other target\n' });
+  const verify = 'if git show-ref --verify --quiet refs/heads/main; then exit 95; fi';
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main'], verify);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /merge_check: origin\/main clean/);
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'preferred/main');
+  assert.deepEqual(c.git(['show', '-s', '--format=%P', 'main']).split(' '), [preferred, c.source]);
+});
+
+test('a gate on the source also requires all saved target copies to agree', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  addPreferredRemoteMain(c, null, { other: 'other target\n' });
+  fs.mkdirSync(path.join(c.work, 'scripts'));
+  fs.writeFileSync(path.join(c.work, 'scripts', 'merge-gate.sh'), pass);
+  c.git(['add', 'scripts/merge-gate.sh'], c.work);
+  c.git(['commit', '-qm', 'add source gate'], c.work);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+test('a fetch mapping outside remote refs is included even when excluded', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  const other = addPreferredRemoteMain(c, '#!/bin/sh\nexit 37\n');
+  c.git(['update-ref', 'refs/cache/kept-target', other]);
+  c.git(['update-ref', '-d', 'refs/remotes/preferred/main']);
+  c.git(['config', '--add', 'remote.preferred.fetch', '+refs/heads/main:refs/cache/kept-target']);
+  c.git(['config', '--add', 'remote.preferred.fetch', '^refs/heads/main']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+test('agreeing gated copies still track origin when its fetch rule excludes the branch', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  const remote = path.join(c.dir, 'preferred.git');
+  c.git(['init', '--bare', '-q', remote]);
+  c.git(['--git-dir', remote, 'fetch', '--no-write-fetch-head', c.primary, c.base], c.dir);
+  c.git(['--git-dir', remote, 'update-ref', 'refs/heads/main', c.base], c.dir);
+  c.git(['remote', 'add', 'preferred', remote]);
+  c.git(['fetch', 'preferred', 'main'], c.work);
+  c.git(['config', '--add', 'remote.origin.fetch', '^refs/heads/main']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'main']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/main');
+});
