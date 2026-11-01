@@ -113,6 +113,17 @@ test('hook: not under claude means no decision', () => {
   assert.equal(guard.hookDecision({ argv: null, env: quiet({}) }).block, false);
 });
 
+test('the model a run carries is the last --model, spelled with a space or an equals sign, and a flag with no value is none', () => {
+  assert.equal(guard.modelFromArgv(['claude', '-p', 'hi']), '');
+  assert.equal(guard.modelFromArgv(['claude', '--model', 'opus']), 'opus');
+  assert.equal(guard.modelFromArgv(['claude', '--model=opus']), 'opus');
+  assert.equal(guard.modelFromArgv(['claude', '--model', 'opus', '--model=claude-haiku-5-5']), 'claude-haiku-5-5', 'the last one wins');
+  assert.equal(guard.modelFromArgv(['claude', '--model=claude-haiku-5-5', '--model', 'opus']), 'opus');
+  assert.equal(guard.modelFromArgv(['claude', '--model']), '', 'a flag with nothing after it');
+  assert.equal(guard.modelFromArgv(['claude', '--model', '']), '', 'or an empty value');
+  assert.equal(guard.modelFromArgv(['claude', '--model', 'opus', '--model=']), '', 'an empty --model= is the last word');
+});
+
 test('install keeps existing hooks, puts the guard first, and is idempotent', () => {
   const home = tempHome({
     model: 'opus[1m]',
@@ -144,4 +155,72 @@ test('install refuses to overwrite settings it cannot parse', () => {
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{ not json');
   assert.throws(() => guard.installGuard({ env: { HOME: home } }));
   assert.equal(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'), '{ not json');
+});
+
+test('unattendedStop: null when a run may start, else the plain reason, and asking writes nothing to the ledger', () => {
+  const home = tempHome();
+  const env = (extra = {}) => ({ HOME: home, ...extra });
+  assert.equal(guard.unattendedStop({ model: 'claude-haiku-5-5', env: env() }), null);
+  assert.deepEqual(guard.unattendedStop({ model: 'claude-opus-5-5', env: env() }), {
+    reason: 'paid_model',
+    model: 'claude-opus-5-5',
+    why: 'paid model claude-opus-5-5, no spend approval',
+  });
+  assert.equal(guard.unattendedStop({ model: 'claude-opus-5-5', env: env({ ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }), null, 'a yes for that model lets it run');
+  assert.equal(guard.unattendedStop({ model: 'claude-opus-5-5', env: env({ ATRIS_CLAUDE_SPEND_OK: 'claude-fable-5-1' }) }).reason, 'paid_model', 'a yes for another model does not');
+
+  const keyed = guard.unattendedStop({ model: 'claude-haiku-5-5', env: env({ ANTHROPIC_API_KEY: 'sk-test-not-real' }) });
+  assert.deepEqual(keyed, { reason: 'paid_key', model: 'claude-haiku-5-5', why: 'a pay-per-use Claude key is set' });
+  assert.equal(guard.unattendedStop({ model: 'claude-haiku-5-5', env: env({ ANTHROPIC_API_KEY: 'sk-test-not-real', ATRIS_CLAUDE_KEY_OK: '1' }) }), null);
+
+  // Asking is not a block: neither the stops nor the yeses above reached the guard's ledger.
+  assert.equal(fs.existsSync(guard.ledgerPath(env())), false);
+});
+
+// A caller that asks about a run that has not started has no settings file to read: that file belongs to the home the
+// run will get, which the caller may not know. With no model, the answer is ANTHROPIC_MODEL in the environment it was
+// given, else the paid default. The hook itself still reads the settings of the run it stops.
+test('unattendedStop: with no model it asks about ANTHROPIC_MODEL in the environment given, else the paid default, and reads no settings file', () => {
+  const settingsSayHaiku = tempHome({ model: 'claude-haiku-5-5' });
+  const env = (extra = {}) => ({ HOME: settingsSayHaiku, ...extra });
+
+  // The run's own environment names Haiku, so that is the model.
+  assert.equal(guard.unattendedStop({ model: '', env: env({ ANTHROPIC_MODEL: 'claude-haiku-5-5' }) }), null);
+  assert.equal(guard.unattendedStop({ env: env({ ANTHROPIC_MODEL: ' claude-haiku-5-5 ' }) }), null, 'no model at all is no model');
+  // Nothing in the environment: the paid default, although the settings of the home it was given say Haiku.
+  assert.deepEqual(guard.unattendedStop({ model: '', env: env() }), { reason: 'paid_model', model: 'default', why: 'paid model default, no spend approval' });
+  assert.deepEqual(guard.unattendedStop({ model: '   ', env: env({ ANTHROPIC_MODEL: '' }) }), { reason: 'paid_model', model: 'default', why: 'paid model default, no spend approval' });
+  // The hook, which stops a run that has a home, does read those settings; asking does not.
+  assert.equal(guard.checkClaudeSpend({ model: '', env: env() }).ok, true, 'the hook reads settings.json');
+  assert.equal(guard.checkClaudeSpend({ model: '', env: env() }).model, 'claude-haiku-5-5');
+  // And what the settings say is never a yes for a paid model either.
+  const settingsSayOpus = tempHome({ model: 'claude-opus-5-5' });
+  assert.equal(guard.unattendedStop({ model: '', env: { HOME: settingsSayOpus, ANTHROPIC_MODEL: 'claude-haiku-5-5' } }), null, 'the environment comes first, as it does for the hook');
+  // A paid model in the environment is that model.
+  assert.equal(guard.unattendedStop({ env: env({ ANTHROPIC_MODEL: 'claude-opus-5-5' }) }).model, 'claude-opus-5-5');
+  assert.equal(guard.unattendedStop({ env: env({ ANTHROPIC_MODEL: 'claude-opus-5-5', ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }), null);
+  // The paid default is approved by naming it, as for the hook.
+  assert.equal(guard.unattendedStop({ model: 'default', env: env({ ATRIS_CLAUDE_SPEND_OK: 'default' }) }), null);
+  assert.equal(guard.unattendedStop({ model: '', env: env({ ATRIS_CLAUDE_SPEND_OK: 'default' }) }), null);
+  assert.equal(guard.unattendedStop({ model: '', env: env({ ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }).model, 'default');
+  // A model that is given wins over the environment's, as --model wins over ANTHROPIC_MODEL.
+  assert.equal(guard.unattendedStop({ model: 'claude-haiku-5-5', env: env({ ANTHROPIC_MODEL: 'claude-opus-5-5' }) }), null);
+  assert.equal(guard.unattendedStop({ model: 'claude-opus-5-5', env: env({ ANTHROPIC_MODEL: 'claude-haiku-5-5' }) }).model, 'claude-opus-5-5');
+});
+
+test('unattendedStop: a bare model name is judged through the remap the run\'s environment has, whichever way the name arrives', () => {
+  const REMAP = { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-opus-5-5' };
+  const env = (extra = {}) => ({ HOME: tempHome(), ...extra });
+  // --model haiku: free, until the environment maps haiku to a paid model.
+  assert.equal(guard.unattendedStop({ model: 'haiku', env: env() }), null);
+  assert.deepEqual(guard.unattendedStop({ model: 'haiku', env: env(REMAP) }), { reason: 'paid_model', model: 'claude-opus-5-5', why: 'paid model claude-opus-5-5, no spend approval' });
+  // The same name from ANTHROPIC_MODEL, when there is no --model.
+  assert.equal(guard.unattendedStop({ model: '', env: env({ ANTHROPIC_MODEL: 'haiku' }) }), null);
+  assert.equal(guard.unattendedStop({ model: '', env: env({ ANTHROPIC_MODEL: 'haiku', ...REMAP }) }).model, 'claude-opus-5-5');
+  // The other names the program takes.
+  assert.equal(guard.unattendedStop({ model: 'haiku', env: env({ ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5' }) }), null, 'a remap to another cheap model is still cheap');
+  assert.equal(guard.unattendedStop({ model: 'sonnet', env: env({ ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-5-5' }) }), null);
+  assert.equal(guard.unattendedStop({ model: 'sonnet', env: env() }).model, 'sonnet');
+  // The yes is for the model it maps to.
+  assert.equal(guard.unattendedStop({ model: 'haiku', env: env({ ...REMAP, ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }), null);
 });

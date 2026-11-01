@@ -758,6 +758,7 @@ function printJsonOrText(payload, lines, asJson) {
 
 const MISSION_RUN_VALUE_FLAGS = [
   '--slots',
+  '--pick',
   '--max-ticks',
   '--max-idle-ticks',
   '--max-wall',
@@ -10256,14 +10257,34 @@ async function parseAndValidateMissionRunPhase(args) {
   // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
   // full loop, see lib/fleet.js. --dry-run previews the staffing only.
   if (hasFlag(args, '--fleet')) {
-    const { runFleetFlight, flightExitCode } = require('../lib/fleet');
+    const { runFleetFlight, flightExitCode, FLEET_CAPABLE } = require('../lib/fleet');
+    const { parsePickFlag } = require('../lib/builder-pick');
     const slots = Math.max(1, Number(readFlag(args, '--slots', '')) || 3);
+    // --pick rating|turns: rating (the default) deals each job to the builder its results favor, turns deals
+    // in turn as the fleet always did. --engine <name> sends every job to that engine and skips the picker.
+    const pickFlag = readFlag(args, '--pick', '');
+    if ((pickFlag || args.some((arg) => arg === '--pick' || String(arg).startsWith('--pick='))) && !parsePickFlag(pickFlag)) {
+      exitMissionError('--pick takes rating or turns', 2, asJson);
+    }
+    const engineFlag = readFlag(args, '--engine', '').toLowerCase();
+    if (engineFlag && !FLEET_CAPABLE.includes(engineFlag)) {
+      exitMissionError(`--engine for a fleet takes one of ${FLEET_CAPABLE.join(', ')}`, 2, asJson);
+    }
+    if (engineFlag && !hasFlag(args, '--dry-run')) {
+      try {
+        require('../lib/engine-registry').requireEngineBin(engineFlag);
+      } catch (err) {
+        exitMissionError(err.message, 2, asJson);
+      }
+    }
     // Default: cut build worktrees from origin/master (checkoutBase). --base
     // keeps launcher-HEAD only when the operator asks for it explicitly.
     const baseOverride = readFlag(args, '--base', '');
     const flight = await runFleetFlight({
       slots,
       dryRun: hasFlag(args, '--dry-run'),
+      pick: pickFlag,
+      ...(engineFlag ? { engine: engineFlag } : {}),
       log: asJson ? () => {} : console.log,
       ...(baseOverride ? { checkoutBase: baseOverride } : {}),
     });
@@ -12485,7 +12506,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission set-verifier <id> "<cmd>" [--json]
   atris mission route set <id> [--file <route.json>|--file -] [--json]   Validate and save a falsifiable route from a JSON file or stdin
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
-  atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
+  atris mission run --fleet [--slots 3] [--dry-run] [--json] [--pick rating|turns] [--engine <name>]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/. Each job goes to the builder its real results favor (--pick turns deals in turn; --engine sends every job to one engine)
   atris mission run "<objective>" --cloud [--lane fast|pro|max] [--agent <id>]   Enqueue on the Atris backend instead of running local ticks
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--budget quick|long|deep] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--detach] [--land --repo <path> --verify "git diff --check"]
                                 [--native-goal-status active|paused|usageLimited] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--take-goal-slot]

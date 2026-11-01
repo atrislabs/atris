@@ -110,6 +110,30 @@ test('plays come from events with the right member for each kind', () => {
   assert.equal(out[3].claimed_at, 45);
 });
 
+test('a landing record is a kept completion, or a proof or landing event that names its merge, and the rating counts exactly those', () => {
+  const merged = { merge_commit: 'a'.repeat(40) };
+  assert.equal(season.isLandingRecord('completed', { action: 'merged' }), true);
+  assert.equal(season.isLandingRecord('completed', { action: 'accepted' }), true);
+  assert.equal(season.isLandingRecord('completed', { action: 'archived' }), false);
+  assert.equal(season.isLandingRecord('proof_ready', merged), true);
+  assert.equal(season.isLandingRecord('landing', { landing: { merged: true } }), true);
+  assert.equal(season.isLandingRecord('proof_ready', {}), false, 'a hand-in that names no merge is not a landing');
+  assert.equal(season.isLandingRecord('claimed', merged), false, 'only a proof or landing event is read for its merge');
+  assert.equal(season.isLandingRecord('completed', null), false);
+  assert.equal(season.isLandingRecord('proof_ready', undefined), false);
+
+  const cases = [
+    ['completed', { action: 'merged' }], ['completed', { action: 'accepted' }], ['completed', { action: 'archived' }], ['completed', {}],
+    ['proof_ready', {}], ['proof_ready', merged], ['landing', { pull_request: { merged: true } }], ['landing', { pr: { number: 4, state: 'merged' } }],
+    ['landing', {}], ['reopened', merged], ['claimed', { action: 'merged' }], ['revision_requested', merged],
+  ];
+  for (const [type, payload] of cases) {
+    const row = { event_id: 'x', task_id: 'a', event_type: type, actor: 'someone', payload: JSON.stringify(payload), created_at: 10, claim_actor: 'builder', claim_event_at: 5, claim_event_id: 'c1', title: 't' };
+    const landed = season.outcomesFromEvents([row]).some(o => o.kind === 'landed');
+    assert.equal(landed, season.isLandingRecord(type, payload), `${type} ${JSON.stringify(payload)}: the rating and the question agree`);
+  }
+});
+
 test('owner line splits landed by autoland and by you, this week only, and counts stuck', () => {
   assert.equal(season.weekStart(NOW), MONDAY);
   const rows = [
