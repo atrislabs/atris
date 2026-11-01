@@ -456,3 +456,173 @@ test('a push hook that moves the source cannot land the old candidate', (t) => {
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
 });
+
+for (const local of [false, true]) {
+  test(`${local ? 'local' : 'remote'} preserves an ignored source file when the target adds that path`, (t) => {
+    const c = fixture(t, { gate: '#!/bin/sh\nexit 37\n' });
+    fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+    fs.writeFileSync(path.join(c.work, 'notes.local'), 'precious source notes\n');
+    fs.writeFileSync(path.join(c.primary, 'notes.local'), 'target file\n');
+    c.git(['add', '-f', 'notes.local']);
+    c.git(['commit', '-qm', 'add target file']);
+    c.git(['push', 'origin', 'master']);
+    const base = c.git(['rev-parse', 'master']);
+    const result = c.ship(local ? localArgs : ['--merge']);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /notes\.local/);
+    assert.equal(fs.readFileSync(path.join(c.work, 'notes.local'), 'utf8'), 'precious source notes\n');
+    assert.equal(c.git(['rev-parse', 'HEAD'], c.work), c.source);
+    assert.equal(c.git(['rev-parse', 'master']), base);
+    assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), base);
+  });
+}
+
+for (const switched of [false, true]) {
+  test(`local landing preserves ignored primary files ${switched ? 'on another branch' : 'on the target'}`, (t) => {
+    const c = fixture(t, { gate: pass, open: false });
+    fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+    fs.writeFileSync(path.join(c.work, 'notes.local'), 'checked-in replacement\n');
+    c.git(['add', '-f', 'notes.local'], c.work);
+    c.git(['commit', '-qm', 'add source file'], c.work);
+    if (switched) c.git(['switch', '-qc', 'other']);
+    fs.writeFileSync(path.join(c.primary, 'notes.local'), 'precious primary notes\n');
+    const result = c.ship(localArgs);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /notes\.local/);
+    assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious primary notes\n');
+    assert.equal(c.git(['branch', '--show-current']), switched ? 'other' : 'master');
+    assert.equal(c.git(['rev-parse', 'master']), c.base);
+  });
+}
+
+test('a hidden remote target refuses a merge instead of trusting a stale target', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\necho mandatory gate >&2\nexit 37\n', targetOnly: true });
+  c.git(['update-ref', 'refs/remotes/origin/master', `${c.source}^`], c.work);
+  c.git(['--git-dir', c.remote, 'config', 'uploadpack.hideRefs', 'refs/heads/master'], c.dir);
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /target|fetch|read/i);
+  assert.match(result.stderr, /left unmerged/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+  assert.doesNotMatch(fs.existsSync(c.ghLog) ? fs.readFileSync(c.ghLog, 'utf8') : '', /"merge"/);
+});
+
+for (const noPr of [false, true]) {
+  test(`a hidden remote target still checks auto-merge${noPr ? ' with no-pr' : ''}`, (t) => {
+    const c = fixture(t, { gate: pass, targetOnly: true, auto: true });
+    c.git(['update-ref', 'refs/remotes/origin/master', `${c.source}^`], c.work);
+    c.git(['--git-dir', c.remote, 'config', 'uploadpack.hideRefs', 'refs/heads/master'], c.dir);
+    const result = c.ship(noPr ? ['--no-pr'] : []);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /auto-merge/);
+    assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+  });
+}
+
+test('local landing reads its target without access to the remote', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  c.git(['--git-dir', c.remote, 'config', 'uploadpack.hideRefs', 'refs/heads/master'], c.dir);
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.notEqual(c.git(['rev-parse', 'master']), c.base);
+});
+
+test('a moving target without a gate keeps the original merge check and refs', (t) => {
+  const c = fixture(t);
+  const index = path.join(c.dir, 'moving-index');
+  const run = (args, input) => {
+    const result = spawnSync('git', args, { cwd: c.work, env: { ...c.env, GIT_INDEX_FILE: index }, input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  run(['read-tree', c.base]);
+  const blob = run(['hash-object', '-w', '--stdin'], 'conflicting target\n');
+  run(['update-index', '--add', '--cacheinfo', '100644', blob, 'a.txt']);
+  const tree = run(['write-tree']);
+  const next = run(['commit-tree', tree, '-p', c.base, '-m', 'move target']);
+  c.git(['--git-dir', c.remote, 'fetch', '--no-write-fetch-head', c.primary, next], c.dir);
+  const verify = 'git --git-dir "$REMOTE" update-ref refs/heads/master "$NEXT" "$BASE"';
+  const result = c.ship(['--merge'], verify, { NEXT: next, BASE: c.base });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /merge_check: origin\/master clean/);
+  assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), c.base);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), next);
+  assert.match(fs.readFileSync(c.ghLog, 'utf8'), /"merge"/);
+});
+
+for (const shape of ['file-for-directory', 'directory-for-file']) {
+  test(`a candidate preserves ignored source data when a ${shape} blocks it`, (t) => {
+    const c = fixture(t, { gate: pass });
+    fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\ncollision\n');
+    if (shape === 'file-for-directory') {
+      fs.writeFileSync(path.join(c.work, 'collision'), 'precious\n');
+      fs.mkdirSync(path.join(c.primary, 'collision'));
+      fs.writeFileSync(path.join(c.primary, 'collision', 'child'), 'target\n');
+    } else {
+      fs.mkdirSync(path.join(c.work, 'collision'));
+      fs.writeFileSync(path.join(c.work, 'collision', 'precious'), 'precious\n');
+      fs.writeFileSync(path.join(c.primary, 'collision'), 'target\n');
+    }
+    c.git(['add', '-f', 'collision']);
+    c.git(['commit', '-qm', 'add target path']);
+    c.git(['push', 'origin', 'master']);
+    const result = c.ship(['--merge']);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /collision/);
+    const kept = shape === 'file-for-directory' ? 'collision' : 'collision/precious';
+    assert.equal(fs.readFileSync(path.join(c.work, kept), 'utf8'), 'precious\n');
+  });
+}
+
+test('local landing checks the switch to the target before changing the primary branch', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+  c.git(['switch', '-qc', 'other']);
+  fs.writeFileSync(path.join(c.primary, 'notes.local'), 'precious\n');
+  const targetWork = path.join(c.dir, 'target-work');
+  c.git(['worktree', 'add', '--detach', targetWork, 'master']);
+  fs.writeFileSync(path.join(targetWork, 'notes.local'), 'target\n');
+  c.git(['add', '-f', 'notes.local'], targetWork);
+  c.git(['commit', '-qm', 'target adds file'], targetWork);
+  const target = c.git(['rev-parse', 'HEAD'], targetWork);
+  c.git(['update-ref', 'refs/heads/master', target, c.base]);
+  const result = c.ship(localArgs);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /notes\.local/);
+  assert.equal(c.git(['branch', '--show-current']), 'other');
+  assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious\n');
+  assert.equal(c.git(['rev-parse', 'master']), target);
+});
+
+test('local landing does not require a reachable pull request service', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  c.git(['remote', 'set-url', 'origin', 'https://example.invalid/repository.git']);
+  fs.writeFileSync(path.join(c.dir, 'bin', 'gh'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.notEqual(c.git(['rev-parse', 'master']), c.base);
+});
+
+test('a moved local target cannot overwrite ignored data while switching the primary folder', (t) => {
+  const gate = `#!/bin/sh
+if test ! -f "$EVENTS.moved"; then
+  touch "$EVENTS.moved"
+  old=$(git rev-parse refs/heads/master)
+  GIT_INDEX_FILE="$EVENTS.index" git read-tree "$old"
+  blob=$(printf 'target file\\n' | git hash-object -w --stdin)
+  GIT_INDEX_FILE="$EVENTS.index" git update-index --add --cacheinfo 100644 "$blob" notes.local
+  tree=$(GIT_INDEX_FILE="$EVENTS.index" git write-tree)
+  next=$(git commit-tree "$tree" -p "$old" -m moved)
+  git update-ref refs/heads/master "$next" "$old"
+fi
+`;
+  const c = fixture(t, { gate, open: false });
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+  c.git(['switch', '-qc', 'other']);
+  fs.writeFileSync(path.join(c.primary, 'notes.local'), 'precious\n');
+  const result = c.ship(localArgs);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /notes\.local/);
+  assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious\n');
+  assert.equal(c.git(['branch', '--show-current']), 'other');
+});
