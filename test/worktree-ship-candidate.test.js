@@ -64,14 +64,14 @@ const args = process.argv.slice(2);
 fs.appendFileSync(process.env.GH_LOG, JSON.stringify(args) + '\\n');
 const git = (a) => spawnSync('git', ['--git-dir', process.env.REMOTE, ...a], {encoding:'utf8'});
 const merged = git(['merge-base', '--is-ancestor', 'feature', 'master']).status === 0;
-const pr = {number:41,url:'https://example.test/pull/41',baseRefName:'master',title:'Check combined changes',headRefName:'feature',headRefOid:process.env.SOURCE,headRepositoryOwner:{login:'example'},autoMergeRequest:process.env.AUTO === '1' ? {enabledAt:'today'} : null};
+const pr = {number:41,url:'https://example.test/pull/41',baseRefName:'master',title:'Check combined changes',headRefName:'feature',headRefOid:fs.existsSync(process.env.HEAD_FILE) ? fs.readFileSync(process.env.HEAD_FILE,'utf8').trim() : process.env.SOURCE,headRepositoryOwner:{login:'example'},autoMergeRequest:process.env.AUTO === '1' ? {enabledAt:'today'} : null};
 if (args[1] === 'list') console.log(JSON.stringify(process.env.OPEN === '1' && !merged ? [pr] : []));
 else if (args[1] === 'view' && args.includes('--jq')) console.log('41 https://example.test/pull/41 OPEN');
 else if (args[1] === 'view') console.log(JSON.stringify({...pr,state:merged ? 'MERGED' : 'OPEN',mergedAt:merged ? '2026-10-31T00:00:00Z' : null,mergeCommit:merged ? {oid:git(['rev-parse','master']).stdout.trim()} : null}));
 else if (args[1] === 'merge') process.exit(0);
 else process.exit(1);
 `, { mode: 0o755 });
-  const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: ghLog, REMOTE: remote, SOURCE: source, EVENTS: events, AUTO: auto ? '1' : '0', OPEN: open ? '1' : '0', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
+  const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: ghLog, REMOTE: remote, SOURCE: source, HEAD_FILE: path.join(dir, 'pr-head'), EVENTS: events, AUTO: auto ? '1' : '0', OPEN: open ? '1' : '0', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
   const ship = (args, verify = 'printf "verify:%s\\n" "$(git rev-parse HEAD)" >> "$EVENTS"', extra = {}) => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'feature change', '--verify', verify, '--no-map-refresh', ...args], { cwd: work, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
   return { dir, primary, work, remote, events, ghLog, git, source, base, ship };
 }
@@ -154,7 +154,7 @@ test('a changed target is rechecked before the remote candidate lands', (t) => {
   assert.notEqual(events[0], events[2]);
 });
 
-test('a successful noisy gate is allowed and failure output stays below four kilobytes', (t) => {
+test('a noisy failing gate prints at most four kilobytes', (t) => {
   const gate = `#!/bin/sh\n"${process.execPath}" -e 'process.stdout.write("x".repeat(100000),()=>process.exitCode=19)'\n`;
   const c = fixture(t, { gate });
   const result = c.ship(['--merge']);
@@ -238,5 +238,41 @@ test('a gate cannot move the source branch during the check', (t) => {
   const result = c.ship(['--merge']);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /branch moved during the check/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+
+test('a gate cannot leave new conductor files behind', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\necho changed > .codex-last-message.txt\n' });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /changed files.*\.codex-last-message\.txt/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('a pull request head that moves during the gate stops the landing', (t) => {
+  const gate = '#!/bin/sh\ntree=$(git rev-parse HEAD^{tree})\ngit commit-tree "$tree" -p "$SOURCE" -m changed > "$HEAD_FILE"\n';
+  const c = fixture(t, { gate });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /pull request.*changed|pull request.*moved/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('a passing check with no pull request lands without creating one', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  const result = c.ship(['--merge']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+  assert.doesNotMatch(fs.readFileSync(c.ghLog, 'utf8'), /\"create\"|\"merge\"/);
+});
+
+test('a gate cannot alter a pre-existing conductor file', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\necho altered > .codex-last-message.txt\n' });
+  fs.writeFileSync(path.join(c.work, '.codex-last-message.txt'), 'original\n');
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /changed files.*\.codex-last-message\.txt/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
 });

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
@@ -1127,7 +1128,6 @@ function candidatePullRequest(root, branch, targetBranch, localMode) {
     '--json', 'number,url,baseRefName,title,headRefName,headRepositoryOwner,headRefOid,autoMergeRequest'],
   { cwd: root, encoding: 'utf8', timeout: 60000 });
   if (result.status !== 0) {
-    if (localMode) return { pr: null };
     return { error: 'could not read open pull requests; branch was left unmerged' };
   }
   let list;
@@ -1136,7 +1136,7 @@ function candidatePullRequest(root, branch, targetBranch, localMode) {
     return { error: 'could not read all open pull requests; branch was left unmerged' };
   }
   const matches = list.filter((pr) => pr.baseRefName === targetBranch);
-  if (matches.length > 1 || (matches[0] && (!matches[0].number || typeof matches[0].title !== 'string'))) {
+  if (matches.length > 1 || (matches[0] && (!matches[0].number || typeof matches[0].title !== 'string' || !GIT_OID_PATTERN.test(String(matches[0].headRefOid || ''))))) {
     return { error: 'could not identify the pull request and its title; branch was left unmerged' };
   }
   return { pr: matches[0] || null };
@@ -1158,7 +1158,24 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
     return false;
   }
   let passed = false;
+  const snapshot = () => runGit(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root }).stdout
+    .split(/\r?\n/).filter(Boolean);
+  const fingerprint = (rows) => new Map(rows.filter((row) => row.startsWith('?? ') && isConductorUntracked(row.slice(3)))
+    .map((row) => {
+      const file = row.slice(3);
+      const target = path.join(root, file);
+      const data = fs.lstatSync(target).isSymbolicLink() ? fs.readlinkSync(target) : fs.readFileSync(target);
+      return [row, crypto.createHash('sha256').update(data).digest('hex')];
+    }));
+  const changesSince = (before, fingerprints, after) => {
+    const current = fingerprint(after);
+    const dirty = after.filter((row) => !row.startsWith('?? ') || !isConductorUntracked(row.slice(3)));
+    return [...new Set([...dirty, ...newStatusRows(before, after),
+      ...before.filter((row) => fingerprints.has(row) && fingerprints.get(row) !== current.get(row))])];
+  };
   try {
+    const beforeVerify = snapshot();
+    const verifyFingerprints = fingerprint(beforeVerify);
     if (verify) {
       console.log(`verify: ${verify}`);
       const result = runCommand(verify, { cwd: root, check: false });
@@ -1171,13 +1188,10 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
     } else {
       console.log('verify: skipped (no --verify)');
     }
-    const checkClean = () => {
-      const state = runGit(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root });
-      return state.stdout.split(/\r?\n/).filter((row) => row && (!row.startsWith('?? ') || !isConductorUntracked(row.slice(3))));
-    };
-    const afterVerify = checkClean();
-    if (afterVerify.length || runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim() !== candidate) {
-      console.error(`blocked: verifier changed the combined commit or files: ${afterVerify.join(', ')}; branch was left unmerged`);
+    const afterVerify = snapshot();
+    const verifyChanges = changesSince(beforeVerify, verifyFingerprints, afterVerify);
+    if (verifyChanges.length || runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim() !== candidate) {
+      console.error(`blocked: verifier changed the combined commit or files: ${verifyChanges.join(', ')}; branch was left unmerged`);
       return false;
     }
     const gatePath = path.join(root, 'scripts', 'merge-gate.sh');
@@ -1185,8 +1199,9 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
       console.error(`blocked: ${requireGate ? 'the target merge gate is missing from the combined commit' : 'the merge gate is missing'}; branch was left unmerged`);
       return false;
     }
+    const gateFingerprints = fingerprint(afterVerify);
     const result = runMergeGate(root, gatePath);
-    const changed = checkClean();
+    const changed = changesSince(afterVerify, gateFingerprints, snapshot());
     const head = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
     if (head !== candidate) {
       const files = runGit(['diff', '--name-only', candidate, head], { cwd: root, check: false });
@@ -1263,6 +1278,17 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge
     if (runGit(['rev-parse', `refs/heads/${branch}`], { cwd: root }).stdout.trim() !== source) {
       console.error('blocked: the branch moved during the check; branch was left unmerged');
       return 3;
+    }
+    if (pr) {
+      const latest = spawnSync('gh', ['pr', 'view', String(pr.number), '--json', 'state,headRefOid,title,baseRefName'],
+        { cwd: root, encoding: 'utf8', timeout: 60000 });
+      let current = null;
+      try { if (latest.status === 0) current = JSON.parse(latest.stdout); } catch {}
+      if (!current || current.state !== 'OPEN' || current.headRefOid !== pr.headRefOid
+        || current.title !== pr.title || current.baseRefName !== pr.baseRefName) {
+        console.error('blocked: the pull request changed during the check; branch was left unmerged');
+        return 3;
+      }
     }
     if (localMode && !merge) {
       console.log('push: skipped (local mode)');
