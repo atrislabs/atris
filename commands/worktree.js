@@ -531,28 +531,24 @@ function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) 
     ['<!-- ATRIS_BRAIN_COMPILE:START -->', '<!-- ATRIS_BRAIN_COMPILE:END -->'],
   ]);
   const ends = new Set(starts.values());
-  // Keep the markers and all outside text, while masking only complete block bodies.
+  // Compare outside text after removing only complete generated blocks.
   const outsideBlocks = (text) => {
     const lines = text.match(/[^\n]*\n|[^\n]+$/g) || [];
     let expectedEnd = null;
-    let blocks = 0;
     let outside = '';
     for (const line of lines) {
       const marker = line.replace(/\r?\n$/, '');
       if (starts.has(marker)) {
         if (expectedEnd) return null;
         expectedEnd = starts.get(marker);
-        blocks += 1;
-        outside += line;
       } else if (ends.has(marker)) {
         if (expectedEnd !== marker) return null;
         expectedEnd = null;
-        outside += line;
       } else if (!expectedEnd) {
         outside += line;
       }
     }
-    return blocks && !expectedEnd ? outside : null;
+    return expectedEnd ? null : outside;
   };
   const skipped = [];
   for (const file of REGEN_ADAPTER_FILES) {

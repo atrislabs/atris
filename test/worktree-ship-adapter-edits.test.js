@@ -73,6 +73,41 @@ test('ship discards only generated command changes inside the brain block', (t) 
   assert.equal(git(['show', '--name-only', '--format=', 'HEAD'], work).trim(), 'README.md');
 });
 
+test('ship discards complete generated blocks added to a marker-free file', (t) => {
+  const original = '# Personal instructions\nkeep this\n';
+  const { work, git, ship } = fixture(t, original);
+  const generated = `${bootStart}\nfirst boot\n${bootEnd}\n${brainStart}\nfirst compile\n${brainEnd}\n`;
+  fs.writeFileSync(path.join(work, 'AGENTS.md'), generated + original);
+  fs.writeFileSync(path.join(work, 'README.md'), 'real change\n');
+  const result = ship();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /skipped regenerated adapter churn: AGENTS\.md/);
+  assert.equal(fs.readFileSync(path.join(work, 'AGENTS.md'), 'utf8'), original);
+  assert.equal(git(['show', '--name-only', '--format=', 'HEAD'], work).trim(), 'README.md');
+});
+
+test('ship keeps an added generated block together with a hand edit', (t) => {
+  const original = '# Personal instructions\nkeep this\n';
+  const { work, git, ship } = fixture(t, original);
+  const changed = `${brainStart}\nfirst compile\n${brainEnd}\n${original}hand edit\n`;
+  fs.writeFileSync(path.join(work, 'CLAUDE.md'), changed);
+  const result = ship();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /kept hand edits in CLAUDE\.md/);
+  assert.equal(git(['show', 'HEAD:CLAUDE.md'], work), changed);
+});
+
+test('ship keeps a hand edit when neither version has generated blocks', (t) => {
+  const original = '# Personal instructions\nkeep this\n';
+  const { work, git, ship } = fixture(t, original);
+  const changed = `${original}hand edit\n`;
+  fs.writeFileSync(path.join(work, 'GEMINI.md'), changed);
+  const result = ship();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /kept hand edits in GEMINI\.md/);
+  assert.equal(git(['show', 'HEAD:GEMINI.md'], work), changed);
+});
+
 test('ship keeps the whole file when generated churn and a hand edit are mixed', (t) => {
   const { work, git, ship } = fixture(t);
   const changed = baseline.replace('old boot', 'new boot').replace('keep this', 'keep this hand edit');
