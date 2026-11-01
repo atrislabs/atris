@@ -978,6 +978,9 @@ function shipHelp() {
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  gated merges verify the combined commit and fast-forward that exact commit to the target');
   console.log('  if the target moves, the check runs again before another landing attempt');
+  console.log('  a landing stops before overwriting existing files, including ignored files');
+  console.log('  a failed target read stops merging and makes review pushes check auto-merge');
+  console.log('  local mode reads the local target without fetching it');
   console.log('  review pushes in gated repos refuse when a pull request has auto-merge on');
   console.log('  ATRIS_MERGE_GATE_TIMEOUT_MS sets its timeout in milliseconds (default 1800000)');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
