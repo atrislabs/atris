@@ -1524,6 +1524,23 @@ function shipWorktree(args) {
     console.log('verify: skipped (no --verify)');
   }
 
+  // A target may gain its gate while the original verification is running.
+  // Recheck before any push and, if needed, verify the combined commit too.
+  if (!dryRun && !gated) {
+    if (!localMode) refreshRemoteRef(root, targetRef);
+    const targetNowHasGate = runGit(['cat-file', '-e', `${gateTarget}:scripts/merge-gate.sh`], { cwd: root, check: false }).status === 0;
+    if (targetNowHasGate) {
+      if (merge || localMode) {
+        return shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget: true });
+      }
+      const refusal = protectedPushRefusal(root, branch);
+      if (refusal) {
+        console.error(`${refusal}; or use --merge to run the gate`);
+        return 2;
+      }
+    }
+  }
+
   const mergeCheck = dryRun
     ? { status: 0, stdout: 'dry-run' }
     : runGit(['merge-tree', '--write-tree', targetRef, 'HEAD'], { cwd: root, check: false });

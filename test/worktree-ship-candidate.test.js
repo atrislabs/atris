@@ -71,7 +71,7 @@ else if (args[1] === 'view') console.log(JSON.stringify({...pr,state:merged ? 'M
 else if (args[1] === 'merge') process.exit(0);
 else process.exit(1);
 `, { mode: 0o755 });
-  const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: ghLog, REMOTE: remote, SOURCE: source, HEAD_FILE: path.join(dir, 'pr-head'), EVENTS: events, AUTO: auto ? '1' : '0', OPEN: open ? '1' : '0', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
+  const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: ghLog, REMOTE: remote, PRIMARY: primary, SOURCE: source, HEAD_FILE: path.join(dir, 'pr-head'), EVENTS: events, AUTO: auto ? '1' : '0', OPEN: open ? '1' : '0', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '1' };
   const ship = (args, verify = 'printf "verify:%s\\n" "$(git rev-parse HEAD)" >> "$EVENTS"', extra = {}) => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'feature change', '--verify', verify, '--no-map-refresh', ...args], { cwd: work, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
   return { dir, primary, work, remote, events, ghLog, git, source, base, ship };
 }
@@ -275,4 +275,27 @@ test('a gate cannot alter a pre-existing conductor file', (t) => {
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /changed files.*\.codex-last-message\.txt/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+
+for (const local of [false, true]) {
+  test(`${local ? 'local' : 'remote'} notices a gate added to the target during verification`, (t) => {
+    const c = fixture(t);
+    const verify = 'if ! test -f ../added; then mkdir -p "$PRIMARY/scripts"; printf "#!/bin/sh\\necho late gate >&2\\nexit 57\\n" > "$PRIMARY/scripts/merge-gate.sh"; git -C "$PRIMARY" add scripts/merge-gate.sh; git -C "$PRIMARY" commit -qm "add gate"; git -C "$PRIMARY" push -q origin master; touch ../added; fi';
+    const result = c.ship(local ? localArgs : ['--merge'], verify);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /late gate/);
+    assert.match(result.stderr, /left unmerged/);
+    assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+  });
+}
+
+test('a review push checks auto-merge if verification adds a gate to the target', (t) => {
+  const c = fixture(t, { auto: true });
+  const verify = 'mkdir -p "$PRIMARY/scripts"; printf "#!/bin/sh\\nexit 0\\n" > "$PRIMARY/scripts/merge-gate.sh"; git -C "$PRIMARY" add scripts/merge-gate.sh; git -C "$PRIMARY" commit -qm "add gate"; git -C "$PRIMARY" push -q origin master';
+  fs.writeFileSync(path.join(c.work, 'a.txt'), 'newer\n');
+  const result = c.ship(['--no-pr'], verify);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /auto-merge/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
 });
