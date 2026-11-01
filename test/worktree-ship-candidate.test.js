@@ -862,3 +862,66 @@ for (const succeeds of [false, true]) {
     }
   });
 }
+
+test('a moved remote-only local target is checked again before creating its branch', (t) => {
+  const gate = `#!/bin/sh
+${marker}if test ! -f "$EVENTS.moved"; then
+  touch "$EVENTS.moved"
+  old=$(git rev-parse refs/remotes/origin/main)
+  tree=$(git rev-parse "$old^{tree}")
+  next=$(git commit-tree "$tree" -p "$old" -m moved)
+  git update-ref refs/remotes/origin/main "$next" "$old"
+fi
+`;
+  const c = fixture(t, { gate, open: false });
+  addRemoteMain(c);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'main']);
+  const latest = c.git(['rev-parse', 'refs/remotes/origin/main']);
+  const events = fs.readFileSync(c.events, 'utf8').trim().split('\n');
+  assert.equal(events.length, 4);
+  assert.notEqual(events[0], events[2]);
+  assert.deepEqual(events.slice(2), [`verify:${landed}`, `gate:${landed}`]);
+  assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [latest, c.source]);
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/main');
+});
+
+test('a remote-only local target does not overwrite ignored primary data', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+  fs.writeFileSync(path.join(c.work, 'notes.local'), 'checked file\n');
+  c.git(['add', '-f', 'notes.local'], c.work);
+  c.git(['commit', '-qm', 'add checked file'], c.work);
+  fs.writeFileSync(path.join(c.primary, 'notes.local'), 'precious\n');
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /notes\.local/);
+  assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious\n');
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+});
+
+test('a no-gate local landing creates a remote-only target only when switching', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  const verify = 'if git show-ref --verify --quiet refs/heads/main; then exit 95; fi';
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main'], verify);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /merge_check: origin\/main clean/);
+  assert.equal(c.git(['branch', '--show-current']), 'main');
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/main');
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+});
+
+test('a local landing refuses when both the local target and saved remote copy are absent', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /could not read the target.*left unmerged/);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+});
