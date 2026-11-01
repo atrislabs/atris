@@ -993,8 +993,8 @@ function shipHelp() {
   console.log('  if the target moves, the check runs again before another landing attempt');
   console.log('  a landing stops before overwriting existing files, including ignored files');
   console.log('  a failed target read stops merging and makes review pushes check auto-merge');
-  console.log('  local mode checks the local target or all saved copies if the branch is new');
-  console.log('  gated copies must agree; otherwise create the local branch first');
+  console.log('  local mode checks the local target or the saved origin copy if the branch is new');
+  console.log('  a new local target is created from and tracks that origin copy');
   console.log('  it tries to refresh the saved remote copy before landing');
   console.log('  review pushes in gated repos refuse when a pull request has auto-merge on');
   console.log('  ATRIS_MERGE_GATE_TIMEOUT_MS sets its timeout in milliseconds (default 1800000)');
