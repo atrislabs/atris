@@ -52,12 +52,13 @@ function gitFailureDetail(result) {
     .map(output => String(output || '').trim()).filter(Boolean).join('\n');
 }
 
-function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
+function runGit(args, { cwd = process.cwd(), check = true, timeout, maxBuffer } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
   // Only network calls need the SSH probe; local calls skip its extra git spawn.
   const defaultTimeout = args[0] === 'push' ? GIT_PUSH_TIMEOUT_MS : network ? 30000 : undefined;
   const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout,
     killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
+  if (maxBuffer) options.maxBuffer = maxBuffer;
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
@@ -1186,14 +1187,37 @@ function candidateGateTail(output) {
 // A directory replaced by a file is walked only as far as tracked entries; an
 // untracked child stops the walk without scanning its contents.
 function checkoutCollision(root, from, to) {
-  const changed = runGit(['diff', '--name-only', '-z', '--no-renames', from, to, '--'], { cwd: root, check: false });
-  const before = runGit(['ls-tree', '-r', '-z', '--name-only', from], { cwd: root, check: false });
-  const after = runGit(['ls-tree', '-r', '-z', '--name-only', to], { cwd: root, check: false });
-  if (changed.status !== 0 || before.status !== 0 || after.status !== 0) {
-    return { error: gitFailureDetail(changed) || gitFailureDetail(before) || gitFailureDetail(after) || 'could not inspect checkout paths' };
+  const changed = runGit(['diff', '--name-only', '-z', '--no-renames', from, to, '--'],
+    { cwd: root, check: false, maxBuffer: COMMAND_MAX_BUFFER_BYTES });
+  if (changed.status !== 0) return { error: gitFailureDetail(changed) || 'could not inspect checkout paths' };
+  const paths = changed.stdout.split('\0').filter(Boolean);
+  if (!paths.length) return {};
+  const oldFiles = new Set();
+  const newFiles = new Set();
+  // Keep command lines short even when a commit changes many files. A literal
+  // pathspec also keeps names containing brackets or stars from matching others.
+  const batches = [];
+  let batch = [];
+  let bytes = 0;
+  for (const file of paths) {
+    const size = Buffer.byteLength(file) + 1;
+    if (batch.length && (batch.length >= 200 || bytes + size > 48000)) {
+      batches.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(file);
+    bytes += size;
   }
-  const oldFiles = new Set(before.stdout.split('\0').filter(Boolean));
-  const newFiles = new Set(after.stdout.split('\0').filter(Boolean));
+  if (batch.length) batches.push(batch);
+  for (const names of batches) {
+    for (const [commit, files] of [[from, oldFiles], [to, newFiles]]) {
+      const tree = runGit(['--literal-pathspecs', 'ls-tree', '-r', '-z', '--name-only', commit, '--', ...names],
+        { cwd: root, check: false, maxBuffer: COMMAND_MAX_BUFFER_BYTES });
+      if (tree.status !== 0) return { error: gitFailureDetail(tree) || 'could not inspect checkout paths' };
+      for (const file of tree.stdout.split('\0').filter(Boolean)) files.add(file);
+    }
+  }
   const oldDirs = new Set();
   for (const file of oldFiles) {
     const parts = file.split('/');
@@ -1218,15 +1242,19 @@ function checkoutCollision(root, from, to) {
     return '';
   };
   try {
-    for (const file of changed.stdout.split('\0').filter(name => name && newFiles.has(name))) {
+    for (const file of paths.filter(name => newFiles.has(name))) {
       const parts = file.split('/');
       for (let n = 1; n <= parts.length; n += 1) {
         const part = parts.slice(0, n).join('/');
         const info = stat(part);
         if (!info) break;
         if (n < parts.length) {
-          if (!info.isDirectory() && !oldFiles.has(part)) return { path: part };
-          if (!info.isDirectory()) break;
+          if (!info.isDirectory()) {
+            const oldEntry = oldFiles.has(part) ? 'blob'
+              : runGit(['cat-file', '-t', `${from}:${part}`], { cwd: root, check: false }).stdout.trim();
+            if (oldEntry !== 'blob') return { path: part };
+            break;
+          }
         } else if (info.isDirectory()) {
           if (!oldDirs.has(part)) return { path: part };
           const found = inspectDir(part);

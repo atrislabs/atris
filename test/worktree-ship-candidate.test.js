@@ -678,3 +678,16 @@ test('an ignored local gate is not silently bypassed', (t) => {
   assert.match(result.stderr, /gate.*missing|gate.*commit/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
 });
+
+test('checkout protection asks Git only for the paths being changed', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  assert.ok(realGit);
+  const trace = path.join(c.dir, 'git-tree-requests');
+  fs.writeFileSync(path.join(c.dir, 'bin', 'git'), '#!/bin/sh\ncase " $* " in *" ls-tree -r "*) printf "%s\\n" "$*" >> "$TREE_REQUESTS";; esac\nexec "$REAL_GIT" "$@"\n', { mode: 0o755 });
+  const result = c.ship(['--merge'], undefined, { REAL_GIT: realGit, TREE_REQUESTS: trace });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const requests = fs.readFileSync(trace, 'utf8').trim().split('\n');
+  assert.ok(requests.length > 0);
+  for (const request of requests) assert.match(request, / -- .+/, request);
+});
