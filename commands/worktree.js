@@ -452,83 +452,21 @@ function refreshRemoteRef(root, ref) {
   return fetched.status === 0 ? '' : (gitFailureDetail(fetched) || 'fetch failed');
 }
 
-// List every saved copy that could matter to a new local target. Exclusions
-// do not discard existing refs, and every positive fetch mapping is included.
-function savedBranchCopies(root, branch) {
-  const listed = runGit(['for-each-ref', '--format=%(refname)', 'refs/remotes/'],
-    { cwd: root, check: false, maxBuffer: COMMAND_MAX_BUFFER_BYTES });
-  if (listed.status !== 0) return { error: gitFailureDetail(listed) || 'could not list saved targets' };
-  const refs = new Set(listed.stdout.split(/\r?\n/).filter(ref => ref.endsWith(`/${branch}`)));
-  const remotes = runGit(['remote'], { cwd: root, check: false });
-  if (remotes.status !== 0) return { error: gitFailureDetail(remotes) || 'could not list remotes' };
-  const source = `refs/heads/${branch}`;
-  const originRefs = new Set([`refs/remotes/origin/${branch}`]);
-  const originMappedRefs = new Set();
-  const remoteNames = remotes.stdout.split(/\r?\n/).filter(Boolean);
-  for (const remote of remoteNames) {
-    const config = runGit(['config', '--get-all', `remote.${remote}.fetch`], { cwd: root, check: false });
-    if (config.status !== 0 && config.status !== 1) return { error: gitFailureDetail(config) || 'could not read fetch rules' };
-    for (const raw of config.stdout.split(/\r?\n/).filter(Boolean)) {
-      if (raw.startsWith('^')) continue;
-      const spec = raw.startsWith('+') ? raw.slice(1) : raw;
-      const separator = spec.indexOf(':');
-      if (separator < 0) continue;
-      const pattern = spec.slice(0, separator);
-      const destination = spec.slice(separator + 1);
-      const star = pattern.indexOf('*');
-      let part = '';
-      if (star < 0) {
-        if (pattern !== source) continue;
-      } else {
-        const prefix = pattern.slice(0, star);
-        const suffix = pattern.slice(star + 1);
-        if (!source.startsWith(prefix) || !source.endsWith(suffix) || source.length < prefix.length + suffix.length) continue;
-        part = source.slice(prefix.length, source.length - suffix.length);
-      }
-      const ref = destination.replace('*', part);
-      if (!ref.startsWith('refs/')) continue;
-      if (remote === 'origin') originMappedRefs.add(ref);
-      const exists = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false });
-      if (exists.status === 0) {
-        refs.add(ref);
-        if (remote === 'origin') originRefs.add(ref);
-      } else if (exists.status !== 1) return { error: gitFailureDetail(exists) || `could not read ${ref}` };
-    }
-  }
-  const copies = [];
-  for (const ref of [...refs].sort()) {
-    const commit = runGit(['rev-parse', '--verify', `${ref}^{commit}`], { cwd: root, check: false });
-    if (commit.status !== 0) return { error: gitFailureDetail(commit) || `could not read ${ref}` };
-    copies.push({ ref, oid: commit.stdout.trim() });
-  }
-  if (!copies.length) return { error: 'no saved target copy exists' };
-  const origin = copies.find(copy => originRefs.has(copy.ref));
-  return { copies, originRef: origin && origin.ref, originConfigured: remoteNames.includes('origin'), originMappedRefs: [...originMappedRefs].sort() };
-}
-
-function savedCopiesDisagree(target) {
-  return !!(target && target.copies && new Set(target.copies.map(copy => copy.oid)).size > 1);
-}
-
-function refuseDisagreeingCopies() {
-  console.error('blocked: saved target copies disagree; create the local branch first; branch was left unmerged');
-}
-
 // Read the remote without updating the tracking ref or FETCH_HEAD. The old
 // no-gate flow still owns its initial fetch and its merge-check base.
 function readShipTarget(root, targetRef, localMode) {
   const target = `refs/heads/${baseBranchName(targetRef)}`;
   let oid;
   let localRef = target;
-  let saved = null;
+  let missing = false;
   if (localMode) {
     const exists = runGit(['show-ref', '--verify', '--quiet', target], { cwd: root, check: false });
     if (exists.status === 1) {
-      saved = savedBranchCopies(root, baseBranchName(targetRef));
-      if (saved.error) return saved;
-      const selected = saved.copies.find(copy => copy.ref === saved.originRef) || saved.copies[0];
-      localRef = selected.ref;
-      oid = selected.oid;
+      localRef = `refs/remotes/origin/${baseBranchName(targetRef)}`;
+      const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
+      if (resolved.status !== 0) return { error: gitFailureDetail(resolved) || 'no saved origin target exists' };
+      oid = resolved.stdout.trim();
+      missing = true;
     } else if (exists.status !== 0) return { error: gitFailureDetail(exists) || 'could not read the target branch' };
     else {
       const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
@@ -547,13 +485,9 @@ function readShipTarget(root, targetRef, localMode) {
     const fetched = runGit(['fetch', '--no-tags', '--no-write-fetch-head', 'origin', oid], { cwd: root, check: false });
     if (fetched.status !== 0) return { error: gitFailureDetail(fetched) || 'target fetch failed' };
   }
-  let hasGate = false;
-  for (const commit of new Set(saved ? saved.copies.map(copy => copy.oid) : [oid])) {
-    const gate = runGit(['ls-tree', commit, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
-    if (gate.status !== 0) return { error: gitFailureDetail(gate) || 'could not read the target tree' };
-    if (gate.stdout.trim()) hasGate = true;
-  }
-  return { oid, gate: hasGate, ref: localMode ? localRef : target, ...(saved || {}) };
+  const gate = runGit(['ls-tree', oid, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
+  if (gate.status !== 0) return { error: gitFailureDetail(gate) || 'could not read the target tree' };
+  return { oid, gate: !!gate.stdout.trim(), ref: localMode ? localRef : target, missing };
 }
 
 function baseBranchName(ref) {
@@ -1457,6 +1391,20 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
   return passed;
 }
 
+// Create a new local target from the saved origin commit, without Git guessing a remote.
+function switchLocalTarget(primary, branch, target) {
+  if (!target.missing) return runGit(['switch', branch], { cwd: primary, check: false });
+  const current = runGit(['rev-parse', '--verify', `${target.ref}^{commit}`], { cwd: primary, check: false });
+  if (current.status !== 0 || current.stdout.trim() !== target.oid) {
+    return { status: 1, stderr: 'the saved origin target changed' };
+  }
+  const switched = runGit(['switch', '--no-track', '-c', branch, target.oid], { cwd: primary, check: false });
+  if (switched.status !== 0) return switched;
+  const remote = runGit(['config', `branch.${branch}.remote`, 'origin'], { cwd: primary, check: false });
+  if (remote.status !== 0) return remote;
+  return runGit(['config', `branch.${branch}.merge`, `refs/heads/${branch}`], { cwd: primary, check: false });
+}
+
 function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget }) {
   const targetBranch = baseBranchName(targetRef);
   const target = `refs/heads/${targetBranch}`;
@@ -1484,7 +1432,6 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       console.error(`blocked: could not read the target; branch was left unmerged: ${latest.error}`);
       return 3;
     }
-    if (savedCopiesDisagree(latest)) { refuseDisagreeingCopies(); return 3; }
     const base = latest.oid;
     const tree = runGit(['merge-tree', '--write-tree', base, source], { cwd: root, check: false });
     if (tree.status !== 0) {
@@ -1519,9 +1466,7 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
         console.error(`blocked: could not read the target; branch was left unmerged: ${currentTarget.error}`);
         return 3;
       }
-      if (savedCopiesDisagree(currentTarget)) { refuseDisagreeingCopies(); return 3; }
-      if (currentTarget.oid !== base || currentTarget.ref !== latest.ref
-        || JSON.stringify(currentTarget.copies || []) !== JSON.stringify(latest.copies || [])) {
+      if (currentTarget.oid !== base || currentTarget.ref !== latest.ref) {
         console.log(`merge: target moved, checking again (${attempt}/3)`);
         continue;
       }
@@ -1533,20 +1478,10 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       const primaryHead = runGit(['rev-parse', 'HEAD'], { cwd: primary }).stdout.trim();
       if (!safeCheckout(primary, primaryHead, base) || !safeCheckout(primary, primaryHead, candidate)) return 3;
       if (currentBranch(primary) !== targetBranch) {
-        const switchArgs = latest.copies ? ['switch', '--no-track', '-c', targetBranch, base] : ['switch', targetBranch];
-        const switched = runGit(switchArgs, { cwd: primary, check: false });
+        const switched = switchLocalTarget(primary, targetBranch, latest);
         if (switched.status !== 0) {
           console.error(`blocked: could not switch the primary checkout to the target; branch was left unmerged: ${gitFailureDetail(switched)}`);
           return 3;
-        }
-        if (latest.copies && latest.originRef && latest.originConfigured) {
-          const remote = runGit(['config', `branch.${targetBranch}.remote`, 'origin'], { cwd: primary, check: false });
-          const merge = remote.status === 0
-            ? runGit(['config', `branch.${targetBranch}.merge`, `refs/heads/${targetBranch}`], { cwd: primary, check: false }) : remote;
-          if (merge.status !== 0) {
-            console.error(`blocked: could not set the target upstream; branch was left unmerged: ${gitFailureDetail(merge)}`);
-            return 3;
-          }
         }
         const switchedHead = runGit(['rev-parse', '--verify', `${target}^{commit}`], { cwd: primary, check: false });
         if (switchedHead.status !== 0 || switchedHead.stdout.trim() !== base) {
@@ -1695,35 +1630,10 @@ function shipWorktree(args) {
     }
   };
 
-  // Check existing copies before the legacy refresh can change a ref.
   const branchHasGate = fs.existsSync(path.join(root, 'scripts', 'merge-gate.sh'));
-  const beforeRefresh = !dryRun && localMode ? readShipTarget(root, targetRef, true) : null;
-  if (savedCopiesDisagree(beforeRefresh) && (beforeRefresh.gate || branchHasGate
-    || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0)) {
-    refuseDisagreeingCopies();
-    return 3;
-  }
-  // Read the possible refresh without moving refs, so a new split can be refused first.
-  if (beforeRefresh && beforeRefresh.copies && beforeRefresh.originConfigured && beforeRefresh.originMappedRefs.length) {
-    const live = readShipTarget(root, targetRef, false);
-    if (!live.error) {
-      const after = new Map(beforeRefresh.copies.map(copy => [copy.ref, copy.oid]));
-      for (const ref of beforeRefresh.originMappedRefs) after.set(ref, live.oid);
-      if (new Set(after.values()).size > 1 && (beforeRefresh.gate || live.gate || branchHasGate
-        || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0)) {
-        refuseDisagreeingCopies();
-        return 3;
-      }
-    }
-  }
   // Local shipping keeps the legacy refresh, but reads its gate from the local target.
   if (localMode) refreshRemoteRef(root, targetRef);
   const initialTarget = dryRun ? null : readShipTarget(root, targetRef, localMode);
-  if (savedCopiesDisagree(initialTarget) && (initialTarget.gate || branchHasGate
-    || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0)) {
-    refuseDisagreeingCopies();
-    return 3;
-  }
   if (!localMode && (dryRun || (initialTarget && !initialTarget.error && !initialTarget.gate && !branchHasGate))) {
     refreshRemoteRef(root, targetRef);
   }
@@ -1852,7 +1762,8 @@ function shipWorktree(args) {
         const targetBranch = baseBranchName(targetRef);
         const primaryBranch = currentBranch(primary);
         if (primaryBranch !== targetBranch) {
-          const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+          if (targetRead.missing && !safeCheckout(primary, 'HEAD', targetRead.oid)) return 3;
+          const switched = switchLocalTarget(primary, targetBranch, targetRead);
           if (switched.status !== 0) {
             throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
           }
