@@ -1311,15 +1311,17 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge
       return 0;
     }
     if (localMode) {
-      const primaryBranch = currentBranch(primary);
-      if (primaryBranch !== targetBranch) {
-        console.error('blocked: the primary checkout must be on the target branch; branch was left unmerged');
-        return 3;
-      }
       const status = statusCounts(primary, { ignoreUntracked: isConductorUntracked });
       if (!status || status.staged || status.unstaged || status.untracked) {
         console.error('blocked: the primary checkout has changes; branch was left unmerged');
         return 3;
+      }
+      if (currentBranch(primary) !== targetBranch) {
+        const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+        if (switched.status !== 0) {
+          console.error(`blocked: could not switch the primary checkout to the target; branch was left unmerged: ${gitFailureDetail(switched)}`);
+          return 3;
+        }
       }
       const preview = runGit(['read-tree', '-n', '-m', '-u', base, candidate], { cwd: primary, check: false });
       if (preview.status !== 0) { console.error(`blocked: could not update the primary checkout; branch was left unmerged: ${gitFailureDetail(preview)}`); return 3; }

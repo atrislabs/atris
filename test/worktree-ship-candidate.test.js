@@ -365,3 +365,13 @@ test('a gate symlink may point to another file in the checked commit', (t) => {
   const landed = c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir);
   assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
 });
+
+test('local landing can switch a clean primary checkout to its target', (t) => {
+  const c = fixture(t, { gate: pass });
+  c.git(['switch', '-qc', 'other']);
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  const landed = c.git(['rev-parse', 'master']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});
