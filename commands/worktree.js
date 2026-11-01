@@ -1326,7 +1326,11 @@ function shipWorktree(args) {
   }
 
   console.log(`push: origin ${branch}`);
-  if (!dryRun) runGit(['push', '-u', 'origin', checkedGateHead ? `${checkedGateHead}:refs/heads/${branch}` : branch], { cwd: root });
+  if (!dryRun) {
+    runGit(['push', '-u', 'origin', checkedGateHead ? `${checkedGateHead}:refs/heads/${branch}` : branch], { cwd: root });
+    // Pushing an object id instead of a branch name does not set its upstream.
+    if (checkedGateHead) runGit(['branch', '--set-upstream-to', `origin/${branch}`, branch], { cwd: root });
+  }
 
   if (!noPr || merge) {
     const title = message || branch;

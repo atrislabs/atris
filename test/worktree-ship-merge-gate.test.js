@@ -68,6 +68,7 @@ test('a passing gate runs after verify at the repository root on the committed h
   const head = ctx.git(['rev-parse', 'HEAD'], ctx.work);
   assert.match(fs.readFileSync(ctx.log, 'utf8'), new RegExp(`pr merge .*--match-head-commit ${head}`));
   assert.equal(head, ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir));
+  assert.equal(ctx.git(['rev-parse', '--abbrev-ref', '@{upstream}'], ctx.work), 'origin/feature');
 });
 
 test('a failed gate preserves the remote branch and pull request and reports its output', (t) => {
