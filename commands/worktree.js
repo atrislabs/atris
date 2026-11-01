@@ -452,6 +452,37 @@ function refreshRemoteRef(root, ref) {
   return fetched.status === 0 ? '' : (gitFailureDetail(fetched) || 'fetch failed');
 }
 
+// Find the saved ref a remote's fetch rules use for this branch. Git's switch
+// guess follows these rules, including exclusions and custom destination paths.
+function savedBranchRef(root, remote, branch) {
+  const result = runGit(['config', '--get-all', `remote.${remote}.fetch`], { cwd: root, check: false });
+  if (result.status !== 0) return '';
+  const specs = result.stdout.split(/\r?\n/).filter(Boolean);
+  const source = `refs/heads/${branch}`;
+  const match = (pattern) => {
+    const star = pattern.indexOf('*');
+    if (star < 0) return pattern === source ? '' : null;
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (!source.startsWith(prefix) || !source.endsWith(suffix) || source.length < prefix.length + suffix.length) return null;
+    return source.slice(prefix.length, source.length - suffix.length);
+  };
+  if (specs.some(spec => spec.startsWith('^') && match(spec.slice(1)) !== null)) return '';
+  for (const raw of specs) {
+    if (raw.startsWith('^')) continue;
+    const spec = raw.startsWith('+') ? raw.slice(1) : raw;
+    const separator = spec.indexOf(':');
+    if (separator < 0) continue;
+    const sourcePattern = spec.slice(0, separator);
+    const destination = spec.slice(separator + 1);
+    const part = match(sourcePattern);
+    if (part === null || !destination) continue;
+    const ref = destination.replace('*', part);
+    return runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status === 0 ? ref : '';
+  }
+  return '';
+}
+
 // Read the remote without updating the tracking ref or FETCH_HEAD. The old
 // no-gate flow still owns its initial fetch and its merge-check base.
 function readShipTarget(root, targetRef, localMode) {
@@ -464,8 +495,8 @@ function readShipTarget(root, targetRef, localMode) {
       const name = baseBranchName(targetRef);
       const remotes = runGit(['remote'], { cwd: root, check: false });
       if (remotes.status !== 0) return { error: gitFailureDetail(remotes) || 'could not read remotes' };
-      const choices = remotes.stdout.split(/\r?\n/).filter(Boolean).map(remote => ({ remote, ref: `refs/remotes/${remote}/${name}` }))
-        .filter(choice => runGit(['show-ref', '--verify', '--quiet', choice.ref], { cwd: root, check: false }).status === 0);
+      const choices = remotes.stdout.split(/\r?\n/).filter(Boolean)
+        .map(remote => ({ remote, ref: savedBranchRef(root, remote, name) })).filter(choice => choice.ref);
       const configured = runGit(['config', '--get', 'checkout.defaultRemote'], { cwd: root, check: false });
       if (configured.status !== 0 && configured.status !== 1) return { error: gitFailureDetail(configured) || 'could not read the default remote' };
       const preferred = choices.find(choice => choice.remote === configured.stdout.trim());

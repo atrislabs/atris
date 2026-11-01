@@ -971,3 +971,28 @@ test('a passing gate on the preferred remote lands the checked commit from that 
   assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [preferred, c.source]);
   assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'preferred/main');
 });
+
+for (const succeeds of [false, true]) {
+  test(`local landing ${succeeds ? 'passes' : 'refuses'} a target gate stored under a custom remote mapping`, (t) => {
+    const gate = succeeds ? pass : '#!/bin/sh\necho mapped gate refused >&2\nexit 37\n';
+    const c = fixture(t, { gate, targetOnly: true, open: false });
+    addRemoteMain(c);
+    c.git(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/saved/*']);
+    c.git(['update-ref', '-d', 'refs/remotes/origin/main']);
+    c.git(['fetch', 'origin', 'main'], c.work);
+    assert.equal(c.git(['rev-parse', 'refs/remotes/origin/saved/main']), c.base);
+    const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+    if (!succeeds) {
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.match(result.stderr, /mapped gate refused/);
+      assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+      assert.equal(c.git(['branch', '--show-current']), 'master');
+    } else {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const landed = c.git(['rev-parse', 'main']);
+      assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+      assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [c.base, c.source]);
+      assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/saved/main');
+    }
+  });
+}
