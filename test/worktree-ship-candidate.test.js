@@ -724,3 +724,13 @@ test('checkout protection treats special characters in paths literally', (t) => 
   assert.match(result.stderr, /notes\[1\]\.local/);
   assert.equal(fs.readFileSync(path.join(c.work, 'notes[1].local'), 'utf8'), 'precious\n');
 });
+
+test('a gate that commits a new file leaves that file in place when it is refused', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\necho precious > gate-created.txt\ngit add gate-created.txt\ngit commit -qm "gate created file"\n' });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /changed the commit/);
+  assert.equal(fs.readFileSync(path.join(c.work, 'gate-created.txt'), 'utf8'), 'precious\n');
+  assert.equal(c.git(['rev-parse', 'feature'], c.work), c.source);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});

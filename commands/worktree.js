@@ -1362,11 +1362,16 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
     passed = true;
   } finally {
     const checkedHead = runGit(['rev-parse', 'HEAD'], { cwd: root, check: false }).stdout.trim();
-    const restored = safeCheckout(root, checkedHead, branch)
-      ? runGit(['switch', branch], { cwd: root, check: false }) : { status: 1, stderr: 'existing files were kept' };
-    if (restored.status !== 0) {
-      console.error(`blocked: could not return to the branch; changes were kept and the branch was left unmerged: ${gitFailureDetail(restored)}`);
+    if (checkedHead !== candidate) {
+      console.error('blocked: the check changed the commit; its files were kept and the branch was left unmerged');
       passed = false;
+    } else {
+      const restored = safeCheckout(root, candidate, branch)
+        ? runGit(['switch', branch], { cwd: root, check: false }) : { status: 1, stderr: 'existing files were kept' };
+      if (restored.status !== 0) {
+        console.error(`blocked: could not return to the branch; changes were kept and the branch was left unmerged: ${gitFailureDetail(restored)}`);
+        passed = false;
+      }
     }
   }
   return passed;
