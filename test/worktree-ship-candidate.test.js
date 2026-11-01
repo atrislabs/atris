@@ -544,7 +544,8 @@ test('a moving target without a gate keeps the original merge check and refs', (
   const verify = 'git --git-dir "$REMOTE" update-ref refs/heads/master "$NEXT" "$BASE"';
   const result = c.ship(['--merge'], verify, { NEXT: next, BASE: c.base });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /merge_check: origin\/master clean/);
+  assert.equal(result.stdout, `commit: skipped (no local changes)\nverify: ${verify}\nmerge_check: origin/master clean\npush: origin feature\npr: 41 https://example.test/pull/41\nmerge: requested\nmerge: pending; kept the source branch while required checks finish\n`);
+  assert.equal(result.stderr, '');
   assert.equal(c.git(['rev-parse', 'refs/remotes/origin/master']), c.base);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), next);
   assert.match(fs.readFileSync(c.ghLog, 'utf8'), /"merge"/);
@@ -625,4 +626,34 @@ fi
   assert.match(result.stderr, /notes\.local/);
   assert.equal(fs.readFileSync(path.join(c.primary, 'notes.local'), 'utf8'), 'precious\n');
   assert.equal(c.git(['branch', '--show-current']), 'other');
+});
+
+test('a candidate preserves hidden changes to an assumed-unchanged tracked file', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\nexit 37\n' });
+  c.git(['update-index', '--assume-unchanged', 'b.txt'], c.work);
+  fs.writeFileSync(path.join(c.work, 'b.txt'), 'precious tracked data\n');
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /b\.txt/);
+  assert.equal(fs.readFileSync(path.join(c.work, 'b.txt'), 'utf8'), 'precious tracked data\n');
+  assert.equal(c.git(['rev-parse', 'HEAD'], c.work), c.source);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('returning from the check preserves an ignored file created where the branch has a file', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\ntest ! -e notes.local || exit 70\necho new-data > notes.local\n' });
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes.local\n');
+  fs.writeFileSync(path.join(c.work, 'notes.local'), 'tracked branch data\n');
+  c.git(['add', '-f', 'notes.local'], c.work);
+  c.git(['commit', '-qm', 'add source file'], c.work);
+  c.git(['merge', '--no-ff', '-m', 'include source', 'feature']);
+  c.git(['rm', 'notes.local']);
+  c.git(['commit', '-qm', 'remove target file']);
+  c.git(['push', 'origin', 'master']);
+  const base = c.git(['rev-parse', 'master']);
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /overwrite existing file notes\.local/);
+  assert.equal(fs.readFileSync(path.join(c.work, 'notes.local'), 'utf8'), 'new-data\n');
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), base);
 });
