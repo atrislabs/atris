@@ -320,3 +320,33 @@ test('a landed commit without pull request confirmation keeps the source branch'
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
   assert.doesNotMatch(result.stdout, /done: worktree shipped/);
 });
+
+test('an ignored local file cannot replace a gate removed from the candidate', (t) => {
+  const c = fixture(t, { gate: pass });
+  c.git(['rm', 'scripts/merge-gate.sh'], c.work);
+  fs.appendFileSync(path.join(c.work, '.gitignore'), 'scripts/merge-gate.sh\n');
+  c.git(['add', '.gitignore'], c.work);
+  c.git(['commit', '-qm', 'remove gate'], c.work);
+  fs.mkdirSync(path.join(c.work, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(c.work, 'scripts', 'merge-gate.sh'), '#!/bin/sh\nexit 0\n');
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /gate.*missing|gate.*commit/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('a gate symlink cannot run a file outside the checked repository', (t) => {
+  const c = fixture(t, { gate: pass });
+  const outside = path.join(c.dir, 'outside-gate');
+  fs.writeFileSync(outside, '#!/bin/sh\nexit 0\n');
+  fs.unlinkSync(path.join(c.primary, 'scripts', 'merge-gate.sh'));
+  fs.symlinkSync(outside, path.join(c.primary, 'scripts', 'merge-gate.sh'));
+  c.git(['add', 'scripts/merge-gate.sh']);
+  c.git(['commit', '-qm', 'replace gate with link']);
+  c.git(['push', 'origin', 'master']);
+  const expected = c.git(['rev-parse', 'master']);
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /gate.*outside|gate.*commit/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), expected);
+});

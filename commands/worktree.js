@@ -1196,8 +1196,21 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
       return false;
     }
     const gatePath = path.join(root, 'scripts', 'merge-gate.sh');
-    if (!fs.existsSync(gatePath)) {
-      console.error(`blocked: ${requireGate ? 'the target merge gate is missing from the combined commit' : 'the merge gate is missing'}; branch was left unmerged`);
+    const declared = runGit(['ls-tree', candidate, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
+    if (!fs.existsSync(gatePath) || declared.status !== 0 || !/^(100644|100755|120000) blob /m.test(declared.stdout)) {
+      console.error(`blocked: ${requireGate ? 'the target merge gate is missing from the combined commit' : 'the merge gate is missing from the combined commit'}; branch was left unmerged`);
+      return false;
+    }
+    const realGate = fs.realpathSync(gatePath);
+    const realRoot = fs.realpathSync(root);
+    const gateRelative = path.relative(realRoot, realGate);
+    if (!gateRelative || gateRelative === '..' || gateRelative.startsWith(`..${path.sep}`) || path.isAbsolute(gateRelative)) {
+      console.error('blocked: the merge gate points outside the checked repository; branch was left unmerged');
+      return false;
+    }
+    const actual = runGit(['ls-tree', candidate, '--', gateRelative], { cwd: root, check: false });
+    if (actual.status !== 0 || !/^(100644|100755) blob /m.test(actual.stdout)) {
+      console.error('blocked: the merge gate file is not in the combined commit; branch was left unmerged');
       return false;
     }
     const gateFingerprints = fingerprint(afterVerify);
