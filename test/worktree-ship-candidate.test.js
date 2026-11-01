@@ -162,3 +162,81 @@ test('a successful noisy gate is allowed and failure output stays below four kil
   assert.match(result.stderr, /exit code 19/);
   assert.ok(Buffer.byteLength(result.stderr) < 4600, `diagnostic was ${Buffer.byteLength(result.stderr)} bytes`);
 });
+
+test('a changed local target is rechecked before the candidate lands', (t) => {
+  const gate = `#!/bin/sh\n${marker}if test ! -f "$EVENTS.moved"; then\n  touch "$EVENTS.moved"\n  old=$(git rev-parse refs/heads/master)\n  tree=$(git rev-parse refs/heads/master^{tree})\n  next=$(git commit-tree "$tree" -p "$old" -m moved)\n  git update-ref refs/heads/master "$next" "$old"\nfi\n`;
+  const c = fixture(t, { gate });
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  const events = fs.readFileSync(c.events, 'utf8').trim().split('\n');
+  assert.equal(events.length, 4);
+  assert.equal(events[2], `verify:${landed}`);
+  assert.equal(events[3], `gate:${landed}`);
+  assert.notEqual(events[0], events[2]);
+  assert.equal(c.git(['status', '--porcelain'], c.primary), '');
+});
+
+test('a target that keeps moving stops after three checked candidates', (t) => {
+  const c = fixture(t, { gate: pass });
+  const hooks = path.join(c.dir, 'hooks');
+  fs.mkdirSync(hooks);
+  c.git(['config', 'core.hooksPath', hooks]);
+  fs.writeFileSync(path.join(hooks, 'pre-push'), `#!/bin/sh\nold=$(git --git-dir "$REMOTE" rev-parse master)\ntree=$(git --git-dir "$REMOTE" rev-parse master^{tree})\nnext=$(git --git-dir "$REMOTE" -c user.name=Test -c user.email=test@example.com commit-tree "$tree" -p "$old" -m moved)\ngit --git-dir "$REMOTE" update-ref refs/heads/master "$next" "$old"\n`, { mode: 0o755 });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /target kept moving.*left unmerged/);
+  assert.equal(fs.readFileSync(c.events, 'utf8').trim().split('\n').length, 6);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+  const landed = spawnSync('git', ['--git-dir', c.remote, 'merge-base', '--is-ancestor', c.source, 'master']);
+  assert.notEqual(landed.status, 0);
+});
+
+test('an armed review push is refused when the gate exists only on the target', (t) => {
+  const c = fixture(t, { gate: pass, targetOnly: true, auto: true });
+  const result = c.ship(['--no-pr']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /auto-merge/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+});
+
+for (const local of [false, true]) {
+  test(`${local ? 'local' : 'remote'} allows a successful gate with five megabytes of output`, (t) => {
+    const gate = `#!/bin/sh\n"${process.execPath}" -e 'process.stdout.write("x".repeat(5*1024*1024))'\n`;
+    const c = fixture(t, { gate });
+    const result = c.ship(local ? localArgs : ['--merge']);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /merge gate: passed/);
+  });
+}
+
+test('gate failure reports no more than the last forty lines', (t) => {
+  const gate = '#!/bin/sh\ni=1\nwhile test "$i" -le 60; do echo "gate-line-$i"; i=$((i + 1)); done\nexit 19\n';
+  const c = fixture(t, { gate });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /gate-line-60/);
+  assert.doesNotMatch(result.stderr, /gate-line-20(?:\n|$)/);
+  assert.equal((result.stderr.match(/gate-line-/g) || []).length, 40);
+});
+
+test('an existing push hook can reject the checked landing', (t) => {
+  const c = fixture(t, { gate: pass });
+  const hooks = path.join(c.dir, 'hooks');
+  fs.mkdirSync(hooks);
+  c.git(['config', 'core.hooksPath', hooks]);
+  fs.writeFileSync(path.join(hooks, 'pre-push'), '#!/bin/sh\necho hook refused >&2\nexit 41\n', { mode: 0o755 });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /hook refused/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('a gate cannot move the source branch during the check', (t) => {
+  const gate = '#!/bin/sh\nold=$(git rev-parse refs/heads/feature)\ntree=$(git rev-parse "$old^{tree}")\nnext=$(git commit-tree "$tree" -p "$old" -m moved)\ngit update-ref refs/heads/feature "$next" "$old"\n';
+  const c = fixture(t, { gate });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /branch moved during the check/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
