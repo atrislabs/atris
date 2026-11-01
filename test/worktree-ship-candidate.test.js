@@ -398,3 +398,12 @@ test('a map refresh cannot change a source tree bound to independent review', (t
   assert.match(result.stderr, /one-lap head tree differs/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
 });
+
+test('local landing works without a pull request service for a local remote', (t) => {
+  const c = fixture(t, { gate: pass });
+  fs.writeFileSync(path.join(c.dir, 'bin', 'gh'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});

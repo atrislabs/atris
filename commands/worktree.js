@@ -1129,6 +1129,9 @@ function candidatePullRequest(root, branch, targetBranch, localMode) {
     '--json', 'number,url,baseRefName,title,headRefName,headRepositoryOwner,headRefOid,autoMergeRequest'],
   { cwd: root, encoding: 'utf8', timeout: 60000 });
   if (result.status !== 0) {
+    const url = String(remote.stdout || '').trim();
+    const localRemote = url.startsWith('file://') || (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^[^/\\:]+@[^:]+:/.test(url));
+    if (localMode && localRemote) return { pr: null };
     return { error: 'could not read open pull requests; branch was left unmerged' };
   }
   let list;
