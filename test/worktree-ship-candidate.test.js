@@ -429,3 +429,17 @@ test('local landing rechecks when the target checkout gains a real commit', (t) 
   assert.equal(events[3], `gate:${landed}`);
   assert.equal(c.git(['show', 'master:b.txt']), 'advanced');
 });
+
+test('local landing retries when an unselected target moves during the gate', (t) => {
+  const gate = `#!/bin/sh\n${marker}if test ! -f "$EVENTS.moved"; then\n  touch "$EVENTS.moved"\n  old=$(git rev-parse refs/heads/master)\n  GIT_INDEX_FILE="$EVENTS.index" git read-tree "$old"\n  blob=$(printf 'advanced\\n' | git hash-object -w --stdin)\n  GIT_INDEX_FILE="$EVENTS.index" git update-index --add --cacheinfo 100644 "$blob" b.txt\n  tree=$(GIT_INDEX_FILE="$EVENTS.index" git write-tree)\n  next=$(git commit-tree "$tree" -p "$old" -m moved)\n  git update-ref refs/heads/master "$next" "$old"\nfi\n`;
+  const c = fixture(t, { gate });
+  c.git(['switch', '-qc', 'other']);
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  const events = fs.readFileSync(c.events, 'utf8').trim().split('\n');
+  assert.equal(events.length, 4);
+  assert.equal(events[2], `verify:${landed}`);
+  assert.equal(events[3], `gate:${landed}`);
+  assert.equal(c.git(['show', 'master:b.txt']), 'advanced');
+});
