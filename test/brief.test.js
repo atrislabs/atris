@@ -176,7 +176,9 @@ test('--json shape is stable', async () => {
     }));
     assert.equal(code, 0);
     const data = JSON.parse(out);
-    assert.deepEqual(Object.keys(data), ['schema', 'days', 'landed', 'waiting', 'moves', 'week']);
+    // the keys it always had come first and unchanged; the owner's screen adds its own after them
+    assert.deepEqual(Object.keys(data).slice(0, 6), ['schema', 'days', 'landed', 'waiting', 'moves', 'week']);
+    assert.deepEqual(Object.keys(data).slice(6), ['needs_you', 'done_this_week', 'team']);
     assert.equal(data.schema, 'atris.brief.v1');
     assert.equal(data.days, 1);
     assert.equal(data.landed.length, 1);
