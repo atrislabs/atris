@@ -131,6 +131,29 @@ test('the builder cannot be its own second check', () => {
   });
 });
 
+test('nobody who ever built the job can be its second check, even after someone else rebuilt it', () => {
+  withProject((fx) => {
+    const id = reviewJob(fx, 'Built by codex, rebuilt by claude', proofWith(VERIFY), {
+      metadata: { verify: VERIFY },
+      order: 1000,
+    });
+    // A person reopens it from review. Claude takes it and hands in its own build, so claude is the
+    // builder on record now. Codex built the first attempt and is no more independent than claude.
+    assert.strictEqual(taskDb.reopenTask(fx.db, { id, actor: 'harman', reason: 'redo it', fromReview: true }).reopened, true);
+    assert.strictEqual(taskDb.claimTask(fx.db, { id, claimedBy: 'claude' }).claimed, true);
+    assert.strictEqual(taskDb.readyTask(fx.db, { id, actor: 'claude', proof: proofWith(VERIFY) }).ready, true);
+    fx.db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(1000, id);
+    assert.strictEqual(taskDb.getTask(fx.db, id).metadata.built_by, 'claude');
+
+    const outcome = (actor) => cmdCertifyVerified(['--as', actor], { preview: true, silent: true }).results.map((r) => [r.action, r.reason]);
+
+    assert.deepStrictEqual(outcome('claude'), [['skipped', 'verifier_is_builder']]);
+    assert.deepStrictEqual(outcome(BUILDER), [['skipped', 'verifier_is_builder']]);
+    assert.deepStrictEqual(outcome(' Codex '), [['skipped', 'verifier_is_builder']], 'in any spelling of the name');
+    assert.deepStrictEqual(outcome('validator'), [['would_certify', undefined]]);
+  });
+});
+
 test('a job with no runnable check is skipped, and the limit counts only checks that run', () => {
   withProject((fx) => {
     // Oldest first. This one names no check at all, so it uses no turn.

@@ -581,7 +581,7 @@ function printStatus() {
 // finished copies across the workspace and then refuses (ATRIS_LOW_DISK),
 // and a matching install is cloned in as node_modules. deps: false skips
 // the clone; an object passes options through to seedNodeModules.
-function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date(), env = process.env, freeSpace = space.freeBytes, spaceGuard, deps } = {}) {
+function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, formerTasks = [], branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date(), env = process.env, freeSpace = space.freeBytes, spaceGuard, deps } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
   // Pin the caller's flight base, or resolve it once for this new flight.
@@ -633,6 +633,18 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     skippedResume = resumedFrom;
     resumedFrom = null;
     console.error(`note: the last run's branch ${skippedResume} no longer merges cleanly with ${checkoutBase}, so this run starts fresh; that branch keeps its commits`);
+  }
+  // A display name is not an identity: it repeats across workspaces and changes when the task list
+  // changes, so a branch under a job's older name is never a starting point and never blocks a
+  // flight. It can still be this job's own unfinished work, so say where it is and leave the choice
+  // to a person; this run goes on from the job's own name.
+  const own = slugify(task, 'task', 36);
+  for (const former of Array.isArray(formerTasks) ? formerTasks : [formerTasks]) {
+    if (!former || !String(former).trim() || slugify(former, 'task', 36) === own) continue;
+    const olderRun = lastRunBranch(root, owner, former, checkoutBase, branch);
+    if (!olderRun) continue;
+    console.error(`note: older unfinished work may be on ${olderRun}; ${resumedFrom ? `continuing from ${resumedFrom} instead` : 'starting fresh'}`);
+    break;
   }
   const startPoint = resumedFrom || checkoutBase;
   const ref = `refs/heads/${branch}`;
@@ -792,9 +804,12 @@ function startWorktree(args) {
   const owner = member || agent;
   const task = readFlag(args, '--task');
   if (!owner || !task) {
-    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim] [--force] [--no-deps]');
+    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--former-task "<older name of the task>"] [--claim] [--force] [--no-deps]');
     return 2;
   }
+  // The task's older name, when it has gone by one. It is only mentioned: an unfinished branch under
+  // it is named in one line, never resumed and never a collision (see createAgentWorktree).
+  const formerTask = readFlag(args, '--former-task');
   const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
   if (memberFile && !fs.existsSync(memberFile)) {
     console.error(`warning: no member persona at ${path.relative(root, memberFile)}`);
@@ -826,6 +841,7 @@ function startWorktree(args) {
       member,
       agent,
       task,
+      formerTasks: formerTask ? [formerTask] : [],
       branch: readFlag(args, '--branch'),
       path: readFlag(args, '--path'),
       base: readFlag(args, '--base') || readFlag(args, '--target'),
@@ -944,15 +960,19 @@ function deniedLaneForShip(root, branch, message) {
       for (const m of source.toUpperCase().matchAll(/([A-Z]{2,6}-\d+)/g)) refs.add(m[1]);
       for (const m of source.toLowerCase().matchAll(/([a-z]{2,6})-(\d+)/g)) refs.add(`${m[1].toUpperCase()}-${m[2]}`);
     }
-    if (!refs.size) return null;
+    // A flight's branch names its job by row id, lowercased, not by the display id a person reads
+    // (flightTaskName in lib/fleet.js), so a branch also finds a job by its row id as a whole word.
+    const words = new Set(String(branch || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
     const projectionPath = path.join(findPrimaryRoot(root), '.atris', 'state', 'tasks.projection.json');
     if (!fs.existsSync(projectionPath)) return null;
     const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
     for (const task of projection.tasks || []) {
       const ids = [task.display_id, task.legacy_ref].filter(Boolean).map(v => String(v).toUpperCase());
-      if (!ids.some(id => refs.has(id))) continue;
+      // Only a real row id counts: a short or odd one could match any word in a branch name.
+      const rowId = typeof task.id === 'string' && /^[A-Za-z0-9]{16,}$/.test(task.id) ? task.id.toLowerCase() : '';
+      if (!ids.some(id => refs.has(id)) && !(rowId && words.has(rowId))) continue;
       const hit = protectedLaneOfTask(task);
-      if (hit) return { taskId: ids[0], tag: hit };
+      if (hit) return { taskId: ids[0] || task.id, tag: hit };
     }
     return null;
   } catch {
@@ -2127,8 +2147,9 @@ function help() {
   console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup|sweep>');
   console.log('');
   console.log('  atris worktree guide');
-  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim] [--force] [--no-deps]');
+  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--former-task "<older name>"] [--claim] [--force] [--no-deps]');
   console.log('    --force         start even when another recent flight shares a task word');
+  console.log('    --former-task   the task\'s older name; a branch left unfinished under it is named, never resumed');
   console.log('    --no-deps       do not clone node_modules from a matching install');
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');

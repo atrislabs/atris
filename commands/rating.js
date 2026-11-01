@@ -44,11 +44,21 @@ function readHere(deps = {}) {
     return null;
   }
   if (!played || played.error || played.no_history) return null;
-  const { rosterRows } = require('../lib/gm-season');
+  const { rosterRows, tally } = require('../lib/gm-season');
+  // Jobs still in review whose pull request is open, per builder. These do not depend on the
+  // last 30 days of plays: a job can wait longer than that, and its builder still has it.
+  const waiting = new Map();
+  for (const review of played.reviews || []) {
+    if (review && review.waiting_on_pull_request && review.member) waiting.set(review.member, (waiting.get(review.member) || 0) + 1);
+  }
+  const roster = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER });
   // A member whose only misses were later confirmed not needed, or whose only jobs
   // wait on a pull request or could not start, has no finished job, but still shows,
   // so those jobs have somewhere to be counted.
-  const rows = rosterRows({ outcomes: played.outcomes || [], limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.finished > 0 || row.not_needed > 0 || row.held > 0 || row.could_not_start > 0);
+  const rows = roster.filter((row) => row.finished > 0 || row.not_needed > 0 || row.held > 0 || row.could_not_start > 0 || waiting.has(row.name));
+  for (const name of waiting.keys()) {
+    if (!roster.some((row) => row.name === name)) rows.push({ name, ...tally([]), ovr: null });
+  }
   if (!rows.length) return null;
   let lineup = deps.lineup;
   if (lineup === undefined) lineup = require('../lib/team-lineup').readLineupSafe(root);
@@ -63,7 +73,7 @@ function readHere(deps = {}) {
     }
     const miss_reasons = [...reasons].map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 3);
-    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), ...(row.could_not_start ? { could_not_start: row.could_not_start } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
+    return { member: row.name, ovr: row.ovr, landed: row.landed, finished: row.finished, ...(row.not_needed ? { not_needed: row.not_needed } : {}), ...(row.held ? { held: row.held } : {}), ...(row.could_not_start ? { could_not_start: row.could_not_start } : {}), ...(waiting.has(row.name) ? { waiting_on_pull_request: waiting.get(row.name) } : {}), job: seat.job || null, model: seat.model || null, ...(miss_reasons.length ? { miss_reasons } : {}) };
   });
   const buildJob = ((lineup && lineup.ok && lineup.jobs) || []).find((row) => row.job === 'build' && !row.key);
   const buildModel = buildJob && buildJob.now_runs ? buildJob.now_runs.model : null;
@@ -126,6 +136,10 @@ function renderMember(m, card) {
   if (m.not_needed) lines.push(`  not needed: ${m.not_needed} (confirmed by someone else, so ${m.not_needed === 1 ? 'it does' : 'they do'} not count either way)`);
   if (m.held) lines.push(`  waiting on a pull request: ${m.held} (the work is done and a person has to land it, so ${m.held === 1 ? 'it does' : 'they do'} not count either way)`);
   if (m.could_not_start) lines.push(`  ${couldNotStartLine(m.could_not_start)}`);
+  if (m.waiting_on_pull_request) {
+    const one = m.waiting_on_pull_request === 1;
+    lines.push(`  ${m.waiting_on_pull_request} ${one ? 'job waits' : 'jobs wait'} on an open pull request. Check GitHub and credit ${one ? 'it' : 'them'}: atris task sweep --held`);
+  }
   if (m.ovr == null) lines.push('  rated once it has 3 finished jobs');
   if (m.miss_reasons && m.miss_reasons.length) {
     lines.push('  top miss reasons:');

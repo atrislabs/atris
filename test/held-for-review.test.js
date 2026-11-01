@@ -20,6 +20,8 @@ const { loadSeason, rosterRows } = require('../lib/gm-season');
 const { readRosterRuns, summarizeRuns, OUTCOMES } = require('../lib/roster-runs');
 const { attachStaleModels } = require('../lib/roster-stale');
 const { ratingCommand } = require('../commands/rating');
+const worktreeCommand = require('../commands/worktree');
+const heldPullRequests = require('../lib/held-pull-requests');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
@@ -1054,11 +1056,16 @@ test('the claim, the lease and the release all name the row the task command sho
   // The release is on that row, with the marker.
   assert.deepEqual(releaseEvents(local.db, local.id), [heldRelease()]);
 
-  // Log lines and the receipt still say the display id a person reads.
+  // Log lines and the receipt still say the display id a person reads. The work folder is named
+  // by the row id (lowercased, so the sweep can find the job from its branch), and that folder
+  // name is the only place a row id may show in the log.
   assert.equal(receipt.paused[0].task, shown);
-  assert.ok(logs.includes(`    building ${shown} in dispatch-${shown.toLowerCase()}`), logs.join('\n'));
+  assert.ok(logs.includes(`    building ${shown} in dispatch-${local.id.toLowerCase()}`), logs.join('\n'));
   assert.ok(logs.includes(`    released the claim on ${shown} with the pull request link as the reason`), logs.join('\n'));
-  assert.equal(logs.some((line) => line.includes(local.id) || line.includes(other.id)), false, 'no log line shows a row id');
+  const rowIds = [local.id, other.id].map((id) => id.toLowerCase());
+  const outsideTheFolder = logs.filter((line) => rowIds.some((id) => line.toLowerCase().split(`dispatch-${id}`).join('').includes(id)));
+  assert.deepEqual(outsideTheFolder, [], 'no log line shows a row id outside the work folder name');
+  assert.equal(logs.some((line) => line.includes(other.id.toLowerCase())), false, 'the other workspace\'s row id is never shown');
 });
 
 test('a claim the store refuses pauses the dispatch flight at the claim under the display id a person reads, and nothing is leased, built or let go', async (t) => {
@@ -1229,6 +1236,148 @@ test('the fleet flight claims and leases the row its own list named, even when t
   // Log lines still say the display id a person reads.
   assert.ok(logs.some((line) => line.includes(`building ${shown} in `)), logs.join('\n'));
   assert.equal(logs.some((line) => line.includes(other.id) || line.includes(local.id)), false, 'no log line shows a row id');
+});
+
+// The branch a flight builds a job on carries the job's row id, lowercased, as one word. The
+// sweep that credits a builder for a pull request a person merged (`atris task sweep --held`)
+// takes the branch as the proof that the pull request is this job's own build, so the branch has
+// to say which job it is for. A display id cannot: the same folder name in another place gives the
+// same ids, and the list that gives an id its meaning can be written again. `worktree start` builds
+// the branch from the task name it is given, so every flight gives it the row id it already holds.
+const ANOTHER_ROW_ID = '01K8X3M2Q4ABCDEFGHJKMNPQRS';
+const branchOfStart = (args) => worktreeCommand.branchName(flagValue(args, '--agent'), flagValue(args, '--task'), new Date('2026-10-30T17:15:00Z'));
+
+test('a flight names a branch for the row id after its kind, lowercased, and a job with no row id keeps the display id', () => {
+  assert.equal(fleet.flightTaskName('dispatch', ANOTHER_ROW_ID), `dispatch-${ANOTHER_ROW_ID.toLowerCase()}`);
+  assert.equal(fleet.flightTaskName('fleet', ANOTHER_ROW_ID), `fleet-${ANOTHER_ROW_ID.toLowerCase()}`);
+  assert.equal(fleet.flightTaskName('dispatch', 'CLI-900'), 'dispatch-cli-900');
+  // Every kind of flight fits the 36 characters `worktree start` keeps of a task name, so the whole id survives.
+  for (const kind of ['dispatch', 'fleet']) {
+    const branch = worktreeCommand.branchName('codex', fleet.flightTaskName(kind, ANOTHER_ROW_ID), new Date('2026-10-30T17:15:00Z'));
+    assert.equal(branch, `codex/codex-${kind}-${ANOTHER_ROW_ID.toLowerCase()}-20261030-171500`);
+    assert.equal(heldPullRequests.branchNamesJob(branch, ANOTHER_ROW_ID), true, kind);
+  }
+});
+
+test('the dispatch flight builds on a branch named for the row id of the job it claimed', async (t) => {
+  const seeded = claimedForFlight(t);
+  assert.equal(seeded.id.length, 26, 'a row id is 26 characters');
+  const plane = planeFor(seeded.task);
+
+  const { logs } = await flyWith(t, plane, { root: seeded.root });
+
+  const starts = callsTo(plane, 'worktree', 'start');
+  assert.equal(starts.length, 1, logs.join('\n'));
+  assert.equal(flagValue(starts[0], '--task'), `dispatch-${seeded.id.toLowerCase()}`);
+  assert.ok(starts[0].includes('--force'), 'a retry still resumes the earlier run');
+  assert.equal(claimRefs(plane)[0], seeded.id, 'and the claim went by the same row id');
+  // The branch the real command cuts from that name is one the sweep reads as this job's own,
+  // and no one else's.
+  const branch = branchOfStart(starts[0]);
+  assert.equal(heldPullRequests.branchNamesJob(branch, seeded.id), true, branch);
+  assert.equal(heldPullRequests.branchNamesJob(branch, ANOTHER_ROW_ID), false, branch);
+  assert.equal(logs.some((line) => line.includes(seeded.id)), false, 'no log line shows a row id');
+});
+
+test('the dispatch flight keeps the display id in the branch name when the task command gave no row id', async (t) => {
+  const seeded = claimedForFlight(t);
+  const { id, ...withoutId } = seeded.task;
+  assert.ok(id);
+  const plane = planeFor(withoutId);
+
+  await flyWith(t, plane, { root: seeded.root });
+
+  const starts = callsTo(plane, 'worktree', 'start');
+  assert.equal(starts.length, 1);
+  assert.equal(flagValue(starts[0], '--task'), `dispatch-${seeded.task.display_id.toLowerCase()}`);
+  assert.equal(heldPullRequests.branchNamesJob(branchOfStart(starts[0]), id), false, 'such a branch proves nothing to the sweep');
+});
+
+// The review import (importReviewCommit) names its worktree the same way as the two flights, but it
+// only runs in the sealed review-only lane, which no test reaches with an injected dispatcher. So
+// the three places a flight starts a worktree are pinned here: each names the branch through
+// flightTaskName, with the row id the flight holds.
+test('every place a flight starts a worktree names the branch through flightTaskName', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'fleet.js'), 'utf8');
+  const starts = [...source.matchAll(/cli\(\['worktree', 'start'[^\n]*\]\);/g)].map((match) => match[0]);
+  assert.equal(starts.length, 3, 'the review import, the fleet flight and the dispatch flight');
+  for (const call of starts) {
+    const named = /'--task', flightTaskName\('(dispatch|fleet)', (ref|rowRef)\)/.exec(call);
+    assert.ok(named, call);
+    // Each also hands over the older, display-id name of the same kind of flight, so start can say
+    // where unfinished work under that name may be (it never resumes it; see formerTaskArgs).
+    const former = /\.\.\.formerTaskArgs\('(dispatch|fleet)', (ref|rowRef), (taskId|entry\.task\.display_id)\)/.exec(call);
+    assert.ok(former, `${call} hands over the older name too`);
+    assert.deepEqual([former[1], former[2]], [named[1], named[2]], call);
+  }
+  assert.match(source, /ref: jobRef\(entry\.task, entry\.taskId\),/, 'the review import is handed the row id the flight holds');
+});
+
+// Before the branch carried the row id it carried the display id a person reads. A display name is not
+// an identity, so start never resumes a branch under it and is never held up by one; a flight that
+// names the job by its row id still hands `worktree start` the older name, and start names a branch
+// left unfinished under it in one line.
+test('the older, display-id name is handed over only when it differs from the row-id name', () => {
+  assert.deepEqual(fleet.formerTaskArgs('dispatch', ANOTHER_ROW_ID, 'FEED-12'), ['--former-task', 'dispatch-feed-12']);
+  assert.deepEqual(fleet.formerTaskArgs('fleet', ANOTHER_ROW_ID, 'feed-12'), ['--former-task', 'fleet-feed-12']);
+  // A job shown with no row id is named by its display id at every step: there is no older name.
+  assert.deepEqual(fleet.formerTaskArgs('dispatch', 'CLI-900', 'CLI-900'), []);
+  assert.deepEqual(fleet.formerTaskArgs('fleet', 'cli-900', 'CLI-900'), []);
+  // And with no display id there is nothing to hand over.
+  for (const missing of ['', undefined, null]) assert.deepEqual(fleet.formerTaskArgs('dispatch', ANOTHER_ROW_ID, missing), [], String(missing));
+});
+
+test('the dispatch flight also hands worktree start the job\'s display-id name', async (t) => {
+  const seeded = claimedForFlight(t);
+  const plane = planeFor(seeded.task);
+
+  await flyWith(t, plane, { root: seeded.root });
+
+  const [start] = callsTo(plane, 'worktree', 'start');
+  assert.equal(flagValue(start, '--task'), `dispatch-${seeded.id.toLowerCase()}`);
+  assert.equal(flagValue(start, '--former-task'), `dispatch-${seeded.task.display_id.toLowerCase()}`);
+  assert.equal(start.filter((arg) => arg === '--former-task').length, 1);
+  assert.ok(start.includes('--force'), 'a retry still resumes the earlier run');
+});
+
+test('the dispatch flight hands over no older name when the task command gave no row id', async (t) => {
+  const seeded = claimedForFlight(t);
+  const { id, ...withoutId } = seeded.task;
+  assert.ok(id);
+  const plane = planeFor(withoutId);
+
+  await flyWith(t, plane, { root: seeded.root });
+
+  const [start] = callsTo(plane, 'worktree', 'start');
+  assert.equal(flagValue(start, '--task'), `dispatch-${seeded.task.display_id.toLowerCase()}`);
+  assert.equal(start.includes('--former-task'), false, 'the name is the display id already');
+});
+
+test('the fleet flight builds on a branch named for the row id of the job it claimed', async (t) => {
+  const local = openForFlight(t);
+  assert.equal(local.id.length, 26, 'a row id is 26 characters');
+
+  const { plane, logs } = await flyFleet(t, local, { listed: [listedAs(local)], real: ['claim'] });
+
+  const starts = callsTo(plane, 'worktree', 'start');
+  assert.equal(starts.length, 1, logs.join('\n'));
+  assert.equal(flagValue(starts[0], '--task'), `fleet-${local.id.toLowerCase()}`);
+  assert.equal(claimRefs(plane)[0], local.id, 'and the claim went by the same row id');
+  const branch = branchOfStart(starts[0]);
+  assert.equal(heldPullRequests.branchNamesJob(branch, local.id), true, branch);
+  assert.equal(heldPullRequests.branchNamesJob(branch, ANOTHER_ROW_ID), false, branch);
+});
+
+test('the fleet flight also hands worktree start the job\'s display-id name', async (t) => {
+  const local = openForFlight(t);
+
+  const { plane, logs } = await flyFleet(t, local, { listed: [listedAs(local)], real: ['claim'] });
+
+  const [start] = callsTo(plane, 'worktree', 'start');
+  assert.ok(start, logs.join('\n'));
+  assert.equal(flagValue(start, '--task'), `fleet-${local.id.toLowerCase()}`);
+  assert.equal(flagValue(start, '--former-task'), `fleet-${local.task.display_id.toLowerCase()}`);
+  assert.equal(start.filter((arg) => arg === '--former-task').length, 1);
 });
 
 test('a claim the store refuses pauses the fleet flight under the display id a person reads, and nothing is leased, built or let go', async (t) => {
@@ -2708,4 +2857,122 @@ test('a fix that really landed is still written down as landed, and a paused one
 
   const paused = await flyWith(t, planeFor(FEEDBACK_TASK, { shipOutput: 'push: origin codex/dispatch\ndone: worktree shipped\n' }));
   assert.deepEqual(heldRuns(paused.root).map((run) => run.outcome), ['failed']);
+});
+
+// ---------------------------------------------------------------------------
+// A flight that runs for a member claims the job and hands it in under the member's name, so the
+// engines that did the building never reached the job's history, and either one could later review
+// the work as an independent check. The hand-in names them too, each by the name it has on a flight
+// with no member (fleet-<engine>).
+
+const OUT_OF_CREDIT = { exitCode: 1, stderr: 'Usage limit reached. Purchase more credits.', report: '' };
+// codex runs out of credit and cursor builds the same prompt. `ran` collects the engines that ran.
+const codexRunsOut = (ran = []) => (entry) => {
+  ran.push(entry.engine);
+  return Promise.resolve(entry.engine === 'codex' ? OUT_OF_CREDIT : { exitCode: 0, report: 'cursor finished the same prompt' });
+};
+// A flight on the real task commands: the pull request waits for a person, and the job waits in Review.
+async function switchedEngines(t, options = {}) {
+  const local = openForFlight(t);
+  const run = realCommand(local.root);
+  const plane = planeFor(local.task, { show: run, claim: run, ready: run, release: run });
+  const ran = [];
+  const { flight } = await flyWith(t, plane, {
+    root: local.root,
+    options: { installedEngines: ['codex', 'cursor'], dispatcher: codexRunsOut(ran), ...options },
+  });
+  assert.deepEqual(ran, ['codex', 'cursor']);
+  assert.equal(flight.held_for_review.length, 1, JSON.stringify(flight.paused));
+  return { local, plane };
+}
+const authorsNow = (local) => [...tasks.authorsOfTask(local.db, tasks.getTask(local.db, local.id))].sort();
+const passFrom = (local, actor) => assert.equal(tasks.readyTask(local.db, { id: local.id, actor, proof: `Pass by ${actor}: node --test exited 0.` }).ready, true);
+
+test('a flight that runs for a member puts every engine that built the job on its record, so neither can review it as independent, and a third name still can', async (t) => {
+  const { local, plane } = await switchedEngines(t, { actor: 'maya' });
+
+  assert.deepEqual(jobNow(local.db, local.id), { status: 'review', claimed_by: 'maya', released: 0 });
+  const [ready] = callsTo(plane, 'task', 'ready');
+  assert.equal(flagValue(ready, '--as'), 'maya');
+  assert.equal(flagValue(ready, '--built-with'), 'fleet-codex,fleet-cursor');
+  const [handIn] = proofPayloads(local.db, local.id);
+  assert.equal(handIn.handed_in_by, 'maya');
+  assert.deepEqual(handIn.built_with, ['fleet-codex', 'fleet-cursor']);
+  assert.deepEqual(authorsNow(local), ['fleet-codex', 'fleet-cursor', 'maya']);
+
+  // A pass by either engine is refused as an independent check: two passes do not certify the job.
+  passFrom(local, 'fleet-codex');
+  passFrom(local, 'fleet-cursor');
+  const afterEngines = tasks.getTask(local.db, local.id).metadata;
+  assert.equal(afterEngines.agent_review_pass_count, 3, 'the hand-in and the two passes');
+  assert.equal(afterEngines.agent_certified, undefined);
+  assert.equal(afterEngines.independent_review_by, undefined);
+  // And neither can give it a positive review.
+  for (const actor of ['fleet-codex', 'fleet-cursor', 'maya']) {
+    const refused = tasks.reviewTask(local.db, { id: local.id, actor, reward: 1, proof: 'Looks good.' });
+    assert.deepEqual([refused.reviewed, refused.reason], [false, 'judge_equals_worker'], actor);
+  }
+  // A third name, which built none of it, still counts.
+  passFrom(local, 'fleet-gemini');
+  const certified = tasks.getTask(local.db, local.id).metadata;
+  assert.equal(certified.agent_certified, true);
+  assert.equal(certified.independent_review_by, 'fleet-gemini');
+});
+
+test('a flight with no member already records both engines through its own claim and hand-in, and sends nothing extra', async (t) => {
+  const { local, plane } = await switchedEngines(t);
+
+  assert.deepEqual(jobNow(local.db, local.id), { status: 'review', claimed_by: 'fleet-codex', released: 0 });
+  const [ready] = callsTo(plane, 'task', 'ready');
+  assert.equal(flagValue(ready, '--as'), 'fleet-cursor');
+  assert.equal(ready.includes('--built-with'), false, 'the claim and the hand-in name the two engines already');
+  assert.deepEqual(authorsNow(local), ['fleet-codex', 'fleet-cursor']);
+  passFrom(local, 'fleet-codex');
+  passFrom(local, 'fleet-cursor');
+  assert.equal(tasks.getTask(local.db, local.id).metadata.agent_certified, undefined);
+  passFrom(local, 'fleet-gemini');
+  assert.equal(tasks.getTask(local.db, local.id).metadata.independent_review_by, 'fleet-gemini');
+});
+
+for (const [label, build] of [
+  ['a protected-lane fix waiting for a person to land it', (task) => ({ plane: planeFor(task), options: {} })],
+  ['a safe-lane fix that landed', (task) => ({ plane: planeFor({ ...task, tag: 'code' }, { shipOutput: `merge: merged\nmerge: record ${MERGE_RECORD}\ndone: worktree shipped\n` }), options: {} })],
+  ['a proof for Review that nothing lands', (task) => ({ plane: planeFor(task), options: A_PROOF_ONLY })],
+]) {
+  test(`whichever way a member's flight hands the job in, it names the engines that built it: ${label}`, async (t) => {
+    const { plane, options } = build(FEEDBACK_TASK);
+    const ran = [];
+    await flyWith(t, plane, { options: { ...options, actor: 'maya', installedEngines: ['codex', 'cursor'], dispatcher: codexRunsOut(ran) } });
+
+    assert.deepEqual(ran, ['codex', 'cursor']);
+    const sent = callsTo(plane, 'task', 'ready');
+    assert.equal(sent.length, 1);
+    assert.equal(flagValue(sent[0], '--as'), 'maya');
+    assert.equal(flagValue(sent[0], '--built-with'), 'fleet-codex,fleet-cursor');
+    assert.equal(sent[0].filter((arg) => arg === '--built-with').length, 1);
+  });
+}
+
+test('a member\'s flight that never switched engines names only the one that built the job', async (t) => {
+  const plane = planeFor(FEEDBACK_TASK);
+  await flyWith(t, plane, { options: { actor: 'maya', installedEngines: ['codex', 'cursor'] } });
+
+  const [ready] = callsTo(plane, 'task', 'ready');
+  assert.equal(flagValue(ready, '--as'), 'maya');
+  assert.equal(flagValue(ready, '--built-with'), 'fleet-codex');
+});
+
+test('builtWithArgs names every engine that ran, by the name it has on a flight with no member, less the names the claim and the hand-in already put on the record', () => {
+  const member = { claimedAs: 'maya', handedInAs: 'maya' };
+  assert.deepEqual(fleet.builtWithArgs(['codex', 'cursor'], member), ['--built-with', 'fleet-codex,fleet-cursor']);
+  // In order, once each, however the engine is written; blanks mean nothing.
+  assert.deepEqual(fleet.builtWithArgs(['codex', ' Cursor ', 'codex', '', null, undefined], member), ['--built-with', 'fleet-codex,fleet-cursor']);
+  // With no member the first engine claims and the last hands in: both are on the record already.
+  assert.deepEqual(fleet.builtWithArgs(['codex', 'cursor'], { claimedAs: 'fleet-codex', handedInAs: 'fleet-cursor' }), []);
+  assert.deepEqual(fleet.builtWithArgs(['codex'], { claimedAs: 'fleet-codex', handedInAs: 'fleet-codex' }), []);
+  // A chain of three leaves the one in the middle, which neither the claim nor the hand-in names.
+  assert.deepEqual(fleet.builtWithArgs(['codex', 'claude', 'cursor'], { claimedAs: 'fleet-codex', handedInAs: 'fleet-cursor' }), ['--built-with', 'fleet-claude']);
+  // Nothing ran, nothing to name.
+  for (const none of [[], undefined, null, 'codex']) assert.deepEqual(fleet.builtWithArgs(none, member), [], String(none));
+  assert.deepEqual(fleet.builtWithArgs(['codex']), ['--built-with', 'fleet-codex']);
 });

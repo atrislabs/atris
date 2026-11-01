@@ -84,3 +84,86 @@ test('an existing branch survives a failed creation', (t) => {
   assert.throws(() => createAgentWorktree({ root, agent: 'tester', task: 'existing', branch: 'existing', path: target, base: 'HEAD' }), /already exists/);
   assert.equal(git(['rev-parse', 'existing']), before);
 });
+
+// Flights used to be named for the display id a person reads (dispatch-feed-12) and are now named for
+// the row id. The older name is not an identity: display names repeat across workspaces and change
+// when the task list changes, so a branch under one can belong to another job. A start that is told
+// the older name is never held up by an unfinished flight under it and never starts from it. It says
+// where the unfinished work may be, in one line, and starts fresh.
+function leaveOlderFlight(t) {
+  const setup = room(t);
+  const stampOf = (when) => when.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '').replace('T', '-');
+  const older = `codex/tester-dispatch-feed-12-${stampOf(new Date(Date.now() - 5 * 60 * 1000))}`;
+  const home = setup.git(['branch', '--show-current']);
+  setup.git(['checkout', '-q', '-b', older]);
+  fs.writeFileSync(path.join(setup.root, 'half.txt'), 'half done\n');
+  setup.git(['add', 'half.txt']);
+  setup.git(['commit', '-qm', 'half done']);
+  setup.git(['checkout', '-q', home]);
+  return { ...setup, older };
+}
+
+function startUnderNewName(setup, extra) {
+  return spawnSync(process.execPath, [
+    path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'start', '--agent', 'tester',
+    '--task', 'dispatch-01k8x3m2q4abcdefghjkmnpqrs', '--base', 'HEAD', ...extra,
+  ], { cwd: setup.root, encoding: 'utf8', env: { ...process.env, HOME: setup.dir, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+}
+
+const sidecarOf = (started) => {
+  const target = /^path: (.+)$/m.exec(started.stdout)[1];
+  return { target, sidecar: JSON.parse(fs.readFileSync(path.join(target, '.atris', 'agent-worktree.json'), 'utf8')) };
+};
+
+const olderLine = (branch) => `older unfinished work may be on ${branch}; starting fresh`;
+const aboutOlderWork = (started) => started.stderr.split('\n').filter((line) => /older unfinished work/.test(line));
+
+test('a start told the job\'s older name is not held up by an unfinished flight under that name, does not start from it, and says where it is', (t) => {
+  const setup = leaveOlderFlight(t);
+  const started = startUnderNewName(setup, ['--former-task', 'dispatch-feed-12']);
+
+  assert.equal(started.status, 0, started.stderr);
+  assert.doesNotMatch(started.stderr, /overlapping flight/);
+  assert.doesNotMatch(started.stderr, /pass --force to start anyway/);
+  assert.equal(aboutOlderWork(started).length, 1, 'one line');
+  assert.ok(started.stderr.includes(olderLine(setup.older)), started.stderr);
+  const { target, sidecar } = sidecarOf(started);
+  assert.equal(sidecar.resumed_from, null);
+  assert.equal(fs.existsSync(path.join(target, 'half.txt')), false);
+  assert.match(sidecar.branch, /^codex\/tester-dispatch-01k8x3m2q4abcdefghjkmnpqrs-\d{8}-\d{6}$/);
+  assert.equal(setup.git(['show', `${setup.older}:half.txt`]), 'half done', 'the older branch keeps its commits');
+});
+
+test('a start told nothing of the older name knows nothing of it: no line, no flight in the way, no work picked up', (t) => {
+  const setup = leaveOlderFlight(t);
+  const started = startUnderNewName(setup, []);
+
+  assert.equal(started.status, 0, started.stderr);
+  assert.doesNotMatch(started.stderr, /overlapping flight/);
+  assert.deepEqual(aboutOlderWork(started), []);
+  const { target, sidecar } = sidecarOf(started);
+  assert.equal(sidecar.resumed_from, null);
+  assert.equal(fs.existsSync(path.join(target, 'half.txt')), false);
+});
+
+test('the older name is read as written: with an equals sign, with --force, and an empty one means none', (t) => {
+  // Each start gets its own repository: a start leaves a flight under the new name behind, and the
+  // next start of the same name would meet that flight, which is not what is being asked here.
+  const withEquals = leaveOlderFlight(t);
+  const equals = startUnderNewName(withEquals, ['--former-task=dispatch-feed-12']);
+  assert.equal(equals.status, 0, equals.stderr);
+  assert.ok(equals.stderr.includes(olderLine(withEquals.older)), equals.stderr);
+
+  // --force has nothing to force past: the older name never blocks, and it is still named.
+  const withForce = leaveOlderFlight(t);
+  const forced = startUnderNewName(withForce, ['--former-task', 'dispatch-feed-12', '--force']);
+  assert.equal(forced.status, 0, forced.stderr);
+  assert.doesNotMatch(forced.stderr, /overlapping flight/);
+  assert.ok(forced.stderr.includes(olderLine(withForce.older)), forced.stderr);
+  assert.equal(sidecarOf(forced).sidecar.resumed_from, null);
+
+  const withBlank = leaveOlderFlight(t);
+  const blank = startUnderNewName(withBlank, ['--former-task=']);
+  assert.equal(blank.status, 0, blank.stderr);
+  assert.deepEqual(aboutOlderWork(blank), []);
+});
