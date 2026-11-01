@@ -460,8 +460,18 @@ function readShipTarget(root, targetRef, localMode) {
   let localRef = target;
   if (localMode) {
     const exists = runGit(['show-ref', '--verify', '--quiet', target], { cwd: root, check: false });
-    if (exists.status === 1) localRef = `refs/remotes/origin/${baseBranchName(targetRef)}`;
-    else if (exists.status !== 0) return { error: gitFailureDetail(exists) || 'could not read the target branch' };
+    if (exists.status === 1) {
+      const name = baseBranchName(targetRef);
+      const remotes = runGit(['remote'], { cwd: root, check: false });
+      if (remotes.status !== 0) return { error: gitFailureDetail(remotes) || 'could not read remotes' };
+      const choices = remotes.stdout.split(/\r?\n/).filter(Boolean).map(remote => ({ remote, ref: `refs/remotes/${remote}/${name}` }))
+        .filter(choice => runGit(['show-ref', '--verify', '--quiet', choice.ref], { cwd: root, check: false }).status === 0);
+      const configured = runGit(['config', '--get', 'checkout.defaultRemote'], { cwd: root, check: false });
+      if (configured.status !== 0 && configured.status !== 1) return { error: gitFailureDetail(configured) || 'could not read the default remote' };
+      const preferred = choices.find(choice => choice.remote === configured.stdout.trim());
+      const selected = choices.length === 1 ? choices[0] : (preferred || choices.find(choice => choice.remote === 'origin') || choices[0]);
+      localRef = selected ? selected.ref : `refs/remotes/origin/${name}`;
+    } else if (exists.status !== 0) return { error: gitFailureDetail(exists) || 'could not read the target branch' };
     const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
     if (resolved.status !== 0) return { error: gitFailureDetail(resolved) || 'target branch is unavailable' };
     oid = resolved.stdout.trim();
@@ -1455,11 +1465,14 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       const primaryHead = runGit(['rev-parse', 'HEAD'], { cwd: primary }).stdout.trim();
       if (!safeCheckout(primary, primaryHead, base) || !safeCheckout(primary, primaryHead, candidate)) return 3;
       if (currentBranch(primary) !== targetBranch) {
-        const switchArgs = latest.ref === target ? ['switch', targetBranch]
-          : ['switch', '--track', '-c', targetBranch, latest.ref];
-        const switched = runGit(switchArgs, { cwd: primary, check: false });
+        const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
         if (switched.status !== 0) {
           console.error(`blocked: could not switch the primary checkout to the target; branch was left unmerged: ${gitFailureDetail(switched)}`);
+          return 3;
+        }
+        const switchedHead = runGit(['rev-parse', '--verify', `${target}^{commit}`], { cwd: primary, check: false });
+        if (switchedHead.status !== 0 || switchedHead.stdout.trim() !== base) {
+          console.error('blocked: the target changed while switching; branch was left unmerged');
           return 3;
         }
       }

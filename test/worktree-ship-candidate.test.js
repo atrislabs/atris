@@ -925,3 +925,49 @@ test('a local landing refuses when both the local target and saved remote copy a
   assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
   assert.equal(c.git(['rev-parse', 'master']), c.base);
 });
+
+function addPreferredRemoteMain(c, gate) {
+  const index = path.join(c.dir, 'preferred-index');
+  const run = (args, input) => {
+    const result = spawnSync('git', args, { cwd: c.work, env: { ...c.env, GIT_INDEX_FILE: index }, input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  run(['read-tree', c.base]);
+  const blob = run(['hash-object', '-w', '--stdin'], gate);
+  run(['update-index', '--add', '--cacheinfo', '100644', blob, 'scripts/merge-gate.sh']);
+  const tree = run(['write-tree']);
+  const next = run(['commit-tree', tree, '-p', c.base, '-m', 'preferred remote gate']);
+  const remote = path.join(c.dir, 'preferred.git');
+  c.git(['init', '--bare', '-q', remote]);
+  c.git(['--git-dir', remote, 'fetch', '--no-write-fetch-head', c.primary, next], c.dir);
+  c.git(['--git-dir', remote, 'update-ref', 'refs/heads/main', next], c.dir);
+  c.git(['remote', 'add', 'preferred', remote]);
+  c.git(['fetch', 'preferred', 'main'], c.work);
+  c.git(['config', 'checkout.defaultRemote', 'preferred']);
+  return next;
+}
+
+test('a new local target checks the gate on the remote Git would select', (t) => {
+  const c = fixture(t, { open: false });
+  addRemoteMain(c);
+  addPreferredRemoteMain(c, '#!/bin/sh\necho preferred gate refused >&2\nexit 37\n');
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /preferred gate refused/);
+  assert.equal(c.git(['branch', '--show-current']), 'master');
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+  assert.equal(c.git(['rev-parse', 'master']), c.base);
+});
+
+test('a passing gate on the preferred remote lands the checked commit from that remote', (t) => {
+  const c = fixture(t, { gate: '#!/bin/sh\necho origin gate refused >&2\nexit 37\n', targetOnly: true, open: false });
+  addRemoteMain(c);
+  const preferred = addPreferredRemoteMain(c, pass);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'main']);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+  assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [preferred, c.source]);
+  assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'preferred/main');
+});
