@@ -526,9 +526,51 @@ function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) 
   const unstaged = changedFiles(root, ['diff', '--name-only']);
   const staged = changedFiles(root, ['diff', '--cached', '--name-only']);
   const commitMessage = String(message || '');
-  const skipped = REGEN_ADAPTER_FILES.filter(
-    (file) => unstaged.has(file) && !staged.has(file) && !commitMessage.includes(file)
-  );
+  const starts = new Map([
+    ['<!-- ATRIS:START - Auto-generated, do not edit -->', '<!-- ATRIS:END -->'],
+    ['<!-- ATRIS_BRAIN_COMPILE:START -->', '<!-- ATRIS_BRAIN_COMPILE:END -->'],
+  ]);
+  const ends = new Set(starts.values());
+  // Keep the markers and all outside text, while masking only complete block bodies.
+  const outsideBlocks = (text) => {
+    const lines = text.match(/[^\n]*\n|[^\n]+$/g) || [];
+    let expectedEnd = null;
+    let blocks = 0;
+    let outside = '';
+    for (const line of lines) {
+      const marker = line.replace(/\r?\n$/, '');
+      if (starts.has(marker)) {
+        if (expectedEnd) return null;
+        expectedEnd = starts.get(marker);
+        blocks += 1;
+        outside += line;
+      } else if (ends.has(marker)) {
+        if (expectedEnd !== marker) return null;
+        expectedEnd = null;
+        outside += line;
+      } else if (!expectedEnd) {
+        outside += line;
+      }
+    }
+    return blocks && !expectedEnd ? outside : null;
+  };
+  const skipped = [];
+  for (const file of REGEN_ADAPTER_FILES) {
+    if (!unstaged.has(file)) continue;
+    let generatedOnly = file === '.atris/state/tasks.projection.json';
+    if (!generatedOnly) {
+      const original = runGit(['show', `:${file}`], { cwd: root, check: false });
+      try {
+        const before = original.status === 0 ? outsideBlocks(original.stdout) : null;
+        const after = outsideBlocks(fs.readFileSync(path.join(root, file), 'utf8'));
+        generatedOnly = before !== null && after !== null && before === after;
+      } catch {
+        generatedOnly = false;
+      }
+      if (!generatedOnly) console.log(`ship: kept hand edits in ${file}`);
+    }
+    if (generatedOnly && !staged.has(file) && !commitMessage.includes(file)) skipped.push(file);
+  }
   if (!skipped.length) return [];
   console.log(`ship: skipped regenerated adapter churn: ${skipped.join(', ')}`);
   if (!dryRun) runGit(['checkout', '--', ...skipped], { cwd: root });
@@ -948,7 +990,8 @@ function shipHelp() {
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
-  console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
+  console.log('  generated-only adapter changes are skipped unless staged first or named in --message; hand edits are kept');
+  console.log('  unstaged task projection changes are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
 
