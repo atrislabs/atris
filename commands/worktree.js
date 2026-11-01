@@ -463,6 +463,7 @@ function savedBranchCopies(root, branch) {
   if (remotes.status !== 0) return { error: gitFailureDetail(remotes) || 'could not list remotes' };
   const source = `refs/heads/${branch}`;
   const originRefs = new Set([`refs/remotes/origin/${branch}`]);
+  const originMappedRefs = new Set();
   const remoteNames = remotes.stdout.split(/\r?\n/).filter(Boolean);
   for (const remote of remoteNames) {
     const config = runGit(['config', '--get-all', `remote.${remote}.fetch`], { cwd: root, check: false });
@@ -486,6 +487,7 @@ function savedBranchCopies(root, branch) {
       }
       const ref = destination.replace('*', part);
       if (!ref.startsWith('refs/')) continue;
+      if (remote === 'origin') originMappedRefs.add(ref);
       const exists = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false });
       if (exists.status === 0) {
         refs.add(ref);
@@ -501,7 +503,7 @@ function savedBranchCopies(root, branch) {
   }
   if (!copies.length) return { error: 'no saved target copy exists' };
   const origin = copies.find(copy => originRefs.has(copy.ref));
-  return { copies, originRef: origin && origin.ref, originConfigured: remoteNames.includes('origin') };
+  return { copies, originRef: origin && origin.ref, originConfigured: remoteNames.includes('origin'), originMappedRefs: [...originMappedRefs].sort() };
 }
 
 function savedCopiesDisagree(target) {
@@ -1699,6 +1701,19 @@ function shipWorktree(args) {
     || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0)) {
     refuseDisagreeingCopies();
     return 3;
+  }
+  // Read the possible refresh without moving refs, so a new split can be refused first.
+  if (beforeRefresh && beforeRefresh.copies && beforeRefresh.originConfigured && beforeRefresh.originMappedRefs.length) {
+    const live = readShipTarget(root, targetRef, false);
+    if (!live.error) {
+      const after = new Map(beforeRefresh.copies.map(copy => [copy.ref, copy.oid]));
+      for (const ref of beforeRefresh.originMappedRefs) after.set(ref, live.oid);
+      if (new Set(after.values()).size > 1 && (beforeRefresh.gate || live.gate || branchHasGate
+        || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0)) {
+        refuseDisagreeingCopies();
+        return 3;
+      }
+    }
   }
   // Local shipping keeps the legacy refresh, but reads its gate from the local target.
   if (localMode) refreshRemoteRef(root, targetRef);

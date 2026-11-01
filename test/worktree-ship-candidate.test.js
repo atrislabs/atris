@@ -1107,3 +1107,74 @@ test('agreeing gated copies still track origin when its fetch rule excludes the 
   assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
   assert.equal(c.git(['rev-parse', '--abbrev-ref', 'main@{upstream}']), 'origin/main');
 });
+
+function addAgreeingPreferred(c) {
+  const remote = path.join(c.dir, 'preferred.git');
+  c.git(['init', '--bare', '-q', remote]);
+  c.git(['--git-dir', remote, 'fetch', '--no-write-fetch-head', c.primary, c.base], c.dir);
+  c.git(['--git-dir', remote, 'update-ref', 'refs/heads/main', c.base], c.dir);
+  c.git(['remote', 'add', 'preferred', remote]);
+  c.git(['fetch', 'preferred', 'main'], c.work);
+}
+
+function advanceOriginMain(c, gate = null) {
+  const index = path.join(c.dir, 'advance-main-index');
+  const run = (args, input) => {
+    const result = spawnSync('git', args, { cwd: c.work, env: { ...c.env, GIT_INDEX_FILE: index }, input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  run(['read-tree', c.base]);
+  if (gate !== null) {
+    const blob = run(['hash-object', '-w', '--stdin'], gate);
+    run(['update-index', '--add', '--cacheinfo', '100644', blob, 'scripts/merge-gate.sh']);
+  }
+  const tree = run(['write-tree']);
+  const next = run(['commit-tree', tree, '-p', c.base, '-m', 'advance origin main']);
+  c.git(['--git-dir', c.remote, 'fetch', '--no-write-fetch-head', c.primary, next], c.dir);
+  c.git(['--git-dir', c.remote, 'update-ref', 'refs/heads/main', next, c.base], c.dir);
+  return next;
+}
+
+test('already disagreeing gated copies refuse before refreshing the saved target', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  addPreferredRemoteMain(c, pass);
+  advanceOriginMain(c);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
+
+for (const gateAlreadySaved of [false, true]) {
+  test(`a refresh that would split ${gateAlreadySaved ? 'gated' : 'newly gated'} copies refuses before changing refs`, (t) => {
+    const c = fixture(t, { gate: gateAlreadySaved ? pass : null, open: false });
+    addRemoteMain(c);
+    addAgreeingPreferred(c);
+    advanceOriginMain(c, gateAlreadySaved ? null : '#!/bin/sh\nexit 37\n');
+    const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+    const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+    assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+    assert.equal(c.git(['branch', '--show-current']), 'master');
+    assert.equal(fs.existsSync(c.events), false);
+  });
+}
+
+test('an excluded origin refresh that would split copies refuses before changing refs', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  addRemoteMain(c);
+  addAgreeingPreferred(c);
+  c.git(['config', '--add', 'remote.origin.fetch', '^refs/heads/main']);
+  advanceOriginMain(c);
+  const refs = c.git(['for-each-ref', '--format=%(refname) %(objectname)']);
+  const result = c.ship(['--local', '--merge', '--target', 'origin/main']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /copies.*disagree.*create.*branch/i);
+  assert.equal(c.git(['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.existsSync(c.events), false);
+});
