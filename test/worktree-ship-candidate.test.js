@@ -443,3 +443,16 @@ test('local landing retries when an unselected target moves during the gate', (t
   assert.equal(events[3], `gate:${landed}`);
   assert.equal(c.git(['show', 'master:b.txt']), 'advanced');
 });
+
+test('a push hook that moves the source cannot land the old candidate', (t) => {
+  const c = fixture(t, { gate: pass });
+  const hooks = path.join(c.dir, 'hooks');
+  fs.mkdirSync(hooks);
+  c.git(['config', 'core.hooksPath', hooks]);
+  fs.writeFileSync(path.join(hooks, 'pre-push'), '#!/bin/sh\nold=$(git rev-parse refs/heads/feature)\ntree=$(git rev-parse "$old^{tree}")\nnext=$(git commit-tree "$tree" -p "$old" -m moved)\ngit update-ref refs/heads/feature "$next" "$old"\n', { mode: 0o755 });
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /source branch moved/);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+});

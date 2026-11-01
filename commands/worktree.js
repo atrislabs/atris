@@ -1345,7 +1345,7 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       return 0;
     }
     console.log(`push: checked commit to ${targetBranch}`);
-    const pushed = checkedPush({ root, candidate, target, base, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
+    const pushed = checkedPush({ root, candidate, target, base, sourceRef: `refs/heads/${branch}`, sourceOid: source, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
     if (pushed.status !== 0) {
       const latest = runGit(['ls-remote', 'origin', target], { cwd: root, check: false });
       const latestId = String(latest.stdout || '').trim().split(/\s+/)[0];
@@ -1374,7 +1374,7 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       const remoteHead = runGit(['ls-remote', 'origin', `refs/heads/${branch}`], { cwd: root, check: false });
       const oldHead = String(remoteHead.stdout || '').trim().split(/\s+/)[0];
       if (remoteHead.status === 0 && oldHead && (!pr.headRefOid || oldHead === pr.headRefOid)) {
-        const deleted = checkedPush({ root, candidate: '', target: `refs/heads/${branch}`, base: oldHead, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
+        const deleted = checkedPush({ root, candidate: '', target: `refs/heads/${branch}`, base: oldHead, sourceRef: `refs/heads/${branch}`, sourceOid: source, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
         if (deleted.status === 0) console.log(`merge: remote branch deleted ${branch}`);
         else console.log(`merge: remote branch delete skipped: ${gitFailureDetail(deleted)}`);
       }
