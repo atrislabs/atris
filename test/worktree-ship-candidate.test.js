@@ -350,3 +350,18 @@ test('a gate symlink cannot run a file outside the checked repository', (t) => {
   assert.match(result.stderr, /gate.*outside|gate.*commit/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), expected);
 });
+
+test('a gate symlink may point to another file in the checked commit', (t) => {
+  const c = fixture(t, { gate: pass });
+  fs.writeFileSync(path.join(c.primary, 'actual-gate.sh'), pass);
+  fs.unlinkSync(path.join(c.primary, 'scripts', 'merge-gate.sh'));
+  fs.symlinkSync('../actual-gate.sh', path.join(c.primary, 'scripts', 'merge-gate.sh'));
+  c.git(['add', 'actual-gate.sh', 'scripts/merge-gate.sh']);
+  c.git(['commit', '-qm', 'link the checked gate']);
+  c.git(['push', 'origin', 'master']);
+  const result = c.ship(['--merge']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /merge gate: passed/);
+  const landed = c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});
