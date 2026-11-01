@@ -457,8 +457,12 @@ function refreshRemoteRef(root, ref) {
 function readShipTarget(root, targetRef, localMode) {
   const target = `refs/heads/${baseBranchName(targetRef)}`;
   let oid;
+  let localRef = target;
   if (localMode) {
-    const resolved = runGit(['rev-parse', '--verify', `${target}^{commit}`], { cwd: root, check: false });
+    const exists = runGit(['show-ref', '--verify', '--quiet', target], { cwd: root, check: false });
+    if (exists.status === 1) localRef = `refs/remotes/origin/${baseBranchName(targetRef)}`;
+    else if (exists.status !== 0) return { error: gitFailureDetail(exists) || 'could not read the target branch' };
+    const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
     if (resolved.status !== 0) return { error: gitFailureDetail(resolved) || 'target branch is unavailable' };
     oid = resolved.stdout.trim();
   } else {
@@ -475,7 +479,7 @@ function readShipTarget(root, targetRef, localMode) {
   }
   const gate = runGit(['ls-tree', oid, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
   if (gate.status !== 0) return { error: gitFailureDetail(gate) || 'could not read the target tree' };
-  return { oid, gate: !!gate.stdout.trim() };
+  return { oid, gate: !!gate.stdout.trim(), ref: localMode ? localRef : target };
 }
 
 function baseBranchName(ref) {
@@ -1433,12 +1437,12 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       }
     }
     if (localMode) {
-      const currentTarget = runGit(['rev-parse', '--verify', target], { cwd: root, check: false });
-      if (currentTarget.status !== 0) {
-        console.error('blocked: could not read the target; branch was left unmerged');
+      const currentTarget = readShipTarget(root, targetRef, true);
+      if (currentTarget.error) {
+        console.error(`blocked: could not read the target; branch was left unmerged: ${currentTarget.error}`);
         return 3;
       }
-      if (currentTarget.stdout.trim() !== base) {
+      if (currentTarget.oid !== base || currentTarget.ref !== latest.ref) {
         console.log(`merge: target moved, checking again (${attempt}/3)`);
         continue;
       }
@@ -1450,7 +1454,9 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verif
       const primaryHead = runGit(['rev-parse', 'HEAD'], { cwd: primary }).stdout.trim();
       if (!safeCheckout(primary, primaryHead, base) || !safeCheckout(primary, primaryHead, candidate)) return 3;
       if (currentBranch(primary) !== targetBranch) {
-        const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+        const switchArgs = latest.ref === target ? ['switch', targetBranch]
+          : ['switch', '--track', '-c', targetBranch, latest.ref];
+        const switched = runGit(switchArgs, { cwd: primary, check: false });
         if (switched.status !== 0) {
           console.error(`blocked: could not switch the primary checkout to the target; branch was left unmerged: ${gitFailureDetail(switched)}`);
           return 3;

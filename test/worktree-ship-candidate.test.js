@@ -828,3 +828,37 @@ test('local no-gate landing ignores a failed remote refresh as before', (t) => {
   assert.equal(result.stderr, '');
   assert.notEqual(c.git(['rev-parse', 'master']), c.base);
 });
+
+function addRemoteMain(c) {
+  c.git(['push', 'origin', 'master:refs/heads/main']);
+  c.git(['fetch', 'origin', 'main'], c.work);
+  assert.notEqual(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 0);
+}
+
+for (const succeeds of [false, true]) {
+  test(`local landing ${succeeds ? 'passes' : 'refuses'} the remote-only target gate before creating its branch`, (t) => {
+    const gate = '#!/bin/sh\nif git show-ref --verify --quiet refs/heads/main; then echo branch created too soon >&2; exit 96; fi\n'
+      + marker + (succeeds ? 'exit 0\n' : 'echo remote-only gate refused >&2\nexit 37\n');
+    const c = fixture(t, { gate, targetOnly: !succeeds, open: false });
+    addRemoteMain(c);
+    const verify = 'if git show-ref --verify --quiet refs/heads/main; then echo branch created too soon >&2; exit 95; fi; printf "verify:%s\\n" "$(git rev-parse HEAD)" >> "$EVENTS"';
+    const result = c.ship(['--local', '--merge', '--target', 'origin/main'], verify);
+    if (!succeeds) {
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.match(result.stderr, /remote-only gate refused/);
+      assert.match(result.stderr, /left unmerged/);
+      assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: c.work }).status, 1);
+      assert.equal(c.git(['branch', '--show-current']), 'master');
+      assert.equal(c.git(['rev-parse', 'master']), c.base);
+      assert.equal(c.git(['rev-parse', 'feature'], c.work), c.source);
+    } else {
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const landed = c.git(['rev-parse', 'refs/heads/main']);
+      assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+      assert.deepEqual(c.git(['show', '-s', '--format=%P', landed]).split(' '), [c.base, c.source]);
+      assert.equal(c.git(['branch', '--show-current']), 'main');
+      assert.equal(c.git(['rev-parse', 'master']), c.base);
+      assert.equal(c.git(['rev-parse', 'feature'], c.work), c.source);
+    }
+  });
+}
