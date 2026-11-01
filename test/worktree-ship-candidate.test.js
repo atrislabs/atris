@@ -691,3 +691,36 @@ test('checkout protection asks Git only for the paths being changed', (t) => {
   assert.ok(requests.length > 0);
   for (const request of requests) assert.match(request, / -- .+/, request);
 });
+
+test('a tracked file may safely become a directory and return to a file', (t) => {
+  const c = fixture(t, { gate: pass, open: false });
+  fs.writeFileSync(path.join(c.work, 'collision'), 'tracked source\n');
+  c.git(['add', 'collision'], c.work);
+  c.git(['commit', '-qm', 'add source file'], c.work);
+  const source = c.git(['rev-parse', 'HEAD'], c.work);
+  c.git(['merge', '--no-ff', '-m', 'include source', 'feature']);
+  c.git(['rm', 'collision']);
+  fs.mkdirSync(path.join(c.primary, 'collision'));
+  fs.writeFileSync(path.join(c.primary, 'collision', 'child'), 'tracked target\n');
+  c.git(['add', 'collision']);
+  c.git(['commit', '-qm', 'replace file with directory']);
+  c.git(['push', 'origin', 'master']);
+  const result = c.ship(['--merge']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.readFileSync(path.join(c.work, 'collision'), 'utf8'), 'tracked source\n');
+  assert.equal(c.git(['rev-parse', 'HEAD'], c.work), source);
+});
+
+test('checkout protection treats special characters in paths literally', (t) => {
+  const c = fixture(t, { gate: pass });
+  fs.appendFileSync(path.join(c.primary, '.git', 'info', 'exclude'), '\nnotes[[]1].local\n');
+  fs.writeFileSync(path.join(c.work, 'notes[1].local'), 'precious\n');
+  fs.writeFileSync(path.join(c.primary, 'notes[1].local'), 'target\n');
+  c.git(['add', '-f', 'notes[1].local']);
+  c.git(['commit', '-qm', 'add target file']);
+  c.git(['push', 'origin', 'master']);
+  const result = c.ship(['--merge']);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /notes\[1\]\.local/);
+  assert.equal(fs.readFileSync(path.join(c.work, 'notes[1].local'), 'utf8'), 'precious\n');
+});
