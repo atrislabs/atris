@@ -42,7 +42,8 @@ function setup(t, gate) {
   git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
   git(['worktree', 'add', '-qb', 'feature', work, 'master']);
   fs.writeFileSync(path.join(work, 'app.txt'), 'changed\n');
-  fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nfs.appendFileSync(process.env.GH_LOG, args.join(' ') + '\\n');\nif (args[1] === 'view' && args.includes('--jq')) console.log('41 https://example.test/pull/41 OPEN');\nelse if (args[1] === 'view') console.log(JSON.stringify({state:'OPEN', mergedAt:null}));\nelse if (args[1] !== 'merge') process.exit(1);\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nfs.appendFileSync(process.env.GH_LOG, args.join(' ') + '\\n');\nif (args[1] === 'list') console.log('[]');
+else if (args[1] === 'view' && args.includes('--jq')) console.log('41 https://example.test/pull/41 OPEN');\nelse if (args[1] === 'view') console.log(JSON.stringify({state:'OPEN', mergedAt:null}));\nelse if (args[1] !== 'merge') process.exit(1);\n`, { mode: 0o755 });
   const env = { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_LOG: log, ATRIS_SKIP_UPDATE_CHECK: '1' };
   function ship(args, extraEnv = {}, verify = 'test -f app.txt') {
     return spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'save change', '--verify', verify, '--no-map-refresh', ...args], {
@@ -56,7 +57,7 @@ function assertUnmerged(ctx, result) {
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /branch.*left unmerged/i);
   assert.equal(ctx.git(['rev-parse', 'master']), ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'master'], ctx.dir));
-  assert.equal(fs.existsSync(ctx.log), false, 'no pull request was changed');
+  if (fs.existsSync(ctx.log)) assert.doesNotMatch(fs.readFileSync(ctx.log, 'utf8'), /pr (merge|create)/, 'no pull request was changed');
   assert.notEqual(spawnSync('git', ['--git-dir', ctx.remote, 'show-ref', '--verify', '--quiet', 'refs/heads/feature']).status, 0);
 }
 
@@ -66,9 +67,9 @@ test('a passing gate runs after verify at the repository root on the committed h
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /merge gate: passed/);
   const head = ctx.git(['rev-parse', 'HEAD'], ctx.work);
-  assert.match(fs.readFileSync(ctx.log, 'utf8'), new RegExp(`pr merge .*--match-head-commit ${head}`));
-  assert.equal(head, ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir));
-  assert.equal(ctx.git(['rev-parse', '--abbrev-ref', '@{upstream}'], ctx.work), 'origin/feature');
+  const landed = ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'master'], ctx.dir);
+  assert.equal(ctx.git(['rev-parse', `${landed}^2`], ctx.work), head);
+  assert.doesNotMatch(fs.readFileSync(ctx.log, 'utf8'), /pr merge/);
 });
 
 test('a failed gate preserves the remote branch and pull request and reports its output', (t) => {
@@ -167,7 +168,7 @@ test('a failed verification never starts the gate', (t) => {
   const result = ctx.ship(['--merge'], {}, 'exit 17');
   assert.notEqual(result.status, 0);
   assert.equal(fs.existsSync(path.join(ctx.dir, 'gate-ran')), false);
-  assert.equal(fs.existsSync(ctx.log), false);
+  assert.doesNotMatch(fs.readFileSync(ctx.log, 'utf8'), /pr (merge|create)/);
 });
 
 test('a failed gate leaves an existing remote branch and pull request alone', (t) => {
@@ -178,7 +179,7 @@ test('a failed gate leaves an existing remote branch and pull request alone', (t
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /branch was left unmerged/);
   assert.equal(ctx.git(['--git-dir', ctx.remote, 'rev-parse', 'feature'], ctx.dir), before);
-  assert.equal(fs.existsSync(ctx.log), false);
+  assert.doesNotMatch(fs.readFileSync(ctx.log, 'utf8'), /pr (merge|create)/);
 });
 
 test('timeout stops gate descendants before they can keep writing', (t) => {

@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { runMergeGate } = require('../lib/merge-gate');
 
-test('the gate uses its declared interpreter even without executable permission', (t) => {
+test('a non-executable gate still runs through its declared interpreter', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-gate-interpreter-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const script = path.join(root, 'gate.sh');
