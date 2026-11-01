@@ -46,7 +46,7 @@ function setupRepo(dir) {
   git(['config', 'user.name', 'Test User']);
   fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
   fs.writeFileSync(path.join(repo, '.gitignore'), '.atris/\n');
-  fs.writeFileSync(path.join(repo, 'AGENTS.md'), 'agent instructions\n');
+  fs.writeFileSync(path.join(repo, 'AGENTS.md'), 'agent instructions\n<!-- ATRIS_BRAIN_COMPILE:START -->\nold command\n<!-- ATRIS_BRAIN_COMPILE:END -->\n');
   fs.writeFileSync(path.join(repo, 'CLAUDE.md'), 'claude instructions\n');
   fs.writeFileSync(path.join(repo, 'GEMINI.md'), 'gemini instructions\n');
   git(['add', '.']);
@@ -125,7 +125,7 @@ test('worktree ship skips unstaged adapter churn while committing real work', ()
     ], { cwd: repo });
     assert.equal(start.status, 0, start.stderr || start.stdout);
 
-    fs.appendFileSync(path.join(worktreePath, 'AGENTS.md'), 'regenerated\n');
+    fs.writeFileSync(path.join(worktreePath, 'AGENTS.md'), 'agent instructions\n<!-- ATRIS_BRAIN_COMPILE:START -->\nregenerated\n<!-- ATRIS_BRAIN_COMPILE:END -->\n');
     fs.appendFileSync(path.join(worktreePath, 'README.md'), 'real change\n');
 
     const shipped = runCli([
@@ -140,7 +140,7 @@ test('worktree ship skips unstaged adapter churn while committing real work', ()
 
     assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
     assert.match(shipped.stdout, /ship: skipped regenerated adapter churn: AGENTS\.md/);
-    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n');
+    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n<!-- ATRIS_BRAIN_COMPILE:START -->\nold command\n<!-- ATRIS_BRAIN_COMPILE:END -->\n');
     assert.equal(git(['status', '--short'], worktreePath), '');
     assert.equal(git(['show', '--name-only', '--format=', 'HEAD'], worktreePath), 'README.md');
   } finally {
@@ -209,7 +209,7 @@ test('worktree ship treats adapter-only churn as clean after restore', () => {
     ], { cwd: repo });
     assert.equal(start.status, 0, start.stderr || start.stdout);
 
-    fs.appendFileSync(path.join(worktreePath, 'AGENTS.md'), 'regenerated only\n');
+    fs.writeFileSync(path.join(worktreePath, 'AGENTS.md'), 'agent instructions\n<!-- ATRIS_BRAIN_COMPILE:START -->\nregenerated only\n<!-- ATRIS_BRAIN_COMPILE:END -->\n');
 
     const shipped = runCli([
       'worktree',
@@ -222,7 +222,7 @@ test('worktree ship treats adapter-only churn as clean after restore', () => {
     assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
     assert.match(shipped.stdout, /ship: skipped regenerated adapter churn: AGENTS\.md/);
     assert.match(shipped.stdout, /commit: skipped \(no local changes\)/);
-    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n');
+    assert.equal(fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8'), 'agent instructions\n<!-- ATRIS_BRAIN_COMPILE:START -->\nold command\n<!-- ATRIS_BRAIN_COMPILE:END -->\n');
     assert.equal(git(['status', '--short'], worktreePath), '');
     assert.equal(git(['rev-list', '--count', 'HEAD'], worktreePath), '1');
   } finally {
