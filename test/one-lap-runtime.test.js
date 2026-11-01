@@ -185,7 +185,7 @@ function fakeValidatorScript() {
   return `#!/bin/sh
 set -eu
 case "$*" in
-  *"--model claude-haiku-5-5"*)
+  *"--tools Read,Glob,Grep"*)
     printf '{}\n'
     exit 0
     ;;
