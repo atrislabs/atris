@@ -529,26 +529,39 @@ function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) 
   const starts = new Map([
     ['<!-- ATRIS:START - Auto-generated, do not edit -->', '<!-- ATRIS:END -->'],
     ['<!-- ATRIS_BRAIN_COMPILE:START -->', '<!-- ATRIS_BRAIN_COMPILE:END -->'],
+    ['<!-- ATRIS_OPERATING_RULES:START -->', '<!-- ATRIS_OPERATING_RULES:END -->'],
+    ['<!-- ATRIS_MISSION_ROOM_SIGNALS:START -->', '<!-- ATRIS_MISSION_ROOM_SIGNALS:END -->'],
+    ['<!-- ATRIS_VOICE_CARD:START -->', '<!-- ATRIS_VOICE_CARD:END -->'],
   ]);
   const ends = new Set(starts.values());
   // Compare outside text after removing only complete generated blocks.
   const outsideBlocks = (text) => {
-    const lines = text.match(/[^\n]*\n|[^\n]+$/g) || [];
+    const lines = text.replace(/\r\n/g, '\n').match(/[^\n]*\n|[^\n]+$/g) || [];
     let expectedEnd = null;
-    let outside = '';
-    for (const line of lines) {
-      const marker = line.replace(/\r?\n$/, '');
-      if (starts.has(marker)) {
-        if (expectedEnd) return null;
+    let currentStart = null;
+    let dropAfter = false;
+    const outside = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const marker = line.replace(/\n$/, '');
+      if (expectedEnd) {
+        if (marker === currentStart) return null;
+        if (marker === expectedEnd) expectedEnd = null;
+      } else if (starts.has(marker)) {
         expectedEnd = starts.get(marker);
+        currentStart = marker;
+        dropAfter = lines[i - 1] !== '\n' || outside[outside.length - 1] !== '\n';
+        if (!dropAfter) outside.pop();
       } else if (ends.has(marker)) {
-        if (expectedEnd !== marker) return null;
-        expectedEnd = null;
-      } else if (!expectedEnd) {
-        outside += line;
+        return null;
+      } else if (dropAfter && line === '\n') {
+        dropAfter = false;
+      } else {
+        dropAfter = false;
+        outside.push(line);
       }
     }
-    return expectedEnd ? null : outside;
+    return expectedEnd ? null : outside.join('');
   };
   const skipped = [];
   for (const file of REGEN_ADAPTER_FILES) {
