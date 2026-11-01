@@ -293,15 +293,20 @@ async function captured(fn) {
   }
 }
 
+// These tests read the screen itself, which asks GitHub nothing and changes no job. The command runs the
+// held-job check (lib/held-autosweep.js) as a step before the screen, and that step does both, so it is turned
+// off here; test/held-autosweep.test.js runs it and proves it comes first and is no part of the screen.
+const WITHOUT_HELD_CHECK = { ATRIS_HELD_SWEEP: 'off' };
+
 function runBrief(scn, args = [], extraEnv = {}) {
-  return withEnv({ ATRIS_TASKS_DB: scn.dbPath, ATRIS_TEST_STATE_DIR: scn.stateDir, ...extraEnv }, () =>
+  return withEnv({ ATRIS_TASKS_DB: scn.dbPath, ATRIS_TEST_STATE_DIR: scn.stateDir, ...WITHOUT_HELD_CHECK, ...extraEnv }, () =>
     captured(() => briefCommand(['--no-input', ...args], scn.ws, { stdin: { isTTY: false }, stdout: { isTTY: false } })));
 }
 
 function spawnBrief(scn, args) {
   return runCli(['brief', '--no-input', ...args], {
     cwd: scn.ws,
-    env: { HOME: scn.home, ATRIS_TASKS_DB: scn.dbPath, ATRIS_TEST_STATE_DIR: scn.stateDir },
+    env: { HOME: scn.home, ATRIS_TASKS_DB: scn.dbPath, ATRIS_TEST_STATE_DIR: scn.stateDir, ...WITHOUT_HELD_CHECK },
   });
 }
 

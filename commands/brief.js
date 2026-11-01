@@ -479,7 +479,7 @@ function renderOwnerHtml(data) {
     blocks: [
       { type: 'title', headline: 'atris brief', sub: `${needs} ${needs === 1 ? 'thing needs' : 'things need'} you, ${done} landed this week` },
       ...ownerBlocks(shown),
-      { type: 'close', tagline: 'Read from your task list. Nothing here was changed.' },
+      { type: 'close', tagline: 'This screen only reads your jobs.' },
     ],
   }, { title: 'atris brief' });
 }
@@ -559,7 +559,11 @@ function showHelp() {
   console.log('       atris brief outcome <brief_id> --result pass|fail|partial --note <text> [--json|--raw]');
   console.log('       atris brief review [--lessons] [--json] [--limit N]');
   console.log('One screen: what needs you, what got done this week, and how the team is doing.');
-  console.log('Read only. It never changes your jobs. --days N sets the older landed list in --json.');
+  console.log('It reads your jobs. Before the screen it may quietly check GitHub and credit or release held jobs');
+  console.log('whose pull request merged or closed. A merge is usually credited within the hour, by a command that');
+  console.log('reaches GitHub; atris task sweep --held does it right away.');
+  console.log('ATRIS_HELD_SWEEP=off turns that off.');
+  console.log('--days N sets the older landed list in --json.');
 }
 
 function isBriefLedgerSubcommand(value) {
@@ -795,6 +799,8 @@ async function briefCommand(args = [], root = process.cwd(), io = {}) {
     showHelp();
     return 0;
   }
+  // A person's merge pays the builder with no command: the held-job check runs here.
+  require('../lib/held-autosweep').autoSweepHeld({ root });
 
   const data = buildBriefData(root, { days: flags.days, owner: true });
   if (flags.json) {

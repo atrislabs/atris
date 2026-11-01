@@ -152,6 +152,8 @@ function ratingCommand(args = [], deps = {}) {
     write(`${USAGE}\n`);
     return 0;
   }
+  // A person's merge pays the builder with no command: the held-job check runs here.
+  require('../lib/held-autosweep').autoSweepHeld({ root: deps.root });
   const json = hasFlag(args, '--json');
   const name = args.filter((arg) => !arg.startsWith('-')).join(' ').trim();
   const cards = rating.combineCards();

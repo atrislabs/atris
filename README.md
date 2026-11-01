@@ -475,6 +475,7 @@ atris rating <member>      # one member's rating here, next to its engine's
 - Engines are rated in the combine: Loop Bench tasks from the atris repos, each graded by the tests that shipped with it. No engine is a 99 yet.
 - Each engine's card also rates its Python tasks, its JavaScript tasks, the tasks the Atris prompt was never tuned on, and how rarely a try broke another test, with its median time and pay-per-use price per finished task.
 - Members are rated on the same scale from the jobs they landed in your workspace over the last 30 days. Landed means accepted or merged; drops and abandons count against them. `atris gm` shows the same numbers.
+- When a person merges a builder's pull request, the builder is usually credited within the hour, by an `atris brief`, `atris rating`, `atris gm` or flight that reaches GitHub; `atris task sweep --held` does it right away. `ATRIS_HELD_SWEEP=off` stops the automatic check.
 - The session boot shows the build engine's rating, for example `build opus 5.5 (86 ovr)`. The combine grades building only, so review and search engines show none.
 
 ## Benchmark Harness
