@@ -416,3 +416,16 @@ test('local mode alone lands the checked candidate on the target', (t) => {
   assert.notEqual(landed, c.base);
   assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
 });
+
+test('local landing rechecks when the target checkout gains a real commit', (t) => {
+  const gate = `#!/bin/sh\n${marker}if test ! -f "$EVENTS.moved"; then\n  touch "$EVENTS.moved"\n  echo advanced > "$PRIMARY/b.txt"\n  git -C "$PRIMARY" add b.txt\n  git -C "$PRIMARY" commit -qm 'advance while checking'\nfi\n`;
+  const c = fixture(t, { gate });
+  const result = c.ship(localArgs);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  const events = fs.readFileSync(c.events, 'utf8').trim().split('\n');
+  assert.equal(events.length, 4);
+  assert.equal(events[2], `verify:${landed}`);
+  assert.equal(events[3], `gate:${landed}`);
+  assert.equal(c.git(['show', 'master:b.txt']), 'advanced');
+});
