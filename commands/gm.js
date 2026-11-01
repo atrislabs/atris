@@ -1907,6 +1907,9 @@ async function gmCommand(...args) {
     showHelp();
     return;
   }
+  // A person's merge pays the builder with no command: the held-job check runs here, for the workspace the
+  // board shows.
+  require('../lib/held-autosweep').autoSweepHeld({ root: boardWorkspaceRoot(args) });
 
   if (positional(args)[0] === 'target') {
     const at = args.indexOf('target');

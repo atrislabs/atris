@@ -34,6 +34,10 @@ const { loadSeason, rosterRows } = require('../lib/gm-season');
 const { ratingCommand } = require('../commands/rating');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
+// These tests drive the sweep themselves, so the commands they run (the real rating, in this process) must
+// not run the sweep on their own as well: it would ask a real gh about these made-up pull requests.
+process.env.ATRIS_HELD_SWEEP = 'off';
+
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 const COMMIT = '93b6d4bcf66276bbd6a53aebe72ab48bf9a7b136';
 const HOUR = 60 * 60 * 1000;
@@ -79,6 +83,15 @@ const held = () => require('../lib/held-pull-requests');
 // shows up), and writes down every call. A url with a failure entry exits 1 and says that on
 // stderr, as gh does.
 
+// The programs standing in for the engines: they exist and do nothing, which is all the check for an installed engine asks.
+// The engine programs this computer happens to have are not read, so a machine without them (a CI runner) sees the
+// same engines as one with them.
+const ENGINES = ['claude', 'codex'];
+function standInEngines(dir) {
+  for (const name of ENGINES) fs.writeFileSync(path.join(dir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+}
+
+// A PATH that has git, a shell (the check for an installed engine runs one) and the stand-in engines, and no gh at all.
 function onlyGit(tools) {
   const dir = path.join(tools, 'only-git');
   fs.mkdirSync(dir);
@@ -90,6 +103,8 @@ function onlyGit(tools) {
       break;
     } catch { /* keep looking */ }
   }
+  fs.symlinkSync('/bin/sh', path.join(dir, 'sh'));
+  standInEngines(dir);
   return dir;
 }
 
@@ -130,6 +145,7 @@ function desk(t) {
 
   const bin = path.join(tools, 'bin');
   fs.mkdirSync(bin);
+  standInEngines(bin);
   const ghLog = path.join(tools, 'gh.log');
   const ghSetup = path.join(tools, 'gh.json');
   fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}
@@ -178,8 +194,10 @@ console.log(JSON.stringify(shown));
   const ghCalls = () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').split('\n').filter(Boolean) : []);
   const noGh = onlyGit(tools);
 
-  // attempt answers whatever the command did; run insists it worked. withoutGh runs the
-  // command on a PATH with no gh at all; fakeGhOnly on a PATH with only the fake gh and git.
+  // attempt answers whatever the command did; run insists it worked. The usual PATH is the fake gh and the
+  // stand-in engines, then the system folders and nothing else this computer has (git and sh are there). withoutGh
+  // runs the command on a PATH with no gh at all; fakeGhOnly on a PATH with only the fake gh and git. All three
+  // have the stand-in engines.
   const attempt = (args, { env = {}, withoutGh = false, fakeGhOnly = false } = {}) => spawnSync(process.execPath, [CLI, ...args], {
     cwd: dir,
     encoding: 'utf8',
@@ -187,7 +205,7 @@ console.log(JSON.stringify(shown));
     env: {
       ...scrubAgentEnv(),
       ...env,
-      PATH: withoutGh ? noGh : fakeGhOnly ? `${bin}${path.delimiter}${noGh}` : `${bin}${path.delimiter}${process.env.PATH}`,
+      PATH: withoutGh ? noGh : fakeGhOnly ? `${bin}${path.delimiter}${noGh}` : `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
       ATRIS_TASKS_DB: dbPath,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
@@ -814,6 +832,62 @@ test('a job in another checkout of the same repository that points at the same p
   assert.match(report.results[0].detail, notBuild(escapeRe(`another job (${refOf(d.db, theirs)}) still points at pull request 77 in ${REPO}`)));
   assert.deepEqual(snapshot(d.dbPath), before, 'neither job was touched');
   assert.deepEqual(d.ghCalls(), [`pr view ${pullAt(77)} --json ${FIELDS}`], 'a refusal made from the board alone does not ask which branch the repository lands on');
+});
+
+test('a refusal names a job in another workspace by that workspace\'s own numbering, also when a checkout is linked to that workspace', (t) => {
+  const d = desk(t);
+  // A workspace of its own, with a checkout linked to it: telling that workspace's jobs apart takes a call to git.
+  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'held-sweep-other-')));
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  const other = path.join(parent, 'work');
+  fs.mkdirSync(other);
+  repoAt(other, ORIGIN);
+  gitIn(other, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-q', '-m', 'first');
+  gitIn(other, 'worktree', 'add', '-q', path.join(parent, 'side'), '-b', 'side');
+  const mine = d.heldJob('Fix the feedback form', 77);
+  const theirs = d.heldJob('The same pull request, from the other workspace', 77, { root: other, builder: 'fleet-claude' });
+  d.setGh({ prs: { [pullAt(77)]: mergedPr(77) } });
+  const before = snapshot(d.dbPath);
+  const named = refOf(d.db, theirs);
+  assert.notEqual(named, theirs, 'a name a person reads, not the row id');
+
+  const report = d.sweepJson();
+  const printed = d.sweep('--dry-run').stdout.trim().split('\n');
+
+  const why = `another job (${named}) still points at pull request 77 in ${REPO}`;
+  assert.equal(report.results.length, 1);
+  assert.equal(report.results[0].action, 'refused');
+  assert.equal(report.results[0].detail, `${report.results[0].ref}'s recorded pull request is not this job's build: ${why}`);
+  assert.deepEqual(printed, ['held jobs: 1 checked against GitHub (dry run, nothing written)', report.results[0].detail]);
+  assert.deepEqual(snapshot(d.dbPath), before, 'neither job was touched');
+  assert.equal(tasks.getTask(d.db, mine).status, 'review');
+});
+
+test('a name the sweep is given is the name a refusal uses for the other job, and that job\'s workspace is not listed to find one', (t) => {
+  const d = desk(t);
+  const checkout = repoAt(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'held-sweep-other-'))), ORIGIN);
+  t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
+  const mine = d.heldJob('Fix the feedback form', 77);
+  const theirs = d.heldJob('The same pull request, from the other checkout', 77, { root: checkout, builder: 'fleet-claude' });
+  const own = { number: 77, url: pullAt(77), repo: REPO, head_repo: REPO, base_ref: 'main', head_ref: buildBranch(mine) };
+  const ask = () => ({ answer: { state: 'merged', ...own, merge_commit: COMMIT, merged_at: MERGED_AT, merged_by: 'keshav' } });
+  const sweepWith = (extra) => {
+    const listed = [];
+    const store = { ...tasks, listTasks: (db, options) => { listed.push(options.workspaceRoot); return tasks.listTasks(db, options); } };
+    const report = held().sweepHeldJobs(store, d.db, { workspaceRoot: d.dir, actor: 'keshav', dryRun: true, only: mine, ask, askBranch: () => ({ branch: 'main' }), ...extra });
+    return { listed, detail: report.results[0].detail };
+  };
+
+  const given = [];
+  const named = sweepWith({ nameOf: (id) => { given.push(id); return 'the-other-one'; } });
+  assert.match(named.detail, notBuild(escapeRe(`another job (the-other-one) still points at pull request 77 in ${REPO}`)));
+  assert.deepEqual(given, [theirs], 'asked for the name of the one job that has the pull request');
+  assert.deepEqual(named.listed, [d.dir], 'only the workspace being swept was listed');
+
+  // With no name given, as the command line does it, the other job is numbered in its own workspace.
+  const plain = sweepWith({});
+  assert.match(plain.detail, notBuild(escapeRe(`another job (${refOf(d.db, theirs)}) still points at pull request 77 in ${REPO}`)));
+  assert.deepEqual(plain.listed, [d.dir, checkout], 'the other job\'s workspace was listed to number it');
 });
 
 test('a pull request a job already landed with is refused for any other job, on its row or only in its history', (t) => {
@@ -3186,9 +3260,10 @@ test('the task help lists the held lane', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// The rating names the check. It never asks GitHub itself.
+// The rating names the check. On its own it asks GitHub nothing; the commands that run the check by themselves
+// (see test/held-autosweep.test.js) are switched off for this file, so these tests prove only that.
 
-test('atris rating names the check when a member has jobs waiting on a pull request, and asks GitHub nothing', (t) => {
+test('atris rating names the check when a member has jobs waiting on a pull request, and with the automatic run switched off asks GitHub nothing', (t) => {
   const d = desk(t);
   d.heldJob('First waiting job', 77);
   d.heldJob('Second waiting job', 78);
@@ -3212,12 +3287,41 @@ test('atris rating names the check when a member has jobs waiting on a pull requ
   assert.doesNotMatch(landed, /atris task sweep --held/);
   assert.equal('waiting_on_pull_request' in JSON.parse(ratingOf(d.dir, season, 'fleet-gemini', '--json')).member, false);
 
-  // The real command does the same and never calls gh, even with one on the PATH.
-  const card = d.run(['rating', 'fleet-codex']).stdout;
+  // The real command does the same and never calls gh, even with one on the PATH, while the automatic run is off.
+  const card = d.run(['rating', 'fleet-codex'], { env: { ATRIS_HELD_SWEEP: 'off' } }).stdout;
   assert.match(card, /^ {2}2 jobs wait on an open pull request\. Check GitHub and credit them: atris task sweep --held$/m);
   assert.deepEqual(d.ghCalls(), [], 'the rating asked GitHub nothing');
-  const bare = d.run(['rating', 'fleet-codex', '--json'], { withoutGh: true });
+  const bare = d.run(['rating', 'fleet-codex', '--json'], { withoutGh: true, env: { ATRIS_HELD_SWEEP: 'off' } });
   assert.equal(JSON.parse(bare.stdout).member.waiting_on_pull_request, 2);
+});
+
+test('with the automatic run on and no job waiting on a pull request, atris rating never calls GitHub', (t) => {
+  const d = desk(t);
+  // Jobs that are not held: one open, one claimed and not handed in, one in review with no pull request.
+  tasks.addTask(d.db, { title: 'Still open', tag: 'feedback', workspaceRoot: d.dir });
+  const claimed = tasks.addTask(d.db, { title: 'Claimed, not handed in', tag: 'feedback', workspaceRoot: d.dir }).id;
+  tasks.claimTask(d.db, { id: claimed, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid });
+  const reviewed = tasks.addTask(d.db, { title: 'In review, no pull request', tag: 'feedback', workspaceRoot: d.dir }).id;
+  tasks.claimTask(d.db, { id: reviewed, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid });
+  tasks.readyTask(d.db, { id: reviewed, actor: 'fleet-codex', proof: 'Built and verified.' });
+  // A finished job, so the builder has a card to ask for.
+  const finished = tasks.addTask(d.db, { title: 'Finished and accepted', tag: 'feedback', workspaceRoot: d.dir }).id;
+  tasks.claimTask(d.db, { id: finished, claimedBy: 'fleet-codex', leaseMinutes: 60, leasePid: process.pid });
+  tasks.readyTask(d.db, { id: finished, actor: 'fleet-codex', proof: 'Built and verified.' });
+  tasks.doneTask(d.db, { id: finished, status: 'done', actor: 'keshav', allowReview: true, action: 'accepted' });
+  // The file switches the run off for its own tests; here it is on (an empty switch is no switch), with a state folder of its own.
+  const on = { env: { ATRIS_HELD_SWEEP: '', HOME: d.tools } };
+
+  for (const args of [['rating'], ['rating', '--json'], ['rating', 'fleet-codex'], ['rating', 'fleet-codex', '--json']]) {
+    assert.equal(d.run(args, on).stderr, '', args.join(' '));
+  }
+  assert.deepEqual(d.ghCalls(), [], 'nothing waits on a pull request, so nothing was asked');
+
+  // The run really is on: the same command asks as soon as one job waits on a pull request.
+  d.heldJob('Waiting', 77);
+  d.setGh({ prs: { [pullAt(77)]: mergedPr(77) } });
+  d.run(['rating', '--json'], on);
+  assert.deepEqual(d.ghCalls().map((call) => call.split(' ').slice(0, 3).join(' ')), [`pr view ${pullAt(77)}`, `repo view ${repoLink()}`]);
 });
 
 test('a job that has waited longer than the rating window still shows on its builder\'s card', (t) => {
