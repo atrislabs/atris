@@ -67,7 +67,7 @@ const merged = git(['merge-base', '--is-ancestor', 'feature', 'master']).status 
 const pr = {number:41,url:'https://example.test/pull/41',baseRefName:'master',title:'Check combined changes',headRefName:'feature',headRefOid:fs.existsSync(process.env.HEAD_FILE) ? fs.readFileSync(process.env.HEAD_FILE,'utf8').trim() : process.env.SOURCE,headRepositoryOwner:{login:'example'},autoMergeRequest:process.env.AUTO === '1' ? {enabledAt:'today'} : null};
 if (args[1] === 'list') console.log(JSON.stringify(process.env.OPEN === '1' && !merged ? [pr] : []));
 else if (args[1] === 'view' && args.includes('--jq')) console.log('41 https://example.test/pull/41 OPEN');
-else if (args[1] === 'view') console.log(JSON.stringify({...pr,state:merged ? 'MERGED' : 'OPEN',mergedAt:merged ? '2026-10-31T00:00:00Z' : null,mergeCommit:merged ? {oid:git(['rev-parse','master']).stdout.trim()} : null}));
+else if (args[1] === 'view') console.log(JSON.stringify({...pr,state:merged && process.env.PR_PENDING !== '1' ? 'MERGED' : 'OPEN',mergedAt:merged && process.env.PR_PENDING !== '1' ? '2026-10-31T00:00:00Z' : null,mergeCommit:merged ? {oid:git(['rev-parse','master']).stdout.trim()} : null}));
 else if (args[1] === 'merge') process.exit(0);
 else process.exit(1);
 `, { mode: 0o755 });
@@ -298,4 +298,25 @@ test('a review push checks auto-merge if verification adds a gate to the target'
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /auto-merge/);
   assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+});
+
+
+test('a changed checkout after verification stops before the gate', (t) => {
+  const c = fixture(t, { gate: pass });
+  const result = c.ship(['--merge'], 'echo dirty >> a.txt');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /verifier changed.*a\.txt/);
+  assert.equal(fs.existsSync(c.events), false);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir), c.base);
+});
+
+test('a landed commit without pull request confirmation keeps the source branch', (t) => {
+  const c = fixture(t, { gate: pass });
+  const result = c.ship(['--merge'], undefined, { PR_PENDING: '1' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /commit landed.*could not be confirmed.*source branch was kept/);
+  const target = c.git(['--git-dir', c.remote, 'rev-parse', 'master'], c.dir);
+  assert.notEqual(target, c.base);
+  assert.equal(c.git(['--git-dir', c.remote, 'rev-parse', 'feature'], c.dir), c.source);
+  assert.doesNotMatch(result.stdout, /done: worktree shipped/);
 });

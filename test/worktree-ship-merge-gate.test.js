@@ -127,7 +127,8 @@ test('without a gate the existing output contains no gate messages', (t) => {
   const ctx = setup(t, null);
   const result = ctx.ship(['--merge']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.doesNotMatch(result.stdout + result.stderr, /merge gate/);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, 'commit: save change\nverify: test -f app.txt\nmerge_check: origin/master clean\npush: origin feature\npr: 41 https://example.test/pull/41\nmerge: requested\nmerge: pending; kept the source branch while required checks finish\n');
   assert.match(fs.readFileSync(ctx.log, 'utf8'), /pr merge/);
 });
 
