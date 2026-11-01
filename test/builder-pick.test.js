@@ -1415,15 +1415,21 @@ const assigned = (n, member) => job(n, { metadata: { assigned_to: member } });
 const CLAUDE_STRONG = [...plays(6, 'fleet-claude', 'landed'), ...plays(6, 'fleet-codex', 'dropped')];
 
 // A scratch project, with a scratch home, whose roster gives these members these engines (null: a member the
-// roster says nothing about). The owner's real roster, engine registry and home folder are never read.
-function projectRoom(t, team = {}) {
+// roster says nothing about). The owner's real roster, engine registry and home folder are never read, and
+// neither are the engine programs this computer happens to have: PATH holds stand-ins for claude and codex
+// (and any `tools` named) only, so a machine without them (a CI runner) sees the same engines as one with them.
+function projectRoom(t, team = {}, { tools = [] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-pick-team-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-pick-team-home-'));
   t.after(() => {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });
+  const bin = path.join(home, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const name of ['claude', 'codex', ...tools]) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   setEnv(t, {
+    PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
     HOME: home,
     ATRIS_MACHINE_ROSTER_PATH: path.join(home, '.atris', 'roster.json'),
     ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, '.atris', 'ROSTER.md'),
@@ -1528,11 +1534,7 @@ test('explicit: when every job is left out, nothing is dealt and every job is na
 
 test('explicit: a job assigned to a member, or naming one, whose engine this flight does not have is left out too; a member the roster does not decide keeps its turn', (t) => {
   // cursor counts as installed because a stand-in for its program is on the path, not because of this computer's tools.
-  const tools = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-pick-tools-'));
-  t.after(() => fs.rmSync(tools, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(tools, 'cursor-agent'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  setEnv(t, { PATH: `${tools}${path.delimiter}${process.env.PATH}` });
-  const { root } = projectRoom(t, { closer: 'cursor', ghost: null });
+  const { root } = projectRoom(t, { closer: 'cursor', ghost: null }, { tools: ['cursor-agent'] });
   const { memberRosterEngine } = require('../lib/member-engine');
   assert.equal(memberRosterEngine('closer', root).engine.id, 'cursor', 'the roster really sends closer to cursor');
   const list = [assigned(1, 'closer'), named(2, 'closer'), assigned(3, 'ghost'), job(4)];
@@ -1570,11 +1572,7 @@ test('explicit: gives(roster) is asked before staffing: a job whose choice the r
 });
 
 test('explicit: gives(roster) turns down a member\'s job too when the member\'s engine is not in the roster, and lets everything go when steering is off', (t) => {
-  const tools = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-pick-tools-'));
-  t.after(() => fs.rmSync(tools, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(tools, 'cursor-agent'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  setEnv(t, { PATH: `${tools}${path.delimiter}${process.env.PATH}` });
-  const { root } = projectRoom(t, { closer: 'cursor', owner: 'codex' });
+  const { root } = projectRoom(t, { closer: 'cursor', owner: 'codex' }, { tools: ['cursor-agent'] });
   const steer = steerWith(CODEX_STRONG, { root });
   const may = steer.gives(POOL);
   assert.deepEqual([assigned(1, 'closer'), named(2, 'closer'), assigned(3, 'owner'), named(4, 'owner')].map((task) => may(task)), [false, false, true, true]);
