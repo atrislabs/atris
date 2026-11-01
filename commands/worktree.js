@@ -1247,7 +1247,7 @@ function checkCandidate(root, branch, candidate, verify, requireGate) {
   return passed;
 }
 
-function shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget }) {
+function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget }) {
   const targetBranch = baseBranchName(targetRef);
   const target = `refs/heads/${targetBranch}`;
   const valid = runGit(['check-ref-format', '--branch', targetBranch], { cwd: root, check: false });
@@ -1306,12 +1306,6 @@ function shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge
         console.error('blocked: the pull request changed during the check; branch was left unmerged');
         return 3;
       }
-    }
-    if (localMode && !merge) {
-      console.log('push: skipped (local mode)');
-      console.log('pr: skipped (local mode)');
-      console.log('done: worktree shipped');
-      return 0;
     }
     if (localMode) {
       const status = statusCounts(primary, { ignoreUntracked: isConductorUntracked });
@@ -1514,7 +1508,7 @@ function shipWorktree(args) {
   }
   if (gated && (merge || localMode)) {
     if (!proofTreeMatches('head')) return 3;
-    return shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget });
+    return shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget });
   }
 
   if (verify) {
@@ -1552,7 +1546,7 @@ function shipWorktree(args) {
     if (targetNowHasGate) {
       if (merge || localMode) {
         if (!proofTreeMatches('head')) return 3;
-        return shipGatedCandidate({ root, primary, branch, targetRef, localMode, merge, verify, gateOnTarget: true });
+        return shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget: true });
       }
       const refusal = protectedPushRefusal(root, branch);
       if (refusal) {

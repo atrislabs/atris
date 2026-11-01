@@ -407,3 +407,12 @@ test('local landing works without a pull request service for a local remote', (t
   const landed = c.git(['rev-parse', 'master']);
   assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
 });
+
+test('local mode alone lands the checked candidate on the target', (t) => {
+  const c = fixture(t, { gate: pass });
+  const result = c.ship(['--local', '--target', 'master']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const landed = c.git(['rev-parse', 'master']);
+  assert.notEqual(landed, c.base);
+  assert.deepEqual(fs.readFileSync(c.events, 'utf8').trim().split('\n'), [`verify:${landed}`, `gate:${landed}`]);
+});
