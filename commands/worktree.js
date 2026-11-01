@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
@@ -9,6 +10,8 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { installKeep, planKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorArtifact, isConductorUntracked } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
+const { runMergeGate } = require('../lib/merge-gate');
+const { checkedPush } = require('../lib/checked-push');
 const { sleepSync } = require('../lib/sleep-sync');
 const space = require('../lib/worktree-space');
 const close = require('./close');
@@ -49,12 +52,13 @@ function gitFailureDetail(result) {
     .map(output => String(output || '').trim()).filter(Boolean).join('\n');
 }
 
-function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
+function runGit(args, { cwd = process.cwd(), check = true, timeout, maxBuffer } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
   // Only network calls need the SSH probe; local calls skip its extra git spawn.
   const defaultTimeout = args[0] === 'push' ? GIT_PUSH_TIMEOUT_MS : network ? 30000 : undefined;
   const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout,
     killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
+  if (maxBuffer) options.maxBuffer = maxBuffer;
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
@@ -446,6 +450,44 @@ function refreshRemoteRef(root, ref) {
   const remoteBranch = ref.slice('origin/'.length);
   const fetched = runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 5000 });
   return fetched.status === 0 ? '' : (gitFailureDetail(fetched) || 'fetch failed');
+}
+
+// Read the remote without updating the tracking ref or FETCH_HEAD. The old
+// no-gate flow still owns its initial fetch and its merge-check base.
+function readShipTarget(root, targetRef, localMode) {
+  const target = `refs/heads/${baseBranchName(targetRef)}`;
+  let oid;
+  let localRef = target;
+  let missing = false;
+  if (localMode) {
+    const exists = runGit(['show-ref', '--verify', '--quiet', target], { cwd: root, check: false });
+    if (exists.status === 1) {
+      localRef = `refs/remotes/origin/${baseBranchName(targetRef)}`;
+      const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
+      if (resolved.status !== 0) return { error: gitFailureDetail(resolved) || 'no saved origin target exists' };
+      oid = resolved.stdout.trim();
+      missing = true;
+    } else if (exists.status !== 0) return { error: gitFailureDetail(exists) || 'could not read the target branch' };
+    else {
+      const resolved = runGit(['rev-parse', '--verify', `${localRef}^{commit}`], { cwd: root, check: false });
+      if (resolved.status !== 0) return { error: gitFailureDetail(resolved) || 'target branch is unavailable' };
+      oid = resolved.stdout.trim();
+    }
+  } else {
+    const listed = runGit(['ls-remote', '--exit-code', 'origin', target], { cwd: root, check: false });
+    if (listed.status !== 0) return { error: gitFailureDetail(listed) || 'target branch is unavailable' };
+    const lines = listed.stdout.trim().split(/\r?\n/);
+    const fields = lines[0].split(/\s+/);
+    if (lines.length !== 1 || fields[1] !== target || !GIT_OID_PATTERN.test(fields[0])) {
+      return { error: 'could not identify the target branch' };
+    }
+    oid = fields[0];
+    const fetched = runGit(['fetch', '--no-tags', '--no-write-fetch-head', 'origin', oid], { cwd: root, check: false });
+    if (fetched.status !== 0) return { error: gitFailureDetail(fetched) || 'target fetch failed' };
+  }
+  const gate = runGit(['ls-tree', oid, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
+  if (gate.status !== 0) return { error: gitFailureDetail(gate) || 'could not read the target tree' };
+  return { oid, gate: !!gate.stdout.trim(), ref: localMode ? localRef : target, missing };
 }
 
 function baseBranchName(ref) {
@@ -947,6 +989,15 @@ function shipHelp() {
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
+  console.log('  gated merges verify the combined commit and fast-forward that exact commit to the target');
+  console.log('  if the target moves, the check runs again before another landing attempt');
+  console.log('  a landing stops before overwriting existing files, including ignored files');
+  console.log('  a failed target read stops merging and makes review pushes check auto-merge');
+  console.log('  local mode checks the local target or the saved origin copy if the branch is new');
+  console.log('  a new local target is created from and tracks that origin copy');
+  console.log('  it tries to refresh the saved remote copy before landing');
+  console.log('  review pushes in gated repos refuse when a pull request has auto-merge on');
+  console.log('  ATRIS_MERGE_GATE_TIMEOUT_MS sets its timeout in milliseconds (default 1800000)');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
@@ -1113,6 +1164,402 @@ function refreshMovedMapRefs(root, args = []) {
   }
 }
 
+// Read every open pull request so a candidate carries its title and we know
+// which request must be confirmed after the checked commit reaches the target.
+function candidatePullRequest(root, branch, targetBranch, localMode) {
+  const remote = runGit(['remote', 'get-url', 'origin'], { cwd: root, check: false });
+  if (localMode && remote.status !== 0) return { pr: null };
+  const result = spawnSync('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--limit', String(OPEN_PR_LIST_LIMIT),
+    '--json', 'number,url,baseRefName,title,headRefName,headRepositoryOwner,headRefOid,autoMergeRequest'],
+  { cwd: root, encoding: 'utf8', timeout: 60000 });
+  if (result.status !== 0) {
+    if (localMode) return { pr: null };
+    return { error: 'could not read open pull requests; branch was left unmerged' };
+  }
+  let list;
+  try { list = JSON.parse(result.stdout); } catch { list = null; }
+  if (!Array.isArray(list) || list.length >= OPEN_PR_LIST_LIMIT || list.some((pr) => !pr || typeof pr.baseRefName !== 'string')) {
+    return { error: 'could not read all open pull requests; branch was left unmerged' };
+  }
+  const matches = list.filter((pr) => pr.baseRefName === targetBranch);
+  if (matches.length > 1 || (matches[0] && (!matches[0].number || typeof matches[0].title !== 'string' || !GIT_OID_PATTERN.test(String(matches[0].headRefOid || ''))))) {
+    return { error: 'could not identify the pull request and its title; branch was left unmerged' };
+  }
+  return { pr: matches[0] || null };
+}
+
+function candidateGateTail(output) {
+  let tail = String(output || '').trimEnd().split(/\r?\n/).slice(-40).join('\n');
+  if (Buffer.byteLength(tail) > 4096) {
+    tail = Buffer.from(tail).subarray(-4096).toString('utf8');
+    while (Buffer.byteLength(tail) > 4096) tail = tail.slice(1);
+  }
+  return tail;
+}
+
+// Only inspect paths Git will write, including obstructions in their parents.
+// A directory replaced by a file is walked only as far as tracked entries; an
+// untracked child stops the walk without scanning its contents.
+function checkoutCollision(root, from, to) {
+  const changed = runGit(['diff', '--name-only', '-z', '--no-renames', from, to, '--'],
+    { cwd: root, check: false, maxBuffer: COMMAND_MAX_BUFFER_BYTES });
+  if (changed.status !== 0) return { error: gitFailureDetail(changed) || 'could not inspect checkout paths' };
+  const paths = changed.stdout.split('\0').filter(Boolean);
+  if (!paths.length) return {};
+  const oldFiles = new Set();
+  const newFiles = new Set();
+  // Keep command lines short even when a commit changes many files. A literal
+  // pathspec also keeps names containing brackets or stars from matching others.
+  const batches = [];
+  let batch = [];
+  let bytes = 0;
+  for (const file of paths) {
+    const size = Buffer.byteLength(file) + 1;
+    if (batch.length && (batch.length >= 200 || bytes + size > 48000)) {
+      batches.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(file);
+    bytes += size;
+  }
+  if (batch.length) batches.push(batch);
+  for (const names of batches) {
+    for (const [commit, files] of [[from, oldFiles], [to, newFiles]]) {
+      const tree = runGit(['--literal-pathspecs', 'ls-tree', '-r', '-z', '--name-only', commit, '--', ...names],
+        { cwd: root, check: false, maxBuffer: COMMAND_MAX_BUFFER_BYTES });
+      if (tree.status !== 0) return { error: gitFailureDetail(tree) || 'could not inspect checkout paths' };
+      for (const file of tree.stdout.split('\0').filter(Boolean)) files.add(file);
+    }
+  }
+  const oldDirs = new Set();
+  for (const file of oldFiles) {
+    const parts = file.split('/');
+    for (let n = 1; n < parts.length; n += 1) oldDirs.add(parts.slice(0, n).join('/'));
+  }
+  const stat = (file) => {
+    try { return fs.lstatSync(path.join(root, file)); } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+      throw error;
+    }
+  };
+  const inspectDir = (dir) => {
+    for (const name of fs.readdirSync(path.join(root, dir))) {
+      const child = `${dir}/${name}`;
+      const info = stat(child);
+      if (!info) continue;
+      if (info.isDirectory() && oldDirs.has(child)) {
+        const found = inspectDir(child);
+        if (found) return found;
+      } else if (!oldFiles.has(child)) return child;
+    }
+    return '';
+  };
+  try {
+    for (const file of paths.filter(name => newFiles.has(name))) {
+      const parts = file.split('/');
+      for (let n = 1; n <= parts.length; n += 1) {
+        const part = parts.slice(0, n).join('/');
+        const info = stat(part);
+        if (!info) break;
+        if (n < parts.length) {
+          if (!info.isDirectory()) {
+            const oldEntry = oldFiles.has(part) ? 'blob'
+              : runGit(['cat-file', '-t', `${from}:${part}`], { cwd: root, check: false }).stdout.trim();
+            if (oldEntry !== 'blob') return { path: part };
+            break;
+          }
+        } else if (info.isDirectory()) {
+          if (!oldDirs.has(part)) return { path: part };
+          const found = inspectDir(part);
+          if (found) return { path: found };
+        } else if (!oldFiles.has(part)) return { path: part };
+      }
+    }
+  } catch (error) {
+    return { error: error.message };
+  }
+  return {};
+}
+
+function safeCheckout(root, from, to) {
+  const collision = checkoutCollision(root, from, to);
+  if (collision.path || collision.error) {
+    console.error(`blocked: checkout would overwrite existing file ${collision.path || collision.error}; branch was left unmerged`);
+    return false;
+  }
+  return true;
+}
+
+function checkCandidate(root, branch, candidate, verify, requireGate) {
+  if (!safeCheckout(root, branch, candidate)) return false;
+  const switched = runGit(['switch', '--detach', candidate], { cwd: root, check: false });
+  if (switched.status !== 0) {
+    console.error(`blocked: could not check the combined commit; branch was left unmerged: ${gitFailureDetail(switched)}`);
+    return false;
+  }
+  let passed = false;
+  const snapshot = () => runGit(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root }).stdout
+    .split(/\r?\n/).filter(Boolean);
+  const fingerprint = (rows) => new Map(rows.filter((row) => row.startsWith('?? ') && isConductorUntracked(row.slice(3)))
+    .map((row) => {
+      const file = row.slice(3);
+      const target = path.join(root, file);
+      const data = fs.lstatSync(target).isSymbolicLink() ? fs.readlinkSync(target) : fs.readFileSync(target);
+      return [row, crypto.createHash('sha256').update(data).digest('hex')];
+    }));
+  const changesSince = (before, fingerprints, after) => {
+    const current = fingerprint(after);
+    const dirty = after.filter((row) => !row.startsWith('?? ') || !isConductorUntracked(row.slice(3)));
+    return [...new Set([...dirty, ...newStatusRows(before, after),
+      ...before.filter((row) => fingerprints.has(row) && fingerprints.get(row) !== current.get(row))])];
+  };
+  try {
+    const beforeVerify = snapshot();
+    const verifyFingerprints = fingerprint(beforeVerify);
+    if (verify) {
+      console.log(`verify: ${verify}`);
+      const result = runCommand(verify, { cwd: root, check: false });
+      if (result.status !== 0) {
+        console.error(`verify failed: exit code ${result.status === null ? 'unavailable' : result.status}; branch was left unmerged`);
+        const tail = candidateGateTail(`${result.stdout || ''}${result.stderr || ''}`);
+        if (tail) console.error(tail);
+        return false;
+      }
+    } else {
+      console.log('verify: skipped (no --verify)');
+    }
+    const afterVerify = snapshot();
+    const verifyChanges = changesSince(beforeVerify, verifyFingerprints, afterVerify);
+    if (verifyChanges.length || runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim() !== candidate) {
+      console.error(`blocked: verifier changed the combined commit or files: ${verifyChanges.join(', ')}; branch was left unmerged`);
+      return false;
+    }
+    const gatePath = path.join(root, 'scripts', 'merge-gate.sh');
+    const declared = runGit(['ls-tree', candidate, '--', 'scripts/merge-gate.sh'], { cwd: root, check: false });
+    if (!fs.existsSync(gatePath) || declared.status !== 0 || !/^(100644|100755|120000) blob /m.test(declared.stdout)) {
+      console.error(`blocked: ${requireGate ? 'the target merge gate is missing from the combined commit' : 'the merge gate is missing from the combined commit'}; branch was left unmerged`);
+      return false;
+    }
+    const realGate = fs.realpathSync(gatePath);
+    const realRoot = fs.realpathSync(root);
+    const gateRelative = path.relative(realRoot, realGate);
+    if (!gateRelative || gateRelative === '..' || gateRelative.startsWith(`..${path.sep}`) || path.isAbsolute(gateRelative)) {
+      console.error('blocked: the merge gate points outside the checked repository; branch was left unmerged');
+      return false;
+    }
+    const actual = runGit(['ls-tree', candidate, '--', gateRelative], { cwd: root, check: false });
+    if (actual.status !== 0 || !/^(100644|100755) blob /m.test(actual.stdout)) {
+      console.error('blocked: the merge gate file is not in the combined commit; branch was left unmerged');
+      return false;
+    }
+    const gateFingerprints = fingerprint(afterVerify);
+    const result = runMergeGate(root, gatePath);
+    const changed = changesSince(afterVerify, gateFingerprints, snapshot());
+    const head = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
+    if (head !== candidate) {
+      const files = runGit(['diff', '--name-only', candidate, head], { cwd: root, check: false });
+      changed.push(...String(files.stdout || '').split(/\r?\n/).filter(Boolean));
+    }
+    if (result.code !== 0 || result.timedOut || result.error || changed.length || head !== candidate) {
+      const code = result.code === null ? (result.timedOut ? '124' : 'unavailable') : String(result.code);
+      console.error(`merge gate failed: scripts/merge-gate.sh, exit code ${code}${result.timedOut ? ' (timed out)' : ''}`);
+      if (result.error) console.error(result.error);
+      const tail = candidateGateTail(result.output);
+      if (tail) console.error(tail);
+      if (changed.length) console.error(`merge gate changed files: ${changed.join(', ')}`);
+      if (head !== candidate) console.error('merge gate changed the commit');
+      console.error('branch was left unmerged');
+      return false;
+    }
+    console.log('merge gate: passed');
+    passed = true;
+  } finally {
+    const checkedHead = runGit(['rev-parse', 'HEAD'], { cwd: root, check: false }).stdout.trim();
+    if (checkedHead !== candidate) {
+      console.error('blocked: the check changed the commit; its files were kept and the branch was left unmerged');
+      passed = false;
+    } else {
+      const restored = safeCheckout(root, candidate, branch)
+        ? runGit(['switch', branch], { cwd: root, check: false }) : { status: 1, stderr: 'existing files were kept' };
+      if (restored.status !== 0) {
+        console.error(`blocked: could not return to the branch; changes were kept and the branch was left unmerged: ${gitFailureDetail(restored)}`);
+        passed = false;
+      }
+    }
+  }
+  return passed;
+}
+
+// Create a new local target from the saved origin commit, without Git guessing a remote.
+function switchLocalTarget(primary, branch, target) {
+  if (!target.missing) return runGit(['switch', branch], { cwd: primary, check: false });
+  const current = runGit(['rev-parse', '--verify', `${target.ref}^{commit}`], { cwd: primary, check: false });
+  if (current.status !== 0 || current.stdout.trim() !== target.oid) {
+    return { status: 1, stderr: 'the saved origin target changed' };
+  }
+  const switched = runGit(['switch', '--no-track', '-c', branch, target.oid], { cwd: primary, check: false });
+  if (switched.status !== 0) return switched;
+  const remote = runGit(['config', `branch.${branch}.remote`, 'origin'], { cwd: primary, check: false });
+  if (remote.status !== 0) return remote;
+  return runGit(['config', `branch.${branch}.merge`, `refs/heads/${branch}`], { cwd: primary, check: false });
+}
+
+function shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget }) {
+  const targetBranch = baseBranchName(targetRef);
+  const target = `refs/heads/${targetBranch}`;
+  const valid = runGit(['check-ref-format', '--branch', targetBranch], { cwd: root, check: false });
+  if (valid.status !== 0 || targetBranch === 'HEAD') {
+    console.error('blocked: the landing target must be a branch; branch was left unmerged');
+    return 3;
+  }
+  const source = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
+  const review = candidatePullRequest(root, branch, targetBranch, localMode);
+  if (review.error) { console.error(`blocked: ${review.error}`); return 3; }
+  const pr = review.pr;
+  const owner = pr && pr.headRepositoryOwner && pr.headRepositoryOwner.login;
+  const title = pr ? `Merge pull request #${pr.number} from ${owner ? `${owner}/` : ''}${pr.headRefName || branch}\n\n${pr.title}` : `Merge ${branch}`;
+  if (pr && pr.headRefOid) {
+    const contained = runGit(['merge-base', '--is-ancestor', pr.headRefOid, source], { cwd: root, check: false });
+    if (contained.status !== 0) {
+      console.error('blocked: the pull request head is not in this branch; branch was left unmerged');
+      return 3;
+    }
+  }
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const latest = readShipTarget(root, targetRef, localMode);
+    if (latest.error) {
+      console.error(`blocked: could not read the target; branch was left unmerged: ${latest.error}`);
+      return 3;
+    }
+    const base = latest.oid;
+    const tree = runGit(['merge-tree', '--write-tree', base, source], { cwd: root, check: false });
+    if (tree.status !== 0) {
+      console.error(`blocked: branch does not merge cleanly into ${targetBranch}; branch was left unmerged`);
+      console.error((tree.stderr || tree.stdout || '').trim());
+      return 3;
+    }
+    const treeId = String(tree.stdout || '').split(/\r?\n/)[0].trim();
+    if (!GIT_OID_PATTERN.test(treeId)) { console.error('blocked: could not build the combined tree; branch was left unmerged'); return 3; }
+    const made = runGit(['commit-tree', treeId, '-p', base, '-p', source, '-m', title], { cwd: root, check: false });
+    if (made.status !== 0) { console.error(`blocked: could not build the combined commit; branch was left unmerged: ${gitFailureDetail(made)}`); return 3; }
+    const candidate = made.stdout.trim();
+    if (!checkCandidate(root, branch, candidate, verify, gateOnTarget)) return 3;
+    if (runGit(['rev-parse', `refs/heads/${branch}`], { cwd: root }).stdout.trim() !== source) {
+      console.error('blocked: the branch moved during the check; branch was left unmerged');
+      return 3;
+    }
+    if (pr) {
+      const latest = spawnSync('gh', ['pr', 'view', String(pr.number), '--json', 'state,headRefOid,title,baseRefName'],
+        { cwd: root, encoding: 'utf8', timeout: 60000 });
+      let current = null;
+      try { if (latest.status === 0) current = JSON.parse(latest.stdout); } catch {}
+      if (!current || current.state !== 'OPEN' || current.headRefOid !== pr.headRefOid
+        || current.title !== pr.title || current.baseRefName !== pr.baseRefName) {
+        console.error('blocked: the pull request changed during the check; branch was left unmerged');
+        return 3;
+      }
+    }
+    if (localMode) {
+      const currentTarget = readShipTarget(root, targetRef, true);
+      if (currentTarget.error) {
+        console.error(`blocked: could not read the target; branch was left unmerged: ${currentTarget.error}`);
+        return 3;
+      }
+      if (currentTarget.oid !== base || currentTarget.ref !== latest.ref) {
+        console.log(`merge: target moved, checking again (${attempt}/3)`);
+        continue;
+      }
+      const status = statusCounts(primary, { ignoreUntracked: isConductorUntracked });
+      if (!status || status.staged || status.unstaged || status.untracked) {
+        console.error('blocked: the primary checkout has changes; branch was left unmerged');
+        return 3;
+      }
+      const primaryHead = runGit(['rev-parse', 'HEAD'], { cwd: primary }).stdout.trim();
+      if (!safeCheckout(primary, primaryHead, base) || !safeCheckout(primary, primaryHead, candidate)) return 3;
+      if (currentBranch(primary) !== targetBranch) {
+        const switched = switchLocalTarget(primary, targetBranch, latest);
+        if (switched.status !== 0) {
+          console.error(`blocked: could not switch the primary checkout to the target; branch was left unmerged: ${gitFailureDetail(switched)}`);
+          return 3;
+        }
+        const switchedHead = runGit(['rev-parse', '--verify', `${target}^{commit}`], { cwd: primary, check: false });
+        if (switchedHead.status !== 0 || switchedHead.stdout.trim() !== base) {
+          console.error('blocked: the target changed while switching; branch was left unmerged');
+          return 3;
+        }
+      }
+      const preview = runGit(['read-tree', '-n', '-m', '-u', base, candidate], { cwd: primary, check: false });
+      if (preview.status !== 0) { console.error(`blocked: could not update the primary checkout; branch was left unmerged: ${gitFailureDetail(preview)}`); return 3; }
+      const updated = runGit(['update-ref', target, candidate, base], { cwd: primary, check: false });
+      if (updated.status !== 0) {
+        if (runGit(['rev-parse', target], { cwd: root }).stdout.trim() !== base) {
+          console.log(`merge: target moved, checking again (${attempt}/3)`);
+          continue;
+        }
+        console.error(`blocked: could not update the target; branch was left unmerged: ${gitFailureDetail(updated)}`);
+        return 3;
+      }
+      const checkout = runGit(['read-tree', '-m', '-u', base, candidate], { cwd: primary, check: false });
+      if (checkout.status !== 0) {
+        console.error(`blocked: the checked commit landed but the primary checkout could not be updated: ${gitFailureDetail(checkout)}`);
+        return 3;
+      }
+      console.log('push: skipped (local mode)');
+      console.log('merge: merged (local mode)');
+      console.log('pr: skipped (local mode)');
+      runShipHealthCheck(primary);
+      announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: target }));
+      console.log('done: worktree shipped');
+      return 0;
+    }
+    console.log(`push: checked commit to ${targetBranch}`);
+    const pushed = checkedPush({ root, candidate, target, base, sourceRef: `refs/heads/${branch}`, sourceOid: source, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
+    if (pushed.status !== 0) {
+      const latest = runGit(['ls-remote', 'origin', target], { cwd: root, check: false });
+      const latestId = String(latest.stdout || '').trim().split(/\s+/)[0];
+      if (latest.status === 0 && GIT_OID_PATTERN.test(latestId) && latestId !== base) {
+        console.log(`merge: target moved, checking again (${attempt}/3)`);
+        continue;
+      }
+      console.error(`blocked: checked commit could not be pushed; branch was left unmerged: ${gitFailureDetail(pushed)}`);
+      return 3;
+    }
+    if (pr) {
+      let state = null;
+      for (let check = 0; check < 5; check += 1) {
+        const confirmation = spawnSync('gh', ['pr', 'view', String(pr.number), '--json', 'state,mergedAt,number,url,mergeCommit'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+        try { if (confirmation.status === 0) state = JSON.parse(confirmation.stdout); } catch { state = null; }
+        if (state && state.state === 'MERGED' && state.mergedAt) break;
+        if (check < 4) sleepSync(1000);
+      }
+      if (!state || state.state !== 'MERGED' || !state.mergedAt) {
+        console.error('checked commit landed, but the pull request could not be confirmed; the source branch was kept');
+        return 3;
+      }
+      console.log('merge: merged');
+      const record = shipMergeRecord(state);
+      if (record) console.log(`merge: record ${JSON.stringify(record)}`);
+      const remoteHead = runGit(['ls-remote', 'origin', `refs/heads/${branch}`], { cwd: root, check: false });
+      const oldHead = String(remoteHead.stdout || '').trim().split(/\s+/)[0];
+      if (remoteHead.status === 0 && oldHead && (!pr.headRefOid || oldHead === pr.headRefOid)) {
+        const deleted = checkedPush({ root, candidate: '', target: `refs/heads/${branch}`, base: oldHead, sourceRef: `refs/heads/${branch}`, sourceOid: source, env: gitNetworkEnvironment(process.env, root), timeout: GIT_PUSH_TIMEOUT_MS });
+        if (deleted.status === 0) console.log(`merge: remote branch deleted ${branch}`);
+        else console.log(`merge: remote branch delete skipped: ${gitFailureDetail(deleted)}`);
+      }
+    } else {
+      console.log('merge: merged');
+      console.log('pr: skipped (no open pull request)');
+    }
+    runShipHealthCheck(primary || root);
+    announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: targetRef }));
+    console.log('done: worktree shipped');
+    return 0;
+  }
+  console.error('blocked: the target kept moving; branch was left unmerged');
+  return 3;
+}
+
 function shipWorktree(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     shipHelp();
@@ -1183,7 +1630,13 @@ function shipWorktree(args) {
     }
   };
 
-  refreshRemoteRef(root, targetRef);
+  const branchHasGate = fs.existsSync(path.join(root, 'scripts', 'merge-gate.sh'));
+  // Local shipping keeps the legacy refresh, but reads its gate from the local target.
+  if (localMode) refreshRemoteRef(root, targetRef);
+  const initialTarget = dryRun ? null : readShipTarget(root, targetRef, localMode);
+  if (!localMode && (dryRun || (initialTarget && !initialTarget.error && !initialTarget.gate && !branchHasGate))) {
+    refreshRemoteRef(root, targetRef);
+  }
   const skippedAdapters = restoreRegeneratedAdapterChurn(root, message, { dryRun });
   const ignoredUnstagedFiles = dryRun ? new Set(skippedAdapters) : new Set();
   // Conductor plumbing must not make the checkout look dirty, or a flight where the
@@ -1218,6 +1671,26 @@ function shipWorktree(args) {
     refreshMovedMapRefs(root, args);
   }
 
+  let targetRead = dryRun ? null : readShipTarget(root, targetRef, localMode);
+  let gateOnTarget = !!(targetRead && targetRead.gate);
+  const committedGate = !dryRun && runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0;
+  const gated = !dryRun && (gateOnTarget || committedGate || branchHasGate || targetRead.error);
+  if (targetRead && targetRead.error && (merge || localMode)) {
+    console.error(`blocked: could not read the target; branch was left unmerged: ${targetRead.error}`);
+    return 3;
+  }
+  if (gated && !merge && !localMode) {
+    const refusal = protectedPushRefusal(root, branch);
+    if (refusal) {
+      console.error(`${refusal}; or use --merge to run the gate`);
+      return 2;
+    }
+  }
+  if (gated && (merge || localMode)) {
+    if (!proofTreeMatches('head')) return 3;
+    return shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget });
+  }
+
   if (verify) {
     const beforeVerify = dryRun ? [] : statusSnapshot(root);
     console.log(`verify: ${verify}`);
@@ -1245,6 +1718,30 @@ function shipWorktree(args) {
     console.log('verify: skipped (no --verify)');
   }
 
+  // A target may gain its gate while the original verification is running.
+  // Recheck before any push and, if needed, verify the combined commit too.
+  if (!dryRun && !gated) {
+    targetRead = readShipTarget(root, targetRef, localMode);
+    gateOnTarget = !!targetRead.gate;
+    if (targetRead.error && (merge || localMode)) {
+      console.error(`blocked: could not read the target; branch was left unmerged: ${targetRead.error}`);
+      return 3;
+    }
+    const branchNowHasGate = fs.existsSync(path.join(root, 'scripts', 'merge-gate.sh'))
+      || runGit(['cat-file', '-e', 'HEAD:scripts/merge-gate.sh'], { cwd: root, check: false }).status === 0;
+    if (gateOnTarget || branchNowHasGate || targetRead.error) {
+      if (merge || localMode) {
+        if (!proofTreeMatches('head')) return 3;
+        return shipGatedCandidate({ root, primary, branch, targetRef, localMode, verify, gateOnTarget });
+      }
+      const refusal = protectedPushRefusal(root, branch);
+      if (refusal) {
+        console.error(`${refusal}; or use --merge to run the gate`);
+        return 2;
+      }
+    }
+  }
+
   const mergeCheck = dryRun
     ? { status: 0, stdout: 'dry-run' }
     : runGit(['merge-tree', '--write-tree', targetRef, 'HEAD'], { cwd: root, check: false });
@@ -1265,7 +1762,8 @@ function shipWorktree(args) {
         const targetBranch = baseBranchName(targetRef);
         const primaryBranch = currentBranch(primary);
         if (primaryBranch !== targetBranch) {
-          const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+          if (targetRead.missing && !safeCheckout(primary, 'HEAD', targetRead.oid)) return 3;
+          const switched = switchLocalTarget(primary, targetBranch, targetRead);
           if (switched.status !== 0) {
             throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
           }
