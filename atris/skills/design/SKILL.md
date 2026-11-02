@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.18
+version: 3.2.19
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -137,6 +137,7 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
 
 | D34 | engine settings show only the selected engine’s effective model and supported controls; preserve saved choices missing from the option list instead of displaying another engine | `node scripts/test-engine-settings.mjs` in project-obelisk | graduated (engine settings regression) |
+| D35 | public site links use clean paths (/syllabus, /welcome?paid=1), never a visible .html, in hrefs, canonicals, sitemaps, and payment redirects (Keshav 2026-11-02 on foundry.atris.ai: "why does it show .html ... we should be a higher standard than lovable") | `grep -nE 'href="[^"#]*\.html' landing/*.html` returns nothing | active |
 
 Measured recipes live in the mimic studies: `~/arena/mimic-beautiful-ui/LESSONS.md` (18 AI-interface components with exact tokens) and its `remix.css` :root block (the portable Atris token sheet, coffee + paper themes). Start there before designing an agent surface.
 
