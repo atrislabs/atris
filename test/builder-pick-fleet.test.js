@@ -55,6 +55,7 @@ const FIRST = START + 2 * HOUR;
 
 // Every test here counts from the same day, whatever today is, and starts with the picker on.
 process.env.ATRIS_PICK_SINCE = '2026-11-01';
+process.env.ATRIS_PICK_SEED_DAY = '2026-11-03';
 delete process.env.ATRIS_PICK;
 
 async function withEnv(vars, fn) {

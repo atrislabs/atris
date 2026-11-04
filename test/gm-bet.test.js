@@ -103,7 +103,8 @@ function goodBet(over = {}) {
 
 async function bundleFor(root, deps = fixtureDeps) {
   const events = [];
-  const bundle = await gmBet.readBundle(root, { deps, emit: e => events.push(e), ledgerFile: path.join(root, 'bets.jsonl') });
+  // a fixed day, so the fixture's now.md never ages into "stale" as the calendar moves
+  const bundle = await gmBet.readBundle(root, { deps, emit: e => events.push(e), ledgerFile: path.join(root, 'bets.jsonl'), today: '2026-10-21' });
   return { bundle, events };
 }
 
