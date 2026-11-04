@@ -12,6 +12,16 @@ After displaying the boot output, respond to the user naturally.
 
 Guidance for working on the **Atris CLI itself** (this repo builds the `atris` package that ships to user projects). Navigation lives in `atris/MAP.md`; workflow and task protocol live in `atris/atris.md`. This file is only the gotchas.
 
+## Where to work
+
+The main copy of this project under `~/arena/` tracks the published branch, and scheduled jobs run from it. A job moves it to the latest code every 15 minutes and puts any edit left there in a backup, so treat it as read-only.
+
+- Change code only in a short-lived copy: `atris worktree start --agent <name> --task "<task>"`, then `atris worktree ship`.
+- Remove your copy as soon as the work lands or is dropped. Push anything worth keeping.
+- Keep caches, datasets, build output, and run output out of copies, and delete temp folders your tests create.
+- Close Chrome with `browser.close()`. A killed Chrome leaves about 1,300 files behind for every launch.
+- Trust code, `git log`, and `atris task` over documents. `atris/now.md`, `atris/TODO.md`, and `atris/brain/STATUS.md` are snapshots, so ignore one that is older than three days.
+
 ## Gotchas
 
 **Distribution blast radius.** `atris.md` (repo root), `atris/CLAUDE.md`, and the templates under `atris/team/` are copied into every user project by `init`/`update`. Editing them is a product change: bump the version in `package.json` and keep old projects working. Downstream copies in other repos are synced; never hand-edit them there.
