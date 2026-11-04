@@ -65,6 +65,7 @@ const {
 const {
   isDecisionTask,
   decisionMarkerFor,
+  taskHasTag,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
 const {
@@ -6528,6 +6529,60 @@ function nextActionFromCommand(command) {
   return 'none';
 }
 
+// Open decision rows in scope, newest first. A tag filter matches any tag a
+// row carries, so `--tag needs-human` also finds rows held through metadata.tags.
+function decisionRowsInScope(tasks, scope) {
+  const rows = filterTasksByScope(tasks, { ...scope, tag: null })
+    .filter((task) => task && task.status === 'open' && isDecisionTask(task))
+    .filter((task) => !scope.tag || taskHasTag(task, scope.tag));
+  return sortTasksNewestFirst(rows);
+}
+
+// The author's own choice line when one was written; otherwise the title is the question.
+function decisionChoiceFor(task) {
+  const explanation = taskExplanation(task);
+  return explanation.sources.what_changes === 'explicit'
+    ? explanation.what_changes
+    : 'Decide the question in the title.';
+}
+
+function printDecisionsForNext(args, { decisions, projection, owner, scope, outPath }) {
+  const rows = decisions.map((task) => {
+    const ref = taskRef(task);
+    return {
+      task_id: task.id,
+      ref,
+      title: task.title,
+      choice: decisionChoiceFor(task),
+      show_command: `atris task show ${ref}`,
+    };
+  });
+  const first = rows[0];
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: nextActionFromCommand(first.show_command),
+      command: first.show_command,
+      task_id: first.task_id,
+      owner: String(owner),
+      scope: normalizeTaskQueueScope(scope),
+      projection_path: outPath,
+      skipped_decision_count: rows.length,
+      decisions: rows,
+      task: compactTaskFromProjection(projection, first.task_id),
+    });
+    return;
+  }
+  const scopeText = formatTaskQueueScope(scope);
+  const lead = scopeText ? `No open work for ${scopeText}.` : 'No open work to pick up.';
+  console.log(`${lead} ${rows.length === 1 ? '1 decision waits' : `${rows.length} decisions wait`} for a person:`);
+  for (const row of rows) {
+    console.log(`${row.ref}  ${row.title}`);
+    console.log(`  Choice: ${row.choice}`);
+  }
+  console.log(`next: ${first.show_command}`);
+}
+
 function cmdNextTruth(args) {
   const owner = flag(args, '--as') || personName() || DEFAULT_OWNER;
   const scope = taskQueueScopeFromArgs(args);
@@ -6562,27 +6617,17 @@ function cmdNextTruth(args) {
     outPath = written.outPath;
   }
   const scoped = filterTasksByScope(projection.tasks || [], scope);
-  const openDecisions = scoped.filter((task) => task && isDecisionTask(task) && task.status === 'open');
   const actionable = scoped.filter((task) => task && !isDecisionTask(task));
   const picked = pickNext({ tasks: actionable, person: owner });
   const command = picked.task ? (picked.command || taskCommand(picked.task, owner)) : taskNextCommand(actionable, owner);
   const task = picked.task || null;
 
-  if (!task && openDecisions.length) {
-    if (wantsJson(args)) {
-      printJson({
-        ok: false,
-        action: 'refused',
-        reason: DECISION_REFUSE_REASON,
-        skipped_decision_count: openDecisions.length,
-        owner: String(owner),
-        scope: normalizeTaskQueueScope(scope),
-        projection_path: outPath,
-      });
-      process.exit(1);
+  if (!task) {
+    const decisions = decisionRowsInScope(projection.tasks || [], scope);
+    if (decisions.length) {
+      printDecisionsForNext(args, { decisions, projection, owner, scope, outPath });
+      return;
     }
-    console.error(DECISION_REFUSE_REASON);
-    process.exit(1);
   }
 
   if (wantsJson(args)) {

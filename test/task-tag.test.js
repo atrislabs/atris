@@ -230,7 +230,7 @@ test('fleet staffing skips a task flagged needs-human via metadata.tags', () => 
   assert.equal(fleet.DECISION_REFUSE_REASON, 'decision row: human judgment required');
 });
 
-test('task list marks decision rows and task next refuses them', () => {
+test('task list marks decision rows and task next never claims them', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = makeEnv(dir);
@@ -279,7 +279,7 @@ test('task list marks decision rows and task next refuses them', () => {
   }
 });
 
-test('task next refuses when the only open row is needs-human', () => {
+test('task next names the held decision when the only open row is needs-human', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = makeEnv(dir);
@@ -296,9 +296,26 @@ test('task next refuses when the only open row is needs-human', () => {
     assert.equal(listed.status, 0, listed.stderr);
     assert.match(listed.stdout, /\[decision\]/);
 
-    const refused = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
-    assert.notEqual(refused.status, 0);
-    assert.match(`${refused.stdout || ''}${refused.stderr || ''}`, /decision row: human judgment required/);
+    // Next names the held decision and its show command; it never claims it.
+    const next = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const payload = JSON.parse(next.stdout);
+    assert.equal(payload.action, 'show');
+    assert.equal(payload.command, `atris task show ${held.display_id}`);
+    assert.deepEqual(payload.decisions.map(row => row.ref), [held.display_id]);
+    assert.equal(payload.decisions[0].title, 'Mount the notification bell or delete it');
+    assert.equal(
+      JSON.parse(runCli(['task', 'show', held.display_id, '--json'], { cwd: dir, env }).stdout).status,
+      'open',
+      'next must leave the decision row unclaimed',
+    );
+
+    // The tag filter finds the metadata-held row instead of offering a new task.
+    const byTag = runCli(['task', 'next', '--tag', 'needs-human'], { cwd: dir, env });
+    assert.equal(byTag.status, 0, byTag.stderr || byTag.stdout);
+    assert.match(byTag.stdout, new RegExp(`${held.display_id}  Mount the notification bell`));
+    assert.match(byTag.stdout, new RegExp(`^next: atris task show ${held.display_id}$`, 'm'));
+    assert.doesNotMatch(byTag.stdout, /atris task new/);
   } finally {
     cleanupTempDir(dir);
   }
