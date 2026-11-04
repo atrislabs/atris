@@ -238,7 +238,13 @@ test('dispatchToEngine writes the prompt file and captures the report', () => {
     assert.equal(calls.length, 1);
     const promptFile = path.join(wt, '.atris', 'fleet-prompt-CLI-900.md');
     assert.ok(fs.existsSync(promptFile));
-    assert.match(fs.readFileSync(promptFile, 'utf8'), /Done criteria/);
+    const sent = fs.readFileSync(promptFile, 'utf8');
+    assert.match(sent, /Done criteria/);
+    for (const value of ['acceleration', 'accuracy', 'ambition', 'agency']) assert.match(sent, new RegExp(value, 'i'));
+    fleet.dispatchToEngine({ task: TASK, engine: 'cursor', worktreePath: wt, prompt: 'Role: reviewer. Task: inspect. Acceptance: cite evidence.', runner: () => ({ status: 0, stdout: 'done', stderr: '' }) });
+    const override = fs.readFileSync(promptFile, 'utf8');
+    assert.match(override, /Role: reviewer\. Task: inspect\. Acceptance: cite evidence\./);
+    for (const value of ['acceleration', 'accuracy', 'ambition', 'agency']) assert.match(override, new RegExp(value, 'i'));
   } finally {
     fs.rmSync(wt, { recursive: true, force: true });
   }

@@ -766,3 +766,44 @@ test('mercury engine ask launches the test model through ax', () => {
   assert.deepEqual(invocation.args.slice(0, 3), ['--mercury', '--cloud', '--print']);
   assert.match(invocation.args[3], /hello/);
 });
+
+test('Claude spend guard output is a failure even when the process exits zero', async () => {
+  const root = tempRoot();
+  try {
+    const jobs = [
+      { engine: 'claude', model: 'opus', prompt: 'inspect', label: 'blocked' },
+      { engine: 'claude', model: 'opus', prompt: 'inspect', label: 'answered' },
+    ];
+    const answers = await runEngineAskJobs(jobs, { root, executeAskJob: async (job) => runAskProcess(fakeReplyInvocation({ stdout: job.label === 'blocked' ? 'claude spend guard: opus is a paid Claude model and this run is unattended. Haiku runs free. Get the owner\'s yes with a dollar estimate, then rerun with ATRIS_CLAUDE_SPEND_OK=opus.' : 'A real answer.' })) });
+    assert.equal(answers[0].ok, false);
+    assert.equal(answers[0].reason, 'spend_guard_blocked');
+    assert.match(answers[0].stdout, /spend guard/);
+    assert.equal(answers[1].ok, true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('workspace values and caller contract reach engine argv even when launched from home', () => {
+  const root = tempRoot();
+  try {
+    fs.writeFileSync(path.join(root, 'atris.md'), '## values\n- **accuracy.** Check the evidence.\n');
+    const invocation = buildReadOnlyEngineInvocation('cursor', 'Role: scout. Task: inspect. Acceptance: cite proof.', '', { root });
+    const sent = invocation.args.join(' ');
+    assert.match(sent, /accuracy: check the evidence/);
+    assert.match(sent, /Role: scout\. Task: inspect\. Acceptance: cite proof\./);
+    assert.match(sent, /Do not modify files/);
+    assert.equal(invocation.cwd, os.homedir());
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('only a standalone guard diagnostic or structured error is blocked', async () => {
+  const root = tempRoot();
+  const guard = "claude spend guard: opus is a paid Claude model and this run is unattended. Haiku runs free. Get the owner's yes with a dollar estimate, then rerun with ATRIS_CLAUDE_SPEND_OK=opus.";
+  try {
+    const outputs = [guard, JSON.stringify({ type: 'result', is_error: true, result: guard }), `The prior failure printed: "${guard}" The repair is verified.`, `Example:\n\`\`\`\n${guard}\n\`\`\``, JSON.stringify({ type: 'result', is_error: false, result: guard })];
+    const jobs = outputs.map((_, i) => ({ engine: 'claude', model: 'opus', prompt: 'inspect', label: String(i) }));
+    const answers = await runEngineAskJobs(jobs, { root, executeAskJob: async (job) => ({ ok: true, exit_code: 0, stdout: outputs[Number(job.label)] }) });
+    assert.deepEqual(answers.map(a => a.ok), [false, false, true, true, true]);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

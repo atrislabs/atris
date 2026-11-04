@@ -224,3 +224,27 @@ test('unattendedStop: a bare model name is judged through the remap the run\'s e
   // The yes is for the model it maps to.
   assert.equal(guard.unattendedStop({ model: 'haiku', env: env({ ...REMAP, ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }), null);
 });
+
+test('verified first-party Max with extra usage disabled may run, other billing paths stay protected', () => {
+  const home = tempHome();
+  const bin = path.join(home, 'bin');
+  fs.mkdirSync(bin);
+  const status = { loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', subscriptionType: 'max', orgId: 'test-org', email: 'user@example.test' };
+  fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\nprintf '%s' '${JSON.stringify(status)}'\n`, { mode: 0o755 });
+  const env = { HOME: home, PATH: bin };
+  const setAccount = (account) => fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: account }));
+  const account = { organizationType: 'claude_max', hasExtraUsageEnabled: false, organizationUuid: 'test-org', emailAddress: 'user@example.test' };
+  setAccount(account);
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env, log: false }).reason, 'max_subscription');
+  assert.equal(guard.hookDecision({ argv: ['claude', '-p', '--model', 'opus'], env }).block, false);
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env: { ...env, ANTHROPIC_API_KEY: 'test' }, checkKey: true, log: false }).reason, 'paid_key');
+  setAccount({ ...account, organizationUuid: 'different-org' });
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env, log: false }).reason, 'paid_model');
+  setAccount({ ...account, emailAddress: 'other@example.test' });
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env, log: false }).reason, 'paid_model');
+  setAccount({ ...account, hasExtraUsageEnabled: true });
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env, log: false }).reason, 'paid_model');
+  setAccount({ organizationType: 'claude_max' });
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env, log: false }).reason, 'paid_model');
+  fs.rmSync(home, { recursive: true, force: true });
+});

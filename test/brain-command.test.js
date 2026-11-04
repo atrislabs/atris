@@ -108,6 +108,7 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     for (const adapter of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
       const text = fs.readFileSync(path.join(dir, adapter), 'utf8');
       assert.match(text, /Atris Brain Compile/, `${adapter} should carry the boot block`);
+      for (const value of ['acceleration', 'accuracy', 'ambition', 'agency']) assert.match(text, new RegExp(value, 'i'));
       assert.match(text, /atris brain activate --root \. --yes --verify/, `${adapter} should name the activation command`);
     }
   } finally {
