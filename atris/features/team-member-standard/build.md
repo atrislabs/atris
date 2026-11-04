@@ -1,17 +1,21 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-23
 sources:
-  - commands/member.js:212-230 (memberPaths and MISSION.md wiring)
-  - commands/member.js:972-1016 (member run bridge to Mission Runtime)
-  - commands/member.js:3942-3996 (member list)
-  - commands/member.js:3997-4126 (member create scaffold)
-  - commands/member.js:4520-4859 (goal, goal-from-mission, goal-from-score)
-  - commands/member.js:7845-7874 (wake decision and receipts)
-  - commands/member.js:7924-8348 (member loop, including memberLoopAll)
-  - commands/member.js:8349-8704 (tick, review, block, status)
-  - commands/member.js:8933-9072 (member command dispatch and help)
-  - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
-  - bin/atris.js:2625 (member command route)
+  - commands/member.js:215-233 (memberPaths and MISSION.md wiring)
+  - commands/member.js:1256-1436 (member run bridge to Mission Runtime, memberRun and memberRunWith)
+  - commands/member.js:4462-4531 (member list)
+  - commands/member.js:4539-4671 (member create scaffold)
+  - lib/member-scaffold.js:145-177 (ensureMemberBundle, files and folders a new member gets)
+  - commands/member.js:5149-5536 (goal, goal-from-mission, goal-from-score)
+  - commands/member.js:8213-8487 (wake decision and receipts)
+  - commands/member.js:8615-8699 (memberWake and its wake-then-work step)
+  - commands/member.js:8780-9295 (member loop, including memberLoopAll)
+  - commands/member.js:9297-9668 (tick, review, block, status)
+  - commands/member.js:11626-11875 (member command dispatch and help)
+  - lib/member-verbs.js:47-79 (run and wake verb routing)
+  - lib/member-context.js
+  - commands/mission.js:2028-2068 (renderMemberNowMarkdown, member now.md rendering)
+  - bin/atris.js:3121 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---
@@ -80,7 +84,7 @@ team receipts. A local install is not an npm publication or backend deployment.
 |------|------|
 | `commands/member.js` | Member CRUD, cloud sync, mission-derived goals, wake/tick/review loop, status, block, archive |
 | `commands/mission.js` | Renders member `now.md` and workspace `atris/status/now.md` from active missions |
-| `bin/atris.js:2625` | Routes `atris member <subcommand>` to `memberCommand` |
+| `bin/atris.js:3121` | Routes `atris member <subcommand>` to `memberCommand` |
 | `atris/skills/create-member/SKILL.md` | Skill for creating members via conversation |
 | `atris/team/_template/MEMBER.md` | Canonical frontmatter template |
 | `atris/team/*/MEMBER.md` | Local member identity contracts |
@@ -98,7 +102,7 @@ team receipts. A local install is not an npm publication or backend deployment.
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `list` / `ls` | `memberList` | Show all members with role, format, skill/context counts, version |
-| `create <name>` / `new` | `memberCreate` | Scaffold directory: `MEMBER.md` + `MISSION.md` + `skills/` + `tools/` + `context/` + `logs/` |
+| `create <name>` / `new` | `memberCreate` | Scaffold directory: `MEMBER.md` + `SOUL.md` + `MISSION.md` + `goals.json` + `goals.md` + `skills/` + `tools/` + `context/` + a dated `logs/` entry |
 | `activate <name>` | `memberActivate` | Symlink local skills into `~/.claude`, `~/.codex`, `~/.cursor`; print context + permissions |
 | `upgrade <name>` | `memberUpgrade` | Convert flat `team/<name>.md` to directory format |
 | `push <name>` | `memberPush` | Upload `MEMBER.md` to cloud; writes `agent-id` back into frontmatter on create |
@@ -106,8 +110,8 @@ team receipts. A local install is not an npm publication or backend deployment.
 | `goal <name> "..."` | `memberGoal` | Create or update a durable active goal with acceptance criteria |
 | `goal-from-mission <name>` / `mission-goal` | `memberGoalFromMission` | Derive one bounded goal from `MISSION.md` and current member `now.md` |
 | `goal-from-score <name>` / `score-goal` | `memberGoalFromScore` | Derive one active self-improvement goal from Team score evidence |
-| `wake <name>` | `memberWake` | Decide `tick`, `wait`, `ask`, or `stop` from mission, goals, steering, task evidence, and workspace state |
-| `run <name>` | `memberRun` | Run the member's active Mission Runtime through `atris mission run` |
+| `wake <name>` | `memberWake` (via `memberWakeVerb`) | Decide the next step (`tick`, `wait`, `ask`, `stop`, or a richer decision such as `set_objective` or `create_task`) from mission, goals, steering, task evidence, and workspace state. From a terminal it then runs one bounded member run on the roster engine unless `--plan` or `--dry-run` is passed. `wake <N>` or `wake <a> <b>` hands off to `up` |
+| `run <name>` / `run "<job>"` | `memberRun` (via `memberRunVerb`) | With a member name, start a budgeted member mission or run its active Mission Runtime. With a job that is not a member name, dispatch it to the best member with `--ignite` |
 | `loop <name>` | `memberLoop` | Repeat wake on a bounded cadence with a no-overlap lease, stop file, latest status, and receipts. Exits early when wake returns the same `ask` decision twice in a row, so a blocked member stops burning cycles |
 | `alive <name>` | `memberAlive` | Run `loop` in always-on liveness mode (forces the `--alive` flag) |
 | `tick <name>` | `memberTick` | Propose or reuse the next bounded experiment for the active goal |
@@ -121,9 +125,11 @@ team receipts. A local install is not an npm publication or backend deployment.
 | `archive <name>` | `memberArchive` | Move a member to `atris/team/_archived/` |
 | `purge-archived` | `memberPurgeArchived` | Delete old archived members with explicit confirmation |
 
+The dispatcher also routes newer subcommands not covered by this spec, among them `roster`, `install`, `chat`, `go`, `up`, `steer`, `sleep`, `1on1`, `room`, `board`, `stop`, `card`, `ping`, `dispatch`, `feed`, `result`, `report`, `handoff`, `live`, `heartbeat`, `improvements`, `export`, and `tidy`. Bare `atris member` inside a workspace with `atris/team/` opens the Team Room.
+
 ## Frontmatter Schema
 
-Aligned with `atris/team/_template/MEMBER.md`:
+Aligned with `atris/team/_template/MEMBER.md`. `atris member create` also writes `type: ai` (a human member is a person, and Atris never acts as them):
 
 ```yaml
 ---
@@ -136,6 +142,9 @@ skills: []                  # list of skill slugs
 
 permissions:
   can-read: true
+  can-execute: true
+  can-approve: false
+  can-accept-task: false
   approval-required: []
 
 tools: []
@@ -152,19 +161,20 @@ tools: []
 ```
 atris/team/<name>/
 ├── MEMBER.md      # frontmatter + persona/workflow/rules
+├── SOUL.md        # member identity, with its birth date
 ├── MISSION.md     # human-authored North Star and goal-selection contract
+├── goals.json     # durable goal and experiment state, empty at first
+├── goals.md       # generated operator readout ("No goals yet.")
 ├── skills/        # local skills (linked on activate)
 ├── tools/         # member-specific tools
 ├── context/       # reference docs surfaced on activate
-└── logs/          # dated receipts and goal/review history
+└── logs/          # dated receipts and goal/review history, seeded with today's entry
 ```
 
-Runtime commands can then add:
+Existing files are never overwritten; `lib/member-scaffold.js` only writes what is missing. Runtime commands can then add:
 
 ```
 atris/team/<name>/
-├── goals.json     # durable goal and experiment state
-├── goals.md       # generated operator readout
 └── now.md         # generated mission runtime view
 ```
 
@@ -194,24 +204,24 @@ MISSION.md + now.md
 
 - `goal-from-mission` refuses placeholder missions and creates one active goal from the member North Star.
 - `goal-from-score` can replace direction from Team score evidence and supersedes older open experiments.
-- `wake` checks mission, active goal, open/blocked experiments, steering directives, task projection evidence, recent receipts, and member-scoped dirty work.
+- `wake` checks mission, active goal, open/blocked experiments, steering directives, task projection evidence, recent receipts, and member-scoped dirty work. A sleeping member is skipped. From a terminal, a free-to-work decision is followed by one bounded member run on the roster engine (15 minutes and no verify unless flags say otherwise); `--plan` or `--dry-run` only decides.
 - `loop` repeats wake with a lease so two loops do not run the same member at once, and stops early on a repeated identical `ask`.
 - `review` refuses missing proof and records optional value/lesson/next experiment.
 
 ## What's Done
 
 - [x] MEMBER.md frontmatter schema (`name`, `role`, `description`, `version`, `skills`, `permissions`, `tools`, optional `agent-id`)
-- [x] `atris member create <name>` scaffolds `MEMBER.md` + `MISSION.md` + `skills/` + `tools/` + `context/` + `logs/`
+- [x] `atris member create <name>` scaffolds `MEMBER.md` + `SOUL.md` + `MISSION.md` + `goals.json` + `goals.md` + `skills/` + `tools/` + `context/` + `logs/`
 - [x] `atris member list` shows all members with role, format, skill/context counts
 - [x] `atris member activate <name>` symlinks skills into Claude/Codex/Cursor and prints context, tools, permissions
 - [x] `atris member upgrade <name>` converts flat file → directory format
 - [x] `atris member push <name>` creates or updates cloud agent; writes `agent-id` back to frontmatter on create
 - [x] `atris member pull <name|agent_id>` downloads agent + journal; auto-resolves name via local `agent-id`
 - [x] `atris member goal`, `goal-from-mission`, and `goal-from-score` maintain structured goals and generated readouts
-- [x] `atris member wake` makes one finite decision with a receipt instead of piling work onto open experiments
+- [x] `atris member wake` makes one finite decision with a receipt instead of piling work onto open experiments, then runs one bounded work step from a terminal when the decision allows it
 - [x] `atris member loop` repeats wake with no-overlap lease, latest status, stop support, and receipts
 - [x] `atris member tick`, `review`, `block`, and `status` form the proof loop for useful member work
-- [x] `atris member run` bridges active member runtime state into `atris mission run`
+- [x] `atris member run` bridges active member runtime state into `atris mission run`, and routes a plain job to the best member
 - [x] `atris member alive` runs the member loop in always-on liveness mode
 - [x] `atris member history` shows git-backed identity history for MEMBER.md / SOUL.md
 - [x] Supervisor, objective-generator, and generalist subcommands expose member-specialized readouts
