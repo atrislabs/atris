@@ -150,6 +150,62 @@ test('empty task next names task new and does not prompt', () => {
   }
 });
 
+test('task next names each decision ref when only decision rows are open', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'UNW-1',
+        title: 'Raise the bundle budget or replace the metric',
+        status: 'open',
+        tag: 'decision',
+        updated_at: 20,
+      },
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Mount the notification bell or delete it',
+        status: 'open',
+        tag: 'web-quality',
+        metadata: {
+          tags: ['needs-human'],
+          what_changes: 'The bell mounts on the phone page, or it is removed.',
+        },
+        updated_at: 40,
+      },
+    ]);
+    const env = nextEnv(dir, 'decisions.db');
+    const expected = 'atris task show UNW-2';
+    const { next } = assertSameNext(dir, env, expected);
+    assert.match(next.stdout, /^UNW-2  Mount the notification bell or delete it$/m);
+    assert.match(next.stdout, /^UNW-1  Raise the bundle budget or replace the metric$/m);
+    assert.match(next.stdout, /Choice: The bell mounts on the phone page, or it is removed\./);
+    assert.match(next.stdout, /Choice: Decide the question in the title\./);
+    assert.doesNotMatch(next.stdout, /No open tasks|atris task new|decision row: human judgment/);
+
+    const json = runCli(['task', 'next', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.action, 'show');
+    assert.equal(payload.command, expected);
+    assert.equal(payload.task_id, 'task-2');
+    assert.equal(payload.skipped_decision_count, 2);
+    assert.deepEqual(payload.decisions.map(row => row.ref), ['UNW-2', 'UNW-1']);
+    assert.equal(payload.decisions[0].choice, 'The bell mounts on the phone page, or it is removed.');
+    assert.equal(payload.decisions[1].choice, 'Decide the question in the title.');
+    assert.equal(payload.decisions[1].show_command, 'atris task show UNW-1');
+
+    const byTag = runCli(['task', 'next', '--tag', 'needs-human'], { cwd: dir, env });
+    assert.equal(byTag.status, 0, byTag.stderr || byTag.stdout);
+    assert.equal(nextLine(byTag.stdout), expected);
+    assert.doesNotMatch(byTag.stdout, /UNW-1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task next in an uninitialized folder talks like first-minute', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
