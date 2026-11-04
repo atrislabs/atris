@@ -6,6 +6,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+
+// Any rescue these tests reach lands here, never in the real home folder.
+const rescueDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-rescue-'));
+process.env.ATRIS_WORKTREE_RESCUE_DIR = rescueDir;
+test.after(() => fs.rmSync(rescueDir, { recursive: true, force: true }));
+
 const { cleanupWorktrees, createAgentWorktree } = require('../commands/worktree');
 
 function git(root, args) {
@@ -136,7 +142,7 @@ test('cleanup preserves edits to a tracked file named like agent output', () => 
   }
 });
 
-test('cleanup preserves ignored local data in an otherwise clean merged checkout', () => {
+test('cleanup saves ignored local data before removing an otherwise clean merged checkout', () => {
   const root = initRepo();
   const worktree = `${root}-ignored-data`;
   try {
@@ -145,9 +151,9 @@ test('cleanup preserves ignored local data in an otherwise clean merged checkout
     fs.writeFileSync(path.join(worktree, '.derivedData', 'local.db'), 'local data');
     backdate(worktree, 2);
     const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
-    assert.equal(result.removed.length, 0);
-    assert.equal(result.kept.some((item) => item.reason === 'ignored_data'), true);
-    assert.equal(fs.readFileSync(path.join(worktree, '.derivedData', 'local.db'), 'utf8'), 'local data');
+    assert.equal(result.removed.length, 1);
+    assert.equal(fs.existsSync(worktree), false);
+    assert.equal(fs.readFileSync(path.join(result.removed[0].rescue.path, 'ignored', '.derivedData', 'local.db'), 'utf8'), 'local data');
   } finally {
     spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
     fs.rmSync(root, { recursive: true, force: true });

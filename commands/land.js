@@ -583,9 +583,9 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   for (const w of candidateWorktrees) {
     // Only the fresh-worktree grace protects here. Dirty worktrees are NOT
     // skipped: reap's salvage (bundle + patches + untracked copies below)
-    // exists precisely so dirty residue can be cleared loss-free. Blanket
-    // dirty protection lives in the janitor's cleanupWorktrees, which has
-    // no salvage machinery.
+    // exists precisely so dirty residue can be cleared loss-free. The janitor's
+    // cleanupWorktrees keeps dirty copies until they sit idle for days, then
+    // saves them with lib/worktree-rescue.js.
     if (protectCurrent && path.resolve(w.path) === current) {
       protectedWorktrees.push({ ...w, reason: 'current_checkout' });
       continue;
