@@ -55,6 +55,7 @@ const FIRST = START + 2 * HOUR;
 
 // Every test here counts from the same day, whatever today is, and starts with the picker on.
 process.env.ATRIS_PICK_SINCE = '2026-11-01';
+process.env.ATRIS_PICK_SEED_DAY = '2026-11-03';
 delete process.env.ATRIS_PICK;
 
 async function withEnv(vars, fn) {
@@ -938,7 +939,11 @@ test('origin\'s default branch is fetched once, with an explicit refspec, before
 
   // A live flight whose first engine dies and is retried: still one fetch for the whole flight.
   watch.clear();
-  const answer = (entry) => (entry.engine === 'claude' ? DEAD : { exitCode: 0, report: 'built it' });
+  let dead = null;   // whichever engine the draw sends first dies, so a job is retried on any day
+  const answer = (entry) => {
+    dead = dead || entry.engine;
+    return entry.engine === dead ? DEAD : { exitCode: 0, report: 'built it' };
+  };
   const live = await liveFlight(app, jobs(4), { answer, flight: { engines: ['claude', 'codex', 'cursor'] } });
   assert.ok(live.flight.results.some((row) => row.restaffed), 'a job was retried');
   assert.deepEqual(watch.startingWith('fetch'), [FETCH_MAIN], watch.calls().join('\n'));
