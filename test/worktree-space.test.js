@@ -75,6 +75,17 @@ test('temp folders and agent copy folders are told apart', (t) => {
   assert.equal(space.isAgentCopyPath(path.join(os.homedir(), 'arena', 'app')), false);
 });
 
+test('the sweep only reaches folders that exist to hold copies', (t) => {
+  const ws = tempDir(t, 'reach');
+  for (const copy of ['.agent-worktrees/app/one', 'app-worktrees/one', 'worktrees/one', 'app/worktrees/one', '.wt-one']) {
+    assert.equal(space.isWorkspaceCopyPath(path.join(ws, copy), ws), true, copy);
+  }
+  for (const copy of ['hand-named', 'app-worktrees', 'app/hand-named', '../elsewhere/worktrees/one']) {
+    assert.equal(space.isWorkspaceCopyPath(path.join(ws, copy), ws), false, copy);
+  }
+  assert.equal(space.isWorkspaceCopyPath(ws, ws), false);
+});
+
 test('repos with build copies are the copy folders that sit next to a checkout', (t) => {
   const ws = tempDir(t, 'repos');
   for (const name of ['app', 'loose', '.deps']) fs.mkdirSync(path.join(ws, '.agent-worktrees', name), { recursive: true });
@@ -84,6 +95,10 @@ test('repos with build copies are the copy folders that sit next to a checkout',
   assert.deepEqual(repos.map((repo) => repo.name), ['app']);
   assert.equal(repos[0].root, path.join(ws, 'app'));
   assert.deepEqual(space.agentCopyRepos(path.join(ws, 'missing')), []);
+
+  // A repo whose copies live elsewhere counts too, through git's own list.
+  fs.mkdirSync(path.join(ws, 'linked', '.git', 'worktrees', 'one'), { recursive: true });
+  assert.deepEqual(space.agentCopyRepos(ws).map((repo) => repo.name), ['app', 'linked']);
 });
 
 test('an install matches its lockfile only when every required package is there at the locked version', (t) => {

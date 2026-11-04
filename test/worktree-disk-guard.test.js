@@ -6,6 +6,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+
+// Any rescue these tests reach lands here, never in the real home folder.
+const rescueDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-disk-guard-rescue-'));
+process.env.ATRIS_WORKTREE_RESCUE_DIR = rescueDir;
+test.after(() => fs.rmSync(rescueDir, { recursive: true, force: true }));
+
 const {
   cleanupWorktrees,
   createAgentWorktree,
@@ -197,13 +203,13 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   const shipped = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [fresh], freshGraceMs: 0 });
   assert.deepEqual(shipped.removed.map((item) => item.path), [fresh]);
 
-  // Files git ignores may be local data, so they keep a merged copy for review.
-  const holding = addCopy(app, 'holding');
-  fs.mkdirSync(path.join(holding, 'node_modules'));
-  backdateCopy(holding, 3);
-  const review = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [holding] });
-  assert.ok(review.kept.some((item) => item.path === holding && item.reason === 'ignored_data'));
-  assert.equal(fs.existsSync(holding), true);
+  // A rebuildable folder git ignores is not data, so it holds nothing back.
+  const rebuildable = addCopy(app, 'rebuildable');
+  fs.mkdirSync(path.join(rebuildable, 'node_modules'));
+  backdateCopy(rebuildable, 3);
+  const review = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [rebuildable] });
+  assert.deepEqual(review.removed.map((item) => item.path), [rebuildable]);
+  assert.equal(fs.existsSync(rebuildable), false);
 });
 
 test('the sweep removes merged idle copies in every repo, clears webpack caches in copies it keeps, and keeps the rest', (t) => {
@@ -242,7 +248,7 @@ test('the sweep removes merged idle copies in every repo, clears webpack caches 
   assert.equal(fs.existsSync(path.join(idleUnmerged, '.next')), true, 'the rest of the build output waits for review');
   for (const keptCopy of [changed, busy, recent, outside, localCopy]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
   const reasons = (name) => applied.repos.find((repo) => repo.name === name).kept.map((item) => item.reason).sort();
-  assert.deepEqual(reasons('app'), ['dirty', 'ignored_data']);
+  assert.deepEqual(reasons('app'), ['dirty', 'unmerged']);
   assert.deepEqual(reasons('other'), ['active_process', 'recent_activity']);
   assert.match(applied.repos.find((repo) => repo.name === 'local').skipped, /no origin/);
   assert.equal(typeof applied.before, 'number');

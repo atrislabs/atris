@@ -10,6 +10,7 @@ const { installKeep, planKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorArtifact, isConductorUntracked } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
+const rescue = require('../lib/worktree-rescue');
 const space = require('../lib/worktree-space');
 const close = require('./close');
 
@@ -53,7 +54,7 @@ function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
   // Only network calls need the SSH probe; local calls skip its extra git spawn.
   const defaultTimeout = args[0] === 'push' ? GIT_PUSH_TIMEOUT_MS : network ? 30000 : undefined;
-  const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout,
+  const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout, maxBuffer: COMMAND_MAX_BUFFER_BYTES,
     killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
@@ -1615,7 +1616,7 @@ function worktreeHasActiveProcess(worktreePath, activeCwds) {
 
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
-function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
+function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, rescue: rescuePath = '' }) {
   try {
     const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
     const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
@@ -1623,6 +1624,7 @@ function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reaso
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify({
       at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
+      ...(rescuePath ? { rescue: rescuePath } : {}),
     })}\n`);
   } catch {}
 }
@@ -1720,8 +1722,258 @@ function originBaseIsCurrent(root, base) {
     && match[2] === `refs/heads/${branch}` && local.stdout.trim() === match[1];
 }
 
+// How long a copy can sit before its work is saved and the copy removed.
+const COPY_STALE_MS = 3 * DAY_MS;
+// A lock outlives whoever took it when a session dies, so it expires.
+const COPY_LOCK_STALE_MS = DAY_MS;
+const MAX_COPIES_PER_REPO = 15;
+const MERGED_PR_TIMEOUT_MS = 10 * 1000;
+const CHERRY_TIMEOUT_MS = 30 * 1000;
+
+function isAncestorCommit(root, commit, of) {
+  return runGit(['merge-base', '--is-ancestor', commit, of], { cwd: root, check: false }).status === 0;
+}
+
+// Finds the merged pull request that carries this exact work, asking GitHub at
+// most once per branch in a run. A branch name alone proves nothing: it can be
+// reused, a fork can have the same one, the copy can have commits made after
+// the merge, and a stacked pull request can merge into a branch that never
+// landed. So the merged head must contain this copy's head, and the pull
+// request must target the base. Any failure or timeout means not proven, and
+// GitHub is not asked again this run, so an outage costs one timeout.
+function mergedPrFinder(root, base, timeout = MERGED_PR_TIMEOUT_MS) {
+  const target = base === 'HEAD'
+    ? runGit(['symbolic-ref', '--short', 'HEAD'], { cwd: root, check: false }).stdout.trim()
+    : baseBranchName(base.replace(/^refs\/remotes\//, ''));
+  const answers = new Map();
+  let unavailable = false;
+  return (branch, head) => {
+    if (unavailable) return null;
+    if (!answers.has(branch)) {
+      const result = spawnSync('gh', ['pr', 'list', '--state', 'merged', '--head', branch, '--json', 'number,headRefOid,baseRefName'], {
+        cwd: root,
+        encoding: 'utf8',
+        timeout,
+        killSignal: 'SIGKILL',
+        maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+        env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+      });
+      let pulls = null;
+      if (!result.error && result.status === 0) {
+        try { pulls = JSON.parse(result.stdout); } catch {}
+      }
+      if (!Array.isArray(pulls)) {
+        unavailable = true;
+        return null;
+      }
+      answers.set(branch, pulls);
+    }
+    return answers.get(branch).find((pull) => pull
+      && Number.isInteger(pull.number)
+      && pull.baseRefName === target
+      && typeof pull.headRefOid === 'string' && GIT_OID_PATTERN.test(pull.headRefOid)
+      && (pull.headRefOid === head || isAncestorCommit(root, head, pull.headRefOid))) || null;
+  };
+}
+
+// Why this head counts as landed, or null. This repo family lands by rebase and
+// squash, so an ancestor check alone reads landed work as unmerged. A branch
+// made only of merge commits lists nothing in git cherry, and proves nothing.
+function proveCopyFinished({ root, base, head, branch, findMergedPr }) {
+  if (isAncestorCommit(root, head, base)) return { reason: 'merged_into_base' };
+  const cherry = runGit(['cherry', base, head], { cwd: root, check: false, timeout: CHERRY_TIMEOUT_MS });
+  const commits = cherry.status === 0 ? cherry.stdout.split(/\r?\n/).filter(Boolean) : [];
+  if (commits.length && commits.every((line) => line.startsWith('- '))) return { reason: 'commits_upstream' };
+  const trees = [head, base].map((ref) => runGit(['rev-parse', '--verify', `${ref}^{tree}`], { cwd: root, check: false }));
+  if (trees.every((tree) => tree.status === 0) && trees[0].stdout.trim() === trees[1].stdout.trim()) return { reason: 'tree_matches_base' };
+  if (branch === 'detached') return null;
+  const pull = findMergedPr(branch, head);
+  return pull ? { reason: 'merged_pr', pull_request: pull.number } : null;
+}
+
+// git keeps each copy's own files, its lock included, in .git/worktrees/<id>.
+// The gitdir file there names the copy, and still does once the folder is gone.
+function worktreeAdminDirs(root) {
+  const dirs = new Map();
+  const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+  if (common.status !== 0) return dirs;
+  const parent = path.join(common.stdout.trim(), 'worktrees');
+  let names = [];
+  try { names = fs.readdirSync(parent); } catch { return dirs; }
+  for (const name of names) {
+    const adminDir = path.join(parent, name);
+    try {
+      const link = fs.readFileSync(path.join(adminDir, 'gitdir'), 'utf8').trim();
+      dirs.set(canonicalPath(path.dirname(path.resolve(adminDir, link))), adminDir);
+    } catch {}
+  }
+  return dirs;
+}
+
+function readCopyLock(adminDir, now) {
+  if (!adminDir) return null;
+  try {
+    const file = path.join(adminDir, 'locked');
+    const { mtimeMs } = fs.statSync(file);
+    return { mtimeMs, stale: now - mtimeMs >= COPY_LOCK_STALE_MS, text: fs.readFileSync(file, 'utf8').trim() };
+  } catch {
+    return null;
+  }
+}
+
+// Only a folder the system says is not there counts as gone. A folder it will
+// not let us look at is still somebody's folder.
+function folderIsGone(target) {
+  try {
+    fs.lstatSync(target);
+    return false;
+  } catch (error) {
+    return error.code === 'ENOENT' || error.code === 'ENOTDIR';
+  }
+}
+
+function isSameOrInside(child, parent) {
+  return child === parent || child.startsWith(`${parent}${path.sep}`);
+}
+
+// Commits on a detached head that no branch or tag reaches disappear with the
+// copy, so they must be saved even when the rest of the copy is finished.
+function detachedCommitsNeedSaving(root, wt) {
+  if (wt.branch !== 'detached') return false;
+  const holders = runGit(['for-each-ref', '--count=1', '--contains', wt.head], { cwd: root, check: false });
+  return holders.status !== 0 || !holders.stdout.trim();
+}
+
+// The newest sign anyone touched the copy. A person editing a file deep in the
+// tree changes neither the top folder nor the reflog, so the changed files and
+// the ignored data count too.
+function copyLastTouchMs(wtPath, status, ignored) {
+  return Math.max(lastCopyActivityMs(wtPath), status.newestMs, ignored.newestMs);
+}
+
+function copyFingerprint(wtPath, status, ignored) {
+  return JSON.stringify([status.raw, ignored.raw, copyLastTouchMs(wtPath, status, ignored)]);
+}
+
+// The one decision for every path that removes copies: cleanup, sweep, the
+// removal after ship, start, and autoland. It only reads, so a preview reports
+// what a real run would do. It returns an action:
+//   keep               leave the copy and report why
+//   forget             the folder is gone, drop the registration
+//   remove             finished, idle, and nothing to save
+//   rescue_then_remove something would be lost, so save it first
+function decideCopy(wt, context) {
+  const { root, base, now, activeCwds, worktreePaths } = context;
+  const wtPath = path.resolve(wt.path);
+  const canonical = canonicalPath(wtPath);
+  const item = { path: wt.path, branch: wt.branch, head: wt.head };
+  const keep = (reason, extra = {}, details = {}) => ({ action: 'keep', reason, wtPath, item: { ...item, reason, ...extra }, ...details });
+
+  if (wtPath === context.primary) return keep('primary_checkout');
+  if (wtPath === context.current || isSameOrInside(context.cwd, canonical)) return keep('current_checkout');
+  const lock = wt.locked ? readCopyLock(context.adminDirs.get(canonical), now) : null;
+  const lockProtects = wt.locked && !(lock && lock.stale);
+  const lockFields = lock ? { stale_lock: true } : {};
+  if (folderIsGone(wtPath)) {
+    // No folder means no work to lose, so a sweep forgets it wherever it was.
+    if (context.scopePaths && !context.scopePaths.includes(canonical)) return keep('out_of_scope', {}, { gone: true });
+    if (lockProtects) return keep('locked', {}, { gone: true });
+    return { action: 'forget', reason: 'folder_missing', wtPath, lock, item: { ...item, reason: 'folder_missing', action: 'forget', ...lockFields } };
+  }
+  if (!context.inScope(wtPath)) return keep('out_of_scope');
+  if (lockProtects) return keep('locked');
+  if (PROTECTED_BRANCHES.has(wt.branch)) return keep('protected_branch');
+  if (worktreeHasActiveProcess(wtPath, activeCwds)) return keep(activeCwds ? 'active_process' : 'process_scan_failed');
+  // Removing a folder takes everything inside it, another copy's work included.
+  if (worktreePaths.some((other) => other !== canonical && isSameOrInside(other, canonical) && !folderIsGone(other))) return keep('holds_another_copy');
+
+  // A folder that lost its .git file makes git search upward and answer for
+  // whichever repo sits above it, so confirm git is talking about this copy.
+  const gitDir = runGit(['rev-parse', '--absolute-git-dir'], { cwd: wtPath, check: false });
+  const adminDir = context.adminDirs.get(canonical);
+  if (gitDir.status !== 0 || !adminDir || canonicalPath(gitDir.stdout.trim()) !== canonicalPath(adminDir)) {
+    return keep('unreadable', { error: 'git cannot read this folder as a copy; its .git link is missing or broken' });
+  }
+  const status = rescue.readCopyStatus(wtPath);
+  if (!status) return keep('unreadable', { error: 'git status failed in this folder' });
+  const ignored = rescue.scanIgnored(wtPath);
+  if (!ignored) return keep('ignored_scan_failed');
+  if (ignored.holdsLinkedCopy) return keep('holds_another_copy');
+  if (!wt.head) return keep('missing_head', {}, { clearCaches: true });
+
+  const dirty = Boolean(status.staged || status.unstaged || status.untracked);
+  const lastTouchMs = copyLastTouchMs(wtPath, status, ignored);
+  const fingerprint = copyFingerprint(wtPath, status, ignored);
+  const bundleCommits = detachedCommitsNeedSaving(root, wt);
+  const inspected = { status, ignored, lastTouchMs, fingerprint, bundleCommits, lock };
+  const counts = { staged: status.staged, unstaged: status.unstaged, untracked: status.untracked };
+  const proof = !dirty && !context.refreshError
+    ? proveCopyFinished({ root, base, head: wt.head, branch: wt.branch, findMergedPr: context.findMergedPr })
+    : null;
+  // The pull request answer comes from GitHub, so the local base does not matter to it.
+  const proofHolds = Boolean(proof) && (proof.reason === 'merged_pr' || context.baseIsCurrent());
+  const plan = (action, reason, extra = {}) => ({
+    action,
+    reason,
+    wtPath,
+    proof: extra.proof || null,
+    inspected,
+    lock,
+    item: { ...item, reason, action, ...lockFields, ...(extra.proof && extra.proof.pull_request ? { pull_request: extra.proof.pull_request } : {}) },
+  });
+  const tooMuchIgnored = () => keep('ignored_data_large', { ignored_bytes_over: rescue.IGNORED_RESCUE_LIMIT_BYTES }, { clearCaches: true });
+
+  if (proofHolds) {
+    if (context.freshGraceMs > 0 && worktreeWithinReapGrace(wtPath, now, context.freshGraceMs)) return keep('fresh_worktree_grace', {}, { inspected });
+    if (context.recentlyUsed(wtPath)) return keep('recent_activity', {}, { inspected });
+    if (ignored.overLimit) return tooMuchIgnored();
+    const nothingToSave = !ignored.files.length && !bundleCommits;
+    return plan(nothingToSave ? 'remove' : 'rescue_then_remove', proof.reason, { proof });
+  }
+  if (now - lastTouchMs >= COPY_STALE_MS) {
+    if (ignored.overLimit) return tooMuchIgnored();
+    return plan('rescue_then_remove', dirty ? 'stale_dirty' : 'stale_unfinished');
+  }
+  if (dirty) return keep('dirty', counts, { inspected, clearCaches: true });
+  if (context.refreshError) return keep('base_refresh_failed', {}, { inspected });
+  if (proof) return keep('base_unverified', {}, { inspected });
+  return keep(wt.branch === 'detached' ? 'detached_unmerged' : 'unmerged', {}, { inspected, clearCaches: true });
+}
+
+// Above the cap, the oldest idle copies go through the rescue path until the
+// repo is back at the cap. A copy used inside the idle window is not idle, even
+// here: an engine can be booting in it with no program running yet. A run aimed
+// at given copies never reaches for others. Returns the plans it changed.
+function applyCopyCap(plans, { maxCopies, now, idleMs }) {
+  const remaining = plans.filter((plan) => plan.action !== 'forget' && plan.reason !== 'primary_checkout' && !plan.gone);
+  let excess = remaining.filter((plan) => plan.action === 'keep').length - maxCopies;
+  if (excess <= 0) return [];
+  const idleAfter = Math.max(idleMs, WORKTREE_REAP_GRACE_MS);
+  const oldestFirst = remaining
+    .filter((plan) => plan.action === 'keep' && plan.inspected && now - plan.inspected.lastTouchMs >= idleAfter)
+    .sort((a, b) => a.inspected.lastTouchMs - b.inspected.lastTouchMs);
+  const chosen = [];
+  for (const candidate of oldestFirst) {
+    if (excess <= 0) break;
+    if (candidate.inspected.ignored.overLimit) {
+      candidate.reason = 'ignored_data_large';
+      candidate.item = { path: candidate.item.path, branch: candidate.item.branch, head: candidate.item.head, reason: 'ignored_data_large', ignored_bytes_over: rescue.IGNORED_RESCUE_LIMIT_BYTES };
+      continue;
+    }
+    const { path: copyPath, branch, head } = candidate.item;
+    candidate.action = 'rescue_then_remove';
+    candidate.reason = 'over_cap';
+    candidate.clearCaches = false;
+    candidate.lock = candidate.inspected.lock;
+    candidate.item = { path: copyPath, branch, head, reason: 'over_cap', action: 'rescue_then_remove', ...(candidate.lock ? { stale_lock: true } : {}) };
+    chosen.push(candidate);
+    excess -= 1;
+  }
+  return chosen;
+}
+
 // Scope and pace options, all off by default:
-//   onlyUnder / onlyPaths  touch only copies inside that folder / those paths
+//   onlyWhere / onlyPaths  touch only copies this function accepts / those paths
 //   idleMs                 keep merged copies with work newer than this, and
 //                          leave their caches alone
 //   freshGraceMs           how long a merged copy is kept after its start
@@ -1731,16 +1983,18 @@ function cleanupWorktrees({
   apply = false,
   activeCwds: activeCwdsOverride,
   by = 'atris worktree cleanup',
-  onlyUnder = '',
+  onlyWhere = null,
   onlyPaths = null,
   idleMs = 0,
   freshGraceMs = WORKTREE_REAP_GRACE_MS,
   now = Date.now(),
   cleanupBudget = null,
+  rescueRoot = rescue.defaultRescueRoot(),
+  maxCopies = MAX_COPIES_PER_REPO,
+  mergedPrTimeoutMs = MERGED_PR_TIMEOUT_MS,
 } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
-  const current = path.resolve(root);
   const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessPaths();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
   const refreshError = refreshRemoteRef(root, base);
@@ -1752,7 +2006,7 @@ function cleanupWorktrees({
   const cacheBudget = cleanupBudget || { count: 0, kib: 0 };
   const scopePaths = Array.isArray(onlyPaths) ? onlyPaths.map(canonicalPath) : null;
   const inScope = (wtPath) => (!scopePaths || scopePaths.includes(canonicalPath(wtPath)))
-    && (!onlyUnder || space.isInside(wtPath, onlyUnder));
+    && (!onlyWhere || onlyWhere(wtPath));
   const recentlyUsed = (wtPath) => Boolean(idleMs) && now - lastCopyActivityMs(wtPath) < idleMs;
   const pruneCachesForKept = (wtPath) => {
     if (worktreeWithinReapGrace(wtPath, now)) return;
@@ -1761,148 +2015,187 @@ function cleanupWorktrees({
     cacheCandidates.push(...caches.candidates);
     cachePruned.push(...caches.pruned);
   };
+  let cwd = '';
+  try { cwd = canonicalPath(process.cwd()); } catch {}
+  let baseCurrent;
+  const findMergedPr = mergedPrFinder(root, base, mergedPrTimeoutMs);
+  const context = {
+    root,
+    base,
+    now,
+    activeCwds,
+    primary,
+    current: path.resolve(root),
+    cwd,
+    scopePaths,
+    inScope,
+    recentlyUsed,
+    freshGraceMs,
+    refreshError,
+    findMergedPr,
+    adminDirs: worktreeAdminDirs(root),
+    worktreePaths: worktrees.map((wt) => canonicalPath(wt.path)),
+    // Asked once per run for the decision, and again per copy right before removal.
+    baseIsCurrent: () => {
+      if (baseCurrent === undefined) baseCurrent = originBaseIsCurrent(root, base);
+      return baseCurrent;
+    },
+  };
 
-  for (const wt of worktrees) {
-    const wtPath = path.resolve(wt.path);
-    const item = { path: wt.path, branch: wt.branch, head: wt.head };
-    if (wtPath === primary) {
-      kept.push({ ...item, reason: 'primary_checkout' });
-      continue;
-    }
-    if (wtPath === current) {
-      kept.push({ ...item, reason: 'current_checkout' });
-      continue;
-    }
-    if (!inScope(wtPath)) {
-      kept.push({ ...item, reason: 'out_of_scope' });
-      continue;
-    }
-    if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
-      continue;
-    }
-    if (PROTECTED_BRANCHES.has(wt.branch)) {
-      kept.push({ ...item, reason: 'protected_branch' });
-      continue;
-    }
-    if (worktreeHasActiveProcess(wtPath, activeCwds)) {
-      kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
-      continue;
-    }
-    const counts = statusCounts(wt.path);
-    if (!counts) {
-      kept.push({ ...item, reason: 'missing_or_unreadable' });
-      continue;
-    }
-    if (counts.staged || counts.unstaged || counts.untracked) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: 'dirty', staged: counts.staged, unstaged: counts.unstaged, untracked: counts.untracked });
-      continue;
-    }
-    // Git removes ignored files along with a worktree. They may include local
-    // state, credentials, or user data, so a clean status is not enough proof.
-    const ignored = runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { cwd: wt.path, check: false });
-    if (ignored.status !== 0 || ignored.error) {
-      kept.push({ ...item, reason: 'ignored_scan_failed' });
-      continue;
-    }
-    if (ignored.stdout) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: 'ignored_data' });
-      continue;
-    }
-    if (!wt.head) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: 'missing_head' });
-      continue;
-    }
-    if (refreshError) {
-      kept.push({ ...item, reason: 'base_refresh_failed' });
-      continue;
-    }
-    const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
-    if (!merged) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: wt.branch === 'detached' ? 'detached_unmerged' : 'unmerged' });
-      continue;
-    }
-    if (freshGraceMs > 0 && worktreeWithinReapGrace(wtPath, now, freshGraceMs)) {
-      kept.push({ ...item, reason: 'fresh_worktree_grace' });
-      continue;
-    }
-    if (recentlyUsed(wtPath)) {
-      kept.push({ ...item, reason: 'recent_activity' });
-      continue;
-    }
-    if (!originBaseIsCurrent(root, base)) {
-      kept.push({ ...item, reason: 'base_unverified' });
-      continue;
-    }
-    let real;
-    try { real = fs.realpathSync(wtPath); } catch { real = ''; }
-    if (!real || real !== wtPath) {
-      kept.push({ ...item, reason: 'path_not_canonical' });
-      continue;
-    }
+  const plans = worktrees.map((wt) => decideCopy(wt, context));
+  const overCap = scopePaths ? [] : applyCopyCap(plans, { maxCopies, now, idleMs });
+  const ordered = [...plans.filter((plan) => !overCap.includes(plan)), ...overCap];
+
+  const measureKib = (wtPath) => {
     const measured = spawnSync('du', ['-sk', wtPath], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL' });
-    const sizeMatch = measured.status === 0 && !String(measured.stderr || '').trim() && String(measured.stdout || '').match(/^(\d+)\s/);
-    const kib = sizeMatch ? Number(sizeMatch[1]) : 0;
-    if (!kib || cacheBudget.count >= 20 || cacheBudget.kib + kib > 10 * 1024 * 1024) {
-      kept.push({ ...item, reason: 'size_unknown_or_cleanup_limit' });
+    const match = measured.status === 0 && !String(measured.stderr || '').trim() && String(measured.stdout || '').match(/^(\d+)\s/);
+    return match ? Number(match[1]) : 0;
+  };
+  // Everything the decision rested on, read again right before acting on it.
+  const stillAsDecided = (plan, kib) => {
+    const { wtPath, inspected, proof, lock } = plan;
+    const freshActive = Array.isArray(activeCwdsOverride) ? activeCwds : listActiveProcessPaths();
+    if (!Array.isArray(freshActive) || worktreeHasActiveProcess(wtPath, freshActive)) return false;
+    if (canonicalPath(wtPath) !== wtPath) return false;
+    const status = rescue.readCopyStatus(wtPath);
+    const ignored = rescue.scanIgnored(wtPath);
+    if (!status || !ignored || copyFingerprint(wtPath, status, ignored) !== inspected.fingerprint) return false;
+    if (measureKib(wtPath) !== kib) return false;
+    const gitDir = runGit(['rev-parse', '--absolute-git-dir'], { cwd: wtPath, check: false });
+    if (gitDir.status !== 0 || !gitDir.stdout.trim()) return false;
+    const freshLock = readCopyLock(gitDir.stdout.trim(), now);
+    if (fs.existsSync(path.join(gitDir.stdout.trim(), 'locked')) && (!lock || !freshLock || freshLock.mtimeMs !== lock.mtimeMs)) return false;
+    const head = runGit(['rev-parse', 'HEAD'], { cwd: wtPath, check: false });
+    if (head.status !== 0 || String(head.stdout || '').trim() !== plan.item.head) return false;
+    if (!proof) return true;
+    const again = proveCopyFinished({ root, base, head: plan.item.head, branch: plan.item.branch, findMergedPr });
+    return Boolean(again) && (again.reason === 'merged_pr' || originBaseIsCurrent(root, base));
+  };
+  // A stale lock is only lifted at the last moment, and put back if removal fails.
+  const removeRegisteredCopy = (plan, force) => {
+    const copyPath = plan.item.path;
+    if (plan.lock) {
+      const unlocked = runGit(['worktree', 'unlock', copyPath], { cwd: root, check: false });
+      if (unlocked.status !== 0) return unlocked;
+    }
+    const result = runGit(['worktree', 'remove', ...(force ? ['--force'] : []), copyPath], { cwd: root, check: false });
+    if (result.status !== 0 && plan.lock) {
+      runGit(['worktree', 'lock', ...(plan.lock.text ? ['--reason', plan.lock.text] : []), copyPath], { cwd: root, check: false });
+    }
+    return result;
+  };
+  const withoutAction = ({ action, stale_lock: staleLock, ...fields }) => fields;
+
+  for (const plan of ordered) {
+    const { wtPath, item } = plan;
+    if (plan.action === 'keep') {
+      if (plan.clearCaches) pruneCachesForKept(wtPath);
+      kept.push(item);
       continue;
     }
-    const candidate = { ...item, reason: 'merged_into_base', size_kib: kib };
+    if (plan.action === 'forget') {
+      candidates.push(item);
+      if (!apply) continue;
+      const forgotten = removeRegisteredCopy(plan, false);
+      if (forgotten.status === 0) {
+        removed.push(item);
+        recordWorktreeRemoval(root, { path: item.path, branch: item.branch, by, reason: plan.reason });
+      } else {
+        kept.push({ ...withoutAction(item), reason: 'remove_failed', error: (forgotten.stderr || forgotten.stdout || '').trim() });
+      }
+      continue;
+    }
+    if (canonicalPath(wtPath) !== wtPath) {
+      kept.push({ ...withoutAction(item), reason: 'path_not_canonical' });
+      continue;
+    }
+    if (plan.proof && plan.proof.reason !== 'merged_pr' && !originBaseIsCurrent(root, base)) {
+      kept.push({ ...withoutAction(item), reason: 'base_unverified' });
+      continue;
+    }
+    const kib = measureKib(wtPath);
+    if (!kib || cacheBudget.count >= 20 || cacheBudget.kib + kib > 10 * 1024 * 1024) {
+      kept.push({ ...withoutAction(item), reason: 'size_unknown_or_cleanup_limit' });
+      continue;
+    }
+    const needsRescue = plan.action === 'rescue_then_remove';
+    const { status, ignored, bundleCommits } = plan.inspected;
+    const candidate = { ...item, size_kib: kib };
+    if (needsRescue) {
+      candidate.rescue = {
+        path: rescue.rescueFolder(rescueRoot, wtPath, now),
+        tracked_patch: Boolean(status.staged || status.unstaged),
+        commits_bundle: bundleCommits,
+        untracked_files: status.untrackedFiles.length,
+        ignored_files: ignored.files.length,
+        ignored_bytes: ignored.bytes,
+      };
+    }
     candidates.push(candidate);
     cacheBudget.count += 1;
     cacheBudget.kib += kib;
     if (!apply) continue;
-    const freshActive = Array.isArray(activeCwdsOverride) ? activeCwds : listActiveProcessPaths();
-    const freshCounts = statusCounts(wt.path);
-    const freshIgnored = runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { cwd: wt.path, check: false });
-    const freshSize = spawnSync('du', ['-sk', wtPath], { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL' });
-    const freshMatch = freshSize.status === 0 && !String(freshSize.stderr || '').trim() && String(freshSize.stdout || '').match(/^(\d+)\s/);
-    const gitdir = runGit(['rev-parse', '--absolute-git-dir'], { cwd: wtPath, check: false });
-    const freshHead = runGit(['rev-parse', 'HEAD'], { cwd: wtPath, check: false });
-    if (!Array.isArray(freshActive) || worktreeHasActiveProcess(wtPath, freshActive)
-        || !freshCounts || freshCounts.staged || freshCounts.unstaged || freshCounts.untracked
-        || freshIgnored.status !== 0 || freshIgnored.stdout || !freshMatch || Number(freshMatch[1]) !== kib
-        || gitdir.status !== 0 || !gitdir.stdout.trim() || fs.existsSync(path.join(gitdir.stdout.trim(), 'locked'))
-        || freshHead.status !== 0 || String(freshHead.stdout || '').trim() !== wt.head
-        || runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status !== 0
-        || !originBaseIsCurrent(root, base)
-        || canonicalPath(wtPath) !== wtPath) {
-      kept.push({ ...item, reason: 'changed_or_active_during_verification' });
+    if (!stillAsDecided(plan, kib)) {
+      kept.push({ ...withoutAction(item), reason: 'changed_or_active_during_verification' });
       continue;
     }
-    const removedResult = runGit(['worktree', 'remove', wt.path], { cwd: root, check: false });
-    if (removedResult.status === 0) {
+    let saved = null;
+    if (needsRescue) {
+      const baseCommit = runGit(['rev-parse', '--verify', `${base}^{commit}`], { cwd: root, check: false });
+      saved = rescue.saveRescue({
+        worktree: wtPath,
+        branch: item.branch === 'detached' ? '' : item.branch,
+        head: item.head,
+        reason: plan.reason,
+        status,
+        ignored,
+        bundleCommits,
+        baseCommit: baseCommit.status === 0 ? baseCommit.stdout.trim() : '',
+        rescueRoot,
+        now,
+      });
+      if (!saved.ok) {
+        kept.push({ ...withoutAction(item), reason: 'rescue_failed', error: saved.error });
+        continue;
+      }
+      if (!stillAsDecided(plan, kib)) {
+        fs.rmSync(saved.path, { recursive: true, force: true });
+        kept.push({ ...withoutAction(item), reason: 'changed_or_active_during_verification' });
+        continue;
+      }
+      candidate.rescue.path = saved.path;
+    }
+    // Only the rescue path may force, and only once the save above succeeded: git refuses a dirty copy otherwise.
+    const dirty = Boolean(status.staged || status.unstaged || status.untracked);
+    const result = removeRegisteredCopy(plan, needsRescue && dirty);
+    if (result.status === 0) {
       removed.push(candidate);
-      recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
+      recordWorktreeRemoval(root, { path: item.path, branch: item.branch, by, reason: plan.reason, rescue: saved ? saved.path : '' });
     } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+      kept.push({ ...withoutAction(item), reason: 'remove_failed', error: (result.stderr || result.stdout || '').trim(), ...(saved ? { rescue: { path: saved.path } } : {}) });
     }
   }
 
   return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
 }
 
-// The sweep: cleanup for every repo with build copies in the workspace.
-// Removes copies that pass every cleanup check (merged into origin's main
-// branch, nothing changed, untracked, or ignored, nothing running inside)
-// and are unused for idleMs; clears verified webpack caches in the idle
-// copies it keeps. Shared installs and unmerged work stay for review.
+// The sweep: cleanup for every repo with copies in the workspace, under the
+// same rules as cleanup, unused for idleMs. It acts on copies in the usual copy
+// folders (space.isWorkspaceCopyPath) and clears verified webpack caches in the
+// idle copies it keeps. A folder with any other name is left alone, unless it
+// is already gone. Shared installs stay for review.
 const SWEEP_IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_EVERY_HOURS = 3;
 const SWEEP_HIDDEN_KEPT = new Set(['primary_checkout', 'current_checkout', 'out_of_scope']);
 
-function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, activeCwds, freeSpace = space.freeBytes, by = 'atris worktree sweep', cleanupBudget = null } = {}) {
+function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, activeCwds, freeSpace = space.freeBytes, by = 'atris worktree sweep', cleanupBudget = null, rescueRoot } = {}) {
   const root = path.resolve(workspace);
   const before = freeSpace(root);
   const report = { workspace: root, apply, idle_ms: idleMs, before, after: before, repos: [] };
   const scan = Array.isArray(activeCwds) ? activeCwds.map(canonicalPath) : listActiveProcessPaths();
   // Without a process list nobody can tell which copies are in use.
   if (!Array.isArray(scan)) return { ...report, error: 'could not list running programs, so every copy was kept' };
-  const scope = path.join(root, space.AGENT_COPIES_DIR);
+  const onlyWhere = (copy) => space.isWorkspaceCopyPath(copy, root);
   // One limit covers the whole sweep, not each repository separately.
   cleanupBudget = cleanupBudget || { count: 0, kib: 0 };
   for (const repo of space.agentCopyRepos(root)) {
@@ -1916,7 +2209,7 @@ function sweepWorkspace({ workspace, apply = false, idleMs = SWEEP_IDLE_MS, acti
       // A real removal scans again per repo and right before each copy goes;
       // the shared scan only serves previews and tests.
       const shared = Array.isArray(activeCwds) || !apply ? scan : undefined;
-      const result = cleanupWorktrees({ root: repo.root, base, apply, activeCwds: shared, by, onlyUnder: scope, idleMs, cleanupBudget });
+      const result = cleanupWorktrees({ root: repo.root, base, apply, activeCwds: shared, by, onlyWhere, idleMs, cleanupBudget, rescueRoot });
       report.repos.push({
         ...entry,
         base: result.base,
@@ -1943,13 +2236,15 @@ const SWEEP_KEPT_LABELS = {
   dirty: 'with changes',
   unmerged: 'not merged',
   detached_unmerged: 'not merged',
-  ignored_data: 'holding files git ignores (kept for review)',
+  ignored_data_large: 'holding over 50 MB of files git ignores (kept for review)',
   ignored_scan_failed: 'unreadable',
   fresh_worktree_grace: 'new',
   recent_activity: 'used recently',
-  locked: 'locked',
+  locked: 'locked in the last 24 hours',
   protected_branch: 'on a main branch',
-  missing_or_unreadable: 'unreadable',
+  unreadable: 'unreadable',
+  holds_another_copy: 'holding another copy inside',
+  rescue_failed: 'could not be saved first',
   missing_head: 'without a commit',
   remove_failed: 'failed to remove',
   base_refresh_failed: 'main branch unreachable',
@@ -1958,6 +2253,9 @@ const SWEEP_KEPT_LABELS = {
   size_unknown_or_cleanup_limit: 'over the per-run limit',
   changed_or_active_during_verification: 'changed during the check',
 };
+
+// Nothing clears these on its own, so each one is named in the report.
+const NEEDS_A_PERSON = new Set(['ignored_data_large', 'rescue_failed', 'unreadable', 'holds_another_copy']);
 
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
@@ -2061,8 +2359,9 @@ function sweep(args) {
     }
     const keptText = Object.entries(counts).map(([label, count]) => `${count} ${label}`).join(', ');
     console.log(`${repo.name}: ${apply ? 'removed' : 'would remove'} ${plural(gone.length, 'finished copy', 'finished copies')}, ${apply ? 'cleared' : 'would clear'} ${plural(cleared.length, 'webpack cache', 'webpack caches')}; kept ${repo.kept.length}${keptText ? ` (${keptText})` : ''}`);
-    for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path}`);
+    for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path} (${item.reason})${item.rescue ? `, saved to ${item.rescue.path}` : ''}`);
     for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
+    for (const item of repo.kept.filter((row) => NEEDS_A_PERSON.has(row.reason))) console.log(`  needs a person: ${item.path} (${SWEEP_KEPT_LABELS[item.reason]})${item.error ? `: ${item.error}` : ''}`);
   }
   if (reviewTotal) console.log(`review: ${plural(reviewTotal, 'other build folder waits', 'other build folders wait')} for a person; \`atris worktree cleanup\` in each repo lists them`);
   if (apply) {
@@ -2088,7 +2387,7 @@ function cleanup(args) {
   console.log(`cleanup: ${result.apply ? 'applied' : 'dry-run'} base=${result.base}`);
   console.log(`${action}s: ${result.apply ? result.removed.length : result.candidates.length}`);
   for (const item of result.apply ? result.removed : result.candidates) {
-    console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);
+    console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason} action=${item.action}${item.rescue ? ` rescue=${item.rescue.path}` : ''}${item.stale_lock ? ' stale_lock=yes' : ''}`);
   }
   const review = result.cacheCandidates.filter((item) => item.reason === 'manual_review_required');
   const safe = result.apply ? result.cachePruned : result.cacheCandidates.filter((item) => item.reason === 'generated_webpack_cache');
@@ -2099,6 +2398,9 @@ function cleanup(args) {
     console.log(`review: ${item.path} reason=${item.reason}`);
   }
   console.log(`kept: ${result.kept.length}`);
+  for (const item of result.kept) {
+    console.log(`keep: ${item.path} branch=${item.branch} reason=${item.reason}${item.error ? ` error=${item.error}` : ''}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
 }
@@ -2135,7 +2437,10 @@ function guide() {
   console.log('   atris worktree sweep --install            run the sweep every 3 hours');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
-  console.log('Start reaps completed checkouts first. Cleanup preserves branches, source changes, and files git ignores, skips live work, and prunes only verified webpack caches.');
+  console.log('Start reaps completed checkouts first. Cleanup keeps branches and skips anything a running program uses.');
+  console.log('A copy is finished when its commits are in the base, a pull request for it merged, or its files match the base. Finished and idle copies are removed.');
+  console.log('A copy with changes or unfinished work, untouched for 3 days, is saved to ~/.atris/worktree-rescue/<date>/<name>/ and then removed. A failed save keeps it.');
+  console.log('Ignored build folders are not data. Other ignored files go in the save; over 50 MB of them keeps the copy for a person. Above 15 copies in a repo, the oldest idle ones go the same way.');
   console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
   console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
   console.log('A copy shipped with --merge is removed once nothing has run in it for 10 minutes (ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
@@ -2159,8 +2464,8 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
-  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
-  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2]  reap merged, idle copies in every repo');
+  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  remove finished copies, save then remove long-idle ones; a preview without --apply');
+  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2]  the same cleanup in every repo in the workspace');
   console.log('  atris worktree sweep --install [--every 3] | --uninstall  run the sweep on a timer');
 }
 
