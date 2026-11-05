@@ -4786,17 +4786,20 @@ function cmdReviews(args) {
   }
 }
 
+function applyTaskMetadata(taskDb, db, taskId, mutate, options = {}) {
+  const result = taskDb.mutateTaskMetadata(db, { id: taskId, mutate, ...options });
+  if (!result.updated && result.reason !== 'not_found') throw new Error(`cannot safely update task metadata: ${result.reason}`);
+  return result;
+}
+
 function stampAcceptGroupMetadata(taskDb, db, taskId, { actor, group, verified, sampleVerifiedIds }) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.accept_group = group;
-  metadata.accept_group_by = actor;
-  metadata.accept_group_at = new Date().toISOString();
-  metadata.accepted_by_sampling = !verified;
-  if (!verified) metadata.sample_verified_ids = sampleVerifiedIds;
-  db.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(metadata), Date.now(), taskId);
+  applyTaskMetadata(taskDb, db, taskId, metadata => {
+    metadata.accept_group = group;
+    metadata.accept_group_by = actor;
+    metadata.accept_group_at = new Date().toISOString();
+    metadata.accepted_by_sampling = !verified;
+    if (!verified) metadata.sample_verified_ids = sampleVerifiedIds;
+  });
 }
 
 // Accept a whole certified cluster honestly: the human spot-checks K rows (real career XP), the rest
@@ -9485,17 +9488,18 @@ function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
   } catch (err) {
     landing = { status: 'unverified', reason: 'landing_proof_failed', detail: String((err && err.message) || err).slice(0, 200) };
   }
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.auto_accepted_at = new Date().toISOString();
-  metadata.auto_accepted_by = actor;
-  metadata.auto_accept_policy = policy;
-  metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  const stamped = taskDb.mutateTaskMetadata(db, { id: taskId, expectedRow: row, mutate(metadata) {
+    metadata.auto_accepted_at = new Date().toISOString();
+    metadata.auto_accepted_by = actor;
+    metadata.auto_accept_policy = policy;
+    metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
+  } });
+  if (!stamped.updated) {
+    if (stamped.reason === 'stale_task_state' || stamped.reason === 'not_found') {
+      return { status: 'unverified', reason: 'task_changed_during_landing_proof' };
+    }
+    throw new Error(`cannot safely update task metadata: ${stamped.reason}`);
+  }
   return landing;
 }
 
@@ -9580,19 +9584,12 @@ function verifyIsOnlyFileChecks(verify) {
 }
 
 function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify = metadata.verify || verify;
-  metadata.certified_verified_at = new Date().toISOString();
-  metadata.certified_verified_by = actor;
-  metadata.machine_verified = true;
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  applyTaskMetadata(taskDb, db, taskId, metadata => {
+    metadata.verify = metadata.verify || verify;
+    metadata.certified_verified_at = new Date().toISOString();
+    metadata.certified_verified_by = actor;
+    metadata.machine_verified = true;
+  });
 }
 
 function currentHeadSha(workspaceRoot) {
@@ -9613,10 +9610,7 @@ function currentHeadSha(workspaceRoot) {
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
 function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify_cache = {
+  const cache = {
     command: verify,
     ok: result && result.ok === true,
     reason: (result && result.reason) || null,
@@ -9629,11 +9623,7 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), taskId);
+  applyTaskMetadata(taskDb, db, taskId, metadata => { metadata.verify_cache = cache; }, { touch: false });
 }
 
 // When a review job was last given a second check; never checked reads 0.
@@ -9656,23 +9646,16 @@ function failedOnSameCode(task, verify, codeSha) {
 // metadata.verify is what lets sweep --auto-accept (and certify-verified)
 // re-run it later against the current checkout instead of re-parsing prose.
 function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify = verify;
-  // A real verify stamped at ready means the creation-time degraded flag is
-  // stale: clear it so `task show` stops warning about a missing check. A
-  // diff-only verify keeps the flag; it still cannot fail on real breakage.
-  if (verify.toLowerCase() !== 'git diff --check') {
-    delete metadata.verification_status;
-    delete metadata.verification_degraded_reason;
-  }
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  applyTaskMetadata(taskDb, db, taskId, metadata => {
+    metadata.verify = verify;
+    // A real verify stamped at ready means the creation-time degraded flag is
+    // stale: clear it so `task show` stops warning about a missing check. A
+    // diff-only verify keeps the flag; it still cannot fail on real breakage.
+    if (verify.toLowerCase() !== 'git diff --check') {
+      delete metadata.verification_status;
+      delete metadata.verification_degraded_reason;
+    }
+  });
 }
 
 function landingVerifyFailureNote(verify, result) {
@@ -12275,6 +12258,10 @@ module.exports = {
   certifyVerifyCandidate,
   landingProofVerify,
   stampAutoAcceptMetadata,
+  stampAcceptGroupMetadata,
+  stampCertifyVerifyMetadata,
+  stampVerifyCacheMetadata,
+  stampReadyVerifyMetadata,
   acceptReviewTask,
   evaluateSweepAutoAccept,
   writeDefaultProjection,

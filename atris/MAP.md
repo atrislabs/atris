@@ -28,7 +28,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
 | workspace tree hash | `commands/tree.js`, `lib/tree-hash.js` | `atris tree hash` over the doctrine files |
-| task database and TODO markdown renderer | `lib/task-db.js`, `lib/todo-fallback.js` | SQLite task store, atomic result and event writes, claim leases and expiry, `renderTodoMarkdown`, legacy fallback |
+| task database and TODO markdown renderer | `lib/task-db.js`, `lib/todo-fallback.js` | SQLite task store, serialized result/review writes and command metadata stamps, claim leases, `renderTodoMarkdown`, legacy fallback |
 | task command surface and projection | `commands/task.js`, `lib/task-core.js`, `lib/task-list-keeper.js` | task claims, shared task helpers, and proof handled here: claim, sweep, ready, accept, render, keep, day, `.atris/state/tasks.projection.json` |
 | test home state fence | `lib/state-home.js`, `commands/sync.js`, `lib/member-progress.js` | redirects `~/.atris` state to a throwaway folder under `node --test` |
 | test junk cleanup in the task database | `lib/task-prune.js`, `commands/task.js` | `atris task prune-test-junk` backs up and removes rows from deleted temp folders |

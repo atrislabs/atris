@@ -1,0 +1,131 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+const taskDb = require('../lib/task-db');
+const { stampAutoAcceptMetadata, stampAcceptGroupMetadata, stampCertifyVerifyMetadata, stampVerifyCacheMetadata, stampReadyVerifyMetadata } = require('../commands/task');
+
+test('automatic landing stamp does not erase a result written after its read', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-stamp-atomic-'));
+  const db = taskDb.open(path.join(tmp, 'tasks.db'));
+  const other = new DatabaseSync(path.join(tmp, 'tasks.db'));
+  try {
+    const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+    const initial = taskDb.getTask(db, id);
+    let intervened = false;
+    const interposed = {
+      ...taskDb,
+      getTask(connection, taskId) {
+        const row = taskDb.getTask(connection, taskId);
+        if (!intervened) {
+          intervened = true;
+          assert.equal(taskDb.setTaskResult(other, { id, actor: 'other', result: 'important result' }).saved, true);
+        }
+        return row;
+      },
+    };
+    const landing = stampAutoAcceptMetadata(interposed, db, initial, 'reviewer', 'policy');
+    assert.equal(taskDb.getTask(db, id).metadata.result, 'important result');
+    assert.equal(landing.status, 'unverified');
+    assert.equal(landing.reason, 'task_changed_during_landing_proof');
+  } finally {
+    other.close(); taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+for (const [name, stamp] of [
+  ['accept group', (api, db, id) => stampAcceptGroupMetadata(api, db, id, { actor: 'reviewer', group: 'g', verified: true, sampleVerifiedIds: [] })],
+  ['certify verify', (api, db, id) => stampCertifyVerifyMetadata(api, db, id, 'reviewer', 'node --test test/example.test.js')],
+  ['verify cache', (api, db, id) => stampVerifyCacheMetadata(api, db, id, { actor: 'reviewer', verify: 'test', result: { ok: true, code_sha: 'abc' } })],
+  ['ready verify', (api, db, id) => stampReadyVerifyMetadata(api, db, id, 'node --test test/example.test.js')],
+]) {
+  test(`${name} merges a result committed immediately before its write`, () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-stamp-merge-'));
+    const db = taskDb.open(path.join(tmp, 'tasks.db'));
+    const other = new DatabaseSync(path.join(tmp, 'tasks.db'));
+    try {
+      const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+      const api = {
+        ...taskDb,
+        mutateTaskMetadata(connection, options) {
+          assert.equal(taskDb.setTaskResult(other, { id, actor: 'other', result: 'important result' }).saved, true);
+          return taskDb.mutateTaskMetadata(connection, options);
+        },
+      };
+      stamp(api, db, id);
+      assert.equal(taskDb.getTask(db, id).metadata.result, 'important result');
+    } finally {
+      other.close(); taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test(`${name} preserves unreadable task metadata`, () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-stamp-corrupt-'));
+    const db = taskDb.open(path.join(tmp, 'tasks.db'));
+    try {
+      const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+      db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('{broken', id);
+      assert.throws(() => stamp(taskDb, db, id), /metadata_unreadable/);
+      assert.equal(db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(id).metadata, '{broken');
+    } finally {
+      taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
+
+test('verify cache does not advance the task ordering timestamp', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-cache-order-'));
+  const db = taskDb.open(path.join(tmp, 'tasks.db'));
+  try {
+    const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+    const before = taskDb.getTask(db, id).updated_at;
+    stampVerifyCacheMetadata(taskDb, db, id, { actor: 'reviewer', verify: 'test', result: { ok: true, code_sha: 'abc' } });
+    const after = taskDb.getTask(db, id);
+    assert.equal(after.updated_at, before);
+    assert.equal(after.metadata.verify_cache.ok, true);
+  } finally {
+    taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+for (const kind of ['reopen', 'backlog', 'tag', 'chat']) {
+  test(`${kind} refuses a stale snapshot when the cache changes without touching task order`, () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-cache-cas-'));
+    const db = taskDb.open(path.join(tmp, 'tasks.db'));
+    const other = new DatabaseSync(path.join(tmp, 'tasks.db'));
+    try {
+      const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp, tag: 'planned' });
+      if (kind === 'reopen') db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(id);
+      let intervened = false;
+      const wrapped = {
+        get isTransaction() { return db.isTransaction; },
+        exec: db.exec.bind(db),
+        prepare(sql) {
+          const statement = db.prepare(sql);
+          if (!intervened && /SELECT id, title, status, tag, workspace_root/.test(sql)) {
+            return { get(...args) {
+              const row = statement.get(...args);
+              intervened = true;
+              assert.equal(taskDb.mutateTaskMetadata(other, {
+                id, touch: false, mutate(metadata) { metadata.verify_cache = { ok: true }; },
+              }).updated, true);
+              return row;
+            } };
+          }
+          return statement;
+        },
+      };
+      const out = kind === 'reopen' ? taskDb.reopenTask(wrapped, { id, actor: 'test' })
+        : kind === 'backlog' ? taskDb.backlogTask(wrapped, { id, actor: 'test' })
+          : kind === 'tag' ? taskDb.tagTask(wrapped, { id, actor: 'test', add: ['one'] })
+            : taskDb.chatTask(wrapped, { id, actor: 'test', goal: 'new goal' });
+      assert.equal(out.reason, 'stale_task_state');
+      assert.deepEqual(taskDb.getTask(db, id).metadata.verify_cache, { ok: true });
+    } finally {
+      other.close(); taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
