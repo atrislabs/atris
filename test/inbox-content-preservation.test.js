@@ -47,3 +47,55 @@ test('actual log CLI preserves unnumbered Inbox content', (t) => {
   assert.equal(run.status, 0, run.stderr);
   assert.match(fs.readFileSync(file, 'utf8'), /- \[ \] keep this important task/);
 });
+
+for (const [label, input, check] of [
+  ['fenced sample', '# Daily\n\n```md\n## Inbox\nexample\n```\n\n## Inbox\n\n- [ ] Real item\n\n## Notes\nend\n', (after) => {
+    assert.ok(after.indexOf('new capture') > after.indexOf('```\n\n## Inbox'));
+    assert.ok(after.includes('```md\n## Inbox\nexample\n```'));
+    assert.ok(after.includes('- [ ] Real item'));
+  }],
+  ['nested heading', '# Daily\n\n### Inbox\nNested example\n\n## Notes\nend\n', (after) => {
+    assert.ok(after.includes('### Inbox\nNested example'));
+    assert.equal((after.match(/^## Inbox$/gm) || []).length, 1);
+  }],
+  ['heading at EOF', '# Daily\n\n## Inbox', (after) => {
+    assert.equal((after.match(/^## Inbox$/gm) || []).length, 1);
+    assert.match(after, /## Inbox\n\n- \*\*I1:\*\* new capture/);
+  }],
+]) {
+  test(`actual log capture finds ${label} safely`, (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-boundary-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const logs = path.join(dir, 'atris', 'logs', String(now.getFullYear()));
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# workspace\n');
+    const file = path.join(logs, `${day}.md`);
+    fs.writeFileSync(file, input);
+    const run = spawnSync(process.execPath, [cli, 'log', 'new capture', '--json'], { cwd: dir, encoding: 'utf8', env: { ...process.env, ATRIS_TEST_STATE_DIR: path.join(dir,'state') } });
+    assert.equal(run.status, 0, run.stderr);
+    check(fs.readFileSync(file, 'utf8'));
+  });
+}
+
+test('actual log refuses duplicate Inbox sections without changing bytes', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-duplicates-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const logs = path.join(dir, 'atris', 'logs', String(now.getFullYear()));
+  fs.mkdirSync(logs, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# workspace\n');
+  const file = path.join(logs, `${day}.md`);
+  const input = '# Daily\n\n## Inbox\n\n- **I1:** first\n\n## Inbox\n\n- **I2:** second\n';
+  fs.writeFileSync(file, input);
+  const run = spawnSync(process.execPath, [cli, 'log', 'new capture', '--json'], { cwd: dir, encoding: 'utf8', env: { ...process.env, ATRIS_TEST_STATE_DIR: path.join(dir,'state') } });
+  assert.notEqual(run.status, 0);
+  assert.equal(fs.readFileSync(file, 'utf8'), input);
+});
+
+test('capture refuses an unclosed fence instead of guessing a section', () => {
+  const input = '# Daily\n\n```markdown\n## Inbox\nexample\n';
+  assert.throws(() => addInboxItemToContent(input, 1, 'new'), /Unclosed code fence/);
+});
