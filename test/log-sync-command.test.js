@@ -79,3 +79,21 @@ test('logSyncAtris creates the local log file, then fails without an agent', asy
   assert.ok(fs.readFileSync(logFile, 'utf8').length > 0);
   assert.ok(lines.some((line) => line.includes('2020-01-15')));
 });
+
+test('log sync does not claim it created a template when another process wins', async (t) => {
+  const { root, lines } = makeSandbox(t, { dateArg: '2020-01-15' });
+  const logFile = path.join(root, 'atris', 'logs', '2020', '2020-01-15.md');
+  const originalLink = fs.linkSync;
+  let competed = false;
+  t.mock.method(fs, 'linkSync', (source, dest) => {
+    if (dest === path.join(fs.realpathSync(root), 'atris', 'logs', '2020', '2020-01-15.md')) {
+      competed = true;
+      fs.writeFileSync(logFile, '# A concurrent journal\n');
+    }
+    return originalLink(source, dest);
+  });
+  await assert.rejects(() => logSyncAtris(), /No agent selected/);
+  assert.equal(competed, true);
+  assert.equal(fs.readFileSync(logFile, 'utf8'), '# A concurrent journal\n');
+  assert.equal(lines.some(line => line.includes('Created local log template')), false);
+});

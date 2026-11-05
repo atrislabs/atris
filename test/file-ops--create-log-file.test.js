@@ -30,7 +30,7 @@ test('creates a log file with the full daily template when no previous log exist
   const dir = withTempCwd(t);
   const logFile = path.join(dir, 'new-log.md');
 
-  createLogFile(logFile, '2026-03-10');
+  assert.equal(createLogFile(logFile, '2026-03-10'), true);
 
   const content = fs.readFileSync(logFile, 'utf8');
   assert.match(content, /^# Log, 2026-03-10\n/);
@@ -118,7 +118,7 @@ test('preserves an existing log instead of truncating it', (t) => {
   const dir = withTempCwd(t);
   const logFile = path.join(dir, 'existing.md');
   fs.writeFileSync(logFile, 'journal content\n');
-  createLogFile(logFile, '2026-03-10');
+  assert.equal(createLogFile(logFile, '2026-03-10'), false);
   assert.strictEqual(fs.readFileSync(logFile, 'utf8'), 'journal content\n');
   assert.deepStrictEqual(fs.readdirSync(dir), ['existing.md']);
 });
