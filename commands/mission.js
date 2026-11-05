@@ -11581,12 +11581,17 @@ function pruneRunsMission(args) {
   } catch (error) {
     exitMissionError(error.message || String(error), 1, asJson);
   }
-  const result = pruneRuns(process.cwd(), {
-    apply: hasFlag(args, '--apply'),
-    archive: !hasFlag(args, '--no-archive'),
-    keepNewest,
-    keepDays,
-  });
+  let result;
+  try {
+    result = pruneRuns(process.cwd(), {
+      apply: hasFlag(args, '--apply'),
+      archive: !hasFlag(args, '--no-archive'),
+      keepNewest,
+      keepDays,
+    });
+  } catch (error) {
+    exitMissionError(error.message || String(error), 1, asJson);
+  }
   printJsonOrText(
     { ok: !result.errors.length, ...result },
     runsPruneLines(result),
