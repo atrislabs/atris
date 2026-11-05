@@ -113,3 +113,32 @@ test('still writes a file for a malformed date string, using the string as the t
   assert.match(content, /^# Log, not-a-date\n/);
   assert.ok(content.includes('## Inbox'));
 });
+
+test('preserves an existing log instead of truncating it', (t) => {
+  const dir = withTempCwd(t);
+  const logFile = path.join(dir, 'existing.md');
+  fs.writeFileSync(logFile, 'journal content\n');
+  createLogFile(logFile, '2026-03-10');
+  assert.strictEqual(fs.readFileSync(logFile, 'utf8'), 'journal content\n');
+  assert.deepStrictEqual(fs.readdirSync(dir), ['existing.md']);
+});
+
+test('a failed initial write never publishes a partial journal', (t) => {
+  const dir = withTempCwd(t);
+  const logFile = path.join(dir, 'new.md');
+  const originalWrite = fs.writeFileSync;
+  fs.writeFileSync = function(file, data, options) {
+    if (typeof file === 'number') {
+      originalWrite.call(fs, file, '# incomplete');
+      throw Object.assign(new Error('simulated write error'), { code: 'EIO' });
+    }
+    return originalWrite.call(fs, file, data, options);
+  };
+  try {
+    assert.throws(() => createLogFile(logFile, '2026-03-10'), { code: 'EIO' });
+  } finally {
+    fs.writeFileSync = originalWrite;
+  }
+  assert.equal(fs.existsSync(logFile), false);
+  assert.deepStrictEqual(fs.readdirSync(dir), []);
+});
