@@ -723,7 +723,17 @@ async function pullBusiness(slug) {
     if (!content && content !== '') continue;
     const localPath = path.join(outputDir, p.replace(/^\//, ''));
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, content);
+    // A missing path can appear after the preflight. Create it exclusively so
+    // --keep-local never replaces a file another process just created.
+    const createOnly = !force && (diff.newRemote.includes(p) || diff.deletedLocal.includes(p));
+    try {
+      fs.writeFileSync(localPath, content, createOnly ? { flag: 'wx' } : undefined);
+    } catch (error) {
+      if (createOnly && error.code === 'EEXIST') {
+        throw new Error(`cannot safely pull ${p}: a local path appeared during pull`, { cause: error });
+      }
+      throw error;
+    }
     const label = diff.newRemote.includes(p)
       ? 'new on computer'
       : diff.deletedLocal.includes(p)
