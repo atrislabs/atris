@@ -76,3 +76,20 @@ for (const scenario of ['legacy-leaf-link', 'claude-ancestor-link']) {
     if (scenario === 'claude-ancestor-link') assert.match(result.stderr, /Skill sync refused/);
   });
 }
+
+for (const args of [['update', '--dry-run'], ['update', '--yes']]) {
+  test(`${args.join(' ')} skips a linked custom project skill directory`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-skill-subtree-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const cwd = path.join(root, 'project'), home = path.join(root, 'home'), outside = path.join(root, 'outside');
+    fs.mkdirSync(path.join(cwd, 'atris/skills'), { recursive: true }); fs.mkdirSync(home); fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(cwd, 'atris/skills/aeo'));
+    const env = { ...process.env, HOME: home, USERPROFILE: home, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(root, 'tasks.db'), ATRIS_CAMPAIGN_DB: path.join(root, 'campaign.db') };
+    delete env.NODE_TEST_CONTEXT; delete env.ATRIS_TEST_STATE_DIR; delete env.ATRIS_TEST_PROTECTED_HOME;
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /existing skill directory not replaced/);
+    assert.deepEqual(fs.readdirSync(outside), []);
+    assert.ok(fs.lstatSync(path.join(cwd, 'atris/skills/aeo')).isSymbolicLink());
+  });
+}

@@ -183,6 +183,13 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
     const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
     const syncRecursive = (src, dest, skillName, basePath = '') => {
+      try {
+        const existing = fs.lstatSync(dest);
+        if (!existing.isDirectory()) {
+          console.warn(`- Kept atris/skills/${skillName}${basePath ? '/' + basePath : ''} (existing skill directory not replaced)`);
+          return;
+        }
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
       ensureSkillDirectory(dest, path.dirname(targetAtrisDir), { create: !dryRun });
       for (const entry of fs.readdirSync(src)) {
         const srcPath = path.join(src, entry);
