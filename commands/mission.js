@@ -3361,6 +3361,7 @@ function missionFromArgs(args) {
     lane,
     verifier,
     always_on: alwaysOn,
+    ...(process.env.ATRIS_MEMBER_REQUIRE_REVIEW === '1' ? { require_independent_review: true } : {}),
     xp_task_enabled: xpTaskEnabled,
     stop_condition: stopCondition,
     task_ids: taskIds,
@@ -4501,6 +4502,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     ...mission,
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
+    ...(parent.require_independent_review === true ? { require_independent_review: true } : {}),
     ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
@@ -9382,10 +9384,14 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `Verification must be a real invocation of the changed surface. Run the actual CLI command or endpoint and paste the command, an output excerpt, and its exit code. Self-description such as "it works now" is never proof. If you changed a CLI behavior, run that CLI command for real and show its output.`,
     ``,
     `## Landing rule`,
-    `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
+    (mission.require_independent_review === true || process.env.ATRIS_MEMBER_REQUIRE_REVIEW === '1')
+      ? `Save the work on its own branch and hand it to an independent reviewer. Do not merge or deploy it yourself. Do not send messages, spend money, or perform external actions without explicit authorization.`
+      : `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
     `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that.`,
-    `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
-    missionShippedCard(),
+    ...(mission.require_independent_review === true || process.env.ATRIS_MEMBER_REQUIRE_REVIEW === '1' ? [] : [
+      `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
+      missionShippedCard(),
+    ]),
     ``,
     `## Constraints`,
     `- Lane = ${frozen.lane}: stay inside that lane.`,
@@ -9509,7 +9515,7 @@ function escalateHumanBlockingPause(mission, root = process.cwd(), options = {})
   };
   let eventType = 'mission_pause_escalated';
   let eventPayload = { reason: pauseReason, resume_command: command };
-  if (policy.imessage_to) {
+  if (policy.imessage_to && !mission.require_independent_review && process.env.ATRIS_MEMBER_REQUIRE_REVIEW !== '1') {
     const sendImessage = options.sendImessage || autolandLib.sendImessage;
     const sent = sendImessage(root, policy.imessage_to, message);
     marker.channel = 'imessage';
@@ -9533,11 +9539,11 @@ function escalateHumanBlockingPause(mission, root = process.cwd(), options = {})
   const nextMission = { ...mission, paused_at: pausedAt, human_blocking_pause_escalation: marker };
   try {
     appendEvent(eventType, nextMission, eventPayload, root);
-  } catch {}
-  if (!policy.imessage_to) {
+  } catch (error) { console.error('[mission] could not record pause event:', error); }
+  if (marker.channel === 'mission-log') {
     try {
       appendMemberLog(nextMission.owner, 'Mission pause needs operator', { warning: marker.warning }, root);
-    } catch {}
+    } catch (error) { console.error('[mission] could not record pause in member log:', error); }
   }
   return {
     mission: nextMission,
@@ -9675,7 +9681,7 @@ function spawnGenericRunnerTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const seenItemIds = new Set();
@@ -9867,7 +9873,7 @@ function spawnClaudeTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const progressMember = mission.owner || 'mission';
@@ -11597,10 +11603,11 @@ async function runMission(args) {
 
 // Merged member work closes its jobs even when the team loop is down.
 function sweepMergedMemberWork(context) {
+  if (context.mission?.require_independent_review === true) return;
   try {
     const out = require('../lib/member-autoland').sweepAfterMissionRun({ cwd: context.cwd || process.cwd() });
     if (out && out.closed > 0 && !context.asJson) console.log(out.line);
-  } catch {}
+  } catch (error) { console.error('[mission] could not inspect merged member work:', error); }
 }
 
 function tickMission(args) {

@@ -11255,7 +11255,8 @@ function memberUpSpawn(root, name, onExit, onClaim) {
 
 async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
+    console.log('Usage: atris member up [--max N] [--only a,b] [--require-review] [--dry-run]');
+    console.log('--require-review keeps automatic landing off for this supervisor and its child runs.');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
     console.log('A member with no such task writes its next job from its mission when the mission has a ## Check, then starts it.');
     console.log('Without a check it stays idle. At most one self-written job is open per member, and 3 a day.');
@@ -11267,6 +11268,7 @@ async function memberUp(...args) {
     return;
   }
   const root = process.cwd();
+  if (hasFlag(args, '--require-review')) process.env.ATRIS_MEMBER_REQUIRE_REVIEW = '1';
   const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX } = require('../lib/member-up');
   const parsed = parseMemberUpArgs(args);
   if (parsed.error) {
