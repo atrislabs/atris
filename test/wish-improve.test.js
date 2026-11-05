@@ -8,6 +8,28 @@ const { runWishCli } = require('./helpers/wish-fixture');
 
 const runCli = (args, cwd) => runWishCli(args, { cwd });
 
+test('wish improve retains a later review sharing the last timestamp', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-same-time-'));
+  try {
+    const state = path.join(dir, '.atris', 'state');
+    fs.mkdirSync(state, { recursive: true });
+    const file = path.join(state, 'wishes.jsonl');
+    const ts = '2026-07-06T03:00:00.000Z';
+    const review = (wish_id) => JSON.stringify({ kind: 'review', ts, wish_id, review_text: wish_id });
+    fs.writeFileSync(file, `${review('first')}\n`);
+    assert.equal(runCli(['wish', 'improve'], dir).status, 0);
+    fs.appendFileSync(file, `${review('second')}\n`);
+    assert.equal(runCli(['wish', 'improve'], dir).status, 0);
+    const lessons = fs.readFileSync(path.join(dir, '.claude', 'skills', 'wish', 'LESSONS.md'), 'utf8');
+    assert.match(lessons, /\| first \|/);
+    assert.match(lessons, /\| second \|/);
+    assert.equal(runCli(['wish', 'improve'], dir).status, 0);
+    assert.equal(fs.readFileSync(path.join(dir, '.claude', 'skills', 'wish', 'LESSONS.md'), 'utf8'), lessons);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('wish improve ingests unprocessed reviews into LESSONS.md, then reruns clean', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-improve-'));
   try {
