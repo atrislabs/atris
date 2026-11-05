@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { improveWishes } = require('../commands/wish');
+const { wishLessonsSummary } = require('../lib/wish-store');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-improve-direct-'));
@@ -124,4 +125,43 @@ test('legacy cursor stays untouched until a newer review establishes a boundary'
   assert.doesNotMatch(content, /already handled/);
   assert.match(content, /\| second \|/);
   assert.match(content, /\| third \|/);
+});
+
+test('ingests a review into its existing inbox before a later section', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.dirname(f.lessons), { recursive: true });
+  fs.writeFileSync(f.lessons, '# Wish lessons\n\n## Review inbox (raw, distill me)\n- prior\n\n## Notes\n- preserve notes\n');
+  writeEvents(f.events, [{ kind: 'review', ts: '2026-11-05T16:00:00.000Z', wish_id: 'new', review_text: 'useful' }]);
+  improveWishes(f.root, { quiet: true });
+  const content = fs.readFileSync(f.lessons, 'utf8');
+  const review = content.indexOf('| new |');
+  assert.ok(review > content.indexOf('## Review inbox (raw, distill me)'));
+  assert.ok(review < content.indexOf('## Notes'));
+  assert.match(content, /## Notes\n- preserve notes\n/);
+  assert.equal(wishLessonsSummary(f.root).inbox, 2);
+});
+
+test('keeps fenced example headings and later sections unchanged', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.dirname(f.lessons), { recursive: true });
+  const source = '# Notes\r\n\r\n```md\r\n## Review inbox (raw, distill me)\r\n```\r\n\r\n## Review inbox (raw, distill me)\r\n- prior\r\n\r\n## Later\r\n- keep me\r\n';
+  fs.writeFileSync(f.lessons, source);
+  writeEvents(f.events, [{ kind: 'review', ts: '2026-11-05T16:00:00.000Z', wish_id: 'fenced', review_text: 'useful' }]);
+  improveWishes(f.root, { quiet: true });
+  const output = fs.readFileSync(f.lessons, 'utf8');
+  assert.ok(output.includes('```md\r\n## Review inbox (raw, distill me)\r\n```'));
+  assert.ok(output.indexOf('| fenced |') > output.lastIndexOf('## Review inbox (raw, distill me)'));
+  assert.ok(output.indexOf('| fenced |') < output.indexOf('## Later'));
+  assert.ok(output.includes('## Later\r\n- keep me\r\n'));
+});
+
+test('refuses ambiguous inbox headings without advancing the cursor', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.dirname(f.lessons), { recursive: true });
+  const original = '# Wish lessons\n\n## Review inbox (raw, distill me)\n\n## Review inbox (raw, distill me)\n';
+  fs.writeFileSync(f.lessons, original);
+  writeEvents(f.events, [{ kind: 'review', ts: '2026-11-05T16:00:00.000Z', wish_id: 'ambiguous' }]);
+  assert.throws(() => improveWishes(f.root, { quiet: true }), /multiple wish review inbox/);
+  assert.equal(fs.readFileSync(f.lessons, 'utf8'), original);
+  assert.equal(fs.existsSync(f.cursor), false);
 });

@@ -1,6 +1,6 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
-Wish review ingestion: `lib/wish-store.js:299` records review fingerprints and multiplicities at the newest timestamp. Legacy timestamp-only cursors remain unchanged until a newer review advances them; same-time events at the legacy boundary remain ambiguous and are not recovered. Regression: `test/wish--improve-wishes.test.js:82`.
+Wish review ingestion: `lib/wish-store.js:334` records review fingerprints and multiplicities at the newest timestamp. `lib/wish-store.js:253` inserts reviews inside the inbox without moving later sections and rejects ambiguous headings. Legacy timestamp-only cursors remain unchanged until a newer review advances them; same-time events at the legacy boundary remain ambiguous and are not recovered. Regression: `test/wish--improve-wishes.test.js:130`.
 
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
