@@ -4,6 +4,16 @@
 
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
 
+## Where to work
+
+The main copy of this project under `~/arena/` tracks the published branch, and scheduled jobs run from it. A job moves it to the latest code every 15 minutes and puts any edit left there in a backup, so treat it as read-only.
+
+- Change code only in a short-lived copy: `atris worktree start --agent <name> --task "<task>"`, then `atris worktree ship`.
+- Remove your copy as soon as the work lands or is dropped. Push anything worth keeping.
+- Keep caches, datasets, build output, and run output out of copies, and delete temp folders your tests create.
+- Close Chrome with `browser.close()`. A killed Chrome leaves about 1,300 files behind for every launch.
+- Trust code, `git log`, and `atris task` over documents. `atris/now.md`, `atris/TODO.md`, and `atris/brain/STATUS.md` are snapshots, so ignore one that is older than three days.
+
 ## The way of talking (every reply, no exceptions)
 
 Talk like a person. This governs every message you send the operator: boot, status, summaries, everything.
