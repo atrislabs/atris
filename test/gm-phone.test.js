@@ -1520,14 +1520,13 @@ test('browser: after a lost answer, a tap on the old card does nothing and the p
   const show = JSON.stringify(out, null, 1);
   // the answer saved and the desk moved on, but the page never heard: the old card is back with a plain line
   assert.equal(out.after_lost.title, 'who uses the phone page most?', show);
-  assert.equal(out.after_lost.line, 'that did not go through. try again.', show);
-  // both taps name the card the owner saw
-  assert.deepEqual(out.posts, [{ card: 'question:q1', option: 'a2' }, { card: 'question:q1', option: 'a2' }], show);
+  assert.equal(out.after_lost.line, 'could not confirm whether that went through. check before trying again.', show);
+  // A repeat of the same send is held by the in-memory cache.
+  assert.deepEqual(out.posts, [{ card: 'question:q1', option: 'a2' }], show);
   // only the answer to the question on screen is saved; fewer mistakes never is
   assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
-  // the second tap is refused, and the page lands on the card the Mac has, saying so
+  // Polling brings the page to the card the Mac has.
   assert.equal(out.at_end.title, 'what would make a small team pay?', show);
-  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
 });
 
 // ---- words that did not send stay in the box ----------------------------------------
