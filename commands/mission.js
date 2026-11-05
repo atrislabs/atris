@@ -1675,6 +1675,11 @@ function appendJsonLine(file, payload) {
 
 function resolveMemberWorkspaceRoot(root = process.cwd()) {
   const resolved = path.resolve(root || process.cwd());
+  // A supervised control copy must keep its member records local, not append
+  // them to the project's read-only primary checkout.
+  if (process.env.ATRIS_MEMBER_LOCAL_RECORDS === '1') {
+    return require('../lib/member-queue-scope').resolveMemberRecordsRoot(resolved);
+  }
   const agentWorktreesMarker = `${path.sep}.agent-worktrees${path.sep}`;
   const agentIdx = resolved.indexOf(agentWorktreesMarker);
   if (agentIdx > 0) {
@@ -3362,6 +3367,8 @@ function missionFromArgs(args) {
     verifier,
     always_on: alwaysOn,
     ...(process.env.ATRIS_MEMBER_REQUIRE_REVIEW === '1' ? { require_independent_review: true } : {}),
+    ...(process.env.ATRIS_MEMBER_LOCAL_RECORDS === '1' ? { local_member_records: true, ...(process.env.ATRIS_MEMBER_RECORDS_ROOT ? { member_records_root: process.env.ATRIS_MEMBER_RECORDS_ROOT } : {}) } : {}),
+    ...(process.env.ATRIS_MEMBER_QUEUE_ROOT ? { member_queue_root: process.env.ATRIS_MEMBER_QUEUE_ROOT } : {}),
     xp_task_enabled: xpTaskEnabled,
     stop_condition: stopCondition,
     task_ids: taskIds,
@@ -4503,6 +4510,8 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
     ...(parent.require_independent_review === true ? { require_independent_review: true } : {}),
+    ...(parent.local_member_records === true ? { local_member_records: true, ...(parent.member_records_root ? { member_records_root: parent.member_records_root } : {}) } : {}),
+    ...(parent.member_queue_root ? { member_queue_root: parent.member_queue_root } : {}),
     ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
@@ -9681,7 +9690,7 @@ function spawnGenericRunnerTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ...(mission.local_member_records === true ? { ATRIS_MEMBER_LOCAL_RECORDS: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const seenItemIds = new Set();
@@ -9873,7 +9882,7 @@ function spawnClaudeTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: { ...gitGuard.env, ...(mission.require_independent_review === true ? { ATRIS_MEMBER_REQUIRE_REVIEW: '1' } : {}), ...(mission.local_member_records === true ? { ATRIS_MEMBER_LOCAL_RECORDS: '1' } : {}), ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const progressMember = mission.owner || 'mission';
@@ -10420,6 +10429,9 @@ async function resolveMissionRunPhase(context) {
   }
   if (!mission) {
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
+  }
+  if (mission.local_member_records === true || mission.member_queue_root || mission.require_independent_review === true) {
+    require('../lib/member-queue-scope').restoreMemberMissionScope(mission, cwd);
   }
   const worktreeRoot = mission.worktree_root || mission.worktree?.path || '';
   if (worktreeRoot && fs.existsSync(worktreeRoot) && path.resolve(worktreeRoot) !== path.resolve(cwd)) {

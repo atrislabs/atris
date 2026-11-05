@@ -9114,7 +9114,7 @@ function memberLoopAliveTick(name, run, index, tickStartedAt) {
     ok: alive.ok !== false,
     decision: alive.status || 'alive_tick',
     reason: alive.reason || null,
-    executed: options.execute && alive.operate?.payload?.executed !== false,
+    executed: options.execute && alive.operate?.skipped !== true && alive.operate?.payload?.executed !== false,
     needs_user: alive.needs_user === true,
     next_command: alive.next_command || null,
     has_mission: alive.has_mission === true,
@@ -9342,6 +9342,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
     `Stop: ${payload.stop_command}`,
     `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
   ], asJson);
+  if (failed) process.exitCode = 1;
 }
 
 // Driver: the phases above do the work; this reads as setup -> gate -> run -> record.
@@ -10764,15 +10765,17 @@ function memberGoTask(owner, root, { claim, requireCheck = false }) {
     const picker = require('../lib/member-task-pick');
     const db = taskDb.open();
     const job = memberGoJob(owner, root);
-    const workspaceRoot = taskDb.workspaceRoot(root);
+    const queueScope = require('../lib/member-queue-scope').resolveMemberQueueScope(root);
+  const { workspaceRoot, exactWorkspace } = queueScope;
     if (claim) {
-      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, exactWorkspace, member: owner, job, requireCheck, recoverClaimed: !requireCheck });
       return got ? { ...got, job } : null;
     }
-    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, exactWorkspace, member: owner, job, requireCheck, recoverClaimed: !requireCheck });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
   } catch (error) {
     console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
+    if (requireCheck) throw error;
     return null;
   }
 }
@@ -10886,6 +10889,10 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     return;
   }
   const root = process.cwd();
+  if (process.env.ATRIS_MEMBER_QUEUE_ROOT) {
+    const scope = require('../lib/member-queue-scope').resolveMemberQueueScope(root);
+    if (scope.workspaceRoot !== require('../lib/task-db').workspaceRoot(root)) process.env.ATRIS_MEMBER_LOCAL_RECORDS = '1';
+  }
   // everything after -- is the direction: words a person typed are never options
   const cut = rawArgs.indexOf('--');
   const optionArgs = cut >= 0 ? rawArgs.slice(0, cut) : rawArgs;
@@ -11148,6 +11155,9 @@ async function memberGo(...rawArgs) {
 // Where a running `atris member up` leaves its pid, so a whole-team sleep
 // can end it.
 function memberUpPidFile(root) {
+  return require('../lib/member-up-launch').planMemberUpLaunch({ root, cliPath: path.join(__dirname, '..', 'bin', 'atris.js'), stateHome: require('../lib/state-home').atrisHome(), taskDb: '', queueRoot: '' }).pidFile;
+}
+function legacyMemberUpPidFile(root) {
   return path.join(root, '.atris', 'state', 'member-up.json');
 }
 
@@ -11181,7 +11191,9 @@ function memberUpPick(root, name, taken) {
   const { fittingTasks } = require('../lib/member-task-pick');
   const db = taskDb.open();
   const job = memberGoJob(name, root);
-  return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
+  const queueScope = require('../lib/member-queue-scope').resolveMemberQueueScope(root);
+  const { workspaceRoot, exactWorkspace } = queueScope;
+  return fittingTasks(taskDb, db, { workspaceRoot, exactWorkspace, member: name, job, requireCheck: true, recoverClaimed: false })
     .find((task) => !taken.has(task.id)) || null;
 }
 
@@ -11192,7 +11204,7 @@ function memberUpWriteNextJob(root, name, { dryRun = false } = {}) {
   const db = taskDb.open();
   return writeSelfNextJob(taskDb, db, {
     root,
-    workspaceRoot: taskDb.workspaceRoot(root),
+    workspaceRoot: require('../lib/member-queue-scope').resolveMemberQueueScope(root).workspaceRoot,
     member: name,
     job: memberGoJob(name, root),
     dryRun,
@@ -11204,8 +11216,9 @@ function memberUpWaiting(root) {
   const taskDb = require('../lib/task-db');
   const { fittingTasks } = require('../lib/member-task-pick');
   const db = taskDb.open();
-  const workspaceRoot = taskDb.workspaceRoot(root);
-  return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, job, requireCheck: true })
+  const queueScope = require('../lib/member-queue-scope').resolveMemberQueueScope(root);
+  const { workspaceRoot, exactWorkspace } = queueScope;
+  return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, exactWorkspace, job, requireCheck: true })
     .map((task) => ({ id: task.id, title: task.title, job })));
 }
 
@@ -11259,6 +11272,8 @@ async function memberUp(...args) {
     console.log('--require-review keeps automatic landing off for this supervisor and its child runs.');
     console.log('--install starts a restartable macOS supervisor with separate output and error logs.');
     console.log('--resume restarts an installed supervisor after an explicit sleep.');
+    console.log('--queue-root uses an explicitly validated queue from a linked project copy.');
+    console.log('--local-records keeps member records in the current work copy.');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
     console.log('A member with no such task writes its next job from its mission when the mission has a ## Check, then starts it.');
     console.log('Without a check it stays idle. At most one self-written job is open per member, and 3 a day.');
@@ -11271,6 +11286,20 @@ async function memberUp(...args) {
   }
   const root = process.cwd();
   if (hasFlag(args, '--require-review')) process.env.ATRIS_MEMBER_REQUIRE_REVIEW = '1';
+  if (hasFlag(args, '--local-records')) process.env.ATRIS_MEMBER_LOCAL_RECORDS = '1';
+  const queueRoot = readFlag(args, '--queue-root', '');
+  if (queueRoot) process.env.ATRIS_MEMBER_QUEUE_ROOT = queueRoot;
+  if (process.env.ATRIS_MEMBER_QUEUE_ROOT) {
+    const scope = require('../lib/member-queue-scope').resolveMemberQueueScope(root);
+    if (scope.workspaceRoot !== require('../lib/task-db').workspaceRoot(root)) process.env.ATRIS_MEMBER_LOCAL_RECORDS = '1';
+  }
+  if (process.env.ATRIS_MEMBER_LOCAL_RECORDS === '1') {
+    const recordsRoot = process.env.ATRIS_MEMBER_RECORDS_ROOT || root;
+    process.env.ATRIS_MEMBER_RECORDS_ROOT = require('../lib/member-queue-scope').resolveMemberQueueScope(root, recordsRoot).workspaceRoot;
+    if (process.env.ATRIS_MEMBER_QUEUE_ROOT && process.env.ATRIS_MEMBER_RECORDS_ROOT === require('../lib/member-queue-scope').resolveMemberQueueScope(root).workspaceRoot) {
+      throw new Error('member records root must differ from the protected queue root');
+    }
+  }
   const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX } = require('../lib/member-up');
   const parsed = parseMemberUpArgs(args);
   if (parsed.error) {
@@ -11330,7 +11359,7 @@ async function memberUp(...args) {
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
-    requeueDropped: () => require('../lib/member-up').memberMaintenance({
+    requeueDropped: (process.env.ATRIS_MEMBER_REQUIRE_REVIEW === '1' || process.env.ATRIS_MEMBER_LOCAL_RECORDS === '1') ? undefined : () => require('../lib/member-up').memberMaintenance({
       cwd: root,
       codeRoot: path.resolve(__dirname, '..'),
       requeueDropped: () => require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root }),
@@ -11370,8 +11399,11 @@ async function memberUp(...args) {
       }
     } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
     fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+    fs.mkdirSync(path.dirname(legacyMemberUpPidFile(root)), { recursive: true });
     const startIdentity = require('../lib/member-up-launch').processStartIdentity(process.pid);
-    fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, start_identity: startIdentity, started_at: new Date().toISOString() }));
+    const record = JSON.stringify({ pid: process.pid, start_identity: startIdentity, started_at: new Date().toISOString() });
+    fs.writeFileSync(pidFile, record);
+    fs.writeFileSync(legacyMemberUpPidFile(root), record);
     return true;
   }, { waitMs: 5000 });
   if (!started) { console.log('team remains asleep until explicitly restarted'); return; }
@@ -11384,9 +11416,10 @@ async function memberUp(...args) {
   await loop.done;
   process.removeListener('SIGINT', end);
   process.removeListener('SIGTERM', end);
-  try {
-    if (JSON.parse(fs.readFileSync(pidFile, 'utf8')).pid === process.pid) fs.unlinkSync(pidFile);
-  } catch {}
+  for (const file of [pidFile, legacyMemberUpPidFile(root)]) {
+    try { if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.unlinkSync(file); }
+    catch (error) { if (error.code !== 'ENOENT') console.error('[member-up] could not remove supervisor record:', error); }
+  }
   const working = loop.up.running();
   console.log(working.length ? `team is down; still finishing: ${working.join(', ')}` : 'team is down');
   if (hasFlag(args, '--supervised') && !fs.existsSync(control.stop)) {
@@ -11399,7 +11432,11 @@ async function memberUp(...args) {
 function stopMemberUp(root) {
   let record;
   try { record = JSON.parse(fs.readFileSync(memberUpPidFile(root), 'utf8')); }
-  catch (error) { return error.code === 'ENOENT' ? { stopped: false } : { stopped: false, error: `could not read supervisor record: ${error.message}` }; }
+  catch (error) {
+    if (error.code !== 'ENOENT') return { stopped: false, error: `could not read supervisor record: ${error.message}` };
+    try { record = JSON.parse(fs.readFileSync(legacyMemberUpPidFile(root), 'utf8')); }
+    catch (legacyError) { return legacyError.code === 'ENOENT' ? { stopped: false } : { stopped: false, error: `could not read supervisor record: ${legacyError.message}` }; }
+  }
   const pid = record.pid;
   if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return { stopped: false, error: 'supervisor record has an invalid pid' };
   try { process.kill(pid, 0); } catch (error) { return error.code === 'ESRCH' ? { stopped: false } : { stopped: false, error: `could not inspect supervisor pid ${pid}: ${error.message}` }; }

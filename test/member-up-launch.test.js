@@ -11,9 +11,10 @@ test('launch plan names a project-specific service with crash restart and separa
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const root = path.join(home, 'project & one');
   fs.mkdirSync(root);
-  const plan = planMemberUpLaunch({ root, cliPath: '/tmp/atris.js', stateHome: path.join(home, 'state'), homeDir: home, nodeBin: '/usr/bin/node', envPath: '/usr/bin', taskDb: '/tmp/tasks & more.db', max: 2, only: ['builder'] });
+  const plan = planMemberUpLaunch({ root, cliPath: '/tmp/atris.js', stateHome: path.join(home, 'state'), homeDir: home, nodeBin: '/usr/bin/node', envPath: '/usr/bin', taskDb: '/tmp/tasks & more.db', queueRoot: '/tmp/project queue', max: 2, only: ['builder'] });
   assert.ok(plan.args.includes('--require-review'));
   assert.ok(plan.args.includes('--supervised'));
+  assert.deepEqual(plan.args.slice(-2), ['--queue-root', '/tmp/project queue']);
   assert.match(plan.contents, /project &amp; one/);
   assert.match(plan.contents, /tasks &amp; more\.db/);
   assert.match(plan.contents, /<key>SuccessfulExit<\/key><false\/>/);

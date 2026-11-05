@@ -131,7 +131,7 @@ function installedPackageFixture(t, { failure = null, runResult = failure, write
           ...(sharedCheckout ? ['--shared-checkout'] : [])];
       }
       const result = spawnSync(process.execPath, args, { cwd: command ? workspace : root, env, encoding: 'utf8', timeout: 10000 });
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.status, command && !expectedOk ? 1 : 0, result.stderr);
       const tick = JSON.parse(result.stdout);
       assert.equal(tick.ok, expectedOk, JSON.stringify(tick));
       return tick;
@@ -268,3 +268,77 @@ for (const extension of ['mjs', 'js']) {
     assert.equal(fs.existsSync(path.join(fixture.workspace, 'dispatch-proof.json')), false);
   });
 }
+
+test('failed, timed-out and malformed wake results never start operate', (t) => {
+  const cases = [
+    { label: 'failed', wake: "process.stdout.write(JSON.stringify({decision:'run'}));process.exit(1);", reason: 'wake_failed' },
+    { label: 'invalid JSON', wake: "process.stdout.write('not-json');", reason: 'wake_invalid_result' },
+    { label: 'missing decision', wake: "process.stdout.write(JSON.stringify({ok:true}));", reason: 'wake_invalid_result' },
+    { label: 'unknown decision', wake: "process.stdout.write(JSON.stringify({decision:'unrecognized'}));", reason: 'wake_invalid_result' },
+    { label: 'declared failure', wake: "process.stdout.write(JSON.stringify({ok:false,decision:'run'}));", reason: 'wake_invalid_result' },
+    { label: 'timeout', wake: 'setTimeout(() => {}, 1000);', reason: 'wake_failed', timeout: 50 },
+  ];
+  for (const item of cases) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-wake-error-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const bin = path.join(dir, 'fake-atris.js');
+    fs.writeFileSync(bin, item.wake);
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.writeFileSync(path.join(dir, 'scripts', 'member-operate.js'), "require('fs').writeFileSync('operated', 'yes')");
+    const tick = runAliveTick('demo', { execute: true, confirmed: true, noPrime: true, atrisBin: bin, cwd: dir, wakeTimeoutMs: item.timeout || 10000 });
+    assert.equal(tick.ok, false, item.label);
+    assert.equal(tick.reason, item.reason, item.label);
+    assert.equal(tick.operate.skipped, true, item.label);
+    assert.equal(tick.auto_accept.skipped, true, item.label);
+    assert.equal(fs.existsSync(path.join(dir, 'operated')), false, item.label);
+    if (item.timeout) assert.equal(tick.wake.error.code, 'ETIMEDOUT');
+  }
+});
+
+test('skip and a human-needed wake never start operate', (t) => {
+  for (const wake of [{ decision: 'skip' }, { decision: 'run', needs_user: true }]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-wake-hold-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const atrisBin = writeFakeAtris(dir, wake);
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.writeFileSync(path.join(dir, 'scripts', 'member-operate.js'), "require('fs').writeFileSync('operated', 'yes')");
+    const tick = runAliveTick('demo', { execute: true, confirmed: true, noPrime: true, atrisBin, cwd: dir });
+    assert.equal(tick.operate.skipped, true);
+    assert.equal(fs.existsSync(path.join(dir, 'operated')), false);
+    if (wake.needs_user) assert.equal(tick.status, 'needs_user');
+  }
+});
+
+test('other valid wake decisions do not trigger a different generic operation', (t) => {
+  for (const decision of ['scan_clean', 'scan_found_problem', 'existing_task_found', 'create_task', 'set_objective', 'close_loop', 'report_proof', 'supervise', 'wiki_mine']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-specific-wake-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const atrisBin = writeFakeAtris(dir, { decision, next_command: `do-${decision}` });
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.writeFileSync(path.join(dir, 'scripts', 'member-operate.js'), "require('fs').writeFileSync('operated', 'yes')");
+    const tick = runAliveTick('demo', { execute: true, confirmed: true, noPrime: true, atrisBin, cwd: dir });
+    assert.equal(tick.operate.skipped, true, decision);
+    assert.equal(tick.next_command, `do-${decision}`);
+    assert.equal(fs.existsSync(path.join(dir, 'operated')), false);
+  }
+});
+
+test('failed wake is recorded as unexecuted and returns a failing loop exit', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-failed-loop-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const member = path.join(root, 'atris', 'team', 'demo'); fs.mkdirSync(member, { recursive: true });
+  fs.writeFileSync(path.join(member, 'MEMBER.md'), '---\nname: demo\nrole: Test\n---\n');
+  const fake = path.join(root, 'fake-atris.js');
+  fs.writeFileSync(fake, "if(process.argv[3]==='wake'){console.error('wake unavailable');process.exit(1)}process.stdout.write(JSON.stringify({ok:true}));");
+  const cli = path.resolve(__dirname, '../bin/atris.js');
+  const out = spawnSync(process.execPath, [cli, 'member', 'alive', 'demo', '--ticks', '1', '--execute', '--confirm-autonomy-policy', '--json'], {
+    cwd: root, encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, HOME: root, ATRIS_BIN: fake, ATRIS_TASKS_DB: path.join(root, 'tasks.db'), ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  assert.equal(out.status, 1, out.stderr);
+  const summary = JSON.parse(out.stdout);
+  assert.equal(summary.ok, false);
+  const event = JSON.parse(fs.readFileSync(summary.log_path, 'utf8').trim());
+  assert.equal(event.executed, false);
+  assert.equal(event.alive.operate.skipped, true);
+});
