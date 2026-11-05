@@ -36,7 +36,11 @@ async function runChat(t, reply, interactive = false) {
   });
   if (interactive) child.stdin.write('hello\n');
   child.stderr.on('data', chunk => { stderr += chunk; });
-  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+  let code;
+  try {
+    code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+  } finally { clearTimeout(timer); }
   return { code, stdout, stderr, requests };
 }
 
