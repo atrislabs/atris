@@ -169,11 +169,14 @@ async function pullAtris() {
   console.log('');
 
   let totalSynced = 0;
+  let journalNeedsReview = false;
 
   // --- 1. General journal sync ---
   const config = loadConfig();
   if (config.agent_id) {
-    const journalSynced = await pullGeneralJournal(creds.token, config.agent_id);
+    const journalSynced = await pullGeneralJournal(creds.token, config.agent_id, {
+      onNeedsReview: () => { journalNeedsReview = true; },
+    });
     totalSynced += journalSynced;
   } else {
     console.log('  Skip general journal (no agent selected, run "atris agent")');
@@ -197,7 +200,9 @@ async function pullAtris() {
   // --- Summary ---
   console.log('');
   if (totalSynced > 0) {
-    console.log(`Done. ${totalSynced} file${totalSynced > 1 ? 's' : ''} synced.`);
+    console.log(`Done. ${totalSynced} file${totalSynced > 1 ? 's' : ''} synced.${journalNeedsReview ? ' Some journal entries need review.' : ''}`);
+  } else if (journalNeedsReview) {
+    console.log('Some journal entries need review.');
   } else {
     console.log('Everything up to date.');
   }
@@ -1016,7 +1021,7 @@ function _timeSince(isoString) {
 }
 
 
-async function pullGeneralJournal(token, agentId) {
+async function pullGeneralJournal(token, agentId, { onNeedsReview = () => {} } = {}) {
   // Pull today's journal and recent days
   const today = new Date();
   const dates = [];
@@ -1086,6 +1091,8 @@ async function pullGeneralJournal(token, agentId) {
   if (synced === 0 && !needsReview) {
     console.log('  General journal: up to date');
   }
+
+  if (needsReview) onNeedsReview();
 
   return synced;
 }

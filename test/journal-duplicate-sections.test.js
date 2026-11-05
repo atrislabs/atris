@@ -44,6 +44,53 @@ test('merge parser refuses duplicate and reserved headings without changing ordi
   assert.equal(parseJournalSections('## Notes\nfirst\n## Notes\nsecond\n').Notes, '## Notes\nsecond\n');
 });
 
+test('journal pull separates a remote heading after a local section without a final newline', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-journal-boundary-'));
+  const oldCwd = process.cwd();
+  t.after(() => { process.chdir(oldCwd); fs.rmSync(root, { recursive: true, force: true }); });
+  process.chdir(root);
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const log = path.join(root, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  fs.writeFileSync(log, '# Today\n\n## Notes\nlast');
+  const api = require('../utils/api');
+  t.mock.method(api, 'apiRequestJson', async (p) => p.endsWith(date)
+    ? { ok: true, data: { content: '# Today\n\n## Inbox\nremote item\n' } }
+    : { ok: false });
+  delete require.cache[require.resolve('../commands/pull')];
+  await require('../commands/pull').pullGeneralJournal('synthetic-token', 'synthetic-agent');
+  assert.match(fs.readFileSync(log, 'utf8'), /last\n## Inbox\nremote item/);
+});
+
+test('the actual pull summary does not report up to date for an unmerged journal', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pull-summary-'));
+  const oldCwd = process.cwd();
+  const oldArgv = process.argv;
+  t.after(() => { process.chdir(oldCwd); process.argv = oldArgv; fs.rmSync(root, { recursive: true, force: true }); });
+  process.chdir(root);
+  process.argv = ['node', 'atris', 'pull'];
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const log = path.join(root, 'atris', 'logs', date.slice(0, 4), `${date}.md`);
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  fs.writeFileSync(log, '# Today\n\n## Notes\nfirst\n## Notes\nsecond\n');
+  const api = require('../utils/api');
+  const auth = require('../utils/auth');
+  const config = require('../utils/config');
+  const output = [];
+  t.mock.method(console, 'log', (...args) => output.push(args.join(' ')));
+  t.mock.method(config, 'loadConfig', () => ({ agent_id: 'synthetic-agent' }));
+  t.mock.method(auth, 'ensureFreshCredentials', async () => ({ token: 'synthetic-token' }));
+  t.mock.method(api, 'apiRequestJson', async (p) => p.endsWith(date)
+    ? { ok: true, data: { content: '# Today\n\n## Inbox\nremote item\n' } }
+    : { ok: false });
+  delete require.cache[require.resolve('../commands/pull')];
+  await require('../commands/pull').pullAtris();
+  assert.ok(output.some((line) => line.includes('Some journal entries need review')));
+  assert.ok(!output.some((line) => line.includes('Everything up to date')));
+});
+
 test('log sync refuses repeated remote sections without writing either copy', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-log-duplicates-'));
   const oldCwd = process.cwd();
