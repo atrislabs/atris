@@ -124,3 +124,24 @@ test('capture and task import ignore fenced examples and preserve real notes', (
   assert.match(listed.stdout, /keep this note/);
   assert.doesNotMatch(listed.stdout, /fake example|nested fake/);
 });
+
+for (const args of [['task', 'import', 'atris/TODO.md', '--json'], ['task', 'setup', '--import-todo', '--json']]) {
+  test(`${args.slice(0,2).join(' ')} validates Inbox before importing TODO rows`, (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-preflight-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const logs = path.join(dir, 'atris', 'logs', String(now.getFullYear()));
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# workspace\n');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n- [ ] Preserve this task\n');
+    fs.writeFileSync(path.join(logs, `${day}.md`), '# Daily\n\n## Inbox\n- **I1:** first\n\n## Inbox\n- **I2:** second\n');
+    const env = { ...process.env, ATRIS_TEST_STATE_DIR: path.join(dir,'state'), ATRIS_TASKS_DB: path.join(dir,'state','tasks.db') };
+    const run = (argv) => spawnSync(process.execPath, [cli, ...argv], { cwd: dir, encoding: 'utf8', env });
+    const imported = run(args);
+    assert.notEqual(imported.status, 0, imported.stdout);
+    const listed = run(['task', 'list', '--json']);
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert.doesNotMatch(listed.stdout, /Preserve this task/);
+  });
+}

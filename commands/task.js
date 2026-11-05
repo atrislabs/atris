@@ -10757,18 +10757,14 @@ function importTodoFile(taskDb, db, target) {
   return { ok: true, inserted, skipped, filePath, knownTitles };
 }
 
-function importJournalFile(taskDb, db, journalPath, knownTitles = null) {
+function prepareJournalImport(journalPath) {
   const filePath = path.resolve(journalPath);
   if (!fs.existsSync(filePath)) {
-    return { ok: false, reason: 'not_found', filePath, inserted: 0, skipped: 0 };
+    return { ok: false, reason: 'not_found', filePath };
   }
   const { parseSection } = require('../lib/todo-fallback');
   const { parseInboxItems } = require('../lib/file-ops');
   const content = fs.readFileSync(filePath, 'utf8');
-  const ws = taskDb.workspaceRoot();
-  const titles = knownTitles || new Set(
-    taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 }).map((row) => taskDb.normalizeTitle(row.title))
-  );
   const all = [
     ...parseSection(content, 'Backlog').map((t) => ({ ...t, importStatus: 'open' })),
     ...parseSection(content, 'In Progress').map((t) => ({ ...t, importStatus: 'claimed' })),
@@ -10779,6 +10775,17 @@ function importJournalFile(taskDb, db, journalPath, knownTitles = null) {
       importStatus: 'open',
     })),
   ];
+  return { ok: true, filePath, all };
+}
+
+function importJournalFile(taskDb, db, journalPath, knownTitles = null, prepared = null) {
+  const snapshot = prepared || prepareJournalImport(journalPath);
+  if (!snapshot.ok) return { ...snapshot, inserted: 0, skipped: 0 };
+  const { filePath, all } = snapshot;
+  const ws = taskDb.workspaceRoot();
+  const titles = knownTitles || new Set(
+    taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 }).map((row) => taskDb.normalizeTitle(row.title))
+  );
   let inserted = 0;
   let skipped = 0;
   for (const t of all) {
@@ -10818,12 +10825,16 @@ function cmdImport(args) {
   const target = pos[0] || 'atris/TODO.md';
   const taskDb = getTaskDb();
   const db = taskDb.open();
+  // Parse the journal before importing any TODO rows. The same snapshot is
+  // used below, so an ambiguous Inbox cannot cause a partially applied import.
+  const journalPath = todayJournalPath();
+  const journal = fs.existsSync(path.resolve(target)) ? prepareJournalImport(journalPath) : null;
   const result = importTodoFile(taskDb, db, target);
   if (!result.ok) {
     console.error(`atris task import: file not found: ${result.filePath}`);
     process.exit(2);
   }
-  const journalResult = importJournalFile(taskDb, db, todayJournalPath(), result.knownTitles);
+  const journalResult = importJournalFile(taskDb, db, journalPath, result.knownTitles, journal);
   const inserted = result.inserted + (journalResult.ok ? journalResult.inserted : 0);
   const skipped = result.skipped + (journalResult.ok ? journalResult.skipped : 0);
   const { outPath } = writeDefaultProjection(taskDb, db);
@@ -11030,13 +11041,16 @@ function cmdSetup(args) {
   let importResult = null;
   let journalResult = null;
   if (hasFlag(args, '--import-todo')) {
-    importResult = importTodoFile(taskDb, db, flag(args, '--todo') || 'atris/TODO.md');
+    const todoTarget = flag(args, '--todo') || 'atris/TODO.md';
+    const journalPath = todayJournalPath();
+    const journal = fs.existsSync(path.resolve(todoTarget)) ? prepareJournalImport(journalPath) : null;
+    importResult = importTodoFile(taskDb, db, todoTarget);
     if (!importResult.ok && flag(args, '--todo')) {
       console.error(`atris task setup: TODO file not found: ${importResult.filePath}`);
       process.exit(2);
     }
     if (importResult.ok) {
-      journalResult = importJournalFile(taskDb, db, todayJournalPath(), importResult.knownTitles);
+      journalResult = importJournalFile(taskDb, db, journalPath, importResult.knownTitles, journal);
       importResult = {
         ...importResult,
         inserted: importResult.inserted + (journalResult.ok ? journalResult.inserted : 0),
