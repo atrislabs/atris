@@ -1,5 +1,7 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
+Wish review ingestion: `lib/wish-store.js:299` records review fingerprints and multiplicities at the newest timestamp. Legacy timestamp-only cursors establish an equal-time boundary on upgrade; reviews already ambiguous at that boundary are not recovered. Regression: `test/wish--improve-wishes.test.js:82`.
+
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Hourly cleanup failed stops: `commands/autoland.js:869` reads saved failure counts into the summary; `test/engine-resource.test.js:589` proves real ESRCH using a harmless signal 0 probe, saved failures, singular/plural messages, and combined outcomes.

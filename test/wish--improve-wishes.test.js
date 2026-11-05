@@ -78,3 +78,34 @@ test('improveWishes leaves empty or malformed event input without generated file
   assert.strictEqual(fs.existsSync(f.lessons), false);
   assert.strictEqual(fs.readFileSync(f.cursor, 'utf8'), 'invalid cursor json');
 });
+
+test('separately ingests reviews sharing a timestamp, including identical repeats', (t) => {
+  const f = fixture(t);
+  const ts = '2026-11-05T16:00:00.000Z';
+  const first = { kind: 'review', ts, wish_id: 'first', review_text: 'first' };
+  const second = { kind: 'review', ts, wish_id: 'second', review_text: 'second' };
+  writeEvents(f.events, [first]);
+  improveWishes(f.root, { quiet: true });
+  writeEvents(f.events, [first, second, second]);
+  improveWishes(f.root, { quiet: true });
+  const content = fs.readFileSync(f.lessons, 'utf8');
+  assert.equal(content.split('\n').filter((line) => line.includes('| second |')).length, 2);
+  improveWishes(f.root, { quiet: true });
+  assert.equal(fs.readFileSync(f.lessons, 'utf8'), content);
+});
+
+test('legacy timestamp cursor establishes a boundary for later equal-time reviews', (t) => {
+  const f = fixture(t);
+  const ts = '2026-11-05T16:00:00.000Z';
+  const first = { kind: 'review', ts, wish_id: 'first', review_text: 'already handled' };
+  const second = { kind: 'review', ts, wish_id: 'second', review_text: 'new' };
+  fs.writeFileSync(f.cursor, JSON.stringify({ last_ts: ts }));
+  writeEvents(f.events, [first]);
+  improveWishes(f.root, { quiet: true });
+  assert.equal(fs.existsSync(f.lessons), false);
+  writeEvents(f.events, [first, second]);
+  improveWishes(f.root, { quiet: true });
+  const content = fs.readFileSync(f.lessons, 'utf8');
+  assert.doesNotMatch(content, /already handled/);
+  assert.match(content, /\| second \|/);
+});
