@@ -153,6 +153,7 @@ test('keeps fenced example headings and later sections unchanged', (t) => {
   assert.ok(output.indexOf('| fenced |') > output.lastIndexOf('## Review inbox (raw, distill me)'));
   assert.ok(output.indexOf('| fenced |') < output.indexOf('## Later'));
   assert.ok(output.includes('## Later\r\n- keep me\r\n'));
+  assert.equal(wishLessonsSummary(f.root).inbox, 2);
 });
 
 test('refuses ambiguous inbox headings without advancing the cursor', (t) => {
@@ -164,4 +165,27 @@ test('refuses ambiguous inbox headings without advancing the cursor', (t) => {
   assert.throws(() => improveWishes(f.root, { quiet: true }), /multiple wish review inbox/);
   assert.equal(fs.readFileSync(f.lessons, 'utf8'), original);
   assert.equal(fs.existsSync(f.cursor), false);
+});
+
+test('validates duplicate inbox before a prune could change the document', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.dirname(f.lessons), { recursive: true });
+  const original = '# Wishes\n\n## Lessons\n- 2024-01-02: preserve this lesson\n\n## Review inbox (raw, distill me)\n\n## Review inbox (raw, distill me)\n';
+  fs.writeFileSync(f.lessons, original);
+  writeEvents(f.events, [
+    {kind: 'review', ts: '2024-01-01T00:00:00Z', review_score: 5},
+    {kind: 'review', ts: '2024-01-03T00:00:00Z', review_score: 0},
+    {kind: 'review', ts: '2024-01-04T00:00:00Z', review_score: 0},
+    {kind: 'review', ts: '2024-01-05T00:00:00Z', review_score: 0},
+  ]);
+  assert.throws(() => improveWishes(f.root, { quiet: true }), /multiple wish review inbox/);
+  assert.equal(fs.readFileSync(f.lessons, 'utf8'), original);
+  assert.equal(fs.existsSync(f.cursor), false);
+});
+
+test('summary ignores example headings and fenced list items', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(path.dirname(f.lessons), { recursive: true });
+  fs.writeFileSync(f.lessons, '# Notes\n```md\n## Review inbox (raw, distill me)\n- fake\n```\n## Review inbox (raw, distill me)\n- real1\n```\n- example\n```\n- real2\n');
+  assert.equal(wishLessonsSummary(f.root).inbox, 2);
 });

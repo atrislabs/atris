@@ -161,3 +161,41 @@ test('wishLessonsSummary reports alive, pruned, inbox, and score stats', (t) => 
   assert.equal(summary.reviews, 2);
   assert.equal(summary.avg_all, 3);
 });
+
+test('CLI improves a CRLF inbox after a fenced example and preserves later sections', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-cli-inbox-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const state = path.join(dir, '.atris', 'state');
+  const lessons = path.join(dir, '.claude', 'skills', 'wish', 'LESSONS.md');
+  fs.mkdirSync(state, { recursive: true });
+  fs.mkdirSync(path.dirname(lessons), { recursive: true });
+  fs.writeFileSync(path.join(state, 'wishes.jsonl'), JSON.stringify({kind: 'review', ts: '2024-01-03T00:00:00Z', wish_id: 'real', review_text: 'new review'}) + '\n');
+  fs.writeFileSync(lessons, '# Notes\r\n```md\r\n## Review inbox (raw, distill me)\r\n- fake\r\n```\r\n## Review inbox (raw, distill me)\r\n- existing\r\n## Later\r\nKeep this.\r\n');
+  const result = runCli(['wish', 'improve'], dir);
+  assert.equal(result.status, 0, result.stderr);
+  const content = fs.readFileSync(lessons, 'utf8');
+  assert.ok(content.indexOf('| real |') < content.indexOf('## Later'));
+  assert.ok(content.endsWith('## Later\r\nKeep this.\r\n'));
+  assert.equal(require('../lib/wish-store').wishLessonsSummary(dir).inbox, 2);
+});
+
+test('CLI rejects duplicate inbox before pruning or advancing the cursor', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-cli-duplicate-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const state = path.join(dir, '.atris', 'state');
+  const lessons = path.join(dir, '.claude', 'skills', 'wish', 'LESSONS.md');
+  fs.mkdirSync(state, { recursive: true });
+  fs.mkdirSync(path.dirname(lessons), { recursive: true });
+  const original = '# Wishes\n\n## Lessons\n- 2024-01-02: preserve this lesson\n\n## Review inbox (raw, distill me)\n\n## Review inbox (raw, distill me)\n';
+  fs.writeFileSync(lessons, original);
+  const events = [
+    {kind: 'review', ts: '2024-01-01T00:00:00Z', review_score: 5},
+    ...['03', '04', '05'].map(day => ({kind: 'review', ts: `2024-01-${day}T00:00:00Z`, review_score: 0})),
+  ];
+  fs.writeFileSync(path.join(state, 'wishes.jsonl'), events.map(JSON.stringify).join('\n') + '\n');
+  const result = runCli(['wish', 'improve'], dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /multiple wish review inbox/);
+  assert.equal(fs.readFileSync(lessons, 'utf8'), original);
+  assert.equal(fs.existsSync(path.join(state, 'wish-improve.cursor.json')), false);
+});
