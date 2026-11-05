@@ -87,7 +87,7 @@ function run(f, args) {
 function assertGlobalSkills(home) {
   for (const dir of globalDirs) {
     const skills = path.join(home, dir, 'skills');
-    assert.deepEqual(fs.readFileSync(path.join(skills, skill)), packagedSkill);
+    assert.equal(fs.readFileSync(path.join(skills, skill), 'utf8'), 'stale owned skill\n');
     assert.equal(fs.readFileSync(path.join(skills, hook), 'utf8'), customHook);
   }
 }

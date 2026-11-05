@@ -326,10 +326,11 @@ if (!helpRequested && !dryRunRequested && (
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
     if (skillsUpdated > 0) {
-      console.log(`${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
+      console.log(`${skillsUpdated} skill file${skillsUpdated > 1 ? 's' : ''} added`);
     }
   } catch (e) {
-    // Non-critical
+    console.error(`Skill sync refused: ${e.message}`);
+    process.exit(1);
   }
 }
 

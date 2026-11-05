@@ -91,11 +91,51 @@ function ensureRealDirectory(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// A hook script the project already has is never replaced. Projects harden
-// their hooks (nonce checks, queues, proof before pop); a sync must not
-// downgrade them to the shipped copy.
-function isProtectedHook(destPath) {
-  return path.basename(path.dirname(destPath)) === 'hooks' && fs.existsSync(destPath);
+// Check each component below the trusted workspace or home root before
+// creating directories; never follow a link into another owner's tree.
+function ensureSkillDirectory(dir, root, { create = true } = {}) {
+  const relative = path.relative(root, dir);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Unsafe skill path: ${dir}`);
+  let current = root;
+  for (const part of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    let stat;
+    try { stat = fs.lstatSync(current); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      if (!create) return;
+      try { fs.mkdirSync(current); } catch (mkdirError) {
+        if (mkdirError.code !== 'EEXIST') throw mkdirError;
+      }
+      stat = fs.lstatSync(current);
+    }
+    if (!stat.isDirectory()) throw new Error(`${current} is not a real directory; skill sync skipped`);
+  }
+}
+
+// Existing skill files are user-owned unless an ownership baseline proves
+// otherwise. We have no such baseline, so never replace or follow them.
+function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = false } = {}) {
+  const source = fs.readFileSync(srcPath);
+  let stat;
+  try { stat = fs.lstatSync(destPath); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  if (stat) {
+    if (!stat.isFile() || !source.equals(fs.readFileSync(destPath))) {
+      console.warn(`- Kept ${label} (existing skill file not replaced)`);
+    }
+    return 0;
+  }
+  if (!dryRun) {
+    try { fs.writeFileSync(destPath, source, { flag: 'wx' }); } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      console.warn(`- Kept ${label} (existing skill file not replaced)`);
+      return 0;
+    }
+    if (srcPath.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
+  }
+  if (!silent) console.log(`${dryRun ? 'Would add' : '✓ Added'} ${label}`);
+  return 1;
 }
 
 // A member retired to team/_archived/<name>-<date>/ must never come back.
@@ -128,8 +168,8 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
   if (!fs.existsSync(packageSkillsDir)) return 0;
 
   if (!dryRun) {
-    ensureRealDirectory(userSkillsDir);
-    ensureRealDirectory(claudeSkillsBaseDir);
+    ensureSkillDirectory(userSkillsDir, path.dirname(targetAtrisDir));
+    ensureSkillDirectory(claudeSkillsBaseDir, path.dirname(targetAtrisDir));
   }
 
   const skillFolders = fs.readdirSync(packageSkillsDir).filter(f => {
@@ -143,7 +183,14 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
     const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
     const syncRecursive = (src, dest, skillName, basePath = '') => {
-      if (!dryRun) ensureRealDirectory(dest);
+      try {
+        const existing = fs.lstatSync(dest);
+        if (!existing.isDirectory()) {
+          console.warn(`- Kept atris/skills/${skillName}${basePath ? '/' + basePath : ''} (existing skill directory not replaced)`);
+          return;
+        }
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      ensureSkillDirectory(dest, path.dirname(targetAtrisDir), { create: !dryRun });
       for (const entry of fs.readdirSync(src)) {
         const srcPath = path.join(src, entry);
         const destPath = path.join(dest, entry);
@@ -151,18 +198,9 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
         if (fs.statSync(srcPath).isDirectory()) {
           syncRecursive(srcPath, destPath, skillName, relPath);
         } else {
-          const srcContent = fs.readFileSync(srcPath, 'utf8');
-          const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-          if (srcContent !== destContent && isProtectedHook(destPath)) {
-            if (verbose) console.log(`- Kept atris/skills/${skillName}/${relPath} (differs from shipped hook, not replaced)`);
-          } else if (srcContent !== destContent) {
-            if (!dryRun) {
-              fs.writeFileSync(destPath, srcContent);
-              if (entry.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
-            }
-            if (verbose) console.log(`${dryRun ? 'Would update' : '✓ Updated'} atris/skills/${skillName}/${relPath}`);
-            updated++;
-          }
+          updated += syncSkillFile(srcPath, destPath, `atris/skills/${skillName}/${relPath}`, {
+            dryRun, silent: !verbose,
+          });
         }
       }
     };
@@ -178,12 +216,7 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
           fs.symlinkSync(relativePath, symlinkPath);
           if (verbose) console.log(`✓ Linked .claude/skills/${skill}`);
         } catch (e) {
-          ensureRealDirectory(symlinkPath);
-          const skillFile = path.join(destSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillFile)) {
-            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
-          }
-          if (verbose) console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
+          console.log(`- Kept .claude/skills/${skill} (link could not be created: ${e.code || e.message})`);
         }
       }
     }
@@ -411,9 +444,9 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
 
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
-  console.log(`  Preserved: ${preserved} (existing customizations kept)`);
+  console.log(`  Template files preserved: ${preserved} (existing customizations kept)`);
   console.log(`  Skipped:   ${skipped} (already match template)`);
-  console.log(`  Skills:    ${skillsUpdated} ${dryRun ? 'would update' : 'updated'} from atris-cli/atris/skills/`);
+  console.log(`  Skills:    ${skillsUpdated} ${dryRun ? 'would add' : 'added'} from atris-cli/atris/skills/`);
   console.log('');
 
   if (addedList.length > 0) {
@@ -655,51 +688,8 @@ function syncAtris(options = {}) {
     updated++;
   }
 
-  // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
-  const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
-  const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
-  const skillContent = `---
-name: atris
-description: Atris workspace navigation for atris repos, TODO files, tasks, MAP.md, backlog, and where-is-X questions.
-allowed-tools: Read, Bash, Glob, Grep, Write, Edit
----
-
-# Atris Skill
-
-## IMPORTANT: First Interaction
-
-**On your FIRST message in any Atris project, IMMEDIATELY run:**
-
-\`\`\`bash
-atris atris.md
-\`\`\`
-
-Show the full ASCII output to the user. This displays the Atris welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
-
-## Workflow
-
-Detect: Project has \`atris/\` folder with MAP.md, TODO.md, PERSONA.md
-
-Commands: plan → do → review
-
-Key behaviors:
-- Read PERSONA.md (MAP.md first, plain words, lead with the outcome)
-- Check MAP.md for file:line refs
-- Use \`atris task\` for claims, proof, ready, and accept
-- Give every task a plain first layer: what changes, why it matters, and what
-  done looks like. Keep exact technical detail underneath and use the existing
-  approve/change gates; never bypass proof.
-- Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks`;
-
-  if (!dryRun && !fs.existsSync(claudeSkillsDir)) {
-    fs.mkdirSync(claudeSkillsDir, { recursive: true });
-  }
-  const currentSkill = fs.existsSync(claudeSkillFile) ? fs.readFileSync(claudeSkillFile, 'utf8') : '';
-  if (currentSkill !== skillContent) {
-    if (!dryRun) fs.writeFileSync(claudeSkillFile, skillContent);
-    console.log(`${dryRun ? 'Would update' : '✓ Updated'} .claude/skills/atris/SKILL.md`);
-    updated++;
-  }
+  // syncPackageSkills above creates the canonical Atris skill and link. Do
+  // not write through .claude/skills/atris: it may be a user-owned link.
 
   // Update .claude/settings.json with startup and per-prompt hooks.
   const claudeSettingsFile = path.join(process.cwd(), '.claude', 'settings.json');
@@ -778,31 +768,25 @@ Key behaviors:
 /**
  * Recursively sync files from src to dest. Returns count of files updated.
  */
-function syncRecursiveCount(src, dest, label, silent) {
+function syncRecursiveCount(src, dest, label, silent, root) {
   let count = 0;
-  ensureRealDirectory(dest);
+  try {
+    const existing = fs.lstatSync(dest);
+    if (!existing.isDirectory()) {
+      console.warn(`- Kept ${label} (existing skill directory not replaced)`);
+      return 0;
+    }
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  ensureSkillDirectory(dest, root);
   const entries = fs.readdirSync(src);
   for (const entry of entries) {
     const srcPath = path.join(src, entry);
     const destPath = path.join(dest, entry);
 
     if (fs.statSync(srcPath).isDirectory()) {
-      count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent);
+      count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent, root);
     } else {
-      const srcBuf = fs.readFileSync(srcPath);
-      const destBuf = fs.existsSync(destPath) ? fs.readFileSync(destPath) : Buffer.alloc(0);
-      if (!srcBuf.equals(destBuf) && isProtectedHook(destPath)) {
-        if (!silent) console.log(`- Kept ${label}/${entry} (differs from shipped hook, not replaced)`);
-      } else if (!srcBuf.equals(destBuf)) {
-        fs.writeFileSync(destPath, srcBuf);
-        if (entry.endsWith('.sh')) {
-          fs.chmodSync(destPath, 0o755);
-        }
-        if (!silent) {
-          console.log(`✓ Updated ${label}/${entry}`);
-        }
-        count++;
-      }
+      count += syncSkillFile(srcPath, destPath, `${label}/${entry}`, { silent });
     }
   }
   return count;
@@ -829,6 +813,14 @@ function syncSkills({ silent = false } = {}) {
     fs.statSync(path.join(packageSkillsDir, f)).isDirectory()
   );
 
+  // Preflight before init or update gets a chance to traverse these roots.
+  for (const dir of [path.join(homeDir, '.claude', 'skills'), path.join(homeDir, '.codex', 'skills')]) {
+    ensureSkillDirectory(dir, homeDir, { create: false });
+  }
+  for (const dir of [path.join(process.cwd(), '.claude', 'skills'), path.join(process.cwd(), 'atris', 'skills')]) {
+    ensureSkillDirectory(dir, process.cwd(), { create: false });
+  }
+
   // --- 1. Global skill directories (sync if they exist) ---
   const globalSkillDirs = [
     path.join(homeDir, '.claude', 'skills'),
@@ -844,7 +836,7 @@ function syncSkills({ silent = false } = {}) {
       const destSkillDir = path.join(globalDir, skill);
 
       if (fs.existsSync(destSkillDir) || fs.existsSync(globalDir)) {
-        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent);
+        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent, homeDir);
       }
     }
   }
@@ -865,15 +857,15 @@ function syncSkills({ silent = false } = {}) {
     const userSkillsDir = path.join(targetDir, 'skills');
     const claudeSkillsBaseDir = path.join(process.cwd(), '.claude', 'skills');
 
-    ensureRealDirectory(userSkillsDir);
-    ensureRealDirectory(claudeSkillsBaseDir);
+    ensureSkillDirectory(userSkillsDir, process.cwd());
+    ensureSkillDirectory(claudeSkillsBaseDir, process.cwd());
 
     for (const skill of skillFolders) {
       const srcSkillDir = path.join(packageSkillsDir, skill);
       const destSkillDir = path.join(userSkillsDir, skill);
       const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
-      updated += syncRecursiveCount(srcSkillDir, destSkillDir, `atris/skills/${skill}`, silent);
+      updated += syncRecursiveCount(srcSkillDir, destSkillDir, `atris/skills/${skill}`, silent, process.cwd());
 
       // Create symlink if doesn't exist
       if (!fs.existsSync(symlinkPath)) {
@@ -884,12 +876,7 @@ function syncSkills({ silent = false } = {}) {
             console.log(`✓ Linked .claude/skills/${skill}`);
           }
         } catch (e) {
-          // Fallback: copy instead of symlink
-          ensureRealDirectory(symlinkPath);
-          const skillFile = path.join(destSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillFile)) {
-            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
-          }
+          console.log(`- Kept .claude/skills/${skill} (link could not be created: ${e.code || e.message})`);
         }
       }
     }

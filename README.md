@@ -564,6 +564,8 @@ atris upgrade     # Install latest from npm
 atris update      # Sync local workspace files to new version
 ```
 
+Skill synchronization adds missing packaged files but preserves existing differing project and global skill files, including empty files and symlinks. Preserved files are reported; to adopt a newer packaged version, compare it with your copy and update your copy intentionally. Atris does not currently track which older files were unmodified package versions.
+
 Packaged npm installs check for new versions during normal commands and start a background update automatically. Git checkout installs stay manual so linked development copies are not overwritten unexpectedly.
 
 ---

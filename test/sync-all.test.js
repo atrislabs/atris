@@ -227,21 +227,21 @@ test('node_modules and .git subtrees are not scanned', () => {
   }
 });
 
-test('workspace template sync repairs broken .claude skills link', () => {
+test('workspace template sync preserves broken .claude skills link', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-broken-claude-'));
   try {
     fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
     fs.symlinkSync(path.join(root, 'missing-skills-target'), path.join(root, '.claude', 'skills'));
 
-    assert.doesNotThrow(() => syncWorkspaceTemplate(root, {
+    assert.throws(() => syncWorkspaceTemplate(root, {
       name: 'Broken Skills Co',
       slug: 'broken-skills',
       business_id: 'biz-broken-skills',
       workspace_id: 'ws-broken-skills',
     }, { templateName: 'business' }));
 
-    assert.ok(fs.lstatSync(path.join(root, '.claude', 'skills')).isDirectory());
-    assert.ok(fs.existsSync(path.join(root, '.claude', 'skills', 'aeo', 'SKILL.md')));
+    assert.ok(fs.lstatSync(path.join(root, '.claude', 'skills')).isSymbolicLink());
+    assert.equal(fs.existsSync(path.join(root, 'missing-skills-target')), false);
   } finally {
     cleanup(root);
   }
