@@ -5,7 +5,7 @@ const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
-const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
+const { DuplicateJournalSectionError, UnclosedJournalFenceError, parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
@@ -169,11 +169,14 @@ async function pullAtris() {
   console.log('');
 
   let totalSynced = 0;
+  let journalNeedsReview = false;
 
   // --- 1. General journal sync ---
   const config = loadConfig();
   if (config.agent_id) {
-    const journalSynced = await pullGeneralJournal(creds.token, config.agent_id);
+    const journalSynced = await pullGeneralJournal(creds.token, config.agent_id, {
+      onNeedsReview: () => { journalNeedsReview = true; },
+    });
     totalSynced += journalSynced;
   } else {
     console.log('  Skip general journal (no agent selected, run "atris agent")');
@@ -197,7 +200,9 @@ async function pullAtris() {
   // --- Summary ---
   console.log('');
   if (totalSynced > 0) {
-    console.log(`Done. ${totalSynced} file${totalSynced > 1 ? 's' : ''} synced.`);
+    console.log(`Done. ${totalSynced} file${totalSynced > 1 ? 's' : ''} synced.${journalNeedsReview ? ' Some journal entries need review.' : ''}`);
+  } else if (journalNeedsReview) {
+    console.log('Some journal entries need review.');
   } else {
     console.log('Everything up to date.');
   }
@@ -1016,7 +1021,7 @@ function _timeSince(isoString) {
 }
 
 
-async function pullGeneralJournal(token, agentId) {
+async function pullGeneralJournal(token, agentId, { onNeedsReview = () => {} } = {}) {
   // Pull today's journal and recent days
   const today = new Date();
   const dates = [];
@@ -1029,6 +1034,7 @@ async function pullGeneralJournal(token, agentId) {
   }
 
   let synced = 0;
+  let needsReview = false;
 
   for (const date of dates) {
     const result = await apiRequestJson(`/agents/${agentId}/journal/${date}`, {
@@ -1057,8 +1063,8 @@ async function pullGeneralJournal(token, agentId) {
     } else {
       // Both exist and differ, merge
       try {
-        const localSections = parseJournalSections(localContent);
-        const remoteSections = parseJournalSections(remoteContent);
+        const localSections = parseJournalSections(localContent, { rejectDuplicates: true });
+        const remoteSections = parseJournalSections(remoteContent, { rejectDuplicates: true });
         const { merged, conflicts } = mergeSections(localSections, remoteSections);
 
         if (conflicts.length === 0) {
@@ -1068,17 +1074,27 @@ async function pullGeneralJournal(token, agentId) {
           synced++;
         } else {
           // Conflicts, keep local, warn
+          needsReview = true;
           console.log(`  Journal ${date} has conflicts (kept local, run "atris log sync" to resolve)`);
         }
-      } catch {
-        console.log(`  Journal ${date} differs (run "atris log sync" to resolve)`);
+      } catch (error) {
+        needsReview = true;
+        if (error instanceof UnclosedJournalFenceError) {
+          console.log(`  Journal ${date} has an unclosed code fence; kept local for review`);
+        } else if (error instanceof DuplicateJournalSectionError) {
+          console.log(`  Journal ${date} has repeated or reserved section headings; kept local for review`);
+        } else {
+          console.log(`  Journal ${date} differs (run "atris log sync" to resolve)`);
+        }
       }
     }
   }
 
-  if (synced === 0) {
+  if (synced === 0 && !needsReview) {
     console.log('  General journal: up to date');
   }
+
+  if (needsReview) onNeedsReview();
 
   return synced;
 }

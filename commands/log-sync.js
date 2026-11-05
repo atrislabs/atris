@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath, createLogFile } = require('../lib/file-ops');
-const { parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
-const { computeContentHash, isSameTimestamp } = require('../lib/journal');
+const { DuplicateJournalSectionError, parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
+const { computeContentHash } = require('../lib/journal');
 const { loadConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
 const { ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -12,6 +12,13 @@ class LogSyncWriteError extends Error {
   constructor(message) {
     super(message);
     this.name = 'LogSyncWriteError';
+  }
+}
+
+class LogSyncReviewError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'LogSyncReviewError';
   }
 }
 
@@ -90,7 +97,6 @@ async function logSyncAtris() {
   console.log(`🔄 Syncing log for ${dateFormatted} with agent "${agentLabel}"`);
 
   const syncState = loadLogSyncState();
-  const knownRemoteUpdate = syncState[dateFormatted]?.updated_at || null;
   const knownRemoteHash = syncState[dateFormatted]?.hash || null;
 
   let remoteExists = false;
@@ -109,7 +115,14 @@ async function logSyncAtris() {
     remoteExists = true;
     remoteUpdatedAt = existing.data?.updated_at || existing.data?.created_at || null;
     remoteContent = typeof existing.data?.content === 'string' ? existing.data.content : null;
-    remoteHash = remoteContent ? computeContentHash(remoteContent) : null;
+    remoteHash = remoteContent !== null ? computeContentHash(remoteContent) : null;
+
+    // A timestamp is not proof that the server content is unchanged.  Without
+    // readable content and a usable timestamp the old path falls through to a
+    // PUT, which could overwrite a journal we never inspected.
+    if (remoteContent === null || !remoteUpdatedAt || Number.isNaN(new Date(remoteUpdatedAt).getTime())) {
+      throw new Error('Cannot safely sync journal: remote content or timestamp is unavailable');
+    }
 
     if (remoteUpdatedAt) {
       const localStats = fs.statSync(logFile);
@@ -117,11 +130,17 @@ async function logSyncAtris() {
       const remoteTime = new Date(remoteUpdatedAt).getTime();
       const localTime = new Date(localModified).getTime();
 
-      const remoteMatchesKnown = (knownRemoteUpdate && isSameTimestamp(remoteUpdatedAt, knownRemoteUpdate))
-        || (remoteHash && knownRemoteHash && remoteHash === knownRemoteHash);
+      const remoteMatchesKnown = Boolean(remoteHash && knownRemoteHash && remoteHash === knownRemoteHash);
 
       // Check if local has changes since last sync
       const localMatchesKnown = (knownRemoteHash && localHash === knownRemoteHash);
+
+      if (remoteTime === localTime && remoteHash !== localHash) {
+        throw new Error('Cannot safely sync journal: equal timestamps have different contents; review both versions');
+      }
+      if (localTime > remoteTime && !localMatchesKnown && !remoteMatchesKnown && remoteHash !== localHash) {
+        throw new Error('Cannot safely sync journal: the remote may have changed; review both versions');
+      }
 
       if (remoteTime > localTime && !remoteMatchesKnown) {
         // Web is newer - need to pull/merge
@@ -145,13 +164,19 @@ async function logSyncAtris() {
         }
 
         try {
-          const localSections = parseJournalSections(normalizedLocal);
-          const remoteSections = parseJournalSections(normalizedRemote || '');
+          const localSections = parseJournalSections(normalizedLocal, { rejectDuplicates: true });
+          const remoteSections = parseJournalSections(normalizedRemote || '', { rejectDuplicates: true });
           const { merged, conflicts } = mergeSections(localSections, remoteSections, knownRemoteHash);
 
           if (conflicts.length === 0) {
             // Clean merge - auto-merge and continue
             const mergedContent = reconstructJournal(merged);
+            // The no-push branch below is valid only if the merged result is
+            // already present remotely. A merge can retain sections the web
+            // removed (including all sections when web content is empty).
+            if (localMatchesKnown && computeContentHash(mergedContent) !== remoteHash) {
+              throw new LogSyncReviewError('Cannot safely sync journal: merged content differs from the web; review both versions');
+            }
             writeLogFile(logFile, mergedContent);
             console.log('✓ Auto-merged web and local changes');
             console.log(`   Merged sections: ${Object.keys(merged).filter(k => k !== '__header__').join(', ')}`);
@@ -233,7 +258,7 @@ async function logSyncAtris() {
             }
           }
         } catch (parseError) {
-          if (parseError instanceof LogSyncWriteError) {
+          if (parseError instanceof LogSyncWriteError || parseError instanceof LogSyncReviewError || parseError instanceof DuplicateJournalSectionError) {
             throw parseError;
           }
           // Fallback to simple prompt
