@@ -10,24 +10,12 @@ const { loadManifest } = require('../lib/manifest');
 
 function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-test-'));
-  const savedEnv = { ...process.env };
-
-  for (const key of Object.keys(process.env)) {
-    if (key.startsWith('ATRIS_')) {
-      delete process.env[key];
-    }
-  }
-
-  process.env.HOME = root;
-  process.env.USERPROFILE = root;
+  const prior = process.env.ATRIS_TEST_STATE_DIR;
+  process.env.ATRIS_TEST_STATE_DIR = root;
 
   t.after(() => {
-    for (const key of Object.keys(process.env)) {
-      if (!(key in savedEnv)) {
-        delete process.env[key];
-      }
-    }
-    Object.assign(process.env, savedEnv);
+    if (prior === undefined) delete process.env.ATRIS_TEST_STATE_DIR;
+    else process.env.ATRIS_TEST_STATE_DIR = prior;
     fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -64,7 +52,7 @@ test('loadManifest returns null when manifest file does not exist', (t) => {
   assert.strictEqual(result, null);
 });
 
-test('loadManifest returns null when manifest file contains invalid json', (t) => {
+test('loadManifest refuses an existing manifest containing invalid json', (t) => {
   const root = createFixture(t);
   const slug = 'broken-business';
   const manifestDir = path.join(root, '.atris', 'businesses', slug);
@@ -72,8 +60,7 @@ test('loadManifest returns null when manifest file contains invalid json', (t) =
 
   fs.writeFileSync(path.join(manifestDir, 'manifest.json'), '{ invalid json, not parsed:');
 
-  const result = loadManifest(slug);
-  assert.strictEqual(result, null);
+  assert.throws(() => loadManifest(slug), /cannot safely parse sync manifest/);
 });
 
 test('loadManifest handles edge case with empty manifest object', (t) => {
