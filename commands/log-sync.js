@@ -60,8 +60,9 @@ async function logSyncAtris() {
     fs.mkdirSync(yearDir, { recursive: true });
   }
   if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-    console.log(`Created local log template for ${dateFormatted}. Fill it in before syncing.`);
+    if (createLogFile(logFile, dateFormatted)) {
+      console.log(`Created local log template for ${dateFormatted}. Fill it in before syncing.`);
+    }
   }
 
   const localContent = fs.readFileSync(logFile, 'utf8');
