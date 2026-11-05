@@ -119,7 +119,7 @@ test('verify cache does not advance the task ordering timestamp', () => {
 });
 
 for (const kind of ['reopen', 'backlog', 'tag', 'chat', 'plan']) {
-  test(`${kind} refuses a stale snapshot when the cache changes without touching task order`, () => {
+  test(`${kind} serializes a concurrent cache change without losing it`, () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-cache-cas-'));
     const db = taskDb.open(path.join(tmp, 'tasks.db'));
     const other = new DatabaseSync(path.join(tmp, 'tasks.db'));
@@ -127,6 +127,7 @@ for (const kind of ['reopen', 'backlog', 'tag', 'chat', 'plan']) {
       const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp, tag: 'planned' });
       if (kind === 'reopen') db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(id);
       let intervened = false;
+      let blocked = false;
       const wrapped = {
         get isTransaction() { return db.isTransaction; },
         exec: db.exec.bind(db),
@@ -136,9 +137,12 @@ for (const kind of ['reopen', 'backlog', 'tag', 'chat', 'plan']) {
             return { get(...args) {
               const row = statement.get(...args);
               intervened = true;
-              assert.equal(taskDb.mutateTaskMetadata(other, {
-                id, touch: false, mutate(metadata) { metadata.verify_cache = { ok: true }; },
-              }).updated, true);
+              try {
+                other.prepare("UPDATE tasks SET metadata = json_set(metadata, '$.verify_cache.ok', json('true')) WHERE id = ?").run(id);
+              } catch (error) {
+                if (!/locked|busy/i.test(String(error.message))) throw error;
+                blocked = true;
+              }
               return row;
             } };
           }
@@ -150,7 +154,11 @@ for (const kind of ['reopen', 'backlog', 'tag', 'chat', 'plan']) {
           : kind === 'tag' ? taskDb.tagTask(wrapped, { id, actor: 'test', add: ['one'] })
             : kind === 'chat' ? taskDb.chatTask(wrapped, { id, actor: 'test', goal: 'new goal' })
               : taskDb.stageTask(wrapped, { id, actor: 'test', stage: 'plan', goal: 'goal', exit: 'done', proofNeeded: 'test' });
-      assert.equal(out.reason, 'stale_task_state');
+      assert.equal(blocked, true);
+      assert.equal(out[{ reopen: 'reopened', backlog: 'backlogged', tag: 'tagged', chat: 'chatted', plan: 'staged' }[kind]], true);
+      taskDb.mutateTaskMetadata(other, {
+        id, touch: false, mutate(metadata) { metadata.verify_cache = { ok: true }; },
+      });
       assert.deepEqual(taskDb.getTask(db, id).metadata.verify_cache, { ok: true });
     } finally {
       other.close(); taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
