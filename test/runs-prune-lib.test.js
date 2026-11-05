@@ -150,3 +150,22 @@ test('mission prune CLI reports reference read errors without deleting anything'
   assert.strictEqual(fs.existsSync(receipt), true);
   assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive')), false);
 });
+
+test('apply refuses to delete receipts when state includes symlinks', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  const source = write('state-source.json', JSON.stringify({ proof: 'atris/runs/needed.json' }));
+  fs.mkdirSync(path.join(root, '.atris/state'), { recursive: true });
+  fs.symlinkSync(source, path.join(root, '.atris/state/linked.json'));
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+  assert.strictEqual(fs.existsSync(receipt), true);
+});
+
+test('apply refuses a dangling state-root symlink', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+  fs.symlinkSync(path.join(root, 'missing'), path.join(root, '.atris/state'));
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+  assert.strictEqual(fs.existsSync(receipt), true);
+});
