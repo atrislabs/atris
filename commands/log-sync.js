@@ -15,6 +15,13 @@ class LogSyncWriteError extends Error {
   }
 }
 
+class LogSyncReviewError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'LogSyncReviewError';
+  }
+}
+
 function formatWriteError(error) {
   return error && error.message ? error.message : String(error);
 }
@@ -164,6 +171,12 @@ async function logSyncAtris() {
           if (conflicts.length === 0) {
             // Clean merge - auto-merge and continue
             const mergedContent = reconstructJournal(merged);
+            // The no-push branch below is valid only if the merged result is
+            // already present remotely. A merge can retain sections the web
+            // removed (including all sections when web content is empty).
+            if (localMatchesKnown && computeContentHash(mergedContent) !== remoteHash) {
+              throw new LogSyncReviewError('Cannot safely sync journal: merged content differs from the web; review both versions');
+            }
             writeLogFile(logFile, mergedContent);
             console.log('✓ Auto-merged web and local changes');
             console.log(`   Merged sections: ${Object.keys(merged).filter(k => k !== '__header__').join(', ')}`);
@@ -245,7 +258,7 @@ async function logSyncAtris() {
             }
           }
         } catch (parseError) {
-          if (parseError instanceof LogSyncWriteError || parseError instanceof DuplicateJournalSectionError) {
+          if (parseError instanceof LogSyncWriteError || parseError instanceof LogSyncReviewError || parseError instanceof DuplicateJournalSectionError) {
             throw parseError;
           }
           // Fallback to simple prompt

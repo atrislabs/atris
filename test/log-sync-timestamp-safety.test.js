@@ -48,3 +48,11 @@ test('newer local content does not overwrite changed remote even with matching o
 test('missing remote timestamp does not trigger an unconditional overwrite', async t => {
   await exercise(t, { localTime: '2020-01-17T00:00:00Z', remoteTime: null, remote: '# Remote\n' });
 });
+test('newer empty remote does not save a fictitious merged baseline', async t => {
+  const local = '# Today\n\n## Notes\nlocal changes\n';
+  await exercise(t, { localTime: '2020-01-15T00:00:00Z', remoteTime: '2020-01-16T00:00:00Z', remote: '', known: { updated_at: '2020-01-14T00:00:00Z', hash: computeContentHash(local) } });
+});
+test('remote section removal does not save a fictitious merged baseline', async t => {
+  const local = '# Today\n\n## Notes\nlocal changes\n';
+  await exercise(t, { localTime: '2020-01-15T00:00:00Z', remoteTime: '2020-01-16T00:00:00Z', remote: '# Today\n\n## Inbox\nremote only\n', known: { updated_at: '2020-01-14T00:00:00Z', hash: computeContentHash(local) } });
+});
