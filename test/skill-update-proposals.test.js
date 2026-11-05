@@ -30,6 +30,10 @@ test('real CLI proposes package transitions without replacing originals or exist
   const repeat = run('sync', '--yes'); assert.equal(repeat.status, 0, repeat.stderr); assert.match(repeat.stderr, /Kept existing proposal/);
   assert.equal(fs.readFileSync(skill, 'utf8'), original); assert.equal(fs.readFileSync(proposal, 'utf8'), v2); assert.equal(fs.readFileSync(pending, 'utf8'), v2);
   assert.deepEqual(fs.readdirSync(path.dirname(skill)).filter(x => x.includes('atris-proposal')).sort(), ['SKILL.md.atris-proposal', 'SKILL.md.atris-proposal.pending']);
+  assert.equal(fs.statSync(proposal).ino, fs.statSync(pending).ino);
+  fs.appendFileSync(proposal, 'review note\n');
+  assert.equal(fs.readFileSync(pending, 'utf8'), v2 + 'review note\n');
+  assert.equal(fs.readFileSync(skill, 'utf8'), original);
 });
 
 test('interrupted staging and existing proposal links are preserved', (t) => {
