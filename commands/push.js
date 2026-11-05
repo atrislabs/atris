@@ -186,8 +186,10 @@ function buildPushChangePlan({
       try {
         const content = readFileContent ? readFileContent(filePath) : '';
         filesToPush.push({ path: filePath, content });
-      } catch {
-        // File moved or became unreadable while planning; skip this cycle.
+      } catch (error) {
+        // A late read failure makes the plan incomplete. Stop before any
+        // upload or deletion rather than reporting an omitted change as synced.
+        throw new Error(`cannot safely read local workspace: ${error.message}`, { cause: error });
       }
     }
   }
