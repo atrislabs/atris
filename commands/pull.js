@@ -659,6 +659,23 @@ async function pullBusiness(slug) {
       }
       throw new Error(`cannot safely pull ${p}: a local path already exists`);
     }
+    // Conflict sidecars are local files too. Check the entire plan before any
+    // write, so a later collision cannot overwrite a user's existing sidecar
+    // or leave earlier planned changes partially applied.
+    const pullPaths = new Set([...diff.toPull, ...diff.newRemote, ...diff.deletedLocal]);
+    for (const p of diff.conflicts) {
+      if (remoteContent[p] === undefined || remoteContent[p] === null) continue;
+      const sidecar = `${p}.remote`;
+      if (pullPaths.has(sidecar)) throw new Error(`cannot safely pull ${p}: conflict sidecar is also a remote file`);
+      const localPath = path.join(outputDir, sidecar.replace(/^\//, ''));
+      try {
+        fs.lstatSync(localPath);
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw new Error(`cannot safely inspect local workspace: ${error.message}`, { cause: error });
+      }
+      throw new Error(`cannot safely pull ${p}: conflict sidecar already exists`);
+    }
   }
 
   if (dryRun) {
@@ -736,7 +753,9 @@ async function pullBusiness(slug) {
       if (content || content === '') {
         const localPath = path.join(outputDir, p.replace(/^\//, '') + '.remote');
         fs.mkdirSync(path.dirname(localPath), { recursive: true });
-        fs.writeFileSync(localPath, content);
+        // Exclusive creation also avoids overwriting a sidecar created after
+        // the preflight. Other concurrent filesystem changes remain unfenced.
+        fs.writeFileSync(localPath, content, { flag: 'wx' });
       }
       console.log(`  \u26A0 ${p.replace(/^\//, '')}: conflict, both you and the computer changed this`);
       console.log(`    \u2192 Remote version saved as ${p.replace(/^\//, '')}.remote`);
