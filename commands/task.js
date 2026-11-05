@@ -63,8 +63,12 @@ const {
   buildInspectPayload,
 } = require('../lib/inspect-fields');
 const {
+  taskTagTokens,
+  isDecisionHoldTag,
   isDecisionTask,
   decisionMarkerFor,
+  summarizeSkippedDecisions,
+  formatDecisionRefusalLines,
   DECISION_REFUSE_REASON,
 } = require('../lib/task-decision');
 const {
@@ -2985,12 +2989,21 @@ function taskReviewStateMatches(task, reviewState, { hasExistingReviewFollowUp =
   return false;
 }
 
+function taskMatchesScopeTag(task, wantedTag) {
+  if (!wantedTag) return true;
+  if (taskScopeEquals(task && task.tag, wantedTag)) return true;
+  const tokens = taskTagTokens(task);
+  if (tokens.some((token) => taskScopeEquals(token, wantedTag))) return true;
+  if (isDecisionHoldTag(wantedTag) && isDecisionTask(task)) return true;
+  return false;
+}
+
 function taskMatchesQueueScope(task, scope = {}, options = {}) {
   const normalized = normalizeTaskQueueScope(scope);
   if (normalized.goal_id && !taskGoalScopeValues(task).some(value => taskScopeEquals(value, normalized.goal_id))) {
     return false;
   }
-  if (normalized.tag && !taskScopeEquals(task && task.tag, normalized.tag)) {
+  if (normalized.tag && !taskMatchesScopeTag(task, normalized.tag)) {
     return false;
   }
   if (normalized.status) {
@@ -6569,20 +6582,7 @@ function cmdNextTruth(args) {
   const task = picked.task || null;
 
   if (!task && openDecisions.length) {
-    if (wantsJson(args)) {
-      printJson({
-        ok: false,
-        action: 'refused',
-        reason: DECISION_REFUSE_REASON,
-        skipped_decision_count: openDecisions.length,
-        owner: String(owner),
-        scope: normalizeTaskQueueScope(scope),
-        projection_path: outPath,
-      });
-      process.exit(1);
-    }
-    console.error(DECISION_REFUSE_REASON);
-    process.exit(1);
+    reportSkippedDecisionsAndExit(openDecisions, { args, owner, scope, outPath });
   }
 
   if (wantsJson(args)) {
@@ -6605,6 +6605,33 @@ function cmdNextTruth(args) {
     return;
   }
   console.log(`next: ${command}`);
+}
+
+function reportSkippedDecisionsAndExit(openDecisions, { args, owner, scope, outPath }) {
+  const summary = summarizeSkippedDecisions(openDecisions);
+  if (wantsJson(args)) {
+    printJson({
+      ok: false,
+      action: 'refused',
+      reason: DECISION_REFUSE_REASON,
+      command: summary.command,
+      show_command: summary.show_command,
+      next_command: summary.next_command,
+      choice: summary.choice,
+      skipped_decision_count: summary.skipped_decision_count,
+      skipped_decision_refs: summary.skipped_decision_refs,
+      skipped_decisions: summary.skipped_decisions,
+      decisions: summary.decisions,
+      owner: String(owner),
+      scope: normalizeTaskQueueScope(scope),
+      projection_path: outPath,
+    });
+    process.exit(1);
+  }
+  const text = formatDecisionRefusalLines(openDecisions).join('\n');
+  console.log(text);
+  console.error(text);
+  process.exit(1);
 }
 
 function isUninitializedTaskFolder(cwd = process.cwd()) {
@@ -6679,20 +6706,14 @@ function cmdNext(args) {
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
     if (skippedDecisions > 0 && !reviewTasks.length) {
-      if (wantsJson(args)) {
-        printJson({
-          ok: false,
-          action: 'refused',
-          reason: DECISION_REFUSE_REASON,
-          skipped_decision_count: skippedDecisions,
-          owner: String(owner),
-          scope: normalizeTaskQueueScope(scope),
-          projection_path: outPath,
-        });
-        process.exit(1);
-      }
-      console.error(DECISION_REFUSE_REASON);
-      process.exit(1);
+      const openDecisionTasks = filterTasksByScope(projection.tasks || [], scope)
+        .filter((task) => task && isDecisionTask(task) && task.status === 'open');
+      reportSkippedDecisionsAndExit(
+        openDecisionTasks.length
+          ? openDecisionTasks
+          : taskDb.withTaskDisplayRefs(openAll.filter((task) => isDecisionTask(task))),
+        { args, owner, scope, outPath }
+      );
     }
     const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
       || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work')

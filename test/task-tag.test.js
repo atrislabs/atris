@@ -296,10 +296,56 @@ test('task next refuses when the only open row is needs-human', () => {
     assert.equal(listed.status, 0, listed.stderr);
     assert.match(listed.stdout, /\[decision\]/);
 
+    const refusedText = runCli(['task', 'next', '--as', 'fleet-codex'], { cwd: dir, env });
+    assert.notEqual(refusedText.status, 0);
+    assert.match(refusedText.stdout, /decision row: human judgment required/);
+    assert.match(refusedText.stdout, new RegExp(`${held.display_id}: Mount the notification bell or delete it`));
+    assert.match(refusedText.stdout, /choice: Mount the notification bell or delete it\./);
+    assert.match(refusedText.stdout, new RegExp(`next: atris task show ${held.display_id}`));
+
     const refused = runCli(['task', 'next', '--as', 'fleet-codex', '--json'], { cwd: dir, env });
     assert.notEqual(refused.status, 0);
     assert.match(`${refused.stdout || ''}${refused.stderr || ''}`, /decision row: human judgment required/);
+    const payload = JSON.parse(refused.stdout);
+    assert.deepEqual(payload.skipped_decision_refs, [held.display_id]);
+    assert.equal(payload.command, `atris task show ${held.display_id}`);
+    assert.equal(payload.skipped_decisions[0].ref, held.display_id);
+    assert.equal(payload.skipped_decisions[0].title, 'Mount the notification bell or delete it');
+    assert.equal(payload.skipped_decisions[0].choice, 'Mount the notification bell or delete it.');
+    assert.equal(payload.skipped_decisions[0].command, `atris task show ${held.display_id}`);
   } finally {
     cleanupTempDir(dir);
   }
 });
+
+test('task list and task next with --tag needs-human surface metadata-tagged decision rows', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = makeEnv(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const held = JSON.parse(runCli([
+      'task', 'new', 'Choose Redis or SQLite for session cache', '--tag', 'backend', '--json',
+    ], { cwd: dir, env }).stdout).task;
+    assert.equal(runCli([
+      'task', 'tag', held.display_id, '--add', 'needs-human', '--as', 'keshav', '--json',
+    ], { cwd: dir, env }).status, 0);
+    runCli([
+      'task', 'new', 'Add cache hit counters', '--tag', 'backend', '--json',
+    ], { cwd: dir, env });
+
+    const listed = runCli(['task', 'list', '--tag', 'needs-human'], { cwd: dir, env });
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, new RegExp(held.display_id));
+    assert.match(listed.stdout, /Choose Redis or SQLite for session cache/);
+
+    const scopedNext = runCli(['task', 'next', '--tag', 'needs-human'], { cwd: dir, env });
+    assert.notEqual(scopedNext.status, 0);
+    assert.match(scopedNext.stdout, new RegExp(`${held.display_id}: Choose Redis or SQLite for session cache`));
+    assert.match(scopedNext.stdout, new RegExp(`next: atris task show ${held.display_id}`));
+    assert.doesNotMatch(scopedNext.stdout, /atris task new/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+

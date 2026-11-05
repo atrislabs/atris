@@ -183,3 +183,103 @@ test('task next in an uninitialized folder talks like first-minute', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('task next names skipped decision refs, titles, choice, and show command in text and JSON', () => {
+  const dir = makeTempDir();
+  const env = nextEnv(dir, 'alex');
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-1',
+        display_id: 'UNW-1',
+        title: 'Choose Stripe or Paddle for checkout',
+        status: 'open',
+        tag: 'billing',
+        tags: ['needs-human'],
+        metadata: {
+          tags: ['needs-human'],
+          what_changes: 'Pick the billing provider before wiring webhooks.',
+        },
+        updated_at: 20,
+      },
+      {
+        id: 'task-2',
+        display_id: 'UNW-2',
+        title: 'Keep the notification bell or remove it',
+        status: 'open',
+        tag: 'decision',
+        updated_at: 10,
+      },
+    ]);
+
+    const text = runCli(['task', 'next'], { cwd: dir, env });
+    assert.notEqual(text.status, 0);
+    assert.match(text.stdout, /decision row: human judgment required/);
+    assert.match(text.stdout, /UNW-1: Choose Stripe or Paddle for checkout/);
+    assert.match(text.stdout, /UNW-2: Keep the notification bell or remove it/);
+    assert.match(text.stdout, /choice: Pick the billing provider before wiring webhooks\./);
+    assert.equal(nextLine(text.stdout), 'atris task show UNW-1');
+
+    const json = runCli(['task', 'next', '--json'], { cwd: dir, env });
+    assert.notEqual(json.status, 0);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.action, 'refused');
+    assert.equal(payload.command, 'atris task show UNW-1');
+    assert.deepEqual(payload.skipped_decision_refs, ['UNW-1', 'UNW-2']);
+    assert.equal(payload.skipped_decisions.length, 2);
+    assert.equal(payload.skipped_decisions[0].ref, 'UNW-1');
+    assert.equal(payload.skipped_decisions[0].title, 'Choose Stripe or Paddle for checkout');
+    assert.equal(payload.skipped_decisions[0].choice, 'Pick the billing provider before wiring webhooks.');
+    assert.equal(payload.skipped_decisions[0].command, 'atris task show UNW-1');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task next --tag needs-human surfaces decision rows instead of create-task', () => {
+  const dir = makeTempDir();
+  const env = nextEnv(dir, 'alex');
+  try {
+    writeProjection(dir, [
+      {
+        id: 'task-build',
+        display_id: 'UNW-1',
+        title: 'Wire checkout tests',
+        status: 'open',
+        tag: 'billing',
+        updated_at: 30,
+      },
+      {
+        id: 'task-hold',
+        display_id: 'UNW-2',
+        title: 'Approve annual discount tier',
+        status: 'open',
+        tag: 'billing',
+        tags: ['needs-human'],
+        metadata: {
+          tags: ['needs-human'],
+          choice: 'Pick 15% or 20% for annual plans.',
+        },
+        updated_at: 20,
+      },
+    ]);
+
+    const text = runCli(['task', 'next', '--tag', 'needs-human'], { cwd: dir, env });
+    assert.notEqual(text.status, 0);
+    assert.match(text.stdout, /UNW-2: Approve annual discount tier/);
+    assert.match(text.stdout, /choice: Pick 15% or 20% for annual plans\./);
+    assert.equal(nextLine(text.stdout), 'atris task show UNW-2');
+    assert.doesNotMatch(text.stdout, /atris task new/);
+
+    const json = runCli(['task', 'next', '--tag', 'needs-human', '--json'], { cwd: dir, env });
+    assert.notEqual(json.status, 0);
+    const payload = JSON.parse(json.stdout);
+    assert.notEqual(payload.action, 'create');
+    assert.deepEqual(payload.skipped_decision_refs, ['UNW-2']);
+    assert.equal(payload.command, 'atris task show UNW-2');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
