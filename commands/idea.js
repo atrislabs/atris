@@ -89,9 +89,10 @@ function ideaTimerPlan(repo, keepDeps = {}) {
 
 function ideaTimerOn(plan, keepDeps = {}) {
   if (plan.kind === 'launchd') return fs.existsSync(plan.file);
+  const { containsTimerMarker } = require('../lib/campaign-keep');
   const spawn = keepDeps.spawn || spawnSync;
   const listed = spawn('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
-  return listed.status === 0 && String(listed.stdout || '').includes(plan.marker);
+  return listed.status === 0 && containsTimerMarker(listed.stdout, plan.marker);
 }
 
 function switchTimer(turnOn, { repo, dryRun, json, log, keepDeps }) {
