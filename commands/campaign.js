@@ -408,10 +408,19 @@ async function cmdStart(args, ctx) {
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
   const startCommit = headCommit(process.cwd());
-  const reading = await ctx.judge(judge, timeout, id, startCommit);
+  let reading;
+  try {
+    reading = await ctx.judge(judge, timeout, id, startCommit);
+  } catch (error) {
+    if (!held) throw error;
+    const restored = moveHoldoutBack(held);
+    const restoreNote = restored.ok ? ' Holdout restored to its original path.' : ` ${restored.error}`;
+    return ctx.fail(`judge failed: ${error.message}.${restoreNote}`, 1);
+  }
   if (reading.passed && !standing) {
-    moveHoldoutBack(held);
-    return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
+    const restored = moveHoldoutBack(held);
+    const restoreNote = restored.ok ? '' : ` ${restored.error}`;
+    return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.${restoreNote}`, 1);
   }
 
   let kept = null;
@@ -428,7 +437,12 @@ async function cmdStart(args, ctx) {
   if (standing) startData.standing = true;
   if (basis) startData.basis = basis;
   if (startCommit) startData.start_commit = startCommit;
-  ctx.append(id, 'campaign_started', startData);
+  try {
+    ctx.append(id, 'campaign_started', startData);
+  } catch (error) {
+    if (!held) throw error;
+    return ctx.fail(`could not confirm campaign start: ${error.message}. Holdout remains at ${held.path}; check campaign state before moving it.`, 1);
+  }
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
   ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
