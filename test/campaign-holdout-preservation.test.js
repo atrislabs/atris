@@ -100,3 +100,33 @@ test('real CLI refuses existing holdouts before running either judge', async () 
     assert.equal(fs.readFileSync(source, 'utf8'), 'new data'); assert.equal(fs.readFileSync(path.join(dest, 'held'), 'utf8'), 'old data');
   }
 }));
+
+test('a throwing judge restores its holdout before reporting failure', async () => fixture(async (repo, state) => {
+  const source = path.join(repo, 'held'); fs.writeFileSync(source, 'private');
+  const r = await start(state, source, async () => { throw new Error('judge unavailable'); });
+  assert.equal(r.code, 1); assert.match(r.output, /judge unavailable/); assert.match(r.output, /restored/);
+  assert.equal(fs.readFileSync(source, 'utf8'), 'private');
+}));
+test('an ambiguous campaign store failure retains and reports the holdout', async () => fixture(async (repo, state) => {
+  const source = path.join(repo, 'held'); fs.writeFileSync(source, 'private');
+  const store = createMemoryStore(); const realAppend = store.append.bind(store);
+  store.append = (...args) => { realAppend(...args); throw new Error('lost acknowledgement'); };
+  const log = console.log; let output = ''; console.log = (s) => { output += String(s); };
+  try {
+    const code = await campaignCommand(['start', 'Goal', '--id', 'cmp-test', '--judge', 'judge', '--budget', '5', '--holdout', source, '--json'], {
+      store, holdoutRoot: state, actor: 'human:test', runJudge: async () => ({ passed: false, exit: 1 }),
+    });
+    assert.equal(code, 1); assert.match(output, /check campaign state/);
+    assert.equal(store.read('cmp-test').length, 1);
+    assert.equal(fs.readFileSync(path.join(state, 'campaigns/cmp-test/holdout/held'), 'utf8'), 'private');
+    assert.equal(fs.existsSync(source), false);
+  } finally { console.log = log; }
+}));
+
+test('a throwing judge reports the holdout when original path is occupied', async () => fixture(async (repo, state) => {
+  const source = path.join(repo, 'held'); fs.writeFileSync(source, 'private');
+  const r = await start(state, source, async () => { fs.writeFileSync(source, 'replacement'); throw new Error('judge unavailable'); });
+  assert.equal(r.code, 1); assert.match(r.output, /holdout remains at/);
+  assert.equal(fs.readFileSync(source, 'utf8'), 'replacement');
+  assert.equal(fs.readFileSync(path.join(state, 'campaigns/cmp-test/holdout/held'), 'utf8'), 'private');
+}));
