@@ -154,3 +154,22 @@ for (const [name, ticks, expected] of errorStreakCases) {
     assert.deepEqual(consecutiveSameReasonErrors(ticks), expected);
   });
 }
+
+test('review-required mission records an escalation locally without sending', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pause-review-'));
+  try {
+    let sends = 0;
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'builder', 'MEMBER.md'), '# Builder\n');
+    const result = escalateHumanBlockingPause({ id: 'mission-review', owner: 'builder', status: 'paused', stop_reason: 'auth-required', require_independent_review: true }, dir, {
+      policy: { imessage_to: '+15555550123' },
+      sendImessage: () => { sends += 1; return { ok: true }; },
+    });
+    assert.equal(sends, 0);
+    assert.equal(result.channel, 'mission-log');
+    const logs = path.join(dir, 'atris', 'team', 'builder', 'logs');
+    assert.match(fs.readFileSync(path.join(logs, fs.readdirSync(logs)[0]), 'utf8'), /auth-required/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

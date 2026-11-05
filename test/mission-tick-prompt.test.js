@@ -130,3 +130,23 @@ test('buildTickPrompt preloads member identity, soul, standing mission, and boun
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('supervised runs requiring review do not instruct the worker to self-land', () => {
+  const old = process.env.ATRIS_MEMBER_REQUIRE_REVIEW;
+  process.env.ATRIS_MEMBER_REQUIRE_REVIEW = '1';
+  try {
+    const prompt = buildTickPrompt({ id: 'job', objective: 'Fix a bug', owner: 'builder', status: 'running' }, 1, 1, { lane: 'workspace', verifier: '' });
+    assert.match(prompt, /hand it to an independent reviewer/);
+    assert.match(prompt, /Do not merge or deploy/);
+    assert.doesNotMatch(prompt, /must be committed and pushed or landed WITHOUT/);
+  } finally {
+    if (old === undefined) delete process.env.ATRIS_MEMBER_REQUIRE_REVIEW;
+    else process.env.ATRIS_MEMBER_REQUIRE_REVIEW = old;
+  }
+});
+
+test('a resumed mission retains its independent review instructions', () => {
+  const prompt = buildTickPrompt({ id: 'job', objective: 'Fix a bug', owner: 'builder', status: 'running', require_independent_review: true }, 1, 1, { lane: 'workspace', verifier: '' });
+  assert.match(prompt, /hand it to an independent reviewer/);
+  assert.doesNotMatch(prompt, /must be committed and pushed or landed WITHOUT/);
+});

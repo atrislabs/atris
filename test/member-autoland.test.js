@@ -765,3 +765,30 @@ test('a git replacement ref cannot make the code check read different code', () 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a supervised run requiring review cannot autoland even when the workspace policy allows it', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  const old = process.env.ATRIS_MEMBER_REQUIRE_REVIEW;
+  process.env.ATRIS_MEMBER_REQUIRE_REVIEW = '1';
+  try {
+    withFakeGh(fx, () => {
+      const out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+      assert.equal(out.auto_merge, false);
+      assert.equal(out.gate, 'policy');
+      assert.deepEqual(ghCalls(fx), []);
+    });
+  } finally {
+    if (old === undefined) delete process.env.ATRIS_MEMBER_REQUIRE_REVIEW;
+    else process.env.ATRIS_MEMBER_REQUIRE_REVIEW = old;
+  }
+});
+
+test('a resumed mission keeps its independent review requirement', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const out = autolandMemberRun({ mission: mission({ require_independent_review: true }), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.auto_merge, false);
+    assert.equal(out.gate, 'policy');
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
