@@ -313,6 +313,14 @@ const isBusinessSyncSafetyCommand = command === 'sync'
     || firstCommandArg === 'resolve'
   );
 
+// Proposals have single-workspace update semantics only. Refuse unsupported
+// routes before startup synchronization or any command can write anything.
+if (!helpRequested && updateArgs.includes('--propose-skills') &&
+    (command !== 'update' || updateArgs.includes('--all') || updateArgs.includes('--self'))) {
+  console.error('--propose-skills is supported only with single-workspace atris update.');
+  process.exit(2);
+}
+
 // Auto-sync skills only for commands that modify workspace state. Help must
 // stay read-only, including global ~/.claude and ~/.codex skill directories.
 // update/sync stay plan-only until --yes, so do not write skills on a bare update.
@@ -324,7 +332,7 @@ if (!helpRequested && !dryRunRequested && (
 )) {
   try {
     const { syncSkills } = require('../commands/sync');
-    const skillsUpdated = syncSkills({ silent: true, propose: ['update', 'sync'].includes(command) && updateArgs.includes('--propose-skills') && !updateArgs.includes('--all') });
+    const skillsUpdated = syncSkills({ silent: true, propose: command === 'update' && updateArgs.includes('--propose-skills') });
     if (skillsUpdated > 0) {
       console.log(`${skillsUpdated} skill file${skillsUpdated > 1 ? 's' : ''} added`);
     }
@@ -994,7 +1002,7 @@ function showUpdateHelp(commandName = 'update') {
   console.log('  --dry-run    Preview update work without writing files.');
   console.log('  --yes, -y    Apply the planned writes.');
   console.log('  --force      Overwrite existing template files where supported (with --yes).');
-  console.log('  --propose-skills  Propose differing project skill files for manual review (single workspace).');
+  if (commandName === 'update') console.log('  --propose-skills  Propose differing project skill files for manual review (single workspace).');
   if (commandName === 'update') {
     console.log('  --self       Update the installed atris cli from npm (packaged installs only).');
   }

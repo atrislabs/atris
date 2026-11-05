@@ -24,6 +24,11 @@ test('real CLI proposes package transitions without replacing originals or exist
   const packaged = path.join(pkg, 'atris/skills/atris/SKILL.md');
   const original = fs.readFileSync(skill, 'utf8'), proposal = skill + '.atris-proposal', pending = proposal + '.pending';
   const v2 = original + '\n# Version 2\n'; fs.writeFileSync(packaged, v2);
+  for (const args of [['sync', '--yes', '--propose-skills'], ['update', '--all', '--yes', '--propose-skills'], ['update', '--self', '--yes', '--propose-skills']]) {
+    const rejected = run(...args); assert.equal(rejected.status, 2, rejected.stderr);
+    assert.match(rejected.stderr, /supported only with single-workspace atris update/);
+    assert.equal(fs.existsSync(proposal), false); assert.equal(fs.existsSync(pending), false);
+  }
   for (const args of [['init', '--minimal', '--yes', '--no-commit'], ['update', '--yes'], ['sync', '--yes']]) {
     const normal = run(...args); assert.equal(normal.status, 0, normal.stderr);
     assert.equal(fs.existsSync(proposal), false); assert.equal(fs.existsSync(pending), false);
@@ -35,7 +40,7 @@ test('real CLI proposes package transitions without replacing originals or exist
   assert.equal(fs.existsSync(globalSkill + '.atris-proposal'), false);
   assert.equal(fs.readFileSync(skill, 'utf8'), original); assert.equal(fs.readFileSync(proposal, 'utf8'), v2); assert.equal(fs.readFileSync(pending, 'utf8'), v2);
   const v3 = original + '\n# Version 3\n'; fs.writeFileSync(packaged, v3);
-  const repeat = run('sync', '--yes', '--propose-skills'); assert.equal(repeat.status, 0, repeat.stderr); assert.match(repeat.stderr, /Kept existing proposal/);
+  const repeat = run('update', '--yes', '--propose-skills'); assert.equal(repeat.status, 0, repeat.stderr); assert.match(repeat.stderr, /Kept existing proposal/);
   assert.equal(fs.readFileSync(skill, 'utf8'), original); assert.equal(fs.readFileSync(proposal, 'utf8'), v2); assert.equal(fs.readFileSync(pending, 'utf8'), v2);
   assert.deepEqual(fs.readdirSync(path.dirname(skill)).filter(x => x.includes('atris-proposal')).sort(), ['SKILL.md.atris-proposal', 'SKILL.md.atris-proposal.pending']);
   assert.equal(fs.statSync(proposal).ino, fs.statSync(pending).ino);
