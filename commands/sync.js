@@ -878,7 +878,7 @@ function syncSkills({ silent = false, propose = false } = {}) {
       const destSkillDir = path.join(globalDir, skill);
 
       if (fs.existsSync(destSkillDir) || fs.existsSync(globalDir)) {
-        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent, homeDir, propose);
+        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent, homeDir, false);
       }
     }
   }

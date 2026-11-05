@@ -12,6 +12,8 @@ test('real CLI proposes package transitions without replacing originals or exist
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const pkg = path.join(root, 'package'), cwd = path.join(root, 'project'), home = path.join(root, 'home');
   fs.mkdirSync(pkg); fs.mkdirSync(cwd); fs.mkdirSync(home);
+  const globalSkill = path.join(home, '.codex/skills/atris/SKILL.md');
+  fs.mkdirSync(path.dirname(globalSkill), { recursive: true }); fs.writeFileSync(globalSkill, 'global custom content\n');
   for (const name of ['bin', 'commands', 'lib', 'utils', 'atris', 'templates', 'package.json', 'atris.md']) fs.cpSync(path.join(repo, name), path.join(pkg, name), { recursive: true });
   const env = { ...process.env, HOME: home, USERPROFILE: home, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(root, 'tasks.db'), ATRIS_CAMPAIGN_DB: path.join(root, 'campaign.db') };
   delete env.NODE_TEST_CONTEXT; delete env.ATRIS_TEST_STATE_DIR; delete env.ATRIS_TEST_PROTECTED_HOME;
@@ -29,6 +31,8 @@ test('real CLI proposes package transitions without replacing originals or exist
   const preview = run('update', '--dry-run', '--propose-skills'); assert.equal(preview.status, 0, preview.stderr);
   assert.match(preview.stderr, /Would propose/); assert.equal(fs.existsSync(proposal), false); assert.equal(fs.existsSync(pending), false);
   const update = run('update', '--yes', '--propose-skills'); assert.equal(update.status, 0, update.stderr); assert.match(update.stderr, /Proposed.*sha256/);
+  assert.equal(fs.readFileSync(globalSkill, 'utf8'), 'global custom content\n');
+  assert.equal(fs.existsSync(globalSkill + '.atris-proposal'), false);
   assert.equal(fs.readFileSync(skill, 'utf8'), original); assert.equal(fs.readFileSync(proposal, 'utf8'), v2); assert.equal(fs.readFileSync(pending, 'utf8'), v2);
   const v3 = original + '\n# Version 3\n'; fs.writeFileSync(packaged, v3);
   const repeat = run('sync', '--yes', '--propose-skills'); assert.equal(repeat.status, 0, repeat.stderr); assert.match(repeat.stderr, /Kept existing proposal/);

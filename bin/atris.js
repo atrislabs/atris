@@ -994,7 +994,7 @@ function showUpdateHelp(commandName = 'update') {
   console.log('  --dry-run    Preview update work without writing files.');
   console.log('  --yes, -y    Apply the planned writes.');
   console.log('  --force      Overwrite existing template files where supported (with --yes).');
-  console.log('  --propose-skills  Propose differing skill files for manual review (single workspace).');
+  console.log('  --propose-skills  Propose differing project skill files for manual review (single workspace).');
   if (commandName === 'update') {
     console.log('  --self       Update the installed atris cli from npm (packaged installs only).');
   }
