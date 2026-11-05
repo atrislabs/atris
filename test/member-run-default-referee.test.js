@@ -145,10 +145,40 @@ test('work the reviewer turns down says so with its reason, not that the check f
 });
 
 test('the reviewer checks every part of done-looks-like and turns down work that does only some', (t) => {
-  const { run, root, env, reviewPrompt } = workspace(t, 'VERDICT: FAIL; missing: notes.txt lists what changed');
+  const { engineVerifierResultFromRun, splitDoneLooksLikeClaims } = require('../commands/mission');
+  const doneLooksLike = 'work.txt says done, and notes.txt lists what changed';
+  assert.deepEqual(splitDoneLooksLikeClaims(doneLooksLike), [
+    'work.txt says done',
+    'notes.txt lists what changed',
+  ]);
+
+  // Direct approval check: a diff covering one of two claims fails naming the missing claim, and a diff covering both passes.
+  const partialVerdict = engineVerifierResultFromRun(
+    { ok: true, result: 'checked diff\nVERDICT: PASS' },
+    'codex',
+    { doneLooksLike, diff: 'diff --git a/work.txt b/work.txt\n+++ b/work.txt\n@@ -0,0 +1 @@\n+done\n' },
+  );
+  assert.equal(partialVerdict.passed, false);
+  assert.equal(partialVerdict.reason, 'missing: notes.txt lists what changed');
+
+  const fullVerdict = engineVerifierResultFromRun(
+    { ok: true, result: 'checked diff\nVERDICT: PASS' },
+    'codex',
+    {
+      doneLooksLike,
+      diff: [
+        'diff --git a/work.txt b/work.txt\n+++ b/work.txt\n@@ -0,0 +1 @@\n+done',
+        'diff --git a/notes.txt b/notes.txt\n+++ b/notes.txt\n@@ -0,0 +1 @@\n+wrote work.txt',
+      ].join('\n'),
+    },
+  );
+  assert.equal(fullVerdict.passed, true);
+
+  // End-to-end member run: partial work (only work.txt) fails naming the missing claim, then covering both passes.
+  const { run, root, env, reviewPrompt } = workspace(t);
   const made = spawnSync(process.execPath, [
     cliPath, 'task', 'new', 'Write work.txt',
-    '--done-looks-like', 'work.txt says done, and notes.txt lists what changed', '--json',
+    '--done-looks-like', doneLooksLike, '--json',
   ], { cwd: root, encoding: 'utf8', env });
   assert.equal(made.status, 0, made.stderr || made.stdout);
   const res = run([]);
@@ -156,7 +186,17 @@ test('the reviewer checks every part of done-looks-like and turns down work that
   const prompt = fs.readFileSync(reviewPrompt, 'utf8');
   assert.match(prompt, /The job says done looks like: work\.txt says done, and notes\.txt lists what changed/);
   assert.match(prompt, /Split that line into each separate thing it promises and check every one/);
+  assert.match(prompt, /Claim 1: work\.txt says done/);
+  assert.match(prompt, /Claim 2: notes\.txt lists what changed/);
   assert.match(prompt, /Work that does only some of the parts is not done/);
+  assert.doesNotMatch(prompt, /End your reply with a final line exactly 'VERDICT: PASS' or 'VERDICT: FAIL'/);
   const payload = JSON.parse(res.stdout);
   assert.equal(payload.error, 'turned down in review: missing: notes.txt lists what changed');
+
+  // Now cover both claims in the diff and run again; approval passes.
+  fs.writeFileSync(path.join(root, 'notes.txt'), 'wrote work.txt\n', 'utf8');
+  const bothRes = run([]);
+  assert.equal(bothRes.status, 0, bothRes.stderr || bothRes.stdout);
+  const bothPayload = JSON.parse(bothRes.stdout);
+  assert.equal(bothPayload.ticks[0].referee_result.passed, true);
 });

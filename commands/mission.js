@@ -10003,8 +10003,91 @@ function missionDoneLooksLike(mission, root = process.cwd()) {
   }
 }
 
+function splitDoneLooksLikeClaims(doneLooksLike) {
+  const line = String(doneLooksLike || '').replace(/\s+/g, ' ').trim().replace(/\.+$/, '').trim();
+  if (!line) return [];
+  const hasSerialJoin = /,\s+(?:and|then)\s+/i.test(line);
+  const rawParts = line.split(/;\s*|\.\s+(?=[A-Za-z])|,\s+(?:and|then)\s+/i);
+  const claims = [];
+  for (const part of rawParts) {
+    const trimmed = String(part || '').trim();
+    if (!trimmed) continue;
+    if (hasSerialJoin && trimmed.includes(', ')) {
+      const sub = trimmed.split(/,\s+/).map((item) => item.trim()).filter(Boolean);
+      if (sub.length > 1 && sub.every((item) => item.split(/\s+/).length >= 2)) {
+        claims.push(...sub);
+        continue;
+      }
+    }
+    claims.push(trimmed);
+  }
+  return claims
+    .map((claim) => claim.replace(/^(?:and|then)\s+/i, '').replace(/\.+$/, '').trim())
+    .filter(Boolean);
+}
+
+function collectVerifyEvidence(cwd, { diff = '', changedFiles = [], testOutput = '' } = {}) {
+  let diffText = String(diff || '');
+  const testText = String(testOutput || '');
+  const files = new Set(
+    (Array.isArray(changedFiles) ? changedFiles : [])
+      .map((file) => String(file || '').trim())
+      .filter(Boolean),
+  );
+  if (cwd && !diffText && !files.size) {
+    try {
+      const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd, encoding: 'utf8' });
+      const statusLines = status.status === 0 ? String(status.stdout || '').split(/\r?\n/).filter(Boolean) : [];
+      for (const line of statusLines) {
+        const rel = line.slice(3).trim().replace(/^"(.*)"$/, '$1');
+        if (!rel || /^(\.atris\/|atris\/(?:runs|status|logs)\/|atris\/team\/[^/]+\/logs\/)/.test(rel)) continue;
+        files.add(rel);
+        try {
+          const full = path.join(cwd, rel);
+          if (fs.statSync(full).isFile()) {
+            diffText += `\n--- ${rel}\n${fs.readFileSync(full, 'utf8').slice(0, 8192)}`;
+          }
+        } catch {}
+      }
+      const patch = spawnSync('git', ['diff', 'HEAD'], { cwd, encoding: 'utf8' });
+      if (patch.status === 0 && patch.stdout) diffText += `\n${patch.stdout}`;
+      if (!files.size && !diffText.trim()) {
+        const headShow = spawnSync('git', ['show', '--stat', '--patch', '--pretty=format:', 'HEAD'], { cwd, encoding: 'utf8' });
+        if (headShow.status === 0 && headShow.stdout) diffText += `\n${headShow.stdout}`;
+      }
+    } catch {}
+  }
+  return { diffText, testText, files: [...files] };
+}
+
+function missingDoneLooksLikeClaim(doneLooksLike, options = {}) {
+  const reviewOutput = String(options.reviewOutput || '');
+  const explicitMissing = reviewOutput.match(/VERDICT:\s*FAIL\s*[;:]\s*missing:\s*(.+)/i);
+  if (explicitMissing) return explicitMissing[1].trim();
+  const claims = splitDoneLooksLikeClaims(doneLooksLike);
+  if (claims.length < 2) return '';
+  const { diffText, testText, files } = collectVerifyEvidence(options.cwd, options);
+  const haystack = [diffText, testText, ...files].filter(Boolean).join('\n');
+  if (!haystack.trim()) return '';
+  for (const claim of claims) {
+    if (/\b(?:no|not|never|without|unchanged|untouched)\b/i.test(claim)) continue;
+    const namedFiles = claim.match(/\b(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8}\b|\b[A-Za-z0-9_-]+\.(?:txt|md|js|ts|tsx|jsx|json|py|sh|yml|yaml|sql|css|html|go|rs|csv)\b/g) || [];
+    for (const file of namedFiles) {
+      const base = path.basename(file);
+      const touched = files.some((entry) => entry === file || path.basename(entry) === base)
+        || diffText.includes(file)
+        || diffText.includes(base)
+        || testText.includes(file)
+        || testText.includes(base);
+      if (!touched) return claim;
+    }
+  }
+  return '';
+}
+
 function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeoutMs = ENGINE_VERIFY_TIMEOUT_MS, checkPassed = '' } = {}) {
   const doneLine = String(doneLooksLike || '').replace(/\s+/g, ' ').trim();
+  const claims = splitDoneLooksLikeClaims(doneLine);
   const minutes = Math.max(1, Math.round(timeoutMs / 60000));
   return [
     `# Verify Mission Tick ${tickIndex}`,
@@ -10013,8 +10096,9 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeo
     ...(doneLine ? [
       `The job says done looks like: ${doneLine}`,
       `Compare the work against that line. If the work does not show it, the verdict is FAIL even when the checks pass.`,
-      `Split that line into each separate thing it promises and check every one. List each part as met or missing.`,
-      `Work that does only some of the parts is not done. If any part is missing, end with 'VERDICT: FAIL; missing: <that part>'.`,
+      `Split that line into each separate thing it promises and check every one. List each part as met or missing:`,
+      ...claims.map((claim, index) => `Claim ${index + 1}: ${claim}`),
+      `Require evidence for each claim from the diff or test output. Work that does only some of the parts is not done. If any part is missing, end with 'VERDICT: FAIL; missing: <that part>'.`,
     ] : []),
     // Member lab: reviewers spent about half their time on the workspace boot
     // (atris atris.md, MAP, PERSONA, skills) before reading the change.
@@ -10027,11 +10111,11 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeo
     ...(checkPassed ? [`The mission check \`${checkPassed}\` already passed on this exact code. Do not run it again.`] : []),
     `Prove the change with the narrowest real run: the changed command, or one test file or one named test.`,
     `Do not run whole test suites or large test files; on a busy machine they outlast your time.`,
-    `End your reply with a final line exactly 'VERDICT: PASS' or 'VERDICT: FAIL'.`,
+    `End your reply with a final line 'VERDICT: PASS' or 'VERDICT: FAIL' (or 'VERDICT: FAIL; missing: <that part>' when a part of done-looks-like is unproven).`,
   ].join('\n');
 }
 
-function engineVerifierResultFromRun(engineResult, engine = 'codex') {
+function engineVerifierResultFromRun(engineResult, engine = 'codex', options = {}) {
   const output = String(
     engineResult?.result
     || engineResult?.receipt_text
@@ -10049,6 +10133,21 @@ function engineVerifierResultFromRun(engineResult, engine = 'codex') {
     };
   }
   const finalLine = output.trim().split(/\r?\n/).pop() || '';
+  const missing = missingDoneLooksLikeClaim(options.doneLooksLike, {
+    ...options,
+    reviewOutput: output,
+  });
+  if (missing) {
+    const failLine = `VERDICT: FAIL; missing: ${missing}`;
+    return {
+      passed: false,
+      mode: 'engine',
+      engine,
+      missing_claim: missing,
+      reason: `missing: ${missing}`,
+      output: /VERDICT:\s*FAIL/i.test(finalLine) ? output : `${output.trim()}\n${failLine}`.trim(),
+    };
+  }
   return {
     passed: finalLine === 'VERDICT: PASS',
     mode: 'engine',
@@ -10133,6 +10232,7 @@ function engineVerifierLineup(mission, cwd, preferredEngine = '', options = {}) 
 async function runEngineVerifier(mission, options = {}) {
   const cwd = options.cwd || process.cwd();
   const healthRoot = engineHealthRoot(cwd);
+  const doneLooksLike = options.doneLooksLike !== undefined ? options.doneLooksLike : missionDoneLooksLike(mission, cwd);
   const lineup = engineVerifierLineup(mission, cwd, options.refereeEngine, { healthRoot });
   let verdict = null;
   for (const { engine, model } of lineup) {
@@ -10146,7 +10246,7 @@ async function runEngineVerifier(mission, options = {}) {
         cwd,
         signal: options.signal,
         timeoutMs: options.timeoutMs || ENGINE_VERIFY_TIMEOUT_MS,
-        prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+        prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, doneLooksLike, {
           timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
           checkPassed: options.checkPassed || '',
         }),
@@ -10157,7 +10257,13 @@ async function runEngineVerifier(mission, options = {}) {
     } finally {
       restoreRunnerProfile();
     }
-    verdict = engineVerifierResultFromRun(engineResult, engine);
+    verdict = engineVerifierResultFromRun(engineResult, engine, {
+      doneLooksLike,
+      cwd,
+      diff: options.diff,
+      changedFiles: options.changedFiles,
+      testOutput: options.testOutput,
+    });
     if (engineResult?.ok && !engineResult?.timedOut && !engineResult?.aborted) {
       try { setEngineHealth(engine, 'ready', healthRoot); } catch {}
       try { setEngineHealth(engine, 'ready', reviewerHealthRoot(engine)); } catch {}
@@ -11385,6 +11491,7 @@ async function verifyMissionRunTickPhase(context) {
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
         checkPassed: verifierResult?.passed ? currentTick.frozen.verifier : '',
+        testOutput: [verifierResult?.stdout, verifierResult?.stderr].filter(Boolean).join('\n'),
       });
       const afterReview = gitCodeState(cwd);
       const codeMoved = beforeReview.tree !== afterReview.tree
@@ -13103,6 +13210,8 @@ module.exports = {
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,
   missionDoneLooksLike,
+  splitDoneLooksLikeClaims,
+  missingDoneLooksLikeClaim,
   engineVerifierResultFromRun,
   pickCrossEngineVerifier,
   runVerifier,
