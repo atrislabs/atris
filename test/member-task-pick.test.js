@@ -97,7 +97,7 @@ test('skips tasks protected by a declared phrase in the body or a denied tag in 
   });
 });
 
-test('a claim that throws is released, not stranded', () => {
+test('an ambiguous claim error does not release a claim owned by another run', () => {
   withProject(({ db, ws, add }) => {
     const id = add('Add a retry to the uploader');
     const failing = {
@@ -106,8 +106,8 @@ test('a claim that throws is released, not stranded', () => {
     };
     assert.throws(() => claimTaskForMember(failing, db, { workspaceRoot: ws, member: 'executor', job: 'build' }), /event write failed/);
     const row = taskDb.getTask(db, id);
-    assert.equal(row.claimed_by, null);
-    assert.equal(row.status, 'open');
+    assert.equal(row.claimed_by, 'executor');
+    assert.equal(row.status, 'claimed');
   });
 });
 
