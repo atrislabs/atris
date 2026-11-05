@@ -426,6 +426,7 @@ async function pushAtris() {
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Cloud deletion is temporarily unavailable');
     console.log('  atris push --delete-all      Cloud deletion is temporarily unavailable');
+    console.log('  --auto-wake                  May wake the computer before a push is refused; not available with --dry-run');
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
@@ -459,6 +460,7 @@ async function pushAtris() {
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Cloud deletion is temporarily unavailable');
     console.log('  atris push --delete-all      Cloud deletion is temporarily unavailable');
+    console.log('  --auto-wake                  May wake the computer before a push is refused; not available with --dry-run');
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
@@ -468,6 +470,10 @@ async function pushAtris() {
 
   const force = process.argv.includes('--force');
   const dryRun = process.argv.includes('--dry-run');
+  const autoWake = process.argv.includes('--auto-wake');
+  if (dryRun && autoWake) {
+    throw new Error('--auto-wake cannot be used with --dry-run; a preview must not wake the computer');
+  }
   const yes = process.argv.includes('--yes');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
@@ -544,7 +550,6 @@ async function pushAtris() {
   // Auto-wake the EC2 computer if --auto-wake is set, otherwise check status and warn.
   // Without this, push silently routes to agent_files cache when computer is asleep
   // (the silent fallback footgun from tonight's debugging).
-  const autoWake = process.argv.includes('--auto-wake');
   if (autoWake) {
     const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
     abortOnAuthFailure(statusResult);
