@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, createLogFile } = require('../lib/file-ops');
 const { DuplicateJournalSectionError, parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
-const { computeContentHash, isSameTimestamp } = require('../lib/journal');
+const { computeContentHash } = require('../lib/journal');
 const { loadConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
 const { ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -90,7 +90,6 @@ async function logSyncAtris() {
   console.log(`🔄 Syncing log for ${dateFormatted} with agent "${agentLabel}"`);
 
   const syncState = loadLogSyncState();
-  const knownRemoteUpdate = syncState[dateFormatted]?.updated_at || null;
   const knownRemoteHash = syncState[dateFormatted]?.hash || null;
 
   let remoteExists = false;
@@ -109,7 +108,14 @@ async function logSyncAtris() {
     remoteExists = true;
     remoteUpdatedAt = existing.data?.updated_at || existing.data?.created_at || null;
     remoteContent = typeof existing.data?.content === 'string' ? existing.data.content : null;
-    remoteHash = remoteContent ? computeContentHash(remoteContent) : null;
+    remoteHash = remoteContent !== null ? computeContentHash(remoteContent) : null;
+
+    // A timestamp is not proof that the server content is unchanged.  Without
+    // readable content and a usable timestamp the old path falls through to a
+    // PUT, which could overwrite a journal we never inspected.
+    if (remoteContent === null || !remoteUpdatedAt || Number.isNaN(new Date(remoteUpdatedAt).getTime())) {
+      throw new Error('Cannot safely sync journal: remote content or timestamp is unavailable');
+    }
 
     if (remoteUpdatedAt) {
       const localStats = fs.statSync(logFile);
@@ -117,11 +123,17 @@ async function logSyncAtris() {
       const remoteTime = new Date(remoteUpdatedAt).getTime();
       const localTime = new Date(localModified).getTime();
 
-      const remoteMatchesKnown = (knownRemoteUpdate && isSameTimestamp(remoteUpdatedAt, knownRemoteUpdate))
-        || (remoteHash && knownRemoteHash && remoteHash === knownRemoteHash);
+      const remoteMatchesKnown = Boolean(remoteHash && knownRemoteHash && remoteHash === knownRemoteHash);
 
       // Check if local has changes since last sync
       const localMatchesKnown = (knownRemoteHash && localHash === knownRemoteHash);
+
+      if (remoteTime === localTime && remoteHash !== localHash) {
+        throw new Error('Cannot safely sync journal: equal timestamps have different contents; review both versions');
+      }
+      if (localTime > remoteTime && !localMatchesKnown && !remoteMatchesKnown && remoteHash !== localHash) {
+        throw new Error('Cannot safely sync journal: the remote may have changed; review both versions');
+      }
 
       if (remoteTime > localTime && !remoteMatchesKnown) {
         // Web is newer - need to pull/merge
