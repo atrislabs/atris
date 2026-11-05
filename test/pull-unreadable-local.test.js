@@ -20,8 +20,8 @@ for (const scenario of ['read error', 'directory error', 'binary file', 'symboli
   let api;
   let savedRequest;
   try {
-    for (const key of Object.keys(process.env)) delete process.env[key];
-    process.env.HOME = root;
+    process.env.ATRIS_TEST_STATE_DIR = path.join(root, 'test-state');
+    process.env.ATRIS_TOKEN = 'test-token';
     process.chdir(root);
     const output = path.join(root, 'workspace');
     const local = path.join(output, 'notes.md');
@@ -39,8 +39,6 @@ for (const scenario of ['read error', 'directory error', 'binary file', 'symboli
     console.log = () => {};
     console.error = () => {};
     process.stdout.write = () => true;
-    fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
-    fs.writeFileSync(path.join(root, '.atris', 'credentials.json'), JSON.stringify({ token: 'test-token' }));
     api = require('../utils/api');
     savedRequest = api.apiRequestJson;
     api.apiRequestJson = async (url) => {
@@ -73,8 +71,10 @@ for (const scenario of ['read error', 'directory error', 'binary file', 'symboli
     console.log = savedLog;
     console.error = savedError;
     process.stdout.write = savedWrite;
-    for (const key of Object.keys(process.env)) delete process.env[key];
-    Object.assign(process.env, savedEnv);
+    for (const key of ['ATRIS_TEST_STATE_DIR', 'ATRIS_TOKEN']) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
