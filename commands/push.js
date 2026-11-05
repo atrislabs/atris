@@ -424,8 +424,9 @@ async function pushAtris() {
     console.log('  atris push --changed         Push only files that differ from the last-synced manifest');
     console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
-    console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
-    console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
+    console.log('  atris push --delete          Cloud deletion is temporarily unavailable');
+    console.log('  atris push --delete-all      Cloud deletion is temporarily unavailable');
+    console.log('  --auto-wake                  May wake the computer before a push is refused; not available with --dry-run');
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
@@ -457,8 +458,9 @@ async function pushAtris() {
     console.log('  atris push --changed         Push only files that differ from the last-synced manifest');
     console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
-    console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
-    console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
+    console.log('  atris push --delete          Cloud deletion is temporarily unavailable');
+    console.log('  atris push --delete-all      Cloud deletion is temporarily unavailable');
+    console.log('  --auto-wake                  May wake the computer before a push is refused; not available with --dry-run');
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
     console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
     console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
@@ -468,6 +470,10 @@ async function pushAtris() {
 
   const force = process.argv.includes('--force');
   const dryRun = process.argv.includes('--dry-run');
+  const autoWake = process.argv.includes('--auto-wake');
+  if (dryRun && autoWake) {
+    throw new Error('--auto-wake cannot be used with --dry-run; a preview must not wake the computer');
+  }
   const yes = process.argv.includes('--yes');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
@@ -544,7 +550,6 @@ async function pushAtris() {
   // Auto-wake the EC2 computer if --auto-wake is set, otherwise check status and warn.
   // Without this, push silently routes to agent_files cache when computer is asleep
   // (the silent fallback footgun from tonight's debugging).
-  const autoWake = process.argv.includes('--auto-wake');
   if (autoWake) {
     const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
     abortOnAuthFailure(statusResult);
@@ -727,22 +732,29 @@ async function pushAtris() {
       console.log(`  ${isNew ? '+' : '\u2191'} ${f.path.replace(/^\//, '')}  ${isNew ? 'new file' : 'updated'}  (dry run)`);
     }
     for (const filePath of deletedPaths) {
-      console.log(`  x ${filePath.replace(/^\//, '')}  deleted  (dry run)`);
+      console.log(`  ? ${filePath.replace(/^\//, '')}  possible cloud deletion  (not verified)`);
     }
     const parts = [];
     if (filesToPush.length > 0) parts.push(`${filesToPush.length} would be pushed`);
-    if (deletedPaths.length > 0) parts.push(`${deletedPaths.length} would be deleted`);
+    if (deletedPaths.length > 0) parts.push(`${deletedPaths.length} possible cloud deletion${deletedPaths.length === 1 ? '' : 's'}`);
     if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
     console.log(`\n  ${parts.join(', ')}. (--dry-run, nothing sent)\n`);
     if (deletedPaths.length > 0) {
-      console.log('  Deletes require an explicit real push with --delete.');
-      console.log('  If these deletes are unexpected, run `atris pull --keep-local` first.\n');
+      console.log('  Cloud deletion is unavailable until local writers can be coordinated.');
+      console.log('  A local path can appear after this preview; this is not a safe deletion list.\n');
     }
     if (!safetyReport.ok) {
       process.stdout.write(renderPushSafetyBlock(safetyReport, resolvedSlug || slug));
       console.log('  Dry run only: nothing was sent.\n');
     }
     return;
+  }
+
+  // A local writer can recreate a missing path after the plan is made, even
+  // after a final existence check. Refuse the whole push before uploads as
+  // well as deletes until all local writers can coordinate with deletion.
+  if (deletedPaths.length > 0) {
+    throw new Error('cloud deletion is unavailable while local writers are not coordinated; dry-run remains available');
   }
 
   if (deletedPaths.length > 0 && !allowDelete) {
