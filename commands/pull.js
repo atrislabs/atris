@@ -382,7 +382,7 @@ async function pullBusiness(slug) {
   // Load manifest (last sync state)
   const manifest = loadManifest(resolvedSlug || slug);
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
-  const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
+  const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir, { strict: true }) : {};
   const manifestRootMatchesOutput = !manifest || !manifest.workspace_root || (() => {
     try {
       return fs.realpathSync(manifest.workspace_root) === fs.realpathSync(outputDir);
@@ -645,6 +645,39 @@ async function pullBusiness(slug) {
   // Three-way compare
   const diff = threeWayCompare(scopedLocalFiles, scopedRemoteFiles, effectiveManifest);
 
+  // Files omitted from the text hash scan (such as binary files or symlinks)
+  // still occupy their names.  Never mistake one for a new remote file and
+  // silently overwrite it during an ordinary pull.
+  if (!force) {
+    for (const p of [...diff.newRemote, ...diff.deletedLocal]) {
+      const localPath = path.join(outputDir, p.replace(/^\//, ''));
+      try {
+        fs.lstatSync(localPath);
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw new Error(`cannot safely inspect local workspace: ${error.message}`, { cause: error });
+      }
+      throw new Error(`cannot safely pull ${p}: a local path already exists`);
+    }
+    // Conflict sidecars are local files too. Check the entire plan before any
+    // write, so a later collision cannot overwrite a user's existing sidecar
+    // or leave earlier planned changes partially applied.
+    const pullPaths = new Set([...diff.toPull, ...diff.newRemote, ...diff.deletedLocal]);
+    for (const p of diff.conflicts) {
+      if (remoteContent[p] === undefined || remoteContent[p] === null) continue;
+      const sidecar = `${p}.remote`;
+      if (pullPaths.has(sidecar)) throw new Error(`cannot safely pull ${p}: conflict sidecar is also a remote file`);
+      const localPath = path.join(outputDir, sidecar.replace(/^\//, ''));
+      try {
+        fs.lstatSync(localPath);
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw new Error(`cannot safely inspect local workspace: ${error.message}`, { cause: error });
+      }
+      throw new Error(`cannot safely pull ${p}: conflict sidecar already exists`);
+    }
+  }
+
   if (dryRun) {
     console.log('');
     for (const p of [...diff.toPull, ...diff.newRemote, ...diff.deletedLocal]) {
@@ -690,7 +723,17 @@ async function pullBusiness(slug) {
     if (!content && content !== '') continue;
     const localPath = path.join(outputDir, p.replace(/^\//, ''));
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, content);
+    // A missing path can appear after the preflight. Create it exclusively so
+    // --keep-local never replaces a file another process just created.
+    const createOnly = !force && (diff.newRemote.includes(p) || diff.deletedLocal.includes(p));
+    try {
+      fs.writeFileSync(localPath, content, createOnly ? { flag: 'wx' } : undefined);
+    } catch (error) {
+      if (createOnly && error.code === 'EEXIST') {
+        throw new Error(`cannot safely pull ${p}: a local path appeared during pull`, { cause: error });
+      }
+      throw error;
+    }
     const label = diff.newRemote.includes(p)
       ? 'new on computer'
       : diff.deletedLocal.includes(p)
@@ -720,7 +763,9 @@ async function pullBusiness(slug) {
       if (content || content === '') {
         const localPath = path.join(outputDir, p.replace(/^\//, '') + '.remote');
         fs.mkdirSync(path.dirname(localPath), { recursive: true });
-        fs.writeFileSync(localPath, content);
+        // Exclusive creation also avoids overwriting a sidecar created after
+        // the preflight. Other concurrent filesystem changes remain unfenced.
+        fs.writeFileSync(localPath, content, { flag: 'wx' });
       }
       console.log(`  \u26A0 ${p.replace(/^\//, '')}: conflict, both you and the computer changed this`);
       console.log(`    \u2192 Remote version saved as ${p.replace(/^\//, '')}.remote`);
