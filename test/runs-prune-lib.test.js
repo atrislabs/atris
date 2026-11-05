@@ -56,45 +56,14 @@ test('preview preserves referenced siblings, recent files, newest files, and arc
   assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive/prune.json')), false);
 });
 
-test('apply deletes old files, removes empty directories, and saves compact receipts', (t) => {
+test('apply refuses to delete candidates and preserves the original receipt', (t) => {
   const { root, write } = fixture(t);
-  const receipt = {
-    schema: 'receipt.v1',
-    mission: { id: 'example', objective: 'prove cleanup', owner: 'tester' },
-    created_at: '2026-09-23T00:00:00.000Z',
-    result: { verifier_result: { command: 'node --test', passed: true }, kind: 'check', tick: { summary: 'passed' } },
-    extra: 'not retained',
-  };
-  const old = write('atris/runs/old/nested/receipt.json', JSON.stringify(receipt));
-  const result = pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 });
-
-  assert.strictEqual(result.action, 'runs_pruned');
-  assert.strictEqual(result.deleted_count, 1);
-  assert.deepStrictEqual(result.deleted, ['atris/runs/old/nested/receipt.json']);
-  assert.deepStrictEqual(result.errors, []);
-  assert.strictEqual(fs.existsSync(old), false);
-  assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/old')), false);
-  assert.match(result.manifest_path, /^atris\/runs\/_archive\/prune-.*\.json$/);
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, result.manifest_path), 'utf8'));
-  assert.strictEqual(manifest.schema, 'atris.runs_prune_manifest.v1');
-  assert.strictEqual(manifest.pruned_count, 1);
-  assert.strictEqual(manifest.pruned_bytes, Buffer.byteLength(JSON.stringify(receipt)));
-  assert.deepStrictEqual(manifest.entries[0].compact, {
-    schema: 'receipt.v1', mission_id: 'example', objective: 'prove cleanup', owner: 'tester',
-    at: receipt.created_at, verifier: 'node --test', passed: true, kind: 'check', summary: 'passed',
-  });
-  assert.strictEqual(pruneRuns(root, { nowMs }).total_files, 0);
-});
-
-test('archive can be disabled and output describes the resulting deletion', (t) => {
-  const { root, write } = fixture(t);
-  write('atris/runs/old.txt', 'discard');
-  const result = pruneRuns(root, { nowMs, apply: true, archive: false, keepNewest: 0 });
-  assert.strictEqual(result.deleted_count, 1);
-  assert.strictEqual(result.manifest_path, null);
+  const old = write('atris/runs/old/nested/receipt.json', '{"proof":"full content"}');
+  const preview = pruneRuns(root, { nowMs, keepDays: 0, keepNewest: 0 });
+  assert.strictEqual(preview.prune_count, 1);
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /receipt deletion is unavailable/);
+  assert.strictEqual(fs.readFileSync(old, 'utf8'), '{"proof":"full content"}');
   assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive')), false);
-  assert.strictEqual(runsPruneLines(result)[1], '  Changed: Pruned 1 old run file(s).');
-  assert.strictEqual(runsPruneLines(result)[3], '  Proof: No manifest was needed.');
   assert.strictEqual(formatBytes(1023), '1023 B');
   assert.strictEqual(formatBytes(1024), '1.0 KB');
   assert.strictEqual(formatBytes(1048576), '1.0 MB');

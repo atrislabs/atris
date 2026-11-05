@@ -3003,7 +3003,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.match(markdown, /## Next move\n\nContinue active task: \S+ Add receipt timeline proof\./);
     assert.match(markdown, /## Keep it concise/);
     assert.match(markdown, /Dry run: `atris mission prune-runs --days 14 --keep-newest 200`/);
-    assert.match(markdown, /Apply only after review: add `--apply`\./);
+    assert.match(markdown, /Receipt deletion is unavailable until reference writers coordinate\./);
     assert.match(markdown, /## Latest prune dry-run/);
     assert.match(markdown, /Policy: keep newest 200; keep 14 days/);
     assert.match(markdown, /Total run files: \d+/);
@@ -4376,7 +4376,7 @@ test('mission room names messy input goal-chain runs specifically', () => {
   }
 });
 
-test('mission prune-runs previews and deletes only old unreferenced run clutter', () => {
+test('mission prune-runs previews clutter and refuses unsafe deletion', () => {
   const dir = makeTempDir();
   try {
     const runsDir = path.join(dir, 'atris', 'runs');
@@ -4421,19 +4421,13 @@ test('mission prune-runs previews and deletes only old unreferenced run clutter'
     assert.equal(fs.existsSync(oldUnreferenced), true);
 
     const applied = runCli(['mission', 'prune-runs', '--days', '1', '--keep-newest', '1', '--apply', '--json'], { cwd: dir });
-    assert.equal(applied.status, 0, applied.stderr || applied.stdout);
-    const payload = JSON.parse(applied.stdout);
-    assert.equal(payload.applied, true);
-    assert.equal(payload.deleted_count, 2);
-    assert.match(payload.manifest_path, /^atris\/runs\/_archive\/prune-/);
-    assert.equal(fs.existsSync(oldUnreferenced), false);
-    assert.equal(fs.existsSync(oldText), false);
+    assert.equal(applied.status, 1, applied.stderr || applied.stdout);
+    assert.match(applied.stdout, /receipt deletion is unavailable/);
+    assert.equal(fs.existsSync(oldUnreferenced), true);
+    assert.equal(fs.existsSync(oldText), true);
     assert.equal(fs.existsSync(oldReferenced), true);
     assert.equal(fs.existsSync(recent), true);
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, payload.manifest_path), 'utf8'));
-    assert.equal(manifest.schema, 'atris.runs_prune_manifest.v1');
-    assert.equal(manifest.pruned_count, 2);
-    assert(manifest.entries.some((entry) => entry.compact?.objective === 'old clutter'));
+    assert.equal(fs.existsSync(path.join(runsDir, '_archive')), false);
   } finally {
     cleanupTempDir(dir);
   }

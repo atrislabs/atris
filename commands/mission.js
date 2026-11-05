@@ -4718,7 +4718,7 @@ function missionTimelineMarkdown(mission, timeline, { prunePreview = null, gener
       '## Keep it concise',
       '',
       '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
-      '- Apply only after review: add `--apply`.',
+      '- Receipt deletion is unavailable until reference writers coordinate.',
     );
     lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
     lines.push('');
@@ -4736,7 +4736,7 @@ function missionTimelineMarkdown(mission, timeline, { prunePreview = null, gener
     '## Keep it concise',
     '',
     '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
-    '- Apply only after review: add `--apply`.',
+    '- Receipt deletion is unavailable until reference writers coordinate.',
   );
   lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
   lines.push('');
@@ -11314,7 +11314,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]   Create a Mission Room card and shareable receipt from messy intent
-  atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
+  atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Preview old receipts; deletion is temporarily unavailable
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused|usageLimited|complete] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--native-goal-status active|paused|usageLimited|complete] [--native-goal-objective "..."] [--dry-run] [--once] [--json]
@@ -11569,7 +11569,7 @@ function roomMission(args) {
 function pruneRunsMission(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
     console.log('Usage: atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]');
-    console.log('Preview old unreferenced run receipts; add --apply only after review.');
+    console.log('Preview old unreferenced run receipts; deletion is temporarily unavailable.');
     return;
   }
   const asJson = wantsJson(args);
