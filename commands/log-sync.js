@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath, createLogFile } = require('../lib/file-ops');
-const { parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
+const { DuplicateJournalSectionError, parseJournalSections, mergeSections, reconstructJournal, showLogDiff } = require('../lib/journal');
 const { computeContentHash, isSameTimestamp } = require('../lib/journal');
 const { loadConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
 const { ensureValidCredentials } = require('../utils/auth');
@@ -145,8 +145,8 @@ async function logSyncAtris() {
         }
 
         try {
-          const localSections = parseJournalSections(normalizedLocal);
-          const remoteSections = parseJournalSections(normalizedRemote || '');
+          const localSections = parseJournalSections(normalizedLocal, { rejectDuplicates: true });
+          const remoteSections = parseJournalSections(normalizedRemote || '', { rejectDuplicates: true });
           const { merged, conflicts } = mergeSections(localSections, remoteSections, knownRemoteHash);
 
           if (conflicts.length === 0) {
@@ -233,7 +233,7 @@ async function logSyncAtris() {
             }
           }
         } catch (parseError) {
-          if (parseError instanceof LogSyncWriteError) {
+          if (parseError instanceof LogSyncWriteError || parseError instanceof DuplicateJournalSectionError) {
             throw parseError;
           }
           // Fallback to simple prompt

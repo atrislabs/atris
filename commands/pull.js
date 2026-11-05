@@ -5,7 +5,7 @@ const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
-const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
+const { DuplicateJournalSectionError, parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
@@ -1029,6 +1029,7 @@ async function pullGeneralJournal(token, agentId) {
   }
 
   let synced = 0;
+  let needsReview = false;
 
   for (const date of dates) {
     const result = await apiRequestJson(`/agents/${agentId}/journal/${date}`, {
@@ -1057,8 +1058,8 @@ async function pullGeneralJournal(token, agentId) {
     } else {
       // Both exist and differ, merge
       try {
-        const localSections = parseJournalSections(localContent);
-        const remoteSections = parseJournalSections(remoteContent);
+        const localSections = parseJournalSections(localContent, { rejectDuplicates: true });
+        const remoteSections = parseJournalSections(remoteContent, { rejectDuplicates: true });
         const { merged, conflicts } = mergeSections(localSections, remoteSections);
 
         if (conflicts.length === 0) {
@@ -1068,15 +1069,21 @@ async function pullGeneralJournal(token, agentId) {
           synced++;
         } else {
           // Conflicts, keep local, warn
+          needsReview = true;
           console.log(`  Journal ${date} has conflicts (kept local, run "atris log sync" to resolve)`);
         }
-      } catch {
-        console.log(`  Journal ${date} differs (run "atris log sync" to resolve)`);
+      } catch (error) {
+        needsReview = true;
+        if (error instanceof DuplicateJournalSectionError) {
+          console.log(`  Journal ${date} has repeated or reserved section headings; kept local for review`);
+        } else {
+          console.log(`  Journal ${date} differs (run "atris log sync" to resolve)`);
+        }
       }
     }
   }
 
-  if (synced === 0) {
+  if (synced === 0 && !needsReview) {
     console.log('  General journal: up to date');
   }
 
