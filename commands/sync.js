@@ -437,9 +437,9 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
 
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
-  console.log(`  Preserved: ${preserved} (existing customizations kept)`);
+  console.log(`  Template files preserved: ${preserved} (existing customizations kept)`);
   console.log(`  Skipped:   ${skipped} (already match template)`);
-  console.log(`  Skills:    ${skillsUpdated} ${dryRun ? 'would update' : 'updated'} from atris-cli/atris/skills/`);
+  console.log(`  Skills:    ${skillsUpdated} ${dryRun ? 'would add' : 'added'} from atris-cli/atris/skills/`);
   console.log('');
 
   if (addedList.length > 0) {

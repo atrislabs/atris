@@ -100,7 +100,7 @@ test('business update dry-run reports stale skill changes without writing', () =
       },
     });
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /Skills:\s+[1-9]\d* would update from atris-cli\/atris\/skills\//);
+    assert.match(result.stdout, /Skills:\s+[1-9]\d* would add from atris-cli\/atris\/skills\//);
     assert.deepEqual(snapshotTree(fixture.workspace), beforeWorkspace, 'business update changed workspace files');
     assert.deepEqual(snapshotTree(fixture.home), beforeHome, 'business update changed global files');
   } finally {
