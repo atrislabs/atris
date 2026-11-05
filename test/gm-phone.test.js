@@ -1568,6 +1568,60 @@ test('browser: what do you mean on a do it or a yes card: the reply explains, so
 
 // ---- a send that went through is never sent twice -----------------------------------
 
+test('browser: a thrown action is shown as uncertain after it acts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const out = await trace.thrownActionTrace({ chromePath: CHROME });
+  assert.deepEqual(out.took, ['take the readme first']);
+  assert.match(out.view.line, /could not confirm.*check before trying again/);
+});
+
+test('over http: synchronous desk exceptions also keep the send id', async () => {
+  let calls = 0;
+  const h = await startHandler({ makeBetDesk: () => ({
+    card: () => ({ ok: true, card: null }),
+    act: () => { calls += 1; throw new Error('after action'); },
+  }) });
+  try {
+    const body = { card_id: 'example', text: 'go', send: 'k1a2b3c4' };
+    const first = await h.call('POST', '/act', { body });
+    const again = await h.call('POST', '/act', { body });
+    assert.equal(first.status, 500);
+    assert.equal(first.json.reason, 'action_unconfirmed');
+    assert.deepEqual(again.json, first.json);
+    assert.equal(calls, 1);
+  } finally { await h.close(); }
+});
+
+test('over http: a steer that acts then throws remains uncertain and is not sent again', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-thrown-steer-'));
+  const calls = [];
+  let desk;
+  const h = await startHandler({ makeBetDesk: (log, dir) => {
+    desk = gmBet.createBetDesk({
+      workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false,
+      readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+      loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }),
+      generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+      readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }),
+      runCli: async args => { calls.push(args); throw new Error('after dispatch'); },
+    });
+    return desk;
+  } });
+  try {
+    desk.state.status = 'ready';
+    desk.state.current = { kind: 'done', id: 'done:intro', job: { owner: 'builder', title: 'Write the intro', bet: { expect: 'more people finish setup.' } } };
+    const id = (await h.call('GET', '/card')).json.card.id;
+    const body = { card_id: id, text: 'add the short demo', send: 'k1a2b3c4' };
+    const first = await h.call('POST', '/act', { body });
+    assert.equal(first.status, 500);
+    assert.equal(first.json.reason, 'action_unconfirmed');
+    assert.match(first.json.message, /could not confirm/i);
+    const again = await h.call('POST', '/act', { body });
+    assert.deepEqual(again.json, first.json);
+    assert.equal(calls.length, 1);
+  } finally { await h.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('over http: an unconfirmed steer keeps its send id and does not say it failed', async () => {
   const gmBet = require('../lib/gm-bet');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-unconfirmed-'));
