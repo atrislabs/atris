@@ -51,3 +51,28 @@ test('sync package skills preserves empty files, symlinks and dangling symlinks'
   assert.equal(fs.existsSync(path.join(root, 'missing')), false);
   assert.notDeepEqual(Buffer.alloc(0), packaged);
 });
+
+for (const scenario of ['legacy-leaf-link', 'claude-ancestor-link']) {
+  test(`real CLI does not write through ${scenario}`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-skill-parent-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const cwd = path.join(root, 'project'), home = path.join(root, 'home'), outside = path.join(root, 'outside');
+    fs.mkdirSync(cwd); fs.mkdirSync(home); fs.mkdirSync(outside);
+    fs.mkdirSync(path.join(cwd, 'atris'));
+    let args;
+    if (scenario === 'legacy-leaf-link') {
+      fs.mkdirSync(path.join(cwd, '.claude/skills'), { recursive: true });
+      fs.symlinkSync(outside, path.join(cwd, '.claude/skills/atris'));
+      args = ['update', '--yes'];
+    } else {
+      fs.symlinkSync(outside, path.join(cwd, '.claude'));
+      args = ['init', '--minimal', '--yes', '--no-commit'];
+    }
+    const env = { ...process.env, HOME: home, USERPROFILE: home, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(root, 'tasks.db'), ATRIS_CAMPAIGN_DB: path.join(root, 'campaign.db') };
+    delete env.NODE_TEST_CONTEXT; delete env.ATRIS_TEST_STATE_DIR; delete env.ATRIS_TEST_PROTECTED_HOME;
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, scenario === 'legacy-leaf-link' ? 0 : 1, result.stderr);
+    assert.deepEqual(fs.readdirSync(outside), []);
+    if (scenario === 'claude-ancestor-link') assert.match(result.stderr, /Skill sync refused/);
+  });
+}
