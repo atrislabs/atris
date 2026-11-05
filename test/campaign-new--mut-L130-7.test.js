@@ -11,7 +11,7 @@ test('drafting preserves an explicit campaign id in its output', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-explicit-id-'));
   try {
     let output;
-    const code = await draftAndStart(['--id', 'chosen-campaign'], {
+    const code = await draftAndStart(['--id', 'cmp-chosen-campaign'], {
       asJson: true,
       judge: async () => ({ passed: false, exit: 1, summary: 'not ready' }),
       out: (_human, json) => { output = json; },
@@ -26,9 +26,9 @@ test('drafting preserves an explicit campaign id in its output', async () => {
     });
 
     assert.equal(code, 0);
-    assert.equal(output.draft.id, 'chosen-campaign');
-    assert.equal(output.draft.judge_file, 'atris/campaigns/chosen-campaign/judge.sh');
-    assert.equal(output.draft.judge, 'sh atris/campaigns/chosen-campaign/judge.sh');
+    assert.equal(output.draft.id, 'cmp-chosen-campaign');
+    assert.equal(output.draft.judge_file, 'atris/campaigns/cmp-chosen-campaign/judge.sh');
+    assert.equal(output.draft.judge, 'sh atris/campaigns/cmp-chosen-campaign/judge.sh');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

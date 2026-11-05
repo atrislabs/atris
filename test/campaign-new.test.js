@@ -101,7 +101,9 @@ test('a drafted judge that passes today gets one retry with the reason, then is 
     assert.equal(prompts.length, 2);
     assert.match(prompts[1], /passed today/);
     assert.equal(listCampaigns(store).length, 0);
-    assert.deepEqual(fs.readdirSync(path.join(dir, 'atris', 'campaigns')), [], 'the failed draft is cleaned up');
+    const dirs = fs.readdirSync(path.join(dir, 'atris', 'campaigns'));
+    assert.equal(dirs.length, 1, 'failed drafts remain available for inspection');
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'atris', 'campaigns', dirs[0])).sort(), ['judge-2.sh', 'judge.sh']);
   });
 });
 
@@ -189,4 +191,111 @@ test('a yes at the terminal starts the drafted campaign; a no starts nothing', a
       assert.equal(listCampaigns(store).length, answer ? 1 : 0);
     });
   }
+});
+
+
+test('existing campaign directory survives a new draft with the same id', async () => {
+  await inWorkspace(async (dir) => {
+    const campaignDir = path.join(dir, 'atris', 'campaigns', 'cmp-existing');
+    fs.mkdirSync(campaignDir, { recursive: true });
+    fs.writeFileSync(path.join(campaignDir, 'judge.sh'), 'original judge\n');
+    fs.writeFileSync(path.join(campaignDir, 'notes'), 'original notes\n');
+    const result = await run(['goal', '--id', 'cmp-existing'], [reply(FAILING)]);
+    assert.equal(result.code, 1);
+    assert.match(result.json.error, /directory already exists/);
+    assert.equal(fs.readFileSync(path.join(campaignDir, 'judge.sh'), 'utf8'), 'original judge\n');
+    assert.equal(fs.readFileSync(path.join(campaignDir, 'notes'), 'utf8'), 'original notes\n');
+  });
+});
+
+test('unsafe campaign id is rejected before asking or running a judge', async () => {
+  await inWorkspace(async () => {
+    const result = await run(['goal', '--id', 'cmp-x;touch-pwned'], [reply(FAILING)]);
+    assert.equal(result.code, 2);
+    assert.match(result.json.error, /--id must look/);
+    assert.equal(result.prompts.length, 0);
+    assert.equal(fs.existsSync('touch-pwned'), false);
+  });
+});
+
+test('retry leaves a judge edited after the first reading intact', async () => {
+  const { draftAndStart } = require('../lib/campaign-new');
+  await inWorkspace(async (dir) => {
+    let reads = 0;
+    let result;
+    const code = await draftAndStart(['--id', 'cmp-retry'], {
+      asJson: true,
+      fail: (message) => assert.fail(message),
+      out: (_human, json) => { result = json; },
+      judge: async () => {
+        if (++reads === 1) {
+          fs.writeFileSync(path.join(dir, 'atris/campaigns/cmp-retry/judge.sh'), 'edited while running\n');
+          return { passed: true, exit: 0 };
+        }
+        return { passed: false, exit: 1 };
+      },
+    }, { root: dir, goal: 'test', ask: async () => ({ engine: 'mock', text: reply(FAILING) }) });
+    assert.equal(code, 0);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris/campaigns/cmp-retry/judge.sh'), 'utf8'), 'edited while running\n');
+    assert.equal(result.draft.judge_file, 'atris/campaigns/cmp-retry/judge-2.sh');
+  });
+});
+
+test('existing SQLite campaign without its judge directory refuses drafting before engine or judge', async () => {
+  const { draftAndStart } = require('../lib/campaign-new');
+  const { createSqliteStore } = require('../lib/campaign-store');
+  await inWorkspace(async (dir) => {
+    const store = createSqliteStore(path.join(dir, 'campaigns.db'));
+    try {
+      const id = 'cmp-existing';
+      const target = path.join(dir, 'atris/campaigns', id);
+      store.append({ campaign_id: id, type: 'campaign_started', actor: 'human:test', data: {
+        title: 'Original', judge: `sh atris/campaigns/${id}/judge.sh`, budget: 10,
+      } });
+      let asks = 0;
+      let judges = 0;
+      let error;
+      const code = await draftAndStart(['--id', id], {
+        store, asJson: true,
+        fail: (message, status) => { error = message; return status || 2; },
+        out: () => {},
+        judge: async () => { judges++; return { passed: false, exit: 1 }; },
+      }, { root: dir, goal: 'New goal', ask: async () => { asks++; return { text: reply(FAILING) }; } });
+      assert.equal(code, 1);
+      assert.match(error, /already exists/);
+      assert.equal(asks, 0);
+      assert.equal(judges, 0);
+      assert.equal(fs.existsSync(target), false);
+      assert.equal(store.read(id).length, 1);
+    } finally { store.close(); }
+  });
+});
+
+test('campaign created while the engine is answering is refused before writing or judging', async () => {
+  const { draftAndStart } = require('../lib/campaign-new');
+  const { createSqliteStore } = require('../lib/campaign-store');
+  await inWorkspace(async (dir) => {
+    const store = createSqliteStore(path.join(dir, 'campaigns.db'));
+    const id = 'cmp-race';
+    let judges = 0;
+    let output;
+    const log = console.log;
+    console.log = (line) => { output = JSON.parse(line); };
+    try {
+      const code = await draftAndStart(['--id', id], {
+        store, asJson: true, fail: (message) => assert.fail(message), out: () => {},
+        judge: async () => { judges++; return { passed: false, exit: 1 }; },
+      }, { root: dir, goal: 'New goal', ask: async () => {
+        store.append({ campaign_id: id, type: 'campaign_started', actor: 'human:test', data: {
+          title: 'Original', judge: `sh atris/campaigns/${id}/judge.sh`, budget: 10,
+        } });
+        return { text: reply(FAILING) };
+      } });
+      assert.equal(code, 1);
+      assert.match(output.error, /already exists/);
+      assert.equal(judges, 0);
+      assert.equal(fs.existsSync(path.join(dir, 'atris/campaigns', id)), false);
+      assert.equal(store.read(id).length, 1);
+    } finally { console.log = log; store.close(); }
+  });
 });
