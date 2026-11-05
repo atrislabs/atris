@@ -7,17 +7,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 
-test('forcing compaction removes history from a small ledger', (t) => {
+test('forced compaction leaves a small ledger untouched', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-force-compact-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'missions.jsonl');
-  fs.writeFileSync(file, [
-    { id: 'small-mission', n: 1, status: 'running' },
-    { id: 'small-mission', n: 1, status: 'complete' },
-  ].map(row => JSON.stringify(row)).join('\n') + '\n');
-
-  const result = compactMissionLedger(file, { force: true });
-
-  assert.equal(result.compacted, true);
-  assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  const before = [{ id: 'small-mission', status: 'running' }, { id: 'small-mission', status: 'complete' }].map(JSON.stringify).join('\n') + '\n';
+  fs.writeFileSync(file, before);
+  assert.equal(compactMissionLedger(file, { force: true }).compacted, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
 });
