@@ -1568,6 +1568,43 @@ test('browser: what do you mean on a do it or a yes card: the reply explains, so
 
 // ---- a send that went through is never sent twice -----------------------------------
 
+test('over http: an unconfirmed steer keeps its send id and does not say it failed', async () => {
+  const gmBet = require('../lib/gm-bet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-unconfirmed-'));
+  const calls = [];
+  let desk;
+  const h = await startHandler({
+    makeBetDesk: (log, dir) => {
+      desk = gmBet.createBetDesk({
+        workspaceRoot: root, ledgerFile: path.join(dir, 'gm-bets.jsonl'), now: () => NOW, log, warmOnCreate: false,
+        readTeam: () => [{ name: 'builder' }], readMissions: () => ({}), readHandoffs: () => [],
+        loadSeason: () => ({ outcomes: [], error: null }), resolveEngine: () => ({ engine: { id: 'one' }, model: 'm-one' }),
+        generate: () => new Promise(() => {}), generateQuestion: () => new Promise(() => {}),
+        readSaid: async () => ({ ok: true, kind: 'instruction', reply: '' }),
+        runCli: async args => { calls.push(args); return { code: 1, stdout: JSON.stringify({ ok: false, action: 'member_steer_unconfirmed' }) }; },
+      });
+      return desk;
+    },
+  });
+  try {
+    desk.state.status = 'ready';
+    desk.state.current = { kind: 'done', id: 'done:intro', job: { owner: 'builder', title: 'Write the intro', bet: { expect: 'more people finish setup.' } } };
+    const id = (await h.call('GET', '/card')).json.card.id;
+    const body = { card_id: id, text: 'add the short demo', send: 'k1a2b3c4' };
+    const first = await h.call('POST', '/act', { body });
+    assert.equal(first.json.ok, false);
+    assert.equal(first.json.reason, 'steer_unconfirmed');
+    assert.match(first.json.message, /may already be saved/);
+    assert.doesNotMatch(first.json.message, /did not reach|try again/i);
+    const again = await h.call('POST', '/act', { body });
+    assert.deepEqual(again.json, first.json);
+    assert.equal(calls.length, 1);
+  } finally {
+    await h.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('over http: a typed send carries its own id; a repeat of one that went through gets the first answer and sends nothing', async () => {
   const gmBet = require('../lib/gm-bet');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));

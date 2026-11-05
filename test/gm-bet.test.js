@@ -2024,6 +2024,17 @@ test('steer from the phone: it can only reach a live run; one that is not runnin
   assert.equal((await d2.d.say({ text: 'add a short video', confirm: true })).ack, 'builder is starting on it.');
 });
 
+test('steer from the phone reports uncertain persistence in both send modes', async () => {
+  const h = jobDesk(workspace(), {}, { runCli: async () => ({ code: 1, stdout: JSON.stringify({ action: 'member_steer_unconfirmed' }) }) });
+  for (const confirm of [false, true]) {
+    const out = await h.d.steer({ member: 'builder', text: 'check the answer', confirm });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'steer_unconfirmed');
+    assert.match(out.message, /may already be saved/);
+    assert.doesNotMatch(out.message, /did not reach|did not start|try again/i);
+  }
+});
+
 test('steer from the phone: owner words are never options, even when they start with a dash', async () => {
   const h = jobDesk(workspace(), {}, { live: ['builder'] });
   await h.d.steer({ member: 'builder', text: '--verify=printf example' });
