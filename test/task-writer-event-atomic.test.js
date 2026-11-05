@@ -31,3 +31,45 @@ for (const kind of ['tag', 'chat', 'plan', 'reopen', 'backlog']) {
     }
   });
 }
+
+for (const final of ['done', 'failed']) {
+  for (const outer of [false, true]) {
+    test(`${final} event failure preserves task state${outer ? ' inside caller transaction' : ''}`, () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-done-atomic-'));
+      const db = tasks.open(path.join(tmp, 'tasks.db'));
+      try {
+        const { id } = tasks.addTask(db, { title: 'test task', workspaceRoot: tmp });
+        const before = tasks.getTask(db, id);
+        fs.mkdirSync(path.join(tmp, 'atris'));
+        const eventType = final === 'done' ? 'completed' : 'blocked';
+        db.exec(`CREATE TRIGGER fail_event BEFORE INSERT ON task_events WHEN NEW.event_type = '${eventType}' BEGIN SELECT RAISE(ABORT, 'test failure'); END`);
+        if (outer) db.exec('BEGIN IMMEDIATE');
+        assert.throws(() => tasks.doneTask(db, { id, actor: 'test', status: final }), /test failure/);
+        if (outer) db.exec('COMMIT');
+        assert.deepEqual(tasks.getTask(db, id), before);
+        assert.deepEqual(fs.readdirSync(path.join(tmp, 'atris')), []);
+      } finally {
+        tasks.close();
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+}
+
+test('successful completion joins and rolls back with caller transaction', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-done-outer-'));
+  const db = tasks.open(path.join(tmp, 'tasks.db'));
+  try {
+    const { id } = tasks.addTask(db, { title: 'test task', workspaceRoot: tmp });
+    const before = tasks.getTask(db, id);
+    db.exec('BEGIN IMMEDIATE');
+    assert.equal(tasks.doneTask(db, { id, actor: 'test' }).updated, true);
+    assert.equal(tasks.getTask(db, id).status, 'done');
+    db.exec('ROLLBACK');
+    assert.deepEqual(tasks.getTask(db, id), before);
+    assert.equal(tasks.listTaskEvents(db, { taskId: id }).some((e) => e.event_type === 'completed'), false);
+  } finally {
+    tasks.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
