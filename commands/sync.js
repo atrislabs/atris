@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
@@ -112,6 +113,41 @@ function ensureSkillDirectory(dir, root, { create = true } = {}) {
   }
 }
 
+// One proposal and one staging file per destination. Both are create-only:
+// a pre-existing file (including a symlink or an interrupted staging file)
+// is always preserved and needs manual inspection/removal. We deliberately
+// leave the staging link after publication so cleanup never deletes a file
+// that another process might have replaced.
+function proposeSkillFile(source, destPath, label, { dryRun = false } = {}) {
+  const proposal = `${destPath}.atris-proposal`;
+  const pending = `${proposal}.pending`;
+  const version = createHash('sha256').update(source).digest('hex');
+  for (const [file, description] of [[proposal, 'proposal'], [pending, 'staging file']]) {
+    try {
+      fs.lstatSync(file);
+      console.warn(`- Kept existing ${description} for ${label}; package sha256 ${version}; inspect it before requesting a newer proposal`);
+      return;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  if (dryRun) {
+    console.warn(`- Would propose ${label} at ${proposal} (sha256 ${version})`);
+    return;
+  }
+  let fd;
+  try {
+    fd = fs.openSync(pending, 'wx', 0o600);
+    fs.writeFileSync(fd, source);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.linkSync(pending, proposal);
+    console.warn(`- Proposed ${label} at ${proposal} (sha256 ${version}); staging file retained at ${pending}`);
+  } catch (error) {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (_) {} }
+    console.warn(`- Could not propose ${label}: ${error.message}; existing files and any staging file were kept`);
+  }
+}
+
 // Existing skill files are user-owned unless an ownership baseline proves
 // otherwise. We have no such baseline, so never replace or follow them.
 function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = false } = {}) {
@@ -121,8 +157,11 @@ function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = fals
     if (error.code !== 'ENOENT') throw error;
   }
   if (stat) {
-    if (!stat.isFile() || !source.equals(fs.readFileSync(destPath))) {
+    if (!stat.isFile()) {
       console.warn(`- Kept ${label} (existing skill file not replaced)`);
+    } else if (!source.equals(fs.readFileSync(destPath))) {
+      console.warn(`- Kept ${label} (existing skill file not replaced)`);
+      proposeSkillFile(source, destPath, label, { dryRun });
     }
     return 0;
   }
