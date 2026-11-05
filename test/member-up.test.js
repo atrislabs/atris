@@ -371,3 +371,19 @@ test('a failed supervisor pass is recorded and retried', async (t) => {
   assert.deepEqual(errors, [['supervisor check failed', 'roster unavailable']]);
   assert.deepEqual(team.spawned, ['ready']);
 });
+
+test('watcher errors are logged immediately and repeated failures are counted', () => {
+  const { watchErrorReporter } = require('../lib/member-up');
+  const events = [];
+  let now = 0;
+  const reporter = watchErrorReporter((context, error) => events.push([context, error.message]), () => now, 60000);
+  reporter.report('watch /x', new Error('denied'));
+  for (let i = 0; i < 10; i++) reporter.report('watch /x', new Error('denied'));
+  assert.equal(events.length, 1);
+  now = 60000;
+  reporter.report('watch /x', new Error('denied'));
+  assert.match(events[1][1], /11 repeated watcher errors/);
+  reporter.report('watch /x', new Error('denied'));
+  reporter.flush();
+  assert.match(events[2][1], /1 repeated watcher errors/);
+});
