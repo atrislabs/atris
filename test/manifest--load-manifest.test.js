@@ -63,7 +63,7 @@ test('loadManifest refuses an existing manifest containing invalid json', (t) =>
   assert.throws(() => loadManifest(slug), /cannot safely parse sync manifest/);
 });
 
-test('loadManifest handles edge case with empty manifest object', (t) => {
+test('loadManifest refuses a baseline missing its files map', (t) => {
   const root = createFixture(t);
   const slug = 'empty-business';
   const manifestDir = path.join(root, '.atris', 'businesses', slug);
@@ -71,6 +71,5 @@ test('loadManifest handles edge case with empty manifest object', (t) => {
 
   fs.writeFileSync(path.join(manifestDir, 'manifest.json'), '{}');
 
-  const result = loadManifest(slug);
-  assert.deepStrictEqual(result, {});
+  assert.throws(() => loadManifest(slug), /manifest files must be an object/);
 });

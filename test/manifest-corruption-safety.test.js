@@ -85,7 +85,7 @@ test('boot sync status reports an unavailable baseline without blocking', () => 
   }
 });
 
-test('keep-local pull preserves local files and broken manifest when baseline cannot be parsed', async () => {
+for (const invalidBaseline of ['{\"files\":', '{}']) test(`keep-local pull preserves invalid baseline ${invalidBaseline}`, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-pull-'));
   const prevState = process.env.ATRIS_TEST_STATE_DIR;
   const prevToken = process.env.ATRIS_TOKEN;
@@ -104,7 +104,7 @@ test('keep-local pull preserves local files and broken manifest when baseline ca
     fs.writeFileSync(path.join(output, 'notes.md'), 'local data');
     const baseline = path.join(root, 'state/.atris/businesses/sample/manifest.json');
     fs.mkdirSync(path.dirname(baseline), { recursive: true });
-    fs.writeFileSync(baseline, '{"files":');
+    fs.writeFileSync(baseline, invalidBaseline);
     process.chdir(root);
     process.argv = [process.execPath, 'atris', 'pull', 'sample', '--into', output, '--keep-local'];
     console.log = () => {};
@@ -120,7 +120,7 @@ test('keep-local pull preserves local files and broken manifest when baseline ca
     const { pullAtris } = require('../commands/pull');
     await assert.rejects(pullAtris(), /manifest/i);
     assert.equal(fs.readFileSync(path.join(output, 'notes.md'), 'utf8'), 'local data');
-    assert.equal(fs.readFileSync(baseline, 'utf8'), '{"files":');
+    assert.equal(fs.readFileSync(baseline, 'utf8'), invalidBaseline);
   } finally {
     api.apiRequestJson = request;
     process.chdir(cwd); process.argv = argv; console.log = log; console.error = err; process.stdout.write = write;
