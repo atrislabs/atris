@@ -1539,7 +1539,7 @@ test('browser: say something that does not send comes back on its card with the 
   const pick = l => ({ kind: l.kind, title: l.title, field_open: l.field_open, words: l.words, typing: l.typing });
   // the network is off: the card comes back, the words and the cursor in its box, and a line says so
   assert.deepEqual(pick(out.offline), kept, show);
-  assert.equal(out.offline.line, 'that did not reach the mac. try again.', show);
+  assert.equal(out.offline.line, 'could not confirm whether the mac got that. check before trying again.', show);
   // Enter again reaches the desk, which could not pass it on: the same, with why
   assert.deepEqual(pick(out.refused), kept, show);
   assert.equal(out.refused.line, 'it did not reach them. try again in a minute.', show);
@@ -1676,7 +1676,7 @@ test('browser: a word to a teammate that did not send comes back in its box, a l
   const show = JSON.stringify(out, null, 1);
   for (const l of [out.offline, out.lost]) {
     // nothing left the phone, or the answer was lost: the talk card, the words in its box, one line
-    assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'that did not reach the mac. try again.'], show);
+    assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'could not confirm whether the mac got that. check before trying again.'], show);
   }
   // Enter once more: the first answer comes back, and builder is not told twice
   assert.equal(out.sent.said, 'builder has it.', show);
