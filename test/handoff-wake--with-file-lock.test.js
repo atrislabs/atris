@@ -99,16 +99,27 @@ test('clears a lock whose holder is no longer running', () => {
   assert.equal(fs.existsSync(lockFile), false);
 });
 
-test('clears a lock older than staleMs even when its holder is alive', () => {
+test('an old lock with a live holder is never cleared', () => {
   const lockFile = path.join(TMP, 'stale', 'handoff-wake.lock');
   plantLock(lockFile, { pid: process.pid, at: FIXED });
+  assert.throws(() => withFileLock(lockFile, () => 'must not run', {
+    staleMs: 1000, waitMs: 0, now: () => FIXED + 2000,
+  }), /stayed locked/);
+  assert.equal(fs.existsSync(lockFile), true);
+});
 
-  const out = withFileLock(lockFile, () => 'took it', {
-    staleMs: 1000,
-    waitMs: 0,
-    now: () => FIXED + 2000,
-  });
-
-  assert.equal(out, 'took it');
-  assert.equal(fs.existsSync(lockFile), false);
+test('an unreadable old lock is never cleared or treated as malformed', () => {
+  const lockFile = path.join(TMP, 'unreadable', 'handoff-wake.lock');
+  plantLock(lockFile, { pid: process.pid, at: FIXED });
+  const original = fs.readFileSync;
+  fs.readFileSync = function(file, ...args) {
+    if (file === lockFile) { const error = new Error('permission denied'); error.code = 'EACCES'; throw error; }
+    return original.call(this, file, ...args);
+  };
+  try {
+    assert.throws(() => withFileLock(lockFile, () => 'must not run', { staleMs: 1000, waitMs: 0, now: () => FIXED + 2000 }), /permission denied/);
+    assert.equal(fs.existsSync(lockFile), true);
+  } finally {
+    fs.readFileSync = original;
+  }
 });

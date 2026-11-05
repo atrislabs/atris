@@ -333,3 +333,57 @@ test('member up shares the wake lock with handoffs and counts their starts', () 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('queue errors are reported and do not invent work or stop other members', () => {
+  const team = fakeTeam([{ name: 'broken' }, { name: 'ready' }], {
+    ready: [{ id: 't1', title: 'ready work' }],
+  });
+  const errors = [];
+  const originalPick = team.deps.pickTask;
+  team.deps.pickTask = (name, taken) => {
+    if (name === 'broken') throw new Error('database unavailable');
+    return originalPick(name, taken);
+  };
+  team.deps.writeNextJob = () => { throw new Error('must not create a job after queue failure'); };
+  team.deps.reportError = (context, error) => errors.push([context, error.message]);
+  createMemberUp(team.deps).check();
+  assert.deepEqual(team.spawned, ['ready']);
+  assert.deepEqual(errors, [['broken could not read the task queue', 'database unavailable']]);
+});
+
+test('a failed supervisor pass is recorded and retried', async (t) => {
+  const team = fakeTeam([{ name: 'ready' }], { ready: [{ id: 't1', title: 'ready work' }] });
+  const errors = [];
+  const originalList = team.deps.listMembers;
+  let attempts = 0;
+  team.deps.listMembers = () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('roster unavailable');
+    return originalList();
+  };
+  team.deps.reportError = (context, error) => errors.push([context, error.message]);
+  let loop;
+  team.deps.sleep = async () => { if (attempts >= 2) loop.stop(); };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'member-up-retry-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  loop = runMemberUp(team.deps, { progressDir: dir });
+  await loop.done;
+  assert.deepEqual(errors, [['supervisor check failed', 'roster unavailable']]);
+  assert.deepEqual(team.spawned, ['ready']);
+});
+
+test('watcher errors are logged immediately and repeated failures are counted', () => {
+  const { watchErrorReporter } = require('../lib/member-up');
+  const events = [];
+  let now = 0;
+  const reporter = watchErrorReporter((context, error) => events.push([context, error.message]), () => now, 60000);
+  reporter.report('watch /x', new Error('denied'));
+  for (let i = 0; i < 10; i++) reporter.report('watch /x', new Error('denied'));
+  assert.equal(events.length, 1);
+  now = 60000;
+  reporter.report('watch /x', new Error('denied'));
+  assert.match(events[1][1], /11 repeated watcher errors/);
+  reporter.report('watch /x', new Error('denied'));
+  reporter.flush();
+  assert.match(events[2][1], /1 repeated watcher errors/);
+});

@@ -599,3 +599,17 @@ test('member stop needs the marker to open the prompt, as whole words', async ()
     try { process.kill(-child.pid, 'SIGKILL'); } catch {}
   }
 });
+
+test('progress watcher reports a directory that disappears after startup', (t) => {
+  const { followBoard } = require('../lib/member-board');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'board-missing-'));
+  const dir = path.join(base, 'progress');
+  fs.mkdirSync(dir);
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const errors = [];
+  const follower = followBoard({ dir, emit: () => {}, pollMs: 60_000, onError: (context, error) => errors.push([context, error.code]) });
+  t.after(() => follower.stop());
+  fs.rmdirSync(dir);
+  follower.scan();
+  assert.ok(errors.some(([context, code]) => context.startsWith('list ') && code === 'ENOENT'));
+});

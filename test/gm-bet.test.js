@@ -103,7 +103,7 @@ function goodBet(over = {}) {
 
 async function bundleFor(root, deps = fixtureDeps) {
   const events = [];
-  const bundle = await gmBet.readBundle(root, { deps, emit: e => events.push(e), ledgerFile: path.join(root, 'bets.jsonl') });
+  const bundle = await gmBet.readBundle(root, { deps, emit: e => events.push(e), ledgerFile: path.join(root, 'bets.jsonl'), today: TODAY });
   return { bundle, events };
 }
 

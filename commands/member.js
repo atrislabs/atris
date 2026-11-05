@@ -11177,16 +11177,12 @@ function memberUpTeam(root) {
 // The task `member go <name>` would claim, skipping ones already handed out.
 // Looks only; the child claims it.
 function memberUpPick(root, name, taken) {
-  try {
-    const taskDb = require('../lib/task-db');
-    const { fittingTasks } = require('../lib/member-task-pick');
-    const db = taskDb.open();
-    const job = memberGoJob(name, root);
-    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
-      .find((task) => !taken.has(task.id)) || null;
-  } catch {
-    return null;
-  }
+  const taskDb = require('../lib/task-db');
+  const { fittingTasks } = require('../lib/member-task-pick');
+  const db = taskDb.open();
+  const job = memberGoJob(name, root);
+  return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
+    .find((task) => !taken.has(task.id)) || null;
 }
 
 // An empty job list: write the member's next job from its own mission.
@@ -11205,16 +11201,12 @@ function memberUpWriteNextJob(root, name, { dryRun = false } = {}) {
 
 // Every open task a member could start, with the job it needs.
 function memberUpWaiting(root) {
-  try {
-    const taskDb = require('../lib/task-db');
-    const { fittingTasks } = require('../lib/member-task-pick');
-    const db = taskDb.open();
-    const workspaceRoot = taskDb.workspaceRoot(root);
-    return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, job, requireCheck: true })
-      .map((task) => ({ id: task.id, title: task.title, job })));
-  } catch {
-    return [];
-  }
+  const taskDb = require('../lib/task-db');
+  const { fittingTasks } = require('../lib/member-task-pick');
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot(root);
+  return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, job, requireCheck: true })
+    .map((task) => ({ id: task.id, title: task.title, job })));
 }
 
 function memberUpSpawn(root, name, onExit, onClaim) {
@@ -11250,7 +11242,9 @@ function memberUpSpawn(root, name, onExit, onClaim) {
       const buf = Buffer.alloc(Math.max(0, size - from));
       const read = fs.readSync(fd, buf, 0, buf.length, from);
       output = buf.subarray(0, read).toString('utf8');
-    } catch {} finally {
+    } catch (error) {
+      console.error(`[member-up] could not read ${name}'s run log:`, error);
+    } finally {
       if (fd !== undefined) fs.closeSync(fd);
     }
     const { memberUpResult } = require('../lib/member-up');
@@ -11299,9 +11293,16 @@ async function memberUp(...args) {
     }),
   };
   if (parsed.dryRun) {
-    const up = createMemberUp(deps, { max, only, dryRun: true });
+    let failed = false;
+    const up = createMemberUp({ ...deps, reportError: (context, error) => {
+      failed = true;
+      console.error(`[member-up] ${context}:`, error);
+    } }, { max, only, dryRun: true });
     const started = up.check();
-    if (!started.length && up.working() >= up.max) {
+    if (failed) {
+      console.error('team preview incomplete because of errors');
+      process.exitCode = 1;
+    } else if (!started.length && up.working() >= up.max) {
       console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
     } else if (!started.length) {
       console.log('nothing to start: no free member has a task with a runnable check');
