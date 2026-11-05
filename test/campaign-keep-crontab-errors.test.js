@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { installKeep, removeKeep, planKeep } = require('../lib/campaign-keep');
+const { containsTimerMarker, installKeep, removeKeep, planKeep } = require('../lib/campaign-keep');
 const { ideaAtris } = require('../commands/idea');
 
 function fixture() {
@@ -84,5 +84,58 @@ test('idea timer reports read failure without changing the crontab', () => {
     assert.equal(code, 1);
     assert.match(lines.join('\n'), /could not read crontab/);
     assert.deepEqual(calls, ['-l']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('install retains unrelated jobs that merely mention the marker', () => {
+  const { root, plan } = fixture();
+  try {
+    const original = `# user jobs\n\n0 1 * * * echo ${plan.marker}_EXTRA\n0 2 * * * echo ${plan.marker}\n`;
+    let written = null;
+    const result = installKeep(plan, { spawn(_command, args, options) {
+      if (args[0] === '-l') return { status: 0, stdout: original };
+      written = options.input;
+      return { status: 0 };
+    } });
+    assert.equal(result.ok, true);
+    assert.equal(written, `${original}${plan.crontab_line}\n`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('remove leaves substring-only jobs and performs no write', () => {
+  const { root, plan } = fixture();
+  try {
+    const calls = [];
+    const result = removeKeep(plan, { spawn(_command, args) {
+      calls.push(args[0]);
+      return { status: 0, stdout: `0 1 * * * echo ${plan.marker}_EXTRA\n` };
+    } });
+    assert.deepEqual(result, { ok: true, removed: false });
+    assert.deepEqual(calls, ['-l']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('remove deletes the exact timer while keeping neighboring jobs and blanks', () => {
+  const { root, plan } = fixture();
+  try {
+    const other = `0 1 * * * echo ${plan.marker}_EXTRA`;
+    const prior = `# user jobs\n\n${other}\n${plan.crontab_line}\n`;
+    let written = null;
+    const result = removeKeep(plan, { spawn(_command, args, options) {
+      if (args[0] === '-l') return { status: 0, stdout: prior };
+      written = options.input;
+      return { status: 0 };
+    } });
+    assert.deepEqual(result, { ok: true, removed: true });
+    assert.equal(written, `# user jobs\n\n${other}\n`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('status recognizes only an exact trailing timer marker comment', () => {
+  const { root, plan } = fixture();
+  try {
+    assert.equal(containsTimerMarker(`0 1 * * * echo ${plan.marker}_EXTRA\n`, plan.marker), false);
+    assert.equal(containsTimerMarker(`0 1 * * * echo ${plan.marker}\n`, plan.marker), false);
+    assert.equal(containsTimerMarker(`${plan.crontab_line}   \n`, plan.marker), true);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
