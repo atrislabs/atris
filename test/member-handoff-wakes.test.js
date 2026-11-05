@@ -467,11 +467,11 @@ test('a wake lock left by a crash never strands the next handoff', (t) => {
   fs.writeFileSync(lock, JSON.stringify({ pid: Number(dead.stdout), at: Date.now() }));
   assert.equal(withWakeReservation(dir, () => 'ran', { waitMs: 500 }), 'ran');
   assert.equal(fs.existsSync(lock), false, 'released after the start');
-  // holder alive but stuck past the stale window
+  // A live holder keeps its lock even after the age threshold.
   fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: 0 }));
   const old = new Date(Date.now() - 10 * 60 * 1000);
   fs.utimesSync(lock, old, old);
-  assert.equal(withWakeReservation(dir, () => 'ran', { waitMs: 500 }), 'ran');
+  assert.deepEqual(withWakeReservation(dir, () => 'ran', { waitMs: 0 }), { busy: true });
   // holder alive and fresh: wait, then give up plainly
   fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
   assert.deepEqual(withWakeReservation(dir, () => 'ran', { waitMs: 300 }), { busy: true });
