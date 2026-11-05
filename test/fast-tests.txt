@@ -182,3 +182,5 @@ test/task-not-needed.test.js
 test/roster-runs-held.test.js
 test/task-sweep-held.test.js
 test/brief-owner.test.js
+test/task-core.test.js
+test/mission-core.test.js
