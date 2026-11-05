@@ -245,6 +245,16 @@ test('linked copies share one supervisor identity while a business workspace sta
   assert.equal(planMemberUpLaunch({ ...opts, root: path.join(nestedWorkspace, 'child') }).label, nestedPlan.label);
 });
 
+test('a non-git workspace shares its supervisor identity with its child', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'member-identity-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'atris'));
+  fs.writeFileSync(path.join(tmp, 'atris', 'atris.md'), '# workspace\n');
+  fs.mkdirSync(path.join(tmp, 'child'));
+  const { memberProjectIdentity } = require('../lib/member-up-launch');
+  assert.equal(memberProjectIdentity(tmp), memberProjectIdentity(path.join(tmp, 'child')));
+});
+
 test('fresh mission process restores validated queue and records scope before verification', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'member-resume-scope-'));
   const main = path.join(tmp, 'repo'), linked = path.join(tmp, '.agent-worktrees', 'repo', 'control'), home = path.join(tmp, 'home');
