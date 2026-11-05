@@ -1,1 +1,0 @@
-{"id":"test-commands-status","kind":"test","target":"commands/status.js","files":["test/status-command.test.js"]}

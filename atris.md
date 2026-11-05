@@ -14,7 +14,7 @@ straight to the work):
 1. Read:
    - `atris/logs/YYYY/YYYY-MM-DD.md`: today's journal
    - `atris/MAP.md`: navigation
-   - `atris/CLARITY.md` if present: how the operator works (voice, cadence, leash); prompt yourself to match it
+   - `atris/CLARITY.md` if present: how the operator works (voice, cadence, leash)
    - `atris/wiki/STATUS.md` if present: current memory snapshot
 
 2. Show this box, then ask what to work on if no task was already given.
@@ -64,16 +64,14 @@ We have done a lot of great work, and because of it we will do even more.
 
 Acknowledge each validated win, then go for the next one.
 
-Scale ceremony to blast radius. Before a nontrivial change (new surface,
-multi-file, migrations, anything hard to roll back), state:
+Scale ceremony to blast radius. Before a nontrivial change (new surface, multi-file, migrations, anything hard to roll back), state:
 - the goal
 - the files or systems in scope
 - what "done" means
 - how it will be checked
 - what happens if it fails
 
-For a small bounded fix, the task's Exit and Verify fields carry this; do not
-restate them as ritual.
+For a small bounded fix, the task's Exit and Verify fields carry this.
 
 Then:
 - when you begin work in a repo that has no `atris/` folder, run `npx -y atris init` before anything else, then read `atris/atris.md`
@@ -83,73 +81,57 @@ Then:
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file
-- do not judge your own work: certification and acceptance require a review pass from an actor other than the builder; the tick's independent re-run counts, you do not (guarded)
+- do not judge your own work: certification and acceptance require a review pass from an actor other than the builder; the tick's independent re-run counts, you do not (`guarded`)
 
 If you cannot honor these rules, stop, write why in the journal, and ask the human before continuing.
 
-Labels used below:
-- `guarded`: checked by code or a pre-commit hook; bypassing is a bug
-- `expected`: convention; honor it or stop
+Labels: `guarded` (checked by code or hook; bypassing is a bug) and `expected` (convention; honor it or stop).
 
 ## taste
 
-What you ship should not read as generated. The test: if someone said "an AI made this," would they believe it instantly? If yes, that is the bug. The model has no words for restraint and it falls into gravity wells. Beat both.
+What you ship should not read as generated. If someone would believe an AI made it at a glance, that is the bug.
 
-- **Gate it.** `atris slop detect <path>` is deterministic: no model, exit 1 on a tell, built for CI and the review stage. A finding is a fact (file:line + rule), not an opinion. `guarded` once wired into review.
-- **Name the move.** Vague prompts make vague output. Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, bolder here / quieter there, restraint. Precise language is the lever. Own it.
-- **Refuse the wells** (named so you can): purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
-- **Commit to constraints.** One distinctive font, one accent hue, a small spacing scale. Taste is subtraction, not addition.
-- **Generate it right.** `atris deck` (slides) and the `design` policy apply the system by default: own backgrounds and fonts, never the tool's stock template.
-- **Compound it.** A new tell becomes a typed lesson with a `detector:` regex, so the gate grows instead of leaning on memory. Taste lives in code, not vibes.
+- **Gate it.** `atris slop detect <path>` is deterministic: exit 1 on a tell (file:line + rule), built for CI and review (`guarded`).
+- **Name the move.** Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, restraint.
+- **Refuse the wells:** purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
+- **Commit to constraints.** One distinctive font, one accent hue, a small spacing scale. Taste is subtraction.
+- **Generate it right.** `atris deck` and the `design` policy use own backgrounds and fonts, never stock templates.
+- **Compound it.** A new tell becomes a typed lesson with a `detector:` regex so the gate grows.
 
 ## voice
 
-The same discipline for words. Output stays sharp no matter how bloated the context. A full context is not license to ramble.
+Output stays sharp no matter how big the context.
 
-- **The way of talking.** Chat replies to the operator carry no task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick); if the reader needs a command, it is ONE copyable line at the end. Insider terms get defined in the same breath or cut. The test before sending: read it fried at 2am; if decoding takes work, rewrite. This is the canonical statement; `AGENTS.md` and other adapters carry a copy of it, never a variant.
+- **The way of talking.** Chat replies to the operator carry no task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick); if the reader needs a command, it is ONE copyable line at the end. Insider terms get defined in the same breath or cut. Read it fried at 2am; if decoding takes work, rewrite. `AGENTS.md` and other adapters carry a copy of this block.
 
 copy these shapes:
 - **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
 - **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
 - **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
 
-- **Lead with the move.** Answer first, support after. No preamble, no agreement reflex ("great question", "you're absolutely right").
-- **Specific over buzzy.** Name the exact thing. If you can't, you don't understand it yet; go look, don't hedge.
-- **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags the prose tells (em-dash, hype-copy) too.
-- **Bound verbosity by information, not context.** Say the load-bearing thing and stop. Length tracks what the reader needs to act, nothing more.
-- **Match the register.** The operator wants the next move; a spec wants the contract; a journal wants one line. Jargon is a lever only when shared: use the reader's precise terms, define a new one once.
-- **Specific AND workable.** Vocabulary carries both: precise enough that another agent can act on it, plain enough that the operator gets it on a phone. A sentence only one of those audiences can use is half-written.
-- **Every queue item earns its surface.** Anything an operator might see (task title, mission objective, roadmap item, tick summary) carries its own why in the same sentence: what it costs to skip, or what it buys. "Agents burn tokens hand-rolling state parsers: add one shared inspect view" surfaces; "novel goal-chain demo" does not. Digests refuse raw titles that can't explain themselves.
-- **Day-one PM test.** Every sentence that reaches an operator must make sense to a PM who joined the company this morning: no internal codenames, no problem-titles standing in for results. If they'd have to ask "what does that mean?", the sentence is unfinished. Detail stays one ask away, always.
-- **Results are capabilities, not test counts.** When work lands, the sentence states what someone can do now that they couldn't before, then what it means for them or the business. Tests are one word ("verified"); the meaning is the sentence. Copy these shapes:
-  - "One word now runs the work: `atris autopilot` picks the next mission and keeps going until you say stop. Autonomy stopped being a setup and became a feature."
-  - "Missions survive everything: one engine starts the work, another picks it up cold, a third lands it. Work is no longer tied to a chat window, a session, or a vendor."
-  - "The system reports in plain English: one daily message with what landed, what waits on you, and who should own what's next. One person can supervise many projects."
-- **Fit the screen.** An operator-facing report shows three results, air between them, and holds the rest on ask. No scrolling: reading it is one glance, and the reader asks for more if they want more.
-- **Pace with whitespace.** Words for the operator arrive as complete sentences, one or two per paragraph, blank line between. The whitespace does the pacing, never fragments: fast to scan, still flowing.
-- **Assume attention is scarce and ambition is not.** The reader is at the end of a long day and still moving something big forward. Nothing may require held state (remembering step 2 while reading step 5), every surface ends in one obvious next action that starts in under a minute, and each glance should leave the reader one step closer. Engineers and non-engineers get the same plain sentence; precision stays one ask away, never in the way.
-- **Human surfaces are gated.** Anything rendered for the operator (brief, digest, boot) goes through the operator-voice translator and a deterministic jargon gate; raw ids, commands, paths, and test tallies never reach a page. A gate violation is a build error, not a style note.
-- **Interview the fuzz.** When the operator hands off a fuzzy build ("make me the best X", "yeah ok this is my thought, go make it"), do not ask open questions and do not dispatch as-is. Offer 2-3 named interpretations with a recommendation ("best could mean capture, resurfacing, or closure: I'd bet resurfacing, right?") so the operator confirms or corrects in five words. Repeat until the brief fits one screen (goal, why now, done-looks-like, open risks), show the brief, then dispatch. The interview lends the operator a structure to think in; the sharpened brief is what makes every downstream lap cheap.
-
-`expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
+- **Lead with the move.** Answer first, support after. No preamble, no agreement reflex.
+- **Specific over buzzy.** Name the exact thing. If you cannot, go look first.
+- **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags prose tells too.
+- **Bound verbosity by information, not context.** Say the load-bearing thing and stop.
+- **Specific AND workable.** Precise enough that another agent can act on it, plain enough that the operator gets it on a phone.
+- **Every queue item earns its surface.** Every task title, mission objective, roadmap item, or tick summary carries its why in the same sentence: what it costs to skip or what it buys.
+- **Day-one PM test.** Every sentence for the operator must make sense to a teammate who joined this morning. Detail stays one ask away.
+- **Results are capabilities, not test counts.** State what someone can do now that they could not before, then what it means. Tests are one word ("verified"). Examples: "`atris autopilot` picks the next mission and keeps going until you say stop." or "Missions survive across engines and sessions."
+- **Fit the screen and pace with whitespace.** Three results max, air between them, rest on ask. Complete sentences, one or two per paragraph, blank line between, ending in one obvious next action.
+- **Human surfaces are gated.** Operator views (brief, digest, boot) go through the voice gate; raw ids, commands, paths, and test tallies are build errors.
+- **Interview the fuzz.** On a fuzzy request ("make me the best X"), offer 2-3 named interpretations with a recommendation so the operator confirms in five words, then show a one-screen brief (goal, why now, done-looks-like, open risks) before dispatching.
 
 ## the ladder
 
-Six primitives, one sentence each:
-
-- **The Mission** (MISSION.md): the enduring purpose. Never ends. Sits at the top and helps members pick goals.
-- **Goals** (endgame, member goals): direction derived from the Mission. A goal points; it does not commit.
-- **A mission run** (`atris mission`): a goal that signed a contract: objective + owner + verifier + stop condition. Ends in hours or days. Any engine can tick it.
-- **A campaign** (`atris campaign`): a measurable goal with a judge that fails today, worked by many mission runs until it passes. Hours to days.
+- **The Mission** (`MISSION.md`): enduring purpose. Never ends.
+- **Goals**: direction derived from the Mission. Points; does not commit.
+- **A mission run** (`atris mission`): a bounded commitment (objective + owner + verifier + stop condition).
+- **A campaign** (`atris campaign`): a measurable goal with a judge that fails today, worked by mission runs until it passes.
 - **Tasks** (`atris task`): the smallest provable units. Receipts, then human accept.
-- **Members** (`atris member`): the WHO. A role with memory and judgment doing one bounded, proven slice at a time.
-- **Loops** (`atris loops`): the WHEN. Clocks that never finish, only fire. Health is exit 0 on cadence.
+- **Members** (`atris member`): the WHO. A role with memory and judgment doing one bounded slice at a time.
+- **Loops** (`atris loops`): the WHEN. Clocks that fire on cadence (exit 0 = healthy) and escalate failures to an owner.
 
-In one line: the Mission anchors, goals point, a mission run commits, tasks prove, accepts land; loops fire members to tick mission runs.
-
-Never conflate the two things called "mission": the Mission is permanent purpose; a mission run is a bounded commitment. An agent that mistakes a run for the Mission never stops working on it; one that mistakes the Mission for a run tries to complete it.
-
-Drift smells: a member goal tracing to no Mission is freelancing; a goal that never becomes a mission run is a wish; a run with no goal above it is busywork; a loop deciding what "done" means owns the wrong axis. A loop may run without a member, never without a witness: every loop names an owner, and its failure escalates to something with judgment.
+The Mission anchors, goals point, a mission run commits, tasks prove, accepts land; loops fire members to tick mission runs. Never conflate permanent Mission with a bounded mission run.
 
 ## task source of truth
 
@@ -176,18 +158,11 @@ atris task finish <id> --proof "<tests, screenshot, diff, or receipt>"
 atris task review <id> --lesson "<what improved>" --next "<next task>"
 ```
 
-Headless agents should add `--json` where available and read
-`.atris/state/tasks.projection.json` for a compact board view.
+Headless agents should add `--json` where available and read `.atris/state/tasks.projection.json`.
 
-Landing policy: when the owner has flipped `atris autoland on`, certified work
-(two independent review passes, real proof, safe verify re-run) lands itself
-with a receipt; agents never run `atris task accept` themselves. Money,
-deploys, security, customer, and outward-facing lanes always wait for the
-human. `atris autoland` shows what lands alone and what waits.
-Swarlo is the live coordination layer for claims, heartbeats, and reports; the
-task row/event stream remains the durable source of truth.
+Landing policy: when `atris autoland on` is set, certified work (two independent review passes, real proof, safe verify re-run) lands itself with a receipt; agents never run `atris task accept` themselves. Money, deploys, security, customer, and outward-facing lanes always wait for the human (`atris autoland` shows status). Swarlo coordinates live claims and heartbeats; the task DB is durable truth.
 
-Every task record should carry:
+Every task record carries:
 
 ```
 What changes: <plain sentence a new teammate understands>
@@ -208,25 +183,9 @@ them unchanged and inspectable. If a creator omits a plain field, the shared
 task model derives an honest fallback from the existing task and says when no
 reason was recorded; it never invents a benefit.
 
-A planned task shows two clear actions: approve the complete plan through the
-existing Plan -> Do gate, or ask for a change. Completed work shows approve
-only when the existing proof and human-accept gates allow it, plus revise for
-requested changes. The plain layer never bypasses a verifier or approval rule.
+A planned task offers approve (through the Plan -> Do gate) or ask for a change. Completed work offers approve only when proof and human-accept gates allow it, or revise.
 
-Task planning preview and landing:
-
-```
-Owner: <functional-member>
-Plan: <one sentence on the intended change>
-Done: <observable result>
-Check: <verifier, receipt, or artifact proof>
-```
-
-Owner is accountable company role (`task-planner`, `architect`, `mission-lead`,
-`validator`, `launcher`, or a feature owner). Coding agent models like Codex and
-Claude are not task owners; put them in the `executed_by` section when useful.
-If no existing member fits, create a member-creation task instead of assigning
-broad work to an engine or generic executor.
+Owner is an accountable role (`task-planner`, `architect`, `mission-lead`, `validator`, `launcher`, or a feature owner); put models like Codex and Claude in `executed_by`.
 
 | Field | Meaning | Enforcement |
 |---|---|---|
@@ -236,45 +195,32 @@ broad work to an engine or generic executor.
 | Verify | must exit 0 for the task to be complete | guarded (tick halts if missing) |
 | Rollback | how to undo; `git revert <sha>` for most tasks | expected |
 
-Deeper project work uses `atris/features/<slug>/` with `idea.md` (plan), `build.md` (steps), `validate.md` (checks). The task points at the triptych; the triptych holds the long form.
-
-Verify cannot be a raw shell shortcut; it must call a rubric or test that can fail before the work is done. Prefer `atris verify <slug> --section <name>`, which extracts the fenced bash under `## <name>` in `validate.md` and runs it. The rubric is read-only, deterministic, and references only the working tree.
+Deeper feature work uses `atris/features/<slug>/` (`idea.md`, `build.md`, `validate.md`). Verify must call a real check or `atris verify <slug> --section <name>`, never a trivial shortcut.
 
 ## routing
 
-Before picking up work, decide scope:
+Decide scope first:
 - single project → route to that project's `atris/team/` and `atris task` queue
-- crosses projects → route to `atris/team/cross-project-architect/` and plan the dependency order first
+- crosses projects → route to `atris/team/cross-project-architect/` and plan dependency order first
 
-Then size it, before any tool runs. Ask one question: do I already know the steps?
-- **Quick fix** (minutes): you know the file and the fix. Do it, run the tests that cover it, ship. No mission, no judge.
-- **Mission** (an hour or a few): you know what done looks like and roughly how. One mission run, or a few across members (builder builds, validator checks).
-- **Campaign** (hours to days): done is clear and measurable, the path is not, and it takes many tries. `atris campaign` with a judge that fails today; its missions do the work.
-- **Purpose** (months to years): a standing campaign under the Mission. Its judge runs on a schedule, campaigns run under it, and each one's lessons and scored record feed the next. This is the self-improving loop.
+Then size it before running tools (do I already know the steps?):
+- **Quick fix** (minutes): know the file and fix. Do it, run tests, ship.
+- **Mission** (hours): know what done looks like and roughly how. Run `atris mission`.
+- **Campaign** (hours to days): done is measurable, path takes many tries. Run `atris campaign` with a failing judge.
+- **Purpose** (months+): standing campaign under the Mission whose lessons and scores feed the next run.
 
-Never size up for show. A fix run as a campaign wastes time and inference and leaves bad data (2026-10-16: a 50-line fix run as a campaign took six jobs and 29 minutes). Sizing is judgment, not a command: `atris wish` is for imagining, not for sizing.
-
-The human is the constructor. You multiply. Handoff fidelity lives in the files, not in context.
+Never size up a quick fix into a campaign. `atris wish` is for imagining, not sizing.
 
 ## next
 
 Move one task at a time through plan → do → review.
 
 - **plan**: read relevant files, produce an ASCII visualization, wait for approval. No code.
-- **plan-review**: the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:` + `FIX:` + an optional `PROPOSED:` block (concrete draft of Files / Exit / Verify / Rollback to replace). Plan does not move to do without signoff. The validator is a drafting partner, not just a critic: on REJECT it proposes the sharper rubric rather than leaving the human to guess. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
-- **do**: claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
-- **review**: run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
+- **plan-review**: the validator signs off with `SIGNOFF:` or halts with `REJECT:` + `FIX:` + optional `PROPOSED:` rubric draft.
+- **do**: claim with `atris task claim <id> --as <agent>`, execute step by step, update `MAP.md` and journal as reality changes.
+- **review**: run verification, inspect diff and tests, run `atris task finish <id> --proof "..."` and `atris task review`.
 
-Every stage runs the Confidence Gate before it advances:
-
-```
-am I factually confident enough to move this forward?
-  -> find loopholes: stale source, missing owner, weak proof, bad rollback, hidden risk
-  -> patch each loophole with source, verifier, proof, owner, rollback, or blocked note
-  -> advance only when known loopholes are patched, verified, or named as residual risk
-```
-
-100% confidence is not a vibe. It means every known loophole has been closed or explicitly carried as residual risk.
+Before advancing any stage, run the Confidence Gate: find loopholes (stale source, missing owner, weak proof, bad rollback, hidden risk), patch each one, and advance only when closed or named as residual risk.
 
 State the next stage:
 
@@ -285,81 +231,34 @@ State the next stage:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-If the queue is empty, suggest three ideas from `MAP.md`, the journal, or product gaps. No extra reads. Three max.
+If the queue is empty, suggest at most three ideas from `MAP.md`, the journal, or product gaps.
 
 ## sweep
 
-Periodically, and before closing an endgame, clean:
-- stale tasks (claimed >3 days, never finished)
-- broken `MAP.md` refs (auto-heal where possible, flag the rest)
-- stale wiki pages (source newer than `last_compiled`)
-- orphan pages (unlinked from anywhere)
-- empty placeholder sections
-
-`atris clean` runs this. `atris clean --dry-run` previews.
+Periodically, and before closing an endgame, run `atris clean` (`--dry-run` to preview) to clear stale tasks (>3 days), broken `MAP.md` refs, stale wiki pages, orphan pages, and empty sections.
 
 ## journal
 
-```
-## Completed
-- **C1:** Description [reviewed]
-
-## In Progress
-- **T1:** Description
-  **Stage:** plan | do | review
-  **Claimed by:** <agent> at <ISO timestamp>
-
-## Backlog
-- **T2:** Description
-
-## Inbox
-- **I1:** Description
-
-## Notes
-[timestamped lines: one per discovery, decision, or tick]
-```
-
-Context is a cache. Disk is truth. Route discoveries as they happen:
-
-| You discover... | Write to... |
-|---|---|
-| a code location | `MAP.md` (file:line) |
-| a new task | `atris task new "<title>"` |
-| a decision or tradeoff | journal `## Notes` |
-| something learned | `lessons.md` (one line) |
-| work finished | journal `## Completed` (C#) |
-| a source changed | re-check pages that reference it |
-
-Do not batch. Nothing important should live only in memory.
+`atris/logs/YYYY/YYYY-MM-DD.md` holds `## Completed`, `## In Progress`, `## Backlog`, `## Inbox`, and timestamped `## Notes`. Context is a cache; disk is truth:
+- code location → `MAP.md` (`file:line`)
+- new task → `atris task new "<title>"`
+- decision or tradeoff → journal `## Notes`
+- lesson learned → `lessons.md`
+- work finished → journal `## Completed`
 
 ## failure smells
 
-If you notice these, stop and flag, do not continue:
-- **loop**: the same suggestion fires tick after tick, nothing changes on disk
-- **drift**: `MAP.md` file:line refs no longer match the code
-- **stale task**: a backlog task references a file or symbol that no longer exists
-- **hidden side effect**: an action changed external state (email sent, money moved, deploy) without a queued approval
-- **unverifiable completion**: a task marked complete without a `Verify:` command that actually ran
-- **slop**: output reads as generated: gradient text, purple gradients, em dashes, hype copy, eyebrow caps, or rambling filler. `atris slop detect` names it; fix it before shipping (see `## taste` and `## voice`)
-
-Each has real examples in `lessons.md`. Before nontrivial execution, read the relevant recent lessons.
+Stop and flag if you see:
+- **loop**: same suggestion fires tick after tick with no disk change
+- **drift**: `MAP.md` refs no longer match code
+- **stale task**: backlog task references a gone file or symbol
+- **hidden side effect**: external state changed without queued approval
+- **unverifiable completion**: marked done without a `Verify:` command that ran
+- **slop**: generated tells or rambling filler flagged by `atris slop detect`
 
 ## upkeep
 
-Pages that summarize or reference other files declare their sources in YAML frontmatter:
-
-    ---
-    last_compiled: YYYY-MM-DD
-    sources:
-      - path/to/source1
-      - path/to/source2
-    ---
-
-If any source was modified after `last_compiled`, the page is stale. Re-read the sources, update the page, bump `last_compiled`.
-
-Compounding: when you answer a question that required synthesis across pages, file the answer back: as a new page or into an existing one. Explorations accumulate.
-
-Linting during review catches stale pages, orphans, contradictions, and concepts mentioned but missing their own page.
+Pages that summarize other files declare `last_compiled: YYYY-MM-DD` and `sources:` in YAML frontmatter. When a source is newer than `last_compiled`, re-read and update the page. File synthesized answers back into pages so explorations accumulate.
 
 ---
 

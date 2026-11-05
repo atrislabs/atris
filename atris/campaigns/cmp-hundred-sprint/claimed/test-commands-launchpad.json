@@ -1,1 +1,0 @@
-{"id":"test-commands-launchpad","kind":"test","target":"commands/launchpad.js","files":["test/launchpad-command.test.js"]}

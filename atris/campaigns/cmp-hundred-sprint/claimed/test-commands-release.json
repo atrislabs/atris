@@ -1,1 +1,0 @@
-{"id":"test-commands-release","kind":"test","target":"commands/release.js","files":["test/release-command.test.js"]}

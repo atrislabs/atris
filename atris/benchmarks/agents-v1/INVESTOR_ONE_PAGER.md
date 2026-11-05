@@ -93,5 +93,5 @@ hire an agent → run the exam → get a scorecard → decide with receipts
 
 ---
 
-**Contact / demo:** `atris bench run --pack agents-v1 --engine claude`  
+**Contact / demo:** `atris bench run --pack agents-v1 --engine claude`
 **Repo:** [github.com/atrislabs/atris](https://github.com/atrislabs/atris) · pack lives at `atris/benchmarks/agents-v1/`

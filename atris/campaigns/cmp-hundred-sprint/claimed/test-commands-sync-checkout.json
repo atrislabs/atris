@@ -1,1 +1,0 @@
-{"id":"test-commands-sync-checkout","kind":"test","target":"commands/sync-checkout.js","files":["test/sync-checkout-command.test.js"]}

@@ -1,1 +1,0 @@
-{"id":"test-commands-stripe","kind":"test","target":"commands/stripe.js","files":["test/stripe-command.test.js"]}
