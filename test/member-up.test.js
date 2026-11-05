@@ -371,3 +371,28 @@ test('a failed supervisor pass is recorded and retried', async (t) => {
   assert.deepEqual(errors, [['supervisor check failed', 'roster unavailable']]);
   assert.deepEqual(team.spawned, ['ready']);
 });
+
+test('a member explains why it cannot choose a next job without repeating the same reason', () => {
+  const team = fakeTeam([{ name: 'scout' }]);
+  team.deps.writeNextJob = () => ({ skip: 'mission names no north star or no check' });
+  const up = createMemberUp(team.deps);
+  up.check();
+  team.advance(CHECK_MS);
+  up.check();
+  assert.equal(team.lines.filter(line => line.includes('cannot choose its next job')).length, 1);
+  assert.match(team.lines[0], /mission names no north star or no check/);
+});
+
+test('a mission read error is retried on the next pass instead of counted as idle', () => {
+  const team = fakeTeam([{ name: 'scout' }]);
+  const errors = [];
+  let calls = 0;
+  team.deps.writeNextJob = () => { calls += 1; throw new Error('mission unreadable'); };
+  team.deps.reportError = (context, error) => errors.push([context, error.message]);
+  const up = createMemberUp(team.deps);
+  for (let i = 0; i < 5; i += 1) { up.check(); team.advance(CHECK_MS); }
+  assert.equal(calls, 5);
+  assert.equal(errors.length, 5);
+  assert.deepEqual(up.idle(), []);
+  assert.ok(!team.lines.some(line => line.includes('is idle')));
+});
