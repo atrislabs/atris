@@ -150,7 +150,7 @@ function proposeSkillFile(source, destPath, label, { dryRun = false } = {}) {
 
 // Existing skill files are user-owned unless an ownership baseline proves
 // otherwise. We have no such baseline, so never replace or follow them.
-function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = false } = {}) {
+function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = false, propose = false } = {}) {
   const source = fs.readFileSync(srcPath);
   let stat;
   try { stat = fs.lstatSync(destPath); } catch (error) {
@@ -161,7 +161,7 @@ function syncSkillFile(srcPath, destPath, label, { dryRun = false, silent = fals
       console.warn(`- Kept ${label} (existing skill file not replaced)`);
     } else if (!source.equals(fs.readFileSync(destPath))) {
       console.warn(`- Kept ${label} (existing skill file not replaced)`);
-      proposeSkillFile(source, destPath, label, { dryRun });
+      if (propose) proposeSkillFile(source, destPath, label, { dryRun });
     }
     return 0;
   }
@@ -238,7 +238,7 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
           syncRecursive(srcPath, destPath, skillName, relPath);
         } else {
           updated += syncSkillFile(srcPath, destPath, `atris/skills/${skillName}/${relPath}`, {
-            dryRun, silent: !verbose,
+            dryRun, silent: !verbose, propose: opts.propose === true,
           });
         }
       }
@@ -420,6 +420,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     workspace_template: template.key,
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
+  const propose = options.propose === true;
   const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
   const targetAtrisDir = path.join(targetRoot, 'atris');
 
@@ -479,7 +480,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
   // customer workspace. Business-starter template ships skill infra (README,
   // folders) but skill files live in atris-cli/atris/skills/, single source
   // of truth. Any new skill (e.g. AEO) auto-propagates to every customer.
-  const skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false, dryRun });
+  const skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false, dryRun, propose });
 
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
@@ -562,6 +563,7 @@ function syncAtris(options = {}) {
   // Default is plan-only. Writes require an explicit --yes.
   const dryRun = explicitDryRun || !yes;
   const force = options.force != null ? options.force : process.argv.includes('--force');
+  const propose = options.propose === true;
   // Business mode detection: if .atris/business.json exists, use canonical templates
   const bizFile = path.join(process.cwd(), '.atris', 'business.json');
   if (fs.existsSync(bizFile)) {
@@ -571,6 +573,7 @@ function syncAtris(options = {}) {
         templateName: bizMeta.workspace_template || 'business',
         dryRun,
         force,
+        propose,
       });
       const bizRunIgnore = ensureRunIgnore(process.cwd(), { dryRun });
       if (bizRunIgnore.changed) {
@@ -703,7 +706,7 @@ function syncAtris(options = {}) {
   }
 
   // Sync all skills from package to user's project via shared helper.
-  updated += syncPackageSkills(targetDir, { verbose: true, dryRun });
+  updated += syncPackageSkills(targetDir, { verbose: true, dryRun, propose });
 
   const voiceCard = voiceCardForRoot(process.cwd());
   const cursorVoiceFile = path.join(process.cwd(), '.cursor', 'rules', 'atris-voice.mdc');
@@ -807,7 +810,7 @@ function syncAtris(options = {}) {
 /**
  * Recursively sync files from src to dest. Returns count of files updated.
  */
-function syncRecursiveCount(src, dest, label, silent, root) {
+function syncRecursiveCount(src, dest, label, silent, root, propose) {
   let count = 0;
   try {
     const existing = fs.lstatSync(dest);
@@ -823,9 +826,9 @@ function syncRecursiveCount(src, dest, label, silent, root) {
     const destPath = path.join(dest, entry);
 
     if (fs.statSync(srcPath).isDirectory()) {
-      count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent, root);
+      count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent, root, propose);
     } else {
-      count += syncSkillFile(srcPath, destPath, `${label}/${entry}`, { silent });
+      count += syncSkillFile(srcPath, destPath, `${label}/${entry}`, { silent, propose });
     }
   }
   return count;
@@ -839,7 +842,7 @@ function syncRecursiveCount(src, dest, label, silent, root) {
  * Global = baseline truth. Project = optional override.
  * Returns number of files updated (0 = already current).
  */
-function syncSkills({ silent = false } = {}) {
+function syncSkills({ silent = false, propose = false } = {}) {
   const packageSkillsDir = path.join(__dirname, '..', 'atris', 'skills');
   if (!fs.existsSync(packageSkillsDir)) {
     return 0;
@@ -875,7 +878,7 @@ function syncSkills({ silent = false } = {}) {
       const destSkillDir = path.join(globalDir, skill);
 
       if (fs.existsSync(destSkillDir) || fs.existsSync(globalDir)) {
-        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent, homeDir);
+        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent, homeDir, propose);
       }
     }
   }
@@ -904,7 +907,7 @@ function syncSkills({ silent = false } = {}) {
       const destSkillDir = path.join(userSkillsDir, skill);
       const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
-      updated += syncRecursiveCount(srcSkillDir, destSkillDir, `atris/skills/${skill}`, silent, process.cwd());
+      updated += syncRecursiveCount(srcSkillDir, destSkillDir, `atris/skills/${skill}`, silent, process.cwd(), propose);
 
       // Create symlink if doesn't exist
       if (!fs.existsSync(symlinkPath)) {

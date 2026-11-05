@@ -324,7 +324,7 @@ if (!helpRequested && !dryRunRequested && (
 )) {
   try {
     const { syncSkills } = require('../commands/sync');
-    const skillsUpdated = syncSkills({ silent: true });
+    const skillsUpdated = syncSkills({ silent: true, propose: ['update', 'sync'].includes(command) && updateArgs.includes('--propose-skills') && !updateArgs.includes('--all') });
     if (skillsUpdated > 0) {
       console.log(`${skillsUpdated} skill file${skillsUpdated > 1 ? 's' : ''} added`);
     }
@@ -994,6 +994,7 @@ function showUpdateHelp(commandName = 'update') {
   console.log('  --dry-run    Preview update work without writing files.');
   console.log('  --yes, -y    Apply the planned writes.');
   console.log('  --force      Overwrite existing template files where supported (with --yes).');
+  console.log('  --propose-skills  Propose differing skill files for manual review (single workspace).');
   if (commandName === 'update') {
     console.log('  --self       Update the installed atris cli from npm (packaged installs only).');
   }
@@ -2385,6 +2386,7 @@ if (command === 'guide') {
       dryRun: args.includes('--dry-run'),
       yes: args.includes('--yes') || args.includes('-y'),
       force: args.includes('--force') || args.includes('--yes') || args.includes('-y'),
+      propose: args.includes('--propose-skills'),
     });
   }
 } else if (command === 'upgrade') {
