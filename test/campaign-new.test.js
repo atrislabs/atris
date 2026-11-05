@@ -240,3 +240,62 @@ test('retry leaves a judge edited after the first reading intact', async () => {
     assert.equal(result.draft.judge_file, 'atris/campaigns/cmp-retry/judge-2.sh');
   });
 });
+
+test('existing SQLite campaign without its judge directory refuses drafting before engine or judge', async () => {
+  const { draftAndStart } = require('../lib/campaign-new');
+  const { createSqliteStore } = require('../lib/campaign-store');
+  await inWorkspace(async (dir) => {
+    const store = createSqliteStore(path.join(dir, 'campaigns.db'));
+    try {
+      const id = 'cmp-existing';
+      const target = path.join(dir, 'atris/campaigns', id);
+      store.append({ campaign_id: id, type: 'campaign_started', actor: 'human:test', data: {
+        title: 'Original', judge: `sh atris/campaigns/${id}/judge.sh`, budget: 10,
+      } });
+      let asks = 0;
+      let judges = 0;
+      let error;
+      const code = await draftAndStart(['--id', id], {
+        store, asJson: true,
+        fail: (message, status) => { error = message; return status || 2; },
+        out: () => {},
+        judge: async () => { judges++; return { passed: false, exit: 1 }; },
+      }, { root: dir, goal: 'New goal', ask: async () => { asks++; return { text: reply(FAILING) }; } });
+      assert.equal(code, 1);
+      assert.match(error, /already exists/);
+      assert.equal(asks, 0);
+      assert.equal(judges, 0);
+      assert.equal(fs.existsSync(target), false);
+      assert.equal(store.read(id).length, 1);
+    } finally { store.close(); }
+  });
+});
+
+test('campaign created while the engine is answering is refused before writing or judging', async () => {
+  const { draftAndStart } = require('../lib/campaign-new');
+  const { createSqliteStore } = require('../lib/campaign-store');
+  await inWorkspace(async (dir) => {
+    const store = createSqliteStore(path.join(dir, 'campaigns.db'));
+    const id = 'cmp-race';
+    let judges = 0;
+    let output;
+    const log = console.log;
+    console.log = (line) => { output = JSON.parse(line); };
+    try {
+      const code = await draftAndStart(['--id', id], {
+        store, asJson: true, fail: (message) => assert.fail(message), out: () => {},
+        judge: async () => { judges++; return { passed: false, exit: 1 }; },
+      }, { root: dir, goal: 'New goal', ask: async () => {
+        store.append({ campaign_id: id, type: 'campaign_started', actor: 'human:test', data: {
+          title: 'Original', judge: `sh atris/campaigns/${id}/judge.sh`, budget: 10,
+        } });
+        return { text: reply(FAILING) };
+      } });
+      assert.equal(code, 1);
+      assert.match(output.error, /already exists/);
+      assert.equal(judges, 0);
+      assert.equal(fs.existsSync(path.join(dir, 'atris/campaigns', id)), false);
+      assert.equal(store.read(id).length, 1);
+    } finally { console.log = log; store.close(); }
+  });
+});
