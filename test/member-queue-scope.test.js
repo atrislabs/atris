@@ -231,7 +231,18 @@ test('linked copies share one supervisor identity while a business workspace sta
   assert.equal(a.pidFile, b.pidFile);
   assert.equal(a.dir, b.dir);
   fs.mkdirSync(path.join(linked, '.atris'), { recursive: true }); fs.writeFileSync(path.join(linked, '.atris', 'business.json'), '{}');
-  assert.notEqual(planMemberUpLaunch({ ...opts, root: linked }).label, a.label);
+  const business = planMemberUpLaunch({ ...opts, root: linked });
+  assert.notEqual(business.label, a.label);
+  const nested = path.join(linked, 'inside', 'business');
+  fs.mkdirSync(nested, { recursive: true });
+  assert.equal(planMemberUpLaunch({ ...opts, root: nested }).label, business.label);
+  const nestedWorkspace = path.join(main, 'another-workspace');
+  fs.mkdirSync(path.join(nestedWorkspace, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(nestedWorkspace, 'atris', 'atris.md'), '# nested workspace\n');
+  fs.mkdirSync(path.join(nestedWorkspace, 'child'));
+  const nestedPlan = planMemberUpLaunch({ ...opts, root: nestedWorkspace });
+  assert.notEqual(nestedPlan.label, a.label);
+  assert.equal(planMemberUpLaunch({ ...opts, root: path.join(nestedWorkspace, 'child') }).label, nestedPlan.label);
 });
 
 test('fresh mission process restores validated queue and records scope before verification', (t) => {
