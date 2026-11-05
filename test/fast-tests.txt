@@ -107,6 +107,7 @@ test/permission-grants.test.js
 test/policy-lessons.test.js
 test/probe.test.js
 test/qr.test.js
+test/pack-core.test.js
 test/pack-craft.test.js
 test/pack-safety.test.js
 test/pack-run.test.js
