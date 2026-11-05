@@ -71,7 +71,6 @@ const {
   runsPruneLines,
   formatBytes,
 } = require('../lib/runs-prune');
-const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
 const { operatorReady, hasAgentJargon } = require('./autoland');
@@ -757,11 +756,8 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
     updated_at: stampIso(),
   });
   appendJsonLine(paths.missionsJsonl, next);
-  // Self-maintenance: once history outweighs live missions 4:1 the ledger is
-  // rewritten to one row per mission (latest state, first display number,
-  // exactly what loadMissionMap reconstructs). Every status/tick path parses
-  // this file several times, so unbounded snapshot history taxes everything.
-  try { compactMissionLedger(paths.missionsJsonl); } catch {}
+  // Preserve the append-only ledger. Replacing it during compaction can erase
+  // a mission or cloud receipt appended by another process after the last check.
   const event = appendEvent(eventType, next, payload, root);
   if (next.campaign_id) campaignMissions().recordCampaignMissionEnded(root, existing, next, TERMINAL_STATUSES);
   renderMissionStatus(root);
