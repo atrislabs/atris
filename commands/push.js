@@ -45,6 +45,25 @@ function basenameOfManifestPath(filePath) {
   return idx === -1 ? cleaned : cleaned.slice(idx + 1);
 }
 
+// A dangling link, or a link in a parent component, is an occupied local
+// path even though existsSync on the full path may report false. Do not turn
+// an unreadable or linked local path into a remote deletion.
+function localPathExistsOrIsLinked(root, manifestPath) {
+  const parts = String(manifestPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  let current = root;
+  for (const part of parts) {
+    current = path.join(current, part);
+    let stat;
+    try { stat = fs.lstatSync(current); } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      if (error.code === 'ENOTDIR') return true;
+      throw new Error(`cannot safely inspect local workspace: ${error.message}`, { cause: error });
+    }
+    if (stat.isSymbolicLink()) return true;
+  }
+  return true;
+}
+
 function isBusinessWorkspaceRoot(dir) {
   return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
 }
@@ -549,7 +568,7 @@ async function pushAtris() {
 
   // Load manifest and compute local hashes
   const manifest = loadManifest(resolvedSlug || slug);
-  const localFiles = computeLocalHashes(sourceDir);
+  const localFiles = computeLocalHashes(sourceDir, { strict: true });
 
   if (manifest && manifest.workspace_root && !allowCrossRootManifest) {
     const manifestRoot = canonicalWorkspaceRoot(manifest.workspace_root);
@@ -672,7 +691,7 @@ async function pushAtris() {
     baseFiles,
     onlyPrefixes,
     readFileContent: (filePath) => fs.readFileSync(path.join(sourceDir, filePath.replace(/^\//, '')), 'utf8'),
-    isLocalFilePresent: (filePath) => fs.existsSync(path.join(sourceDir, filePath.replace(/^\//, ''))),
+    isLocalFilePresent: (filePath) => localPathExistsOrIsLinked(sourceDir, filePath),
   });
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
@@ -1054,6 +1073,7 @@ async function pushAtris() {
 module.exports = {
   pushAtris,
   buildPushChangePlan,
+  localPathExistsOrIsLinked,
   buildPushUploadBatches,
   shouldRetrySyncIndividually,
   resolvePushSourceDir,

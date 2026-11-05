@@ -531,6 +531,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/push.js` (`pushAtris`)
 - **Scoped push (S4):** `parsePushArgv` / `mergePushScopes` / `resolveChangedScopePaths`: `atris push <file...>` and `atris push --changed` (manifest hash diffs via `lib/manifest.js`) become `onlyPrefixes` for `buildPushChangePlan`
+- **Incomplete local scan:** push fails closed when a workspace directory or text file cannot be read. Deletion planning treats dangling file or parent links as occupied, not as proof a local file was deleted. Regression: `test/push-unreadable-local.test.js`.
 - **Safety:** drift gate (S1 safe-path-first message with `atris sync --review` and `atris push --only` escape hatches via `renderDriftBlock`), mass-delete guard, `analyzePushSafety` / `renderPushSafetyBlock`, `--force --allow-broad-workspace` requires interactive y/N confirm (skippable with `--yes`) via `needsForceBroadWorkspaceConfirm` / `promptConfirm`
 - **Regression:** `test/push-scoped.test.js`, `test/push-delete-safety.test.js`, `test/push-safety-ux.test.js`
 
