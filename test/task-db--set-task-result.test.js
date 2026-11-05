@@ -67,7 +67,7 @@ test('saves the result on the task and records a result_set event', () => {
 
   const resultAt = out.row.metadata.result_at;
   assert.strictEqual(new Date(resultAt).toISOString(), resultAt);
-  assert.strictEqual(out.row.updated_at, Date.parse(resultAt));
+  assert.ok(out.row.updated_at >= Date.parse(resultAt));
 
   assert.strictEqual(out.event.event_type, 'result_set');
   assert.strictEqual(out.event.task_id, id);
@@ -80,6 +80,18 @@ test('saves the result on the task and records a result_set event', () => {
   const events = eventsFor(db, id);
   assert.deepStrictEqual(events.map((e) => e.event_type), ['created', 'result_set']);
   assert.deepStrictEqual(JSON.parse(events[1].payload), { result: 'The thing shipped.' });
+});
+
+test('result time records wall time even when the row marker is ahead', () => {
+  const db = freshDb();
+  const { id } = taskDb.addTask(db, { title: 'future marker', workspaceRoot: WORKSPACE });
+  const future = Date.now() + 60_000;
+  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(future, id);
+  const before = Date.now();
+  const out = taskDb.setTaskResult(db, { id, actor: 'test', result: 'done' });
+  assert.ok(Date.parse(out.row.metadata.result_at) >= before);
+  assert.ok(Date.parse(out.row.metadata.result_at) < future);
+  assert.ok(out.row.updated_at > future);
 });
 
 test('collapses whitespace in the result and overwrites an earlier one', () => {
