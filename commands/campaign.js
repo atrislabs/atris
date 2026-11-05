@@ -410,8 +410,9 @@ async function cmdStart(args, ctx) {
   const startCommit = headCommit(process.cwd());
   const reading = await ctx.judge(judge, timeout, id, startCommit);
   if (reading.passed && !standing) {
-    moveHoldoutBack(held);
-    return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
+    const restored = moveHoldoutBack(held);
+    const restoreNote = restored.ok ? '' : ` ${restored.error}`;
+    return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.${restoreNote}`, 1);
   }
 
   let kept = null;

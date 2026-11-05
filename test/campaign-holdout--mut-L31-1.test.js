@@ -15,8 +15,9 @@ test('moveHoldoutIn falls back to copy and unlink on EXDEV cross-device link err
   const source = path.join(repo, 'holdout.jsonl');
   fs.writeFileSync(source, 'data\n');
 
-  const realRename = fs.renameSync;
-  fs.renameSync = () => {
+  const realLink = fs.linkSync;
+  fs.linkSync = (from, to) => {
+    if (from !== source) return realLink(from, to);
     const err = new Error('cross-device link not permitted');
     err.code = 'EXDEV';
     throw err;
@@ -28,7 +29,7 @@ test('moveHoldoutIn falls back to copy and unlink on EXDEV cross-device link err
     assert.equal(fs.existsSync(source), false);
     assert.equal(fs.readFileSync(moved.path, 'utf8'), 'data\n');
   } finally {
-    fs.renameSync = realRename;
+    fs.linkSync = realLink;
     try { fs.rmSync(home, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(repo, { recursive: true, force: true }); } catch {}
   }
