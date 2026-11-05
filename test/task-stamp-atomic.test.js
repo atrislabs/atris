@@ -4,9 +4,34 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
 const taskDb = require('../lib/task-db');
 const { stampAutoAcceptMetadata, stampAcceptGroupMetadata, stampCertifyVerifyMetadata, stampVerifyCacheMetadata, stampReadyVerifyMetadata } = require('../commands/task');
+
+for (const kind of ['claim', 'ready', 'plan']) {
+  test(`${kind} preserves corrupt task metadata and writes no event`, () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-corrupt-lifecycle-'));
+    const db = taskDb.open(path.join(tmp, 'tasks.db'));
+    try {
+      // A real git HEAD exercises the claim's start-commit metadata stamp.
+      execFileSync('git', ['init', '--quiet'], { cwd: tmp });
+      execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'test'], { cwd: tmp });
+      const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+      db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('{broken', id);
+      const out = kind === 'claim' ? taskDb.claimTask(db, { id, claimedBy: 'builder' })
+        : kind === 'ready' ? taskDb.readyTask(db, { id, actor: 'builder', proof: 'proof' })
+          : taskDb.stageTask(db, { id, actor: 'builder', stage: 'plan', goal: 'goal', exit: 'done', proofNeeded: 'test' });
+      assert.equal(out.reason, 'metadata_unreadable');
+      const stored = db.prepare('SELECT status, metadata FROM tasks WHERE id = ?').get(id);
+      assert.equal(stored.status, 'open');
+      assert.equal(stored.metadata, '{broken');
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM task_events WHERE task_id = ?').get(id).n, 1);
+    } finally {
+      taskDb.close(); fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
 
 test('a stale landing stamp preserves a later result without undoing acceptance', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-stamp-atomic-'));
@@ -93,7 +118,7 @@ test('verify cache does not advance the task ordering timestamp', () => {
   }
 });
 
-for (const kind of ['reopen', 'backlog', 'tag', 'chat']) {
+for (const kind of ['reopen', 'backlog', 'tag', 'chat', 'plan']) {
   test(`${kind} refuses a stale snapshot when the cache changes without touching task order`, () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-cache-cas-'));
     const db = taskDb.open(path.join(tmp, 'tasks.db'));
@@ -123,7 +148,8 @@ for (const kind of ['reopen', 'backlog', 'tag', 'chat']) {
       const out = kind === 'reopen' ? taskDb.reopenTask(wrapped, { id, actor: 'test' })
         : kind === 'backlog' ? taskDb.backlogTask(wrapped, { id, actor: 'test' })
           : kind === 'tag' ? taskDb.tagTask(wrapped, { id, actor: 'test', add: ['one'] })
-            : taskDb.chatTask(wrapped, { id, actor: 'test', goal: 'new goal' });
+            : kind === 'chat' ? taskDb.chatTask(wrapped, { id, actor: 'test', goal: 'new goal' })
+              : taskDb.stageTask(wrapped, { id, actor: 'test', stage: 'plan', goal: 'goal', exit: 'done', proofNeeded: 'test' });
       assert.equal(out.reason, 'stale_task_state');
       assert.deepEqual(taskDb.getTask(db, id).metadata.verify_cache, { ok: true });
     } finally {
