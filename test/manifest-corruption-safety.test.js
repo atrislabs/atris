@@ -67,6 +67,24 @@ test('an unreadable existing manifest is not treated as a first sync', () => {
   }
 });
 
+test('boot sync status reports an unavailable baseline without blocking', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-boot-'));
+  const prior = process.env.ATRIS_TEST_STATE_DIR;
+  process.env.ATRIS_TEST_STATE_DIR = path.join(root, 'state');
+  try {
+    const workspace = path.join(root, 'workspace');
+    fs.mkdirSync(path.join(workspace, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(workspace, '.atris/business.json'), '{"slug":"sample"}');
+    const file = path.join(root, 'state/.atris/businesses/sample/manifest.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{"files":');
+    assert.equal(require('../lib/sync-status').syncStatus(workspace), 'sync state unavailable');
+  } finally {
+    if (prior === undefined) delete process.env.ATRIS_TEST_STATE_DIR; else process.env.ATRIS_TEST_STATE_DIR = prior;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('keep-local pull preserves local files and broken manifest when baseline cannot be parsed', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-pull-'));
   const prevState = process.env.ATRIS_TEST_STATE_DIR;
