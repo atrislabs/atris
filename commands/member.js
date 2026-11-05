@@ -10210,7 +10210,12 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
         };
         fs.mkdirSync(path.dirname(missionsFile), { recursive: true });
         fs.appendFileSync(missionsFile, `${JSON.stringify(updatedMission)}\n`, 'utf8');
-      } catch {}
+      } catch {
+        const payload = { ok: false, action: 'member_steer_unconfirmed', member: owner, mission_id: missionSummary.live.id };
+        printJsonOrText(payload, [`Could not confirm the direction was saved for ${owner}. Other updates may have happened.`], asJson);
+        process.exitCode = 1;
+        return payload;
+      }
     }
     const payload = {
       ok: true,

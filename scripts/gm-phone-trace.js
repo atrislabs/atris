@@ -671,6 +671,22 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
 // leaves the phone (the network is off). The second reaches the desk, but
 // the answer back is lost. The third goes again with the same words, so it
 // carries the same send id and builder hears it once.
+async function thrownActionTrace({ chromePath = findChrome() } = {}) {
+  const took = [];
+  const desk = cardDesk(memberCard('builder', 1), async (action, { text }) => {
+    if (action === 'talk') { took.push(text); throw new Error('after dispatch'); }
+    return { ok: false, reason: 'bad_option' };
+  });
+  return onPhone(desk, chromePath, async p => {
+    await p.tap('#bet .sayline .quiet');
+    await wait(250);
+    await p.type('take the readme first');
+    await p.enter();
+    await p.until("Boolean(document.querySelector('#bet .act .note')) && document.querySelector('#bet .act .note').textContent.includes('could not confirm')", 'uncertain result', 8000);
+    return { view: await look(p), took };
+  });
+}
+
 async function talkFailTrace({ chromePath = findChrome() } = {}) {
   const WORDS = 'take the readme first';
   const took = [];
@@ -1789,7 +1805,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, thrownActionTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
