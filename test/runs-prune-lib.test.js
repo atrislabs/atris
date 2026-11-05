@@ -169,3 +169,15 @@ test('apply refuses a dangling state-root symlink', (t) => {
   assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
   assert.strictEqual(fs.existsSync(receipt), true);
 });
+
+test('apply refuses symlinked state parent, even when dangling', (t) => {
+  for (const dangling of [true, false]) {
+    const { root, write } = fixture(t);
+    const receipt = write('atris/runs/needed.json', '{}');
+    const target = path.join(root, 'state-parent');
+    if (!dangling) fs.mkdirSync(target);
+    fs.symlinkSync(target, path.join(root, '.atris'));
+    assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+    assert.strictEqual(fs.existsSync(receipt), true);
+  }
+});
