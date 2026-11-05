@@ -866,7 +866,7 @@ test('page: a card\'s box is its input: a quiet line that turns into the field i
   assert.match(script, /if \(body\.text\) body\.send = sendId\(\[from\.id, option \? option\.id : 'the box', body\.text\]\.join\(' \| '\)\);/);
   // words that did not go through come back in their box, and one line says why
   assert.match(script, /field\.querySelector\('input'\)\.value = typed;/);
-  assert.match(script, /if \(note\) note\.textContent = \(r && r\.http === 409 && r\.message\) \|\| \(r && r\.http === 0 && r\.message\) \|\| 'that did not go through\. try again\.';/);
+  assert.match(script, /r\.reason === 'action_unconfirmed' && r\.message/);
   // every card that takes words gets its box from the Mac: the one place to type
   const ask = { job: 'm1', key: 'm1:0', hash: null };
   for (const c of [gmCard.idea({ id: 'b1', title: 't', body: 'b' }), gmCard.yes({ id: 'y1', title: 't', body: 'b', request: ask }), gmCard.done({ id: 'd1', title: 't', body: 'b' }), gmCard.wait({ id: 'w1' }), gmCard.choice({ id: 'c1', items: [{ id: 'b1', title: 't', why: 'w.' }] })]) {
@@ -1520,7 +1520,7 @@ test('browser: after a lost answer, a tap on the old card does nothing and the p
   const show = JSON.stringify(out, null, 1);
   // the answer saved and the desk moved on, but the page never heard: the old card is back with a plain line
   assert.equal(out.after_lost.title, 'who uses the phone page most?', show);
-  assert.equal(out.after_lost.line, 'could not confirm whether that went through. check before trying again.', show);
+  assert.equal(out.after_lost.line, 'could not confirm whether that went through. see what happened before trying again.', show);
   // A repeat of the same send is held by the in-memory cache.
   assert.deepEqual(out.posts, [{ card: 'question:q1', option: 'a2' }], show);
   // only the answer to the question on screen is saved; fewer mistakes never is
@@ -1538,7 +1538,7 @@ test('browser: say something that does not send comes back on its card with the 
   const pick = l => ({ kind: l.kind, title: l.title, field_open: l.field_open, words: l.words, typing: l.typing });
   // the network is off: the card comes back, the words and the cursor in its box, and a line says so
   assert.deepEqual(pick(out.offline), kept, show);
-  assert.equal(out.offline.line, 'could not confirm whether the mac got that. check before trying again.', show);
+  assert.equal(out.offline.line, 'could not confirm whether the mac got that. see what happened before trying again.', show);
   // Enter again reaches the desk, which could not pass it on: the same, with why
   assert.deepEqual(pick(out.refused), kept, show);
   assert.equal(out.refused.line, 'it did not reach them. try again in a minute.', show);
@@ -1570,7 +1570,7 @@ test('browser: what do you mean on a do it or a yes card: the reply explains, so
 test('browser: a thrown action is shown as uncertain after it acts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
   const out = await trace.thrownActionTrace({ chromePath: CHROME });
   assert.deepEqual(out.took, ['take the readme first']);
-  assert.match(out.view.line, /could not confirm.*check before trying again/);
+  assert.match(out.view.line, /could not confirm.*see what happened before trying again/);
 });
 
 test('over http: synchronous desk exceptions also keep the send id', async () => {
@@ -1729,7 +1729,7 @@ test('browser: a word to a teammate that did not send comes back in its box, a l
   const show = JSON.stringify(out, null, 1);
   for (const l of [out.offline, out.lost]) {
     // nothing left the phone, or the answer was lost: the talk card, the words in its box, one line
-    assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'could not confirm whether the mac got that. check before trying again.'], show);
+    assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'could not confirm whether the mac got that. see what happened before trying again.'], show);
   }
   // Enter once more: the first answer comes back, and builder is not told twice
   assert.equal(out.sent.said, 'builder has it.', show);
@@ -1792,7 +1792,7 @@ test('browser: a swap whose answer was lost: the next tap draws the team the Mac
   const out = await trace.swapLostTrace({ chromePath: CHROME });
   const show = JSON.stringify(out, null, 1);
   // the answer never came: the swap card stays, with a line why
-  assert.deepEqual([out.lost.kind, out.lost.line], ['swap', 'could not confirm whether that went through. check before trying again.'], show);
+  assert.deepEqual([out.lost.kind, out.lost.line], ['swap', 'could not confirm whether that went through. see what happened before trying again.'], show);
   // the next tap is refused with the team the desk has, and that team is drawn right away, with the swap on it and the line why
   assert.deepEqual([out.after.kind, out.after.said, out.after.line], ['team', 'builder now runs on two m-two.', 'that card changed, so nothing was done. here is the one on screen now.'], show);
   assert.ok(out.after.ms < 2000, `the team came at once, not on the page's next look (${out.after.ms}ms)`);
