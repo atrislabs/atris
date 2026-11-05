@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pruneRuns } = require('../lib/runs-prune');
 
-test('archived room receipt preserves its recorded timestamp', () => {
+test('receipt preview leaves the recorded timestamp intact', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'receipt-timestamp-'));
   const receiptPath = path.join(root, 'atris/runs/room/receipt.json');
   fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
@@ -26,10 +26,9 @@ test('archived room receipt preserves its recorded timestamp', () => {
 
   const result = pruneRuns(root, {
     nowMs: Date.parse('2026-10-23T12:00:00.000Z'),
-    apply: true,
     keepDays: 14,
     keepNewest: 0,
   });
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, result.manifest_path), 'utf8'));
-  assert.strictEqual(manifest.entries[0].compact.at, at);
+  assert.strictEqual(result.prune_count, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(receiptPath, 'utf8')).at, at);
 });

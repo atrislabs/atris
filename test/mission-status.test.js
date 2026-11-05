@@ -2765,7 +2765,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
       available: false,
       ok: null,
       summary: null,
-      would_prune_label: 'Would prune',
+      would_prune_label: 'Potential candidates',
       prune_count: null,
       prune_bytes_text: null,
       deleted_label: 'Deleted',
@@ -2946,7 +2946,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
 
     const preview = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--prune-preview'], { cwd: dir });
     assert.equal(preview.status, 0, preview.stderr || preview.stdout);
-    assert.match(preview.stdout, /Prune dry-run: \d+ files \/ [^)]+ would prune; \d+ deleted\./);
+    assert.match(preview.stdout, /Prune dry-run: \d+ potential candidates \/ [^)]+; reference scan is incomplete, nothing deleted\./);
     assert.doesNotMatch(preview.stdout, /Saved:/);
 
     const previewJson = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--prune-preview', '--json'], { cwd: dir });
@@ -2959,14 +2959,14 @@ test('mission timeline lists saved landing changed and next lines', () => {
       format: null,
     });
     assert.equal(previewPayload.prune_summary?.ok, true);
-    assert.match(previewPayload.prune_summary?.text, /Prune dry-run: \d+ files \/ [^)]+ would prune; \d+ deleted\./);
+    assert.match(previewPayload.prune_summary?.text, /Prune dry-run: \d+ potential candidates \/ [^)]+; reference scan is incomplete, nothing deleted\./);
     assert.deepEqual(previewPayload.prune_display, {
       label: 'Prune preview',
       command: previewPayload.commands.prune_preview,
       available: true,
       ok: true,
       summary: previewPayload.prune_summary.text,
-      would_prune_label: 'Would prune',
+      would_prune_label: 'Potential candidates',
       prune_count: previewPayload.prune_summary.prune_count,
       prune_bytes_text: previewPayload.prune_summary.prune_bytes_text,
       deleted_label: 'Deleted',
@@ -2979,7 +2979,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.match(written.stdout, /Showing 2 items\./);
     assert.doesNotMatch(written.stdout, /Full history:/);
     assert.match(written.stdout, /Saved: atris\/reports\/landing-timeline-codex-loop-timeline\.md/);
-    assert.match(written.stdout, /Prune dry-run: \d+ files \/ [^)]+ would prune; \d+ deleted\./);
+    assert.match(written.stdout, /Prune dry-run: \d+ potential candidates \/ [^)]+; reference scan is incomplete, nothing deleted\./);
     const markdown = fs.readFileSync(path.join(dir, 'atris', 'reports', 'landing-timeline-codex-loop-timeline.md'), 'utf8');
     assert.match(markdown, /# Mission timeline: landing timeline codex loop/);
     assert.match(markdown, /Generated at: \d{4}-\d{2}-\d{2}T/);
@@ -3007,7 +3007,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.match(markdown, /## Latest prune dry-run/);
     assert.match(markdown, /Policy: keep newest 200; keep 14 days/);
     assert.match(markdown, /Total run files: \d+/);
-    assert.match(markdown, /Would prune: \d+ files \/ [\d,]+ bytes \([^)]+\)/);
+    assert.match(markdown, /Potential candidates: \d+ files \/ [\d,]+ bytes \([^)]+\); not a safe deletion list/);
 
     const writtenJson = runCli(['mission', 'timeline', 'landing-timeline-codex-loop', '--all', '--write', '--json'], { cwd: dir });
     assert.equal(writtenJson.status, 0, writtenJson.stderr || writtenJson.stdout);
@@ -3145,7 +3145,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     const writtenMarkdown = fs.readFileSync(path.join(dir, 'atris', 'reports', 'landing-timeline-codex-loop-timeline.md'), 'utf8');
     assert.ok(writtenMarkdown.includes(`Generated at: ${writtenPayload.generated_at}`), writtenMarkdown);
     assert.equal(writtenPayload.prune_summary?.ok, true);
-    assert.match(writtenPayload.prune_summary?.text, /Prune dry-run: \d+ files \/ [^)]+ would prune; \d+ deleted\./);
+    assert.match(writtenPayload.prune_summary?.text, /Prune dry-run: \d+ potential candidates \/ [^)]+; reference scan is incomplete, nothing deleted\./);
     assert.equal(typeof writtenPayload.prune_summary?.prune_count, 'number');
     assert.equal(typeof writtenPayload.prune_summary?.prune_bytes_text, 'string');
     assert.deepEqual(writtenPayload.prune_display, {
@@ -3154,7 +3154,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
       available: true,
       ok: true,
       summary: writtenPayload.prune_summary.text,
-      would_prune_label: 'Would prune',
+      would_prune_label: 'Potential candidates',
       prune_count: writtenPayload.prune_summary.prune_count,
       prune_bytes_text: writtenPayload.prune_summary.prune_bytes_text,
       deleted_label: 'Deleted',
@@ -4415,6 +4415,9 @@ test('mission prune-runs previews clutter and refuses unsafe deletion', () => {
     assert.equal(preview.status, 0, preview.stderr || preview.stdout);
     const previewPayload = JSON.parse(preview.stdout);
     assert.equal(previewPayload.applied, false);
+    assert.equal(previewPayload.reference_scan_complete, false);
+    assert.equal(previewPayload.deletion_available, false);
+    assert.equal(previewPayload.safe_to_delete, false);
     assert.equal(previewPayload.prune_count, 2);
     assert(previewPayload.candidates.some((entry) => entry.path === 'atris/runs/old-unreferenced.json'));
     assert(previewPayload.candidates.some((entry) => entry.path === 'atris/runs/old-note.txt'));
@@ -4428,6 +4431,9 @@ test('mission prune-runs previews clutter and refuses unsafe deletion', () => {
     assert.equal(fs.existsSync(oldReferenced), true);
     assert.equal(fs.existsSync(recent), true);
     assert.equal(fs.existsSync(path.join(runsDir, '_archive')), false);
+    const none = runCli(['mission', 'prune-runs', '--days', '100000', '--keep-newest', '100000', '--apply', '--json'], { cwd: dir });
+    assert.equal(none.status, 1, none.stderr || none.stdout);
+    assert.match(none.stdout, /receipt deletion is unavailable/);
   } finally {
     cleanupTempDir(dir);
   }

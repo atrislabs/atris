@@ -40,6 +40,11 @@ test('preview preserves referenced siblings, recent files, newest files, and arc
   const result = pruneRuns(root, { nowMs, keepDays: 14, keepNewest: 1 });
 
   assert.strictEqual(result.action, 'runs_prune_preview');
+  assert.strictEqual(result.reference_scan_complete, false);
+  assert.strictEqual(result.deletion_available, false);
+  assert.strictEqual(result.safe_to_delete, false);
+  assert.match(runsPruneLines(result).join('\n'), /reference scan is incomplete/);
+  assert.match(runsPruneLines(result).join('\n'), /not a safe deletion list/);
   assert.strictEqual(result.applied, false);
   assert.strictEqual(result.total_files, 5);
   assert.strictEqual(result.referenced_files, 2);
