@@ -382,7 +382,7 @@ async function pullBusiness(slug) {
   // Load manifest (last sync state)
   const manifest = loadManifest(resolvedSlug || slug);
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
-  const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
+  const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir, { strict: true }) : {};
   const manifestRootMatchesOutput = !manifest || !manifest.workspace_root || (() => {
     try {
       return fs.realpathSync(manifest.workspace_root) === fs.realpathSync(outputDir);
@@ -644,6 +644,22 @@ async function pullBusiness(slug) {
 
   // Three-way compare
   const diff = threeWayCompare(scopedLocalFiles, scopedRemoteFiles, effectiveManifest);
+
+  // Files omitted from the text hash scan (such as binary files or symlinks)
+  // still occupy their names.  Never mistake one for a new remote file and
+  // silently overwrite it during an ordinary pull.
+  if (!force) {
+    for (const p of [...diff.newRemote, ...diff.deletedLocal]) {
+      const localPath = path.join(outputDir, p.replace(/^\//, ''));
+      try {
+        fs.lstatSync(localPath);
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw new Error(`cannot safely inspect local workspace: ${error.message}`, { cause: error });
+      }
+      throw new Error(`cannot safely pull ${p}: a local path already exists`);
+    }
+  }
 
   if (dryRun) {
     console.log('');
