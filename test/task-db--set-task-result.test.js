@@ -126,7 +126,7 @@ test('result_by falls back to ATRIS_AGENT_ID, then USER, then null', () => {
   }
 });
 
-test('starts fresh metadata when the stored metadata cannot be read', () => {
+test('preserves stored metadata when it cannot be read', () => {
   const db = freshDb();
   const { id } = taskDb.addTask(db, { title: 'broken metadata', workspaceRoot: WORKSPACE });
   db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('{not json', id);
@@ -134,13 +134,18 @@ test('starts fresh metadata when the stored metadata cannot be read', () => {
 
   const out = taskDb.setTaskResult(db, { id, actor: 'fixer', result: 'recovered' });
 
-  assert.strictEqual(out.saved, true);
-  assert.deepStrictEqual(
-    Object.keys(out.row.metadata).sort(),
-    ['result', 'result_at', 'result_by'],
-  );
-  assert.strictEqual(out.row.metadata.result, 'recovered');
-  assert.strictEqual(out.row.metadata_unreadable, undefined);
+  assert.deepStrictEqual(out, { saved: false, reason: 'metadata_unreadable' });
+  assert.strictEqual(db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(id).metadata, '{not json');
+  assert.strictEqual(eventsFor(db, id).length, 1);
+});
+
+test('preserves an empty stored metadata string rather than treating it as null', () => {
+  const db = freshDb();
+  const { id } = taskDb.addTask(db, { title: 'empty metadata', workspaceRoot: WORKSPACE });
+  db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('', id);
+  assert.deepStrictEqual(taskDb.setTaskResult(db, { id, result: 'done' }), { saved: false, reason: 'metadata_unreadable' });
+  assert.strictEqual(db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(id).metadata, '');
+  assert.strictEqual(eventsFor(db, id).length, 1);
 });
 
 test('throws when id is missing or the result is empty', () => {
