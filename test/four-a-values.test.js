@@ -77,3 +77,20 @@ test('the boot uses the workspace wording of its values when it has them', () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('nested values wrapping keeps one generated block and preserves caller contract', () => {
+  const { withValues } = require('../lib/values');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'values-nested-'));
+  try {
+    const task = 'Role: reviewer. Task: inspect. Acceptance: cite evidence.';
+    for (const custom of [false, true]) {
+      if (custom) fs.writeFileSync(path.join(root, 'atris.md'), '## values\n- **accuracy.** Check evidence.\n');
+      const once = withValues(task, root);
+      const twice = withValues(once, root);
+      assert.equal(twice, once);
+      assert.equal(twice.split('Workspace values (').length - 1, 1);
+      assert.equal(twice.split(task).length - 1, 1);
+    }
+    assert.match(withValues('A casual mention of Workspace values matters.', root), /A casual mention of Workspace values matters\./);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

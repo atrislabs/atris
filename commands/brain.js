@@ -1440,10 +1440,15 @@ ${nextMove(state)}
 }
 
 function generatedBootBlock(state, voiceCard = voiceCardForRoot(state.root)) {
+  const values = require('../lib/values').valuesForRoot(state.root);
+  const valueLines = values.map(({ name, gist }) => `- ${name}: ${gist}`).join('\n');
   return `${GENERATED_START}
 ## Atris Brain Compile
 
 This workspace has a compiled agent brain.
+
+Workspace values:
+${valueLines}
 
 On session start, activate it first:
 \`atris brain activate --root . --yes --verify\`
