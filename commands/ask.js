@@ -129,6 +129,7 @@ async function askAtris(args) {
       const body = await sendMessage(token, oneShot);
       spinner.stop();
       await typeOut(stripEvents(body.response) || JSON.stringify(body));
+      if (body.success === false) return 1;
     } catch (err) {
       spinner.stop();
       console.error(`✗ ${err.message}`);
