@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const auth = require('../utils/auth');
 
 for (const kind of ['credentials', 'profile']) {
@@ -21,9 +22,16 @@ for (const kind of ['credentials', 'profile']) {
       : path.join(auth.getAtrisDir(), 'profiles', 'test-user.json');
     const old = fs.readFileSync(target, 'utf8');
     const write = fs.writeFileSync;
+    const open = fs.openSync;
+    let temporaryFd;
+    t.mock.method(fs, 'openSync', (file, ...args) => {
+      const fd = open(file, ...args);
+      if (path.dirname(String(file)) === path.dirname(target) && path.basename(String(file)).includes(path.basename(target))) temporaryFd = fd;
+      return fd;
+    });
     t.mock.method(fs, 'writeFileSync', (file, data, options) => {
       const name = String(file);
-      if (name === target || (path.dirname(name) === path.dirname(target) && path.basename(name).includes(path.basename(target)))) {
+      if (file === temporaryFd || name === target || (path.dirname(name) === path.dirname(target) && path.basename(name).includes(path.basename(target)))) {
         write(file, '{', options);
         const err = new Error('synthetic partial write');
         err.code = 'EIO';
@@ -76,3 +84,16 @@ for (const kind of ['credentials', 'profile']) {
     assert.equal(fs.lstatSync(target).isSymbolicLink(), true);
   });
 }
+
+test('an existing temporary-name collision is left untouched', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auth-collision-'));
+  t.mock.method(os, 'homedir', () => dir);
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const credentials = auth.getCredentialsPath();
+  t.mock.method(crypto, 'randomBytes', size => Buffer.alloc(size, 0));
+  const collision = path.join(path.dirname(credentials), `.credentials.json.${process.pid}.${'00'.repeat(6)}.tmp`);
+  fs.writeFileSync(collision, 'existing synthetic data', { flag: 'wx' });
+  assert.throws(() => auth.saveCredentials('new-test-token', 'test-refresh'), error => error.code === 'EEXIST');
+  assert.equal(fs.readFileSync(collision, 'utf8'), 'existing synthetic data');
+  assert.equal(fs.existsSync(credentials), false);
+});
