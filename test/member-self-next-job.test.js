@@ -159,3 +159,12 @@ test('atris member up --dry-run shows the job a member would write for itself', 
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 0);
   });
 });
+
+test('a mission read error is reported instead of treated as a missing mission', () => {
+  withProject(({ root, write }) => {
+    const file = path.join(root, 'atris', 'team', 'executor', 'MISSION.md');
+    fs.unlinkSync(file);
+    fs.mkdirSync(file);
+    assert.throws(() => write(), error => error.code === 'EISDIR');
+  });
+});
