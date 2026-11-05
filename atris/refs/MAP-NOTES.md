@@ -877,7 +877,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/log-sync.js:39-385` (logSyncAtris function)
 - **Strategy:** Timestamp comparison and section merge, with user choice on conflicts
-- **Merge safety:** `commands/log-sync.js` and `pullGeneralJournal()` in `commands/pull.js` refuse automatic section merging when headings repeat or collide with reserved map keys. `lib/journal.js` preserves a newline between reconstructed sections; skipped journal pulls report that review is needed. Regression: `test/journal-duplicate-sections.test.js`.
+- **Merge safety:** `commands/log-sync.js` and `pullGeneralJournal()` in `commands/pull.js` refuse automatic section merging when headings repeat, collide with reserved map keys, or a code fence is unfinished. `lib/journal.js` keeps fenced examples within their section and preserves a newline between reconstructed sections; skipped journal pulls report that review is needed. Regressions: `test/journal-duplicate-sections.test.js`, `test/journal-fence-merge.test.js`.
 - **Logic:**
 - Fetches remote journal entry
 - Compares timestamps

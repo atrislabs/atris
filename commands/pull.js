@@ -5,7 +5,7 @@ const { apiRequestJson } = require('../utils/api');
 const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
-const { DuplicateJournalSectionError, parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
+const { DuplicateJournalSectionError, UnclosedJournalFenceError, parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
@@ -1079,7 +1079,9 @@ async function pullGeneralJournal(token, agentId, { onNeedsReview = () => {} } =
         }
       } catch (error) {
         needsReview = true;
-        if (error instanceof DuplicateJournalSectionError) {
+        if (error instanceof UnclosedJournalFenceError) {
+          console.log(`  Journal ${date} has an unclosed code fence; kept local for review`);
+        } else if (error instanceof DuplicateJournalSectionError) {
           console.log(`  Journal ${date} has repeated or reserved section headings; kept local for review`);
         } else {
           console.log(`  Journal ${date} differs (run "atris log sync" to resolve)`);
