@@ -329,7 +329,7 @@ if (!helpRequested && !dryRunRequested && (
       console.log(`${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
     }
   } catch (e) {
-    // Non-critical
+    console.warn(`Skill sync skipped: ${e.message}`);
   }
 }
 
