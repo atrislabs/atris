@@ -17,16 +17,29 @@ test('an absent manifest remains a first sync, but a broken manifest is not abse
     fs.writeFileSync(file, '{"files":');
     assert.throws(() => loadManifest('sample'), /manifest/i);
     assert.equal(fs.readFileSync(file, 'utf8'), '{"files":');
-    for (const invalid of ['null', '[]', '{"files":null}', '{"files":[]}']) {
+    for (const invalid of ['null', '[]', '{"files":null}', '{"files":[]}', '{"files":{"/notes.md":{}}}', '{"files":{"/notes.md":{"hash":""}}}']) {
       fs.writeFileSync(file, invalid);
       assert.throws(() => loadManifest('sample'), /manifest/i);
     }
     fs.unlinkSync(file);
     fs.symlinkSync(path.join(root, 'missing-target'), file);
-    assert.throws(() => loadManifest('sample'), /cannot safely read sync manifest/);
+    assert.throws(() => loadManifest('sample'), /cannot safely inspect sync manifest/);
   } finally {
     if (prior === undefined) delete process.env.ATRIS_TEST_STATE_DIR;
     else process.env.ATRIS_TEST_STATE_DIR = prior;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a dangling state ancestor is not treated as a missing baseline', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-dangling-parent-'));
+  const prior = process.env.ATRIS_TEST_STATE_DIR;
+  process.env.ATRIS_TEST_STATE_DIR = root;
+  try {
+    fs.symlinkSync(path.join(root, 'missing-state'), path.join(root, '.atris'));
+    assert.throws(() => loadManifest('sample'), /cannot safely inspect sync manifest/);
+  } finally {
+    if (prior === undefined) delete process.env.ATRIS_TEST_STATE_DIR; else process.env.ATRIS_TEST_STATE_DIR = prior;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
