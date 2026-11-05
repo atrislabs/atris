@@ -99,3 +99,28 @@ test('capture refuses an unclosed fence instead of guessing a section', () => {
   const input = '# Daily\n\n```markdown\n## Inbox\nexample\n';
   assert.throws(() => addInboxItemToContent(input, 1, 'new'), /Unclosed code fence/);
 });
+
+test('capture and task import ignore fenced examples and preserve real notes', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-import-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const logs = path.join(dir, 'atris', 'logs', String(now.getFullYear()));
+  fs.mkdirSync(logs, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# workspace\n');
+  fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n');
+  const file = path.join(logs, `${day}.md`);
+  const input = '# Daily\n\n```md\n## Inbox\n- **I99:** fake example\n```\n\n## Inbox\n\n```md\n- **I98:** nested fake\n```\n\n- **I1:** real note\n';
+  fs.writeFileSync(file, input);
+  const env = { ...process.env, ATRIS_TEST_STATE_DIR: path.join(dir,'state'), ATRIS_TASKS_DB: path.join(dir,'state','tasks.db') };
+  const run = (args) => spawnSync(process.execPath, [cli, ...args], { cwd: dir, encoding: 'utf8', env });
+  const captured = run(['log', 'keep this note', '--json']);
+  assert.equal(captured.status, 0, captured.stderr);
+  assert.equal(JSON.parse(captured.stdout).id, 'I2');
+  const imported = run(['task', 'import', 'atris/TODO.md', '--json']);
+  assert.equal(imported.status, 0, imported.stderr || imported.stdout);
+  const listed = run(['task', 'list', '--json']);
+  assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+  assert.match(listed.stdout, /keep this note/);
+  assert.doesNotMatch(listed.stdout, /fake example|nested fake/);
+});

@@ -860,7 +860,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Entry point:** `commands/log.js:72` (logAtris), router `bin/atris.js` `command === 'log'`
 - **Creates:** `atris/logs/YYYY/YYYY-MM-DD.md` files after the room exists
 - `lib/file-ops.js` publishes a complete new daily log only if the destination remains absent; a competing creation is retained. Test: `test/journal-create-concurrency.test.js`.
-- `addInboxIdea` inserts into the existing Inbox body rather than rebuilding it from numbered entries, preserving unnumbered human text and checklists. Test: `test/inbox-content-preservation.test.js`. Concurrent writers are not coordinated.
+- `addInboxIdea` inserts into the existing Inbox body rather than rebuilding it from numbered entries, preserving unnumbered human text and checklists. Inbox parsing ignores fenced examples and rejects ambiguous duplicate sections. Test: `test/inbox-content-preservation.test.js`. Concurrent writers are not coordinated.
 - **Logic:**
 - Empty folder: `lib/first-minute.js` `isFreshWorkspace` + `speakFirstMinute` (same two spoken lines and `--json` next as bare `atris`). No `atris/` and no journal write
 - After `init --minimal`, `atris log "note"` and one-word `atris log text` append to `## Inbox` locally
