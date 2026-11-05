@@ -99,16 +99,11 @@ test('clears a lock whose holder is no longer running', () => {
   assert.equal(fs.existsSync(lockFile), false);
 });
 
-test('clears a lock older than staleMs even when its holder is alive', () => {
+test('an old lock with a live holder is never cleared', () => {
   const lockFile = path.join(TMP, 'stale', 'handoff-wake.lock');
   plantLock(lockFile, { pid: process.pid, at: FIXED });
-
-  const out = withFileLock(lockFile, () => 'took it', {
-    staleMs: 1000,
-    waitMs: 0,
-    now: () => FIXED + 2000,
-  });
-
-  assert.equal(out, 'took it');
-  assert.equal(fs.existsSync(lockFile), false);
+  assert.throws(() => withFileLock(lockFile, () => 'must not run', {
+    staleMs: 1000, waitMs: 0, now: () => FIXED + 2000,
+  }), /stayed locked/);
+  assert.equal(fs.existsSync(lockFile), true);
 });

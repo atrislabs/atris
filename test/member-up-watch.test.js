@@ -331,3 +331,20 @@ test('the members code copy advances only when it is a clean detached plain clon
   assert.equal(fs.readFileSync(path.join(copy, 'code.txt'), 'utf8'), 'after\n');
   assert.notEqual(spawnSync('git', ['symbolic-ref', '-q', 'HEAD'], { cwd: copy }).status, 0);
 });
+
+test('real dry run fails visibly when the task database cannot open', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-up-db-error-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const memberDir = path.join(root, 'atris', 'team', 'tester');
+  fs.mkdirSync(memberDir, { recursive: true });
+  fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '---\nname: tester\nrole: Tester\n---\n');
+  const invalidParent = path.join(root, 'not-a-directory');
+  fs.writeFileSync(invalidParent, 'not a directory');
+  const out = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'up', '--dry-run', '--only', 'tester'], {
+    cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_TASKS_DB: path.join(invalidParent, 'tasks.db') },
+  });
+  assert.notEqual(out.status, 0);
+  assert.match(out.stderr, /could not read the task queue/);
+  assert.match(out.stderr, /preview incomplete/);
+  assert.doesNotMatch(out.stdout, /nothing to start/);
+});
