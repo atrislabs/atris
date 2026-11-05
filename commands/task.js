@@ -9496,6 +9496,8 @@ function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
   } });
   if (!stamped.updated) {
     if (stamped.reason === 'stale_task_state' || stamped.reason === 'not_found') {
+      // Acceptance happens before this proof is stamped. It is not undone;
+      // only the landing claim must remain unverified when the row changed.
       return { status: 'unverified', reason: 'task_changed_during_landing_proof' };
     }
     throw new Error(`cannot safely update task metadata: ${stamped.reason}`);

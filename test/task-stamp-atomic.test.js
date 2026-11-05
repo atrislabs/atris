@@ -8,12 +8,13 @@ const { DatabaseSync } = require('node:sqlite');
 const taskDb = require('../lib/task-db');
 const { stampAutoAcceptMetadata, stampAcceptGroupMetadata, stampCertifyVerifyMetadata, stampVerifyCacheMetadata, stampReadyVerifyMetadata } = require('../commands/task');
 
-test('automatic landing stamp does not erase a result written after its read', () => {
+test('a stale landing stamp preserves a later result without undoing acceptance', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'task-stamp-atomic-'));
   const db = taskDb.open(path.join(tmp, 'tasks.db'));
   const other = new DatabaseSync(path.join(tmp, 'tasks.db'));
   try {
     const { id } = taskDb.addTask(db, { title: 'task', workspaceRoot: tmp });
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(id);
     const initial = taskDb.getTask(db, id);
     let intervened = false;
     const interposed = {
@@ -29,6 +30,7 @@ test('automatic landing stamp does not erase a result written after its read', (
     };
     const landing = stampAutoAcceptMetadata(interposed, db, initial, 'reviewer', 'policy');
     assert.equal(taskDb.getTask(db, id).metadata.result, 'important result');
+    assert.equal(taskDb.getTask(db, id).status, 'done');
     assert.equal(landing.status, 'unverified');
     assert.equal(landing.reason, 'task_changed_during_landing_proof');
   } finally {
