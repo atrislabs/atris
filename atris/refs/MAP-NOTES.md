@@ -783,6 +783,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris task sync --dry-run` maps local projection rows to canonical backend `/business/{business_id}/work/tasks` POST/PATCH plans, including Swarlo lease metadata from `claimed_by`
 - `atris task export --out .atris/state/tasks.projection.json` writes the compact web/desktop projection (`atris.task_projection.v1`)
 - `atris task events [id]` prints the append-only event trail for a task; `atris task events --all` prints the full workspace ledger
+- Tag, chat, plan, reopen, backlog and completion row changes and event insertions share a SQLite write transaction (`lib/task-db.js`); a failed event rolls the row back. Nested writes use a savepoint when a caller owns the outer transaction, while successful writes remain subject to that caller's commit or rollback. Filesystem episodes and logs remain outside SQLite. Regression: `test/task-writer-event-atomic.test.js`.
 - `atris task render --out atris/TODO.md` regenerates the markdown board from durable task state
 - `atris task claim` uses a single guarded SQLite update so only one agent wins an open task
 - `atris task import atris/TODO.md` imports backlog and in-progress tasks with source keys for idempotent re-runs

@@ -67,7 +67,7 @@ test('saves the result on the task and records a result_set event', () => {
 
   const resultAt = out.row.metadata.result_at;
   assert.strictEqual(new Date(resultAt).toISOString(), resultAt);
-  assert.strictEqual(out.row.updated_at, Date.parse(resultAt));
+  assert.ok(out.row.updated_at >= Date.parse(resultAt));
 
   assert.strictEqual(out.event.event_type, 'result_set');
   assert.strictEqual(out.event.task_id, id);
@@ -80,6 +80,18 @@ test('saves the result on the task and records a result_set event', () => {
   const events = eventsFor(db, id);
   assert.deepStrictEqual(events.map((e) => e.event_type), ['created', 'result_set']);
   assert.deepStrictEqual(JSON.parse(events[1].payload), { result: 'The thing shipped.' });
+});
+
+test('result time records wall time even when the row marker is ahead', () => {
+  const db = freshDb();
+  const { id } = taskDb.addTask(db, { title: 'future marker', workspaceRoot: WORKSPACE });
+  const future = Date.now() + 60_000;
+  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(future, id);
+  const before = Date.now();
+  const out = taskDb.setTaskResult(db, { id, actor: 'test', result: 'done' });
+  assert.ok(Date.parse(out.row.metadata.result_at) >= before);
+  assert.ok(Date.parse(out.row.metadata.result_at) < future);
+  assert.ok(out.row.updated_at > future);
 });
 
 test('collapses whitespace in the result and overwrites an earlier one', () => {
@@ -126,7 +138,7 @@ test('result_by falls back to ATRIS_AGENT_ID, then USER, then null', () => {
   }
 });
 
-test('starts fresh metadata when the stored metadata cannot be read', () => {
+test('preserves stored metadata when it cannot be read', () => {
   const db = freshDb();
   const { id } = taskDb.addTask(db, { title: 'broken metadata', workspaceRoot: WORKSPACE });
   db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('{not json', id);
@@ -134,13 +146,18 @@ test('starts fresh metadata when the stored metadata cannot be read', () => {
 
   const out = taskDb.setTaskResult(db, { id, actor: 'fixer', result: 'recovered' });
 
-  assert.strictEqual(out.saved, true);
-  assert.deepStrictEqual(
-    Object.keys(out.row.metadata).sort(),
-    ['result', 'result_at', 'result_by'],
-  );
-  assert.strictEqual(out.row.metadata.result, 'recovered');
-  assert.strictEqual(out.row.metadata_unreadable, undefined);
+  assert.deepStrictEqual(out, { saved: false, reason: 'metadata_unreadable' });
+  assert.strictEqual(db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(id).metadata, '{not json');
+  assert.strictEqual(eventsFor(db, id).length, 1);
+});
+
+test('preserves an empty stored metadata string rather than treating it as null', () => {
+  const db = freshDb();
+  const { id } = taskDb.addTask(db, { title: 'empty metadata', workspaceRoot: WORKSPACE });
+  db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run('', id);
+  assert.deepStrictEqual(taskDb.setTaskResult(db, { id, result: 'done' }), { saved: false, reason: 'metadata_unreadable' });
+  assert.strictEqual(db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(id).metadata, '');
+  assert.strictEqual(eventsFor(db, id).length, 1);
 });
 
 test('throws when id is missing or the result is empty', () => {

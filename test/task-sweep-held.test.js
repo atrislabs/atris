@@ -2635,7 +2635,7 @@ test('a review pass is not a new attempt: the job keeps its pull request link, a
   assert.deepEqual(tasks.heldPullRequestOf(row), { number: 77, url: pullAt(77) });
 });
 
-test('a claim still works on a job with no metadata, and leaves metadata it cannot read as it was', (t) => {
+test('a claim works with no metadata but refuses metadata it cannot read', (t) => {
   const d = desk(t);
   const blank = (title, value) => {
     const { id } = tasks.addTask(d.db, { title, tag: 'feedback', workspaceRoot: d.dir });
@@ -2651,7 +2651,9 @@ test('a claim still works on a job with no metadata, and leaves metadata it cann
   assert.equal(tasks.claimTask(d.db, { id: leased, claimedBy: 'fleet-claude', leaseMinutes: 60, leasePid: process.pid }).claimed, true);
   assert.equal(tasks.getTask(d.db, leased).metadata.lease.holder, 'fleet-claude');
   const garbled = blank('Metadata that is not JSON', 'not json');
-  assert.equal(tasks.claimTask(d.db, { id: garbled, claimedBy: 'fleet-claude' }).claimed, true);
+  const refused = tasks.claimTask(d.db, { id: garbled, claimedBy: 'fleet-claude' });
+  assert.equal(refused.claimed, false);
+  assert.equal(refused.reason, 'metadata_unreadable');
   assert.equal(rawMetadata(garbled), 'not json');
 });
 
