@@ -2284,9 +2284,8 @@ function runEngineTest(targets, { json, root } = {}) {
 // One-command dispatch: claim -> worktree start -> bounded prompt -> engine
 // -> re-run Check: -> ship -> task ready, in one call instead of the 6
 // hand-rolled Bash calls per task the manual version took. Task ids are
-// positional; --engine/--prompt-file are the only flags, so parse by hand
-// instead of the generic "anything starting with --" split used above (that
-// split would swallow an --engine value like "cursor" as a task id).
+// positional; parse options explicitly so a typo cannot become a task id or
+// silently discard the operator's prompt.
 function parseDispatchArgs(args) {
   const taskIds = [];
   let engine = '';
@@ -2295,26 +2294,39 @@ function parseDispatchArgs(args) {
   let json = false;
   let yolo = false;
   let pick = '';
+  const seenOptions = new Set();
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a === '--engine') { engine = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--engine=')) { engine = a.slice('--engine='.length); continue; }
-    if (a === '--pick') { pick = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--pick=')) { pick = a.slice('--pick='.length); continue; }
-    if (a === '--prompt-file') { promptFile = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--prompt-file=')) { promptFile = a.slice('--prompt-file='.length); continue; }
-    if (a === '--base') { base = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--base=')) { base = a.slice('--base='.length); continue; }
+    const option = ['--engine', '--pick', '--prompt-file', '--base']
+      .find((name) => a === name || a.startsWith(`${name}=`));
+    if (option) {
+      const value = a === option ? args[++i] : a.slice(option.length + 1);
+      if (typeof value !== 'string' || !value.trim() || value.startsWith('-')) {
+        return { error: `engine dispatch: ${option} requires a non-empty value` };
+      }
+      if (seenOptions.has(option)) return { error: `engine dispatch: ${option} may only be specified once` };
+      seenOptions.add(option);
+      if (option === '--engine') engine = value;
+      if (option === '--pick') pick = value;
+      if (option === '--prompt-file') promptFile = value;
+      if (option === '--base') base = value;
+      continue;
+    }
     if (a === '--json') { json = true; continue; }
     if (a === '--yolo') { yolo = true; continue; }
-    if (a.startsWith('--')) continue;
+    if (a.startsWith('-')) return { error: `engine dispatch: unknown option ${a}` };
     taskIds.push(a);
   }
   return { taskIds, engine, promptFile, base, json, yolo, pick };
 }
 
 function runDispatchCommand(args, root) {
-  const { taskIds, engine, promptFile, base, json, yolo, pick } = parseDispatchArgs(args);
+  const parsed = parseDispatchArgs(args);
+  if (parsed.error) {
+    console.error(parsed.error);
+    return 2;
+  }
+  const { taskIds, engine, promptFile, base, json, yolo, pick } = parsed;
   if (!taskIds.length || !engine) {
     console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine <engine> [--prompt-file <f>] [--yolo] [--pick rating|turns]');
     return 2;
@@ -2342,6 +2354,10 @@ function runDispatchCommand(args, root) {
       promptOverride = fs.readFileSync(promptFile, 'utf8');
     } catch (err) {
       console.error(`engine dispatch: could not read --prompt-file ${promptFile}: ${err.message}`);
+      return 2;
+    }
+    if (!promptOverride.trim()) {
+      console.error('engine dispatch: --prompt-file must contain a non-empty prompt');
       return 2;
     }
   }
