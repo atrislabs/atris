@@ -10312,6 +10312,10 @@ function scrubFeedJargon(text) {
     .replace(/\bmission-\d{4}-\d{2}-\d{2}-[a-z0-9-]+\b/gi, '')
     .replace(/\b[0-9a-f]{7,40}\b/g, '')
     .replace(/\(\s*(commit\s*)?\)/gi, '')
+    .replace(/\s+\bas\s+(?:``|''|""|(?=[.,;!?]|$))/gi, '')
+    .replace(/\s+(?:in|on|at|from)\s+(?:``|''|"")(?=[.,;!?]|\s|$)/gi, '')
+    .replace(/\s*(?:``|''|"")/g, '')
+    .replace(/\s+([.,;!?])/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -10350,6 +10354,9 @@ function isFeedFillerText(text) {
   if (/^member (wake|goal-from-mission|goal created|initialized)\b/i.test(t)) return true;
   if (/^\[?logged update\]?$/i.test(t)) return true;
   if (/^(next[_ ]push|verdict):/i.test(t)) return true;
+  if (/^reading additional input from stdin\b/i.test(t)) return true;
+  if (/^openai codex\b/i.test(t)) return true;
+  if (/^(?:workdir|model|provider|approval|sandbox|reasoning effort|reasoning summaries|session id):/i.test(t)) return true;
   if (/^[`'"]?atris\s/i.test(t) || /\batris\s+[a-z-]+\s+[a-z-]+\s+--[a-z]/i.test(t)) return true;
   return false;
 }
@@ -10530,13 +10537,94 @@ function listMemberUnlockedSkills(memberDir, frontmatterSkills = []) {
 
 function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
   const slug = String(memberSlug || '').trim().toLowerCase();
-  const engineRole = slug === 'navigator'
+  const fallbackRole = slug === 'navigator'
     ? 'navigator'
     : (slug === 'validator' || slug === 'architect')
       ? 'validator'
       : 'executor';
   try {
-    const { resolveEngineForRoleRanked } = require('../lib/engine-registry');
+    const {
+      resolveEngineForMember,
+      readMemberCard,
+      autoJobForMember,
+    } = require('../lib/member-engine');
+    const { rosterEngine } = require('../lib/gm-season');
+    const {
+      ENGINE_JOBS,
+      readRosterState,
+      resolveEngineForRoleRanked,
+      rosterPickFromValue,
+    } = require('../lib/engine-registry');
+    const card = readMemberCard(root, slug);
+    const kind = autoJobForMember(slug, card.role || '');
+    const engineRole = ENGINE_JOBS[kind] || fallbackRole;
+    const state = readRosterState(root);
+    const localRosterState = {
+      ...state,
+      machine: { picks: {}, team: [], file: null, path: null },
+    };
+    const fromProjectRoster = rosterEngine(slug, root, {
+      rosterState: localRosterState,
+      role: card.role || '',
+      hasCard: Boolean(card.found),
+    });
+    if (fromProjectRoster && fromProjectRoster.engine) {
+      return {
+        engine_id: fromProjectRoster.engine,
+        tier: 'pro',
+        models: fromProjectRoster.model ? [fromProjectRoster.model] : [fromProjectRoster.engine],
+        role: engineRole,
+        reason: fromProjectRoster.source ? `${fromProjectRoster.engine} from ${fromProjectRoster.source}.` : `${fromProjectRoster.engine} from roster.`,
+      };
+    }
+    let fm = {};
+    try {
+      const cardPath = path.join(root, 'atris', 'team', slug, 'MEMBER.md');
+      if (fs.existsSync(cardPath)) {
+        fm = parseFrontmatter(fs.readFileSync(cardPath, 'utf8')) || {};
+      }
+    } catch {}
+    const explicitEngine = fm.engine || fm.executed_by || '';
+    if (explicitEngine) {
+      let explicitId = String(explicitEngine).trim().toLowerCase();
+      try {
+        const parsedPick = rosterPickFromValue(String(explicitEngine), engineRole);
+        if (parsedPick && parsedPick.engine) explicitId = parsedPick.engine;
+      } catch {}
+      return {
+        engine_id: explicitId,
+        tier: 'pro',
+        models: fm.model ? [fm.model] : [explicitId],
+        role: engineRole,
+        reason: `${explicitId} declared in MEMBER.md.`,
+      };
+    }
+    const fromMember = resolveEngineForMember(slug, root, { quiet: true, rosterState: state });
+    if (fromMember && fromMember.roster_backed && fromMember.engine) {
+      return {
+        engine_id: fromMember.engine.id,
+        tier: fromMember.engine.tier || 'pro',
+        models: fromMember.model
+          ? [fromMember.model]
+          : (Array.isArray(fromMember.engine.models) ? fromMember.engine.models : []),
+        role: fromMember.role || engineRole,
+        reason: fromMember.reason || `${fromMember.engine.id} selected for ${slug}.`,
+      };
+    }
+    const fromAnyRoster = rosterEngine(slug, root, {
+      rosterState: state,
+      role: card.role || '',
+      hasCard: Boolean(card.found),
+    });
+    if (fromAnyRoster && fromAnyRoster.engine) {
+      return {
+        engine_id: fromAnyRoster.engine,
+        tier: 'pro',
+        models: fromAnyRoster.model ? [fromAnyRoster.model] : [fromAnyRoster.engine],
+        role: engineRole,
+        reason: fromAnyRoster.source ? `${fromAnyRoster.engine} from ${fromAnyRoster.source}.` : `${fromAnyRoster.engine} from roster.`,
+      };
+    }
     const picked = resolveEngineForRoleRanked(engineRole, root, { taskType: engineRole });
     if (picked && picked.engine) {
       return {
@@ -10552,7 +10640,7 @@ function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
     engine_id: 'claude',
     tier: 'pro',
     models: ['claude'],
-    role: engineRole,
+    role: fallbackRole,
     reason: 'Default engine seat.',
   };
 }
@@ -10587,9 +10675,12 @@ function buildMemberCard(name, root = process.cwd()) {
   const recentWork = collectMemberWorkFeed(root, { member: owner, limit: 3 });
   const engineSeat = resolveMemberEngineSeat(owner, root);
 
+  const rawMissionSummary = !isFeedFillerText(mission.latest?.last_summary)
+    ? mission.latest?.last_summary
+    : '';
   const doingNow = mission.latest
     ? {
-        summary: compactSentence(scrubFeedJargon(mission.latest.last_summary || mission.objective || mission.name || ''), 120),
+        summary: compactSentence(scrubFeedJargon(rawMissionSummary || mission.objective || mission.name || ''), 120),
         state: plainFeedStatusLabel(mission.latest),
         engine: mission.runner || engineSeat.engine_id || null,
         model: mission.model || null,
@@ -11647,14 +11738,29 @@ function memberHandoff(from, to, ...args) {
   return handoff;
 }
 
+function isBusyStandupStatus(status) {
+  const s = String(status || '').trim().toLowerCase();
+  return Boolean(s) && s !== 'idle' && s !== 'dormant';
+}
+
 function buildMemberRoom(root = process.cwd()) {
   const teamDir = path.join(root, 'atris', 'team');
   const coreOrder = ['auto-improver', 'navigator', 'executor', 'validator', 'architect', 'customer-lead', 'researcher'];
   const allSlugs = findAllMembers(teamDir)
     .filter(isFleetMember)
     .map(memberSlugFromRecord);
-  const ordered = coreOrder.filter((s) => allSlugs.includes(s));
-  const cards = ordered.map((slug) => buildMemberCard(slug, root));
+  const baseOrder = [
+    ...coreOrder.filter((s) => allSlugs.includes(s)),
+    ...allSlugs.filter((s) => !coreOrder.includes(s)),
+  ];
+  const rawCards = baseOrder.map((slug) => buildMemberCard(slug, root));
+  const cardStatus = (c) => (c.roadmap.doing_now ? c.roadmap.doing_now.state : c.verdict.toLowerCase());
+  const cards = [...rawCards].sort((a, b) => {
+    const aBusy = isBusyStandupStatus(cardStatus(a)) ? 0 : 1;
+    const bBusy = isBusyStandupStatus(cardStatus(b)) ? 0 : 1;
+    return aBusy - bBusy;
+  });
+  const ordered = cards.map((c) => c.member);
   const feed = collectMemberWorkFeed(root, { limit: 6 });
 
   const standup = cards.map((c) => {
@@ -11806,22 +11912,36 @@ function standupTableData(standup, cwd = process.cwd()) {
 // (member, role, ovr, engine, status) with each member's found and push
 // lines under it; piped, or when the box cannot fit, the boxes it always had.
 function memberStandupLines(standup, { bordered = false, width = process.stdout.columns, cells = null } = {}) {
-  if (bordered && cells && standup.length) {
-    const table = require('../lib/gm-bet').teamBox(standup.map((s) => ({ member: s.member, status: s.status })), cells, { width: Number(width) - 2 });
+  const ordered = [
+    ...standup.filter((s) => isBusyStandupStatus(s.status)),
+    ...standup.filter((s) => !isBusyStandupStatus(s.status)),
+  ];
+  if (bordered && cells && ordered.length) {
+    const table = require('../lib/gm-bet').teamBox(ordered.map((s) => ({ member: s.member, status: s.status })), cells, { width: Number(width) - 2 });
     if (table) {
       return [
         ...table.split('\n').map((line) => `  ${line}`),
-        ...standup.flatMap((s) => [`  ${s.member}`, `    found: ${s.latest_update}`, `    push:  ${s.next_push}`]),
+        ...ordered.flatMap((s) => (
+          isBusyStandupStatus(s.status)
+            ? [`  ${s.member}`, `    found: ${s.latest_update}`, `    push:  ${s.next_push}`]
+            : [`  ${s.member} · ${s.status} · engine:${s.engine} · ${s.latest_update}`]
+        )),
       ];
     }
   }
-  return standup.flatMap((s, idx) => [
-    `+-----------------------------------------------------------------------+`,
-    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
-    `|    Found:   ${s.latest_update}`,
-    `|    Push:    ${s.next_push}`,
-    `+-----------------------------------------------------------------------+`,
-  ]);
+  return ordered.flatMap((s, idx) => (
+    isBusyStandupStatus(s.status)
+      ? [
+          `+-----------------------------------------------------------------------+`,
+          `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
+          `|    Found:   ${s.latest_update}`,
+          `|    Push:    ${s.next_push}`,
+          `+-----------------------------------------------------------------------+`,
+        ]
+      : [
+          `  ${idx + 1}. ${s.member} (${s.role}) · ${s.status} · engine:${s.engine} · ${s.latest_update}`,
+        ]
+  ));
 }
 
 async function memberRoom(...args) {
@@ -11844,7 +11964,7 @@ async function memberRoom(...args) {
 
   const handoffRows = room.handoffs.length
     ? room.handoffs.map((h) => `  - ${h.from} -> ${h.to}: ${h.summary} (run: ${h.next_command})`)
-    : ['  - No pending baton passes right now.'];
+    : ['  - No handoffs waiting right now.'];
 
   const oneOnOneRows = room.one_on_ones.length
     ? room.one_on_ones.map((o) => `  - ${o.member}: ${o.reason} -> ${o.command}`)
@@ -11861,13 +11981,13 @@ async function memberRoom(...args) {
     '1. Member-by-Member Standup (detail: `atris member card <name>` | rapid walk: `atris member standup --walk`):',
     ...standupRows,
     '',
-    '2. Handoffs & Baton Passes (`atris member handoff <from> <to> "<slice>"`):',
+    '2. Who is handing work to whom (`atris member handoff <from> <to> "<slice>"`):',
     ...handoffRows,
     '',
     '3. Your 1-on-1s Today (`atris member 1on1 <name>`):',
     ...oneOnOneRows,
     '',
-    'Live Consequence Feed:',
+    'What happened lately:',
     ...feedRows,
     '',
     'Controls: atris member standup --walk | atris member go | atris member "<prompt>" | atris member 1on1 <name> | atris member sleep',
