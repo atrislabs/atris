@@ -214,7 +214,7 @@ rg "codexGoalCommand|completed_task_closed|thread_goals" commands/codex-goal.js 
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
 rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusinessWorkspace|join --help|friends --help|inbox --help|signup help|avail --help" lib/account-bound.js bin/atris.js commands/social.js commands/signup.js commands/avail.js test/dogfood-pass3-27-28.test.js test/dogfood-p0-safety.test.js test/signup.test.js # Unbound folders refuse account-global inbox/gmail/slack/errors; bare atris slack and atris gmail (including slack send/dm/channels/messages/search and gmail connect/send/voice) refuse the same way even with --account (no send/dm/channels, inbox/read/archive listing, OAuth/link flow, mailbox lookup, or Slack network); slack/gmail --help still print usage and do not hit the network; join/friends/inbox/signup/avail help prints usage and does not hit the network
 - Help-before-network: `commands/social.js:173` friends, `commands/social.js:391` join, `commands/social.js:571` friendsCommand, `commands/social.js:581` inboxCommand, `commands/signup.js:53` signup help, `commands/avail.js:385` avail help (before the `--` show path). Regression: `test/dogfood-p0-safety.test.js` (`29:` `31:`) and `test/signup.test.js`.
-- Typo-plus-args: `bin/atris.js:1301` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
+- Typo-plus-args: `bin/atris.js:1305` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
 - Lone unknown verbs: `bin/atris.js:1226` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"` and multiword `atris build a thing` still create work after init. Empty-folder `task new` and `wish` talk like first-minute and do not mint. Regression: `test/dogfood-pass2.test.js` (`14:`), `test/one-lap-router.test.js`, and `test/first-minute.test.js`.
 - Headless autopilot: `commands/autopilot-front.js:236` refuses bare headless invoke and `--json`/`--once` unless `--yes` or `--auto`; unbound scratch `--yes`/`--auto` still refuse via `isUnboundScratchFolder` before `writeState`; `autopilot stop` kills `child_pid` then the wrapper. Regression: `test/dogfood-p0-safety.test.js` (`32:`), `test/dogfood-pass4.test.js` (`30:`), and `test/dogfood-spaceship-scratch.test.js`.
 - x help: `bin/atris.js:2928` treats a lone `--help`/`-h`/`help` as usage and does not POST `/api/agent-sdk/execute`. Regression: `test/dogfood-p0-safety.test.js` (`33:`).
@@ -293,7 +293,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:994` (dispatch check)
-- **Cold-start handler:** `bin/atris.js:1424` (`interactiveEntry`; active missions/work outrank completed history)
+- **Cold-start handler:** `bin/atris.js:1428` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands-8.test.js:1762-1779` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -307,7 +307,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
 - **Argument routing:** `bin/atris.js:134-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
-- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1424` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
+- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1428` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
 - **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
@@ -960,7 +960,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Housekeeping: find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
 - **Dispatch:** `bin/atris.js:1931` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:1137` (`showCleanHelp`) prints usage without touching workspace state
+- **Help:** `bin/atris.js:1141` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:260` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
@@ -1083,7 +1083,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/release.js:16` (releaseAtris function)
 - **Preflight:** `commands/release.js:213` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
-- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js:1013` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
+- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js:1017` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
 - **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**
@@ -1547,7 +1547,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
 - **Command:** `commands/next.js:190` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:946` (`showNextHelp`) stays for `atris atris --help`
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:950` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
@@ -2525,7 +2525,7 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 - Map: `lib/security-audit.js:267` (`mapTarget`) turns tracked source files x attack classes (`lib/security-audit-classes.js`) into a sorted coverage ledger; no model call. Quick profile groups by subsystem.
 - Additive runs: `lib/security-audit.js:412` (`mergePrior`) keeps unchanged covered areas, re-checks old findings through the verifier (areas held in `reserved_for`), and reloads `carried-pending.json` so a cheap run never drops a finding.
 - Contracts: `lib/security-audit.js:483` (`validateLedger`, the state table) and `lib/security-audit.js:577` (`validateFindings`; with root set every cited file:line must resolve). `lib/security-audit.js:944` (`citationErrors`) rejects dead citations before any verifier spend.
-- Run: `lib/security-audit.js:1196` (`runAudit`) hunters on `--hunter` (codex), critic, verifier and final recheck on `--verifier` (claude) via `runEngineAskJobs` read-only. Output under `~/.atris/security-audit/<repo>/run-<N>/` (`ATRIS_SECURITY_AUDIT_HOME` overrides); refuses any folder inside the target unless git ignores it. Exit 1 on a confirmed high or critical.
+- Run: `lib/security-audit.js:1200` (`runAudit`) hunters on `--hunter` (codex), critic, verifier and final recheck on `--verifier` (claude) via `runEngineAskJobs` read-only. Output under `~/.atris/security-audit/<repo>/run-<N>/` (`ATRIS_SECURITY_AUDIT_HOME` overrides); refuses any folder inside the target unless git ignores it. Exit 1 on a confirmed high or critical.
 - Regression: `test/security-audit.test.js`.
 
 ## Wish teammate names
