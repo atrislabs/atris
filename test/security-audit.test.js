@@ -72,9 +72,12 @@ const CANDIDATE = {
   remediation: { strategy: 'use execFileSync with an argv array', regression_test: 'a title with $(touch x) creates no file' },
 };
 
+// The same defect filed by another hunter under another class and name.
+const TWIN = { ...CANDIDATE, fingerprint: CANDIDATE.fingerprint.replace(/\/[^/]+$/, '/title-runs-as-code'), attack_class: 'code-injection', title: 'Task title runs as code' };
+
 // Fake engines: hunters answer per unit, the verifier confirms, the critic
 // finds nothing, the recheck agrees.
-function fakeEngines(calls, { hallucinate = false, verdict = 'confirmed' } = {}) {
+function fakeEngines(calls, { hallucinate = false, verdict = 'confirmed', twin = false } = {}) {
   return async (jobs) => jobs.map((job) => {
     calls.push(job);
     const p = job.prompt;
@@ -90,10 +93,10 @@ function fakeEngines(calls, { hallucinate = false, verdict = 'confirmed' } = {})
             disposition: isRun ? 'candidate' : 'covered',
             reviewed_paths: [isRun ? 'lib/run.js' : 'lib/files.js'],
             checks: [{ invariant: 'input never becomes shell text', method: 'source', result: isRun ? 'title reaches execSync' : 'only the local user picks the name', reviewed_paths: [isRun ? 'lib/run.js' : 'lib/files.js'] }],
-            candidate_fingerprints: isRun ? [CANDIDATE.fingerprint] : [],
+            candidate_fingerprints: isRun ? [CANDIDATE.fingerprint, ...(twin ? [TWIN.fingerprint] : [])] : [],
             unresolved: [],
           })),
-          candidates: isRun ? [{ ...cand, coverage_ids: ids }] : [],
+          candidates: isRun ? [{ ...cand, coverage_ids: ids }, ...(twin ? [{ ...TWIN, coverage_ids: ids }] : [])] : [],
           hardening: [],
           uncovered: [],
         })}\n\`\`\``,
@@ -220,6 +223,18 @@ test('full run: hunter finds, a different engine verifies, reports land outside 
     assert.match(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /1 confirmed problem \(1 high\)/);
     assert.deepStrictEqual(audit.validateLedger(JSON.parse(fs.readFileSync(path.join(res.dir, 'coverage-ledger.json'), 'utf8'))), []);
     assert.ok(!fs.readdirSync(root).some((n) => n !== '.git' && !['lib', 'test'].includes(n)), 'nothing written in the target');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
+
+test('one root cause filed twice is verified once and both areas point at it', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    const calls = [];
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines(calls, { twin: true }) });
+    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier')).length, 1);
+    assert.deepStrictEqual(res.records.map((r) => r.fingerprint), [CANDIDATE.fingerprint]);
+    assert.ok(!res.ledger.some((u) => (u.result_fingerprints || []).includes(TWIN.fingerprint)));
+    assert.deepStrictEqual(audit.validateLedger(res.ledger), []);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
 
