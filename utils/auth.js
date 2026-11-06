@@ -77,9 +77,14 @@ function promptUser(question, opts = {}) {
   }
 
   // Interactive TTY mode - create readline per prompt
+  // A secret typed at a terminal must stay hidden even when stdout is a file:
+  // terminal mode turns off the terminal's own echo, and the prompt goes to
+  // whichever stream is still the screen.
+  const secretOut = opts.secret && !process.stdout.isTTY && process.stderr.isTTY ? process.stderr : process.stdout;
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout
+    output: secretOut,
+    ...(opts.secret ? { terminal: Boolean(process.stdin.isTTY) } : {}),
   });
 
   // Secret answers: let the prompt through, then swallow the typed echo.
