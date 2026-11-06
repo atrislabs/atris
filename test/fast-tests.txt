@@ -40,6 +40,7 @@ test/code-review.test.js
 test/codex-goal.test.js
 test/company-brain-sync.test.js
 test/compile.test.js
+test/computer-core.test.js
 test/confidence-gate.test.js
 test/config-guard.test.js
 test/console-packet-shape.test.js

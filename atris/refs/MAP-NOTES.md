@@ -172,7 +172,7 @@ rg "skillColor|skillList|NO_COLOR" commands/skill.js test/dogfood-papercuts.test
 rg "clipCell|member list" commands/member.js  # member list role column uses clipCell ellipsis
 rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js lib/business-core.js  # Business workspace flows and collaborator handoffs
-rg "computerCreate|computerSetup|formatEngineSeats|runEngineSeatsCommand|readyCheckEngineLogin|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint|ENGINE_SEED_META|normalizeModels|normalizeDuty|printRoster|speakFirstMinute|canPersistEngineRegistry" commands/computer.js commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, named engine seat visibility, config-driven engine models and duties, setup live proof, explicit business-computer activation, readiness, and workspace-mismatch recovery; empty-folder engine/engines/--json reuse speakFirstMinute and skip engines.json seed
+rg "computerCreate|computerSetup|formatEngineSeats|runEngineSeatsCommand|readyCheckEngineLogin|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint|ENGINE_SEED_META|normalizeModels|normalizeDuty|printRoster|speakFirstMinute|canPersistEngineRegistry" commands/computer.js lib/computer-core.js commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, named engine seat visibility, config-driven engine models and duties, setup live proof, explicit business-computer activation, readiness, and workspace-mismatch recovery; empty-folder engine/engines/--json reuse speakFirstMinute and skip engines.json seed
 rg "cmdAdd|cmdRetitle|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdSweep|cmdClearDone|cmdAudit|cmdReviews|cmdDone|cmdNext|cmdNextTruth|cmdFirstMinute|renderTaskDesk|deskNextCommand|taskNextCommand|pickNext|readEndgameAgentAction|liveTaskWithTitle|getTaskDb|task accept --help|task claim --help|task ready --help|task step --help|task next --help|task show --help" commands/task.js lib/first-minute.js test/task-retitle.test.js test/task-sweep-auto-accept.test.js test/task-clear-done.test.js test/task-audit.test.js test/task-subcommand-help.test.js test/task-desk-next.test.js test/task-first-minute.test.js test/task-next-truth.test.js test/first-minute.test.js  # Local agent task plane, title history, proof-ready review, human accept, accept/claim/ready/step/next/show --help usage locks, default task reuses first-minute, empty-folder task new reuses speakFirstMinute and does not mint, desk stays on task desk/--all, desk and task next share first-minute pick/taskCommand, low-stakes auto-accept sweep, completed-task cleanup, accepted-proof audit, task-next Endgame seed dedupe, and compact certified review queue
 rg "keepTaskList|keepWorkspaceTaskList|refreshKeptTaskList|cmdKeep" lib/task-list-keeper.js commands/task.js bin/atris.js test/task-list-keeper.test.js test/task-list-sim.test.js  # Task list keeper: one indexed lookup on boot and task day, puts away finished and idle rows, leaves fresh work, and stays quiet when nothing qualifies
 rg "taskExplanation|plainText|taskApprovalFor|explanationFlags|explanationMarkdownLines|Technical details|plain first layer" lib/task-explanation.js lib/task-db.js lib/todo-fallback.js commands/task.js commands/init.js commands/sync.js FOR_AGENTS.md atris/skills/atris/SKILL.md test/task-explanation.test.js test/task-api.test.js  # Shared cross-project task explanation: additive what/why/done model, legacy derivation, plain-first CLI/JSON/TODO/board/cloud views, generated project policy, exact technical-detail retention, and existing Plan/Do plus accept/revise gates
@@ -719,9 +719,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:4187` (`runComputer` dispatch handles `card` before auth)
-- **Builder:** `commands/computer.js:1546` (`buildComputerCard`)
-- **Writer:** `commands/computer.js:1641` (`computerCard`)
+- **Entry point:** `commands/computer.js:1940` (`runComputer` dispatch handles `card` before auth)
+- **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
+- **Writer:** `lib/computer-core.js:1536` (`computerCard`)
 - **How it works:**
 - Reads `.atris/business.json` when present for owner/workspace metadata
 - Falls back to `package.json` and folder name for project workspaces
@@ -729,7 +729,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `--write` saves markdown to `atris/reports/computer-card.md`
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
-**Search:** `rg "buildComputerCard|computerCard" commands/computer.js`
+**Search:** `rg "buildComputerCard|computerCard" commands/computer.js lib/computer-core.js`
 
 ### Feature: Computer Account Setup (`atris computer setup`)
 
@@ -742,7 +742,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Receipt:** reuses `listEngineLogins()` and prints each account linked during setup
 - **Tests:** `test/engine.test.js` covers device-code and Claude paste-back flows; `test/computer-create.test.js` covers setup guidance and dependency passthrough
 
-**Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js commands/engine.js test/engine.test.js`
+**Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js lib/computer-core.js commands/engine.js test/engine.test.js`
 
 ### Feature: Agent Task Plane (`atris task`)
 
@@ -1374,7 +1374,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
   3. Non-interactive: `--token <t>` flag for CI/scripts
 - **Token refresh:** `utils/auth.js:723` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `utils/auth.js:690` (`refreshAccessToken`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
 - **Credential guard:** `utils/auth.js:840` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
-- **Wake auth abort:** `utils/auth.js:705` (`isAuthFailure`) and `utils/auth.js:715` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
+- **Wake auth abort:** `utils/auth.js:705` (`isAuthFailure`) and `utils/auth.js:715` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `lib/computer-core.js:2179`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami): uses modular `utils/auth.js`
@@ -2544,7 +2544,7 @@ this note holds the objective and proof instead. No acceptance or push is author
 
 Campaign briefs: `lib/campaign-loop.js:53` flattens whitespace only when attaching a brief, shared by proposal storage at `lib/campaign-loop.js:269` and mission start at `lib/campaign-loop.js:293`, without appending the brief twice. The planner still reads the original formatting. The mission gate stays unchanged: slugs (`commands/mission.js:155`) and task titles (`commands/mission.js:928`) normalize whitespace already, while report headings (`commands/mission.js:2088`, `commands/mission.js:5963`) and several console lines interpolate objectives directly. `test/campaign-missions.test.js:127` covers real starts from single-line, multiline, claimed and legacy proposals.
 
-Computer messages: `commands/computer.js:3550` treats an explicit message as one input and keeps piped stdin line by line; `commands/computer.js:3554` recognizes slash commands only on a single line. `test/computer-create.test.js:1630` checks exact HTTP message bodies and one turn for paragraphs and slash-prefixed prompts; `test/computer-create.test.js:1681` checks `/audit 2` sends no chat turn. Verify both fixes: `node --test test/computer-create.test.js test/campaign-*.test.js`.
+Computer messages: `commands/computer.js:1303` treats an explicit message as one input and keeps piped stdin line by line; `commands/computer.js:1307` recognizes slash commands only on a single line. `test/computer-create.test.js:1630` checks exact HTTP message bodies and one turn for paragraphs and slash-prefixed prompts; `test/computer-create.test.js:1681` checks `/audit 2` sends no chat turn. Verify both fixes: `node --test test/computer-create.test.js test/campaign-*.test.js`.
 
 ## google account commands
 
