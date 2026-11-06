@@ -127,6 +127,50 @@ test('map seeds units from source, skips tests, and validates', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('map sees Ruby and Go entry points, crypto, and gem manifests', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-polyglot-'));
+  try {
+    fs.mkdirSync(path.join(root, 'app'));
+    fs.writeFileSync(path.join(root, 'app', 'invoices_controller.rb'), [
+      'class InvoicesController < ApplicationController',
+      '  skip_before_action :authenticate_user!',
+      '  def show',
+      '    @invoice = Invoice.where("account_id = #{params[:account]}").first',
+      '  end',
+      'end',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(root, 'app', 'cipher.rb'), [
+      'def decrypt(data, key)',
+      '  c = OpenSSL::Cipher.new("aes-128-cfb")',
+      '  c.decrypt',
+      'end',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(root, 'main.go'), [
+      'package main',
+      'func main() {',
+      '  http.HandleFunc("/run", func(w http.ResponseWriter, r *http.Request) {',
+      '    exec.Command("sh", "-c", r.URL.Query().Get("cmd")).Run()',
+      '  })',
+      '}',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(root, 'tool.gemspec'), 'Gem::Specification.new do |spec|\n  spec.add_dependency "x"\nend\n');
+    const { units } = audit.mapTarget(root, { profile: 'standard' });
+    const pairs = new Set(units.map((u) => `${u.starting_paths[0]} ${u.attack_class}`));
+    for (const want of [
+      'app/invoices_controller.rb access-control',
+      'app/invoices_controller.rb sql-injection',
+      'app/cipher.rb weak-crypto',
+      'main.go access-control',
+      'main.go command-injection',
+      'tool.gemspec supply-chain',
+    ]) assert.ok(pairs.has(want), `missing ${want}`);
+    assert.deepStrictEqual(audit.validateLedger(units), []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('ledger validator enforces the state table', () => {
   const root = makeRepo();
   try {
