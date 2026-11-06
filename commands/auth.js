@@ -737,7 +737,7 @@ async function loginAtris(options = {}) {
 
       openBrowser(loginUrl);
 
-      const code = await promptUser('CLI code: ');
+      const code = await promptUser('CLI code: ', { secret: true });
       if (!code) {
         console.error('Error: Code is required.');
         process.exit(1);
@@ -774,7 +774,7 @@ async function loginAtris(options = {}) {
     } else if (methodChoice === '2') {
       console.log('\nGet your token from: https://atris.ai/auth/cli\n');
 
-      const tokenInput = await promptUser('API token: ');
+      const tokenInput = await promptUser('API token: ', { secret: true });
 
       if (!tokenInput) {
         console.error('Error: Token is required.');

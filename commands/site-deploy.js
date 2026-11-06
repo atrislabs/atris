@@ -113,13 +113,17 @@ function validateSlug(slug) {
   return null;
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 function validateApiBase(value) {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('bad protocol');
+    // The login token rides on every request, so plain http is only for this machine.
+    if (parsed.protocol === 'http:' && !LOOPBACK_HOSTS.has(parsed.hostname)) throw new Error('bad protocol');
     return parsed.toString().replace(/\/$/, '');
   } catch {
-    throw new Error('--api-base must be a valid http or https url');
+    throw new Error('--api-base must be an https url (http only for localhost, 127.0.0.1, or [::1])');
   }
 }
 
