@@ -526,9 +526,60 @@ function restoreRegeneratedAdapterChurn(root, message, { dryRun = false } = {}) 
   const unstaged = changedFiles(root, ['diff', '--name-only']);
   const staged = changedFiles(root, ['diff', '--cached', '--name-only']);
   const commitMessage = String(message || '');
-  const skipped = REGEN_ADAPTER_FILES.filter(
-    (file) => unstaged.has(file) && !staged.has(file) && !commitMessage.includes(file)
-  );
+  const starts = new Map([
+    ['<!-- ATRIS:START - Auto-generated, do not edit -->', '<!-- ATRIS:END -->'],
+    ['<!-- ATRIS_BRAIN_COMPILE:START -->', '<!-- ATRIS_BRAIN_COMPILE:END -->'],
+    ['<!-- ATRIS_OPERATING_RULES:START -->', '<!-- ATRIS_OPERATING_RULES:END -->'],
+    ['<!-- ATRIS_MISSION_ROOM_SIGNALS:START -->', '<!-- ATRIS_MISSION_ROOM_SIGNALS:END -->'],
+    ['<!-- ATRIS_VOICE_CARD:START -->', '<!-- ATRIS_VOICE_CARD:END -->'],
+  ]);
+  const ends = new Set(starts.values());
+  // Compare outside text after removing only complete generated blocks.
+  const outsideBlocks = (text) => {
+    const lines = text.replace(/\r\n/g, '\n').match(/[^\n]*\n|[^\n]+$/g) || [];
+    let expectedEnd = null;
+    let currentStart = null;
+    let dropAfter = false;
+    const outside = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const marker = line.replace(/\n$/, '');
+      if (expectedEnd) {
+        if (marker === currentStart) return null;
+        if (marker === expectedEnd) expectedEnd = null;
+      } else if (starts.has(marker)) {
+        expectedEnd = starts.get(marker);
+        currentStart = marker;
+        dropAfter = lines[i - 1] !== '\n' || outside[outside.length - 1] !== '\n';
+        if (!dropAfter) outside.pop();
+      } else if (ends.has(marker)) {
+        return null;
+      } else if (dropAfter && line === '\n') {
+        dropAfter = false;
+      } else {
+        dropAfter = false;
+        outside.push(line);
+      }
+    }
+    return expectedEnd ? null : outside.join('');
+  };
+  const skipped = [];
+  for (const file of REGEN_ADAPTER_FILES) {
+    if (!unstaged.has(file)) continue;
+    let generatedOnly = file === '.atris/state/tasks.projection.json';
+    if (!generatedOnly) {
+      const original = runGit(['show', `:${file}`], { cwd: root, check: false });
+      try {
+        const before = original.status === 0 ? outsideBlocks(original.stdout) : null;
+        const after = outsideBlocks(fs.readFileSync(path.join(root, file), 'utf8'));
+        generatedOnly = before !== null && after !== null && before === after;
+      } catch {
+        generatedOnly = false;
+      }
+      if (!generatedOnly) console.log(`ship: kept hand edits in ${file}`);
+    }
+    if (generatedOnly && !staged.has(file) && !commitMessage.includes(file)) skipped.push(file);
+  }
   if (!skipped.length) return [];
   console.log(`ship: skipped regenerated adapter churn: ${skipped.join(', ')}`);
   if (!dryRun) runGit(['checkout', '--', ...skipped], { cwd: root });
@@ -948,7 +999,8 @@ function shipHelp() {
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
-  console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
+  console.log('  generated-only adapter changes are skipped unless staged first or named in --message; hand edits are kept');
+  console.log('  unstaged task projection changes are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
 
