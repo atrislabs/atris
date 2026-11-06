@@ -91,7 +91,14 @@
     "developer-tools",
     "cli",
     "codebase-navigation",
-    "ai-agents"
+    "ai-agents",
+    "agent-memory",
+    "ai-memory",
+    "llm-memory",
+    "project-memory",
+    "context-graph",
+    "knowledge-graph",
+    "memory"
   ],
   "author": "Keshav Rao (atrislabs)",
   "license": "MIT",
