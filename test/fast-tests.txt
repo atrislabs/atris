@@ -30,6 +30,7 @@ test/brain-count-todo-items.test.js
 test/brief.test.js
 test/builder-pick-fleet.test.js
 test/builder-pick.test.js
+test/business-core.test.js
 test/business-create-validation.test.js
 test/calendar-search.test.js
 test/card.test.js
