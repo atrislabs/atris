@@ -965,6 +965,8 @@ test('nothing is fetched when only misses are on record: a miss needs no commit'
   assert.deepEqual(watch.startingWith('fetch'), [], watch.calls().join('\n'));
 });
 test('misses alone steer without a fetch, even when origin is out of reach: a newcomer is tried and the engine that missed gets fewer jobs', async (t) => {
+  // The draw is seeded by the UTC day; pin the day so the deal is the same on every run.
+  t.mock.timers.enable({ apis: ['Date'], now: FIRST + 3 * HOUR });
   const { app, store } = room(t);
   store.plays(14, { member: 'fleet-claude', outcome: 'dropped', at: FIRST });
   store.breakRemote();
