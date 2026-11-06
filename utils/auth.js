@@ -40,9 +40,11 @@ let inputIndex = 0;
 /**
  * Prompt the user for input, handling both TTY and piped input.
  * @param {string} question - Prompt text to display
+ * @param {{secret?: boolean}} [opts] - secret: never print the answer back
  * @returns {Promise<string>} User's input
  */
-function promptUser(question) {
+function promptUser(question, opts = {}) {
+  const shown = (answer) => (opts.secret ? '' : answer);
   // If stdin is not a TTY (piped input), read all lines upfront
   if (!process.stdin.isTTY && inputLines.length === 0 && !sharedRl) {
     return new Promise((resolve) => {
@@ -57,7 +59,7 @@ function promptUser(question) {
         inputLines = data.trim().split('\n');
         process.stdout.write(question);
         const answer = inputLines[inputIndex++] || '';
-        console.log(answer);
+        console.log(shown(answer));
         resolve(answer.trim());
       });
       process.stdin.resume();
@@ -69,22 +71,34 @@ function promptUser(question) {
     return new Promise((resolve) => {
       process.stdout.write(question);
       const answer = inputLines[inputIndex++] || '';
-      console.log(answer);
+      console.log(shown(answer));
       resolve(answer.trim());
     });
   }
 
   // Interactive TTY mode - create readline per prompt
+  // A secret typed at a terminal must stay hidden even when stdout is a file:
+  // terminal mode turns off the terminal's own echo, and the prompt goes to
+  // whichever stream is still the screen.
+  const secretOut = opts.secret && !process.stdout.isTTY && process.stderr.isTTY ? process.stderr : process.stdout;
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout
+    output: secretOut,
+    ...(opts.secret ? { terminal: Boolean(process.stdin.isTTY) } : {}),
   });
 
+  // Secret answers: let the prompt through, then swallow the typed echo.
+  let muted = false;
+  if (opts.secret) {
+    rl._writeToOutput = (text) => { if (!muted) rl.output.write(text); };
+  }
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
+      if (muted) rl.output.write('\n');
       rl.close();
       resolve(answer.trim());
     });
+    muted = Boolean(opts.secret);
   });
 }
 

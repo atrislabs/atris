@@ -446,7 +446,11 @@ function renderAuditLanding({ dir, meta, records }) {
   const L = ['', `  ◉ sentinel security audit · ${meta.profile}${meta.scope_paths.length ? ` · ${meta.scope_paths.join(', ')}` : ''}`, ''];
   if (meta.incomplete_reason === 'plan_only') {
     L.push(`  plan only: ${cov.in_scope} areas to review, no engines called`);
-    L.push(`  a ${meta.profile} run with budget ${meta.budget} sends ${meta.plan.hunters} hunters (${meta.plan.units_per_hunter} area${meta.plan.units_per_hunter === 1 ? '' : 's'} each) and keeps ${meta.plan.verifyReserve} checks for verifying`);
+    const { hunters, hunters_needed: needed, units_per_hunter: per, verifyReserve } = meta.plan;
+    const sending = Math.min(hunters, needed);
+    L.push(`  a ${meta.profile} run with budget ${meta.budget} sends about ${sending} hunter${sending === 1 ? '' : 's'} (up to ${per} area${per === 1 ? '' : 's'} each) and keeps ${verifyReserve} checks for verifying`);
+    if (hunters < 1) L.push('  this budget is too small to send a hunter; try --budget 8 or more');
+    else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
   } else {
     L.push(`  ${confirmed.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
     L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
