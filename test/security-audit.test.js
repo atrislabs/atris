@@ -310,3 +310,18 @@ test('two old findings on one area: one rejected, one confirmed, the area keeps 
   assert.strictEqual(carried.length, 2);
   assert.deepStrictEqual(now[0].reserved_for, ['x:one', 'x:two']);
 });
+
+test('an area a hunter could not settle is named in the report', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    const engines = fakeEngines([]);
+    const runJobs = async (jobs) => (await engines(jobs)).map((a, i) => {
+      if (!jobs[i].prompt.includes('security hunter') || !jobs[i].prompt.includes('lib/files.js')) return a;
+      const v = audit.extractJson(a.stdout, (x) => Array.isArray(x.units));
+      v.units = v.units.map((u) => ({ ...u, disposition: 'blocked', unresolved: ['who writes this folder is set outside the repo'] }));
+      return { ok: true, stdout: JSON.stringify(v) };
+    });
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs });
+    assert.match(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /Could not settle\n\n- path-traversal in lib\/files\.js: who writes this folder/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
