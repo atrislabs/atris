@@ -256,3 +256,57 @@ test('scoped run marks the rest out of scope', () => withHome(async () => {
     assert.ok(res.ledger.filter((u) => u.status !== 'out_of_scope').every((u) => u.starting_paths.every((p) => p === 'lib/run.js')));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
+
+test('extractJson keeps the outer hunter result when a nested object also matches', () => {
+  const v = audit.extractJson('{"units":[{"units":[]}],"candidates":[1]}', (x) => Array.isArray(x.units));
+  assert.deepStrictEqual(v.candidates, [1]);
+});
+
+test('a symlinked folder pointing outside the repo is never read', () => {
+  const root = makeRepo();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-outside-'));
+  try {
+    fs.writeFileSync(path.join(outside, 'secret.js'), "require('child_process').execSync(process.argv[2]);\n");
+    fs.symlinkSync(outside, path.join(root, 'linked'));
+    execFileSync('git', ['add', 'linked'], { cwd: root });
+    const { units } = audit.mapTarget(root, { profile: 'standard' });
+    assert.ok(!units.some((u) => u.starting_paths.some((p) => p.startsWith('linked/'))));
+    assert.ok(audit.citationErrors(root, { trace: [{ kind: 'sink', file: 'linked/secret.js', line: 1, description: 'x' }] }).length);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('--out to a child folder whose name starts with two dots is still inside the repo', async () => {
+  const root = makeRepo();
+  try {
+    await assert.rejects(audit.runAudit({ root, out: path.join(root, '..reports'), planOnly: true }), /inside the target/);
+    assert.ok(!fs.existsSync(path.join(root, '..reports')));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a run too small to re-check an old finding keeps it for the next run', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines([]) });
+    const thin = await audit.runAudit({ root, profile: 'standard', budget: 3, runJobs: fakeEngines([]) });
+    assert.strictEqual(thin.meta.run_status, 'incomplete');
+    const calls = [];
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines(calls) });
+    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier')).length, 1);
+    assert.ok(res.records.some((r) => r.verdict === 'confirmed' && r.fingerprint === CANDIDATE.fingerprint));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
+
+test('two old findings on one area: one rejected, one confirmed, the area keeps the confirmed one', () => {
+  const units = [{ coverage_id: 'a', status: 'candidate', source_digest: 'd', starting_paths: ['lib/run.js'] }];
+  const now = [{ coverage_id: 'a', status: 'planned', source_digest: 'd', priority: 0, starting_paths: ['lib/run.js'], agent_id: null, reviewed_paths: [], local_checks: [], result_fingerprints: [], unresolved: [] }];
+  const prior = { dir: 'p', ledger: units, findings: [
+    { verdict: 'confirmed', fingerprint: 'x:one', coverage_ids: ['a'] },
+    { verdict: 'needs_validation', fingerprint: 'x:two', coverage_ids: ['a'] },
+  ] };
+  const { carried } = audit.mergePrior(now, prior);
+  assert.strictEqual(carried.length, 2);
+  assert.deepStrictEqual(now[0].reserved_for, ['x:one', 'x:two']);
+});
