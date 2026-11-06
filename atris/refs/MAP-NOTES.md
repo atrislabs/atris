@@ -2519,6 +2519,15 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
 - Proof and user-visible changes: `atris/receipts/local-http-security.md`.
 
+### Sentinel security audit
+
+- `atris sentinel` dispatches to `commands/security-review.js:464` (`auditCommand`), same as `atris security-review audit`. Method adapted from cloudflare/security-audit-skill (MIT).
+- Map: `lib/security-audit.js:267` (`mapTarget`) turns tracked source files x attack classes (`lib/security-audit-classes.js`) into a sorted coverage ledger; no model call. Quick profile groups by subsystem.
+- Additive runs: `lib/security-audit.js:412` (`mergePrior`) keeps unchanged covered areas, re-checks old findings through the verifier (areas held in `reserved_for`), and reloads `carried-pending.json` so a cheap run never drops a finding.
+- Contracts: `lib/security-audit.js:483` (`validateLedger`, the state table) and `lib/security-audit.js:577` (`validateFindings`; with root set every cited file:line must resolve). `lib/security-audit.js:944` (`citationErrors`) rejects dead citations before any verifier spend.
+- Run: `lib/security-audit.js:1196` (`runAudit`) hunters on `--hunter` (codex), critic, verifier and final recheck on `--verifier` (claude) via `runEngineAskJobs` read-only. Output under `~/.atris/security-audit/<repo>/run-<N>/` (`ATRIS_SECURITY_AUDIT_HOME` overrides); refuses any folder inside the target unless git ignores it. Exit 1 on a confirmed high or critical.
+- Regression: `test/security-audit.test.js`.
+
 ## Wish teammate names
 
 DV2-134: `commands/wish.js` delegates its name checks to `lib/wish-audit.js`.
