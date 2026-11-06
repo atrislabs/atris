@@ -632,6 +632,7 @@ function showHelpAll() {
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
+  console.log('  sentinel   - Security audit: engines hunt for holes, a different model verifies each one');
   console.log('  voice      - Scan binary voice tells or judge reply shape and plainness');
   console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
@@ -3369,6 +3370,11 @@ if (command === 'guide') {
   // Strings: content design system from live code (no LLM). Extracts UI strings, flags variants,
   // enforces preferred terms at the gate. Exit 1 = variants/banned terms found, for CI + the gate.
   Promise.resolve().then(() => require('../commands/strings').stringsCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'sentinel') {
+  // Sentinel: the full security audit (engines hunt, another model verifies). Same as `security-review audit`.
+  Promise.resolve().then(() => require('../commands/security-review').securityReviewCommand(['audit', ...process.argv.slice(3)]))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'security-review' || command === 'secure') {
