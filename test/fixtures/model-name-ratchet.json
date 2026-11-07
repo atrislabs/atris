@@ -7,7 +7,7 @@
   "lib/runner-command.js": 8,
   "lib/team-lineup.js": 3,
   "commands/computer.js": 1,
-  "commands/improve.js": 2,
+  "commands/improve.js": 1,
   "commands/workflow.js": 1,
   "commands/youtube.js": 1,
   "lib/engine-ask.js": 1

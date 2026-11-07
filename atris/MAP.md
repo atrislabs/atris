@@ -17,7 +17,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
 | known commands list | `lib/known-commands.js` | command names and typo suggestions defined via `suggestCommands` |
 | plain english to a command | `lib/intents.js`, `commands/guide.js` | `atris guide`; maps natural phrases to CLI commands |
-| project initialization | `commands/init.js`, `commands/sync.js`, `lib/gitignore.js` | project initialization implemented here; `init` and `update` scaffold user projects |
+| project initialization | `commands/init.js`, `commands/sync.js`, `lib/gitignore.js`, `lib/init-commit.js` | project initialization implemented here; `init` and `update` scaffold user projects and initial setup commit |
 | first minute boot flow | `lib/first-minute.js`, `commands/activate.js`, `lib/context-gatherer.js` | bare `atris` screen, context activation, and first-contact gatherer |
 | atris done command | `commands/done.js` | land what a coding agent built: check, accept, sign |
 | working values | `atris.md`, `lib/values.js`, `lib/opening-lines.js` | the four values (acceleration, accuracy, ambition, agency) shown at boot |
@@ -65,7 +65,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | ax chat app and try-repo server | `ax`, `atris/refs/FEATURE-MAP-ax.md`, `lib/try-repo.js` | Mercury chat CLI (`--mercury`, `--diffuse`, `/model`) and sandboxed public GitHub repo mapper |
 | active feature specs | `atris/features/campaign/idea.md`, `atris/features/cloud-sync-simplicity/idea.md`, `atris/features/codex-goal-replacement/idea.md`, `atris/features/company-brain-sync/idea.md`, `atris/features/endstate/idea.md`, `atris/features/plan-review-by-validator/idea.md`, `atris/features/spaceship/idea.md`, `atris/features/verify-falsifiability/idea.md` | active specs in `atris/features/` |
 | active team members | `atris/team/alpha-judge/MEMBER.md`, `atris/team/architect/MEMBER.md`, `atris/team/auto-improver/MEMBER.md`, `atris/team/brainstormer/MEMBER.md`, `atris/team/builder/MEMBER.md`, `atris/team/customer-lead/MEMBER.md`, `atris/team/engine-manager/MEMBER.md`, `atris/team/executor/MEMBER.md`, `atris/team/improver/MEMBER.md`, `atris/team/launcher/MEMBER.md`, `atris/team/linguist/MEMBER.md`, `atris/team/mission-lead/MEMBER.md`, `atris/team/navigator/MEMBER.md`, `atris/team/opus-overnight/MEMBER.md`, `atris/team/orb/MEMBER.md`, `atris/team/researcher/MEMBER.md`, `atris/team/scout/MEMBER.md`, `atris/team/task-planner/MEMBER.md`, `atris/team/validator/MEMBER.md`, `atris/team/youtube-lead/MEMBER.md` | one folder per active member under `atris/team/` |
-| tests, fixtures, release, and CI | `package.json`, `test/commands-1.test.js`, `test/helpers/commands-fixtures.js`, `scripts/publish-atris-release.js`, `scripts/pre-commit`, `.github/workflows` | `npm test`, `npm run test:fast`, shared `test/helpers/` fixtures, tag-driven publish, and pre-commit gate |
+| tests, fixtures, release, and CI | `package.json`, `test/commands-1.test.js`, `test/helpers/commands-fixtures.js`, `scripts/ci-test-shard.js`, `test/ci-file-durations.json`, `scripts/publish-atris-release.js`, `scripts/pre-commit`, `.github/workflows` | `npm test`, `npm run test:fast`, balanced 8-shard CI runner, shared `test/helpers/` fixtures, tag-driven publish, and pre-commit gate |
 | deep map with line refs | `atris/refs/MAP-NOTES.md` | rg shortcuts and exact `file:line` notes |
 
 ## Load order
