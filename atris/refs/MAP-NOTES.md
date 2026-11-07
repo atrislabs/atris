@@ -26,7 +26,7 @@ Project 99: `commands/ninety-nine.js:179` (`ninetyNineAtris`) shows a compact de
 
 | Route | Paths | Purpose |
 | --- | --- | --- |
-| Portable local roots and owner | `utils/backend-root.js:10`, `utils/backend-root.js:31`, `utils/config.js:18`, `utils/owner-identity.js:17`, `lib/fleet.js:1324`, `commands/autopilot.js:34`, `commands/study.js:94`, `lib/codex-flight.js:101`, `commands/business.js:16`, `test/no-hardcoded-home-paths.test.js:42`, `test/no-hardcoded-home-paths.test.js:80` | Backend lookup uses the environment or workspace config, then the workspace and installed CLI siblings. NODE_TEST_CONTEXT skips only the install sibling; ATRIS_BACKEND_INSTALL_SIBLING=1 opts in, 0 disables it even outside tests. The install-layout regression exercises both the test fence and normal discovery. Study prefers the workspace study folder before the backend root. Codex companion lookup uses an override or the newest installed version. Owner checks use the signed-in account or configured operator, then git and local user names when logged out. Sealed fleet children inherit the resolved owner names. Autopilot skips human claims. Business workspace prompts use the configured folder. |
+| Portable local roots and owner | `utils/backend-root.js:10`, `utils/backend-root.js:31`, `utils/config.js:18`, `utils/owner-identity.js:17`, `lib/fleet.js:1324`, `commands/autopilot.js:34`, `commands/study.js:94`, `lib/codex-flight.js:101`, `lib/business-core.js:11`, `test/no-hardcoded-home-paths.test.js:42`, `test/no-hardcoded-home-paths.test.js:80` | Backend lookup uses the environment or workspace config, then the workspace and installed CLI siblings. NODE_TEST_CONTEXT skips only the install sibling; ATRIS_BACKEND_INSTALL_SIBLING=1 opts in, 0 disables it even outside tests. The install-layout regression exercises both the test fence and normal discovery. Study prefers the workspace study folder before the backend root. Codex companion lookup uses an override or the newest installed version. Owner checks use the signed-in account or configured operator, then git and local user names when logged out. Sealed fleet children inherit the resolved owner names. Autopilot skips human claims. Business workspace prompts use the configured folder. |
 | Document health | `commands/doc-health.js`, `lib/map-refs.js`, `test/doc-health.test.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/build.md`, `atris/doc-health/build-2.md`, `atris/doc-health/REPORT-2.md`, `atris/doc-health/REPORT-3.md` | Boot size, map coverage, lookup hops, stale features and members, near duplicates, and weighted score (boot earns full credit through 80,000 chars, zero at 200,000). `lib/map-refs.js` checks every backticked `path:N` ref in this map against the code, using the identifier written right next to it: right, moved, unclear, or gone; the map score is the existing-path share times the right-ref share. `atris doc-health --fix-refs` rewrites only moved refs (ranges keep their width, clamped to the last line) and lists the rest by map line. computeDocHealth(root) supplies the guarded startup docs row in bin/atris.js:1766 without a subprocess; one-hop questions avoid document reads and score-only member scans stop at the first recent log. Inactive member frontmatter is excluded from freshness; retired/superseded features are not stale; _archive and _templates never count as features. Uses `commands/brain.js:140` readText and `lib/mission-root.js:24` resolveWorkspaceRoot; registered beside doctor in `bin/atris.js:2757`, with both commands draining piped output through process.exitCode and `lib/known-commands.js`. |
 | Compact task board | `lib/task-db.js:2125`, `lib/todo-fallback.js:40`, `lib/todo.js:91`, `lib/state-detection.js:102`, `lib/first-minute.js:164`, `test/todo-compact.test.js` | Lane-specific compact rows: 140-character active titles, backlog tags only, 40-character in-progress verify previews, 160-character review approval detail, eight completed rows with 100-character titles; ATRIS_TODO_RENDER=full restores detail. Versioned compact marker preserves middle dots in owner-free backlog/completed titles and canonical command lookup. Shared parser strips owner and verification preview from titles; previews never execute. Compact boards resolve full commands from existing task state without the legacy database opt-in; display references prevent duplicate merged rows. |
 | Shared member behavior | `lib/member-context.js` reads the execution workspace's `atris/team/MEMBER_PROCESS.md` for mission prompts, wake proposals, and manual activation. Regression: `test/member-context.test.js`. | from origin/master |
@@ -171,8 +171,8 @@ rg "resolveFunctionalOwner|explicit_member_owner|remap_reason|engine_owner_resol
 rg "skillColor|skillList|NO_COLOR" commands/skill.js test/dogfood-papercuts.test.js  # skill list ANSI gated on TTY / NO_COLOR
 rg "clipCell|member list" commands/member.js  # member list role column uses clipCell ellipsis
 rg "alignAtris" commands/align.js           # Business workspace alignment
-rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js  # Business workspace flows and collaborator handoffs
-rg "computerCreate|computerSetup|formatEngineSeats|runEngineSeatsCommand|readyCheckEngineLogin|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint|ENGINE_SEED_META|normalizeModels|normalizeDuty|printRoster|speakFirstMinute|canPersistEngineRegistry" commands/computer.js commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, named engine seat visibility, config-driven engine models and duties, setup live proof, explicit business-computer activation, readiness, and workspace-mismatch recovery; empty-folder engine/engines/--json reuse speakFirstMinute and skip engines.json seed
+rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js lib/business-core.js  # Business workspace flows and collaborator handoffs
+rg "computerCreate|computerSetup|formatEngineSeats|runEngineSeatsCommand|readyCheckEngineLogin|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint|ENGINE_SEED_META|normalizeModels|normalizeDuty|printRoster|speakFirstMinute|canPersistEngineRegistry" commands/computer.js lib/computer-core.js commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, named engine seat visibility, config-driven engine models and duties, setup live proof, explicit business-computer activation, readiness, and workspace-mismatch recovery; empty-folder engine/engines/--json reuse speakFirstMinute and skip engines.json seed
 rg "cmdAdd|cmdRetitle|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdSweep|cmdClearDone|cmdAudit|cmdReviews|cmdDone|cmdNext|cmdNextTruth|cmdFirstMinute|renderTaskDesk|deskNextCommand|taskNextCommand|pickNext|readEndgameAgentAction|liveTaskWithTitle|getTaskDb|task accept --help|task claim --help|task ready --help|task step --help|task next --help|task show --help" commands/task.js lib/first-minute.js test/task-retitle.test.js test/task-sweep-auto-accept.test.js test/task-clear-done.test.js test/task-audit.test.js test/task-subcommand-help.test.js test/task-desk-next.test.js test/task-first-minute.test.js test/task-next-truth.test.js test/first-minute.test.js  # Local agent task plane, title history, proof-ready review, human accept, accept/claim/ready/step/next/show --help usage locks, default task reuses first-minute, empty-folder task new reuses speakFirstMinute and does not mint, desk stays on task desk/--all, desk and task next share first-minute pick/taskCommand, low-stakes auto-accept sweep, completed-task cleanup, accepted-proof audit, task-next Endgame seed dedupe, and compact certified review queue
 rg "keepTaskList|keepWorkspaceTaskList|refreshKeptTaskList|cmdKeep" lib/task-list-keeper.js commands/task.js bin/atris.js test/task-list-keeper.test.js test/task-list-sim.test.js  # Task list keeper: one indexed lookup on boot and task day, puts away finished and idle rows, leaves fresh work, and stays quiet when nothing qualifies
 rg "taskExplanation|plainText|taskApprovalFor|explanationFlags|explanationMarkdownLines|Technical details|plain first layer" lib/task-explanation.js lib/task-db.js lib/todo-fallback.js commands/task.js commands/init.js commands/sync.js FOR_AGENTS.md atris/skills/atris/SKILL.md test/task-explanation.test.js test/task-api.test.js  # Shared cross-project task explanation: additive what/why/done model, legacy derivation, plain-first CLI/JSON/TODO/board/cloud views, generated project policy, exact technical-detail retention, and existing Plan/Do plus accept/revise gates
@@ -214,7 +214,7 @@ rg "codexGoalCommand|completed_task_closed|thread_goals" commands/codex-goal.js 
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
 rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusinessWorkspace|join --help|friends --help|inbox --help|signup help|avail --help" lib/account-bound.js bin/atris.js commands/social.js commands/signup.js commands/avail.js test/dogfood-pass3-27-28.test.js test/dogfood-p0-safety.test.js test/signup.test.js # Unbound folders refuse account-global inbox/gmail/slack/errors; bare atris slack and atris gmail (including slack send/dm/channels/messages/search and gmail connect/send/voice) refuse the same way even with --account (no send/dm/channels, inbox/read/archive listing, OAuth/link flow, mailbox lookup, or Slack network); slack/gmail --help still print usage and do not hit the network; join/friends/inbox/signup/avail help prints usage and does not hit the network
 - Help-before-network: `commands/social.js:173` friends, `commands/social.js:391` join, `commands/social.js:571` friendsCommand, `commands/social.js:581` inboxCommand, `commands/signup.js:53` signup help, `commands/avail.js:385` avail help (before the `--` show path). Regression: `test/dogfood-p0-safety.test.js` (`29:` `31:`) and `test/signup.test.js`.
-- Typo-plus-args: `bin/atris.js:1301` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
+- Typo-plus-args: `bin/atris.js:1305` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
 - Lone unknown verbs: `bin/atris.js:1226` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"` and multiword `atris build a thing` still create work after init. Empty-folder `task new` and `wish` talk like first-minute and do not mint. Regression: `test/dogfood-pass2.test.js` (`14:`), `test/one-lap-router.test.js`, and `test/first-minute.test.js`.
 - Headless autopilot: `commands/autopilot-front.js:236` refuses bare headless invoke and `--json`/`--once` unless `--yes` or `--auto`; unbound scratch `--yes`/`--auto` still refuse via `isUnboundScratchFolder` before `writeState`; `autopilot stop` kills `child_pid` then the wrapper. Regression: `test/dogfood-p0-safety.test.js` (`32:`), `test/dogfood-pass4.test.js` (`30:`), and `test/dogfood-spaceship-scratch.test.js`.
 - x help: `bin/atris.js:2928` treats a lone `--help`/`-h`/`help` as usage and does not POST `/api/agent-sdk/execute`. Regression: `test/dogfood-p0-safety.test.js` (`33:`).
@@ -242,7 +242,7 @@ rg "pushAtris|buildPushChangePlan|buildPushUploadBatches|sync?timeout" commands/
 rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" commands/cloud.js commands/business-sync.js bin/atris.js lib/known-commands.js test/cloud-clean.test.js  # Cloud clean: list/delete cloud files not present locally, and sync --status --show-orphans
 rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|claimed_task|canonical_mirror_hash" scripts/atris-labs-cloud-next-sync.js test/cloud-next-sync.test.js  # Atris Labs cloud next-work mirror sync: local task state -> /workspace/work/next -> cloud self-improve receipt; claimed codex work beats human-accept waits; stable digest sidecar detects unchanged mirror state
 rg "businessSync|parseBusinessSyncArgs|--watch|command === 'watch'|knownCommands" commands/business-sync.js bin/atris.js lib/known-commands.js test/watch.test.js  # Business sync/watch surface, including top-level `atris watch` alias for `sync --watch`
-rg "businessRoom|businessProducts|businessOrders|businessStore|normalizeOrdersPayload|deployBusiness|files failed to upload" commands/business.js bin/atris.js test/business-ops.test.js test/business-deploy.test.js  # Live business room, product/order lists, the web-compatible storefront switch, and truthful workspace upload failures over the production HTTP API
+rg "businessRoom|businessProducts|businessOrders|businessStore|normalizeOrdersPayload|deployBusiness|files failed to upload" commands/business.js lib/business-core.js bin/atris.js test/business-ops.test.js test/business-deploy.test.js  # Live business room, product/order lists, the web-compatible storefront switch, and truthful workspace upload failures over the production HTTP API
 rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
 rg "teamCommand|collectTeamPresence|buildTeamPresence|atris.team_presence.v1|collectTeamRoster|renderTeamRoster|collectTeamPrune" commands/team.js lib/team-presence.js bin/atris.js test/team-presence.test.js test/team-roster.test.js test/team-prune.test.js  # Team surface: bare `atris team` roster merges atris/team member folders with live-mission engine assignments (one lowercase sentence per member); `team presence` keeps the operator separate from its deterministic awake member roster, count, doing sentence, loop badge, and stream totals; `team prune [--days N]` flags members with no signal (MEMBER.md/logs mtimes or an active mission) and deletes nothing
 rg "whoCommand|collectWorkforcePresence|buildWorkforcePresence|archiveFinishedRuns|atris.workforce_presence.v1" commands/who.js lib/workforce-presence.js bin/atris.js lib/known-commands.js test/workforce-presence.test.js  # Local workforce truth: `atris who` joins live engine processes to task claims, run receipts, and active missions as working, waiting, done, stale, or unowned; `--clear` moves finished receipts into a recoverable archive
@@ -293,7 +293,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:994` (dispatch check)
-- **Cold-start handler:** `bin/atris.js:1424` (`interactiveEntry`; active missions/work outrank completed history)
+- **Cold-start handler:** `bin/atris.js:1428` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands-8.test.js:1762-1779` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -307,7 +307,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
 - **Argument routing:** `bin/atris.js:134-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
-- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1424` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
+- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1428` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
 - **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
@@ -698,30 +698,30 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Create, inspect, and sync shared business owners and their default computers, including the standalone `.atris/business.json` + `atris/` shape used for local-first business environments
 
-- **Entry point:** `commands/business.js`
+- **Entry point:** `commands/business.js`, `lib/business-core.js`
 - **Key flows:**
 - `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
-- `renderBusinessCreatedNextSteps()` (`commands/business.js`) renders the post-`business init` operator path: `business start`, `radar`, `task next`, member activation, mission bootstrap, onboarding, record/share, and `align --fix`
+- `renderBusinessCreatedNextSteps()` (`lib/business-core.js`) renders the post-`business init` operator path: `business start`, `radar`, `task next`, member activation, mission bootstrap, onboarding, record/share, and `align --fix`
 - `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`; product meaning is "create shared owner + first/default computer"
-- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, a fallback starter row in `atris/TODO.md`, and a durable starter task in `.atris/state/tasks.projection.json` when `lib/task-db` is available. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
+- `onboardBusiness()` (`lib/business-core.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, a fallback starter row in `atris/TODO.md`, and a durable starter task in `.atris/state/tasks.projection.json` when `lib/task-db` is available. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
 - `startBusinessWorkspace()` (`commands/business.js`) powers `atris business start|check|ready`; it reads a received workspace, prints readiness, missing artifacts, first reads, first-loop commands including `atris radar`, `atris task next`, and `atris do`, mission bootstrap commands (`mission status`, `mission start`, `member goal-from-mission`), compact local Atris OS state from `.atris/state` + `atris/team`, and the `atris update` repair command when root agent adapters are missing. Supports `--cwd <path>` for handoff links.
-- `shareBusinessWorkspace()` (`commands/business.js`) prints/writes a collaborator handoff with workspace identity, local `cd` path, cloud-aware remote `atris pull <slug>` setup when IDs exist, readiness, exact start commands with `atris radar`, `atris task next`, and `atris do`, first-loop/proof commands, mission bootstrap/resume commands, sync commands, task/review counts, mission loop state, team active-goal counts, AgentXP gate state, and missing next action. Missing root agent adapters point collaborators to `atris update`.
-- `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
-- `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json`, reuses `syncBusinessCanonical()` from `commands/sync.js`, then calls `ensureBusinessRootAgentAdapters()` from `commands/sync.js` to seed root `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` adapters for collaborator first-run guidance while preserving custom existing adapters
+- `shareBusinessWorkspace()` (`lib/business-core.js`) prints/writes a collaborator handoff with workspace identity, local `cd` path, cloud-aware remote `atris pull <slug>` setup when IDs exist, readiness, exact start commands with `atris radar`, `atris task next`, and `atris do`, first-loop/proof commands, mission bootstrap/resume commands, sync commands, task/review counts, mission loop state, team active-goal counts, AgentXP gate state, and missing next action. Missing root agent adapters point collaborators to `atris update`.
+- `recordBusinessRun()` (`lib/business-core.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
+- `createCanonicalBusinessWorkspace()` (`lib/business-core.js`) writes `.atris/business.json`, reuses `syncBusinessCanonical()` from `commands/sync.js`, then calls `ensureBusinessRootAgentAdapters()` from `commands/sync.js` to seed root `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` adapters for collaborator first-run guidance while preserving custom existing adapters
 - `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files and repairs missing root agent adapters during `atris sync` / `atris update`; `renderBusinessAgentAdapter()` seeds root `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` with `atris business start`, `atris radar`, task next, member activation, mission bootstrap, and `atris do`
 - Starter business environments seed `atris/team/START_HERE.md`, `operator`, and `validator` member folders so a collaborator knows which lane to wake first and when proof needs review
 - **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
 - **Value:** Makes shared owners and their computers a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
-**Search:** `rg "initBusinessWorkspace|onboardBusiness|startBusinessWorkspace|shareBusinessWorkspace|createCanonicalBusinessWorkspace|ensureBusinessRootAgentAdapters|syncBusinessCanonical" commands/business.js commands/sync.js`
+**Search:** `rg "initBusinessWorkspace|onboardBusiness|startBusinessWorkspace|shareBusinessWorkspace|createCanonicalBusinessWorkspace|ensureBusinessRootAgentAdapters|syncBusinessCanonical" commands/business.js lib/business-core.js commands/sync.js`
 
 ### Feature: Computer Card (`atris computer card`)
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:4187` (`runComputer` dispatch handles `card` before auth)
-- **Builder:** `commands/computer.js:1546` (`buildComputerCard`)
-- **Writer:** `commands/computer.js:1641` (`computerCard`)
+- **Entry point:** `commands/computer.js:1940` (`runComputer` dispatch handles `card` before auth)
+- **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
+- **Writer:** `lib/computer-core.js:1536` (`computerCard`)
 - **How it works:**
 - Reads `.atris/business.json` when present for owner/workspace metadata
 - Falls back to `package.json` and folder name for project workspaces
@@ -729,7 +729,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `--write` saves markdown to `atris/reports/computer-card.md`
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
-**Search:** `rg "buildComputerCard|computerCard" commands/computer.js`
+**Search:** `rg "buildComputerCard|computerCard" commands/computer.js lib/computer-core.js`
 
 ### Feature: Computer Account Setup (`atris computer setup`)
 
@@ -742,7 +742,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Receipt:** reuses `listEngineLogins()` and prints each account linked during setup
 - **Tests:** `test/engine.test.js` covers device-code and Claude paste-back flows; `test/computer-create.test.js` covers setup guidance and dependency passthrough
 
-**Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js commands/engine.js test/engine.test.js`
+**Search:** `rg "computerSetup|setupComputerChoices|normalizeEngineLoginSeat|listEngineLogins" commands/computer.js lib/computer-core.js commands/engine.js test/engine.test.js`
 
 ### Feature: Agent Task Plane (`atris task`)
 
@@ -960,7 +960,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Housekeeping: find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
 - **Dispatch:** `bin/atris.js:1931` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:1137` (`showCleanHelp`) prints usage without touching workspace state
+- **Help:** `bin/atris.js:1141` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:260` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
@@ -1083,7 +1083,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/release.js:16` (releaseAtris function)
 - **Preflight:** `commands/release.js:213` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
-- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js:1013` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
+- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js:1017` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
 - **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**
@@ -1374,7 +1374,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
   3. Non-interactive: `--token <t>` flag for CI/scripts
 - **Token refresh:** `utils/auth.js:723` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `utils/auth.js:690` (`refreshAccessToken`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
 - **Credential guard:** `utils/auth.js:840` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
-- **Wake auth abort:** `utils/auth.js:705` (`isAuthFailure`) and `utils/auth.js:715` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `commands/computer.js:2259`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
+- **Wake auth abort:** `utils/auth.js:705` (`isAuthFailure`) and `utils/auth.js:715` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `lib/computer-core.js:2179`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami): uses modular `utils/auth.js`
@@ -1547,7 +1547,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
 - **Command:** `commands/next.js:190` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:946` (`showNextHelp`) stays for `atris atris --help`
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:950` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
@@ -2519,6 +2519,15 @@ Campaign local worker recovery order: `lib/campaign-loop.js:80` deduplicates eve
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
 - Proof and user-visible changes: `atris/receipts/local-http-security.md`.
 
+### Sentinel security audit
+
+- `atris sentinel` dispatches to `commands/security-review.js:464` (`auditCommand`), same as `atris security-review audit`. Method adapted from cloudflare/security-audit-skill (MIT).
+- Map: `lib/security-audit.js:267` (`mapTarget`) turns tracked source files x attack classes (`lib/security-audit-classes.js`) into a sorted coverage ledger; no model call. Quick profile groups by subsystem.
+- Additive runs: `lib/security-audit.js:412` (`mergePrior`) keeps unchanged covered areas, re-checks old findings through the verifier (areas held in `reserved_for`), and reloads `carried-pending.json` so a cheap run never drops a finding.
+- Contracts: `lib/security-audit.js:483` (`validateLedger`, the state table) and `lib/security-audit.js:577` (`validateFindings`; with root set every cited file:line must resolve). `lib/security-audit.js:944` (`citationErrors`) rejects dead citations before any verifier spend.
+- Run: `lib/security-audit.js:1200` (`runAudit`) hunters on `--hunter` (codex), critic, verifier and final recheck on `--verifier` (claude) via `runEngineAskJobs` read-only. Output under `~/.atris/security-audit/<repo>/run-<N>/` (`ATRIS_SECURITY_AUDIT_HOME` overrides); refuses any folder inside the target unless git ignores it. Exit 1 on a confirmed high or critical.
+- Regression: `test/security-audit.test.js`.
+
 ## Wish teammate names
 
 DV2-134: `commands/wish.js` delegates its name checks to `lib/wish-audit.js`.
@@ -2535,7 +2544,7 @@ this note holds the objective and proof instead. No acceptance or push is author
 
 Campaign briefs: `lib/campaign-loop.js:53` flattens whitespace only when attaching a brief, shared by proposal storage at `lib/campaign-loop.js:269` and mission start at `lib/campaign-loop.js:293`, without appending the brief twice. The planner still reads the original formatting. The mission gate stays unchanged: slugs (`commands/mission.js:155`) and task titles (`commands/mission.js:928`) normalize whitespace already, while report headings (`commands/mission.js:2088`, `commands/mission.js:5963`) and several console lines interpolate objectives directly. `test/campaign-missions.test.js:127` covers real starts from single-line, multiline, claimed and legacy proposals.
 
-Computer messages: `commands/computer.js:3550` treats an explicit message as one input and keeps piped stdin line by line; `commands/computer.js:3554` recognizes slash commands only on a single line. `test/computer-create.test.js:1630` checks exact HTTP message bodies and one turn for paragraphs and slash-prefixed prompts; `test/computer-create.test.js:1681` checks `/audit 2` sends no chat turn. Verify both fixes: `node --test test/computer-create.test.js test/campaign-*.test.js`.
+Computer messages: `commands/computer.js:1303` treats an explicit message as one input and keeps piped stdin line by line; `commands/computer.js:1307` recognizes slash commands only on a single line. `test/computer-create.test.js:1630` checks exact HTTP message bodies and one turn for paragraphs and slash-prefixed prompts; `test/computer-create.test.js:1681` checks `/audit 2` sends no chat turn. Verify both fixes: `node --test test/computer-create.test.js test/campaign-*.test.js`.
 
 ## google account commands
 

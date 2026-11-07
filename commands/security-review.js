@@ -15,6 +15,9 @@
 //   atris security-review --deep          model-review prompt + evidence
 //   atris security-review --update-baseline accept current findings
 //   atris security-review hook            install a pre-commit gate
+//   atris security-review audit           sentinel audit: engines hunt, a
+//                                         different model verifies (see
+//                                         lib/security-audit.js)
 //
 // Exit code: 0 = clean, 1 = active findings at/over the fail threshold, 2 = bad usage.
 
@@ -123,6 +126,7 @@ function securityReviewCommand(argv = []) {
   if (sub === 'help' || argv.includes('-h') || argv.includes('--help')) return printHelp();
   if (sub === 'rules') return printRules();
   if (sub === 'hook' || sub === 'install-hook') return installHook();
+  if (sub === 'audit') return auditCommand(argv.slice(1));
 
   const root = process.cwd();
   let opts;
@@ -397,6 +401,129 @@ function installHook() {
   } catch (e) { console.error(`  ${e.message}`); return 2; }
 }
 
+function parseAuditArgs(argv) {
+  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null };
+  const takes = (i, flag) => {
+    if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
+    return argv[i + 1];
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const [flag, inline] = arg.includes('=') && arg.startsWith('--') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, null];
+    const value = () => (inline !== null ? inline : takes(i++, flag));
+    if (flag === '--json') opts.json = true;
+    else if (flag === '--plan' || flag === '--dry-run') opts.planOnly = true;
+    else if (flag === '--quick' || flag === '--standard' || flag === '--deep') opts.profile = flag.slice(2);
+    else if (flag === '--profile') opts.profile = value();
+    else if (flag === '--budget') opts.budget = Number(value());
+    else if (flag === '--out') opts.out = value();
+    else if (flag === '--hunter') opts.hunter = value();
+    else if (flag === '--verifier') opts.verifier = value();
+    else if (flag === '--timeout') opts.timeoutMs = Number(value()) * 1000;
+    else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
+    else opts.scope.push(arg);
+  }
+  const { PROFILES } = require('../lib/security-audit');
+  if (!PROFILES.includes(opts.profile)) throw new Error(`--profile must be one of ${PROFILES.join(', ')}`);
+  if (opts.budget !== null && (!Number.isInteger(opts.budget) || opts.budget < 1 || opts.budget > 500)) throw new Error('--budget must be a whole number from 1 to 500');
+  if (opts.timeoutMs !== null && (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < 10000)) throw new Error('--timeout is in seconds, at least 10');
+  return opts;
+}
+
+function tildePath(p) {
+  const home = require('os').homedir();
+  return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+}
+
+// The audit landing: what was found, how much was read, what is left.
+function renderAuditLanding({ dir, meta, records }) {
+  const confirmed = records.filter((r) => r.verdict === 'confirmed');
+  const needs = records.filter((r) => r.verdict === 'needs_validation');
+  const rejected = records.filter((r) => r.verdict === 'rejected');
+  const sev = meta.counts.severity;
+  const cov = meta.coverage;
+  const sevText = ['critical', 'high', 'medium', 'low', 'informational'].filter((s) => sev[s]).map((s) => `${sev[s]} ${s}`).join(', ');
+  const L = ['', `  ◉ sentinel security audit · ${meta.profile}${meta.scope_paths.length ? ` · ${meta.scope_paths.join(', ')}` : ''}`, ''];
+  if (meta.incomplete_reason === 'plan_only') {
+    L.push(`  plan only: ${cov.in_scope} areas to review, no engines called`);
+    const { hunters, hunters_needed: needed, units_per_hunter: per, verifyReserve } = meta.plan;
+    const sending = Math.min(hunters, needed);
+    L.push(`  a ${meta.profile} run with budget ${meta.budget} sends about ${sending} hunter${sending === 1 ? '' : 's'} (up to ${per} area${per === 1 ? '' : 's'} each) and keeps ${verifyReserve} checks for verifying`);
+    if (hunters < 1) L.push('  this budget is too small to send a hunter; try --budget 8 or more');
+    else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
+  } else {
+    L.push(`  ${confirmed.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
+    L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
+    L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}`);
+    for (const r of confirmed.slice(0, 6)) {
+      const sink = r.trace[r.trace.length - 1];
+      L.push(`    ${r.severity.overall.padEnd(8)} ${r.title} (${sink.file}:${sink.line})`);
+    }
+    if (meta.run_status === 'incomplete') L.push(`  incomplete: ${String(meta.incomplete_reason).replace(/_/g, ' ')}`);
+  }
+  L.push(`  report: ${tildePath(path.join(dir, 'REPORT.md'))}`, '');
+  return L.join('\n');
+}
+
+async function auditCommand(argv) {
+  if (argv[0] === 'help' || argv.includes('-h') || argv.includes('--help')) return printAuditHelp();
+  const audit = require('../lib/security-audit');
+  if (argv[0] === 'status' || argv[0] === 'last') {
+    const last = audit.latestRun(process.cwd());
+    if (!last || !last.meta) { console.log('\n  no sentinel audit has run for this repo yet\n'); return 0; }
+    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records }, null, 2)); return 0; }
+    console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
+    return 0;
+  }
+  let opts;
+  try { opts = parseAuditArgs(argv); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
+  const log = opts.json ? () => {} : (msg) => console.log(`  · ${msg}`);
+  let result;
+  try {
+    result = await audit.runAudit({
+      root: process.cwd(), profile: opts.profile, scope: opts.scope, budget: opts.budget ?? undefined, out: opts.out,
+      hunter: opts.hunter || undefined, verifier: opts.verifier || undefined, planOnly: opts.planOnly,
+      timeoutMs: opts.timeoutMs || undefined, log,
+    });
+  } catch (e) {
+    console.error(`security-review audit: ${e.message}`);
+    return 2;
+  }
+  const fail = audit.shouldFailAudit(result.records);
+  if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
+  else console.log(renderAuditLanding(result));
+  return fail ? 1 : 0;
+}
+
+function printAuditHelp() {
+  console.log(`
+  atris security-review audit, the sentinel's full security audit
+
+    atris security-review audit                 standard audit of the repo
+    atris security-review audit src/            audit only these paths
+    atris security-review audit --quick         one wave, coarse areas, cheap
+    atris security-review audit --deep          more waves, smaller areas
+    atris security-review audit --plan          map areas and budget, call no engine
+    atris security-review audit --budget 30     most engine calls this run may spend
+    atris security-review audit --hunter codex --verifier claude
+                                                which engines hunt and which verify
+    atris security-review audit --out DIR       write the run here (outside the repo)
+    atris security-review audit status          the last run's landing
+
+  How it works: every source file x attack class with a reason to be read
+  becomes an area in a coverage ledger. Read-only engine hunters each own a
+  few areas. A coverage critic names gaps. Every candidate goes to a different
+  model that tries to disprove it, and cited lines must exist before any spend.
+  Runs add up: unchanged areas are skipped next time.
+
+  Output: ~/.atris/security-audit/<repo>/run-<N>/ (REPORT.md,
+  FINDINGS-DETAIL.md, NEEDS-VALIDATION.md, findings.json, coverage-ledger.json).
+  Nothing is written inside the repo. Exit 1 when a confirmed finding is high
+  or critical.
+`);
+  return 0;
+}
+
 function printHelp() {
   console.log(`
   atris security-review, deterministic secrets / PII / privacy scan (no LLM)
@@ -416,6 +543,8 @@ function printHelp() {
                                       ignore .security-review.baseline.json
     atris security-review rules       list the active detectors
     atris security-review hook        install a pre-commit gate
+    atris security-review audit       sentinel audit: engines hunt, another model
+                                      verifies (atris security-review audit help)
 
   Scans for real-looking secrets, API keys, personal data, tracked sensitive
   files, and code-exec review evidence. exit 0 = clean, 1 = found. Wire into

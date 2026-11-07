@@ -30,6 +30,7 @@ test/brain-count-todo-items.test.js
 test/brief.test.js
 test/builder-pick-fleet.test.js
 test/builder-pick.test.js
+test/business-core.test.js
 test/business-create-validation.test.js
 test/calendar-search.test.js
 test/card.test.js
@@ -39,6 +40,7 @@ test/code-review.test.js
 test/codex-goal.test.js
 test/company-brain-sync.test.js
 test/compile.test.js
+test/computer-core.test.js
 test/confidence-gate.test.js
 test/config-guard.test.js
 test/console-packet-shape.test.js
