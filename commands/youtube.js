@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { stateHome } = require('../lib/state-home');
+const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 const https = require('https');
 
 const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [youtube-url-or-playlist...] [auto|gemini|haiku|atris-fast|grok|codex|cursor]';
@@ -1240,7 +1241,7 @@ function defaultDigestRunner(prompt, deps = {}) {
   // Machine memory and load at both ends of the launch, so one killed with
   // SIGKILL says whether the machine was short on memory.
   const endResource = require('../lib/engine-resource').startEngineRun(deps.cwd || process.cwd(), { engine: 'claude', task: 'youtube digest' });
-  const result = spawn('claude', ['-p', prompt, '--model', 'claude-haiku-5-5'], {
+  const result = spawn('claude', ['-p', prompt, '--model', DEFAULT_CLAUDE_RUNNER_MODEL], {
     encoding: 'utf8',
     timeout: DIGEST_ENGINE_TIMEOUT_MS,
     maxBuffer: 10 * 1024 * 1024,

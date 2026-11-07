@@ -1507,7 +1507,7 @@ Modes (positional or --mode):
 
 Options:
   --member <name>  attribute the tick to a member (the loop's owner)
-  --model <id>     override the model (e.g. claude-sonnet-4-6)
+  --model <id>     override the model (e.g. sonnet)
   --dry-run        plan and run but do not commit
   --no-fallback    do not fall back to a local tick if the backend is down
   --workspace <p>  workspace path (default: cwd)
