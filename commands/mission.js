@@ -4587,9 +4587,9 @@ function missionTimelinePruneSummaryMarkdown(prunePreview) {
     `- Policy: keep newest ${formatInteger(prunePreview.policy?.keep_newest)}; keep ${formatInteger(prunePreview.policy?.keep_days)} days`,
     `- Total run files: ${formatInteger(prunePreview.total_files)}`,
     `- Total run bytes: ${formatInteger(prunePreview.total_bytes)} (${formatBytes(prunePreview.total_bytes)})`,
-    `- Referenced files kept: ${formatInteger(prunePreview.referenced_files)}`,
+    `- References detected: ${formatInteger(prunePreview.referenced_files)} (the reference scan is incomplete)`,
     `- Recent files kept: ${formatInteger(prunePreview.recent_files)}`,
-    `- Would prune: ${formatInteger(prunePreview.prune_count)} files / ${formatInteger(prunePreview.prune_bytes)} bytes (${formatBytes(prunePreview.prune_bytes)})`,
+    `- Potential candidates: ${formatInteger(prunePreview.prune_count)} files / ${formatInteger(prunePreview.prune_bytes)} bytes (${formatBytes(prunePreview.prune_bytes)}); not a safe deletion list`,
     `- Deleted files: ${formatInteger(prunePreview.deleted_count)}`,
   ];
 }
@@ -4597,7 +4597,7 @@ function missionTimelinePruneSummaryMarkdown(prunePreview) {
 function missionTimelinePruneSummaryLine(prunePreview) {
   if (!prunePreview) return null;
   if (prunePreview.error) return `Prune dry-run: not available (${prunePreview.error}).`;
-  return `Prune dry-run: ${formatInteger(prunePreview.prune_count)} files / ${formatBytes(prunePreview.prune_bytes)} would prune; ${formatInteger(prunePreview.deleted_count)} deleted.`;
+  return `Prune dry-run: ${formatInteger(prunePreview.prune_count)} potential candidates / ${formatBytes(prunePreview.prune_bytes)}; reference scan is incomplete, nothing deleted.`;
 }
 
 function missionTimelinePruneSummaryObject(prunePreview) {
@@ -4611,6 +4611,9 @@ function missionTimelinePruneSummaryObject(prunePreview) {
   }
   return {
     ok: true,
+    reference_scan_complete: false,
+    deletion_available: false,
+    safe_to_delete: false,
     text: missionTimelinePruneSummaryLine(prunePreview),
     total_files: prunePreview.total_files,
     total_bytes: prunePreview.total_bytes,
@@ -4718,7 +4721,7 @@ function missionTimelineMarkdown(mission, timeline, { prunePreview = null, gener
       '## Keep it concise',
       '',
       '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
-      '- Apply only after review: add `--apply`.',
+      '- Receipt deletion is unavailable until reference writers coordinate.',
     );
     lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
     lines.push('');
@@ -4736,7 +4739,7 @@ function missionTimelineMarkdown(mission, timeline, { prunePreview = null, gener
     '## Keep it concise',
     '',
     '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
-    '- Apply only after review: add `--apply`.',
+    '- Receipt deletion is unavailable until reference writers coordinate.',
   );
   lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
   lines.push('');
@@ -4973,7 +4976,7 @@ function groupTimeline({ mission, timelineResult, generatedAt, prunePreview, art
     available: Boolean(pruneSummary),
     ok: pruneSummary?.ok ?? null,
     summary: pruneSummary?.text || null,
-    would_prune_label: 'Would prune',
+    would_prune_label: 'Potential candidates',
     prune_count: pruneSummary?.prune_count ?? null,
     prune_bytes_text: pruneSummary?.prune_bytes_text || null,
     deleted_label: 'Deleted',
@@ -11314,7 +11317,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]   Create a Mission Room card and shareable receipt from messy intent
-  atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
+  atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Preview old receipts; deletion is temporarily unavailable
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused|usageLimited|complete] [--native-goal-objective "..."] [--manual-ack] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--native-goal-status active|paused|usageLimited|complete] [--native-goal-objective "..."] [--dry-run] [--once] [--json]
@@ -11569,7 +11572,7 @@ function roomMission(args) {
 function pruneRunsMission(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || String(args[0] || '').trim() === 'help') {
     console.log('Usage: atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]');
-    console.log('Preview old unreferenced run receipts; add --apply only after review.');
+    console.log('Preview potential old receipt candidates; reference coverage is incomplete and deletion is unavailable.');
     return;
   }
   const asJson = wantsJson(args);
@@ -11581,12 +11584,17 @@ function pruneRunsMission(args) {
   } catch (error) {
     exitMissionError(error.message || String(error), 1, asJson);
   }
-  const result = pruneRuns(process.cwd(), {
-    apply: hasFlag(args, '--apply'),
-    archive: !hasFlag(args, '--no-archive'),
-    keepNewest,
-    keepDays,
-  });
+  let result;
+  try {
+    result = pruneRuns(process.cwd(), {
+      apply: hasFlag(args, '--apply'),
+      archive: !hasFlag(args, '--no-archive'),
+      keepNewest,
+      keepDays,
+    });
+  } catch (error) {
+    exitMissionError(error.message || String(error), 1, asJson);
+  }
   printJsonOrText(
     { ok: !result.errors.length, ...result },
     runsPruneLines(result),

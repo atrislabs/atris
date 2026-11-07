@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pruneRuns } = require('../lib/runs-prune');
 
-test('archiving preserves a receipt with a directly recorded passing result', () => {
+test('receipt preview leaves a directly recorded passing result intact', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-direct-result-'));
   const directory = path.join(root, 'atris', 'runs', 'completed');
   fs.mkdirSync(directory, { recursive: true });
@@ -23,8 +23,8 @@ test('archiving preserves a receipt with a directly recorded passing result', ()
   fs.utimesSync(receipt, timestamp, timestamp);
 
   const result = pruneRuns(root, {
-    nowMs: Date.UTC(2026, 9, 23), apply: true, keepDays: 14, keepNewest: 0,
+    nowMs: Date.UTC(2026, 9, 23), keepDays: 14, keepNewest: 0,
   });
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, result.manifest_path), 'utf8'));
-  assert.strictEqual(manifest.entries[0].compact.passed, true);
+  assert.strictEqual(result.prune_count, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(receipt, 'utf8')).result.passed, true);
 });

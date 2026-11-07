@@ -21,14 +21,14 @@ test('keeping the newest run protects it even when its name sorts last', (t) => 
   fs.utimesSync(older, olderTime, olderTime);
   fs.utimesSync(newer, newerTime, newerTime);
 
-  pruneRuns(root, {
+  const preview = pruneRuns(root, {
     nowMs: Date.UTC(2026, 9, 23),
-    apply: true,
     archive: false,
     keepDays: 0,
     keepNewest: 1,
   });
 
   assert.strictEqual(fs.existsSync(newer), true);
-  assert.strictEqual(fs.existsSync(older), false);
+  assert.strictEqual(fs.existsSync(older), true);
+  assert.deepEqual(preview.candidates.map((entry) => entry.path), ['atris/runs/a-older.txt']);
 });

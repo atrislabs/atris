@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { pruneRuns, runsPruneLines, formatBytes } = require('../lib/runs-prune');
 
 const nowMs = Date.UTC(2026, 9, 23);
@@ -39,6 +40,11 @@ test('preview preserves referenced siblings, recent files, newest files, and arc
   const result = pruneRuns(root, { nowMs, keepDays: 14, keepNewest: 1 });
 
   assert.strictEqual(result.action, 'runs_prune_preview');
+  assert.strictEqual(result.reference_scan_complete, false);
+  assert.strictEqual(result.deletion_available, false);
+  assert.strictEqual(result.safe_to_delete, false);
+  assert.match(runsPruneLines(result).join('\n'), /reference scan is incomplete/);
+  assert.match(runsPruneLines(result).join('\n'), /not a safe deletion list/);
   assert.strictEqual(result.applied, false);
   assert.strictEqual(result.total_files, 5);
   assert.strictEqual(result.referenced_files, 2);
@@ -55,46 +61,97 @@ test('preview preserves referenced siblings, recent files, newest files, and arc
   assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive/prune.json')), false);
 });
 
-test('apply deletes old files, removes empty directories, and saves compact receipts', (t) => {
+test('apply refuses to delete candidates and preserves the original receipt', (t) => {
   const { root, write } = fixture(t);
-  const receipt = {
-    schema: 'receipt.v1',
-    mission: { id: 'example', objective: 'prove cleanup', owner: 'tester' },
-    created_at: '2026-09-23T00:00:00.000Z',
-    result: { verifier_result: { command: 'node --test', passed: true }, kind: 'check', tick: { summary: 'passed' } },
-    extra: 'not retained',
-  };
-  const old = write('atris/runs/old/nested/receipt.json', JSON.stringify(receipt));
-  const result = pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 });
-
-  assert.strictEqual(result.action, 'runs_pruned');
-  assert.strictEqual(result.deleted_count, 1);
-  assert.deepStrictEqual(result.deleted, ['atris/runs/old/nested/receipt.json']);
-  assert.deepStrictEqual(result.errors, []);
-  assert.strictEqual(fs.existsSync(old), false);
-  assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/old')), false);
-  assert.match(result.manifest_path, /^atris\/runs\/_archive\/prune-.*\.json$/);
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, result.manifest_path), 'utf8'));
-  assert.strictEqual(manifest.schema, 'atris.runs_prune_manifest.v1');
-  assert.strictEqual(manifest.pruned_count, 1);
-  assert.strictEqual(manifest.pruned_bytes, Buffer.byteLength(JSON.stringify(receipt)));
-  assert.deepStrictEqual(manifest.entries[0].compact, {
-    schema: 'receipt.v1', mission_id: 'example', objective: 'prove cleanup', owner: 'tester',
-    at: receipt.created_at, verifier: 'node --test', passed: true, kind: 'check', summary: 'passed',
-  });
-  assert.strictEqual(pruneRuns(root, { nowMs }).total_files, 0);
-});
-
-test('archive can be disabled and output describes the resulting deletion', (t) => {
-  const { root, write } = fixture(t);
-  write('atris/runs/old.txt', 'discard');
-  const result = pruneRuns(root, { nowMs, apply: true, archive: false, keepNewest: 0 });
-  assert.strictEqual(result.deleted_count, 1);
-  assert.strictEqual(result.manifest_path, null);
+  const old = write('atris/runs/old/nested/receipt.json', '{"proof":"full content"}');
+  const preview = pruneRuns(root, { nowMs, keepDays: 0, keepNewest: 0 });
+  assert.strictEqual(preview.prune_count, 1);
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /receipt deletion is unavailable/);
+  assert.strictEqual(fs.readFileSync(old, 'utf8'), '{"proof":"full content"}');
   assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive')), false);
-  assert.strictEqual(runsPruneLines(result)[1], '  Changed: Pruned 1 old run file(s).');
-  assert.strictEqual(runsPruneLines(result)[3], '  Proof: No manifest was needed.');
   assert.strictEqual(formatBytes(1023), '1023 B');
   assert.strictEqual(formatBytes(1024), '1.0 KB');
   assert.strictEqual(formatBytes(1048576), '1.0 MB');
+});
+
+test('apply refuses to delete receipts if a reference file cannot be read', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  const state = write('.atris/state/missions.jsonl', JSON.stringify({ receipt_path: 'atris/runs/needed.json' }));
+  const read = fs.readFileSync;
+  fs.readFileSync = function(file, ...args) {
+    if (file === state) throw Object.assign(new Error('simulated read failure'), { code: 'EIO' });
+    return read.call(this, file, ...args);
+  };
+  try {
+    assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /cannot safely scan run references/);
+  } finally {
+    fs.readFileSync = read;
+  }
+  assert.strictEqual(fs.existsSync(receipt), true);
+  assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive')), false);
+});
+
+test('apply refuses to delete receipts if a state subdirectory cannot be read', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  const state = write('.atris/state/nested/task.json', JSON.stringify({ proof: 'atris/runs/needed.json' }));
+  const blocked = path.dirname(state);
+  const read = fs.readdirSync;
+  fs.readdirSync = function(dir, ...args) {
+    if (dir === blocked) throw Object.assign(new Error('simulated directory failure'), { code: 'EACCES' });
+    return read.call(this, dir, ...args);
+  };
+  try {
+    assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /cannot safely scan run references/);
+  } finally {
+    fs.readdirSync = read;
+  }
+  assert.strictEqual(fs.existsSync(receipt), true);
+});
+
+test('mission prune CLI reports reference read errors without deleting anything', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  const state = write('.atris/state/missions.jsonl', JSON.stringify({ receipt_path: 'atris/runs/needed.json' }));
+  const preload = path.join(root, 'fail-read.cjs');
+  fs.writeFileSync(preload, `const fs = require('fs'); const read = fs.readFileSync; fs.readFileSync = function(file, ...args) { if (String(file).endsWith('/.atris/state/missions.jsonl')) throw Object.assign(new Error('simulated read failure'), { code: 'EIO' }); return read.call(this, file, ...args); };`);
+  const result = spawnSync(process.execPath, ['--require', preload, path.join(__dirname, '../bin/atris.js'), 'mission', 'prune-runs', '--apply', '--days', '0', '--keep-newest', '0', '--json'], {
+    cwd: root, encoding: 'utf8', env: { ...process.env, PRUNE_TEST_BLOCKED_FILE: state },
+  });
+  assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /cannot safely scan run references/);
+  assert.strictEqual(fs.existsSync(receipt), true);
+  assert.strictEqual(fs.existsSync(path.join(root, 'atris/runs/_archive')), false);
+});
+
+test('apply refuses to delete receipts when state includes symlinks', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  const source = write('state-source.json', JSON.stringify({ proof: 'atris/runs/needed.json' }));
+  fs.mkdirSync(path.join(root, '.atris/state'), { recursive: true });
+  fs.symlinkSync(source, path.join(root, '.atris/state/linked.json'));
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+  assert.strictEqual(fs.existsSync(receipt), true);
+});
+
+test('apply refuses a dangling state-root symlink', (t) => {
+  const { root, write } = fixture(t);
+  const receipt = write('atris/runs/needed.json', '{}');
+  fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+  fs.symlinkSync(path.join(root, 'missing'), path.join(root, '.atris/state'));
+  assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+  assert.strictEqual(fs.existsSync(receipt), true);
+});
+
+test('apply refuses symlinked state parent, even when dangling', (t) => {
+  for (const dangling of [true, false]) {
+    const { root, write } = fixture(t);
+    const receipt = write('atris/runs/needed.json', '{}');
+    const target = path.join(root, 'state-parent');
+    if (!dangling) fs.mkdirSync(target);
+    fs.symlinkSync(target, path.join(root, '.atris'));
+    assert.throws(() => pruneRuns(root, { nowMs, apply: true, keepDays: 0, keepNewest: 0 }), /symbolic link in state/);
+    assert.strictEqual(fs.existsSync(receipt), true);
+  }
 });
