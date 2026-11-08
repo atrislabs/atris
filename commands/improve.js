@@ -302,7 +302,7 @@ function formatTickHistory(summary = {}) {
   if (summary.rewardTrend && summary.rewardTrend.length) {
     lines.push(`  trend:    ${summary.rewardTrend.map((r) => (r == null ? '·' : r)).join(' → ')}`);
   }
-  if (!summary.ticks) lines.push('  (no ticks yet, run `atris improve`)');
+  if (!summary.ticks) lines.push('  (no ticks yet, run `atris improve tick`)');
   return lines.join('\n');
 }
 

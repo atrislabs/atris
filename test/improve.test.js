@@ -618,7 +618,7 @@ test('summarizeTickHistory: empty history is safe', () => {
   assert.equal(s.ticks, 0);
   assert.equal(s.passRate, 0);
   assert.equal(s.totalReward, 0);
-  assert.match(formatTickHistory(s), /no ticks yet/);
+  assert.match(formatTickHistory(s), /no ticks yet, run `atris improve tick`/);
 });
 
 test('readTickHistory: reads only improve-tick rows, ignores foreign JSONL', () => {
