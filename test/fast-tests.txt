@@ -189,3 +189,4 @@ test/task-core.test.js
 test/mission-core.test.js
 test/youtube-core.test.js
 test/integrations-core.test.js
+test/xp-core.test.js
