@@ -19,6 +19,7 @@ for (const key of Object.keys(process.env)) {
 }
 
 const { executeAgentSDKFast } = require('../commands/workflow');
+const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 
 const HINT = '💡 start your local backend at http://127.0.0.1:8000.';
 
@@ -123,7 +124,7 @@ test('sends a JSON POST to the local agent-sdk endpoint with the working folder'
   assert.deepStrictEqual(sent, {
     message: 'ship it',
     workspace_path: fs.realpathSync(sandbox),
-    model: 'claude-sonnet-4-6',
+    model: DEFAULT_CLAUDE_RUNNER_MODEL,
   });
   assert.strictEqual(out.seen.options.headers['Content-Length'], Buffer.byteLength(out.seen.written));
 });

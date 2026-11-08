@@ -19,6 +19,7 @@ const {
 const { startFirstTalk } = require('../lib/context-gatherer');
 const { isNonInteractive } = require('../lib/noninteractive');
 const { loadContext } = require('../lib/state-detection');
+const { resolveClaudeRunnerModel } = require('../lib/runner-command');
 const { buildToolResultBody } = require('../lib/tool-result-encode');
 const { commitReviewLearning } = require('./learn');
 
@@ -1834,7 +1835,7 @@ async function executeAgentSDKFast(userInput) {
     const postData = JSON.stringify({
       message: userInput,
       workspace_path: process.cwd(),
-      model: 'claude-sonnet-4-6'
+      model: resolveClaudeRunnerModel()
     });
 
     const options = {
