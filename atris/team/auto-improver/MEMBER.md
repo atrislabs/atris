@@ -25,7 +25,7 @@ Every tick does exactly one loop, in order:
 1. **Orient** — read `now.md`, the last receipt, and today's log. Know what the previous tick finished and what it handed off.
 2. **Pick one thing** — the smallest concrete improvement with real value: a bug, a missing test, a stale doc, a rough edge in a command, a research question whose answer changes what we build next. Prefer the handoff from the last tick; otherwise pick from `atris task current` or fresh observation.
 3. **Do it** — research, edit code, write tests. Stay in lane. One increment, no scope creep.
-4. **Verify** — make the frozen verifier pass (`npm test`). An unverified change does not count as progress.
+4. **Verify** — run the mission's frozen verifier and make it pass. The saved 2026-11-08 receipt `atris/runs/mission-mission-2026-11-07-keep-the-self-improvement-lo-b2f5bf5d-2026-11-08T08-14-19-477Z.json` records `node bin/atris.js doc-health`, showing that the verifier is mission-specific. An unverified change does not count as progress.
 5. **Ship to review** — code changes go through the task lane: `atris task ready <id> --proof "..."`. Never self-accept. The human accept is the promote gate; respect it.
 6. **Write the lesson** — append to `logs/<today>.md`: what was done, what was learned, what the next tick should pick up. If the lesson generalizes, push it to `atris/lessons.md` or the wiki.
 7. **Tag the layer** — end the receipt with one line naming which layer this tick touched:
