@@ -12,8 +12,13 @@ const { runGit } = require('../lib/checkout-sync');
  * - Commits, tags, pushes
  * - Creates GitHub release via `gh`
  * - Drafts a /launch post (3 emoji bullets)
+ *
+ * A real release (not --dry-run) runs releasePreflight first, checked against the tag it is
+ * about to make: on master, clean, level with origin/master, the tag free, the tests green.
+ * Any failure refuses the release before anything is written and returns 1. A push that
+ * fails returns 1 too, with the exact commands to finish or undo by hand.
  */
-async function releaseAtris({ dryRun = false } = {}) {
+async function releaseAtris({ dryRun = false, preflight = releasePreflight } = {}) {
   const cwd = process.cwd();
 
   // 1. Get last tag
@@ -80,7 +85,15 @@ async function releaseAtris({ dryRun = false } = {}) {
     return;
   }
 
-  // 7. Let npm keep package.json and package-lock.json aligned.
+  // 7. Refuse to release from anywhere but a clean master that passes preflight.
+  const preflightCode = preflight({ cwd, tagVersion: nextVersion });
+  if (preflightCode !== 0) {
+    console.log('');
+    console.log('release refused: preflight failed, nothing was changed. fix the failures above and run `atris release` again.');
+    return 1;
+  }
+
+  // 8. Let npm keep package.json and package-lock.json aligned.
   execFileSync('npm', [
     'version',
     nextVersion,
@@ -89,22 +102,38 @@ async function releaseAtris({ dryRun = false } = {}) {
   ], { cwd, stdio: 'ignore' });
   console.log(`bumped package.json and package-lock.json to ${nextVersion}`);
 
-  // 8. Commit
+  // 9. Commit
   execFileSync('git', ['add', 'package.json', 'package-lock.json'], { cwd });
   execFileSync('git', ['commit', '-m', `v${nextVersion}`], { cwd });
   console.log('committed');
 
-  // 9. Tag
+  // 9b. Tag
   execFileSync('git', ['tag', `v${nextVersion}`], { cwd });
   console.log(`tagged v${nextVersion}`);
 
-  // 10. Push + push tags
+  // 10. Push the commit, then the one tag. A failure stops here: a GitHub release made
+  // for a tag that never reached origin would create that tag on the wrong commit.
+  const tag = `v${nextVersion}`;
   try {
-    execFileSync('git', ['push'], { cwd });
-    execFileSync('git', ['push', '--tags'], { cwd });
+    execFileSync('git', ['push', 'origin', 'master'], { cwd, stdio: 'pipe' });
+  } catch (err) {
+    // Nothing reached origin. Drop the local tag so a retry is not blocked by it.
+    try { execFileSync('git', ['tag', '-d', tag], { cwd, stdio: 'pipe' }); } catch { /* the tag may not exist */ }
+    console.log(`push failed: the version commit ${tag} is only on this machine, and its local tag was deleted.`);
+    console.log('to finish by hand:');
+    console.log(`  git push origin master && git tag ${tag} && git push origin ${tag}`);
+    console.log('or to undo the version commit:');
+    console.log('  git reset --hard HEAD~1');
+    return 1;
+  }
+  try {
+    execFileSync('git', ['push', 'origin', tag], { cwd, stdio: 'pipe' });
     console.log('pushed');
   } catch (err) {
-    console.log('push failed, you may need to push manually');
+    console.log(`push failed: the version commit is on origin/master, but tag ${tag} is only on this machine.`);
+    console.log('to finish by hand:');
+    console.log(`  git push origin ${tag}`);
+    return 1;
   }
 
   // 11. Create GitHub release via gh
@@ -210,7 +239,9 @@ function gitStdout(result) {
  * each check and exits nonzero if any fail. Skips the test suite when earlier
  * git checks already failed so a bad checkout does not burn a full run.
  */
-function releasePreflight({ cwd = process.cwd(), runTests = runFullTestSuite } = {}) {
+// tagVersion: the version whose tag must be free. `atris release` passes the version it is about to
+// make; the bare preflight checks the version package.json already carries.
+function releasePreflight({ cwd = process.cwd(), runTests = runFullTestSuite, tagVersion = null } = {}) {
   let failed = false;
 
   const branchResult = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
@@ -245,7 +276,7 @@ function releasePreflight({ cwd = process.cwd(), runTests = runFullTestSuite } =
     console.log('pass: local master matches origin/master');
   }
 
-  const version = readPackageVersion(cwd);
+  const version = tagVersion || readPackageVersion(cwd);
   if (!version) {
     failed = true;
     console.log('fail: package.json version is missing');

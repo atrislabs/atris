@@ -2993,7 +2993,7 @@ if (command === 'guide') {
   }
   const dryRun = process.argv.includes('--dry-run');
   require('../commands/release').releaseAtris({ dryRun })
-    .then(() => exitAfterStdoutDrain(0))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'search') {
   const code = require('../commands/search').searchCommand(process.argv.slice(3));

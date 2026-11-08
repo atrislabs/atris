@@ -193,7 +193,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
         .filter(Boolean);
     }
 
-    const completedMatch = logContent.match(/## Completed ✅\n([\s\S]*?)(?=\n##|---|$)/);
+    const completedMatch = logContent.match(/## Completed(?: ✅)?[^\S\n]*\n([\s\S]*?)(?=\n##|---|$)/);
     if (completedMatch && completedMatch[1].trim()) {
       completions = completedMatch[1].trim().split('\n')
         .filter(l => l.match(/^- \*\*C\d+:/))

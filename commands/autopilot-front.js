@@ -12,6 +12,7 @@ const { wantsJson, hasYesFlag } = require('../lib/noninteractive');
 const { isUnboundScratchFolder, refuseUnboundScratch } = require('../lib/scratch-root');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
 const { personName } = require('../lib/first-minute');
+const { acquireFileLock } = require('../lib/file-lock');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const DEFAULT_LEG_WALL_SECONDS = 3600;
@@ -21,6 +22,7 @@ const MAX_FAST_FAILS = 5;
 
 function statePath(root) { return path.join(root, '.atris', 'state', 'autopilot.json'); }
 function stopPath(root) { return path.join(root, '.atris', 'state', 'autopilot.stop'); }
+function lockPath(root) { return path.join(root, '.atris', 'state', 'autopilot.lock'); }
 
 function readState(root) {
   try { return JSON.parse(fs.readFileSync(statePath(root), 'utf8')); } catch { return null; }
@@ -41,6 +43,26 @@ function requestStop(root) {
   fs.writeFileSync(stopPath(root), `${new Date().toISOString()}\n`);
 }
 function clearStop(root) { try { fs.unlinkSync(stopPath(root)); } catch {} }
+
+// When `autopilot stop` wrote its marker, in ms, or null without one.
+function stopRequestedAtMs(root) {
+  let stat;
+  try { stat = fs.statSync(stopPath(root)); } catch { return null; }
+  let stamped = NaN;
+  try { stamped = Date.parse(fs.readFileSync(stopPath(root), 'utf8').trim()); } catch {}
+  return Number.isFinite(stamped) ? Math.max(stamped, stat.mtimeMs) : stat.mtimeMs;
+}
+
+// A stop marker left over from before this start is cleared. One written
+// after this process launched is a real stop that raced the start, so it is
+// kept and honored. Returns true when such a stop is pending.
+function clearStaleStop(root, startRequestedAtMs) {
+  const at = stopRequestedAtMs(root);
+  if (at == null) return false;
+  if (at >= startRequestedAtMs) return true;
+  clearStop(root);
+  return false;
+}
 
 function pidAlive(pid) {
   if (!Number.isFinite(pid) || pid <= 0) return false;
@@ -261,8 +283,28 @@ async function autopilotFront(args = []) {
     console.log(`Autopilot already running (pid ${existing.pid}). Stop it first: atris autopilot stop`);
     return 1;
   }
+  // The state check above is read-then-write; two starts in the same instant
+  // both passed it. The lock file is created exclusively, so only one wins.
+  const lock = acquireFileLock(lockPath(root));
+  if (!lock.ok) {
+    console.log(`Autopilot already running (pid ${lock.holder?.pid || '?'}). Stop it first: atris autopilot stop`);
+    return 1;
+  }
+  try {
+    return await runFrontLoop(root, args, lock);
+  } finally {
+    lock.release();
+  }
+}
 
-  clearStop(root);
+async function runFrontLoop(root, args, lock) {
+  // The moment this process launched. A stop issued after it is not stale.
+  const startRequestedAtMs = Date.now() - Math.round(process.uptime() * 1000);
+  if (clearStaleStop(root, startRequestedAtMs)) {
+    clearStop(root);
+    console.log('\nAutopilot off (stop requested). Legs run: 0.');
+    return 0;
+  }
   const budgetSeconds = runBudgetSeconds(args);
   const legWallDefault = positiveNumber(readValueFlag(args, '--leg-wall')) || DEFAULT_LEG_WALL_SECONDS;
   // Honor the legacy contract callers still speak: `--iterations=N` caps the
@@ -283,6 +325,8 @@ async function autopilotFront(args = []) {
     console.log(`\nAutopilot off (${reason}). Legs run: ${state.legs}.`);
     clearState(root);
     clearStop(root);
+    // process.exit skips the caller's finally, so release here.
+    try { lock.release(); } catch {}
     process.exit(130);
   };
   process.on('SIGINT', onSignal);
@@ -344,6 +388,7 @@ module.exports = {
   stopRequested,
   requestStop,
   clearStop,
+  clearStaleStop,
   readState,
   writeState,
   watchStopFile,

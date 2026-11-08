@@ -47,6 +47,7 @@ const {
 } = require('../lib/task-explanation');
 const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
+const { writeFileAtomic } = require('../lib/json-file');
 const reviewIntegrity = require('../lib/review-integrity');
 const { gateForHuman, isRetiredFillerReason, landingWhyClause, numberWord, plainLandingReason } = require('../lib/voice-gate');
 const {
@@ -184,14 +185,15 @@ function writeDefaultProjection(taskDb, db, options = {}) {
   }));
   const outPath = path.resolve(root || process.cwd(), '.atris', 'state', 'tasks.projection.json');
   const output = JSON.stringify(projection, null, 2) + '\n';
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
   let shouldWrite = true;
   try {
     shouldWrite = fs.readFileSync(outPath, 'utf8') !== output;
   } catch {
     shouldWrite = true;
   }
-  if (shouldWrite) fs.writeFileSync(outPath, output, 'utf8');
+  // Temp file and rename: a reader never sees half a projection. This is the one writer of the
+  // projection's shape; lib/mission-core.js writes through it too.
+  if (shouldWrite) writeFileAtomic(outPath, output);
   return { projection, outPath };
 }
 
@@ -4787,16 +4789,13 @@ function cmdReviews(args) {
 }
 
 function stampAcceptGroupMetadata(taskDb, db, taskId, { actor, group, verified, sampleVerifiedIds }) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.accept_group = group;
-  metadata.accept_group_by = actor;
-  metadata.accept_group_at = new Date().toISOString();
-  metadata.accepted_by_sampling = !verified;
-  if (!verified) metadata.sample_verified_ids = sampleVerifiedIds;
-  db.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(metadata), Date.now(), taskId);
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    metadata.accept_group = group;
+    metadata.accept_group_by = actor;
+    metadata.accept_group_at = new Date().toISOString();
+    metadata.accepted_by_sampling = !verified;
+    if (!verified) metadata.sample_verified_ids = sampleVerifiedIds;
+  });
 }
 
 // Accept a whole certified cluster honestly: the human spot-checks K rows (real career XP), the rest
@@ -4902,16 +4901,7 @@ function cmdAcceptGroup(args) {
       accepted.push({ id: task.id, ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue });
       continue;
     }
-    const done = taskDb.doneTask(db, {
-      id: task.id,
-      status: 'done',
-      actor,
-      allowReview: true,
-      action: 'accepted',
-      proof,
-    });
-    if (!done.updated) { accepted.push({ id: task.id, ok: false, reason: 'not_review' }); continue; }
-    const reviewed = taskDb.reviewTask(db, {
+    const done = taskDb.acceptTask(db, {
       id: task.id,
       actor,
       reward: 1,
@@ -4920,6 +4910,8 @@ function cmdAcceptGroup(args) {
       proof,
       careerXpEligible: isVerified, // honest: career XP ONLY for rows the human actually verified
     });
+    if (!done.updated) { accepted.push({ id: task.id, ok: false, reason: 'not_review' }); continue; }
+    const reviewed = done.reviewed;
     refreshCareerXpAfterReview(reviewed);
     stampAcceptGroupMetadata(taskDb, db, task.id, { actor, group: groupLabel, verified: isVerified, sampleVerifiedIds: [...verifiedIds] });
     accepted.push({ id: task.id, ok: true, verified: isVerified, career_xp: isVerified });
@@ -9390,19 +9382,8 @@ async function cmdAccept(args) {
     console.error('atris task accept: reward must be a positive number');
     process.exit(2);
   }
-  const done = taskDb.doneTask(db, {
-    id: taskId,
-    status: 'done',
-    actor,
-    allowReview: true,
-    action: 'accepted',
-    proof,
-  });
-  if (!done.updated) {
-    console.error(`accept failed: ${taskId} not open|claimed|review`);
-    process.exit(1);
-  }
-  const reviewed = taskDb.reviewTask(db, {
+  // One transaction: done and accepted land together or not at all (lib/task-db.js acceptTask).
+  const done = taskDb.acceptTask(db, {
     id: taskId,
     actor,
     reward: parsedReward.value,
@@ -9412,6 +9393,11 @@ async function cmdAccept(args) {
     careerXpEligible: true,
     clearedFields,
   });
+  if (!done.updated) {
+    console.error(`accept failed: ${taskId} not open|claimed|review`);
+    process.exit(1);
+  }
+  const reviewed = done.reviewed;
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const workspaceRoot = projection.workspace_root || process.cwd();
@@ -9485,17 +9471,13 @@ function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
   } catch (err) {
     landing = { status: 'unverified', reason: 'landing_proof_failed', detail: String((err && err.message) || err).slice(0, 200) };
   }
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.auto_accepted_at = new Date().toISOString();
-  metadata.auto_accepted_by = actor;
-  metadata.auto_accept_policy = policy;
-  metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  // The landing proof runs git, so it is worked out first; only the write holds the lock.
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    metadata.auto_accepted_at = new Date().toISOString();
+    metadata.auto_accepted_by = actor;
+    metadata.auto_accept_policy = policy;
+    metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
+  });
   return landing;
 }
 
@@ -9512,19 +9494,8 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
   if (missionXpIssue) {
     return { ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue };
   }
-  const done = taskDb.doneTask(db, {
-    id: taskId,
-    status: 'done',
-    actor,
-    allowReview: true,
-    action: 'accepted',
-    proof,
-    autoAccepted,
-  });
-  if (!done.updated) {
-    return { ok: false, reason: 'not_open_claimed_or_review' };
-  }
-  const reviewed = taskDb.reviewTask(db, {
+  // One transaction: done and accepted land together or not at all (lib/task-db.js acceptTask).
+  const accepted = taskDb.acceptTask(db, {
     id: taskId,
     actor,
     reward,
@@ -9534,6 +9505,10 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
     careerXpEligible: true,
     autoAccepted,
   });
+  if (!accepted.updated) {
+    return { ok: false, reason: 'not_open_claimed_or_review' };
+  }
+  const reviewed = accepted.reviewed;
   const acceptedRow = taskDb.getTask(db, taskId);
   refreshExistingTodoMarkdown(taskDb, db, acceptedRow && acceptedRow.workspace_root);
   return { ok: true, reviewed };
@@ -9580,19 +9555,12 @@ function verifyIsOnlyFileChecks(verify) {
 }
 
 function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify = metadata.verify || verify;
-  metadata.certified_verified_at = new Date().toISOString();
-  metadata.certified_verified_by = actor;
-  metadata.machine_verified = true;
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    metadata.verify = metadata.verify || verify;
+    metadata.certified_verified_at = new Date().toISOString();
+    metadata.certified_verified_by = actor;
+    metadata.machine_verified = true;
+  });
 }
 
 function currentHeadSha(workspaceRoot) {
@@ -9613,27 +9581,23 @@ function currentHeadSha(workspaceRoot) {
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
 function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify_cache = {
+  if (!taskDb.getTask(db, taskId)) return;
+  const verifyCache = {
     command: verify,
     ok: result && result.ok === true,
     reason: (result && result.reason) || null,
     ran_at: new Date().toISOString(),
     ran_by: actor,
     // The commit the check ran on: the job's own code when it has some,
-    // else the folder the job lives in.
+    // else the folder the job lives in. Read before the write lock is taken.
     code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
     code_source: (result && result.code_source) || 'checkout',
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), taskId);
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    metadata.verify_cache = verifyCache;
+  }, { touch: false });
 }
 
 // When a review job was last given a second check; never checked reads 0.
@@ -9656,23 +9620,16 @@ function failedOnSameCode(task, verify, codeSha) {
 // metadata.verify is what lets sweep --auto-accept (and certify-verified)
 // re-run it later against the current checkout instead of re-parsing prose.
 function stampReadyVerifyMetadata(taskDb, db, taskId, verify) {
-  const row = taskDb.getTask(db, taskId);
-  if (!row) return;
-  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-  metadata.verify = verify;
-  // A real verify stamped at ready means the creation-time degraded flag is
-  // stale: clear it so `task show` stops warning about a missing check. A
-  // diff-only verify keeps the flag; it still cannot fail on real breakage.
-  if (verify.toLowerCase() !== 'git diff --check') {
-    delete metadata.verification_status;
-    delete metadata.verification_degraded_reason;
-  }
-  db.prepare(`
-    UPDATE tasks
-       SET metadata = ?,
-           updated_at = ?
-     WHERE id = ?
-  `).run(JSON.stringify(metadata), Date.now(), taskId);
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    metadata.verify = verify;
+    // A real verify stamped at ready means the creation-time degraded flag is
+    // stale: clear it so `task show` stops warning about a missing check. A
+    // diff-only verify keeps the flag; it still cannot fail on real breakage.
+    if (verify.toLowerCase() !== 'git diff --check') {
+      delete metadata.verification_status;
+      delete metadata.verification_degraded_reason;
+    }
+  });
 }
 
 function landingVerifyFailureNote(verify, result) {
@@ -11095,13 +11052,29 @@ function renderedTaskRefSet(taskDb, rows, refRows) {
   return refs;
 }
 
-function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
+// A bullet the renderer wrote starts with its job's ref in bold brackets: `- **[WSX-1]** title`.
+const RENDERED_TODO_BULLET_REF = /^\s*- (?:\[[ x]\]\s+)?\*\*\[([^\]]+)\]\*\*/;
+
+// Rows in TODO.md that the database does not know. In a hand-written TODO they are rendered
+// from the markdown, as before. In a rendered TODO (it has the "Regenerated" marker) a bullet
+// the renderer wrote whose job is gone stays gone, but a bullet a person or a command added by
+// hand (no bracketed ref, like `atris business` writing `- **Onboard:** ...`) is imported into
+// the database when `db` is given, so the next render keeps it instead of dropping it. Imported
+// rows are pushed onto `rows` and `refRows`, so the caller renders them with the rest.
+function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows, { db = null, workspaceRoot: wsOption = null } = {}) {
   if (!existingTodoPath || !fs.existsSync(existingTodoPath)) return [];
   const { parseTodoFile } = require('../lib/todo-fallback');
   const existingTodo = fs.readFileSync(existingTodoPath, 'utf8');
   const generatedTodo = existingTodo.includes('Regenerated from durable Atris task state');
   const parsed = parseTodoFile(existingTodoPath);
-  const ws = taskDb.workspaceRoot();
+  const ws = wsOption || taskDb.workspaceRoot();
+  const renderedBulletRefs = new Set();
+  if (generatedTodo) {
+    for (const line of existingTodo.split('\n')) {
+      const match = line.match(RENDERED_TODO_BULLET_REF);
+      if (match) renderedBulletRefs.add(normalizeRenderedTaskRef(match[1]));
+    }
+  }
   const existingRefs = renderedTaskRefSet(taskDb, rows, refRows);
   const existingSourceKeys = new Set(
     (Array.isArray(refRows) ? refRows : [])
@@ -11130,9 +11103,38 @@ function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
       if (
         (renderedRef && existingRefs.has(renderedRef)) ||
         (sk && existingSourceKeys.has(sk)) ||
-        existingTitles.has(normalizedTitle) ||
-        generatedTodo
+        existingTitles.has(normalizedTitle)
       ) continue;
+      if (generatedTodo) {
+        // Written by the renderer and no longer in the database: leave it out.
+        // Only open and in-progress bullets are imported: a hand-written line under Review or
+        // Completed has no history to stand on.
+        if (!db || (renderedRef && renderedBulletRefs.has(renderedRef)) || (status !== 'open' && status !== 'claimed')) continue;
+        const claimer = status === 'claimed' ? (task.claimed || null) : null;
+        const added = taskDb.addTask(db, {
+          title: task.title,
+          tag: task.tag || null,
+          workspaceRoot: ws,
+          sourceKey: sk,
+          status: status === 'claimed' && !claimer ? 'open' : status,
+          claimedBy: claimer,
+          metadata: {
+            source: 'todo_markdown_import',
+            todo_id: task.id || null,
+            todo_tags: task.tags || [],
+            ...(task.verify ? { verify: task.verify } : {}),
+          },
+        });
+        const imported = added && added.id ? taskDb.getTask(db, added.id) : null;
+        if (imported) {
+          if (Array.isArray(rows)) rows.push(imported);
+          if (Array.isArray(refRows) && refRows !== rows) refRows.push(imported);
+          existingRefs.add(normalizeRenderedTaskRef(imported.id));
+        }
+        if (sk) existingSourceKeys.add(sk);
+        existingTitles.add(normalizedTitle);
+        continue;
+      }
       out.push({
         id: `markdown:${status}:${task.id || index}:${sk ? sk.slice(0, 10) : index}`,
         title: task.title,
@@ -11204,12 +11206,12 @@ function refreshExistingTodoMarkdown(taskDb, db, workspaceRoot) {
   const preservedSections = [];
   const endgameSection = extractTodoSectionMarkdown(existingTodo, 'Endgame');
   if (endgameSection) preservedSections.push(endgameSection);
-  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
+  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows, { db, workspaceRoot: ws });
   const markdown = taskDb.renderTodoMarkdown([...rows, ...markdownRows], {
     refRows,
     preservedSections,
   });
-  fs.writeFileSync(outPath, markdown, 'utf8');
+  writeFileAtomic(outPath, markdown);
   return outPath;
 }
 
@@ -11225,11 +11227,41 @@ function autoRenderTodoFromDb(cwd = process.cwd()) {
     if (fs.existsSync(outPath)) return refreshExistingTodoMarkdown(taskDb, db, cwd);
     const rows = taskDb.listTasks(db, { workspaceRoot: cwd, limit: 500 });
     const refRows = taskDb.listTasks(db, { workspaceRoot: cwd });
-    fs.writeFileSync(outPath, taskDb.renderTodoMarkdown(rows, { refRows }), 'utf8');
+    writeFileAtomic(outPath, taskDb.renderTodoMarkdown(rows, { refRows }));
     return outPath;
   } catch {
     return null;
   }
+}
+
+// The task behind a TODO bullet, finished the way `atris task done` finishes one: doneTask, then the
+// projection and the rendered TODO. A rendered TODO.md is a view of the database, so marking its bullet
+// means nothing until the job itself is done. `matches(title)` says whether a job's title is the one the
+// caller named; only an open or claimed job in this workspace counts, an exact title wins over a partial
+// one, and two partial matches are a refusal, not a guess. Returns { completed, id, reason }.
+function completeTodoTaskByTitle(cwd, title, { matches, actor, proof } = {}) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const ws = taskDb.workspaceRoot(cwd);
+  const wanted = taskDb.normalizeTitle(title);
+  const candidates = taskDb.listTasks(db, { workspaceRoot: ws, limit: null })
+    .filter((row) => row.status === 'open' || row.status === 'claimed');
+  const exact = candidates.filter((row) => wanted && taskDb.normalizeTitle(row.title) === wanted);
+  const partial = typeof matches === 'function' ? candidates.filter((row) => matches(row.title)) : [];
+  const picked = exact.length === 1 ? exact : (exact.length ? [] : partial);
+  if (picked.length !== 1) return { completed: false, id: null, reason: picked.length ? 'ambiguous' : 'no_match' };
+  const id = picked[0].id;
+  const done = taskDb.doneTask(db, {
+    id,
+    status: 'done',
+    actor: actor || process.env.ATRIS_AGENT_ID || DEFAULT_OWNER,
+    action: 'done',
+    proof,
+  });
+  if (!done.updated) return { completed: false, id, reason: 'not_open_or_claimed' };
+  try { writeDefaultProjection(taskDb, db, { root: cwd }); } catch { /* the view is rebuilt on the next write */ }
+  autoRenderTodoFromDb(cwd);
+  return { completed: true, id, reason: null };
 }
 
 function cmdRender(args) {
@@ -11255,12 +11287,12 @@ function cmdRender(args) {
   const preservedSections = [];
   const endgameSection = extractTodoSectionMarkdown(existingTodo, 'Endgame');
   if (endgameSection) preservedSections.push(endgameSection);
-  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
+  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows, workspaceRoot ? { db, workspaceRoot } : {});
   const rowsToRender = [...rows, ...markdownRows];
   const statusCounts = taskRenderStatusCounts(rowsToRender);
   const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, failedLimit, refRows, preservedSections });
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, markdown, 'utf8');
+  writeFileAtomic(outPath, markdown);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -11839,16 +11871,7 @@ function postTaskApiAccept({ res, taskDb, db, taskId, body }) {
   if (hasExplicitNext && !nextTask.trim()) clearedFields.push('next_task');
   const parsedReward = parseAcceptReward(body.reward);
   if (!parsedReward.ok) return sendJson(res, 400, { ok: false, reason: 'invalid_reward', detail: 'reward must be a positive number' });
-  const done = taskDb.doneTask(db, {
-    id: taskId,
-    status: 'done',
-    actor: String(body.actor || DEFAULT_OWNER),
-    allowReview: true,
-    action: 'accepted',
-    proof,
-  });
-  if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_claimed_or_review' });
-  const reviewed = taskDb.reviewTask(db, {
+  const done = taskDb.acceptTask(db, {
     id: taskId,
     actor: String(body.actor || DEFAULT_OWNER),
     reward: parsedReward.value,
@@ -11858,6 +11881,8 @@ function postTaskApiAccept({ res, taskDb, db, taskId, body }) {
     careerXpEligible: true,
     clearedFields,
   });
+  if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_claimed_or_review' });
+  const reviewed = done.reviewed;
   const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -12260,6 +12285,7 @@ module.exports = {
   delegateTask,
   AGENT_ENV_MARKERS,
   autoRenderTodoFromDb,
+  completeTodoTaskByTitle,
   cmdCertifyVerified,
   refreshKeptTaskList,
   keptCount,

@@ -1742,7 +1742,7 @@ async function reviewAtris() {
   // Handoff prompt: suggest writing handoff if completions exist today
   if (fs.existsSync(logFile)) {
     const journalContent = fs.readFileSync(logFile, 'utf8');
-    const hasCompletions = /## Completed ✅[\s\S]*?- \*\*C\d+:/.test(journalContent);
+    const hasCompletions = /## Completed(?: ✅)?[^\S\n]*\n[\s\S]*?- \*\*C\d+:/.test(journalContent);
     const hasHandoff = /## Handoff[\s\S]*?\*\*Context:\*\*/.test(journalContent);
 
     if (hasCompletions && !hasHandoff) {

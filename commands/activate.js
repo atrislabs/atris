@@ -210,7 +210,7 @@ function activateAtris() {
     for (const logPath of allLogs) {
       if (recentCompletions.length >= 3) break;
       const content = fs.readFileSync(logPath, 'utf8');
-      const completedSection = content.match(/## Completed ✅\n([\s\S]*?)(?=\n## |$)/);
+      const completedSection = content.match(/## Completed(?: ✅)?[^\S\n]*\n([\s\S]*?)(?=\n## |$)/);
       if (completedSection) {
         // Match `- **C#: Title**` (title between the bold markers). If extra
         // prose follows after `**`, ignore it. the activation view shows

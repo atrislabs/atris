@@ -17,6 +17,7 @@ const {
 } = require('../lib/cli-json');
 const escapeRegExp = require('../lib/escape-regexp');
 const { sleepSync } = require('../lib/sleep-sync');
+const { stealStaleLock } = require('../lib/file-lock');
 const {
   appendBriefRecord,
   stampBriefOutcome,
@@ -363,7 +364,20 @@ function isLiveInFlightMission(mission, now = Date.now(), root = process.cwd()) 
   if (!mission || !mission.id || mission.cloud === true) return false;
   const status = String(mission.status || '');
   if (TERMINAL_STATUSES.has(status) || status === 'paused' || status === 'blocked') return false;
-  if (status === 'running') return true;
+  if (status === 'running') {
+    // Session-driven missions sit at running between ticks with no process,
+    // so a missing driver alone is normal. A recorded driver whose process is
+    // gone, plus a day with no tick, is a crashed run: not live.
+    const driver = missionDriverHealth(mission, root);
+    if (driver.alive === true || !driver.pid) return true;
+    const lastActivity = Math.max(
+      Date.parse(mission.last_tick_at || '') || 0,
+      Date.parse(mission.resumed_at || '') || 0,
+      Date.parse(mission.started_at || '') || 0,
+      Date.parse(mission.created_at || '') || 0,
+    );
+    return !lastActivity || now - lastActivity <= LIVE_MISSION_TICK_MS;
+  }
   const lastTickAt = Date.parse(mission.last_tick_at || '');
   if (!Number.isFinite(lastTickAt)) return false;
   const age = now - lastTickAt;
@@ -741,6 +755,48 @@ function resolveMission(ref, root = process.cwd()) {
     return chosen;
   }
   return null;
+}
+
+// Operator halts (stop, pause, complete) land while a long tick or run is in
+// flight. A writer that read the mission before the halt must not save its
+// stale status over it. Returns the latest row when it halted since
+// `baseline` was read, else null.
+const OPERATOR_HALT_STATUSES = new Set(['stopped', 'paused', 'complete']);
+const OPERATOR_HALT_FIELDS = [
+  'status', 'stopped_at', 'paused_at', 'completed_at', 'stop_reason',
+  'proof', 'completion_gate', 'landing', 'result', 'next_action',
+];
+
+function missionHaltedSince(baseline, root = process.cwd()) {
+  if (!baseline || !baseline.id) return null;
+  const latest = loadMissionMap(root).get(baseline.id);
+  if (!latest) return null;
+  const status = String(latest.status || '');
+  if (!OPERATOR_HALT_STATUSES.has(status) || status === String(baseline.status || '')) return null;
+  return latest;
+}
+
+// Keep a halt that landed meanwhile: the writer's progress fields survive,
+// the halt's status fields win.
+function keepOperatorHalt(next, halted) {
+  if (!halted) return next;
+  const merged = { ...next };
+  for (const key of OPERATOR_HALT_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(halted, key)) merged[key] = halted[key];
+  }
+  return merged;
+}
+
+// Operator writes (stop, pause, complete) re-read right before saving, so a
+// tick that saved while they ran keeps its progress instead of being rolled
+// back to the copy read at the start of the command.
+function withLatestMissionProgress(mission, root = process.cwd()) {
+  if (!mission || !mission.id) return mission;
+  const latest = loadMissionMap(root).get(mission.id);
+  if (!latest) return mission;
+  const latestAt = Date.parse(latest.updated_at || '') || 0;
+  const seenAt = Date.parse(mission.updated_at || '') || 0;
+  return latestAt > seenAt ? { ...mission, ...latest } : mission;
 }
 
 function saveMission(mission, root = process.cwd(), eventType = 'mission_updated', payload = {}) {
@@ -7610,6 +7666,11 @@ function installDetachedMissionDriverLifecycle(mission, root = process.cwd()) {
   return { finish, setExitReason };
 }
 
+function missionHasDeadDriver(mission, root = process.cwd()) {
+  const driver = missionDriverHealth(mission, root);
+  return Boolean(driver.pid) && driver.alive !== true;
+}
+
 function missionDriverHealth(mission, root = process.cwd()) {
   const paths = missionDriverPaths(mission, root);
   const driverState = readJson(paths.stateFile);
@@ -7648,6 +7709,10 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
       return { ok: true, lockFile, fd, missionId, driverPid: process.pid, startedAt, recordLength: record.length };
     } catch (e) {
       if (e.code === 'EEXIST') {
+        let judged = null;
+        try { judged = fs.statSync(lockFile); } catch { continue; }
+        let judgedRaw = null;
+        try { judgedRaw = fs.readFileSync(lockFile, 'utf8'); } catch {}
         const info = readJson(lockFile, {}) || {};
         const holderPid = Number(info.pid);
         const holderKnown = Number.isInteger(holderPid) && holderPid > 0;
@@ -7659,13 +7724,13 @@ function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
         // creation window (guards against a crash between openSync and writeSync).
         let stealable = holderKnown && !missionLockOwnerIsAlive(holderPid);
         if (!holderKnown) {
-          let ageMs = 0;
-          try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs; } catch { ageMs = 0; }
-          stealable = ageMs > 1000;
+          stealable = Date.now() - judged.mtimeMs > 1000;
         }
         if (stealable) {
+          // Rename-then-verify, not unlink: two waiters that both judged the
+          // same dead lock used to unlink each other's fresh lock in turn.
           try {
-            fs.unlinkSync(lockFile);
+            stealStaleLock(lockFile, judged, judgedRaw);
             continue;
           } catch {}
         }
@@ -7700,8 +7765,22 @@ function updateMissionLockOwner(lock, pid, extra = {}) {
 
 function releaseMissionLock(lock) {
   if (!lock || !lock.ok) return;
+  // Unlink only while the path still names the file this lock opened; a
+  // lock stolen as stale now belongs to someone else.
+  let ours = true;
+  if (lock.fd != null) {
+    try {
+      const mine = fs.fstatSync(lock.fd);
+      const current = fs.statSync(lock.lockFile);
+      ours = mine.ino === current.ino && mine.dev === current.dev;
+    } catch {
+      ours = false;
+    }
+  }
   try { if (lock.fd != null) fs.closeSync(lock.fd); } catch {}
-  try { fs.unlinkSync(lock.lockFile); } catch {}
+  if (ours) {
+    try { fs.unlinkSync(lock.lockFile); } catch {}
+  }
 }
 
 // Runners that need a live human session cannot be driven headlessly; every
@@ -9885,7 +9964,9 @@ async function executeMissionRunTicksPhase(context) {
       // demote terminal status back to ready (always-on + verifier-pass used to
       // reopen closed rooms, mission 32 complete@19:23:33 → ready@19:23:48).
       const latestOnDisk = loadMissionMap(cwd).get(mission.id) || mission;
-      const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || ''));
+      // A pause issued during this tick stops the loop too, not just stop/complete.
+      const pausedMeanwhile = String(latestOnDisk.status || '') === 'paused' && String(mission.status || '') !== 'paused';
+      const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || '')) || pausedMeanwhile;
       // A passing verifier alone never completes a mission whose linked task
       // is not accepted: park it ready and name the accept command instead.
       const acceptGate = (verifierResult?.passed && completeOnPass && !fullBudgetMode && !mission.always_on && !xpReadyAction)
@@ -10611,8 +10692,11 @@ function tickMission(args) {
 	      ...(nextGoalChain ? { goal_chain: nextGoalChain } : {}),
 	      next_action: nextAction,
 	    };
-    const { mission: saved } = saveMission(nextMission, cwd, 'mission_tick', {
+    // The tick can run for minutes; a stop/pause/complete issued meanwhile wins.
+    const haltedMeanwhile = missionHaltedSince(mission, cwd);
+    const { mission: saved } = saveMission(keepOperatorHalt(nextMission, haltedMeanwhile), cwd, 'mission_tick', {
       tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath, layer: tickRecord.layer,
+      ...(haltedMeanwhile ? { kept_operator_status: haltedMeanwhile.status } : {}),
     });
     const blocker = selfDrive && saved.status === 'blocked'
       ? require('../lib/self-drive').handleMissionBlocker({
@@ -10808,7 +10892,7 @@ function completeMission(args) {
   const baselineSummary = pruneMissionWorktreeBaseline(mission, root);
   const completionGate = { ...gate, forced: force && !gate.ok, ...(force && !gate.ok ? { forced_reason: gate.reason } : {}) };
   const baseNext = {
-    ...mission,
+    ...withLatestMissionProgress(mission, root),
     status: 'complete',
     completed_at: stampIso(),
     proof,
@@ -10881,7 +10965,7 @@ function stopMissionRecord(mission, reason, root = process.cwd(), options = {}) 
   }
   const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, root);
   const next = {
-    ...mission,
+    ...withLatestMissionProgress(mission, root),
     status,
     stopped_at: status === 'stopped' ? stampIso() : mission.stopped_at || null,
     paused_at: status === 'paused' ? stampIso() : mission.paused_at || null,
@@ -10930,8 +11014,9 @@ function stopMission(args) {
 // A mission parked in paused/planning/ready and untouched for a week is
 // abandoned in practice, nobody resumes it, and each one is a line the
 // operator re-reads forever. The daily autoland tick expires them to
-// stopped with a revive hint; running missions and anything touched
-// recently are never aged out, and a tick on an expired id revives it.
+// stopped with a revive hint; a running mission is aged out only when its
+// recorded driver died, anything touched recently never is, and a tick on an
+// expired id revives it.
 const MISSION_IDLE_EXPIRY_DAYS = 7;
 const EXPIRABLE_STATUSES = new Set(['paused', 'planning', 'ready']);
 
@@ -10969,7 +11054,14 @@ function expireStaleMissions(root = process.cwd(), { idleDays = MISSION_IDLE_EXP
   const held = [];
   for (const mission of listMissions(root)) {
     const status = String(mission.status || '').toLowerCase();
-    if (!statuses.has(status)) continue;
+    // A mission left at running by a driver that died is as abandoned as a
+    // parked one. Only the default sweep takes it, and only when a driver was
+    // recorded and its process is gone (session-driven runs have none).
+    const deadRunning = status === 'running'
+      && statuses === EXPIRABLE_STATUSES
+      && mission.cloud !== true
+      && missionHasDeadDriver(mission, root);
+    if (!statuses.has(status) && !deadRunning) continue;
     // updated_at and paused_at are machine-polluted, status renders and
     // goal controllers re-save parked missions daily, so a mission nobody
     // has run since May reads as "touched today". Real activity is the
@@ -11858,6 +11950,10 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  isLiveInFlightMission,
+  missionHaltedSince,
+  keepOperatorHalt,
+  withLatestMissionProgress,
   receiptLearnedLine,
   tickTouchedCheckDefinition,
   engineVerifierLineup,

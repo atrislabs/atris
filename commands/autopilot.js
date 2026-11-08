@@ -1867,24 +1867,41 @@ function isDoPhaseTimeoutMessage(message) {
  * un-struck bullet whose normalized text contains the normalized title
  * prefix; `- **T33:** …` becomes `- [x] **T33:** …`, `- [ ]` becomes `- [x]`.
  * Returns true if a bullet was marked.
+ *
+ * A rendered TODO.md (it carries the "Regenerated from durable Atris task
+ * state" marker) is a view of the task database, so there the job itself is
+ * finished, the way `atris task done` finishes it, and the view re-rendered.
+ * Returns false when no single open or claimed job matches: re-rendering alone
+ * used to return true, and the tick reported a job advanced that never moved.
  */
 function markTodoBulletDone(cwd, taskTitle) {
-  try {
-    // A rendered TODO.md carries the "Regenerated from durable Atris task
-    // state" marker; those are projections and never hand-edited. Legacy
-    // hand-written TODO.md files (no marker) keep the bullet-mark fallback.
-    const renderedTodoPath = path.join(cwd, 'atris', 'TODO.md');
-    const isRenderedView = fs.existsSync(renderedTodoPath)
-      && fs.readFileSync(renderedTodoPath, 'utf8').includes('Regenerated from durable Atris task state');
-    if (isRenderedView) {
-      require('node:sqlite');
-      const rendered = require('./task').autoRenderTodoFromDb(cwd);
-      if (rendered) return true;
-    }
-  } catch {
-    // Older Node runtimes and legacy workspaces retain the markdown fallback.
-  }
   const needle = taskMatchNeedle(taskTitle);
+  let isRenderedView = false;
+  try {
+    const renderedTodoPath = path.join(cwd, 'atris', 'TODO.md');
+    isRenderedView = fs.existsSync(renderedTodoPath)
+      && fs.readFileSync(renderedTodoPath, 'utf8').includes('Regenerated from durable Atris task state');
+  } catch {
+    isRenderedView = false;
+  }
+  if (isRenderedView) {
+    if (!needle) return false;
+    try {
+      require('node:sqlite');
+      const out = require('./task').completeTodoTaskByTitle(cwd, taskTitle, {
+        matches: (title) => {
+          const norm = normalizeForMatch(title);
+          // The reverse test covers a tick title with a prefix ("T33: ..."); a short job title must not match by it.
+          return Boolean(norm) && (norm.includes(needle) || (norm.length >= 12 && needle.includes(norm)));
+        },
+        actor: 'autopilot',
+        proof: `autopilot tick finished "${String(taskTitle || '').slice(0, 200)}" and its completion receipt is in today's journal`,
+      });
+      return Boolean(out && out.completed);
+    } catch {
+      // Older Node runtimes without node:sqlite fall through to the markdown edit.
+    }
+  }
   if (!needle) return false;
   for (const name of ['TODO.md', 'todo.md']) {
     const todoPath = path.join(cwd, 'atris', name);
@@ -2211,26 +2228,38 @@ function logCompletion(description) {
   ensureLogDirectory();
   const { logFile, dateFormatted } = getLogPath();
 
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
+  // The next C number is read and the entry written as one step under a lock file, so two ticks
+  // finishing at once cannot both take the same number. A lock that cannot be had in a few seconds
+  // does not cost the entry: it is written anyway, as before.
+  const write = () => {
+    if (!fs.existsSync(logFile)) {
+      createLogFile(logFile, dateFormatted);
+    }
+
+    let content = fs.readFileSync(logFile, 'utf8');
+
+    const completionMatch = content.match(/\*\*C(\d+):/g);
+    const nextId = completionMatch
+      ? Math.max(...completionMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
+      : 1;
+
+    const entry = `- **C${nextId}:** ${description} [reviewed]`;
+
+    // Readers look for "## Completed ✅" (and, since this fix, a bare "## Completed" too).
+    if (/^## Completed\b/m.test(content)) {
+      content = content.replace(/^(## Completed[^\n]*\n)/m, `$1\n${entry}\n`);
+    } else {
+      content += `\n## Completed ✅\n\n${entry}\n`;
+    }
+
+    fs.writeFileSync(logFile, content);
+  };
+  try {
+    require('../lib/handoff-wake').withFileLock(`${logFile}.lock`, write, { staleMs: 60 * 1000, waitMs: 5 * 1000 });
+  } catch (err) {
+    if (!/stayed locked/.test(String(err && err.message))) throw err;
+    write();
   }
-
-  let content = fs.readFileSync(logFile, 'utf8');
-
-  const completionMatch = content.match(/\*\*C(\d+):/g);
-  const nextId = completionMatch
-    ? Math.max(...completionMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
-    : 1;
-
-  const entry = `- **C${nextId}:** ${description} [reviewed]`;
-
-  if (content.includes('## Completed')) {
-    content = content.replace(/(## Completed[^\n]*\n)/, `$1\n${entry}\n`);
-  } else {
-    content += `\n## Completed\n\n${entry}\n`;
-  }
-
-  fs.writeFileSync(logFile, content);
 }
 
 /**
@@ -4055,6 +4084,7 @@ module.exports = {
   diffAdvancedRepoHeads,
   reconcileTimedOutTick,
   markTodoBulletDone,
+  logCompletion,
   findCompletionReceipt,
   isDoPhaseTimeoutMessage,
   validateVerifyCommandShape,

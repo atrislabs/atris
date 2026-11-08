@@ -9,7 +9,8 @@ const { localDay } = require('../lib/local-day');
 const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
-const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
+const { sweepEngineAskReceipts, sweepFleetReceipts } = require('../lib/engine-receipt-sweep');
+const { acquireFileLock } = require('../lib/file-lock');
 const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
@@ -731,15 +732,6 @@ function runDigest(root, args, { forceSend = false } = {}) {
   return 0;
 }
 
-function pidAlive(pid) {
-  try {
-    process.kill(Number(pid), 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
@@ -756,24 +748,23 @@ async function runTick(root, args) {
   // double-alarms, and double-digests. A stale lock (dead pid or >55min)
   // never wedges the loop.
   const lockPath = path.join(root, '.atris', 'state', 'autoland.tick.lock');
+  let lock;
   try {
-    const prev = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-    const fresh = Date.now() - Number(prev.at || 0) < 55 * 60 * 1000;
-    if (fresh && pidAlive(prev.pid)) {
-      receipt.skipped_reason = 'tick_already_running';
-      if (json) console.log(JSON.stringify(receipt));
-      else console.log('autoland tick: another tick is still running; skipped.');
-      return 0;
-    }
-  } catch {}
-  try {
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: Date.now() }));
-  } catch {}
+    lock = acquireFileLock(lockPath, { staleAfterMs: 55 * 60 * 1000 });
+  } catch {
+    lock = null;
+  }
+  if (lock && !lock.ok) {
+    receipt.skipped_reason = 'tick_already_running';
+    if (json) console.log(JSON.stringify(receipt));
+    else console.log('autoland tick: another tick is still running; skipped.');
+    return 0;
+  }
   try {
     return await runTickBody(root, { json, policy, receipt });
   } finally {
-    try { fs.unlinkSync(lockPath); } catch {}
+    // Only removes the lock while it is still this tick's.
+    if (lock) lock.release();
   }
 }
 
@@ -864,8 +855,10 @@ function digestTickStatus(receipt) {
 
 function engineReceiptSweepNote(receipt) {
   const finalized = Number(receipt.engine_receipt_sweep?.finalized) || 0;
-  if (!finalized) return '';
-  return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
+  const flights = Number(receipt.fleet_receipt_sweep?.finalized) || 0;
+  const engineNote = finalized ? `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead` : '';
+  const fleetNote = flights ? `, marked ${flights} crashed flight${flights === 1 ? '' : 's'} presumed dead` : '';
+  return engineNote + fleetNote;
 }
 
 // Read only: how many ssh-agents look leaked right now, and which readers
@@ -1040,6 +1033,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.engine_receipt_sweep = sweepEngineAskReceipts(root);
   } catch (err) {
     receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
+  try {
+    const fleetSweep = sweepFleetReceipts(root);
+    if (fleetSweep.scanned > 0) receipt.fleet_receipt_sweep = fleetSweep;
+  } catch (err) {
+    receipt.fleet_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
   }
 
   runSshAgentSweep(root, receipt);
