@@ -37,6 +37,6 @@ Each line links to a note with the reason and real examples. Open a note only wh
 
 ## Keep it alive
 
-When the owner corrects something, write the reason into the right note the same day. Single verdicts can also go in with `atris taste keep|kill "<thing>" --why "<reason>"`, which feeds the matching ones into agent work automatically. If the lesson is new, add one line to the list above and link it.
+When the owner corrects something, write the reason into the right note the same day. Single verdicts can also go in with `atris taste keep|kill "<thing>" --why "<reason>"`. Matching verdicts then flow into agent work automatically. If the lesson is new, add one line to the list above and link it.
 
 Keep this page to one screen. Detail goes in the notes.
