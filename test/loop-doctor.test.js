@@ -371,3 +371,29 @@ test('doctor --fix for zero_due_capable_missions does not self-satisfy or self-c
   assert.equal(secondPayload.closed.length, 0, 'must not self-credit +3 reward before a real due-capable mission exists');
 });
 
+test('does not double-count a single errored tick across mission_run_tick and mission_run_summary receipts', (t) => {
+  const root = workspace(t);
+  seedHealthyState(root);
+  const sharedTick = {
+    status: 'errored',
+    reason: 'claude-error',
+    tick_index: 4,
+    started_at: '2026-07-10T11:14:01.007Z',
+    finished_at: '2026-07-10T11:14:19.477Z',
+    claude: { brief_id: 'brief-20260710-111401125-07a4c085' },
+  };
+  writeJson(root, 'atris/runs/mission-tick.json', {
+    mission_id: 'mission-healthy',
+    at: '2026-07-10T11:14:19.567Z',
+    result: { kind: 'mission_run_tick', tick: sharedTick },
+  });
+  writeJson(root, 'atris/runs/mission-summary.json', {
+    mission_id: 'mission-healthy',
+    at: '2026-07-10T11:14:56.920Z',
+    result: { kind: 'mission_run_summary', ticks: [sharedTick] },
+  });
+
+  assert.deepEqual(scanLoopReceipts({ root, now: NOW }), []);
+});
+
+
