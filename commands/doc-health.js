@@ -370,13 +370,14 @@ function renderRecall(report, summaryOnly) {
     `recall exam: ${report.found}/${report.questions} found (${pct(report.found_share)})`,
     `boot read first: ${report.boot_tokens} tokens`,
     `files opened after boot: median ${report.files_opened.median}, mean ${report.files_opened.mean === null ? 'n/a' : report.files_opened.mean.toFixed(2)}`,
+    `wrong opens (opened but held no answer): total ${report.wrong_opens.total}, mean ${report.wrong_opens.mean === null ? 'n/a' : report.wrong_opens.mean.toFixed(2)}`,
     `tokens opened after boot: median ${report.tokens_opened.median}, mean ${report.tokens_opened.mean}, median when found ${report.tokens_opened_when_found.median}`,
     ...table(['area', 'found', 'total'], Object.entries(report.by_area).sort().map(([area, row]) => [area, row.found, row.total])),
   ];
   if (report.invalid_lines.length) lines.push(`invalid question lines skipped: ${report.invalid_lines.join(', ')}`);
   if (!summaryOnly) {
-    lines.push('', ...table(['id', 'found', 'opened', 'tokens', 'answer in'],
-      report.results.map(row => [row.id || '-', row.found ? 'yes' : 'no', row.files_opened, row.tokens_opened, row.found_in || '-'])));
+    lines.push('', ...table(['id', 'found', 'opened', 'wrong', 'tokens', 'answer in'],
+      report.results.map(row => [row.id || '-', row.found ? 'yes' : 'no', row.files_opened, row.wrong_opens, row.tokens_opened, row.found_in || '-'])));
   }
   return lines.join('\n');
 }

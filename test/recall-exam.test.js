@@ -44,6 +44,9 @@ test('follows the link whose words match the question and counts what it read', 
   assert.equal(byId.b.files_opened, 0, 'an answer already in boot costs no extra file');
   // No link on the path mentions the cache, so a reader that only follows matching links never gets there.
   assert.equal(byId.c.found, false);
+  assert.equal(byId.a.wrong_opens, 0);
+  assert.equal(byId.c.wrong_opens, byId.c.files_opened, 'every open on a miss is a wrong open');
+  assert.equal(report.wrong_opens.total, byId.c.files_opened);
   assert.equal(report.found, 2);
   assert.ok(report.boot_tokens > 0);
 });
