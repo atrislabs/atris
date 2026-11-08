@@ -94,9 +94,10 @@ test('a confirmed merge hands the build copy to removal, and a pending one does 
   const merged = setup(t, 'merged', keep).run;
   assert.equal(merged.status, 0, merged.stderr || merged.stdout);
   assert.match(merged.stdout, /merge: merged[\s\S]*cleanup: kept this build copy \(ATRIS_WORKTREE_KEEP_AFTER_SHIP=1\)[\s\S]*done: worktree shipped/);
+  // A pending merge has its branch on origin, so its copy may go too; the keep switch still holds it.
   const pending = setup(t, 'pending', keep).run;
   assert.equal(pending.status, 0, pending.stderr || pending.stdout);
-  assert.doesNotMatch(pending.stdout, /cleanup:/);
+  assert.match(pending.stdout, /merge: pending[\s\S]*cleanup: kept this build copy \(ATRIS_WORKTREE_KEEP_AFTER_SHIP=1\)/);
   // Temp folders are never handed to removal, so the default prints nothing.
   assert.doesNotMatch(setup(t, 'merged').run.stdout, /cleanup:/);
 });
