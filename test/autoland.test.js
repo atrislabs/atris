@@ -1928,6 +1928,20 @@ test('daily tick verifies planning missions after all linked repair tasks close'
   }
 });
 
+test('daily digest reports receipt pruning is paused', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'test', digest_hour: new Date().getHours(), daily_experiment: false, janitor: false, green_landing: false, map_fold: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.receipts_pruned, null);
+    assert.equal(receipt.receipts_prune_skipped, 'reference scan is incomplete');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('daily experiment hook runs when policy allows', () => {
   const { base, repo } = makeTempRepo();
   try {
