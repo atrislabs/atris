@@ -91,6 +91,8 @@ Labels: `guarded` (checked by code or hook; bypassing is a bug) and `expected` (
 
 What you ship should not read as generated. If someone would believe an AI made it at a glance, that is the bug.
 
+- **Read the taste first.** Before making anything a person will see, read `atris/taste/TASTE.md` if it exists. It is a one-screen list of how the owner likes buttons, copy, layout and more, and each line links to a short note you open only when your work touches it (`expected`).
+
 - **Gate it.** `atris slop detect <path>` is deterministic: exit 1 on a tell (file:line + rule), built for CI and review (`guarded`).
 - **Name the move.** Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, restraint.
 - **Refuse the wells:** purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
