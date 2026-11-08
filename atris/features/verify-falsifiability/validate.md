@@ -15,7 +15,7 @@ set -e
 node -e "const m = require('./commands/verify'); if (typeof m.verifyRubric !== 'function') { console.error('verifyRubric not exported'); process.exit(1); }"
 
 # 2. atris.md carries the Verify constraint.
-grep -q "Verify cannot be a raw shell shortcut" atris.md
+grep -q "Verify must call a real check or" atris.md
 
 # 3. runTaskOnce has the falsifiability gate.
 grep -q "verify-not-falsifiable" commands/autopilot.js
