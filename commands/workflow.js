@@ -503,7 +503,7 @@ function mapPromptSection(targetDir, cwd = process.cwd()) {
   if (!notes) return `## MAP.md\nRead this file for file:line references: ${mapRef}\n\n`;
   const notesRef = path.relative(cwd, path.join(path.dirname(targetDir), notes));
   return `## MAP.md\nRead this file to find where work lives: ${mapRef}\n\n`
-    + `## MAP-NOTES.md\nRead this file for exact file:line references: ${notesRef}\n\n`;
+    + `## MAP-NOTES.md\nRead this file for exact file:line references, or the area note it points to: ${notesRef}\n\n`;
 }
 
 async function planAtris(userInput = null) {

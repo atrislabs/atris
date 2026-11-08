@@ -69,3 +69,18 @@ test('the summary flag hides held-out questions from the output', (t) => {
   const full = run([]);
   assert.match(full.stdout, /hidden1/);
 });
+
+test('an index opened on the way to the answer is not a wrong open', (t) => {
+  const root = workspace(t, {
+    'atris/atris.md': '# boot\n\n- Deep refs for releases and tags: [map notes](refs/index.md).\n- Release tag history: [old](refs/old.md).\n',
+    'atris/refs/index.md': '# index\n\n- Release tags and publish steps. Open [release](map/release.md) when you tag.\n',
+    'atris/refs/map/release.md': '# release\n\nThe tag must start with v and come from master.\n',
+    'atris/refs/old.md': '# old\n\nNothing about the rule.\n',
+  });
+  fs.writeFileSync(path.join(root, 'q.jsonl'), JSON.stringify({ id: 'r', q: 'what release tag do I push', needle: 'must start with v' }));
+  const [row] = runRecallExam(root, path.join(root, 'q.jsonl'), { bootFiles: ['atris/atris.md'] }).results;
+  assert.equal(row.found, true);
+  assert.equal(row.found_in, 'atris/refs/map/release.md');
+  assert.ok(row.opened.includes('atris/refs/index.md'));
+  assert.equal(row.wrong_opens, row.opened.filter(file => file === 'atris/refs/old.md').length);
+});

@@ -9,13 +9,13 @@ const path = require('node:path');
 // When code moves and a ref is not updated, the agent lands on the wrong line
 // or a deleted file, silently. This turns that drift into a loud test failure.
 
-const { MAP_REF_DOCS } = require('../lib/map-refs');
+const { existingMapDocs } = require('../lib/map-refs');
 
 const repoRoot = path.join(__dirname, '..');
 const mapPath = path.join(repoRoot, 'atris', 'MAP.md');
-// The boot map routes; exact file:line refs live in the notes file it points to.
-const refText = () => MAP_REF_DOCS
-  .filter(doc => fs.existsSync(path.join(repoRoot, doc)))
+// The boot map routes; exact file:line refs live in the notes file it points to
+// and in the area notes under atris/refs/map/ that it indexes.
+const refText = () => existingMapDocs(repoRoot)
   .map(doc => fs.readFileSync(path.join(repoRoot, doc), 'utf8'))
   .join('\n');
 

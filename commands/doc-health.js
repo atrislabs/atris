@@ -370,7 +370,7 @@ function renderRecall(report, summaryOnly) {
     `recall exam: ${report.found}/${report.questions} found (${pct(report.found_share)})`,
     `boot read first: ${report.boot_tokens} tokens`,
     `files opened after boot: median ${report.files_opened.median}, mean ${report.files_opened.mean === null ? 'n/a' : report.files_opened.mean.toFixed(2)}`,
-    `wrong opens (opened but held no answer): total ${report.wrong_opens.total}, mean ${report.wrong_opens.mean === null ? 'n/a' : report.wrong_opens.mean.toFixed(2)}`,
+    `wrong opens (opened but not on the path to the answer): total ${report.wrong_opens.total}, mean ${report.wrong_opens.mean === null ? 'n/a' : report.wrong_opens.mean.toFixed(2)}`,
     `tokens opened after boot: median ${report.tokens_opened.median}, mean ${report.tokens_opened.mean}, median when found ${report.tokens_opened_when_found.median}`,
     ...table(['area', 'found', 'total'], Object.entries(report.by_area).sort().map(([area, row]) => [area, row.found, row.total])),
   ];

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { mapNotesPath } = require('../lib/map-refs');
+const { MAP_REF_DOCS, existingMapDocs } = require('../lib/map-refs');
 const { spawnSync } = require('child_process');
 const { getLogPath } = require('../lib/journal');
 const { ensureValidCredentials } = require('../utils/auth');
@@ -197,11 +197,12 @@ function findRelevantContextFiles(cwd, prompt) {
 
 // The deep map is large: keep only the lines that share a word with the prompt.
 function mapNotesExcerpt(cwd, prompt, maxChars) {
-  const notesPath = mapNotesPath(cwd);
-  if (!notesPath) return '';
+  // The notes file and any area notes it indexes; the boot map is read elsewhere.
+  const notes = existingMapDocs(cwd).filter(doc => doc !== MAP_REF_DOCS[0]);
+  if (!notes.length) return '';
   const words = promptWords(prompt);
   if (!words.size) return '';
-  const lines = fs.readFileSync(path.join(cwd, notesPath), 'utf8').split(/\r?\n/)
+  const lines = notes.flatMap(doc => fs.readFileSync(path.join(cwd, doc), 'utf8').split(/\r?\n/))
     .filter(line => [...words].some(word => line.toLowerCase().includes(word)));
   return lines.join('\n').slice(0, maxChars);
 }
