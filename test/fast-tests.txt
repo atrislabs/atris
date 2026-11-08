@@ -187,3 +187,4 @@ test/task-sweep-held.test.js
 test/brief-owner.test.js
 test/task-core.test.js
 test/mission-core.test.js
+test/youtube-core.test.js
