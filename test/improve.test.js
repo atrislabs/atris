@@ -932,3 +932,31 @@ test('buildScorecardRow: verify tail is bounded to the last 2000 chars', () => {
   assert.equal(row.verify_output.length, 2000);
   assert.ok(row.verify_output.endsWith('THE REASON'));
 });
+
+test('run: status and vitals route to read-only vitals without calling runImprove, and unknown subcommands fail fast', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-status-'));
+  const originalCwd = process.cwd();
+  process.chdir(root);
+  try {
+    let improveCalled = 0;
+    let vitalsCalled = 0;
+    const deps = {
+      runImprove: async () => { improveCalled += 1; return { ok: true }; },
+      collectImproveVitals: () => {
+        vitalsCalled += 1;
+        return { schema: 'atris.improve_vitals.v1', groups: [['heartbeat is healthy.']] };
+      },
+    };
+    const statusExit = await run(['status', '--json'], deps);
+    const vitalsExit = await run(['vitals', '--json'], deps);
+    const typoExit = await run(['doctr', '--json'], deps);
+    assert.equal(statusExit, 0);
+    assert.equal(vitalsExit, 0);
+    assert.equal(typoExit, 1);
+    assert.ok(vitalsCalled >= 2, 'expected collectImproveVitals to run for status and vitals');
+    assert.equal(improveCalled, 0, 'status, vitals, and unknown subcommands must never trigger a paid RL tick');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

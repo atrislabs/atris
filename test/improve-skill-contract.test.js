@@ -25,5 +25,9 @@ test('improve skill matches the live tick, vitals, receipt, and fallback contrac
 
   assert.equal(isBareVitalsArgs([]), true);
   assert.equal(isBareVitalsArgs(['--json']), true);
+  assert.equal(isBareVitalsArgs(['status']), true);
+  assert.equal(isBareVitalsArgs(['status', '--json']), true);
+  assert.equal(isBareVitalsArgs(['vitals']), true);
+  assert.equal(isBareVitalsArgs(['vitals', '--json']), true);
   assert.equal(isBareVitalsArgs(['tick']), false);
 });
