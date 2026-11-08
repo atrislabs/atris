@@ -1,11 +1,11 @@
 # Copy
 
-How words should read. Back to [TASTE.md](TASTE.md).
+How words should read. Back to [SKILL.md](SKILL.md).
 
 ## Rules
 
 - Tell a story in plain connected sentences. Lead with what it means for the reader.
-- Never put a comma in front of a joining word. That covers and / but / so / then / because / which / when. Keshav called this "one of the worst."
+- Never put a comma in front of a joining word. That covers and / but / so / then / because / which / when. The owner called this "one of the worst."
 - No em dashes. No small labels above headlines. No hype words.
 - No choppy fragments. "Found today. Fixed today." lost because it reads like an ad.
 - Every line must be true for every reader. "Your product has never had a security team" failed because many readers do have one.

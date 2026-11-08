@@ -27,7 +27,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | document health | `commands/doc-health.js`, `lib/map-refs.js`, `atris/doc-health/questions.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
-| taste notes | `atris/taste/TASTE.md` | one-screen list of how the owner likes copy, buttons and layout; each line links to a short note |
+| taste notes | `atris/skills/taste/SKILL.md` | one-screen list of how the owner likes copy, buttons and layout; each line links to a short note |
 | security audit (sentinel) | `lib/security-audit.js`, `lib/security-audit-classes.js`, `commands/security-review.js` | `atris sentinel` = `security-review audit`; engines hunt, another model verifies; member `atris/team/sentinel/` |
 | workspace tree hash | `commands/tree.js`, `lib/tree-hash.js` | `atris tree hash` over the doctrine files |
 | task database and TODO markdown renderer | `lib/task-db.js`, `lib/todo-fallback.js` | SQLite task store, claim leases and expiry, `renderTodoMarkdown`, legacy fallback |

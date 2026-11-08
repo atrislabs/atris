@@ -1,6 +1,6 @@
 # Layout
 
-Back to [TASTE.md](TASTE.md).
+Back to [SKILL.md](SKILL.md).
 
 - One idea per screen, with one thing clearly in charge. This is what all six loves share. See [loves.md](loves.md).
 - Giant type next to small quiet text. Skip the middle sizes.

@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.18
+version: 3.2.19
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -9,6 +9,8 @@ tags:
 ---
 
 # atris-design
+
+Start at [../taste/SKILL.md](../taste/SKILL.md) for the short list of what the owner likes. This file holds the full visual rules for building it.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 

@@ -1,6 +1,16 @@
+---
+name: taste
+description: The front door for how the owner likes things to look and read. Use before making copy, pages, buttons, decks or anything a person will see.
+version: 1.0.0
+tags:
+  - taste
+  - design
+  - copy
+---
+
 # Taste
 
-The short list of how Keshav likes things to look and read. Read this before you make anything a person will see.
+The short list of how the owner likes things to look and read. Read this before you make anything a person will see.
 
 Each line links to a note with the reason and real examples. Open a note only when your work touches it.
 
@@ -19,14 +29,14 @@ Each line links to a note with the reason and real examples. Open a note only wh
 
 ## Go deeper
 
-- [loves.md](loves.md): the six designs Keshav loved and what they share.
+- [loves.md](loves.md): the six designs the owner loved and what they share.
 - [references.md](references.md): outside work worth learning from, with what to take and what to skip.
-- [../skills/design/SKILL.md](../skills/design/SKILL.md): the full design rules and the lessons table.
-- [../policies/ANTISLOP.md](../policies/ANTISLOP.md): the full list of tells that read as generated.
-- Raw picks live on Keshav's laptop in `~/.atris/taste/` (65 design picks and the copy rounds).
+- [../design/SKILL.md](../design/SKILL.md): the full visual rules and the lessons table. Taste says what we like; design says how to build it.
+- [../../policies/ANTISLOP.md](../../policies/ANTISLOP.md): the full list of tells that read as generated.
+- Raw picks live on the owner's laptop in `~/.atris/taste/` (65 design picks and the copy rounds).
 
 ## Keep it alive
 
-When Keshav corrects something, write the reason into the right note the same day. If the lesson is new, add one line to the list above and link it.
+When the owner corrects something, write the reason into the right note the same day. Single verdicts can also go in with `atris taste keep|kill "<thing>" --why "<reason>"`, which feeds the matching ones into agent work automatically. If the lesson is new, add one line to the list above and link it.
 
 Keep this page to one screen. Detail goes in the notes.
