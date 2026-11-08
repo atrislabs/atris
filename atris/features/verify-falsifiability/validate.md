@@ -14,8 +14,9 @@ set -e
 # 1. verifyRubric is exported and the CLI route exists.
 node -e "const m = require('./commands/verify'); if (typeof m.verifyRubric !== 'function') { console.error('verifyRubric not exported'); process.exit(1); }"
 
-# 2. atris.md carries the Verify constraint.
-grep -q "Verify must call a real check or" atris.md
+# 2. The Verify guidance requires a real check and rejects trivial shortcuts.
+# Match the concepts independently so ordinary wording changes do not break proof.
+node -e "const s = require('fs').readFileSync('atris.md', 'utf8'); const guidance = s.split(/\n\n/).find(p => /\bVerify\b/.test(p) && /\breal\s+check\b/i.test(p) && /\b(?:never|reject|avoid)\b/i.test(p) && /\btrivial\s+shortcut/i.test(p)); if (!guidance) { console.error('Verify guidance missing required concepts'); process.exit(1); }"
 
 # 3. runTaskOnce has the falsifiability gate.
 grep -q "verify-not-falsifiable" commands/autopilot.js
