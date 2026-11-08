@@ -12,7 +12,8 @@ test('public consolidation prompt names the wiki inputs and preserves consolidat
   assert.ok(prompt.includes('- ADD nothing new.'));
   assert.ok(prompt.includes('- Entries marked as user-stated conventions or explicit remember-this survive.'));
   assert.ok(prompt.includes('- Every kept entry keeps its provenance as a source link or date.'));
-  assert.ok(prompt.endsWith('Consolidate overlapping entries, preserve the strongest source-backed version, and leave index.md and page links consistent.'));
+  assert.ok(prompt.includes('Consolidate overlapping entries, preserve the strongest source-backed version, and leave index.md and page links consistent.'));
+  assert.ok(prompt.endsWith('Rewrite bare topic lines in index.md so each says when to open the page.'));
   assert.ok(!prompt.includes('.atris/presidio'));
 });
 

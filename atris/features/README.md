@@ -4,6 +4,21 @@ This directory contains feature documentation for the Atris project.
 
 ---
 
+## Open the right spec
+
+Each line says what the feature decided and when to open its folder. A folder holds `idea.md` for why, `build.md` for how and `validate.md` for the proof.
+
+- Campaigns are long goals worked by missions until a judge that fails today passes. The design is settled and not built. Open [campaign](campaign/idea.md) before you build or change campaign work.
+- An agent cannot pass a tick with a check that proves nothing. A task's verify must be a rubric that fails before the work. Open [verify-falsifiability](verify-falsifiability/idea.md) when you touch how a task is verified.
+- The validator reads every plan fresh and signs off before anything runs. Open [plan-review-by-validator](plan-review-by-validator/idea.md) when you change the plan to do handoff.
+- An overnight runner that survives a bad tick and reports what it did. Open [spaceship](spaceship/idea.md) when you build long unattended runs.
+- A public benchmark to prove a coordinated stack beats one pinned model. Open [endstate](endstate/idea.md) when you run or score that benchmark.
+- Sync makes the safe path the default: review each conflict, clean cloud orphans, push only what changed. Open [cloud-sync-simplicity](cloud-sync-simplicity/idea.md) when you change sync or push.
+- A business workspace syncs its brain folder, not raw files. Open [company-brain-sync](company-brain-sync/idea.md) when you work on business workspace sync.
+- Atris picks the mission and writes the goal that the Codex runtime shows. Open [codex-goal-replacement](codex-goal-replacement/idea.md) when you touch the Codex goal bridge.
+
+---
+
 ## Structure
 
 Each feature gets its own folder:

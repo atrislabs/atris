@@ -24,7 +24,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | boot files an agent starts with | `commands/init.js`, `scripts/member-lab.js`, `scripts/boot-tokens.js`, `scripts/boot-usage.js` | lean agent instructions, member benchmark lab, and boot token measurements |
 | workspace protocol and voice | `atris/atris.md`, `atris/PERSONA.md`, `atris/skills/atris/SKILL.md` | operating protocol, communication style, and workspace skill |
 | brain compile command | `commands/brain.js` | brain artifacts compiled and verified here |
-| document health | `commands/doc-health.js`, `lib/map-refs.js`, `atris/doc-health/questions.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs |
+| document health and recall exam | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/recall-seen.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs; `--recall` scores found, files opened, wrong opens and tokens read |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
 | taste notes | `atris/skills/taste/SKILL.md` | one-screen list of how the owner likes copy, buttons and layout; each line links to a short note |
