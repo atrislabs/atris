@@ -2105,7 +2105,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  atris computer local');
     console.log('  atris computer codex');
     console.log('  atris computer --cloud');
-    console.log('  atris computer --cloud --worker openai --model gpt-5.4');
+    console.log('  atris computer --cloud --worker openai --model <model>');
     console.log('  atris computer cloud');
     console.log('  atris computer codeops');
     console.log('  atris computer codeops status');

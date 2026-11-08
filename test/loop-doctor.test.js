@@ -338,3 +338,36 @@ test('doctor --fix files at most one mission and dedupes the second run', (t) =>
     .split(/\r?\n/).filter((line) => line.includes('[loop-doctor:repeated_auth_failure]'));
   assert.equal(missions.length, 1);
 });
+
+test('doctor --fix for zero_due_capable_missions does not self-satisfy or self-credit on filing', (t) => {
+  const root = workspace(t);
+  writeJsonl(root, '.atris/state/scorecards.jsonl', [
+    { ts: '2026-07-10T10:00:00.000Z', reward: 2 },
+  ]);
+  writeJsonl(root, '.atris/state/missions.jsonl', [
+    { id: 'manual-1', status: 'ready', cadence: 'manual', runner: 'claude', always_on: false, created_at: NOW },
+  ]);
+  const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', HOME: path.join(root, 'home') };
+  const runDoctor = (extra = []) => spawnSync(process.execPath, [cli, 'improve', 'doctor', ...extra], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+  });
+
+  const first = runDoctor(['--fix', '--json']);
+  assert.equal(first.status, 0, first.stderr);
+  const firstPayload = JSON.parse(first.stdout);
+  assert.equal(firstPayload.fix.action, 'mission_started');
+  assert.match(firstPayload.fix.mission.objective, /^\[loop-doctor:zero_due_capable_missions\]/);
+
+  const checkBeforeRepair = runDoctor(['--check', 'zero_due_capable_missions']);
+  assert.equal(checkBeforeRepair.status, 1, 'filing a repair ticket alone must not satisfy zero_due_capable_missions');
+
+  const second = runDoctor(['--fix', '--json']);
+  assert.equal(second.status, 0, second.stderr);
+  const secondPayload = JSON.parse(second.stdout);
+  assert.equal(secondPayload.fix.action, 'mission_exists');
+  assert.equal(secondPayload.closed.length, 0, 'must not self-credit +3 reward before a real due-capable mission exists');
+});
+

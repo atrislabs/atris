@@ -96,6 +96,7 @@ function parseImproveArgs(argv = []) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     help: false,
     history: false,
+    unknownCommand: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -113,6 +114,7 @@ function parseImproveArgs(argv = []) {
     if (a.startsWith('--timeout=')) { const v = Number(a.split('=')[1]); if (v > 0) opts.timeoutMs = Math.round(v * 1000); continue; }
     // positional mode (plan|full|delegate)
     if (!a.startsWith('-') && VALID_MODES.has(a)) { opts.mode = a; continue; }
+    if (i === 0 && !a.startsWith('-')) { opts.unknownCommand = a; continue; }
   }
 
   if (!VALID_MODES.has(opts.mode)) opts.mode = 'full';
@@ -300,7 +302,7 @@ function formatTickHistory(summary = {}) {
   if (summary.rewardTrend && summary.rewardTrend.length) {
     lines.push(`  trend:    ${summary.rewardTrend.map((r) => (r == null ? '·' : r)).join(' → ')}`);
   }
-  if (!summary.ticks) lines.push('  (no ticks yet, run `atris improve`)');
+  if (!summary.ticks) lines.push('  (no ticks yet, run `atris improve tick`)');
   return lines.join('\n');
 }
 
@@ -1507,7 +1509,7 @@ Modes (positional or --mode):
 
 Options:
   --member <name>  attribute the tick to a member (the loop's owner)
-  --model <id>     override the model (e.g. claude-sonnet-4-6)
+  --model <id>     override the model (e.g. sonnet)
   --dry-run        plan and run but do not commit
   --no-fallback    do not fall back to a local tick if the backend is down
   --workspace <p>  workspace path (default: cwd)
@@ -1523,7 +1525,11 @@ the backend is unreachable or you are not logged in.`);
 }
 
 function isBareVitalsArgs(argv = []) {
-  return argv.length === 0 || (argv.length === 1 && argv[0] === '--json');
+  if (argv.length === 0 || (argv.length === 1 && argv[0] === '--json')) return true;
+  if (argv[0] === 'status' || argv[0] === 'vitals') {
+    return argv.length === 1 || (argv.length === 2 && argv[1] === '--json');
+  }
+  return false;
 }
 
 const LOOP_DOCTOR_OPEN_STATUSES = new Set(['planning', 'ready', 'running', 'paused', 'blocked']);
@@ -1693,6 +1699,12 @@ async function run(argv = [], deps = {}) {
   const routedArgs = args[0] === 'tick' ? args.slice(1) : args;
   const opts = parseImproveArgs(routedArgs);
   if (opts.help) { showHelp(); return 0; }
+  if (opts.unknownCommand) {
+    const error = `unknown improve subcommand "${opts.unknownCommand}". try: atris improve, atris improve tick, atris improve history, atris improve doctor, or atris improve revisions.`;
+    if (opts.json) console.log(JSON.stringify({ ok: false, error, subcommand: opts.unknownCommand }));
+    else console.error(error);
+    return 1;
+  }
 
   if (opts.history) {
     const summary = summarizeTickHistory(readTickHistory(opts.workspace));

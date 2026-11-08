@@ -20,6 +20,16 @@ Atris gives Claude Code, Codex, Cursor and any other agent a memory that lasts a
 
 Mem0, Zep and Letta remember the users of a chat app. Atris remembers the project. Guide and comparison: https://atris.ai/blog/memory-for-coding-agents
 
+## Check what ChatGPT can read about your business
+
+`atris aeo scan` checks whether ChatGPT, Claude, Perplexity and other answer engines can read your site. No login needed.
+
+```bash
+npx -y atris aeo scan yoursite.com --vs competitor.com
+```
+
+You get a score out of 100, each gap with its fix, a side-by-side score against a competitor, and a draft `llms.txt` you can publish. To see what ChatGPT actually says when buyers ask about your business, run the free check at https://atris.ai/aeo/check.
+
 ## Quick Start
 
 ```bash

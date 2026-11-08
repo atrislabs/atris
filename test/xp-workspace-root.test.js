@@ -15,7 +15,7 @@ const cp = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const acceptedReview = require('./fixtures/xp/accepted-review.json');
 
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'xp.js'), 'utf8');
+const SRC = [fs.readFileSync(path.join(__dirname, '..', 'commands', 'xp.js'), 'utf8'), fs.readFileSync(path.join(__dirname, '..', 'lib', 'xp-core.js'), 'utf8')].join('\n');
 
 test('single-workspace default resolves the workspace root, not raw cwd', () => {
   // Both single-workspace sites use the resolving default...
