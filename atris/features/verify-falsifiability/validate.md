@@ -16,7 +16,7 @@ node -e "const m = require('./commands/verify'); if (typeof m.verifyRubric !== '
 
 # 2. The Verify guidance requires a real check and rejects trivial shortcuts.
 # Match the concepts independently so ordinary wording changes do not break proof.
-node -e "const s = require('fs').readFileSync('atris.md', 'utf8'); const guidance = s.split(/\n\n/).find(p => /\bVerify\b/.test(p) && /\breal\s+check\b/i.test(p) && /\b(?:never|reject|avoid)\b/i.test(p) && /\btrivial\s+shortcut/i.test(p)); if (!guidance) { console.error('Verify guidance missing required concepts'); process.exit(1); }"
+node -e "const assert = require('assert'); const matches = p => /\bVerify\b/.test(p) && /\breal\s+check\b/i.test(p) && /\b(?:never|reject|avoid)\b/i.test(p) && /\btrivial\s+shortcut/i.test(p); assert(matches('Verify: avoid trivial shortcuts and run a real check.')); for (const p of ['Run a real check and avoid trivial shortcuts.', 'Verify: avoid trivial shortcuts.', 'Verify: run a real check with trivial shortcuts.', 'Verify: avoid shortcuts and run a real check.']) assert(!matches(p), p); const s = require('fs').readFileSync('atris.md', 'utf8'); if (!s.split(/\n\n/).some(matches)) { console.error('Verify guidance missing required concepts'); process.exit(1); }"
 
 # 3. runTaskOnce has the falsifiability gate.
 grep -q "verify-not-falsifiable" commands/autopilot.js
