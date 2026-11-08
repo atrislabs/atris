@@ -12,10 +12,12 @@ const worktreeCore = require('../lib/worktree-core');
 
 const {
   ATRIS_BIN,
+  RESCUE_IDLE_MS,
+  finishShippedCopy,
+  formatKib,
   SWEEP_IDLE_MS,
   SWEEP_EVERY_HOURS,
   SWEEP_KEPT_LABELS,
-  announceShippedCopyRemoval,
   assertOneLapProofTree,
   baseBranchName,
   branchName,
@@ -190,6 +192,7 @@ function shipHelp() {
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
+  console.log('  --keep-copy     keep this build copy; by default it is removed once the work lands or is pushed');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
@@ -204,6 +207,7 @@ function shipWorktree(args) {
   const noPr = hasFlag(args, '--no-pr');
   const localMode = hasFlag(args, '--local') || hasFlag(args, '--local-merge');
   const merge = hasFlag(args, '--merge');
+  const keepCopy = hasFlag(args, '--keep-copy');
   const message = readFlag(args, '--message') || readFlag(args, '-m');
   const verify = readFlag(args, '--verify');
   let branch = currentBranch(root);
@@ -351,7 +355,7 @@ function shipWorktree(args) {
     }
     console.log('pr: skipped (local mode)');
     if (merge && !dryRun) runShipHealthCheck(primary || root);
-    if (landedOn) announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: landedOn }));
+    if (landedOn) finishShippedCopy({ root, primary, branch, landedOn, keep: keepCopy });
     console.log('done: worktree shipped');
     return 0;
   }
@@ -385,6 +389,7 @@ function shipWorktree(args) {
         }
         if (state.state === 'OPEN' && !state.mergedAt) {
           console.log('merge: pending; kept the source branch while required checks finish');
+          finishShippedCopy({ root, primary, branch, keep: keepCopy });
           return 0;
         }
         if (state.state !== 'MERGED' || !state.mergedAt) {
@@ -414,7 +419,7 @@ function shipWorktree(args) {
     }, { worktree: root });
   } catch {}
   if (merge && !dryRun) runShipHealthCheck(primary || root);
-  if (landedOn) announceShippedCopyRemoval(scheduleShippedCopyRemoval({ root, primary, branch, base: landedOn }));
+  if (!dryRun) finishShippedCopy({ root, primary, branch, landedOn, keep: keepCopy });
   console.log('done: worktree shipped');
   return 0;
 }
@@ -495,8 +500,14 @@ function sweep(args) {
     console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>]');
     return 2;
   }
+  const rescueDays = hasFlag(args, '--no-rescue') ? 0
+    : Number(readFlag(args, '--rescue-after-days', process.env.ATRIS_WORKTREE_RESCUE_DAYS || String(RESCUE_IDLE_MS / 86400000)));
+  if (!Number.isFinite(rescueDays) || rescueDays < 0) {
+    console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>] [--rescue-after-days <n>] [--no-rescue]');
+    return 2;
+  }
   const apply = hasFlag(args, '--apply');
-  const report = sweepWorkspace({ workspace, apply, idleMs: idleHours * 3600000 });
+  const report = sweepWorkspace({ workspace, apply, idleMs: idleHours * 3600000, rescueIdleMs: rescueDays * 86400000 });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
     return report.error ? 1 : 0;
@@ -514,9 +525,11 @@ function sweep(args) {
       console.log(`${repo.name}: skipped (${repo.error || repo.skipped})`);
       continue;
     }
-    const gone = apply ? repo.removed : repo.candidates;
+    const saved = apply ? repo.rescued : repo.rescueCandidates;
+    const savedSet = new Set(saved);
+    const gone = (apply ? repo.removed : repo.candidates).filter((item) => !savedSet.has(item));
     const cleared = apply ? repo.cachePruned : repo.cacheCandidates.filter((item) => item.reason === 'generated_webpack_cache');
-    removedTotal += gone.length;
+    removedTotal += gone.length + saved.length;
     clearedTotal += cleared.length;
     reviewTotal += repo.cacheCandidates.filter((item) => item.reason === 'manual_review_required').length;
     const counts = {};
@@ -526,7 +539,15 @@ function sweep(args) {
     }
     const keptText = Object.entries(counts).map(([label, count]) => `${count} ${label}`).join(', ');
     console.log(`${repo.name}: ${apply ? 'removed' : 'would remove'} ${plural(gone.length, 'finished copy', 'finished copies')}, ${apply ? 'cleared' : 'would clear'} ${plural(cleared.length, 'webpack cache', 'webpack caches')}; kept ${repo.kept.length}${keptText ? ` (${keptText})` : ''}`);
+    if (saved.length) console.log(`  ${apply ? 'saved and removed' : 'would save and remove'} ${plural(saved.length, 'abandoned copy', 'abandoned copies')}`);
+    for (const item of saved) {
+      const what = item.reason === 'pushed_branch' ? 'already on origin' : `${plural(item.changed_files || 0, 'changed file', 'changed files')}, idle ${item.idle_days} days`;
+      console.log(`  ${apply ? 'saved' : 'save'}: ${item.path} -> origin/${item.rescue_branch} (${what}, ${formatKib(item.size_kib)})`);
+    }
     for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path}`);
+    for (const item of repo.kept.filter((entry) => entry.reason === 'rescue_push_failed')) {
+      console.log(`  kept: ${item.path} (could not push its work to origin/${item.rescue_branch}: ${item.error})`);
+    }
     for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
   }
   if (reviewTotal) console.log(`review: ${plural(reviewTotal, 'other build folder waits', 'other build folders wait')} for a person; \`atris worktree cleanup\` in each repo lists them`);
@@ -603,7 +624,8 @@ function guide() {
   console.log('Start reaps completed checkouts first. Cleanup preserves branches, source changes, and files git ignores, skips live work, and prunes only verified webpack caches.');
   console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
   console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
-  console.log('A copy shipped with --merge is removed once nothing has run in it for 10 minutes (ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
+  console.log('A shipped copy is removed as soon as its work is merged or on origin and nothing else runs in it; if something does, a merged copy goes once it has been quiet for 10 minutes (--keep-copy or ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
+  console.log('The sweep saves an abandoned copy (idle 7 days, nothing running in it) to a commit on its branch, pushes it, and removes the copy only after origin has it. Rescues are logged in .atris/state/worktree_removals.jsonl.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
@@ -620,12 +642,14 @@ function help() {
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('    --no-map-refresh  skip the automatic refresh of moved map line references');
+  console.log('    --keep-copy     keep this build copy after it ships');
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
-  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2]  reap merged, idle copies in every repo');
+  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue-after-days 7] [--no-rescue]');
+  console.log('    removes merged, idle copies in every repo; saves abandoned copies to their branch on origin, then removes them');
   console.log('  atris worktree sweep --install [--every 3] | --uninstall  run the sweep on a timer');
 }
 
