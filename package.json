@@ -1,7 +1,7 @@
 {
   "name": "atris",
   "version": "3.80.1",
-  "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof.",
+  "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof. project memory your coding agents share across sessions.",
   "mcpName": "io.github.atrislabs/atris",
   "main": "bin/atris.js",
   "bin": {
