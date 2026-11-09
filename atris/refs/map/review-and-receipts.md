@@ -26,7 +26,7 @@ rg "namedUnrunProofCommand|unrunNamedProofCommandIssue|proof_command_not_run|req
 
 ## Feature: Autoland (`atris autoland`)
 
-- **Personal protected work:** `lib/auto-accept-certified.js:1126` (`PROTECTED_LANE_TERMS`) includes personal money and messaging; `lib/auto-accept-certified.js:1134` (`sniffedProtectedLane`) uses word starts so syntax does not match tax. Regression: `test/auto-accept-certified.test.js:551`.
+- **Personal protected work:** `lib/auto-accept-certified.js:1135` (`PROTECTED_LANE_TERMS`) includes personal money and messaging; `lib/auto-accept-certified.js:1143` (`sniffedProtectedLane`) uses word starts so syntax does not match tax. Regression: `test/auto-accept-certified.test.js:551`.
 
 - **Eligibility engine:** `lib/auto-accept-certified.js` `evaluateAutoAccept()` checks independent review, denied tags, proof evidence, strict verify, and `candidatePolicyGate()`. Candidate scope comes only from declared artifacts or an exact checked-out branch diff; ambiguous scope records advice instead of blocking. Touched prose uses the existing slop rules and refuses as `slop_gate` with rule ids plus file:line locations. The verifier tokenizer accepts quoted Node test-name regexes, rejects shell operators, and executes with `shell: false`; `lib/task-proof.js` validates proof citations. Regression: `test/auto-accept-certified.test.js`, `test/landing-reasons.test.js`.
 
