@@ -136,3 +136,30 @@ completed run with the starting failure before claiming that improvement.
 Rollback: revert the implementation commit. No data migration is involved.
 Implementation is local until the independent review, checks and landing
 receipt are recorded.
+
+## 2026-11-08: Stable references in the bounded view
+
+Using `now` and `next` against the real workspace exposed a wrong-task action:
+the compact reader numbered its 200-row window, while `task show` resolved the
+number against all workspace history. The suggested acceptance opened an old
+archived task. This violates the checked-work principle above, because evidence
+and the proposed action must identify the same work.
+
+The existing `withTaskDisplayRefs` accepts a complete reference set. The reader
+now supplies the full scoped workspace set for visible rows and exact bound
+lookups, while retaining its existing output budget and workspace isolation.
+No new module, dependency, migration, or approval behavior is needed.
+
+Two regressions fail before the fix and pass after: a real CLI round trip with
+205 archived tasks, and an exact bound job outside the 200-row window. The six
+focused files passed 48 checks with exit zero. A live replay confirmed that
+`now`, `next`, and `task next` suggest the same action and that `task show`
+resolves it to the current task, without executing acceptance.
+
+The configured review engine independently signed off on the diff and static
+checks. Its read-only sandbox prevented fixture execution, so it did not rerun
+runtime tests. Evidence is retained in the task thread and
+`atris/runs/engine-ask-20261109015750588-96876-7ea0dc50.json` and
+`atris/runs/2026-11-08-now-next-reference-replay.json` in the primary checkout.
+The additional scoped history read has not been benchmarked against the old
+path; no latency improvement is claimed. Rollback remains a source revert.
