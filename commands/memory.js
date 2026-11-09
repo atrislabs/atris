@@ -7,6 +7,7 @@ const { ensureFreshCredentials } = require('../utils/auth');
 const { dangerousWorkspaceReason } = require('../lib/workspace-safety');
 const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const {
+  isRemovable,
   isWritable,
   memoryClient,
   pullFolder,
@@ -18,6 +19,7 @@ const USAGE = [
   'usage: atris memory <pull|push|status> [folder] [--json]',
   '  pull    copy your Atris memory folder down (default: ~/atris-memory)',
   '  push    send back changes under wiki/ and files/',
+  '          --prune also removes pages under wiki/ and files/ that you deleted here',
   '  status  show what changed here since the last pull',
 ].join('\n');
 
@@ -77,11 +79,40 @@ function pushLines(r) {
   }
   if (r.tooBig.length) lines.push(`Not pushed: ${nameList(r.tooBig)} is over 1 MB.`);
   if (r.notText.length) lines.push(`Not pushed: ${nameList(r.notText)} is not a text file.`);
-  for (const f of r.failed.slice(0, 3)) lines.push(`Could not push ${f.path}: ${oneLine(f.error)}`);
-  if (r.deletedHere.length) lines.push(`${plural(r.deletedHere.length, 'file was', 'files were')} deleted here (${nameList(r.deletedHere)}). Deletes do not sync; pull brings them back.`);
+  for (const f of r.failed.slice(0, 3)) lines.push(`Could not ${f.removing ? 'remove' : 'push'} ${f.path}: ${oneLine(f.error)}`);
+  lines.push(...deleteLines(r));
   if (r.skipped.length) lines.push(`Skipped ${nameList(r.skipped.map((s) => `${s.path} (${s.reason})`))}.`);
   if (!lines.length) lines.push('Nothing to push. Nothing changed since your last pull.');
   return lines;
+}
+
+const PRUNE_HINT = 'atris memory push --prune';
+
+function deleteLines(r) {
+  const lines = [];
+  if (r.pruned) {
+    if (r.removed.length) lines.push(`Removed ${plural(r.removed.length, 'file', 'files')} from your Atris memory: ${nameList(r.removed)}.`);
+    if (r.alreadyGone.length) lines.push(`Already gone from your Atris memory: ${nameList(r.alreadyGone)}.`);
+    if (r.changedOnServer.length) {
+      lines.push(`Not removed: ${nameList(r.changedOnServer)} changed on the server since your last pull, so nothing was lost. Run: atris memory pull`);
+    }
+    if (r.notRemovable.length) lines.push(`Not removed: ${nameList(r.notRemovable)}. Notes and daily pages can't be deleted; pull brings them back.`);
+    return lines;
+  }
+  const removable = r.deletedHere.filter(isRemovable);
+  const kept = r.deletedHere.filter((rel) => !isRemovable(rel));
+  if (removable.length) {
+    lines.push(`${plural(removable.length, 'file was', 'files were')} deleted here (${nameList(removable)}) and ${removable.length === 1 ? 'is' : 'are'} still in your Atris memory. To remove ${removable.length === 1 ? 'it' : 'them'} there too, run: ${PRUNE_HINT}`);
+  }
+  if (kept.length) lines.push(`${nameList(kept)} ${kept.length === 1 ? 'was' : 'were'} deleted here. Notes and daily pages can't be deleted; pull brings them back.`);
+  return lines;
+}
+
+function pruneNotice(log) {
+  return (doomed) => {
+    log(`Removing ${plural(doomed.length, 'file', 'files')} from your Atris memory, because you deleted ${doomed.length === 1 ? 'it' : 'them'} here:`);
+    for (const rel of doomed) log(`  ${rel}`);
+  };
 }
 
 function statusLines(r) {
@@ -94,7 +125,9 @@ function statusLines(r) {
   if (!rows.length) return [`Nothing changed here since your last pull${when}.`];
   const lines = [`Changed here since your last pull${when}:`];
   for (const [kind, rel] of rows) {
-    const note = kind === 'deleted' ? '  (deletes do not sync)' : isWritable(rel) ? '' : '  (changes through remember, not pushed)';
+    const note = kind === 'deleted'
+      ? (isRemovable(rel) ? `  (${PRUNE_HINT} removes it from Atris)` : '  (notes and daily pages stay; pull brings it back)')
+      : isWritable(rel) ? '' : '  (changes through remember, not pushed)';
     lines.push(`  ${kind.padEnd(8)} ${rel}${note}`);
   }
   for (const s of r.skipped) lines.push(`  skipped  ${s.path} (${s.reason})`);
@@ -110,6 +143,7 @@ async function memoryCommand(args = [], deps = {}) {
   const log = deps.log || console.log;
   const err = deps.err || console.error;
   const json = args.includes('--json');
+  const prune = args.includes('--prune');
   const words = args.filter((arg) => !arg.startsWith('-'));
   const [sub, folderArg] = words;
   const help = args.includes('--help') || args.includes('-h') || sub === 'help' || !sub;
@@ -119,6 +153,10 @@ async function memoryCommand(args = [], deps = {}) {
   }
   if (!['pull', 'push', 'status'].includes(sub)) {
     err(`atris memory: unknown command "${sub}"\n${USAGE}`);
+    return 2;
+  }
+  if (prune && sub !== 'push') {
+    err(`atris memory: --prune only works with push\n${USAGE}`);
     return 2;
   }
 
@@ -145,9 +183,9 @@ async function memoryCommand(args = [], deps = {}) {
         lines = pullLines(dir, result);
         code = result.failed.length ? 1 : 0;
       } else {
-        result = await pushFolder({ dir, client, account });
+        result = await pushFolder({ dir, client, account, prune, onPrune: json ? null : pruneNotice(log) });
         lines = pushLines(result);
-        code = result.failed.length || result.conflicts.length ? 1 : 0;
+        code = result.failed.length || result.conflicts.length || (result.changedOnServer || []).length ? 1 : 0;
       }
     }
     if (json) log(JSON.stringify({ ok: code === 0, dir, ...result }));
