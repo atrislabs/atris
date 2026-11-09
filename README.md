@@ -28,7 +28,7 @@ Mem0, Zep and Letta remember the users of a chat app. Atris remembers the projec
 npx -y atris aeo scan yoursite.com --vs competitor.com
 ```
 
-You get a score out of 100, each gap with its fix, a side-by-side score against a competitor, and a draft `llms.txt` you can publish. To see what ChatGPT actually says when buyers ask about your business, run the free check at https://atris.ai/aeo/check.
+You get a score out of 100, each gap with its fix, a side-by-side score against a competitor, and a draft `llms.txt` you can publish. To see what ChatGPT actually says when buyers ask about your business, run the free check at https://atris.ai/aeo/check. Guide to both checks and the tools that run them: [docs/answer-engine-checks.md](docs/answer-engine-checks.md).
 
 ## Quick Start
 
