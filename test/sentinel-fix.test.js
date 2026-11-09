@@ -501,11 +501,11 @@ test('a push from a generated test fails and the test sees no credentials', asyn
   const fs = require('fs');
   const a = spawnSync('git', ['push', 'origin', 'HEAD:refs/heads/leak'], { encoding: 'utf8' });
   const b = spawnSync('git', ['push', ${JSON.stringify(bare)}, 'HEAD:refs/heads/leak2'], { encoding: 'utf8' });
-  fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ a: a.status, b: b.status, gh: process.env.GH_TOKEN || null, atris: process.env.ATRIS_TOKEN || null, aws: process.env.AWS_SECRET_ACCESS_KEY || null, home: process.env.HOME, prompt: process.env.GIT_TERMINAL_PROMPT }) + '\\n');
+  fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ a: a.status, b: b.status, gh: process.env.GH_TOKEN || null, atris: process.env.ATRIS_TOKEN || null, aws: process.env.AWS_SECRET_ACCESS_KEY || null, db: process.env.DATABASE_URL || null, foo: process.env.FOO_URL || null, keys: Object.keys(process.env).sort(), home: process.env.HOME, prompt: process.env.GIT_TERMINAL_PROMPT }) + '\\n');
 });
 `;
   const deps = baseDeps(root, { runBuilder: builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': pusher }), runChecker: checkerSaying('fixed') });
-  deps.env = { ...deps.env, GH_TOKEN: 'fake-gh', ATRIS_TOKEN: 'fake-atris', AWS_SECRET_ACCESS_KEY: 'fake-aws' };
+  deps.env = { ...deps.env, GH_TOKEN: 'fake-gh', ATRIS_TOKEN: 'fake-atris', AWS_SECRET_ACCESS_KEY: 'fake-aws', DATABASE_URL: 'postgres://app:hunter2@db.internal/prod', FOO_URL: 'https://someone:pw123@example.com/x', PIP_INDEX_URL: 'https://u:p@pypi.internal/simple' };
   const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], deps));
   assert.strictEqual(r.code, 0, r.out + r.err);
   const rows = fs.readFileSync(record, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -518,6 +518,11 @@ test('a push from a generated test fails and the test sees no credentials', asyn
     assert.strictEqual(row.aws, null);
     assert.notStrictEqual(row.home, deps.env.HOME);
     assert.strictEqual(row.prompt, '0');
+    assert.strictEqual(row.db, null);
+    assert.strictEqual(row.foo, null);
+    assert.ok(!row.keys.includes('PIP_INDEX_URL'));
+    const allowed = /^(?:PATH|TERM|LANG|LANGUAGE|LC_[A-Z_]+|VIRTUAL_ENV|HOME|USERPROFILE|TMPDIR|TMP|TEMP|CI|NODE_ENV|PYTHONDONTWRITEBYTECODE|GOPATH|GOCACHE|GIT_TERMINAL_PROMPT|GIT_CONFIG_NOSYSTEM|GIT_CONFIG_GLOBAL|NODE_TEST_CONTEXT|NODE_UNIQUE_ID|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|PWD|OLDPWD|SHLVL|_|__CF_USER_TEXT_ENCODING)$/; // the last five are set by sh and macOS itself
+    assert.deepStrictEqual(row.keys.filter((k) => !allowed.test(k)), [], 'only allow-listed names reach the test');
   }
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak']).status, 1);
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak2']).status, 1);
