@@ -505,21 +505,44 @@ async function auditUploadCommand(argv, deps) {
   return 0;
 }
 
+// Price one quick run on atris models for a folder without calling any
+// model: the audit plans, the estimate is quoted, and the plan is dropped.
+async function quoteQuickRun(target, { hunter, verifier, token, cloud }) {
+  const audit = require('../lib/security-audit');
+  let estimate = null;
+  await audit.runAudit({
+    root: target, profile: 'quick', hunter, verifier,
+    runJobs: async () => { throw new Error('no model call while pricing a schedule'); },
+    confirmSpend: async (est) => { estimate = est; return false; },
+  });
+  if (!estimate) throw new Error('could not plan a review for this folder');
+  return cloud.quoteEstimate(estimate, { token });
+}
+
 async function auditScheduleCommand(argv, deps) {
   const cloud = deps.cloud || require('../lib/sentinel-cloud');
   const { installKeep, removeKeep } = require('../lib/campaign-keep');
   const uninstall = argv.includes('--uninstall');
   let every = 'day';
   let target = null;
+  let engine = null;
+  let maxCredits = null;
+  let yes = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--every') { every = argv[i + 1]; i++; }
-    else if (a.startsWith('--every=')) every = a.slice('--every='.length);
-    else if (a === '--uninstall' || a === '--install') continue;
+    const [flag, inline] = a.startsWith('--') && a.includes('=') ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a, null];
+    const value = () => (inline !== null ? inline : argv[++i]);
+    if (flag === '--every') every = value();
+    else if (flag === '--engine') engine = value();
+    else if (flag === '--max-credits') maxCredits = Number(value());
+    else if (flag === '--yes' || flag === '-y') yes = true;
+    else if (flag === '--uninstall' || flag === '--install') continue;
     else if (a.startsWith('-')) { console.error(`  unknown flag: ${a}`); return 2; }
     else target = a;
   }
   if (!cloud.SCHEDULE_EVERY[every]) { console.error('  use --every day or --every week'); return 2; }
+  if (engine !== null && engine !== 'atris' && engine !== 'local') { console.error('  --engine must be atris or local'); return 2; }
+  if (maxCredits !== null && (!Number.isInteger(maxCredits) || maxCredits < 1)) { console.error('  --max-credits must be a whole number of credits, at least 1'); return 2; }
   target = path.resolve(target || deps.root || process.cwd());
   if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) { console.error(`  ${target} is not a folder`); return 2; }
   const atrisBin = deps.atrisBin || path.resolve(__dirname, '..', 'bin', 'atris.js');
@@ -529,6 +552,7 @@ async function auditScheduleCommand(argv, deps) {
     // Same folder makes the same timer name, so --every does not matter here.
     const removed = removeKeep(plan, keepDeps);
     if (!removed.ok) { console.error(`  could not remove the timer: ${removed.error}`); return 1; }
+    cloud.removeApproval(target, deps.homeDir);
     console.log(`  scheduled reviews ${removed.removed === false ? 'were not on' : 'are off'} for ${tildePath(target)}`);
     return 0;
   }
@@ -537,11 +561,37 @@ async function auditScheduleCommand(argv, deps) {
     console.error(`  refusing: this atris runs from ${path.dirname(path.dirname(atrisBin))}, a folder that gets removed. install the timer from a lasting atris install`);
     return 2;
   }
+
+  // The engine is decided now, with the owner here, and written down. A
+  // scheduled run never picks again.
+  const token = deps.token !== undefined ? deps.token : cloud.authToken();
+  let engines;
+  try { engines = cloud.resolveEngines({ engine, token, env: deps.env || process.env }); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  let approval;
+  if (engines.mode === 'atris') {
+    let quote;
+    try { quote = await quoteQuickRun(target, { hunter: engines.hunter, verifier: engines.verifier, token, cloud }); } catch (e) { console.error(`  no timer was set. ${e.message}`); return 2; }
+    const cap = maxCredits || quote.credits;
+    console.log(`\n  each scheduled review runs on atris models (no codex or claude needed)`);
+    console.log(`  ${cloud.describeQuote(quote)}`);
+    console.log(`  each run may spend at most ${cap} credits, once a ${every}. a run that reaches that stops\n`);
+    if (!yes) {
+      const input = deps.input || process.stdin;
+      if (!input.isTTY && !deps.input) { console.error('  no timer was set. add --yes to approve this spend without the question'); return 1; }
+      const ok = await (deps.ask || askYesNo)(`  approve up to ${cap} credits per scheduled run? (y/N) `, { input, output: process.stdout });
+      if (!ok) { console.log('  no timer was set'); return 1; }
+    }
+    approval = { engine: 'atris', hunter: engines.hunter, verifier: engines.verifier, max_credits: cap, quoted_credits: quote.credits, every, approved_at: new Date().toISOString() };
+  } else {
+    approval = { engine: 'local', every, approved_at: new Date().toISOString() };
+  }
+  cloud.writeApproval(target, approval, deps.homeDir);
   const installed = installKeep(plan, keepDeps);
-  if (!installed.ok) { console.error(`  could not install the timer: ${installed.error}`); return 1; }
+  if (!installed.ok) { cloud.removeApproval(target, deps.homeDir); console.error(`  could not install the timer: ${installed.error}`); return 1; }
   console.log(`  scheduled reviews are on for ${tildePath(target)}, once a ${every}`);
   console.log('  each run uses the quick profile and saves its summary to your atris account');
-  console.log('  on atris models each run spends credits. it uses your local engines instead when they are installed');
+  if (approval.engine === 'local') console.log('  runs use only codex and claude on this machine. they never switch to atris models');
+  else console.log(`  runs use atris models and stop at ${approval.max_credits} credits`);
   console.log(`  log: ${tildePath(plan.log_path)}`);
   console.log(`  stop with: atris sentinel schedule --uninstall ${tildePath(target)}`);
   return 0;
@@ -563,6 +613,16 @@ async function auditCommand(argv, deps = {}) {
   let opts;
   try { opts = parseAuditArgs(argv); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
   const cloud = deps.cloud || require('../lib/sentinel-cloud');
+  // A timer run does only what the owner approved at install.
+  let capOverride = null;
+  if (opts.scheduled) {
+    const approval = cloud.readApproval(root, deps.homeDir);
+    if (!approval) { console.error('security-review audit: this folder has no approved schedule. nothing ran. run atris sentinel schedule again'); return 2; }
+    opts.hunter = null;
+    opts.verifier = null;
+    opts.engine = approval.engine;
+    if (approval.engine === 'atris') { opts.yes = true; capOverride = Number(approval.max_credits); }
+  }
   const token = deps.token !== undefined ? deps.token : cloud.authToken();
   let engines;
   try { engines = cloud.resolveEngines({ engine: opts.engine, hunter: opts.hunter, verifier: opts.verifier, token, env: deps.env || process.env }); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
@@ -574,10 +634,14 @@ async function auditCommand(argv, deps = {}) {
   const tell = opts.json ? (m) => console.error(m) : (m) => console.log(m);
   if (hosted && engines.chosen === 'no_local_engine' && !opts.planOnly) tell('  no codex or claude found on this machine. this review runs on atris models');
   let runJobs = deps.runJobs;
-  if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token });
+  const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
+  if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token, spend });
   const confirmSpend = async (estimate) => {
     const quote = await cloud.quoteEstimate(estimate, { token });
+    spend.max = capOverride || quote.credits;
+    spend.limits = quote.limits;
     tell(`\n  ${cloud.describeQuote(quote)}\n`);
+    if (capOverride) tell(`  this scheduled run may spend at most ${capOverride} credits, as approved`);
     if (opts.yes) return true;
     const input = deps.input || process.stdin;
     if (!input.isTTY && !deps.input) { console.error('  nothing was spent. add --yes to run without this question'); return false; }
@@ -600,6 +664,7 @@ async function auditCommand(argv, deps = {}) {
   const fail = audit.shouldFailAudit(result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderAuditLanding(result));
+  if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run and wait for the next run`);
   if (opts.upload && token && !opts.planOnly) {
     try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the review itself is done`); }
   }
@@ -629,7 +694,9 @@ function printAuditHelp() {
 
   with no --engine, local engines run when codex or claude is installed.
   atris models run only when neither is installed and you are logged in.
-  every run on atris models shows the most it can cost first.
+  every run on atris models shows the most it can cost first and stops
+  before it could pass that. lines that look like secrets are hidden and
+  only tracked files inside the review are ever sent.
 
   saving results to your atris account (on when you are logged in):
 
@@ -643,7 +710,12 @@ function printAuditHelp() {
 
     atris sentinel schedule --every day [path]  quick review once a day, saved to your account
     atris sentinel schedule --every week [path] once a week
+    atris sentinel schedule --engine atris --max-credits 20
+                                                timed runs on atris models, at most 20 credits each
     atris sentinel schedule --uninstall [path]  stop the timer
+
+  the engine is picked when the timer goes on. on atris models you see the
+  price and say yes then. a timed run never switches to atris models later.
 
   How it works: every source file x attack class with a reason to be read
   becomes an area in a coverage ledger. Read-only engine hunters each own a

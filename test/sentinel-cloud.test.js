@@ -52,10 +52,11 @@ const CANDIDATE = {
 };
 
 // What a model would answer for each sentinel prompt.
-function answerFor(prompt, { verdict }) {
+function answerFor(prompt, { verdict, candidate = CANDIDATE }) {
   if (prompt.includes('security hunter')) {
     const ids = [...prompt.matchAll(/coverage_id: (\S+)/g)].map((m) => m[1]);
     const isRun = prompt.includes('starting paths: lib/run.js') && prompt.includes('command-injection');
+    const CANDIDATE = candidate;
     return JSON.stringify({
       units: ids.map((id) => ({ coverage_id: id, disposition: isRun ? 'candidate' : 'covered', reviewed_paths: ['lib/run.js'], checks: [{ invariant: 'input never becomes shell text', method: 'source', result: 'read it', reviewed_paths: ['lib/run.js'] }], candidate_fingerprints: isRun ? [CANDIDATE.fingerprint] : [], unresolved: [] })),
       candidates: isRun ? [{ ...CANDIDATE, coverage_ids: ids }] : [],
@@ -71,7 +72,7 @@ function answerFor(prompt, { verdict }) {
 
 // A fake Atris backend: quotes, streamed turns with a billing receipt, and
 // the sentinel runs route.
-async function fakeBackend({ verdict = 'confirmed', uploadStatus = 201, quoteStatus = 200 } = {}) {
+async function fakeBackend({ verdict = 'confirmed', uploadStatus = 201, quoteStatus = 200, candidate = CANDIDATE } = {}) {
   const log = [];
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -88,7 +89,7 @@ async function fakeBackend({ verdict = 'confirmed', uploadStatus = 201, quoteSta
         return;
       }
       if (url.pathname === '/api/atris2/turn') {
-        const text = answerFor(entry.body.message, { verdict });
+        const text = answerFor(entry.body.message, { verdict, candidate });
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         const half = Math.floor(text.length / 2);
         res.write(`data: ${JSON.stringify({ type: 'text_delta', content: text.slice(0, half) })}\n\n`);
@@ -150,10 +151,10 @@ test('the price is quoted first, and a no spends nothing', async () => {
       assert.ok(quotes.every((q) => q.auth === 'Bearer tok' && Number(q.query.input_tokens) > 0 && Number(q.query.output_tokens) > 0));
       assert.ok(!backend.log.some((e) => e.path === '/api/atris2/turn'), 'no turn after a no');
       assert.ok(!backend.log.some((e) => e.path === '/api/sentinel/runs'));
-      assert.ok(out.join('\n').includes('costs at most about'));
+      assert.ok(out.join('\n').includes('costs at most'));
       assert.ok(out.join('\n').includes('nothing was spent'));
       // quick budget 8: 4 hunters at 2 credits, 4 checks at 5 credits.
-      assert.ok(out.join('\n').includes('about 28 credits'), out.join('\n'));
+      assert.ok(out.join('\n').includes('at most 28 credits'), out.join('\n'));
       const repoDir = fs.readdirSync(home).map((d) => path.join(home, d))[0];
       assert.ok(!repoDir || !fs.readdirSync(repoDir).length, 'a declined run leaves no folder');
     });
@@ -193,7 +194,16 @@ test('after a yes, hunters run on atris:fast and checks on atris:pro, then the s
       const code = await auditCommand(['--engine', 'atris', '--quick'], { root, token: 'tok', env: NO_LOCAL, input: { isTTY: true }, ask: async () => true });
       assert.strictEqual(code, 1, out.join('\n')); // a confirmed high finding fails the run
       const order = backend.log.map((e) => e.path);
-      assert.ok(order.lastIndexOf('/api/atris2/billing/quote') < order.indexOf('/api/atris2/turn'), 'quote comes before the first turn');
+      const firstTurn = order.indexOf('/api/atris2/turn');
+      assert.deepStrictEqual(backend.log.slice(0, firstTurn).filter((e) => e.path === '/api/atris2/billing/quote').slice(0, 2).map((q) => q.query.model).sort(), ['atris:fast', 'atris:pro'], 'the whole-run quote comes before the first turn');
+      // Every turn is priced on its own first, at its exact size and output limit.
+      const turnsAndQuotes = backend.log.filter((e) => e.path !== '/api/sentinel/runs');
+      turnsAndQuotes.forEach((e, i) => {
+        if (e.path !== '/api/atris2/turn') return;
+        const before = turnsAndQuotes.slice(0, i).filter((q) => q.path === '/api/atris2/billing/quote' && q.query.model === e.body.model);
+        assert.ok(before.some((q) => Number(q.query.input_tokens) >= Buffer.byteLength(e.body.message) && Number(q.query.output_tokens) === e.body.max_output_tokens), 'a call is priced at least at its own size');
+        assert.strictEqual(e.body.max_output_tokens, e.body.model === 'atris:fast' ? 8192 : 4096);
+      });
       const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
       assert.ok(turns.length >= 3);
       for (const t of turns) {
@@ -306,14 +316,14 @@ test('schedule installs and removes the timer file', async () => {
   console.log = (...a) => out.push(a.join(' '));
   console.error = (...a) => out.push(a.join(' '));
   try {
-    const deps = { homeDir, platform: 'darwin', spawn, atrisBin: '/opt/atris/bin/atris.js', envPath: '/usr/bin' };
+    const deps = { homeDir, platform: 'darwin', spawn, atrisBin: '/opt/atris/bin/atris.js', envPath: '/usr/bin', token: '', env: NO_LOCAL };
     assert.strictEqual(await auditCommand(['schedule', '--every', 'week', target], deps), 0, out.join('\n'));
     const agents = path.join(homeDir, 'Library', 'LaunchAgents');
     const files = fs.readdirSync(agents);
     assert.strictEqual(files.length, 1);
     assert.match(files[0], /^ai\.atris\.sentinel-review\.[0-9a-f]{8}\.plist$/);
     const plist = fs.readFileSync(path.join(agents, files[0]), 'utf8');
-    assert.ok(plist.includes('<string>sentinel</string><string>--quick</string><string>--yes</string><string>--scheduled</string>'));
+    assert.ok(plist.includes('<string>sentinel</string><string>--quick</string><string>--scheduled</string>'));
     assert.ok(plist.includes(`<key>WorkingDirectory</key><string>${target}</string>`));
     assert.ok(plist.includes('<integer>604800</integer>'));
     assert.ok(calls.some((c) => c.startsWith('launchctl bootstrap')));
@@ -331,7 +341,7 @@ test('schedule installs and removes the timer file', async () => {
     };
     const cronDeps = { ...deps, platform: 'linux', spawn: cronSpawn };
     assert.strictEqual(await auditCommand(['schedule', '--every', 'day', target], cronDeps), 0);
-    assert.match(crontab, /^0 0 \* \* \* cd .* 'sentinel' '--quick' '--yes' '--scheduled' .*# ATRIS_SENTINEL_REVIEW_[0-9a-f]{8}$/m);
+    assert.match(crontab, /^0 0 \* \* \* cd .* 'sentinel' '--quick' '--scheduled' .*# ATRIS_SENTINEL_REVIEW_[0-9a-f]{8}$/m);
     assert.ok(crontab.includes('MAILTO'));
     assert.strictEqual(await auditCommand(['schedule', '--uninstall', target], cronDeps), 0);
     assert.ok(!crontab.includes('ATRIS_SENTINEL_REVIEW'));
@@ -360,6 +370,164 @@ test('upload body strips code spans and secrets from model text', () => {
     assert.deepStrictEqual(body.counts.severity, { critical: 0, high: 0, medium: 0, low: 1, informational: 0 });
     assert.strictEqual(body.findings[0].fix, '[removed: looked like a secret]');
     assert.deepStrictEqual(body.needs_validation, [{ title: 'Maybe open', blocked_on: 'who can reach port 80' }]);
-    assert.deepStrictEqual(body.hardening, ['use fs.writeFileSync(name, body, { mode: 0o600 }) for keys']);
+    assert.deepStrictEqual(body.hardening, ['use for keys']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------- review fixes
+
+const GH = `${'ghp_'}a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8`;
+
+test('a credential on a seeded line and on a cited line never reaches an atris model', async () => {
+  const root = makeRepo();
+  fs.appendFileSync(path.join(root, 'lib', 'run.js'), `const githubToken = '${GH}';\nexecSync(githubToken);\n`);
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'token'], { cwd: root });
+  const cited = { ...CANDIDATE, trace: [...CANDIDATE.trace.slice(0, 2), { kind: 'sink', file: 'lib/run.js', line: 7, description: 'token used' }] };
+  const backend = await fakeBackend({ candidate: cited });
+  try {
+    await withEnv(backend, async ({ out }) => {
+      await auditCommand(['--engine', 'atris', '--yes', '--no-upload'], { root, token: 'tok', env: NO_LOCAL });
+      const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
+      assert.ok(turns.some((t) => t.body.message.includes('independent security verifier')), out.join('\n'));
+      assert.ok(turns.some((t) => t.body.message.includes('lib/run.js:7')), 'the seeded line itself is listed');
+      for (const t of turns) assert.ok(!t.body.message.includes(GH.slice(4)), 'the credential never leaves');
+      assert.ok(turns.some((t) => t.body.message.includes('[line hidden: looks like a secret]')));
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a model citing .env or a file outside the scope never gets those files sent', async () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, '.env'), 'DB_HOST=internal-db.example\n');
+  fs.mkdirSync(path.join(root, 'config'));
+  fs.writeFileSync(path.join(root, 'config', 'app.js'), 'module.exports = { OUTSIDE_SCOPE_MARKER: 1 };\n');
+  execFileSync('git', ['add', 'config/app.js'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'config'], { cwd: root });
+  const sneaky = { ...CANDIDATE, trace: [{ kind: 'entrypoint', file: '.env', line: 1, description: 'env' }, { kind: 'propagation', file: 'config/app.js', line: 1, description: 'config' }, CANDIDATE.trace[2]] };
+  const backend = await fakeBackend({ candidate: sneaky });
+  try {
+    await withEnv(backend, async ({ home }) => {
+      await auditCommand(['lib', '--engine', 'atris', '--quick', '--yes', '--no-upload'], { root, token: 'tok', env: NO_LOCAL });
+      const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
+      assert.ok(turns.length >= 1);
+      for (const t of turns) {
+        assert.ok(!t.body.message.includes('internal-db'), '.env never leaves');
+        assert.ok(!t.body.message.includes('OUTSIDE_SCOPE_MARKER'), 'out-of-scope files never leave');
+      }
+      assert.ok(!turns.some((t) => t.body.message.includes('independent security verifier')), 'the candidate never reaches a hosted verifier');
+      const runDir = path.join(home, fs.readdirSync(home)[0], 'run-1');
+      const findings = JSON.parse(fs.readFileSync(path.join(runDir, 'findings.json'), 'utf8'));
+      assert.strictEqual(findings[0].verdict, 'rejected');
+      assert.match(findings[0].reason, /may not send to atris models: \.env, config\/app\.js/);
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the hosted allow list keeps only tracked, unignored, in-scope, non-key files', () => {
+  const audit = require('../lib/security-audit');
+  const root = makeRepo();
+  try {
+    fs.writeFileSync(path.join(root, '.gitignore'), 'lib/ignored.js\n');
+    for (const f of ['lib/ignored.js', 'lib/server.pem', 'lib/.env.production', 'docs.js']) fs.writeFileSync(path.join(root, f), 'x\n');
+    execFileSync('git', ['add', '-f', 'lib/ignored.js', 'lib/server.pem', 'lib/.env.production', 'docs.js', '.gitignore'], { cwd: root });
+    fs.writeFileSync(path.join(root, 'lib', 'untracked.js'), 'x\n');
+    assert.deepStrictEqual([...audit.hostedAllowedFiles(root, ['lib'])].sort(), ['lib/run.js']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a schedule on atris models needs a priced yes at install and stores a cap', async () => {
+  const backend = await fakeBackend();
+  const target = makeRepo();
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-sched-atris-'));
+  const spawn = () => ({ status: 0, stdout: '', stderr: '' });
+  try {
+    await withEnv(backend, async ({ out }) => {
+      const deps = { homeDir, platform: 'darwin', spawn, atrisBin: '/opt/atris/bin/atris.js', envPath: '/usr/bin', token: 'tok', env: NO_LOCAL, input: { isTTY: true } };
+      const agents = path.join(homeDir, 'Library', 'LaunchAgents');
+      assert.strictEqual(await auditCommand(['schedule', '--every', 'day', target], { ...deps, ask: async () => false }), 1);
+      assert.ok(!fs.existsSync(agents) || !fs.readdirSync(agents).length, 'a no installs nothing');
+      assert.strictEqual(cloud.readApproval(target, homeDir), null);
+      assert.ok(out.join('\n').includes('costs at most 28 credits'), out.join('\n'));
+      assert.ok(!backend.log.some((e) => e.path === '/api/atris2/turn'), 'pricing a schedule calls no model');
+
+      assert.strictEqual(await auditCommand(['schedule', '--every', 'day', '--max-credits', '12', target], { ...deps, ask: async () => true }), 0, out.join('\n'));
+      const approval = cloud.readApproval(target, homeDir);
+      assert.strictEqual(approval.engine, 'atris');
+      assert.strictEqual(approval.max_credits, 12);
+      const plist = fs.readFileSync(path.join(agents, fs.readdirSync(agents)[0]), 'utf8');
+      assert.ok(!plist.includes('--yes'));
+      assert.strictEqual(await auditCommand(['schedule', '--uninstall', target], deps), 0);
+      assert.strictEqual(cloud.readApproval(target, homeDir), null);
+    });
+  } finally { await backend.close(); fs.rmSync(target, { recursive: true, force: true }); fs.rmSync(homeDir, { recursive: true, force: true }); }
+});
+
+test('a scheduled run never switches to atris models without that approval', async () => {
+  const backend = await fakeBackend({ verdict: 'rejected' });
+  const root = makeRepo();
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-sched-run-'));
+  try {
+    await withEnv(backend, async ({ out }) => {
+      // No approval at all: nothing runs.
+      assert.strictEqual(await auditCommand(['--quick', '--scheduled'], { root, token: 'tok', env: NO_LOCAL, homeDir }), 2);
+      assert.strictEqual(backend.log.length, 0);
+      // Approved for local engines: stays local even with a login and no local engine.
+      cloud.writeApproval(root, { engine: 'local' }, homeDir);
+      const engines = [];
+      const runJobs = async (jobs) => jobs.map((j) => { engines.push(j.engine); return { ok: true, stdout: answerFor(j.prompt, { verdict: 'rejected' }) }; });
+      assert.strictEqual(await auditCommand(['--quick', '--scheduled'], { root, token: 'tok', env: NO_LOCAL, homeDir, runJobs }), 0, out.join('\n'));
+      assert.ok(engines.length && engines.every((e) => e === 'codex' || e === 'claude'), engines.join(','));
+      assert.ok(!backend.log.some((e) => e.path.startsWith('/api/atris2/')), 'no quote and no turn');
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(homeDir, { recursive: true, force: true }); }
+});
+
+test('a run stops at its credit cap: no call starts that could pass it', async () => {
+  const backend = await fakeBackend({ verdict: 'rejected' });
+  const root = makeRepo();
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-cap-'));
+  try {
+    await withEnv(backend, async ({ out }) => {
+      cloud.writeApproval(root, { engine: 'atris', max_credits: 6 }, homeDir);
+      const code = await auditCommand(['--quick', '--scheduled', '--no-upload'], { root, token: 'tok', env: NO_LOCAL, homeDir });
+      assert.ok(code === 0 || code === 1, out.join('\n'));
+      const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
+      const charged = turns.reduce((n, t) => n + (t.body.model === 'atris:fast' ? 1 : 3), 0);
+      assert.ok(turns.length >= 1, 'some calls fit');
+      assert.ok(charged <= 6, `charged ${charged}`);
+      // Worst cases (2 per fast call, 5 per pro call) never add past 6.
+      assert.ok(out.join('\n').includes('stopped at the approved limit of 6 credits'), out.join('\n'));
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(homeDir, { recursive: true, force: true }); }
+});
+
+test('the spend guard counts the worst case when a call returns no receipt', async () => {
+  const spend = cloud.spendGuard({ max: 10, quoteCall: async () => 4 });
+  const server = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`data: ${JSON.stringify({ type: 'result', result: '{"ok": true}' })}\n\n`); }); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const run = cloud.atrisJobRunner({ token: 't', base: `http://127.0.0.1:${server.address().port}/api`, spend });
+    const answers = await run([1, 2, 3].map(() => ({ engine: 'atris:pro', prompt: 'p', max_output_tokens: 4096 })), { concurrency: 1 });
+    assert.deepStrictEqual(answers.map((a) => a.ok), [true, true, false]);
+    assert.strictEqual(answers[2].reason, cloud.CAP_REASON);
+    assert.strictEqual(spend.spent, 8);
+  } finally { await new Promise((r) => server.close(r)); }
+});
+
+test('uploaded text drops code spans and code-looking fragments, and keeps file:line', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-run-code-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ repo: 'r', run_id: 'run-1', profile: 'quick', engines: { hunter: 'atris:fast', verifier: 'atris:pro' }, coverage: {}, counts: {} }));
+    fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([{
+      verdict: 'confirmed', fingerprint: 'lib/run.js:runTask/shell', title: 'Title reaches execSync(`echo ${title}`) as shell text', severity: { overall: 'high' },
+      trace: [{ file: 'lib/run.js', line: 4 }],
+      remediation: { strategy: 'replace `execSync(command)` with `execFile(file, args)` and set opts = { shell: false } so cmd && rm -rf / cannot run' },
+    }]));
+    fs.writeFileSync(path.join(dir, 'REPORT.md'), '');
+    const [f] = cloud.buildUploadBody(dir).findings;
+    assert.strictEqual(f.location, 'lib/run.js:4');
+    assert.strictEqual(f.title, 'Title reaches as shell text');
+    assert.strictEqual(f.fix, 'replace with and set so cannot run');
+    for (const text of [f.title, f.fix]) assert.ok(!/[`(){}=&|;$]/.test(text), text);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
