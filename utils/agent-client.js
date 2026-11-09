@@ -52,12 +52,22 @@ function managedSecretPath(clientId) {
 function writeFileAtomic(filePath, content) {
   const dir = path.dirname(filePath);
   const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  let created = false;
   try {
-    fs.writeFileSync(tmp, content, { mode: 0o600, flag: 'wx' });
-    fs.chmodSync(tmp, 0o600);
+    const fd = fs.openSync(tmp, 'wx', 0o600);
+    created = true;
+    try {
+      fs.fchmodSync(fd, 0o600);
+      fs.writeFileSync(fd, content);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, filePath);
+    created = false;
   } catch (error) {
-    try { fs.unlinkSync(tmp); } catch {}
+    // Only clean up a temporary file this call actually created. In
+    // particular, an EEXIST collision belongs to someone else.
+    if (created) { try { fs.unlinkSync(tmp); } catch {} }
     throw error;
   }
   try { fs.chmodSync(filePath, 0o600); } catch {}

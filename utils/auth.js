@@ -407,11 +407,24 @@ function assertSafeLoginWrite(targetPath) {
   throw new Error(`Refusing to write ${targetPath} during a test: set HOME to a temp dir first`);
 }
 
+// Do not truncate the last usable login if a write fails part way through.
+// Refuse links rather than replacing a link or silently changing its target.
+function writeLoginFile(targetPath, value) {
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (!stat.isFile()) throw new Error('login destination is not a regular file');
+    fs.accessSync(targetPath, fs.constants.W_OK);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  agentClient.writeFileAtomic(targetPath, JSON.stringify(value, null, 2));
+  restrictToOwner(targetPath);
+}
+
 function saveProfile(name, credentials) {
   const profilePath = path.join(getProfilesDir(), `${name}.json`);
   assertSafeLoginWrite(profilePath);
-  fs.writeFileSync(profilePath, JSON.stringify(credentials, null, 2));
-  restrictToOwner(profilePath);
+  writeLoginFile(profilePath, credentials);
 }
 
 function loadProfile(name) {
@@ -501,8 +514,7 @@ function saveCredentials(token, refreshToken, email, userId, provider, extras = 
     saved_at: new Date().toISOString()
   };
 
-  fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
-  restrictToOwner(credentialsPath);
+  writeLoginFile(credentialsPath, credentials);
 
   // Auto-save as named profile
   autoSaveProfile(credentials);
