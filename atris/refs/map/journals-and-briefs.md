@@ -82,7 +82,7 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js:905-908` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js:913-916` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands-2.test.js:1476-1491` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
