@@ -457,7 +457,7 @@ function renderAuditLanding({ dir, meta, records }) {
     if (hunters < 1) L.push('  this budget is too small to send a hunter; try --budget 8 or more');
     else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
   } else {
-    const waiting = meta.waiting || [];
+    const waiting = require('../lib/security-audit').waitingOf(meta);
     L.push(`  ${confirmed.length + waiting.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
     L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
     L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}${meta.credits_used ? ` · ${meta.credits_used} credits used` : ''}`);

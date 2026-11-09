@@ -657,3 +657,30 @@ test('a moved severe finding whose re-check timed out still shows in the termina
     });
   } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('sentinel status after a re-check lists a held severe finding with the run summary counts', async () => {
+  const backend = await fakeBackend();
+  const root = makeRepo();
+  try {
+    await withBackend(backend, async ({ out, env }) => {
+      await firstReview(root);
+      fs.writeFileSync(path.join(root, 'lib', 'run.js'), 'module.exports = {};\n');
+      const timeout = async (jobs) => jobs.map(() => ({ ok: false, stdout: '', reason: 'timed out' }));
+      assert.strictEqual(await auditCommand(['recheck', root, '--engine', 'local', '--no-upload'], { token: '', env, runJobs: timeout }), 1, out.join('\n'));
+      const show = async () => {
+        out.length = 0;
+        assert.strictEqual(await auditCommand(['status'], { root }), 0);
+        return out.join('\n');
+      };
+      for (const pass of ['current', 'older run without the shared field']) {
+        const text = await show();
+        assert.ok(text.includes('1 confirmed (1 high)'), `${pass}: ${text}`);
+        assert.ok(text.includes(`${CANDIDATE.title} (last seen at lib/run.js:4, still open`), `${pass}: ${text}`);
+        const file = path.join(audit.latestRun(root).dir, 'run-metadata.json');
+        const meta = JSON.parse(fs.readFileSync(file, 'utf8'));
+        delete meta.waiting;
+        fs.writeFileSync(file, JSON.stringify(meta));
+      }
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
