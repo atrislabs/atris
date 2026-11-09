@@ -521,7 +521,7 @@ test('a push from a generated test fails and the test sees no credentials', asyn
     assert.strictEqual(row.db, null);
     assert.strictEqual(row.foo, null);
     assert.ok(!row.keys.includes('PIP_INDEX_URL'));
-    const allowed = /^(?:PATH|TERM|LANG|LANGUAGE|LC_[A-Z_]+|VIRTUAL_ENV|HOME|USERPROFILE|TMPDIR|TMP|TEMP|CI|NODE_ENV|PYTHONDONTWRITEBYTECODE|GOPATH|GOCACHE|GIT_TERMINAL_PROMPT|GIT_CONFIG_NOSYSTEM|GIT_CONFIG_GLOBAL|NODE_TEST_CONTEXT|NODE_UNIQUE_ID|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|PWD|OLDPWD|SHLVL|_|__CF_USER_TEXT_ENCODING)$/; // the last five are set by sh and macOS itself
+    const allowed = /^(?:PATH|TERM|LANG|LANGUAGE|LC_[A-Z_]+|VIRTUAL_ENV|HOME|USERPROFILE|TMPDIR|TMP|TEMP|CI|NODE_ENV|PYTHONDONTWRITEBYTECODE|GOPATH|GOCACHE|GIT_TERMINAL_PROMPT|GIT_CONFIG_NOSYSTEM|GIT_CONFIG_GLOBAL|NODE_TEST_CONTEXT|NODE_TEST_WORKER_ID|NODE_UNIQUE_ID|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|PWD|OLDPWD|SHLVL|_|__CF_USER_TEXT_ENCODING)$/; // the last five are set by sh and macOS itself
     assert.deepStrictEqual(row.keys.filter((k) => !allowed.test(k)), [], 'only allow-listed names reach the test');
   }
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak']).status, 1);
