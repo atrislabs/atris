@@ -259,7 +259,22 @@
       "cqlsh"
     ],
     "drop_text": "\\bdrop\\s+(?:database|schema)\\b|\\.dropDatabase\\s*\\(|\\bflushall\\b|\\bflushdb\\b",
-    "command_patterns": []
+    "command_patterns": [
+      {
+        "id": "exfil-interpreter-env-net",
+        "category": "exfil",
+        "programs": [
+          "python",
+          "python3",
+          "python2",
+          "node",
+          "perl",
+          "ruby",
+          "php"
+        ],
+        "pattern": "(?:urlopen|requests\\.|http\\.client|https?\\.request|Net::HTTP|fetch\\s*\\(|socket\\.|TCPSocket)[\\s\\S]*(?:environ|getenv|process\\.env|ENV\\[)|(?:environ|getenv|process\\.env|ENV\\[)[\\s\\S]*(?:urlopen|requests\\.|http\\.client|https?\\.request|Net::HTTP|fetch\\s*\\(|socket\\.|TCPSocket)"
+      }
+    ]
   },
   "agents": {
     "secret_key_name": "(?:^|_|-)(?:api[_-]?key|key|token|secret|password|passwd|pat|credential|credentials|auth)(?:$|_|-)",
