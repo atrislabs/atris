@@ -217,10 +217,23 @@ async function aeoScan(args) {
     console.log('\n  Gaps:');
     for (const g of gaps) console.log(`   ✗ ${g.title || g.key}: ${g.fix || ''}`);
   }
+  // What an agent actually gets from live requests: plain text on request,
+  // crawler access, words without scripts, structured data, sitemap.
+  const access = data.agent_access;
+  if (access && Array.isArray(access.checks)) {
+    console.log(`\n  Agent access: ${access.score}/${access.max_score ?? 100}`);
+    for (const c of access.checks) {
+      console.log(`   ${c.passed ? '✓' : '✗'} ${c.title}${c.passed ? '' : `: ${c.fix || c.detail || ''}`}`);
+    }
+  }
   const comp = data.competitors || [];
   if (comp.length) {
-    console.log('\n  Head-to-head:');
-    for (const c of comp) console.log(`   ${pad(String(c.score ?? '?'), 4)} ${c.url || c.name}`);
+    const withAccess = comp.some((c) => c.agent_access_score != null);
+    console.log(withAccess ? '\n  Head-to-head (score, agent access):' : '\n  Head-to-head:');
+    for (const c of comp) {
+      const extra = withAccess ? `${pad(String(c.agent_access_score ?? '?'), 4)} ` : '';
+      console.log(`   ${pad(String(c.score ?? '?'), 4)} ${extra}${c.url || c.name}`);
+    }
   }
   if (data.draft_llms_txt) {
     console.log('\n  Draft llms.txt included, save it with:');
