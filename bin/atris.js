@@ -17,6 +17,14 @@ process.on('unhandledRejection', (err) => {
   }
 }
 
+// Agents call atris memory show, search, remember and the rest many times a
+// session. Answer them before the rest of the CLI loads: half the start time.
+if (process.argv[2] === 'memory'
+  && require('../lib/memory-live').isLiveCommand(process.argv.slice(3).find((arg) => !arg.startsWith('-')))) {
+  require('../commands/memory-live').runFromCli(process.argv.slice(3));
+  return;
+}
+
 const fs = require('fs');
 const path = require('path');
 const { exec, spawnSync } = require('child_process');
@@ -712,7 +720,7 @@ function showHelpAll() {
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
-  console.log('  memory     - Keep your Atris memory folder on this laptop (pull, push, status)');
+  console.log('  memory     - Your Atris memory for any agent: show, search, remember, notebook; pull/push a laptop copy');
   console.log('  sync-checkout - fetch and fast-forward a clean current branch');
   console.log('  zen        - make this repo calm and current, keeping everything (--check to only look)');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
