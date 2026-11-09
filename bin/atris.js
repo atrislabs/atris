@@ -634,6 +634,7 @@ function showHelpAll() {
   console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
   console.log('  sentinel   - Security audit: engines hunt for holes, a different model verifies each one');
   console.log('               free checks: sentinel agents, sentinel watch, sentinel guard install');
+  console.log('               fix a confirmed finding on its own branch: sentinel fix <id>');
   console.log('               re-check old findings against today\'s code: sentinel recheck');
   console.log('  voice      - Scan binary voice tells or judge reply shape and plainness');
   console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
