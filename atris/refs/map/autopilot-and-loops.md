@@ -19,7 +19,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js:317` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
-- **Help:** `bin/atris.js:1115-1126` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
+- **Help:** `bin/atris.js:1136-1147` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
 - **Dispatch:** `bin/atris.js:3095-3093` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
 - **How it works:**
 - `atris loop wiki` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
@@ -170,7 +170,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
 - **Command:** `commands/next.js:190` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:956` (`showNextHelp`) stays for `atris atris --help`
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:965` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
