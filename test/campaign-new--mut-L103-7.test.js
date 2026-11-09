@@ -25,7 +25,7 @@ test('drafting uses the owner engine and model instead of the default engine', a
     }) }];
   });
   let output;
-  const code = await draftAndStart(['--owner', 'builder', '--id', 'fixed-draft'], {
+  const code = await draftAndStart(['--owner', 'builder', '--id', 'cmp-fixed-draft'], {
     asJson: true,
     judge: async () => ({ passed: false, exit: 1, summary: 'feature is missing' }),
     fail: (message) => assert.fail(message),
