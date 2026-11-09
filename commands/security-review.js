@@ -123,10 +123,10 @@ function applyBaselineOptions(root, rawFindings, opts) {
 
 function securityReviewCommand(argv = []) {
   const sub = argv[0];
+  if (sub === 'audit') return auditCommand(argv.slice(1));
   if (sub === 'help' || argv.includes('-h') || argv.includes('--help')) return printHelp();
   if (sub === 'rules') return printRules();
   if (sub === 'hook' || sub === 'install-hook') return installHook();
-  if (sub === 'audit') return auditCommand(argv.slice(1));
 
   const root = process.cwd();
   let opts;
@@ -402,7 +402,7 @@ function installHook() {
 }
 
 function parseAuditArgs(argv) {
-  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null };
+  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null, engine: null, yes: false, upload: true, scheduled: false };
   const takes = (i, flag) => {
     if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
     return argv[i + 1];
@@ -420,6 +420,10 @@ function parseAuditArgs(argv) {
     else if (flag === '--hunter') opts.hunter = value();
     else if (flag === '--verifier') opts.verifier = value();
     else if (flag === '--timeout') opts.timeoutMs = Number(value()) * 1000;
+    else if (flag === '--engine') opts.engine = value();
+    else if (flag === '--yes' || flag === '-y') opts.yes = true;
+    else if (flag === '--no-upload') opts.upload = false;
+    else if (flag === '--scheduled') opts.scheduled = true;
     else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
     else opts.scope.push(arg);
   }
@@ -427,6 +431,7 @@ function parseAuditArgs(argv) {
   if (!PROFILES.includes(opts.profile)) throw new Error(`--profile must be one of ${PROFILES.join(', ')}`);
   if (opts.budget !== null && (!Number.isInteger(opts.budget) || opts.budget < 1 || opts.budget > 500)) throw new Error('--budget must be a whole number from 1 to 500');
   if (opts.timeoutMs !== null && (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < 10000)) throw new Error('--timeout is in seconds, at least 10');
+  if (opts.engine !== null && !['atris', 'local'].includes(opts.engine)) throw new Error('--engine must be atris or local');
   return opts;
 }
 
@@ -454,7 +459,7 @@ function renderAuditLanding({ dir, meta, records }) {
   } else {
     L.push(`  ${confirmed.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
     L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
-    L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}`);
+    L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}${meta.credits_used ? ` · ${meta.credits_used} credits used` : ''}`);
     for (const r of confirmed.slice(0, 6)) {
       const sink = r.trace[r.trace.length - 1];
       L.push(`    ${r.severity.overall.padEnd(8)} ${r.title} (${sink.file}:${sink.line})`);
@@ -465,33 +470,139 @@ function renderAuditLanding({ dir, meta, records }) {
   return L.join('\n');
 }
 
-async function auditCommand(argv) {
+// Ask once on a terminal. Anything but y or yes is a no.
+function askYesNo(question, { input = process.stdin, output = process.stdout } = {}) {
+  return new Promise((resolve) => {
+    const rl = require('readline').createInterface({ input, output });
+    rl.question(question, (answer) => { rl.close(); resolve(/^\s*y(es)?\s*$/i.test(String(answer || ''))); });
+  });
+}
+
+async function uploadAfterRun(dir, { token, quiet, cloud }) {
+  const res = await cloud.uploadRun(dir, { token });
+  const say = quiet ? (m) => console.error(m) : (m) => console.log(m);
+  if (res.ok) say('  saved the summary to your atris account (no source code was sent)');
+  else say(`  warning: could not save the summary to your atris account: ${res.reason}. the review itself is done`);
+  return res;
+}
+
+async function auditUploadCommand(argv, deps) {
+  const audit = require('../lib/security-audit');
+  const cloud = deps.cloud || require('../lib/sentinel-cloud');
+  const token = deps.token !== undefined ? deps.token : cloud.authToken();
+  if (!token) { console.error('  log in first with atris login. then run atris sentinel upload again'); return 2; }
+  const arg = argv.find((a) => !a.startsWith('-'));
+  let dir = arg ? path.resolve(arg) : null;
+  if (!dir) {
+    const last = audit.latestRun(deps.root || process.cwd());
+    if (!last) { console.error('  no sentinel review has run for this repo yet'); return 2; }
+    dir = last.dir;
+  }
+  if (!fs.existsSync(path.join(dir, 'run-metadata.json'))) { console.error(`  ${tildePath(dir)} is not a sentinel run folder`); return 2; }
+  const res = await cloud.uploadRun(dir, { token });
+  if (!res.ok) { console.error(`  could not save ${path.basename(dir)}: ${res.reason}`); return 1; }
+  console.log(`  saved ${path.basename(dir)} to your atris account (no source code was sent)`);
+  return 0;
+}
+
+async function auditScheduleCommand(argv, deps) {
+  const cloud = deps.cloud || require('../lib/sentinel-cloud');
+  const { installKeep, removeKeep } = require('../lib/campaign-keep');
+  const uninstall = argv.includes('--uninstall');
+  let every = 'day';
+  let target = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--every') { every = argv[i + 1]; i++; }
+    else if (a.startsWith('--every=')) every = a.slice('--every='.length);
+    else if (a === '--uninstall' || a === '--install') continue;
+    else if (a.startsWith('-')) { console.error(`  unknown flag: ${a}`); return 2; }
+    else target = a;
+  }
+  if (!cloud.SCHEDULE_EVERY[every]) { console.error('  use --every day or --every week'); return 2; }
+  target = path.resolve(target || deps.root || process.cwd());
+  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) { console.error(`  ${target} is not a folder`); return 2; }
+  const atrisBin = deps.atrisBin || path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const plan = cloud.schedulePlan({ target, every, homeDir: deps.homeDir, platform: deps.platform, atrisBin, envPath: deps.envPath });
+  const keepDeps = deps.spawn ? { spawn: deps.spawn } : {};
+  if (uninstall) {
+    // Same folder makes the same timer name, so --every does not matter here.
+    const removed = removeKeep(plan, keepDeps);
+    if (!removed.ok) { console.error(`  could not remove the timer: ${removed.error}`); return 1; }
+    console.log(`  scheduled reviews ${removed.removed === false ? 'were not on' : 'are off'} for ${tildePath(target)}`);
+    return 0;
+  }
+  const space = require('../lib/worktree-space');
+  if (!deps.atrisBin && (space.isAgentCopyPath(atrisBin) || space.isScratchPath(atrisBin))) {
+    console.error(`  refusing: this atris runs from ${path.dirname(path.dirname(atrisBin))}, a folder that gets removed. install the timer from a lasting atris install`);
+    return 2;
+  }
+  const installed = installKeep(plan, keepDeps);
+  if (!installed.ok) { console.error(`  could not install the timer: ${installed.error}`); return 1; }
+  console.log(`  scheduled reviews are on for ${tildePath(target)}, once a ${every}`);
+  console.log('  each run uses the quick profile and saves its summary to your atris account');
+  console.log('  on atris models each run spends credits. it uses your local engines instead when they are installed');
+  console.log(`  log: ${tildePath(plan.log_path)}`);
+  console.log(`  stop with: atris sentinel schedule --uninstall ${tildePath(target)}`);
+  return 0;
+}
+
+async function auditCommand(argv, deps = {}) {
   if (argv[0] === 'help' || argv.includes('-h') || argv.includes('--help')) return printAuditHelp();
   const audit = require('../lib/security-audit');
+  const root = deps.root || process.cwd();
   if (argv[0] === 'status' || argv[0] === 'last') {
-    const last = audit.latestRun(process.cwd());
+    const last = audit.latestRun(root);
     if (!last || !last.meta) { console.log('\n  no sentinel audit has run for this repo yet\n'); return 0; }
     if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records }, null, 2)); return 0; }
     console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
     return 0;
   }
+  if (argv[0] === 'upload') return auditUploadCommand(argv.slice(1), deps);
+  if (argv[0] === 'schedule') return auditScheduleCommand(argv.slice(1), deps);
   let opts;
   try { opts = parseAuditArgs(argv); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
+  const cloud = deps.cloud || require('../lib/sentinel-cloud');
+  const token = deps.token !== undefined ? deps.token : cloud.authToken();
+  let engines;
+  try { engines = cloud.resolveEngines({ engine: opts.engine, hunter: opts.hunter, verifier: opts.verifier, token, env: deps.env || process.env }); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
+  const hunter = engines.hunter || undefined;
+  const verifier = engines.verifier || undefined;
+  const hosted = audit.isHostedEngine(hunter) || audit.isHostedEngine(verifier);
+  if (hosted && !token) { console.error('security-review audit: reviews on atris models need a login; run atris login first'); return 2; }
   const log = opts.json ? () => {} : (msg) => console.log(`  · ${msg}`);
+  const tell = opts.json ? (m) => console.error(m) : (m) => console.log(m);
+  if (hosted && engines.chosen === 'no_local_engine' && !opts.planOnly) tell('  no codex or claude found on this machine. this review runs on atris models');
+  let runJobs = deps.runJobs;
+  if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token });
+  const confirmSpend = async (estimate) => {
+    const quote = await cloud.quoteEstimate(estimate, { token });
+    tell(`\n  ${cloud.describeQuote(quote)}\n`);
+    if (opts.yes) return true;
+    const input = deps.input || process.stdin;
+    if (!input.isTTY && !deps.input) { console.error('  nothing was spent. add --yes to run without this question'); return false; }
+    const yes = await (deps.ask || askYesNo)('  spend these credits? (y/N) ', { input, output: opts.json ? process.stderr : process.stdout });
+    if (!yes) tell('  nothing was spent');
+    return yes;
+  };
   let result;
   try {
     result = await audit.runAudit({
-      root: process.cwd(), profile: opts.profile, scope: opts.scope, budget: opts.budget ?? undefined, out: opts.out,
-      hunter: opts.hunter || undefined, verifier: opts.verifier || undefined, planOnly: opts.planOnly,
+      root, profile: opts.profile, scope: opts.scope, budget: opts.budget ?? undefined, out: opts.out,
+      hunter, verifier, planOnly: opts.planOnly, runJobs, confirmSpend,
       timeoutMs: opts.timeoutMs || undefined, log,
     });
   } catch (e) {
     console.error(`security-review audit: ${e.message}`);
     return 2;
   }
+  if (result.declined) return 1;
   const fail = audit.shouldFailAudit(result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderAuditLanding(result));
+  if (opts.upload && token && !opts.planOnly) {
+    try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the review itself is done`); }
+  }
   return fail ? 1 : 0;
 }
 
@@ -509,6 +620,30 @@ function printAuditHelp() {
                                                 which engines hunt and which verify
     atris security-review audit --out DIR       write the run here (outside the repo)
     atris security-review audit status          the last run's landing
+
+  on atris models (no other AI subscription needed, paid in atris credits):
+
+    atris sentinel --engine atris               atris:fast searches, atris:pro checks
+    atris sentinel --engine atris --yes         skip the price question
+    atris sentinel --engine local               only codex and claude on this machine
+
+  with no --engine, local engines run when codex or claude is installed.
+  atris models run only when neither is installed and you are logged in.
+  every run on atris models shows the most it can cost first.
+
+  saving results to your atris account (on when you are logged in):
+
+    atris sentinel --no-upload                  keep this run on this machine only
+    atris sentinel upload [run-folder]          save a past run (default: the last one)
+
+  only the summary is saved: titles, file:line locations, fixes and counts.
+  source code and code lines never leave in an upload.
+
+  reviews on a timer:
+
+    atris sentinel schedule --every day [path]  quick review once a day, saved to your account
+    atris sentinel schedule --every week [path] once a week
+    atris sentinel schedule --uninstall [path]  stop the timer
 
   How it works: every source file x attack class with a reason to be read
   becomes an area in a coverage ledger. Read-only engine hunters each own a
@@ -553,4 +688,4 @@ function printHelp() {
   return 0;
 }
 
-module.exports = { securityReviewCommand };
+module.exports = { securityReviewCommand, auditCommand };
