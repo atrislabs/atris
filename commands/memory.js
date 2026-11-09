@@ -14,9 +14,11 @@ const {
   pushFolder,
   statusFolder,
 } = require('../lib/memory-folder');
+const { LIVE_HELP, isLiveCommand } = require('../lib/memory-live');
 
 const USAGE = [
-  'usage: atris memory <pull|push|status> [folder] [--json]',
+  ...LIVE_HELP,
+  'copy to laptop: atris memory <pull|push|status> [folder] [--json]',
   '  pull    copy your Atris memory folder down (default: ~/atris-memory)',
   '  push    send back changes under wiki/ and files/',
   '          --prune also removes pages under wiki/ and files/ that you deleted here',
@@ -146,6 +148,7 @@ async function memoryCommand(args = [], deps = {}) {
   const prune = args.includes('--prune');
   const words = args.filter((arg) => !arg.startsWith('-'));
   const [sub, folderArg] = words;
+  if (isLiveCommand(sub)) return require('./memory-live').memoryLiveCommand(args, deps);
   const help = args.includes('--help') || args.includes('-h') || sub === 'help' || !sub;
   if (help) {
     log(USAGE);

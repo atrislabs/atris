@@ -66,7 +66,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 **Purpose:** Housekeeping: find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
 - **Dispatch:** `bin/atris.js:1931` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:1147` (`showCleanHelp`) prints usage without touching workspace state
+- **Help:** `bin/atris.js:1156` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:260` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
