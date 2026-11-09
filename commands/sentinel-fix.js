@@ -70,17 +70,26 @@ function printFixHelp() {
     atris sentinel fix <id> --engine atris   atris models write and check, after a price
     atris sentinel fix <id> --pr             push the branch and open a pull request
 
-  it needs a clean working tree. the fix goes on a new branch named
-  sentinel/fix-<id> made from the branch you are on. nothing is merged.
-  nothing is pushed unless you add --pr.
+  it needs a clean working tree. the fix is built in a temp copy on a new
+  branch named sentinel/fix-<id> made from the branch you are on. your own
+  checkout and branch are never changed. nothing is merged. nothing is
+  pushed unless you add --pr.
+
+  builder and checker may be codex, claude or an atris model. atris models
+  always show a price and wait for a yes.
 
   a fix is committed only when all three hold:
     the new test fails on the old code
     the full test suite passes with the fix
     a second engine reads the fixed source and finds the attack no longer works
 
-  otherwise nothing is committed. you go back to your branch and the
+  the new test must fail on a real failed check. a missing module, a syntax
+  error or a timeout does not count. otherwise nothing is committed and the
   attempt is saved as a patch under ~/.atris/sentinel/fixes.
+
+  the new tests run with a temp home, no tokens or keys in the environment
+  and push turned off for the temp copy. they still run as you and are not a
+  sandbox. read the new test before you run it on code you do not trust.
 `);
   return 0;
 }

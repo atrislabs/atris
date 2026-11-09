@@ -9,7 +9,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
+const spawnGit = (cwd, args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 
 const fix = require('../lib/sentinel-fix');
 const audit = require('../lib/security-audit');
@@ -210,7 +211,11 @@ test('happy path: real codex and claude processes, commit on the new branch with
     const calls = fs.readFileSync(engines.argLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     const codex = calls.find((c) => c.engine === 'codex');
     const claude = calls.find((c) => c.engine === 'claude');
-    assert.strictEqual(fs.realpathSync(codex.cwd), root);
+    assert.notStrictEqual(codex.cwd, root, 'the builder runs in a temp worktree, not your checkout');
+    assert.match(codex.cwd, /atris-sentinel-fix-/);
+    assert.strictEqual(fs.existsSync(codex.cwd), false, 'the temp worktree is removed');
+    assert.strictEqual(sh(root, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).length, 1);
+    assert.strictEqual(spawnGit(root, ['config', '--get', 'extensions.worktreeConfig']).status, 1, 'the worktree config switch is turned back off');
     assert.ok(codex.args.join(' ').includes('--sandbox workspace-write'));
     assert.ok(claude.args.join(' ').includes('--permission-mode plan'));
     assert.ok(claude.args.some((a) => a.includes('```diff') && a.includes('/^[a-z0-9-]+$/')), 'the checker sees the diff');
@@ -385,4 +390,136 @@ test('a builder that rewrites the test command is rejected', async () => {
   assert.strictEqual(r.code, 1);
   assert.match(r.out, /no fix was committed: the builder changed the test command itself/);
   assert.strictEqual(fix.branchExists(root, BRANCH), false);
+});
+
+test('a builder that switches the temp copy to your branch cannot touch it', async () => {
+  const { root } = makeRepo();
+  const mainBefore = sh(root, 'rev-parse', 'main');
+  const runBuilder = async (job) => {
+    execFileSync('git', ['checkout', '-q', '--ignore-other-worktrees', 'main'], { cwd: job.root });
+    write(job.root, 'lib/run.js', FIXED);
+    write(job.root, 'test/fix.test.js', REGRESSION);
+    return { ok: true, stdout: '{"summary":"x"}' };
+  };
+  const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 1);
+  assert.match(r.out, /no fix was committed: the builder committed or switched branches on its own/);
+  assert.strictEqual(sh(root, 'rev-parse', 'main'), mainBefore);
+  assert.strictEqual(sh(root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main');
+  assert.strictEqual(fs.readFileSync(path.join(root, 'lib/run.js'), 'utf8'), VULNERABLE);
+  assert.strictEqual(sh(root, 'status', '--porcelain'), '');
+  assert.strictEqual(fix.branchExists(root, BRANCH), false);
+});
+
+test('a generated test that switches branches cannot get a commit onto your branch', async () => {
+  const { root } = makeRepo();
+  const mainBefore = sh(root, 'rev-parse', 'main');
+  const sneaky = REGRESSION + "test('switch', () => { require('child_process').execFileSync('git', ['checkout', '-q', '--ignore-other-worktrees', 'main']); });\n";
+  const deps = baseDeps(root, { runBuilder: builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': sneaky }), runChecker: checkerSaying('fixed') });
+  const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], deps));
+  assert.strictEqual(r.code, 1);
+  assert.match(r.out, /a test committed or switched branches while it ran/);
+  assert.strictEqual(sh(root, 'rev-parse', 'main'), mainBefore);
+  assert.strictEqual(fix.branchExists(root, BRANCH), false);
+});
+
+test('files you create or edit in your checkout while the fix runs survive', async () => {
+  for (const outcome of ['fails', 'lands']) {
+    const { root } = makeRepo();
+    const runBuilder = async (job) => {
+      write(root, 'mine.txt', 'my notes');
+      write(root, 'lib/run.js', `${VULNERABLE}// my edit\n`);
+      write(job.root, 'lib/run.js', FIXED);
+      write(job.root, 'test/fix.test.js', outcome === 'fails' ? WEAK_TEST : REGRESSION);
+      return { ok: true, stdout: '{"summary":"x"}' };
+    };
+    const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+    assert.strictEqual(r.code, outcome === 'fails' ? 1 : 0, r.out + r.err);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'mine.txt'), 'utf8'), 'my notes');
+    assert.strictEqual(fs.readFileSync(path.join(root, 'lib/run.js'), 'utf8'), `${VULNERABLE}// my edit\n`);
+    if (outcome === 'lands') {
+      assert.strictEqual(sh(root, 'rev-list', '--count', `main..${BRANCH}`), '1');
+      assert.strictEqual(sh(root, 'show', `${BRANCH}:lib/run.js`), FIXED.trim());
+      assert.deepStrictEqual(sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort(), ['lib/run.js', 'test/fix.test.js']);
+    }
+  }
+});
+
+test('engines off the allow-list are refused, composer included', async () => {
+  const { root } = makeRepo();
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED });
+  for (const args of [['--verifier', 'composer'], ['--engine', 'local', '--verifier', 'composer'], ['--builder', 'cursor'], ['--verifier', 'atris-fast']]) {
+    const r = await capture(() => fixCommand([short, ...args], baseDeps(root, { runBuilder })));
+    assert.strictEqual(r.code, 2, args.join(' '));
+    assert.match(r.err, /is not allowed. use codex, claude or an atris model/);
+  }
+  assert.strictEqual(runBuilder.calls.length, 0);
+  assert.deepStrictEqual(fix.resolveFixEngines({ builder: 'codex', verifier: 'atris:pro', available: () => true }), { builder: 'codex', verifier: 'atris:pro' });
+});
+
+test('a test that fails on the old code only from a missing import is not proof', async () => {
+  const withHelper = "'use strict';\nfunction isPlainName(n) { return /^[a-z0-9-]+$/.test(n); }\nfunction safeName(name) {\n  return typeof name === 'string' && isPlainName(name);\n}\nmodule.exports = { safeName, isPlainName };\n";
+  const importsHelper = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { isPlainName } = require('../lib/run');\ntest('separator refused', () => { assert.strictEqual(isPlainName('x;rm'), false); });\n";
+  const missingModule = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { check } = require('../lib/name-check');\ntest('separator refused', () => { assert.strictEqual(check('x;rm'), false); });\n";
+  const cases = [
+    { 'lib/run.js': withHelper, 'test/fix.test.js': importsHelper },
+    { 'lib/run.js': FIXED, 'lib/name-check.js': "module.exports = { check: (n) => /^[a-z0-9-]+$/.test(n) };\n", 'test/fix.test.js': missingModule },
+  ];
+  for (const files of cases) {
+    const { root } = makeRepo();
+    const runChecker = checkerSaying('fixed');
+    const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], baseDeps(root, { runBuilder: builderWriting(files), runChecker })));
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /the new test fails on the original code only because something is missing, broken or slow and not because a check failed/);
+    assert.strictEqual(runChecker.calls.length, 0);
+    assert.strictEqual(fix.branchExists(root, BRANCH), false);
+  }
+});
+
+test('proof reading per runner', () => {
+  assert.strictEqual(fix.realFailure('node', { code: 1, output: 'AssertionError [ERR_ASSERTION]: false !== true' }), true);
+  assert.strictEqual(fix.realFailure('node', { code: 1, output: "Error: Cannot find module '../lib/x'" }), false);
+  assert.strictEqual(fix.realFailure('node', { code: 1, output: 'AssertionError but also SyntaxError' }), false);
+  assert.strictEqual(fix.realFailure('node', { code: 1, timedOut: true, output: 'AssertionError' }), false);
+  assert.strictEqual(fix.realFailure('pytest', { code: 1, output: 'E       assert True is False\n1 failed' }), true);
+  assert.strictEqual(fix.realFailure('pytest', { code: 2, output: 'E   ModuleNotFoundError: No module named x' }), false);
+  assert.strictEqual(fix.realFailure('pytest', { code: 1, output: 'E   ImportError: cannot import name' }), false);
+  assert.strictEqual(fix.realFailure('go', { code: 1, output: '--- FAIL: TestX (0.00s)\n    x_test.go:9: got true\nFAIL' }), true);
+  assert.strictEqual(fix.realFailure('go', { code: 1, output: './x_test.go:5:2: undefined: IsPlain\nFAIL\tdemo [build failed]' }), false);
+  assert.strictEqual(fix.realFailure('go', { code: 1, output: 'panic: test timed out after 10m0s' }), false);
+  assert.strictEqual(fix.realFailure('node', { code: 1, output: 'something odd' }), false);
+});
+
+test('a push from a generated test fails and the test sees no credentials', async () => {
+  const bare = tmp('sentinel-fix-bare-');
+  execFileSync('git', ['init', '-q', '--bare', bare]);
+  const { root } = makeRepo({ remote: bare });
+  sh(root, 'push', '-q', 'origin', 'main');
+  const record = path.join(tmp('sentinel-fix-rec-'), 'push.jsonl');
+  const pusher = REGRESSION + `test('try to push', () => {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const a = spawnSync('git', ['push', 'origin', 'HEAD:refs/heads/leak'], { encoding: 'utf8' });
+  const b = spawnSync('git', ['push', ${JSON.stringify(bare)}, 'HEAD:refs/heads/leak2'], { encoding: 'utf8' });
+  fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ a: a.status, b: b.status, gh: process.env.GH_TOKEN || null, atris: process.env.ATRIS_TOKEN || null, aws: process.env.AWS_SECRET_ACCESS_KEY || null, home: process.env.HOME, prompt: process.env.GIT_TERMINAL_PROMPT }) + '\\n');
+});
+`;
+  const deps = baseDeps(root, { runBuilder: builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': pusher }), runChecker: checkerSaying('fixed') });
+  deps.env = { ...deps.env, GH_TOKEN: 'fake-gh', ATRIS_TOKEN: 'fake-atris', AWS_SECRET_ACCESS_KEY: 'fake-aws' };
+  const r = await capture(() => fixCommand([short, '--verify', 'node --test test/*.test.js'], deps));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  const rows = fs.readFileSync(record, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(rows.length >= 2);
+  for (const row of rows) {
+    assert.notStrictEqual(row.a, 0, 'push to origin failed');
+    assert.notStrictEqual(row.b, 0, 'push to a folder path failed');
+    assert.strictEqual(row.gh, null);
+    assert.strictEqual(row.atris, null);
+    assert.strictEqual(row.aws, null);
+    assert.notStrictEqual(row.home, deps.env.HOME);
+    assert.strictEqual(row.prompt, '0');
+  }
+  assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak']).status, 1);
+  assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak2']).status, 1);
+  assert.strictEqual(spawnGit(root, ['config', '--get', 'remote.origin.pushurl']).status, 1, 'your own push settings are unchanged');
 });
