@@ -141,13 +141,15 @@ test('cleanup preserves ignored local data in an otherwise clean merged checkout
   const worktree = `${root}-ignored-data`;
   try {
     git(root, ['worktree', 'add', '-q', '-b', 'ignored-data', worktree, 'HEAD']);
-    fs.mkdirSync(path.join(worktree, '.derivedData'));
-    fs.writeFileSync(path.join(worktree, '.derivedData', 'local.db'), 'local data');
+    // A local database git ignores cannot be rebuilt, so it keeps the copy.
+    fs.appendFileSync(path.join(root, '.git', 'info', 'exclude'), 'local-data/\n');
+    fs.mkdirSync(path.join(worktree, 'local-data'));
+    fs.writeFileSync(path.join(worktree, 'local-data', 'local.db'), 'local data');
     backdate(worktree, 2);
     const result = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
     assert.equal(result.removed.length, 0);
-    assert.equal(result.kept.some((item) => item.reason === 'ignored_data'), true);
-    assert.equal(fs.readFileSync(path.join(worktree, '.derivedData', 'local.db'), 'utf8'), 'local data');
+    assert.deepEqual(result.kept.find((item) => item.reason === 'ignored_data').files, ['local-data/local.db']);
+    assert.equal(fs.readFileSync(path.join(worktree, 'local-data', 'local.db'), 'utf8'), 'local data');
   } finally {
     spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
     fs.rmSync(root, { recursive: true, force: true });

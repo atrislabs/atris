@@ -178,7 +178,7 @@ test('start clones node_modules from a matching install and the copy stays clean
 
 test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   const ws = workspace(t);
-  const app = makeRepo(ws, 'app');
+  const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const chosen = addCopy(app, 'chosen');
   const other = addCopy(app, 'other');
   const scoped = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [chosen] });
@@ -197,9 +197,18 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   const shipped = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [fresh], freshGraceMs: 0 });
   assert.deepEqual(shipped.removed.map((item) => item.path), [fresh]);
 
-  // Files git ignores may be local data, so they keep a merged copy for review.
+  // An install git ignores comes back with one command, so it does not pin a merged copy.
+  const installed = addCopy(app, 'installed');
+  fs.mkdirSync(path.join(installed, 'node_modules', 'left-pad'), { recursive: true });
+  fs.writeFileSync(path.join(installed, 'node_modules', 'left-pad', 'index.js'), 'module.exports = 0;\n');
+  backdateCopy(installed, 3);
+  const gone = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [installed] });
+  assert.deepEqual(gone.removed.map((item) => item.path), [installed]);
+
+  // An ignored local database cannot come back, so it keeps a merged copy for review.
   const holding = addCopy(app, 'holding');
-  fs.mkdirSync(path.join(holding, 'node_modules'));
+  fs.mkdirSync(path.join(holding, '.atris'));
+  fs.writeFileSync(path.join(holding, '.atris', 'state.db'), 'local data');
   backdateCopy(holding, 3);
   const review = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [holding] });
   assert.ok(review.kept.some((item) => item.path === holding && item.reason === 'ignored_data'));
@@ -208,7 +217,7 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
 
 test('the sweep removes merged idle copies in every repo, clears webpack caches in copies it keeps, and keeps the rest', (t) => {
   const ws = workspace(t);
-  const app = makeRepo(ws, 'app');
+  const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const other = makeRepo(ws, 'other');
   const local = makeRepo(ws, 'local', { origin: false });
   const merged = addCopy(app, 'merged');
@@ -242,7 +251,8 @@ test('the sweep removes merged idle copies in every repo, clears webpack caches 
   assert.equal(fs.existsSync(path.join(idleUnmerged, '.next')), true, 'the rest of the build output waits for review');
   for (const keptCopy of [changed, busy, recent, outside, localCopy]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
   const reasons = (name) => applied.repos.find((repo) => repo.name === name).kept.map((item) => item.reason).sort();
-  assert.deepEqual(reasons('app'), ['dirty', 'ignored_data']);
+  // Build output no longer pins the unmerged copy; it waits as unmerged work until it has sat idle long enough to save.
+  assert.deepEqual(reasons('app'), ['dirty', 'unmerged']);
   assert.deepEqual(reasons('other'), ['active_process', 'recent_activity']);
   assert.match(applied.repos.find((repo) => repo.name === 'local').skipped, /no origin/);
   assert.equal(typeof applied.before, 'number');
