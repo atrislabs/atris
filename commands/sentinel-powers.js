@@ -140,14 +140,16 @@ async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
       const read = new Set(result.lockfiles.map((l) => l.file));
       const branchHold = holdForBranch(branch);
       const why = { unread: 0, branch: 0 };
+      // Locations not read this run are kept by reportFindings itself. Here:
+      // an old record with no lockfile list plus the branch rule.
       const hold = (fp, prev) => {
         const lfs = prev && Array.isArray(prev.lockfiles) && prev.lockfiles.length ? prev.lockfiles : null;
-        if (lfs ? !lfs.every((l) => read.has(l)) : result.incomplete) { why.unread += 1; return true; }
+        if (!lfs && result.incomplete) { why.unread += 1; return true; }
         if (branchHold && branchHold(fp)) { why.branch += 1; return true; }
         return false;
       };
-      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold, meta: watch.lockfilesByFingerprint(result) });
-      res.heldUnread = why.unread;
+      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold, meta: watch.lockfilesByFingerprint(result), read });
+      res.heldUnread = why.unread + (res.heldLocations || 0);
       res.heldBranch = why.branch;
     } catch (e) { res = { ok: false, reason: e.message }; }
   }

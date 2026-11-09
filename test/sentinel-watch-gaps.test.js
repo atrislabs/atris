@@ -729,3 +729,41 @@ test('round 3: a reported lockfile moved below the depth limit stays open', asyn
     assert.deepStrictEqual(srv.sent().map((e) => [e.fingerprint, e.status]), [[opened[0].fingerprint, 'resolved']]);
   } finally { await srv.close(); }
 });
+
+test('final round: a threat in lockfiles A and B stays open until both were read and fixed', async () => {
+  const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
+  const srv = await fakeOsv(osv);
+  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const root = tmp('swg-ab-');
+  write(root, 'a/requirements.txt', 'requests==2.19.0\n');
+  write(root, 'b/requirements.txt', 'requests==2.19.0\n');
+  const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
+  const resolvedSent = () => srv.sent().filter((e) => e.status === 'resolved');
+  try {
+    await capture(() => powers.watchCommand([root], deps));
+    const fp = srv.sent()[0].fingerprint;
+    // Scan 2: only A is read (B is out of reach). A still holds it.
+    fs.mkdirSync(path.join(root, 'node_modules'));
+    fs.renameSync(path.join(root, 'b'), path.join(root, 'node_modules', 'b'));
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(resolvedSent(), []);
+    // Scan 3: A is fixed, B is still unread and vulnerable: stays open.
+    write(root, 'a/requirements.txt', 'requests==2.20.0\n');
+    srv.calls.length = 0;
+    const r3 = await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(resolvedSent(), [], 'B was never read again so the threat stays open');
+    assert.match(r3.out, /1 earlier threat was in a lockfile this check did not read\. it stays open/);
+    // Scan 4: B is back and still vulnerable: open again, no resolve.
+    fs.renameSync(path.join(root, 'node_modules', 'b'), path.join(root, 'b'));
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(resolvedSent(), []);
+    assert.deepStrictEqual(srv.sent().map((e) => [e.fingerprint, e.status]), [[fp, 'open']]);
+    // Scan 5: B fixed too and read: now it resolves.
+    write(root, 'b/requirements.txt', 'requests==2.20.0\n');
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(resolvedSent().map((e) => e.fingerprint), [fp]);
+  } finally { await srv.close(); }
+});
