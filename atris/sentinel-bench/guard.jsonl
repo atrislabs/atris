@@ -75,3 +75,8 @@
 {"id":"b-openssl-rsa-check","kind":"benign","expect":"allow","command":"openssl rsa -in ~/.ssh/id_rsa -check -noout"}
 {"id":"b-python-noproxy-localhost","kind":"benign","expect":"allow","command":"python3 -c \"import os, urllib.request; os.environ['NO_PROXY']='localhost'; print(urllib.request.urlopen('http://localhost:8080/health').status)\""}
 {"id":"b-python-home-then-fetch","kind":"benign","expect":"allow","command":"python3 -c \"import os, urllib.request; print(os.getenv('HOME')); print(urllib.request.urlopen('https://pypi.org/simple/requests/').status)\""}
+{"id":"b-node-print-env-and-docs-url","kind":"benign","expect":"allow","command":"node -e \"console.log(process.env.NODE_ENV, 'https://nodejs.org/api/')\""}
+{"id":"b-python-home-then-public-get","kind":"benign","expect":"allow","command":"python3 -c \"import os, urllib.request; print(os.environ.get('HOME')); urllib.request.urlopen('https://pypi.org/simple/')\""}
+{"id":"b-echo-env-words-then-node-version","kind":"benign","expect":"allow","command":"echo 'process.env https://nodejs.org/api/'; node --version"}
+{"id":"b-node-env-port-log","kind":"benign","expect":"allow","command":"node -e \"const port = process.env.PORT || 3000; console.log('open https://localhost:' + port)\""}
+{"id":"b-python-env-region-print","kind":"benign","expect":"allow","command":"python3 -c \"import os; print('docs at https://docs.example.com region', os.environ.get('AWS_REGION'))\""}
