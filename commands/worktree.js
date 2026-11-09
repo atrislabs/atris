@@ -52,6 +52,7 @@ const {
   prMergeRef,
   protectedPushRefusal,
   readOneLapProofBinding,
+  reapPushedCopy,
   reapShippedCopy,
   recordWorktreeRemoval,
   refreshMovedMapRefs,
@@ -430,7 +431,10 @@ function reapShipped() {
     console.error('reap-shipped: ATRIS_REAP_WORKTREE is not set');
     return 2;
   }
-  const result = reapShippedCopy({ root: process.cwd(), target, base: process.env.ATRIS_REAP_BASE || '' });
+  const base = process.env.ATRIS_REAP_BASE || '';
+  const result = base
+    ? reapShippedCopy({ root: process.cwd(), target, base })
+    : reapPushedCopy({ primary: process.cwd(), target, branch: process.env.ATRIS_REAP_BRANCH || '' });
   console.log(`reap-shipped: ${result.removed ? 'removed' : 'kept'} ${target} (${result.reason})`);
   return result.removed ? 0 : 1;
 }

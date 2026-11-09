@@ -12,7 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
-const { sweepWorkspace } = require('../lib/worktree-core');
+const { reapPushedCopy, sweepWorkspace } = require('../lib/worktree-core');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,7 +35,7 @@ function workspace(t) {
   git(app, ['init', '-q']);
   git(app, ['config', 'user.name', 'Test User']);
   git(app, ['config', 'user.email', 'test@example.com']);
-  fs.writeFileSync(path.join(app, '.gitignore'), '.atris/\nnode_modules/\n.env\n');
+  fs.writeFileSync(path.join(app, '.gitignore'), '.atris/\nnode_modules/\n.env\nbuild/\nuploads/\n');
   fs.writeFileSync(path.join(app, 'app.js'), 'module.exports = 1;\n');
   git(app, ['add', '.']);
   git(app, ['commit', '-qm', 'initial']);
@@ -78,14 +78,18 @@ function makeDirty(copy) {
   fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
   fs.mkdirSync(path.join(copy, 'node_modules', 'left-pad'), { recursive: true });
   fs.writeFileSync(path.join(copy, 'node_modules', 'left-pad', 'index.js'), 'module.exports = 0;\n');
+  // atris's own start sidecar is plumbing, not work.
+  fs.mkdirSync(path.join(copy, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(copy, '.atris', 'agent-worktree.json'), '{}\n');
 }
 
+const SHIP_ARGS = ['worktree', 'ship', '--message', 'Ship the change', '--no-pr', '--no-map-refresh'];
+const SHIP_ENV = () => ({ ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '' });
+
+// The test process, which sits outside the copy, launches ship directly.
 function ship(copy, extra = []) {
   fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = 3;\n');
-  return spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'Ship the change', '--no-pr', '--no-map-refresh', ...extra], {
-    cwd: copy, encoding: 'utf8', timeout: 60000,
-    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_WORKTREE_KEEP_AFTER_SHIP: '' },
-  });
+  return spawnSync(process.execPath, [CLI, ...SHIP_ARGS, ...extra], { cwd: copy, encoding: 'utf8', timeout: 60000, env: SHIP_ENV() });
 }
 
 function removals(app) {
@@ -130,7 +134,7 @@ test('ship keeps a copy holding an ignored secret it could not rebuild', (t) => 
   fs.writeFileSync(path.join(copy, '.env'), 'TOKEN=local\n');
   const run = ship(copy);
   assert.equal(run.status, 0, run.stderr || run.stdout);
-  assert.match(run.stdout, /cleanup: kept this build copy \(it holds ignored files that cannot be rebuilt: \.env\)/);
+  assert.match(run.stdout, /cleanup: kept this build copy \(it holds ignored files atris cannot rebuild: \.env\)/);
   assert.equal(fs.readFileSync(path.join(copy, '.env'), 'utf8'), 'TOKEN=local\n');
 });
 
@@ -230,4 +234,80 @@ test('sweep keeps a stale dirty copy holding an ignored secret', (t) => {
   assert.equal(kept.reason, 'ignored_data');
   assert.deepEqual(kept.files, ['.env']);
   assert.equal(fs.existsSync(path.join(copy, '.env')), true);
+});
+
+test('ship leaves the copy for the delayed remover while the shell that ran it still stands inside', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'ship-shell');
+  fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = 3;\n');
+  // The trailing echo keeps the shell alive as ship's parent, working in the copy.
+  const quoted = [process.execPath, CLI, ...SHIP_ARGS].map((part) => `'${part.replace(/'/g, `'\\''`)}'`).join(' ');
+  const run = spawnSync('/bin/sh', ['-c', `cd '${copy}' && ${quoted}; echo shell-still-here`], { encoding: 'utf8', timeout: 60000, env: SHIP_ENV() });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /cleanup: not yet \(a program is still working in it\)/);
+  assert.match(run.stdout, /shell-still-here/);
+  assert.equal(fs.existsSync(path.join(copy, 'app.js')), true, 'the copy stays while its shell is in it');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', 'codex/ship-shell:app.js']), 'module.exports = 3;');
+});
+
+test('the delayed remover waits for a pushed copy to be free, then removes it', async (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'pushed-wait');
+  git(copy, ['push', '-q', 'origin', 'codex/pushed-wait']);
+  const holder = spawn('sleep', ['2'], { cwd: copy, stdio: 'ignore' });
+  t.after(() => holder.kill('SIGKILL'));
+  await new Promise((resolve) => holder.once('spawn', resolve));
+  const reasons = [];
+  const result = reapPushedCopy({
+    primary: ws.app,
+    target: copy,
+    branch: 'codex/pushed-wait',
+    settleMs: 0,
+    pollMs: 3000,
+    remove: (options) => {
+      const outcome = require('../lib/worktree-core').finishShippedCopy({ ...options, log: () => {}, schedule: () => ({}) });
+      reasons.push(outcome.removed ? 'removed' : outcome.reason);
+      return outcome;
+    },
+  });
+  assert.deepEqual(reasons, ['a program is still working in it', 'removed']);
+  assert.equal(result.removed, true);
+  assert.equal(fs.existsSync(copy), false);
+});
+
+test('sweep keeps a stale copy holding ignored user files under build/ or uploads/', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'user-files');
+  makeDirty(copy);
+  fs.mkdirSync(path.join(copy, 'build'));
+  fs.writeFileSync(path.join(copy, 'build', 'local.db'), 'rows');
+  fs.mkdirSync(path.join(copy, 'uploads'));
+  fs.writeFileSync(path.join(copy, 'uploads', 'photo.png'), 'png');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'ignored_data');
+  assert.deepEqual(kept.files.sort(), ['build/local.db', 'uploads/photo.png']);
+  assert.equal(fs.readFileSync(path.join(copy, 'build', 'local.db'), 'utf8'), 'rows');
+  assert.equal(fs.readFileSync(path.join(copy, 'uploads', 'photo.png'), 'utf8'), 'png');
+  assert.equal(spawnSync('git', ['--git-dir', ws.remote, 'rev-parse', '--verify', '-q', 'refs/heads/codex/user-files']).status, 1, 'nothing was pushed');
+});
+
+test('sweep keeps both a staged version and a different version on disk', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'staged');
+  fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = "staged";\n');
+  git(copy, ['add', 'app.js']);
+  fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = "on disk";\n');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const repo = repoReport(report);
+  assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
+  assert.equal(fs.existsSync(copy), false);
+  const tip = git(ws.app, ['--git-dir', ws.remote, 'rev-parse', 'refs/heads/codex/staged']);
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${tip}:app.js`]), 'module.exports = "on disk";');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${tip}^:app.js`]), 'module.exports = "staged";');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `${tip}~2`]), git(ws.app, ['rev-parse', 'master']));
 });
