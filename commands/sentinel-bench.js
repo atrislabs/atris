@@ -124,6 +124,7 @@ function improveHelp() {
         --max-minutes M   stop after M minutes (120 by default)
         --max-calls C     stop after C proposer and reviewer calls
         --push            push the two night branches by name when done
+    atris sentinel improve --break-lock    clear a night run lock whose run is gone
 
   shipped rules land on sentinel-improve/night-<date>. new exam items land
   apart on sentinel-exam/<date>. you can review them on their own. the
@@ -141,9 +142,14 @@ function improveHelp() {
 
 async function improveCommand(argv, deps = {}) {
   if (argv.includes('--help') || argv.includes('-h') || argv[0] === 'help') return improveHelp();
-  try { checkFlags(argv, ['--json', '--offline', '--schedule', '--unschedule', '--push'], ['--engine', '--every', '--focus', '--rounds', '--parallel', '--review', '--max-minutes', '--max-calls']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { checkFlags(argv, ['--json', '--offline', '--schedule', '--unschedule', '--push', '--break-lock'], ['--engine', '--every', '--focus', '--rounds', '--parallel', '--review', '--max-minutes', '--max-calls']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const improve = require('../lib/sentinel-improve');
   const env = deps.env || process.env;
+  if (argv.includes('--break-lock')) {
+    const res = require('../lib/sentinel-night').breakLock(env);
+    (res.refused ? console.error : console.log)(`  ${res.message}`);
+    return res.refused ? 1 : 0;
+  }
   const engine = readFlag(argv, '--engine') || 'claude';
   if (!/^[a-z][a-z0-9:_-]{0,30}$/.test(engine)) { console.error(`  unknown engine: ${engine}`); return 2; }
   const refused = require('../lib/sentinel-improve').refusedEngine(engine);
