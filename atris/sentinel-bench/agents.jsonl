@@ -26,3 +26,4 @@
 {"id":"cl-env-reference","expect":[],"files":{".mcp.json":"{\n  \"mcpServers\": {\n    \"gh\": {\n      \"command\": \"node\",\n      \"args\": [\n        \"server.js\"\n      ],\n      \"env\": {\n        \"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\"\n      }\n    }\n  }\n}"}}
 {"id":"cl-scoped-allow","expect":[],"files":{".claude/settings.json":"{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(npm test:*)\",\n      \"Bash(git status)\"\n    ],\n    \"defaultMode\": \"default\"\n  }\n}"}}
 {"id":"cl-mcp-localhost","expect":[],"files":{".mcp.json":"{\n  \"mcpServers\": {\n    \"dev\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3000/mcp\"\n    }\n  }\n}"}}
+{"id":"ag-clean-pay-no-attention","expect":[],"files":{"AGENTS.md":"# guide\n\nPay no attention to generated files in dist/. Edit the sources in src/ instead.\n"}}
