@@ -1,6 +1,7 @@
 const fs = require('fs');
 const { ensureProjectTasteFile } = require('../lib/taste-notes');
 const path = require('path');
+const { migrateLegacyTeam } = require('../lib/legacy-team-migration');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
@@ -531,29 +532,7 @@ function syncAtris(options = {}) {
     console.log('');
     console.log('📦 Migrating agent_team/ → team/ (v2.1.0 update)');
 
-    // Create team/ if it doesn't exist
-    if (!dryRun && !fs.existsSync(teamDir)) {
-      fs.mkdirSync(teamDir, { recursive: true });
-    }
-
-    // Copy any custom files from agent_team/ to team/
-    const legacyFiles = fs.readdirSync(legacyAgentTeamDir);
-    for (const file of legacyFiles) {
-      const srcPath = path.join(legacyAgentTeamDir, file);
-      const destPath = path.join(teamDir, file);
-
-      // Only copy if destination doesn't exist (preserve any customizations)
-      if (!fs.existsSync(destPath)) {
-        if (fs.statSync(srcPath).isFile()) {
-          if (!dryRun) fs.copyFileSync(srcPath, destPath);
-          console.log(`  ${dryRun ? 'Would migrate' : '✓ Migrated'} ${file}`);
-        }
-      }
-    }
-
-    // Remove old agent_team/ folder
-    if (!dryRun) fs.rmSync(legacyAgentTeamDir, { recursive: true, force: true });
-    console.log(`  ${dryRun ? 'Would remove' : '✓ Removed'} old agent_team/ folder`);
+    migrateLegacyTeam(legacyAgentTeamDir, teamDir, { dryRun });
     console.log('');
   }
 

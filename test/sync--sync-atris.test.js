@@ -75,7 +75,7 @@ test('syncAtris previews legacy migration while preserving existing destinations
 
   assert.ok(lines.includes('  Would migrate custom.md'));
   assert.ok(!lines.includes('  Would migrate kept.md'));
-  assert.ok(lines.includes('  Would remove old agent_team/ folder'));
+  assert.ok(lines.includes('  Legacy agent_team/ retained'));
   assert.ok(lines.includes('Would migrate TASK_CONTEXTS.md to TODO.md'));
   assert.deepStrictEqual(snapshot(root), before);
 });
