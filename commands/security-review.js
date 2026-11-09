@@ -719,7 +719,7 @@ async function auditRecheckCommand(argv, deps = {}) {
     return 0;
   }
   if (result.declined) return 1;
-  const fail = audit.shouldFailAudit(result.records) || (result.meta.audit.held || []).some((h) => h.severity === 'critical' || h.severity === 'high');
+  const fail = audit.shouldFailRun(result.dir, result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderRecheckLanding(result));
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run. those findings stay open`);
@@ -792,7 +792,7 @@ async function auditCommand(argv, deps = {}) {
     return 2;
   }
   if (result.declined) return 1;
-  const fail = audit.shouldFailAudit(result.records);
+  const fail = !opts.planOnly && audit.shouldFailRun(result.dir, result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderAuditLanding(result));
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run and wait for the next run`);
