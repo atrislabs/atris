@@ -747,6 +747,10 @@ async function auditCommand(argv, deps = {}) {
     const run = { agents: powers.agentsCommand, guard: powers.guardCommand, watch: powers.watchCommand, flush: powers.flushCommand }[argv[0]];
     return run(argv.slice(1), deps);
   }
+  if (argv[0] === 'bench' || argv[0] === 'improve') {
+    const sb = require('./sentinel-bench');
+    return (argv[0] === 'bench' ? sb.benchCommand : sb.improveCommand)(argv.slice(1), deps);
+  }
   if (argv[0] === 'fix') return require('./sentinel-fix').fixCommand(argv.slice(1), deps);
   if (argv[0] === 'upload') return auditUploadCommand(argv.slice(1), deps);
   if (argv[0] === 'recheck') return auditRecheckCommand(argv.slice(1), deps);
@@ -860,6 +864,12 @@ function printAuditHelp() {
 
   results go to your atris dashboard when you are logged in. add --no-upload
   to keep them on this machine. secret values and file contents never leave.
+
+  the exam and the loop that improves the sentinel (in an atris checkout):
+
+    atris sentinel bench [--summary]            score the guard and agent check on a seen and a held-out half
+    atris sentinel improve [--engine claude]    one engine proposes a change, the exam decides if it stays
+    atris sentinel improve --schedule           run the improve loop nightly
 
   turning a confirmed finding into a fix:
 
