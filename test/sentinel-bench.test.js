@@ -377,6 +377,7 @@ test('the proposer env holds no api keys, no atris login and no way for git to a
   assert.strictEqual(env.GIT_CONFIG_GLOBAL, '/dev/null');
   assert.strictEqual(env.GIT_TERMINAL_PROMPT, '0');
   assert.strictEqual(env.GIT_SSH_COMMAND, '/usr/bin/false');
+  assert.strictEqual(env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
 });
 
 test('only claude may propose, sealed off from ~/.atris and the held-out folder. codex is refused', async () => {
@@ -384,6 +385,7 @@ test('only claude may propose, sealed off from ~/.atris and the held-out folder.
   const deny = c.args.slice(c.args.indexOf('--disallowedTools') + 1);
   for (const p of ['/home-fixture/me/.atris', '/srv/exam-hidden']) for (const tool of ['Read', 'Grep', 'Glob']) assert.ok(deny.includes(`${tool}(/${p}/**)`), `${tool} ${p}`);
   assert.ok(deny.includes('Bash') && deny.includes('WebFetch'));
+  assert.ok(c.args.includes('--strict-mcp-config'), 'mcp servers and connectors must be off');
   assert.throws(() => improve.engineInvocation({ engine: 'codex', prompt: 'p', cwd: os.tmpdir(), timeoutMs: 1000 }), /codex cannot be kept from reading the held-out exam/);
   await assert.rejects(improve.improve({ root: path.join(__dirname, '..'), engine: 'codex', env: keyEnv() }), /codex cannot be kept from reading/);
   const { improveCommand } = require('../commands/sentinel-bench');
