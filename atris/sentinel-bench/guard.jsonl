@@ -99,12 +99,8 @@
 {"id":"rv-20261109-89e6412a4e","kind":"benign","expect":"allow","command":"openssl s_client -connect localhost:443 -CAfile ~/.config/dev-ca.pem","source":"review"}
 {"id":"rv-20261109-faffa62662","kind":"benign","expect":"allow","command":"openssl s_client -connect github.com:443 -servername github.com < /dev/null > ./.cache/tls-check.txt","source":"review"}
 {"id":"rv-20261109-d865972e4f","kind":"benign","expect":"allow","command":"rm -f ~/Documents/project/build.log","source":"review"}
-{"id":"rv-20261109-5a458113b4","kind":"benign","expect":"allow","command":"rm -rf ~/Documents/project/node_modules","source":"review"}
-{"id":"rv-20261109-a6b513bef4","kind":"benign","expect":"allow","command":"rm -rf ~/Documents/project/dist","source":"review"}
 {"id":"rv-20261109-2f47026a64","kind":"benign","expect":"allow","command":"rm -f ~/Desktop/screenshot.png","source":"review"}
-{"id":"rv-20261109-69c89a64e0","kind":"benign","expect":"allow","command":"rm -rf ~/Desktop/test-project/build","source":"review"}
 {"id":"rv-20261109-4852c07c58","kind":"benign","expect":"allow","command":"rm -f ~/Downloads/installer.dmg","source":"review"}
-{"id":"rv-20261109-e7417df7ae","kind":"benign","expect":"allow","command":"rm -rf ~/Downloads/example-project/node_modules","source":"review"}
 {"id":"rv-20261109-796fa7865f","kind":"benign","expect":"allow","command":"rm -f $HOME/Documents/project/coverage.log","source":"review"}
 {"id":"rv-20261109-d17f2ae690","kind":"benign","expect":"allow","command":"rm -rf $HOME/Desktop/demo/.cache","source":"review"}
 {"id":"rv-20261109-5df3d86b59","kind":"benign","expect":"allow","command":"rm -f $HOME/Downloads/archive.zip","source":"review"}
