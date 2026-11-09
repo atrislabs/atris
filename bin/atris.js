@@ -712,6 +712,7 @@ function showHelpAll() {
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
+  console.log('  memory     - Keep your Atris memory folder on this laptop (pull, push, status)');
   console.log('  sync-checkout - fetch and fast-forward a clean current branch');
   console.log('  zen        - make this repo calm and current, keeping everything (--check to only look)');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
@@ -2509,6 +2510,10 @@ if (command === 'guide') {
     process.exit(0);
   }
   require('../commands/auth').accountsCmd(args);
+} else if (command === 'memory') {
+  Promise.resolve().then(() => require('../commands/memory').memoryCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'balance') {
   Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))

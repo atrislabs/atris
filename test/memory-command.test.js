@@ -1,0 +1,293 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const { memoryCommand } = require('../commands/memory');
+const { cleanRel, STATE_FILE } = require('../lib/memory-folder');
+
+const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
+
+// A stand-in for the memory part of the Atris server, kept in a Map.
+function fakeServer(initial, { raw = true } = {}) {
+  const files = new Map(Object.entries(initial));
+  const calls = [];
+  const fail = (status, error) => ({ ok: false, status, data: null, error });
+  const ok = (data) => ({ ok: true, status: 200, data });
+  const request = async (pathname, options = {}) => {
+    const url = new URL(pathname, 'https://x.test');
+    const param = (name) => url.searchParams.get(name);
+    calls.push(`${options.method || 'GET'} ${url.pathname}`);
+    assert.ok(options.token, 'every call carries the login token');
+    if (url.pathname === '/memory/ls') {
+      const base = param('folder') ? `${param('folder')}/` : '';
+      const seen = new Map();
+      for (const [key, text] of files) {
+        if (!key.startsWith(base)) continue;
+        const [name, ...deeper] = key.slice(base.length).split('/');
+        if (deeper.length) seen.set(`${name}/`, { name: `${name}/`, files: 1 });
+        else seen.set(name, { name, size: Buffer.byteLength(text) });
+      }
+      return ok({ items: [...seen.values()] });
+    }
+    if (url.pathname === '/memory/file') {
+      if (!raw) return fail(404, 'Not Found');
+      if (!files.has(param('path'))) return fail(400, `No file at ${param('path')}.`);
+      return ok({ path: param('path'), text: files.get(param('path')) });
+    }
+    if (url.pathname === '/memory/read') {
+      if (!files.has(param('path'))) return fail(400, `No file at ${param('path')}.`);
+      const lines = files.get(param('path')).split(/\r?\n/);
+      if (lines[lines.length - 1] === '') lines.pop();
+      const start = Number(param('start'));
+      const count = Number(param('count'));
+      return ok({
+        lines: lines.slice(start - 1, start - 1 + count).map((text, i) => ({ n: start + i, text })),
+        total: lines.length,
+        more: start - 1 + count < lines.length,
+      });
+    }
+    if (url.pathname === '/memory/write') {
+      const { path: rel, text } = options.body;
+      if (!/^(wiki|files)\//.test(rel)) return fail(400, 'Agents write under wiki/ or files/.');
+      files.set(rel, text);
+      return ok({ path: rel, bytes: Buffer.byteLength(text) });
+    }
+    return fail(404, 'Not Found');
+  };
+  return { files, calls, request };
+}
+
+function run(sub, dir, server, extra = []) {
+  const out = [];
+  const errs = [];
+  return memoryCommand([sub, dir, ...extra], {
+    log: (line) => out.push(line),
+    err: (line) => errs.push(line),
+    apiRequestJson: server && server.request,
+    getToken: async () => ({ token: 'secret-token-123', account: 'acct-1' }),
+  }).then((code) => ({ code, text: out.join('\n'), errs: errs.join('\n') }));
+}
+
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-memory-test-'));
+}
+
+const START = {
+  'MAP.md': '# MAP\n',
+  'about.md': '# About me\n',
+  'now.md': '# Now\n',
+  'wiki/learning.md': '# Learning\n',
+  'wiki/people/sam.md': '# Sam\r\nmet at the meetup',
+  'logs/2026/2026-11-09.md': '# 2026-11-09\n\n- Applied to Wise\n',
+  'files/notes/todo.txt': 'one\ntwo\n',
+};
+
+test('pull copies every file, keeps paths and exact bytes, and writes a hidden state file', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  const r = await run('pull', dir, server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /Pulled 7 files/);
+  for (const [rel, text] of Object.entries(START)) {
+    assert.equal(fs.readFileSync(path.join(dir, rel), 'utf8'), text, rel);
+  }
+  const state = JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE), 'utf8'));
+  assert.equal(Object.keys(state.files).length, 7);
+  assert.match(state.files['about.md'].sha256, /^[0-9a-f]{64}$/);
+  assert.ok(!JSON.stringify(state).includes('secret-token'));
+  assert.ok(!r.text.includes('secret-token'));
+  const again = await run('pull', dir, server);
+  assert.match(again.text, /7 already current/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('pull works on a server without the exact-file call, paging through numbered lines', async () => {
+  const dir = tmp();
+  const long = `${Array.from({ length: 1000 }, (_, i) => `line ${i + 1}`).join('\n')}\n`;
+  const server = fakeServer({ 'wiki/long.md': long, 'wiki/a.md': 'a\n' }, { raw: false });
+  const r = await run('pull', dir, server);
+  assert.equal(r.code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/long.md'), 'utf8'), long);
+  assert.match(r.text, /older download/);
+  assert.equal(server.calls.filter((c) => c === 'GET /memory/read').length >= 4, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('push sends only wiki/ and files/ changes, and says the rest change through remember', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  fs.writeFileSync(path.join(dir, 'wiki/learning.md'), '# Learning\n- gardening\n');
+  fs.mkdirSync(path.join(dir, 'wiki/agent-notes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'wiki/agent-notes/new.md'), 'hello\n');
+  fs.writeFileSync(path.join(dir, 'about.md'), '# About me\nI edited this\n');
+  fs.writeFileSync(path.join(dir, 'logs/2026/2026-11-09.md'), 'rewritten\n');
+  const r = await run('push', dir, server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /Pushed 2 files: wiki\/agent-notes\/new.md, wiki\/learning.md/);
+  assert.match(r.text, /Not pushed: about.md, logs\/2026\/2026-11-09.md\. Those change through remember/);
+  assert.equal(server.files.get('wiki/agent-notes/new.md'), 'hello\n');
+  assert.equal(server.files.get('wiki/learning.md'), '# Learning\n- gardening\n');
+  assert.equal(server.files.get('about.md'), '# About me\n');
+  assert.equal(server.files.get('logs/2026/2026-11-09.md'), START['logs/2026/2026-11-09.md']);
+  const second = await run('push', dir, server);
+  assert.doesNotMatch(second.text, /Pushed/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('push does not overwrite a file the server changed since the last pull', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  fs.writeFileSync(path.join(dir, 'wiki/learning.md'), 'mine\n');
+  server.files.set('wiki/learning.md', '# Learning\n- changed elsewhere\n');
+  const r = await run('push', dir, server);
+  assert.equal(r.code, 1);
+  assert.match(r.text, /wiki\/learning.md changed on the server since your last pull/);
+  assert.equal(server.files.get('wiki/learning.md'), '# Learning\n- changed elsewhere\n');
+  fs.writeFileSync(path.join(dir, 'wiki/brand-new.md'), 'x\n');
+  server.files.set('wiki/brand-new.md', 'someone else made this\n');
+  const clash = await run('push', dir, server);
+  assert.match(clash.text, /wiki\/brand-new.md, wiki\/learning.md changed on the server/);
+  assert.equal(server.files.get('wiki/brand-new.md'), 'someone else made this\n');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('pull updates untouched files, keeps local edits, and never clobbers a clash', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  server.files.set('now.md', '# Now\n- new goal\n');
+  fs.writeFileSync(path.join(dir, 'wiki/learning.md'), 'my edit\n');
+  server.files.set('wiki/people/sam.md', 'server edit\n');
+  fs.writeFileSync(path.join(dir, 'wiki/people/sam.md'), 'local edit\n');
+  const r = await run('pull', dir, server);
+  assert.match(r.text, /1 updated/);
+  assert.match(r.text, /Kept your edits to wiki\/learning.md/);
+  assert.match(r.text, /Left wiki\/people\/sam.md alone/);
+  assert.equal(fs.readFileSync(path.join(dir, 'now.md'), 'utf8'), '# Now\n- new goal\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/learning.md'), 'utf8'), 'my edit\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/people/sam.md'), 'utf8'), 'local edit\n');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('status lists local changes and flags files that cannot be pushed', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  assert.match((await run('status', dir)).text, /Nothing changed here/);
+  fs.writeFileSync(path.join(dir, 'wiki/learning.md'), 'edit\n');
+  fs.writeFileSync(path.join(dir, 'files/new.txt'), 'new\n');
+  fs.writeFileSync(path.join(dir, 'about.md'), 'edit\n');
+  fs.rmSync(path.join(dir, 'now.md'));
+  const r = await run('status', dir);
+  assert.match(r.text, /edited\s+wiki\/learning.md\n/);
+  assert.match(r.text, /new\s+files\/new.txt\n/);
+  assert.match(r.text, /edited\s+about.md\s+\(changes through remember, not pushed\)/);
+  assert.match(r.text, /deleted\s+now.md/);
+  const json = JSON.parse((await run('status', dir, null, ['--json'])).text);
+  assert.deepEqual(json.added, ['files/new.txt']);
+  assert.equal(server.calls.includes('GET /memory/ls'), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('unsafe names from the server are never written outside the folder', async () => {
+  const parent = tmp();
+  const dir = path.join(parent, 'mem');
+  const server = fakeServer({
+    '../escape.md': 'bad', 'wiki/../../escape2.md': 'bad', '/abs.md': 'bad', 'wiki\\win.md': 'bad',
+    '.atris-memory.json': '{"files":{}}', 'wiki/.hidden.md': 'bad', 'wiki/fine.md': 'ok\n',
+  });
+  const r = await run('pull', dir, server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /Skipped \d+ files with names that are not safe/);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/fine.md'), 'utf8'), 'ok\n');
+  assert.deepEqual(fs.readdirSync(parent), ['mem']);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE), 'utf8')).files['wiki/fine.md'].bytes, 3);
+  fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('a link inside the folder cannot lead a pull or a push outside it', async () => {
+  const parent = tmp();
+  const dir = path.join(parent, 'mem');
+  const outside = path.join(parent, 'outside');
+  fs.mkdirSync(outside);
+  fs.mkdirSync(dir);
+  fs.symlinkSync(outside, path.join(dir, 'wiki'));
+  const server = fakeServer({ 'wiki/a.md': 'a\n', 'files/b.md': 'b\n' });
+  const r = await run('pull', dir, server);
+  assert.equal(r.code, 1);
+  assert.match(r.text, /Could not copy wiki\/a.md/);
+  assert.deepEqual(fs.readdirSync(outside), []);
+  assert.equal(fs.readFileSync(path.join(dir, 'files/b.md'), 'utf8'), 'b\n');
+  fs.writeFileSync(path.join(outside, 'secret.md'), 'private');
+  fs.symlinkSync(path.join(outside, 'secret.md'), path.join(dir, 'files/leak.md'));
+  const push = await run('push', dir, server);
+  assert.match(push.text, /Skipped .*files\/leak.md \(is a link\)/);
+  assert.equal(server.files.has('files/leak.md'), false);
+  assert.equal(server.files.has('wiki/secret.md'), false);
+  fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('push needs a pull first, refuses big or binary files, and refuses a dangerous folder', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  const early = await run('push', dir, server);
+  assert.equal(early.code, 1);
+  assert.match(early.errs, /has not been pulled yet/);
+  await run('pull', dir, server);
+  fs.writeFileSync(path.join(dir, 'files/big.txt'), 'x'.repeat(1000001));
+  fs.writeFileSync(path.join(dir, 'files/pic.bin'), Buffer.from([0xff, 0xfe, 0x00, 0x80]));
+  const r = await run('push', dir, server);
+  assert.match(r.text, /files\/big.txt is over 1 MB/);
+  assert.match(r.text, /files\/pic.bin is not a text file/);
+  assert.equal(server.files.has('files/big.txt'), false);
+  const home = await run('pull', os.homedir(), server);
+  assert.equal(home.code, 1);
+  assert.match(home.errs, /your home directory/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a folder pulled with one account refuses another, and no login stops everything', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  const other = await memoryCommand(['pull', dir], {
+    err: () => {}, log: () => {}, apiRequestJson: server.request,
+    getToken: async () => ({ token: 't', account: 'acct-2' }),
+  });
+  assert.equal(other, 1);
+  const errs = [];
+  const none = await memoryCommand(['pull', dir], {
+    err: (l) => errs.push(l), log: () => {}, apiRequestJson: server.request, getToken: async () => ({ token: '' }),
+  });
+  assert.equal(none, 1);
+  assert.match(errs.join(''), /not logged in/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('cleanRel accepts plain folder paths only', () => {
+  assert.equal(cleanRel('wiki/a/b.md'), 'wiki/a/b.md');
+  for (const bad of ['', '/x', '../x', 'a/../b', 'a//b', './a', 'a\\b', 'C:x', '.hid', 'a/.b', null, 'x'.repeat(401)]) {
+    assert.equal(cleanRel(bad), null, String(bad));
+  }
+});
+
+test('atris memory is a real command with help and a clear unknown-subcommand answer', () => {
+  const cwd = tmp();
+  const env = { ...process.env, HOME: cwd, ATRIS_NONINTERACTIVE: '1' };
+  const help = spawnSync(process.execPath, [CLI, 'memory', '--help'], { cwd, env, encoding: 'utf8' });
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /atris memory <pull\|push\|status>/);
+  const bad = spawnSync(process.execPath, [CLI, 'memory', 'sing'], { cwd, env, encoding: 'utf8' });
+  assert.equal(bad.status, 2);
+  const status = spawnSync(process.execPath, [CLI, 'memory', 'status', path.join(cwd, 'nope')], { cwd, env, encoding: 'utf8' });
+  assert.equal(status.status, 1);
+  assert.match(status.stderr, /has not been pulled yet/);
+  fs.rmSync(cwd, { recursive: true, force: true });
+});

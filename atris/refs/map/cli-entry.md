@@ -41,7 +41,7 @@ rg "alignAtris" commands/align.js           # Business workspace alignment
 - Mission `layers` and `prune-runs` help do not scan receipt files; they print usage until the operator asks for the real report or preview.
 rg "Ship Cash Proof Mission Room|one-screen Mission Room proof|What Keshav Approves" atris/reports/2026-06-30-ship-cash-proof-mission-room.md # Cash Proof Mission Room: one-screen approval landing, no-send boundary, linked Mission Room receipt, verifier
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
-- Typo-plus-args: `bin/atris.js:1305` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
+- Typo-plus-args: `bin/atris.js:1311` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
 - Lone unknown verbs: `bin/atris.js:1226` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"` and multiword `atris build a thing` still create work after init. Empty-folder `task new` and `wish` talk like first-minute and do not mint. Regression: `test/dogfood-pass2.test.js` (`14:`), `test/one-lap-router.test.js`, and `test/first-minute.test.js`.
 - x help: `bin/atris.js:2928` treats a lone `--help`/`-h`/`help` as usage and does not POST `/api/agent-sdk/execute`. Regression: `test/dogfood-p0-safety.test.js` (`33:`).
 - write start help: `commands/write.js:129` treats help tokens as usage and does not create `atris/writing/help`. Regression: `test/dogfood-p0-safety.test.js` (`34:`) and `test/write.test.js`.
@@ -59,7 +59,7 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 **Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:994` (dispatch check)
-- **Cold-start handler:** `bin/atris.js:1428` (`interactiveEntry`; active missions/work outrank completed history)
+- **Cold-start handler:** `bin/atris.js:1434` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands-8.test.js:1762-1779` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -73,7 +73,7 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
 - **Argument routing:** `bin/atris.js:134-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
-- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1428` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
+- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js:1434` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
 - **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.

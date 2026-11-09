@@ -170,7 +170,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
 - **Command:** `commands/next.js:190` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:950` (`showNextHelp`) stays for `atris atris --help`
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:956` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
