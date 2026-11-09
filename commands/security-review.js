@@ -724,11 +724,23 @@ async function auditRecheckCommand(argv, deps = {}) {
   const fail = audit.shouldFailRun(result.dir, result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderRecheckLanding(result));
+  addRunToRecord(root, result.dir, tell, deps);
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run. those findings stay open`);
   if (opts.upload && token) {
     try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud, root, env: deps.env || process.env }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the re-check itself is done`); }
   }
   return fail ? 1 : 0;
+}
+
+// Every finished review and recheck adds a signed entry to the security
+// record. A failure warns and never changes the exit code.
+function addRunToRecord(root, dir, tell, deps = {}) {
+  const rec = require('../lib/sentinel-record');
+  let res;
+  try { res = rec.appendSafe(root, rec.entryFromRun(dir), { recordHome: deps.recordHome, homeDir: deps.homeDir, env: deps.env }); } catch (e) { res = { ok: false, reason: e.message }; }
+  const w = rec.warnLine(res);
+  if (w) tell(w);
+  return res;
 }
 
 async function auditCommand(argv, deps = {}) {
@@ -752,6 +764,7 @@ async function auditCommand(argv, deps = {}) {
     return (argv[0] === 'bench' ? sb.benchCommand : sb.improveCommand)(argv.slice(1), deps);
   }
   if (argv[0] === 'fix') return require('./sentinel-fix').fixCommand(argv.slice(1), deps);
+  if (argv[0] === 'record') return require('./sentinel-record').recordCommand(argv.slice(1), deps);
   if (argv[0] === 'upload') return auditUploadCommand(argv.slice(1), deps);
   if (argv[0] === 'recheck') return auditRecheckCommand(argv.slice(1), deps);
   if (argv[0] === 'schedule') return auditScheduleCommand(argv.slice(1), deps);
@@ -802,6 +815,7 @@ async function auditCommand(argv, deps = {}) {
   const fail = !opts.planOnly && audit.shouldFailRun(result.dir, result.records);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));
   else console.log(renderAuditLanding(result));
+  if (!opts.planOnly) addRunToRecord(root, result.dir, tell, deps);
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run and wait for the next run`);
   if (opts.upload && token && !opts.planOnly) {
     try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud, root, env: deps.env || process.env }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the review itself is done`); }
@@ -871,6 +885,15 @@ function printAuditHelp() {
     atris sentinel bench [--summary]            score the guard and agent check on a seen and a held-out half
     atris sentinel improve [--engine claude]    one engine proposes a change, the exam decides if it stays
     atris sentinel improve --schedule           run the improve loop nightly
+
+  the signed security record (hand it to a customer's security reviewer):
+
+    atris sentinel record [path]                what was checked, what is open and fixed, how long fixes took
+    atris sentinel record key                   the public key and fingerprint reviewers compare against
+    atris sentinel record export --out record.html
+                                                one file that checks its own signatures in the browser
+    atris sentinel record verify FILE           check an exported record offline
+    atris sentinel record backfill              add past reviews, marked as added later
 
   turning a confirmed finding into a fix:
 

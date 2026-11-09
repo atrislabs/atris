@@ -222,6 +222,14 @@ async function fixCommand(argv, deps = {}) {
     }
   }
 
+  {
+    const rec = require('../lib/sentinel-record');
+    const o = { recordHome: deps.recordHome, homeDir: deps.homeDir, env: deps.env, record: deps.record };
+    let r;
+    try { r = rec.appendSafe(root, results.map((x) => rec.entryFromFix(x.record, x.res)), o); } catch (e) { r = { ok: false, reason: e.message }; }
+    const w = rec.warnLine(r);
+    if (w) console.log(w);
+  }
   const done = results.filter((x) => x.res.ok);
   if (done.length) {
     const events = require('../lib/sentinel-events');

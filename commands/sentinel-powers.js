@@ -78,6 +78,22 @@ function startUpdateNotice(argv = [], { env = process.env, check, timeoutMs = 15
   };
 }
 
+// ---------------------------------------------------------------- record
+
+// Each check adds a signed entry to the security record
+// (lib/sentinel-record.js). A failure is a warning line, never an exit code.
+function addToRecord(root, build, deps = {}) {
+  const rec = require('../lib/sentinel-record');
+  const o = { recordHome: deps.recordHome, homeDir: deps.homeDir, env: deps.env, record: deps.record };
+  if (deps.record === false) return { ok: true, skipped: true };
+  try { return rec.appendSafe(root, build(rec, o), o); } catch (e) { return { ok: false, reason: String(e.message || e).split('\n')[0] }; }
+}
+
+function recordWarn(res, json) {
+  const w = require('../lib/sentinel-record').warnLine(res);
+  if (w) (json ? console.error : console.log)(w);
+}
+
 // ---------------------------------------------------------------- agents
 
 async function runAgents(root, { home = false, upload = true, deps = {} } = {}) {
@@ -90,7 +106,8 @@ async function runAgents(root, { home = false, upload = true, deps = {} } = {}) 
   try {
     res = await events.reportFindings(root, 'agent_check', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload });
   } catch (e) { res = { ok: false, reason: e.message }; }
-  return { result, events: evs, upload: res };
+  const record = addToRecord(root, (rec, o) => rec.entryFromAgents(root, result, o), deps);
+  return { result, events: evs, upload: res, record };
 }
 
 async function agentsCommand(argv, deps = {}) {
@@ -98,7 +115,8 @@ async function agentsCommand(argv, deps = {}) {
   try { opts = parseFlags(argv, ['home', 'json', 'no-upload']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   let root;
   try { root = resolveRoot(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
-  const { result, upload } = await runAgents(root, { home: Boolean(opts.home), upload: !opts.noUpload, deps });
+  const { result, upload, record } = await runAgents(root, { home: Boolean(opts.home), upload: !opts.noUpload, deps });
+  recordWarn(record, opts.json);
   if (opts.json) {
     console.log(JSON.stringify({ ok: result.grade !== 'fail', grade: result.grade, areas: result.areas, files: result.files, findings: result.findings, upload }, null, 2));
   } else {
@@ -153,7 +171,8 @@ async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
       res.heldBranch = why.branch;
     } catch (e) { res = { ok: false, reason: e.message }; }
   }
-  return { result, events: evs, upload: res, branch };
+  const record = addToRecord(root, (rec, o) => rec.entryFromWatch(root, result, { ...o, branch }), deps);
+  return { result, events: evs, upload: res, branch, record };
 }
 
 function heldLines(upload, branch) {
@@ -186,7 +205,8 @@ async function watchCommand(argv, deps = {}) {
   let root;
   try { root = resolveRoot(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const watch = require('../lib/sentinel-watch');
-  const { result, upload, branch } = await runWatchCheck(root, { upload: !opts.noUpload, deps });
+  const { result, upload, branch, record } = await runWatchCheck(root, { upload: !opts.noUpload, deps });
+  recordWarn(record, opts.json);
   let fix = null;
   if (opts.fix && !result.offline && result.affected.length) {
     try { fix = watch.applyFix(root, result, { run: deps.run, allowMajor: Boolean(opts.allowMajor) }); } catch (e) { fix = { ok: false, reason: String(e.message || e).split('\n')[0] }; }
@@ -279,6 +299,7 @@ async function guardCommand(argv, deps = {}) {
     const blocks = inst.recentBlocks({ env });
     const events = require('../lib/sentinel-events');
     const waiting = events.queueSize(env);
+    recordWarn(addToRecord(root, (rec, o) => rec.entryFromGuard(root, o), { ...deps, env }), opts.json);
     if (opts.json) { console.log(JSON.stringify({ ...st, blocked_today: blocks.length, waiting_to_send: waiting }, null, 2)); return 0; }
     console.log('');
     if (st.installed) console.log(`  the sentinel guard is on for ${where}`);
