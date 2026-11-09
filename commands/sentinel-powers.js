@@ -5,7 +5,7 @@
 //
 //   atris sentinel agents [path] [--home]        check an agent setup
 //   atris sentinel guard install|uninstall|status|test [--global]
-//   atris sentinel watch [path] [--fix]          known attacks in dependencies
+//   atris sentinel watch [path] [--fix] [--allow-major]  known attacks in dependencies
 //   atris sentinel flush                         send queued guard events
 //
 // An upload problem is a warning line. It never changes the exit code.
@@ -50,6 +50,34 @@ function uploadLine(res, what) {
   return `  sent ${res.sent - (res.resolved || 0)} ${what} to your atris dashboard${resolved}. no file contents or secret values were sent`;
 }
 
+// ---------------------------------------------------------------- update
+
+// A stale global install misses sentinel fixes. Every sentinel command
+// ends with one line when npm has a newer atris. The check starts with the
+// command and gets a short wait at the end. It never blocks or fails a run.
+function startUpdateNotice(argv = [], { env = process.env, check, timeoutMs = 1500, packageRoot = path.join(__dirname, '..') } = {}) {
+  const off = env.ATRIS_SKIP_UPDATE_CHECK || env.NO_UPDATE_NOTIFIER
+    || argv.some((a) => ['--json', '--help', '-h', 'help', '--quiet'].includes(a));
+  if (off) return { print: async () => null };
+  const updates = require('../utils/update-check');
+  let pending;
+  try { pending = Promise.resolve((check || updates.checkForUpdates)()).catch(() => null); } catch { pending = Promise.resolve(null); }
+  return {
+    async print(log = console.log) {
+      let timer;
+      const late = new Promise((r) => { timer = setTimeout(() => r(null), timeoutMs); if (timer.unref) timer.unref(); });
+      const info = await Promise.race([pending, late]);
+      clearTimeout(timer);
+      if (!info || !info.needsUpdate) return null;
+      let how = 'npm install -g atris@latest';
+      try { if (updates.isGitCheckout(packageRoot)) how = 'atris upgrade'; } catch {}
+      const line = `  a newer atris is out: ${info.latest}. this one is ${info.installed}. update with: ${how}`;
+      log(line);
+      return line;
+    },
+  };
+}
+
 // ---------------------------------------------------------------- agents
 
 async function runAgents(root, { home = false, upload = true, deps = {} } = {}) {
@@ -83,37 +111,70 @@ async function agentsCommand(argv, deps = {}) {
 
 // ---------------------------------------------------------------- watch
 
+// A threat that is gone here counts as fixed only on the repo's default
+// branch, or when the default branch no longer holds the affected version.
+// On a side branch it stays open on the dashboard.
+function holdForBranch(branch) {
+  if (!branch || branch.onDefault) return null;
+  const live = branch.liveFingerprints;
+  if (!live) return () => true;
+  return (fp) => live.has(fp);
+}
+
 async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
   const watch = require('../lib/sentinel-watch');
   const events = require('../lib/sentinel-events');
   const result = await watch.runWatch(root, { base: deps.osvBase || process.env.ATRIS_OSV_BASE || watch.OSV_BASE, ...(deps.request ? { request: deps.request } : {}) });
   const evs = watch.toEvents(result, { repo: deps.repo });
+  let branch = null;
+  try { branch = watch.branchState(root, { run: deps.run }); } catch { branch = { git: true, onDefault: false, liveFingerprints: null }; }
   let res;
   if (result.offline) res = { ok: true, skipped: 'offline', sent: 0 };
   else {
     try {
-      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload });
+      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold: holdForBranch(branch) });
     } catch (e) { res = { ok: false, reason: e.message }; }
   }
-  return { result, events: evs, upload: res };
+  return { result, events: evs, upload: res, branch };
+}
+
+function heldLine(upload, branch) {
+  const n = upload && upload.held;
+  if (!n) return null;
+  const target = (branch && branch.defaultBranch) || 'the default branch';
+  return `  fixed on this branch, not yet live: ${n} threat${n === 1 ? '' : 's'}. ${n === 1 ? 'it stays' : 'they stay'} open on your dashboard until the fix is merged into ${target}`;
+}
+
+// One or two lines per package left for a person. Never cut short.
+function manualLines(manual) {
+  const L = [];
+  if (!manual || !manual.length) return L;
+  L.push(`  left for you to update (${manual.length}):`);
+  for (const a of manual) {
+    const to = a.fixed ? ` to ${a.fixed}` : '';
+    L.push(`    ${a.name} ${a.version}${to} in ${a.lockfile || a.ecosystem}: ${a.why || 'not updated'}`);
+  }
+  return L;
 }
 
 async function watchCommand(argv, deps = {}) {
   let opts;
-  try { opts = parseFlags(argv, ['fix', 'json', 'no-upload']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { opts = parseFlags(argv, ['fix', 'json', 'no-upload', 'allow-major']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   let root;
   try { root = resolveRoot(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const watch = require('../lib/sentinel-watch');
-  const { result, upload } = await runWatchCheck(root, { upload: !opts.noUpload, deps });
+  const { result, upload, branch } = await runWatchCheck(root, { upload: !opts.noUpload, deps });
   let fix = null;
   if (opts.fix && !result.offline && result.affected.length) {
-    try { fix = watch.applyFix(root, result, { log: (m) => console.error(`  ${m}`) }); } catch (e) { fix = { ok: false, reason: String(e.message || e).split('\n')[0] }; }
+    try { fix = watch.applyFix(root, result, { run: deps.run, allowMajor: Boolean(opts.allowMajor) }); } catch (e) { fix = { ok: false, reason: String(e.message || e).split('\n')[0] }; }
   }
   if (opts.json) {
-    console.log(JSON.stringify({ ok: !result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'), ...result, upload, fix }, null, 2));
+    console.log(JSON.stringify({ ok: !result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'), ...result, upload, branch: branch ? { ...branch, liveFingerprints: undefined } : null, fix }, null, 2));
   } else {
     console.log(watch.renderReport(result));
     if (upload.skipped !== 'offline') console.log(uploadLine(upload, 'the threats'));
+    const held = heldLine(upload, branch);
+    if (held) console.log(held);
     if (fix) {
       console.log('');
       if (!fix.ok) console.log(`  the fix did not run: ${fix.reason}`);
@@ -124,9 +185,12 @@ async function watchCommand(argv, deps = {}) {
         console.log(`  go back with: git checkout ${fix.from || 'main'}`);
         console.log('  nothing was pushed');
       }
-      if (fix.manual && fix.manual.length) {
-        console.log(`  update these yourself: ${fix.manual.map((a) => `${a.name} to ${a.fixed}`).join(', ')}`);
+      for (const te of fix.toolErrors || []) {
+        console.log(`  ${te.tool} could not update ${te.lockfile}. it said:`);
+        for (const l of te.lines) console.log(`    ${l}`);
+        if (te.hint) console.log(`  ${te.hint}`);
       }
+      for (const l of manualLines(fix.manual)) console.log(l);
     }
     console.log('');
   }
@@ -281,4 +345,4 @@ async function runScheduledFreeChecks(root, deps = {}) {
   return out;
 }
 
-module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck };
+module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck, startUpdateNotice };

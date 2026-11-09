@@ -859,6 +859,7 @@ function printAuditHelp() {
     atris sentinel agents --home                also check ~/.claude and ~/.codex
     atris sentinel watch [path]                 known attacks in your dependencies (osv database)
     atris sentinel watch --fix                  update affected packages on a new branch, never pushed
+    atris sentinel watch --fix --allow-major    also take fixes that jump to a new major version
     atris sentinel guard install [--global]     stop risky agent commands before they run
     atris sentinel guard test                   see which sample commands the guard stops
 
