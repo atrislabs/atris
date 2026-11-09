@@ -2121,6 +2121,10 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/probe').probeCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'heavy') {
+  Promise.resolve().then(() => require('../commands/heavy').heavyCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
   Promise.resolve().then(() => require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(code || 0))
