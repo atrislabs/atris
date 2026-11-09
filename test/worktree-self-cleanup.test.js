@@ -577,3 +577,37 @@ test('the sweep keeps clean merged and clean pushed copies when a content filter
     assert.equal(fs.readFileSync(path.join(copy, 'notes.txt'), 'utf8'), 'the secret part\n');
   }
 });
+
+test('an ident attribute keeps a clean copy on ship and in the sweep, since $Id: text $ hashes like $Id$', (t) => {
+  const ws = workspace(t);
+  fs.writeFileSync(path.join(ws.app, '.gitattributes'), '*.txt ident\n');
+  fs.writeFileSync(path.join(ws.app, 'notes.txt'), '$Id$\n');
+  git(ws.app, ['add', '.gitattributes', 'notes.txt']);
+  git(ws.app, ['commit', '-qm', 'ident notes']);
+  git(ws.app, ['push', '-q', 'origin', 'master']);
+  const hide = (copy) => {
+    const original = fs.readFileSync(path.join(copy, 'notes.txt'), 'utf8');
+    // Same length as the expanded line, so git rehashes instead of trusting the size.
+    const secret = original.replace(/\$Id: [0-9a-f]+ \$/, (match) => `$Id: ${'s'.repeat(match.length - 7)} $`);
+    assert.notEqual(secret, original);
+    fs.writeFileSync(path.join(copy, 'notes.txt'), secret);
+    assert.equal(git(copy, ['status', '--porcelain']), '', 'ident hides the local text from status');
+    return secret;
+  };
+
+  const shipped = addCopy(ws, 'ship-ident');
+  const shippedText = hide(shipped);
+  const run = spawnSync(process.execPath, [CLI, ...SHIP_ARGS], { cwd: shipped, encoding: 'utf8', timeout: 60000, env: SHIP_ENV() });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /cleanup: kept this build copy \(git attributes can change bytes on commit \(\.gitattributes: \*\.txt ident\)\)/);
+  assert.equal(fs.readFileSync(path.join(shipped, 'notes.txt'), 'utf8'), shippedText);
+
+  const merged = addCopy(ws, 'merged-ident');
+  const mergedText = hide(merged);
+  age(merged, 1);
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === merged);
+  assert.equal(kept.reason, 'unprovable', JSON.stringify(kept));
+  assert.match(kept.why, /ident/);
+  assert.equal(fs.readFileSync(path.join(merged, 'notes.txt'), 'utf8'), mergedText);
+});
