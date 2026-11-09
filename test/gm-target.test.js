@@ -11,6 +11,7 @@ const target = require('../lib/gm-target');
 const { targetFromInput } = require('../commands/gm');
 const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
+const MINUTE = 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 // Wednesday 2026-10-21 12:00 local. Mondays: sep 21, sep 28, oct 5, oct 12, oct 19.
@@ -176,9 +177,10 @@ function makeDb(dir) {
   const now = Date.now();
   const add = db.prepare('INSERT INTO tasks (id, title, status, workspace_root, claimed_by, claimed_at, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const ev = db.prepare('INSERT INTO task_events (event_id, task_id, version, workspace_root, actor, event_type, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  add.run('T1', 'ship the board', 'archived', ws, 'builder', now - 3 * HOUR, now - 4 * HOUR, now, '{}');
-  ev.run('E1', 'T1', 1, ws, 'builder', 'claimed', '{}', now - 3 * HOUR);
-  ev.run('E2', 'T1', 2, ws, 'autoland', 'completed', '{"action":"merged"}', now - 2 * HOUR);
+  // Minutes, not hours: a landing hours ago falls in last week when the test runs early on a Monday.
+  add.run('T1', 'ship the board', 'archived', ws, 'builder', now - 3 * MINUTE, now - 4 * MINUTE, now, '{}');
+  ev.run('E1', 'T1', 1, ws, 'builder', 'claimed', '{}', now - 3 * MINUTE);
+  ev.run('E2', 'T1', 2, ws, 'autoland', 'completed', '{"action":"merged"}', now - 2 * MINUTE);
   db.close();
   return { ws, dbPath };
 }

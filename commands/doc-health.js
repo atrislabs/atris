@@ -5,6 +5,7 @@ const path = require('path');
 const { resolveWorkspaceRoot } = require('../lib/mission-root');
 const { readText } = require('./brain');
 const { checkMapDocs, fixMapDocs } = require('../lib/map-refs');
+const { runRecallExam } = require('../lib/recall-exam');
 
 const BOOT_FILES = [
   'CLAUDE.md', 'AGENTS.md', 'atris/atris.md', 'atris/MAP.md',
@@ -357,12 +358,58 @@ function renderDocHealth(payload) {
   return lines.join('\n');
 }
 
+function flagValue(args, name) {
+  const index = args.indexOf(name);
+  if (index >= 0 && args[index + 1] && !args[index + 1].startsWith('--')) return args[index + 1];
+  return args.find(arg => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+}
+
+function renderRecall(report, summaryOnly) {
+  const pct = value => (value === null ? 'n/a' : `${Math.round(value * 100)}%`);
+  const lines = [
+    `recall exam: ${report.found}/${report.questions} found (${pct(report.found_share)})`,
+    `boot read first: ${report.boot_tokens} tokens`,
+    `files opened after boot: median ${report.files_opened.median}, mean ${report.files_opened.mean === null ? 'n/a' : report.files_opened.mean.toFixed(2)}`,
+    `wrong opens (opened but not on the path to the answer): total ${report.wrong_opens.total}, mean ${report.wrong_opens.mean === null ? 'n/a' : report.wrong_opens.mean.toFixed(2)}`,
+    `tokens opened after boot: median ${report.tokens_opened.median}, mean ${report.tokens_opened.mean}, median when found ${report.tokens_opened_when_found.median}`,
+    ...table(['area', 'found', 'total'], Object.entries(report.by_area).sort().map(([area, row]) => [area, row.found, row.total])),
+  ];
+  if (report.invalid_lines.length) lines.push(`invalid question lines skipped: ${report.invalid_lines.join(', ')}`);
+  if (!summaryOnly) {
+    lines.push('', ...table(['id', 'found', 'opened', 'wrong', 'tokens', 'answer in'],
+      report.results.map(row => [row.id || '-', row.found ? 'yes' : 'no', row.files_opened, row.wrong_opens, row.tokens_opened, row.found_in || '-'])));
+  }
+  return lines.join('\n');
+}
+
+function recallCommand(args, options, file) {
+  const root = resolveWorkspaceRoot(options.cwd || process.cwd());
+  const questionsFile = path.resolve(options.cwd || process.cwd(), file);
+  if (!stat(questionsFile)?.isFile()) {
+    console.log(`no recall questions at ${file}. one object per line: {"q":"...","needle":"exact answer phrase"}`);
+    return 1;
+  }
+  const maxOpens = Number(flagValue(args, '--max-opens')) || undefined;
+  const report = runRecallExam(root, questionsFile, { bootFiles: BOOT_FILES, maxOpens });
+  // A held-out set is scored without echoing its questions back to the improver.
+  const summaryOnly = args.includes('--summary');
+  if (args.includes('--json')) {
+    const { results, ...totals } = report;
+    console.log(JSON.stringify({ ok: true, action: 'doc-health recall', ...totals, ...(summaryOnly ? {} : { results }) }, null, 2));
+  } else console.log(renderRecall(report, summaryOnly));
+  return 0;
+}
+
 function docHealthCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('usage: atris doc-health [--json] [--questions <path>] [--fix-refs]');
+    console.log('usage: atris doc-health [--json] [--questions <path>] [--fix-refs] [--recall <path> [--summary] [--max-opens N]]');
     console.log('  --fix-refs  rewrite map line refs whose code moved; list the ones a human must fix');
+    console.log('  --recall    follow links from the boot files to answer each question; report found, files opened, tokens read');
+    console.log('  --summary   with --recall, print totals only so a held-out set stays unseen');
     return 0;
   }
+  const recallFile = flagValue(args, '--recall');
+  if (recallFile) return recallCommand(args, options, recallFile);
   if (args.includes('--fix-refs')) {
     const root = resolveWorkspaceRoot(options.cwd || process.cwd());
     if (!stat(path.join(root, 'atris', 'MAP.md'))?.isFile()) {

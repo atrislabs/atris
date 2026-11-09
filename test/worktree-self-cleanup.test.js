@@ -524,3 +524,56 @@ test('a content filter, from an attribute or from repo config, keeps the copy', 
     noRescuePushed(ws);
   }
 });
+
+// Final round: a clean filter can hide local text even from git status, so
+// it keeps clean copies too, on every removal path.
+function filteredWorkspace(t) {
+  const ws = workspace(t);
+  // Same length in and out, so git trusts the filter instead of the file size.
+  git(ws.app, ['config', 'filter.strip.clean', 'sed s/secret/xxxxxx/']);
+  git(ws.app, ['config', 'filter.strip.smudge', 'cat']);
+  fs.writeFileSync(path.join(ws.app, '.gitattributes'), '*.txt filter=strip\n');
+  fs.writeFileSync(path.join(ws.app, 'notes.txt'), 'the xxxxxx part\n');
+  git(ws.app, ['add', '.gitattributes', 'notes.txt']);
+  git(ws.app, ['commit', '-qm', 'filtered notes']);
+  git(ws.app, ['push', '-q', 'origin', 'master']);
+  return ws;
+}
+
+function hideSecret(copy) {
+  fs.writeFileSync(path.join(copy, 'notes.txt'), 'the secret part\n');
+  assert.equal(git(copy, ['status', '--porcelain']), '', 'the filter hides the local text from status');
+}
+
+test('ship keeps a clean copy when a content filter could hide local text', (t) => {
+  const ws = filteredWorkspace(t);
+  const copy = addCopy(ws, 'ship-filter');
+  hideSecret(copy);
+  const run = spawnSync(process.execPath, [CLI, ...SHIP_ARGS], { cwd: copy, encoding: 'utf8', timeout: 60000, env: SHIP_ENV() });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.match(run.stdout, /cleanup: kept this build copy \(a content filter is set in this repo\)/);
+  assert.equal(fs.readFileSync(path.join(copy, 'notes.txt'), 'utf8'), 'the secret part\n');
+});
+
+test('the sweep keeps clean merged and clean pushed copies when a content filter could hide local text', (t) => {
+  const ws = filteredWorkspace(t);
+  const merged = addCopy(ws, 'merged-filter');
+  hideSecret(merged);
+  const pushed = addCopy(ws, 'pushed-filter');
+  fs.writeFileSync(path.join(pushed, 'app.js'), 'module.exports = 4;\n');
+  git(pushed, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qam', 'pushed work']);
+  git(pushed, ['push', '-q', 'origin', 'codex/pushed-filter']);
+  hideSecret(pushed);
+  age(merged, 1);
+  age(pushed, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const repo = repoReport(report);
+  assert.deepEqual(repo.removed, [], JSON.stringify(repo.removed));
+  for (const copy of [merged, pushed]) {
+    const kept = repo.kept.find((item) => item.path === copy);
+    assert.equal(kept.reason, 'unprovable', JSON.stringify(kept));
+    assert.match(kept.why, /content filter is set in this repo/);
+    assert.equal(fs.readFileSync(path.join(copy, 'notes.txt'), 'utf8'), 'the secret part\n');
+  }
+});

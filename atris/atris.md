@@ -87,9 +87,23 @@ If you cannot honor these rules, stop, write why in the journal, and ask the hum
 
 Labels: `guarded` (checked by code or hook; bypassing is a bug) and `expected` (convention; honor it or stop).
 
+## memory
+
+Knowledge lives in small linked notes. Each area has a one-screen index whose lines say when to open the note behind them. Read the index for your area and open only what your work touches (`expected`). Skip any file this project does not have.
+
+- Rules for reviewing work and for anything sent outside: `atris/policies/README.md`. Open it before you review, email or publish.
+- How to do a recurring job: `atris/skills/README.md`. Open it when a task sounds like a skill or you need a process.
+- Who owns what and how each member works: `atris/team/README.md`. Open it before you hand off or act as a member.
+- Feature plans, specs and proofs: `atris/features/README.md`. Open it before you build a planned feature.
+- Mistakes already made and the rule each one left: `atris/lessons.md`. Search it for your task words before risky or repeated work.
+- Project facts and decisions: `atris/wiki/index.md`. Open it when the question is about the project, not the code.
+- How to write or reorganize these notes: `atris/skills/wiki/SKILL.md`. Open it before you add a note or an index line.
+
 ## taste
 
 What you ship should not read as generated. If someone would believe an AI made it at a glance, that is the bug.
+
+- **Read the taste first.** Before making anything a person will see, read `atris/taste/TASTE.md` in this project and `~/.atris/taste/TASTE.md` in the person's home folder, whichever exist, project first. Each is a one-screen list whose lines link to short notes you open only when your work touches them. `atris/skills/taste/SKILL.md` says how to read and keep them; write corrections into those taste files, never into the skill (`expected`).
 
 - **Gate it.** `atris slop detect <path>` is deterministic: exit 1 on a tell (file:line + rule), built for CI and review (`guarded`).
 - **Name the move.** Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, restraint.

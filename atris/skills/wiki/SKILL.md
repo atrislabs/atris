@@ -1,7 +1,7 @@
 ---
 name: wiki
-description: "Local-first project wiki skill. Ingest raw sources into atris/wiki, query the wiki, lint it, and keep the memory sharp. Triggers on: wiki this, ingest this, query the wiki, lint the wiki."
-version: 1.0.0
+description: "Local-first project memory. Ingest sources into atris/wiki, answer questions from it and keep it as small linked notes an agent can find fast. Triggers on: wiki this, ingest this, query the wiki, lint the wiki, reorganize memory, notes are too big."
+version: 1.1.0
 tags:
   - wiki
   - memory
@@ -12,6 +12,16 @@ tags:
 # /wiki
 
 Use this when the user wants to turn source material into durable project memory.
+
+Project memory is small linked notes. An index fits on one screen and each line says when to open the note behind it. Agents read the index and open only the notes their work touches.
+
+## The list
+
+- An index line gives the rule itself and says when to open more. A bare topic name makes the reader open the file just to see if it matters. Open [index-lines.md](index-lines.md) when you write or review an index.
+- One idea per note, under about 80 lines, with real examples right under the rule they prove. Open [note-shape.md](note-shape.md) when you create a note or one has grown.
+- Two layers at most from boot. The boot files point to an area index and the index points to notes. Open [index-lines.md](index-lines.md) before adding a third layer.
+- Merge duplicates, move text instead of rewriting it and prune only what you can prove is stale. Open [upkeep.md](upkeep.md) when you consolidate, split or delete.
+- Measure recall with questions the improver never saw. Open [measure.md](measure.md) before you claim memory got better.
 
 ## Canonical path
 
@@ -49,6 +59,7 @@ When asked a wiki question:
 
 When asked to lint:
 1. Check broken references, orphans, contradictions, and obvious gaps.
+   Also flag index lines that are bare topic names and pages over about 80 lines.
 2. Rewrite `STATUS.md` for a non-technical reader.
 3. Append a LINT entry to `log.md`.
 4. Suggest the next concrete ingest sources.
@@ -56,6 +67,7 @@ When asked to lint:
 ## Rules
 
 - Keep the wiki useful, not bloated.
+- Keep this page to one screen. Detail goes in the notes.
 - Say what is uncertain.
 - Prefer direct language over soft summaries.
 - `atris/wiki/` is the source of truth for local memory.

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { ensureProjectTasteFile } = require('../lib/taste-notes');
 const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
@@ -178,11 +179,10 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
           fs.symlinkSync(relativePath, symlinkPath);
           if (verbose) console.log(`✓ Linked .claude/skills/${skill}`);
         } catch (e) {
+          // No symlinks here (Windows without the right): copy the whole skill,
+          // since a skill may link to notes beside its SKILL.md.
           ensureRealDirectory(symlinkPath);
-          const skillFile = path.join(destSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillFile)) {
-            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
-          }
+          fs.cpSync(destSkillDir, symlinkPath, { recursive: true });
           if (verbose) console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
         }
       }
@@ -568,6 +568,11 @@ function syncAtris(options = {}) {
     console.log(`${dryRun ? 'Would create' : '✓ Created'} atris/policies/ folder`);
   }
 
+  // Project taste is the project's own; create a starter only when missing.
+  if (ensureProjectTasteFile(targetDir, { dryRun })) {
+    console.log(`${dryRun ? 'Would create' : '✓ Created'} atris/taste/TASTE.md`);
+  }
+
   const filesToSync = [
     { source: 'atris.md', target: 'atris.md' },
     { source: 'PERSONA.md', target: 'PERSONA.md' },
@@ -885,11 +890,10 @@ function syncSkills({ silent = false } = {}) {
           }
         } catch (e) {
           // Fallback: copy instead of symlink
+          // No symlinks here (Windows without the right): copy the whole skill,
+          // since a skill may link to notes beside its SKILL.md.
           ensureRealDirectory(symlinkPath);
-          const skillFile = path.join(destSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillFile)) {
-            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
-          }
+          fs.cpSync(destSkillDir, symlinkPath, { recursive: true });
         }
       }
     }
