@@ -182,7 +182,7 @@ function actionToken(args = []) {
   for (let i = 0; i < list.length; i += 1) {
     const arg = list[i];
     const text = String(arg || '').trim();
-    if (['--agent', '--as', '--task'].includes(text)) {
+    if (['--agent', '--as', '--task', '--goal-id', '--goal_id', '--tag', '--status', '--review-state', '--review_state'].includes(text)) {
       if (list[i + 1] && !String(list[i + 1]).startsWith('-')) i += 1;
       continue;
     }

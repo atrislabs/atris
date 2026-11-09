@@ -215,6 +215,8 @@ lanes and mismatched jobs. A requested task cannot silently become another
 task. Untrusted snapshots require discovery, not execution. A review role
 may inspect another builder's unfinished review; its own work is excluded.
 Certified review stays visibly human-only while eligible work advances.
+All three entry points compose the existing task scope filters, including
+goal and status, so a scoped request cannot quietly pick another stream.
 Worker prompts carry the same action and prerequisites. An explicitly
 bound review or completed task stays bound, so a different job cannot be
 used to satisfy a frozen mission. No caller output can turn an untrusted

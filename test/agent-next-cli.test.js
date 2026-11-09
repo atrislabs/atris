@@ -186,3 +186,41 @@ test('worker thread and session callers remain unable to accept even after reque
     }
   } finally { c.close(); }
 });
+
+test('all agent entry points reuse the same goal and status scope', sqlite, () => {
+  const c = room();
+  try {
+    c.add({ title: 'Work in another goal', tag: 'no', metadata: { assigned_to: 'builder', goal_id: 'other-goal' } });
+    const work = c.add({ title: 'Work in this goal', tag: 'no', metadata: { assigned_to: 'builder', goal_id: 'this-goal' } });
+    const before = c.snapshot();
+    const args = ['--agent', 'builder', '--goal-id=this-goal', '--status', 'open', '--tag', 'no', '--json'];
+    const task = c.cli(['task', 'next', ...args]);
+    const now = c.cli(['now', ...args]);
+    const next = c.cli(['next', ...args]);
+    for (const result of [task, now, next]) {
+      assert.equal(result.task_id, work.id);
+      assert.equal(result.action, 'plan');
+      assert.equal(result.scope.goal_id, 'this-goal');
+    }
+    assert.equal(now.next, task.command);
+    assert.equal(next.next_action, task.command);
+    assert.deepEqual(c.snapshot(), before);
+  } finally { c.close(); }
+});
+
+test('a finished display reference stays bound outside the recent outcome window', sqlite, () => {
+  const c = room();
+  try {
+    const done = c.add({ title: 'Earlier finished task', status: 'done' });
+    c.db.prepare('UPDATE tasks SET created_at = 1, updated_at = 1 WHERE id = ?').run(done.id);
+    for (let i = 0; i < 5; i++) c.add({ title: 'More recent result ' + i, status: 'done' });
+    c.add({ title: 'Different open work', metadata: { assigned_to: 'builder' } });
+    const ref = c.cli(['task', 'show', done.id, '--json']).display_id;
+    const before = c.snapshot();
+    const result = c.cli(['task', 'next', '--agent', 'builder', '--task', ref, '--json']);
+    assert.equal(result.action, 'blocked');
+    assert.equal(result.task_id, done.id);
+    assert.equal(c.cli(['task', 'show', commandRef(result.command), '--json']).id, done.id);
+    assert.deepEqual(c.snapshot(), before);
+  } finally { c.close(); }
+});

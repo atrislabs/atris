@@ -5963,14 +5963,9 @@ function isUninitializedTaskFolder(cwd = process.cwd()) {
 
 function cmdNext(args) {
   const root = process.cwd();
-  const { buildAgentNext, printAgentNext, agentCaller } = require('../lib/agent-next');
-  if (agentCaller(args)) {
-    const scope = taskQueueScopeFromArgs(args);
-    const taskId = require('../lib/arg-parser').readFlag(args, '--task');
-    const snapshot = loadLocalTaskState(getTaskDb().workspaceRoot(root), { includeAllActive: true, taskIds: taskId ? [taskId] : [] });
-    const agent = buildAgentNext({ root, args, snapshot, tasks: filterTasksByScope(snapshot.tasks, scope), scope: normalizeTaskQueueScope(scope) });
-    return printAgentNext(agent, { asJson: wantsJson(args), alias: 'command' });
-  }
+  const { buildAgentNext, printAgentNext } = require('../lib/agent-next');
+  const agent = buildAgentNext({ root, args });
+  if (agent) return printAgentNext(agent, { asJson: wantsJson(args), alias: 'command' });
   // Empty folder talks like bare atris. Walk up like the task db so a
   // project subdir stays in the room; stop before inheriting /tmp.
   // A leftover projection with live tasks still names that work.
@@ -12270,6 +12265,9 @@ async function run(args) {
 
 module.exports = {
   run,
+  taskQueueScopeFromArgs,
+  normalizeTaskQueueScope,
+  filterTasksByScope,
   chooseTaskOwner,
   readTeamMembers,
   createTaskApiServer,
