@@ -18,7 +18,7 @@ A computer can be personal or shared by a business. It can run a job like code, 
 
 Atris gives Claude Code, Codex, Cursor and any other agent a memory that lasts across sessions. The memory is plain files in your repo: `atris/MAP.md` (where everything lives, with file and line numbers), `atris/wiki/` (what the team learned, as pages linked with `[[page-name]]`), `atris/logs/` (what was done and checked each day), and `atris task` (open work, who claimed it, and the proof). Every agent reads the same files before it acts, so several agents and people share one memory, reviewed in git like code.
 
-Mem0, Zep and Letta remember the users of a chat app. Atris remembers the project. Guide and comparison: https://atris.ai/blog/memory-for-coding-agents
+Mem0, Zep and Letta remember the users of a chat app. Atris remembers the project. Patterns and setup: [docs/agent-memory.md](docs/agent-memory.md). Comparison: https://atris.ai/blog/memory-for-coding-agents
 
 ## Check what ChatGPT can read about your business
 
