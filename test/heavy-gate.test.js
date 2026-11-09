@@ -102,3 +102,27 @@ test('the turn is given back after the job ends', async (t) => {
   assert.strictEqual(code, 0);
   assert.deepStrictEqual(fs.readdirSync(dir), []);
 });
+
+
+test('releasing a slot never removes a lock another job now holds', (t) => {
+  const s = settingsIn(tempDir(t), { slots: 1 });
+  const mine = tryTakeSlot(s, { pid: process.pid });
+  fs.writeFileSync(mine.file, JSON.stringify({ pid: process.pid, token: 'someone-else' }));
+  releaseSlot(mine);
+  assert.ok(fs.existsSync(mine.file));
+});
+
+test('a lock left half written is never mistaken for a free slot', (t) => {
+  const s = settingsIn(tempDir(t), { slots: 1 });
+  tryTakeSlot(s, { pid: process.pid });
+  const raw = fs.readFileSync(path.join(s.dir, 'slot-0.lock'), 'utf8');
+  assert.ok(JSON.parse(raw).token);
+  assert.strictEqual(tryTakeSlot(s, { pid: process.pid }), null);
+});
+
+test('a very old lock frees its slot even if its process id came back to life', (t) => {
+  const s = settingsIn(tempDir(t), { slots: 1, maxHoldMs: 1000 });
+  fs.mkdirSync(s.dir, { recursive: true });
+  fs.writeFileSync(path.join(s.dir, 'slot-0.lock'), JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 5000).toISOString() }));
+  assert.ok(tryTakeSlot(s, { pid: process.pid }));
+});
