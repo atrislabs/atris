@@ -52,12 +52,21 @@ function benchHelp() {
 
 async function benchCommand(argv, deps = {}) {
   if (argv.includes('--help') || argv.includes('-h') || argv[0] === 'help') return benchHelp();
-  try { checkFlags(argv, ['--summary', '--json', '--review'], ['--split', '--set', '--sets', '--target', '--seen', '--hunter', '--verifier', '--budget']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { checkFlags(argv, ['--summary', '--json', '--review'], ['--split', '--set', '--sets', '--target', '--seen', '--hunter', '--verifier', '--budget', '--screen']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const bench = require('../lib/sentinel-bench');
   const env = deps.env || process.env;
   const root = path.resolve(readFlag(argv, '--target') || deps.root || process.cwd());
   const seenDir = path.resolve(readFlag(argv, '--seen') || bench.seenDirOf(root));
   const holdoutDir = bench.defaultHoldoutDir(env);
+  const screen = readFlag(argv, '--screen');
+  if (screen) {
+    // Internal to the night run: refused ids only, as json.
+    let candidates;
+    try { candidates = JSON.parse(require('fs').readFileSync(path.resolve(screen), 'utf8')); } catch (e) { console.error(`  could not read the items to screen: ${e.message}`); return 1; }
+    if (!Array.isArray(candidates)) { console.error('  the items to screen must be a json list'); return 1; }
+    console.log(JSON.stringify({ ok: true, ...bench.screenItems(candidates, { holdoutDir, env }) }));
+    return 0;
+  }
   const split = readFlag(argv, '--split');
   if (split) {
     const set = readFlag(argv, '--set');
