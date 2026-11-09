@@ -37,7 +37,7 @@ function benchHelp() {
     atris sentinel bench --split <file> --set guard|agents|review
                                          split new items into the seen half (in the repo)
                                          and the sealed held-out half (on this machine).
-                                         the input file is kept
+                                         the plaintext input is replaced with an encrypted copy
 
   the seen half lives in atris/sentinel-bench. the held-out half lives in
   ~/.atris/sentinel-holdout, encrypted with a key in your keychain. its
@@ -68,7 +68,7 @@ async function benchCommand(argv, deps = {}) {
     console.log(`  ${res.holdout} items went to the held-out half on this machine`);
     if (res.skipped) console.log(`  ${res.skipped} items were already in a half and were skipped`);
     if (res.invalid) console.log(`  ${res.invalid} lines were not valid items and were skipped`);
-    console.log(`  the input was kept at ${split}. it still holds the held-out items in plain text. delete it once you have checked the split\n`);
+    console.log(`  the plaintext input was replaced with an encrypted copy at ${res.sealed_source}. no readable held-out item is left behind\n`);
     return 0;
   }
   const review = argv.includes('--review');
