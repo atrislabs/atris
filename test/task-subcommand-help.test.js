@@ -34,8 +34,8 @@ const VERBS = [
   },
   {
     verb: 'next',
-    usage: 'Usage: atris task next [--tag <tag>] [--create-next]',
-    listed: /atris task next \[--tag <tag>\] \[--create-next\]/,
+    usage: 'Usage: atris task next [--tag <tag>] [--agent <member>|--human] [--create-next]',
+    listed: /atris task next \[--tag <tag>\] \[--agent <member>\|--human\] \[--create-next\]/,
     noise: /durable local task state|Confidence Gate|TASK DESK|atris task list|say yes:/,
     acted: /claimed|id required|next:|No open tasks/i,
     idTitle: 'task next <id> --help does not claim the task',

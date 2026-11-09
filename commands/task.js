@@ -5963,6 +5963,14 @@ function isUninitializedTaskFolder(cwd = process.cwd()) {
 
 function cmdNext(args) {
   const root = process.cwd();
+  const { buildAgentNext, printAgentNext, agentCaller } = require('../lib/agent-next');
+  if (agentCaller(args)) {
+    const scope = taskQueueScopeFromArgs(args);
+    const taskId = require('../lib/arg-parser').readFlag(args, '--task');
+    const snapshot = loadLocalTaskState(getTaskDb().workspaceRoot(root), { includeAllActive: true, taskIds: taskId ? [taskId] : [] });
+    const agent = buildAgentNext({ root, args, snapshot, tasks: filterTasksByScope(snapshot.tasks, scope), scope: normalizeTaskQueueScope(scope) });
+    return printAgentNext(agent, { asJson: wantsJson(args), alias: 'command' });
+  }
   // Empty folder talks like bare atris. Walk up like the task db so a
   // project subdir stays in the room; stop before inheriting /tmp.
   // A leftover projection with live tasks still names that work.
@@ -12244,7 +12252,7 @@ async function run(args) {
   // `task next --help` is a help request, not a run. Next can open
   // the task db or print the desk, so never list or claim just to show usage.
   if (sub === 'next' && argsWantHelp(raw.slice(1))) {
-    console.log('Usage: atris task next [--tag <tag>] [--create-next]');
+    console.log('Usage: atris task next [--tag <tag>] [--agent <member>|--human] [--create-next]');
     return;
   }
   // `task show --help` is a help request, not a run. Show can dump
@@ -12254,7 +12262,8 @@ async function run(args) {
     return;
   }
   const result = await runTaskCommand(raw);
-  const skipsRender = hasFlag(raw, '--dry-run');
+  const readOnlyAgentNext = sub === 'next' && require('../lib/agent-next').agentCaller(raw.slice(1));
+  const skipsRender = hasFlag(raw, '--dry-run') || readOnlyAgentNext;
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
   return result;
 }

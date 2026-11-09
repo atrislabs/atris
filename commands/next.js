@@ -19,7 +19,7 @@ const {
 } = require('../lib/next-moves');
 
 function showHelp(log = console.log) {
-  log('Usage: atris next [--json]');
+  log('Usage: atris next [--agent <member>|--human] [--json]');
   return 0;
 }
 
@@ -179,12 +179,17 @@ function executeCard(card, root, log = console.log) {
 
 function actionToken(args = []) {
   const list = Array.isArray(args) ? args : [];
-  const token = list.find((arg) => {
+  for (let i = 0; i < list.length; i += 1) {
+    const arg = list[i];
     const text = String(arg || '').trim();
-    if (!text || text.startsWith('-')) return false;
-    return true;
-  });
-  return String(token || '').trim().toLowerCase();
+    if (['--agent', '--as', '--task'].includes(text)) {
+      if (list[i + 1] && !String(list[i + 1]).startsWith('-')) i += 1;
+      continue;
+    }
+    if (!text || text.startsWith('-')) continue;
+    return text.toLowerCase();
+  }
+  return '';
 }
 
 function nextCommand(args = [], root = process.cwd(), { log = console.log } = {}) {
@@ -193,6 +198,11 @@ function nextCommand(args = [], root = process.cwd(), { log = console.log } = {}
 
   const asJson = wantsJson(list);
   const action = actionToken(list);
+  if (!['skip', 'no', 'yes'].includes(action)) {
+    const { buildAgentNext, printAgentNext } = require('../lib/agent-next');
+    const agent = buildAgentNext({ root, args: list });
+    if (agent) return printAgentNext(agent, { asJson, log });
+  }
 
   if (!action || action === 'json') return speakNext(root, { asJson, log });
 

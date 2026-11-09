@@ -163,3 +163,65 @@ runtime tests. Evidence is retained in the task thread and
 `atris/runs/2026-11-08-now-next-reference-replay.json` in the primary checkout.
 The additional scoped history read has not been benchmarked against the old
 path; no latency improvement is claimed. Rollback remains a source revert.
+
+## 2026-11-08: Work can advance while acceptance waits
+
+Genesis: after the reference repair, the operator asked what came next.
+The live next command still said it was waiting for the person, although
+the builder owned an open completion-check follow-up. The operator asked
+to make that autonomous path substantial. This extends the same four
+operating values and current-evidence contract above.
+
+Ambition: make every quick agent entry point choose a permitted next step,
+not an acceptance action. Agency: use actual task rows, ownership, frozen
+plans, and proof. Acceleration: reuse member-task-pick, the existing task
+page/plan/claim/review commands, and next-work-context. Accuracy: exercise
+the real CLI through plan, claim and continuation while review stays pending.
+
+The missing responsibility is a read-only recommendation for an agent caller.
+lib/agent-next.js accepts workspace evidence and a functional owner; it
+returns a bounded action, current task, missing prerequisites, pending
+human approvals and the existing sourced context. It does not claim, execute,
+review, accept, award XP, create a task or start a scheduler.
+
+Ordered slices, each with its own check and rollback:
+
+1. Select permitted work and classify plan, claim, continue, review or
+   discovery in lib/agent-next.js. Check: node --test test/agent-next.test.js.
+   Rollback: revert the policy helper and its unit tests.
+2. Connect now, next and task next to that same recommendation. The shared
+   reader includes all active candidates before bounding output, preserving
+   canonical references. Check: node --test test/agent-next-cli.test.js.
+   Rollback: revert the three entry-point hooks and the reader option.
+3. Validate the complete path and retain current navigation and lessons.
+   Check: node --test test/agent-next.test.js test/agent-next-cli.test.js
+   test/agent-next-prompt.test.js
+   test/task-next-truth.test.js test/first-minute--load-local-tasks.test.js
+   test/next-work-context.test.js test/import-integrity.test.js
+   test/repo-hygiene.test.js. Rollback: revert this feature's commits.
+
+An explicit --agent member selects the agent view. Known worker environment
+markers also select it; --as or ATRIS_AGENT_ID supplies the member, otherwise
+the functional default is builder. --human preserves the human view and does
+not change permission to accept work. The existing proof-only guard now
+recognizes the same worker thread/session markers as the recommendation.
+An unchecked or unplanned task points
+to its real task page so the agent can establish goal, exit, first move and
+verifier using task plan. A complete recorded plan permits a claim command;
+an owned claim points to the current contract before work continues.
+
+The member picker still excludes foreign owners, decision holds, protected
+lanes and mismatched jobs. A requested task cannot silently become another
+task. Untrusted snapshots require discovery, not execution. A review role
+may inspect another builder's unfinished review; its own work is excluded.
+Certified review stays visibly human-only while eligible work advances.
+Worker prompts carry the same action and prerequisites. An explicitly
+bound review or completed task stays bound, so a different job cannot be
+used to satisfy a frozen mission. No caller output can turn an untrusted
+snapshot into executable authority or silently truncate a task identity.
+
+Six real CLI regressions failed before implementation. They cover the
+approval-plus-follow-up case, plan/claim/continue, caller modes, protected and
+foreign work, an old assigned task behind 205 foreign rows, and a fresh look
+that must not create a database. Independent review and final proof remain
+required. No speedup or general autonomous effectiveness is claimed yet.
