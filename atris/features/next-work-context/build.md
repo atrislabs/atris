@@ -101,9 +101,19 @@ bindings outside the shortlist could lose their owner, completed bindings
 could look executable, assignments were not carried into the action hint,
 and recency could be preempted by creation time or endgame tag priority.
 Exact scoped lookups, terminal-state and assignment handling, and explicit
-update-time ordering now cover those cases. The final focused run and the
+update-time ordering now cover those cases. The initial focused run and the
 independent repeat passed 47 checks with exit zero. The review receipt is
 `atris/runs/2026-11-08-next-work-independent-review.json` in the main checkout.
+
+GitHub's wider suite then found a compatibility regression in the existing
+saved-task view: legacy snapshots with a display reference and no internal id
+were dropped. The task was revised back to claimed before correcting it.
+Such rows now stay visible as unverified projection evidence, without changing
+known-id completion or ownership checks. The new regression and the two reader
+tests are included in `test/fast-tests.txt` so routine checks exercise this path.
+The full first-minute family plus the earlier focused checks passed 239 checks
+with exit zero; an independent compatibility review passed 35 checks and a
+mixed-state experiment. Final proof supersedes the earlier review certification.
 
 Three fresh CLI processes over real local state produced a median lookup
 time of 1.302 seconds and a 10,246-byte packet, including a 5,025-byte context.

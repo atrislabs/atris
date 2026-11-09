@@ -130,6 +130,16 @@ test('missing context and checks produce discovery instead of invented certainty
   assert.equal(payload.context.task_source, 'projection');
 });
 
+test('legacy display-only snapshots stay visible without gaining database authority', (t) => {
+  const { root, env } = room(t);
+  writeProjection(root, [{ display_id: 'OLD-1', title: 'Repair a saved lookup', status: 'open', metadata: { verify: 'node --test test/calendar.test.js' } }]);
+  const { payload } = next(root, env);
+  assert.equal(payload.task.display_id, 'OLD-1');
+  assert.equal(payload.context.task_source, 'projection');
+  assert.equal(payload.context.next_step.kind, 'discover');
+  assert.ok(payload.context.gaps.includes('task_snapshot_not_authoritative'));
+});
+
 test('autonomous prompts receive the same current evidence without a second startup', (t) => {
   const { root } = room(t);
   write(root, '.atris/state/scoreboard.json', JSON.stringify({ goal: 'Reliable calendar lookups' }));
