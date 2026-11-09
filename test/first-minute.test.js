@@ -5,6 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const {
   buildFirstMinute,
@@ -83,7 +84,7 @@ function assertDeskAcceptsReview(stdout, id = 'CLI-193') {
 
 function runCli(args, { cwd, env, timeout = 15000 } = {}) {
   const merged = {
-    ...process.env,
+    ...scrubAgentEnv(),
     ATRIS_SKIP_UPDATE_CHECK: '1',
     ATRIS_NO_INTERACTIVE: '1',
     ...(env || {}),

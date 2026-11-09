@@ -149,6 +149,12 @@ The Mission anchors, goals point, a mission run commits, tasks prove, accepts la
 
 ## task source of truth
 
+For the next agent step, use `atris next --agent <functional-member> --json`.
+Known worker shells choose this view automatically; `--human` shows the
+person's view without changing acceptance permission. An unchecked task
+requires a goal, exit, first move and runnable check through `atris task plan`.
+The recommendation itself never claims, executes, accepts or awards XP.
+
 Use `atris task` as the source of truth for active work. It stores durable local
 SQLite state plus append-only task events, and refreshes
 `.atris/state/tasks.projection.json` for desktop/web UIs. `atris/TODO.md` is a

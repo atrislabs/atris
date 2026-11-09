@@ -1,4 +1,7 @@
 test/activity-stream.test.js
+test/agent-next.test.js
+test/agent-next-cli.test.js
+test/agent-next-prompt.test.js
 test/agent-spawn.test.js
 test/analytics-productivity.test.js
 test/api-stream.test.js
