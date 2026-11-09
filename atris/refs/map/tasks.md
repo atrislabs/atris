@@ -1,5 +1,7 @@
 # Tasks
 
+Current next-work evidence: `lib/next-work-context.js:117` assembles bounded goals, existing paths, candidate hints, prior outcomes and knowledge gaps; `lib/next-work-context.js:40` reconciles known database status with offline rows. `lib/first-minute.js:180` reads current tasks and recent outcomes without creating a database. `lib/member-context.js:42` preloads the same facts into autonomous prompts through `commands/mission.js:8151`; `commands/task.js:5879` exposes them in `task next --json`. Contract and proof: `atris/features/next-work-context/build.md`; regression: `test/next-work-context.test.js`.
+
 The task database, claims, the task plane, task production readiness and returned jobs. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Quick Reference Index

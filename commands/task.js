@@ -10,6 +10,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
+const { buildNextWorkContext, reconcileTaskRows } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
@@ -74,6 +75,7 @@ const {
 } = require('../lib/task-decision');
 const {
   buildFirstMinute,
+  loadLocalTaskState,
   deskNextCommand,
   firstTalkCommand,
   folderName,
@@ -5880,27 +5882,11 @@ function cmdNextTruth(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot();
-  const rows = taskDb.listTasks(db, { workspaceRoot, limit: 500 });
-  const existingProj = readProjectionFile(workspaceRoot);
-  const dbHasActionable = rows.some((task) => {
-    const status = task && task.status;
-    return status === 'open' || status === 'claimed' || status === 'review';
-  });
-  const projHasActionable = Boolean(
-    existingProj
-    && Array.isArray(existingProj.tasks)
-    && existingProj.tasks.some((task) => {
-      const status = task && task.status;
-      return status === 'open' || status === 'claimed' || status === 'review';
-    }),
-  );
+  const snapshot = loadLocalTaskState(workspaceRoot);
   let projection;
   let outPath;
-  if (!dbHasActionable && projHasActionable) {
-    projection = existingProj;
-    outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
-  } else if (rows.length === 0 && existingProj && Array.isArray(existingProj.tasks) && existingProj.tasks.length > 0) {
-    projection = existingProj;
+  if (snapshot.source !== 'database') {
+    projection = { tasks: snapshot.tasks };
     outPath = path.resolve(path.join(workspaceRoot || '.', '.atris', 'state', 'tasks.projection.json'));
   } else {
     const written = writeDefaultProjection(taskDb, db);
@@ -5928,6 +5914,7 @@ function cmdNextTruth(args) {
       scope: normalizeTaskQueueScope(scope),
       projection_path: outPath,
       task: task ? compactTaskFromProjection(projection, task.id) : null,
+      context: buildNextWorkContext({ root: workspaceRoot, tasks: reconcileTaskRows(snapshot.tasks, projection.tasks || []), selected: task, owner: String(owner), taskSource: snapshot.source, generatedAt: snapshot.generated_at }),
     });
     return;
   }
