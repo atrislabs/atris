@@ -132,20 +132,38 @@ async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
   if (result.offline) res = { ok: true, skipped: 'offline', sent: 0 };
   else {
     try {
-      // A scan that skipped a lockfile keeps every earlier finding open.
-      const hold = result.incomplete ? () => true : holdForBranch(branch);
-      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold });
+      // Per lockfile: an earlier threat is fixed only when every lockfile it
+      // was found in was read this time and none of them holds it now. One
+      // whose lockfile was not read (depth, cap, size, error, moved or
+      // deleted) stays open. An old record with no lockfile list needs a
+      // complete scan.
+      const read = new Set(result.lockfiles.map((l) => l.file));
+      const branchHold = holdForBranch(branch);
+      const why = { unread: 0, branch: 0 };
+      const hold = (fp, prev) => {
+        const lfs = prev && Array.isArray(prev.lockfiles) && prev.lockfiles.length ? prev.lockfiles : null;
+        if (lfs ? !lfs.every((l) => read.has(l)) : result.incomplete) { why.unread += 1; return true; }
+        if (branchHold && branchHold(fp)) { why.branch += 1; return true; }
+        return false;
+      };
+      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold, meta: watch.lockfilesByFingerprint(result) });
+      res.heldUnread = why.unread;
+      res.heldBranch = why.branch;
     } catch (e) { res = { ok: false, reason: e.message }; }
   }
   return { result, events: evs, upload: res, branch };
 }
 
-function heldLine(upload, branch, result) {
-  const n = upload && upload.held;
-  if (!n) return null;
-  if (result && result.incomplete) return `  this check did not read every lockfile. ${n} earlier threat${n === 1 ? '' : 's'} not seen this time ${n === 1 ? 'stays' : 'stay'} open on your dashboard`;
-  const target = (branch && branch.defaultBranch) || 'the default branch';
-  return `  fixed on this branch, not yet live: ${n} threat${n === 1 ? '' : 's'}. ${n === 1 ? 'it stays' : 'they stay'} open on your dashboard until the fix is merged into ${target}`;
+function heldLines(upload, branch) {
+  const L = [];
+  const u = (upload && upload.heldUnread) || 0;
+  const b = (upload && upload.heldBranch) || 0;
+  if (u) L.push(`  ${u} earlier threat${u === 1 ? ' was' : 's were'} in a lockfile this check did not read. ${u === 1 ? 'it stays' : 'they stay'} open on your dashboard`);
+  if (b) {
+    const target = (branch && branch.defaultBranch) || 'the default branch';
+    L.push(`  fixed on this branch, not yet live: ${b} threat${b === 1 ? '' : 's'}. ${b === 1 ? 'it stays' : 'they stay'} open on your dashboard until the fix is merged into ${target}`);
+  }
+  return L;
 }
 
 // One or two lines per package left for a person. Never cut short.
@@ -176,8 +194,7 @@ async function watchCommand(argv, deps = {}) {
   } else {
     console.log(watch.renderReport(result));
     if (upload.skipped !== 'offline') console.log(uploadLine(upload, 'the threats'));
-    const held = heldLine(upload, branch, result);
-    if (held) console.log(held);
+    for (const l of heldLines(upload, branch)) console.log(l);
     if (fix) {
       console.log('');
       if (!fix.ok) console.log(`  the fix did not run: ${fix.reason}`);

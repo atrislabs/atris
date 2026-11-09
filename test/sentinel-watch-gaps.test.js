@@ -540,7 +540,7 @@ test('review 1: a lockfile naming a folder outside the repo is refused before an
     assertVoice(r.out);
     assert.strictEqual(calls.length, 0, 'npm never ran');
     assert.strictEqual(fs.readFileSync(path.join(other, 'package.json'), 'utf8'), otherBefore);
-    assert.match(r.out, /package-lock\.json names a folder outside this repo or behind a symlink \(\.\.\/\.\.\/other-project\)\. nothing was changed/);
+    assert.match(r.out, /package-lock\.json would write through a symlink or outside this repo \(\.\.\/\.\.\/other-project\)\. nothing was changed/);
     assert.strictEqual(sh(repo, 'status', '--porcelain'), '');
   } finally { restoreEnv(); await srv.close(); }
 });
@@ -560,7 +560,7 @@ test('review 1: a workspace behind a symlink is refused and a stray file the too
   try {
     const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run: fakeTools({ npm() {} }, calls), env: { ...process.env, HOME: tmp('swg-h-') } }));
     assert.strictEqual(calls.length, 0);
-    assert.match(r.out, /names a folder outside this repo or behind a symlink \(packages\/linked\)/);
+    assert.match(r.out, /would write through a symlink or outside this repo \(packages\/linked\)/);
   } finally { srv.close(); }
 
   const srv2 = await fakeOsv(MINIMATCH);
@@ -592,7 +592,7 @@ test('review 2 + 5: a vulnerable lockfile pushed past the cap or over the size l
     const capped = await capture(() => powers.watchCommand([root], deps));
     assertVoice(capped.out);
     assert.ok(!srv.sent().some((e) => e.status === 'resolved'), 'nothing resolved from a capped scan');
-    assert.match(capped.out, /this check did not read every lockfile\. 1 earlier threat not seen this time stays open on your dashboard/);
+    assert.match(capped.out, /1 earlier threat was in a lockfile this check did not read\. it stays open on your dashboard/);
     for (let i = 0; i < 20; i++) fs.rmSync(path.join(root, `a${String(i).padStart(2, '0')}`), { recursive: true });
 
     // Over the byte limit: skipped with a warning and still held open.
@@ -601,7 +601,7 @@ test('review 2 + 5: a vulnerable lockfile pushed past the cap or over the size l
     const big = await capture(() => powers.watchCommand([root], { ...deps, maxLockfileBytes: 100 }));
     assert.match(big.out, /warning: skipped zz\/requirements\.txt: it is larger than 0 MB/);
     assert.ok(!srv.sent().some((e) => e.status === 'resolved'));
-    assert.match(big.out, /stays open on your dashboard/);
+    assert.match(big.out, /in a lockfile this check did not read\. it stays open/);
     const direct = await watch.runWatch(root, { base: srv.base, maxBytes: 100 });
     assert.strictEqual(direct.incomplete, true);
     assert.deepStrictEqual(direct.tooBig, ['zz/requirements.txt']);
@@ -653,4 +653,79 @@ test('review 4: an open range becomes ^fixed and a tool that crosses a major any
     assert.match(r.out, /undici went to 6\.0\.0\. that is not a fixed version on the line this fix allows/);
     assert.strictEqual(readJson(path.join(root, 'package.json')).dependencies.undici, '>=5.0.0', 'put back');
   } finally { restoreEnv(); await srv.close(); }
+});
+
+// ---------------------------------------------------------------- round three
+
+test('round 3: a package.json symlinked to an outside file is never written', async () => {
+  const srv = await fakeOsv(MINIMATCH);
+  const restoreEnv = withGitEnv();
+  const away = tmp('swg-away-');
+  const outsidePkg = write(away, 'package.json', SCOPED_PKG);
+  const outsideBefore = fs.readFileSync(outsidePkg, 'utf8');
+  const root = gitRepo({ 'package-lock.json': scopedLock() });
+  fs.symlinkSync(outsidePkg, path.join(root, 'package.json'));
+  sh(root, 'add', '.'); sh(root, 'commit', '-qm', 'link');
+  const calls = [];
+  const run = fakeTools({ npm(args, cwd) { write(cwd, 'package-lock.json', scopedLock({ globMinimatch: '9.0.5' })); } }, calls);
+  try {
+    const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assertVoice(r.out);
+    assert.strictEqual(calls.length, 0, 'npm never ran');
+    assert.strictEqual(fs.readFileSync(outsidePkg, 'utf8'), outsideBefore, 'the outside file was never written');
+    assert.ok(fs.lstatSync(path.join(root, 'package.json')).isSymbolicLink(), 'the link itself is untouched');
+    assert.match(r.out, /package-lock\.json would write through a symlink or outside this repo \(package\.json\)\. nothing was changed/);
+  } finally { restoreEnv(); await srv.close(); }
+
+  // A symlinked folder above the lockfile is refused the same way.
+  const srv2 = await fakeOsv(MINIMATCH);
+  const restore2 = withGitEnv();
+  const realDir = tmp('swg-realdir-');
+  write(realDir, 'package.json', SCOPED_PKG);
+  write(realDir, 'package-lock.json', scopedLock());
+  const root2 = gitRepo({ 'README.md': 'x\n' });
+  fs.symlinkSync(realDir, path.join(root2, 'web'));
+  sh(root2, 'add', '.'); sh(root2, 'commit', '-qm', 'link');
+  const lockBefore = fs.readFileSync(path.join(realDir, 'package-lock.json'), 'utf8');
+  try {
+    const result = await watch.runWatch(root2, { base: srv2.base });
+    result.affected = result.affected.length ? result.affected : [{ name: 'minimatch', version: '9.0.3', ecosystem: 'npm', lockfile: 'web/package-lock.json', fixed: '9.0.5', advisories: ['x'], severity: 'high' }];
+    const fix = watch.applyFix(root2, result, { run: fakeTools({ npm() { throw new Error('must not run'); } }) });
+    assert.match(fix.manual.map((m) => m.why).join('\n'), /would write through a symlink or outside this repo \(web/);
+    assert.strictEqual(fs.readFileSync(path.join(realDir, 'package-lock.json'), 'utf8'), lockBefore);
+  } finally { restore2(); await srv2.close(); }
+});
+
+test('round 3: a reported lockfile moved below the depth limit stays open', async () => {
+  const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
+  const srv = await fakeOsv(osv);
+  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const root = tmp('swg-depth-');
+  write(root, 'svc/requirements.txt', 'requests==2.19.0\n');
+  write(root, 'other/requirements.txt', 'flask==2.0.0\n');
+  const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
+  try {
+    await capture(() => powers.watchCommand([root], deps));
+    const opened = srv.sent();
+    assert.deepStrictEqual(opened.map((e) => e.status), ['open']);
+    const deep = 'svc/a/b/c/d/e/f/requirements.txt';
+    write(root, deep, 'requests==2.19.0\n');
+    fs.rmSync(path.join(root, 'svc/requirements.txt'));
+    srv.calls.length = 0;
+    const moved = await capture(() => powers.watchCommand([root], deps));
+    assertVoice(moved.out);
+    assert.ok(!moved.out.includes(deep), 'the deep copy is below the depth limit');
+    assert.ok(!srv.sent().some((e) => e.status === 'resolved'), 'nothing resolved for a lockfile that was not read');
+    assert.match(moved.out, /1 earlier threat was in a lockfile this check did not read\. it stays open on your dashboard/);
+
+    // Deleted: still open. Back and fixed: resolved.
+    fs.rmSync(path.join(root, 'svc/a'), { recursive: true });
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.ok(!srv.sent().some((e) => e.status === 'resolved'));
+    write(root, 'svc/requirements.txt', 'requests==2.20.0\n');
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(srv.sent().map((e) => [e.fingerprint, e.status]), [[opened[0].fingerprint, 'resolved']]);
+  } finally { await srv.close(); }
 });
