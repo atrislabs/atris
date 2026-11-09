@@ -590,6 +590,7 @@ async function auditScheduleCommand(argv, deps) {
   if (!installed.ok) { cloud.removeApproval(target, deps.homeDir); console.error(`  could not install the timer: ${installed.error}`); return 1; }
   console.log(`  scheduled reviews are on for ${tildePath(target)}, once a ${every}`);
   console.log('  each run uses the quick profile and saves its summary to your atris account');
+  console.log('  each run also checks your agent setup and dependencies for free');
   if (approval.engine === 'local') console.log('  runs use only codex and claude on this machine. they never switch to atris models');
   else console.log(`  runs use atris models and stop at ${approval.max_credits} credits`);
   console.log(`  log: ${tildePath(plan.log_path)}`);
@@ -608,6 +609,11 @@ async function auditCommand(argv, deps = {}) {
     console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
     return 0;
   }
+  if (['agents', 'guard', 'watch', 'flush'].includes(argv[0])) {
+    const powers = require('./sentinel-powers');
+    const run = { agents: powers.agentsCommand, guard: powers.guardCommand, watch: powers.watchCommand, flush: powers.flushCommand }[argv[0]];
+    return run(argv.slice(1), deps);
+  }
   if (argv[0] === 'upload') return auditUploadCommand(argv.slice(1), deps);
   if (argv[0] === 'schedule') return auditScheduleCommand(argv.slice(1), deps);
   let opts;
@@ -618,6 +624,11 @@ async function auditCommand(argv, deps = {}) {
   if (opts.scheduled) {
     const approval = cloud.readApproval(root, deps.homeDir);
     if (!approval) { console.error('security-review audit: this folder has no approved schedule. nothing ran. run atris sentinel schedule again'); return 2; }
+    // The free checks run first, so a review that stops at its credit limit
+    // still leaves today's agent and dependency results.
+    try {
+      await require('./sentinel-powers').runScheduledFreeChecks(root, { ...deps, upload: opts.upload, log: opts.json ? (m) => console.error(m) : (m) => console.log(m) });
+    } catch (e) { console.error(`  warning: the free checks did not finish: ${e.message}`); }
     opts.hunter = null;
     opts.verifier = null;
     opts.engine = approval.engine;
@@ -706,6 +717,18 @@ function printAuditHelp() {
   only the summary is saved: plain sentences, file:line locations and counts.
   source code and code lines never leave in an upload.
 
+  free checks, no model and no credits:
+
+    atris sentinel agents [path]                check agent instructions, settings, hooks, mcp and skills
+    atris sentinel agents --home                also check ~/.claude and ~/.codex
+    atris sentinel watch [path]                 known attacks in your dependencies (osv database)
+    atris sentinel watch --fix                  update affected packages on a new branch, never pushed
+    atris sentinel guard install [--global]     stop risky agent commands before they run
+    atris sentinel guard test                   see which sample commands the guard stops
+
+  results go to your atris dashboard when you are logged in. add --no-upload
+  to keep them on this machine. secret values and file contents never leave.
+
   reviews on a timer:
 
     atris sentinel schedule --every day [path]  quick review once a day, saved to your account
@@ -714,6 +737,7 @@ function printAuditHelp() {
                                                 timed runs on atris models, at most 20 credits each
     atris sentinel schedule --uninstall [path]  stop the timer
 
+  every timed run also runs the free agents and watch checks.
   the engine is picked when the timer goes on. on atris models you see the
   price and say yes then. a timed run never switches to atris models later.
 
