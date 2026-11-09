@@ -27,7 +27,7 @@ function git(cwd, args) {
 // the build copies, <workspace>/remote.git the origin.
 function workspace(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-self-cleanup-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
   const remote = path.join(root, 'remote.git');
   const app = path.join(root, 'app');
   fs.mkdirSync(app);
@@ -405,4 +405,22 @@ test('a rescue lands on a new branch and never moves the copy branch, here or on
   assert.equal(git(ws.app, ['rev-parse', 'refs/heads/codex/moved']), localTip, 'local copy branch untouched');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `${rescueBranch}^`]), localTip, 'the rescue sits on top of the local commit');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${rescueBranch}:notes.md`]), 'half-finished idea');
+});
+
+test('a copy whose index lists more than a megabyte of paths is still read, not kept as unreadable', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'big-index');
+  const dir = path.join(copy, 'many');
+  fs.mkdirSync(dir);
+  for (let i = 0; i < 5000; i += 1) fs.writeFileSync(path.join(dir, `${'f'.repeat(230)}-${i}.txt`), `${i}\n`);
+  git(copy, ['add', 'many']);
+  git(copy, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'many files']);
+  fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
+  age(copy, 8);
+
+  // Five thousand fresh files draw the system file indexer in; the process
+  // check is covered above, so this one reports no running programs.
+  const dry = sweepWorkspace({ workspace: ws.root, apply: false, activeCwds: [] });
+  const repo = repoReport(dry);
+  assert.equal(repo.rescueCandidates.length, 1, JSON.stringify(repo.kept));
 });
