@@ -228,7 +228,16 @@
       "neonctl",
       "cqlsh"
     ],
-    "command_blocks": []
+    "command_blocks": [
+      {
+        "id": "inline-secret-out",
+        "category": "exfil",
+        "all": [],
+        "inline": true,
+        "needs_secret": true,
+        "needs_remote": true
+      }
+    ]
   },
   "agents": {
     "override_substrings": [],

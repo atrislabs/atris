@@ -31,7 +31,13 @@ function writeJsonl(file, items) {
 }
 const readJsonl = (file) => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
-const SHIPPED_RULES = () => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'lib', 'sentinel-rules.json'), 'utf8'));
+// The shipped rules with no command blocks, so each test knows exactly which
+// blocks its proposers added.
+const SHIPPED_RULES = () => {
+  const r = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'lib', 'sentinel-rules.json'), 'utf8'));
+  r.guard.command_blocks = [];
+  return r;
+};
 function rulesWith(blocks, tweak) {
   const r = SHIPPED_RULES();
   r.guard.command_blocks.push(...blocks);
@@ -59,14 +65,14 @@ const HELD_OK = { id: 'h-ok', kind: 'benign', expect: 'allow', command: `npm tes
 
 const KEY_FILE = path.join(tmp('sn-key-'), 'holdout.key');
 
-// A temp git repo with the real rules file and a small seen half, plus a
+// A temp git repo with the shipped rules (no command blocks), a small seen half and a
 // held-out folder.
 function standIn(heldGuard) {
   const repo = tmp('sn-repo-');
   const held = tmp('sn-held-');
   const git = (...a) => execFileSync('git', a, { cwd: repo, stdio: 'ignore' });
   fs.mkdirSync(path.join(repo, 'lib'));
-  fs.copyFileSync(path.join(__dirname, '..', 'lib', 'sentinel-rules.json'), path.join(repo, 'lib', 'sentinel-rules.json'));
+  fs.writeFileSync(path.join(repo, 'lib', 'sentinel-rules.json'), `${JSON.stringify(SHIPPED_RULES(), null, 2)}\n`);
   fs.writeFileSync(path.join(repo, '.gitignore'), '.atris/\n');
   writeJsonl(path.join(repo, 'atris', 'sentinel-bench', 'guard.jsonl'), [
     { id: 's-rm', kind: 'destroy', expect: 'block', command: 'rm -rf /' },
