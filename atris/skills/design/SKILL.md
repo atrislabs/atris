@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.18
+version: 3.2.19
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -9,6 +9,8 @@ tags:
 ---
 
 # atris-design
+
+Start with the taste files that [../taste/SKILL.md](../taste/SKILL.md) points to for what the people you work for like. This file holds the full visual rules for building it.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 
@@ -117,8 +119,8 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D14 | compact selectors lead with the chosen name and a discriminating icon; remove redundant field labels and visible type explanations when icon, title, and accessible label carry them | judgment | active |
 | D15 | copy density on landing pages: hero lede one sentence, one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
 | D16 | verify mobile with real device emulation (Playwright iPhone profile, WebKit for iOS), never headless Chrome --window-size: Chrome floors the window at 500px wide and renders a fake layout (caught 2026-09-01: two "passing" screenshots hid a broken phone nav) | command scan for `--window-size=3` or `--window-size=4` in verify scripts | active |
-| D15 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
-| D16 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
+| D33 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
+| D35 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
 | D17 | responsive corrections must test every disclosed state immediately below, at, and above each breakpoint; a fixed bug cannot reappear when a panel opens or the container narrows | judgment | promoted |
 | D18 | no eyebrow metadata or tiny titles: important names become readable headings; indices, platform type names, and generator metadata stay off product surfaces | judgment | promoted |
 | D19 | bubbly flat UI means one generous rounded parent, flat content-rail rows, and circular controls with a real action or stable identity; never round every nested child | judgment | active |
@@ -135,8 +137,8 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D30 | a floating rounded composer inherits the page canvas; never paint a full-width contrast band behind it unless that band is intentional chrome | judgment | active |
 | D31 | developer-only overlays stay off the product surface by default; any temporary visible launcher must have an immediate dismiss control | judgment | active |
 | D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
-
 | D34 | engine settings show only the selected engine’s effective model and supported controls; preserve saved choices missing from the option list instead of displaying another engine | `node scripts/test-engine-settings.mjs` in project-obelisk | graduated (engine settings regression) |
+| D36 | marketing front pages: headline + one 2-line paragraph + buttons per section, card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
 
 Measured recipes live in the mimic studies: `~/arena/mimic-beautiful-ui/LESSONS.md` (18 AI-interface components with exact tokens) and its `remix.css` :root block (the portable Atris token sheet, coffee + paper themes). Start there before designing an agent surface.
 
@@ -178,4 +180,3 @@ This skill compounds or it dies. The contract, every frontend session:
 - Full policy: `atris/policies/atris-design.md`
 - Navigation: `atris/MAP.md`
 - Workflow: `atris/PERSONA.md`
-| D15 | marketing front pages: headline + one 2-line paragraph + buttons per section, card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |

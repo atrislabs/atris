@@ -6,9 +6,11 @@ API and auth in `utils/`, tests in `test/`. Workspace truth lives in `atris/`:
 tasks in the task DB rendered to `atris/TODO.md`, protocol in `atris/atris.md`,
 members in `atris/team/`, feature specs in `atris/features/`.
 
-File:line refs and rg search shortcuts live in `atris/refs/MAP-NOTES.md`. Open it
-when this table names the file but you need the exact line. `atris doc-health`
-checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
+File:line refs and rg search shortcuts live in one note per area under
+`atris/refs/map/`, indexed by `atris/refs/MAP-NOTES.md`. Open the index when this
+table names the file but you need the exact line, then open only the area note
+that matches. `atris doc-health` checks the refs in every one of these files;
+`atris doc-health --fix-refs` moves drifted ones.
 
 ## Routing
 
@@ -24,9 +26,10 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | boot files an agent starts with | `commands/init.js`, `scripts/member-lab.js`, `scripts/boot-tokens.js`, `scripts/boot-usage.js` | lean agent instructions, member benchmark lab, and boot token measurements |
 | workspace protocol and voice | `atris/atris.md`, `atris/PERSONA.md`, `atris/skills/atris/SKILL.md` | operating protocol, communication style, and workspace skill |
 | brain compile command | `commands/brain.js` | brain artifacts compiled and verified here |
-| document health | `commands/doc-health.js`, `lib/map-refs.js`, `atris/doc-health/questions.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs |
+| document health and recall exam | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/recall-seen.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs; `--recall` scores found, files opened, wrong opens and tokens read |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
+| taste notes | `atris/skills/taste/SKILL.md`, `lib/taste-notes.js` | how taste files work; the taste itself lives in each project's `atris/taste/TASTE.md` and the person's `~/.atris/taste/TASTE.md`; sync never touches either |
 | security audit (sentinel) | `lib/security-audit.js`, `lib/security-audit-classes.js`, `commands/security-review.js` | `atris sentinel` = `security-review audit`; engines hunt, another model verifies; member `atris/team/sentinel/` |
 | workspace tree hash | `commands/tree.js`, `lib/tree-hash.js` | `atris tree hash` over the doctrine files |
 | task database and TODO markdown renderer | `lib/task-db.js`, `lib/todo-fallback.js` | SQLite task store, claim leases and expiry, `renderTodoMarkdown`, legacy fallback |
@@ -67,7 +70,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | active feature specs | `atris/features/campaign/idea.md`, `atris/features/cloud-sync-simplicity/idea.md`, `atris/features/codex-goal-replacement/idea.md`, `atris/features/company-brain-sync/idea.md`, `atris/features/endstate/idea.md`, `atris/features/plan-review-by-validator/idea.md`, `atris/features/spaceship/idea.md`, `atris/features/verify-falsifiability/idea.md` | active specs in `atris/features/` |
 | active team members | `atris/team/alpha-judge/MEMBER.md`, `atris/team/architect/MEMBER.md`, `atris/team/auto-improver/MEMBER.md`, `atris/team/brainstormer/MEMBER.md`, `atris/team/builder/MEMBER.md`, `atris/team/customer-lead/MEMBER.md`, `atris/team/engine-manager/MEMBER.md`, `atris/team/executor/MEMBER.md`, `atris/team/improver/MEMBER.md`, `atris/team/launcher/MEMBER.md`, `atris/team/linguist/MEMBER.md`, `atris/team/mission-lead/MEMBER.md`, `atris/team/navigator/MEMBER.md`, `atris/team/opus-overnight/MEMBER.md`, `atris/team/orb/MEMBER.md`, `atris/team/researcher/MEMBER.md`, `atris/team/scout/MEMBER.md`, `atris/team/task-planner/MEMBER.md`, `atris/team/validator/MEMBER.md`, `atris/team/youtube-lead/MEMBER.md` | one folder per active member under `atris/team/` |
 | tests, fixtures, release, and CI | `package.json`, `test/commands-1.test.js`, `test/helpers/commands-fixtures.js`, `scripts/ci-test-shard.js`, `test/ci-file-durations.json`, `scripts/publish-atris-release.js`, `scripts/pre-commit`, `.github/workflows` | `npm test`, `npm run test:fast`, balanced 8-shard CI runner, shared `test/helpers/` fixtures, tag-driven publish, and pre-commit gate |
-| deep map with line refs | `atris/refs/MAP-NOTES.md` | rg shortcuts and exact `file:line` notes |
+| deep map with line refs | `atris/refs/MAP-NOTES.md`, `atris/refs/map/` | one-screen index over one note per area with rg shortcuts and exact `file:line` notes |
 
 ## Load order
 
@@ -75,4 +78,4 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 2. `atris/PERSONA.md` for voice, `atris/atris.md` for protocol
 3. `atris/MAP.md` to route work, `atris/TODO.md` for the queue
 4. `atris/wiki/index.md` if present (local), and `atris/skills/atris/SKILL.md` as needed
-5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`
+5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`, then the one area note it points to

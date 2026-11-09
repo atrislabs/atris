@@ -64,7 +64,7 @@ test('workflow plan and do prompts send line lookups to the notes file', t => {
   const root = workspace(t, '# notes\n');
   const section = mapPromptSection(path.join(root, 'atris'), root);
   assert.match(section, /## MAP\.md\nRead this file to find where work lives: atris\/MAP\.md/);
-  assert.match(section, /## MAP-NOTES\.md\nRead this file for exact file:line references: atris\/refs\/MAP-NOTES\.md/);
+  assert.match(section, /## MAP-NOTES\.md\nRead this file for exact file:line references, or the area note it points to: atris\/refs\/MAP-NOTES\.md/);
   fs.rmSync(path.join(root, NOTES));
   assert.doesNotMatch(mapPromptSection(path.join(root, 'atris'), root), /MAP-NOTES/);
 });
@@ -107,7 +107,7 @@ test('fleet build briefs point at the notes file only when the worktree has one'
   const { buildFleetPrompt } = require('../lib/fleet');
   const root = workspace(t, '# notes\n');
   const task = { display_id: 'CLI-1', title: 'Ship the fix. Done: behavior is covered.' };
-  assert.match(buildFleetPrompt(task, { worktreePath: root }), /then atris\/refs\/MAP-NOTES\.md for exact file:line refs/);
+  assert.match(buildFleetPrompt(task, { worktreePath: root }), /then atris\/refs\/MAP-NOTES\.md \(or the area note it points to\) for exact file:line refs/);
   fs.rmSync(path.join(root, NOTES));
   assert.doesNotMatch(buildFleetPrompt(task, { worktreePath: root }), /MAP-NOTES/);
 });

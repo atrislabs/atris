@@ -38,7 +38,9 @@ Rules:
 - Merge new info into existing pages instead of replacing them
 - Keep index.md, log.md, and STATUS.md current
 - Flag contradictions directly instead of smoothing them over
-- Never modify the raw source documents you ingested`;
+- Never modify the raw source documents you ingested
+- One idea per page, under about 80 lines, with examples under the rule they prove
+- An index line gives the rule or answer, then says when to open the page`;
 }
 
 function expectedPrompt(sourceValue, listedSources, root) {
@@ -51,7 +53,7 @@ Workflow:
 3. Extract people, systems, and concepts worth preserving
 4. Create or update pages under ${root}/, merging with existing facts instead of replacing them
 5. Add cross-references using [[${root}/...]] links
-6. Update ${root}/index.md with one-line descriptions of touched pages
+6. Update ${root}/index.md with one line per touched page: the rule or answer, then when to open it
 7. Append an INGEST entry to ${root}/log.md under today's date
 8. Refresh ${root}/STATUS.md in plain English for a non-technical reader
 

@@ -359,23 +359,34 @@ function findStaleTasks(atrisDir) {
  * Detects both out-of-bounds AND drift (symbol moved to different line)
  * Returns { healed: number, unhealable: array }
  */
-// The boot map routes; atris/refs/MAP-NOTES.md holds the deep file:line refs.
-// Heal both. Entries from the notes file carry `map` so reports can say where.
+// The boot map routes; atris/refs/MAP-NOTES.md holds the deep file:line refs,
+// or indexes area notes under atris/refs/map/ that hold them. Heal every one.
+// Entries from a notes file carry `map` so reports can say where.
 const MAP_NOTES_FILE = path.join('refs', 'MAP-NOTES.md');
+const MAP_NOTES_DIR = path.join('refs', 'map');
+
+function mapNoteFiles(atrisDir) {
+  const files = [path.join(atrisDir, MAP_NOTES_FILE)];
+  try {
+    for (const name of fs.readdirSync(path.join(atrisDir, MAP_NOTES_DIR)).sort()) {
+      if (name.endsWith('.md')) files.push(path.join(atrisDir, MAP_NOTES_DIR, name));
+    }
+  } catch { /* no area notes */ }
+  return files.filter((file) => { try { return fs.statSync(file).isFile(); } catch { return false; } });
+}
 
 function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()) {
   const mapFile = path.join(atrisDir, 'MAP.md');
   if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [] };
   const result = healMapFileRefs(cwd, mapFile, dryRun, homeDir);
-  const notesFile = path.join(atrisDir, MAP_NOTES_FILE);
-  if (!fs.existsSync(notesFile)) return result;
-  const notes = healMapFileRefs(cwd, notesFile, dryRun, homeDir);
-  const map = path.relative(cwd, notesFile).split(path.sep).join('/');
-  return {
-    healed: result.healed + notes.healed,
-    unhealable: [...result.unhealable, ...notes.unhealable.map((entry) => ({ ...entry, map }))],
-    replacements: [...result.replacements, ...notes.replacements.map((entry) => ({ ...entry, map }))],
-  };
+  for (const notesFile of mapNoteFiles(atrisDir)) {
+    const notes = healMapFileRefs(cwd, notesFile, dryRun, homeDir);
+    const map = path.relative(cwd, notesFile).split(path.sep).join('/');
+    result.healed += notes.healed;
+    result.unhealable = [...result.unhealable, ...notes.unhealable.map((entry) => ({ ...entry, map }))];
+    result.replacements = [...(result.replacements || []), ...notes.replacements.map((entry) => ({ ...entry, map }))];
+  }
+  return result;
 }
 
 function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {

@@ -1051,6 +1051,7 @@ const REVISION_WINDOW_HOURS = 72;
 const REVISION_IGNORED_FILES = [
   /^atris\/MAP\.md$/,
   /^atris\/refs\/MAP-NOTES\.md$/,
+  /^atris\/refs\/map\/[^/]+\.md$/,
   /^test\/fast-tests\.txt$/,
   /^atris\/logs\//,
   /^atris\/runs\//,
