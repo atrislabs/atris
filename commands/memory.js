@@ -14,13 +14,14 @@ const {
   pushFolder,
   statusFolder,
 } = require('../lib/memory-folder');
+const { progressPrinter } = require('../lib/memory-files');
 const { LIVE_HELP, isLiveCommand } = require('../lib/memory-live');
 
 const USAGE = [
   ...LIVE_HELP,
   'copy to laptop: atris memory <pull|push|status> [folder] [--json]',
   '  pull    copy your Atris memory folder down (default: ~/atris-memory)',
-  '  push    send back changes under wiki/ and files/',
+  '  push    send back changes under wiki/ and files/ (any file under files/: photos, PDFs, recordings)',
   '          --prune also removes pages under wiki/ and files/ that you deleted here',
   '  status  show what changed here since the last pull',
 ].join('\n');
@@ -181,12 +182,14 @@ async function memoryCommand(args = [], deps = {}) {
       const { token, account } = await (deps.getToken || defaultToken)();
       if (!token) return fail(NOT_LOGGED_IN);
       const client = memoryClient(deps.apiRequestJson || apiRequestJson, token);
+      const tty = deps.tty !== undefined ? deps.tty : (process.stderr.isTTY ? process.stderr : null);
+      const onProgress = json ? null : progressPrinter({ log, tty });
       if (sub === 'pull') {
-        result = await pullFolder({ dir, client, account });
+        result = await pullFolder({ dir, client, account, onProgress });
         lines = pullLines(dir, result);
         code = result.failed.length ? 1 : 0;
       } else {
-        result = await pushFolder({ dir, client, account, prune, onPrune: json ? null : pruneNotice(log) });
+        result = await pushFolder({ dir, client, account, prune, onPrune: json ? null : pruneNotice(log), onProgress });
         lines = pushLines(result);
         code = result.failed.length || result.conflicts.length || (result.changedOnServer || []).length ? 1 : 0;
       }
