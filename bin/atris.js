@@ -2401,7 +2401,7 @@ if (command === 'guide') {
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat' && (process.argv[3] === '--personal' || process.argv[3] === '-p')) {
   require('../commands/ask').askAtris(process.argv.slice(4))
-    .then(() => exitAfterStdoutDrain(0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((error) => {
       console.error(`✗ Ask failed: ${error.message || error}`);
       process.exit(1);
