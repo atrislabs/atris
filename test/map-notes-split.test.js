@@ -130,3 +130,24 @@ test('the blindspot pass reads the area notes that match the problem', (t) => {
   const fallback = gatherTerritoryContext(root, null, '');
   assert.match(fallback, /atris\/refs\/MAP-NOTES\.md first 100 lines/);
 });
+
+test('on this repo a query whose best line is long still returns notes within budget', () => {
+  const { mapNotesExcerpt } = require('../lib/map-refs');
+  const excerpt = mapNotesExcerpt(repoRoot, 'document health recall', 1400);
+  assert.ok(excerpt.length > 0, 'a long matching line is clipped, not dropped');
+  assert.ok(excerpt.length <= 1400);
+  assert.match(excerpt, /commands\/doc-health\.js/);
+  assert.doesNotMatch(excerpt, /\]\(map\//, 'the index holds no notes of its own here, so it is not read');
+  for (const budget of [1, 50, 333, 5000]) assert.ok(mapNotesExcerpt(repoRoot, 'sync review workflow', budget).length <= budget);
+});
+
+test('a half-migrated project keeps the notes still left in MAP-NOTES.md', (t) => {
+  const { mapNotesExcerpt } = require('../lib/map-refs');
+  const root = tempDir(t, 'atris-map-half-');
+  write(root, 'atris/MAP.md', '# map\n');
+  write(root, 'atris/refs/MAP-NOTES.md', '# notes\n\n- Auth moved. Open [auth.md](map/auth.md) for login.\n\n- Billing retries live in `lib/billing.js:40` and back off twice.\n');
+  write(root, 'atris/refs/map/auth.md', '# Auth\n\n- Login tokens refresh in `utils/auth.js:12`.\n');
+  const excerpt = mapNotesExcerpt(root, 'billing retries and login tokens', 2000);
+  assert.match(excerpt, /Billing retries live in/);
+  assert.match(excerpt, /Login tokens refresh/);
+});

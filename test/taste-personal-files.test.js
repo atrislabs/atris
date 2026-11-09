@@ -87,3 +87,16 @@ test('the shipped taste skill holds no one person\'s picks', () => {
   const text = fs.readdirSync(dir).map(name => fs.readFileSync(path.join(dir, name), 'utf8')).join('\n');
   assert.doesNotMatch(text, /the owner|Keshav|loves\.md|beat "|2026-11-07/);
 });
+
+test('without symlinks every shipped skill is copied whole into .claude/skills', (t) => {
+  const { project } = workspace(t);
+  const symlink = fs.symlinkSync;
+  fs.symlinkSync = () => { throw Object.assign(new Error('symlinks not allowed'), { code: 'EPERM' }); };
+  t.after(() => { fs.symlinkSync = symlink; });
+  syncAtris({ dryRun: false, yes: true, force: false });
+  fs.symlinkSync = symlink;
+  const copied = path.join(project, '.claude/skills/taste');
+  assert.strictEqual(fs.lstatSync(copied).isSymbolicLink(), false);
+  assert.deepStrictEqual(fs.readdirSync(copied).sort(), fs.readdirSync(path.join(repoRoot, 'atris/skills/taste')).sort());
+  assert.ok(fs.existsSync(path.join(project, '.claude/skills/wiki/note-shape.md')), 'notes beside SKILL.md come along');
+});
