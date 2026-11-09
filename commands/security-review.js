@@ -703,7 +703,7 @@ function printAuditHelp() {
     atris sentinel --no-upload                  keep this run on this machine only
     atris sentinel upload [run-folder]          save a past run (default: the last one)
 
-  only the summary is saved: titles, file:line locations, fixes and counts.
+  only the summary is saved: plain sentences, file:line locations and counts.
   source code and code lines never leave in an upload.
 
   reviews on a timer:

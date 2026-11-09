@@ -230,9 +230,11 @@ test('after a yes, hunters run on atris:fast and checks on atris:pro, then the s
       assert.ok(!Number.isNaN(Date.parse(body.started_at)) && !Number.isNaN(Date.parse(body.finished_at)));
       assert.strictEqual(body.counts.confirmed, 1);
       assert.strictEqual(body.counts.severity.high, 1);
-      assert.deepStrictEqual(body.findings, [{ id: CANDIDATE.fingerprint, severity: 'high', title: CANDIDATE.title, location: 'lib/run.js:4', fix: CANDIDATE.remediation.strategy, status: 'open' }]);
+      // The fix names execFileSync (camelCase), so it is replaced, never cleaned.
+      assert.deepStrictEqual(body.findings.map(({ id, ...f }) => f), [{ severity: 'high', title: CANDIDATE.title, location: 'lib/run.js:4', fix: cloud.FALLBACK_SENTENCE, status: 'open' }]);
+      assert.match(body.findings[0].id, /^f-[0-9a-f]{12}$/);
       assert.deepStrictEqual(body.needs_validation, []);
-      assert.deepStrictEqual(body.hardening, ['pin the child_process import to execFile only']);
+      assert.deepStrictEqual(body.hardening, [cloud.FALLBACK_SENTENCE]);
       // Every turn's receipt counts: 1 per fast call, 3 per pro call.
       const expected = turns.reduce((n, t) => n + (t.body.model === 'atris:fast' ? 1 : 3), 0);
       assert.strictEqual(body.credits_used, expected);
@@ -368,9 +370,9 @@ test('upload body strips code spans and secrets from model text', () => {
     assert.strictEqual(body.credits_used, 0);
     assert.deepStrictEqual(body.coverage, { in_scope: 3, done: 2, deferred: 1, blocked: 0 });
     assert.deepStrictEqual(body.counts.severity, { critical: 0, high: 0, medium: 0, low: 1, informational: 0 });
-    assert.strictEqual(body.findings[0].fix, '[removed: looked like a secret]');
+    assert.strictEqual(body.findings[0].fix, cloud.FALLBACK_SENTENCE);
     assert.deepStrictEqual(body.needs_validation, [{ title: 'Maybe open', blocked_on: 'who can reach port 80' }]);
-    assert.deepStrictEqual(body.hardening, ['use for keys']);
+    assert.deepStrictEqual(body.hardening, [cloud.FALLBACK_SENTENCE]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -526,8 +528,62 @@ test('uploaded text drops code spans and code-looking fragments, and keeps file:
     fs.writeFileSync(path.join(dir, 'REPORT.md'), '');
     const [f] = cloud.buildUploadBody(dir).findings;
     assert.strictEqual(f.location, 'lib/run.js:4');
-    assert.strictEqual(f.title, 'Title reaches as shell text');
-    assert.strictEqual(f.fix, 'replace with and set so cannot run');
-    for (const text of [f.title, f.fix]) assert.ok(!/[`(){}=&|;$]/.test(text), text);
+    assert.strictEqual(f.title, cloud.FALLBACK_SENTENCE);
+    assert.strictEqual(f.fix, cloud.FALLBACK_SENTENCE);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('upload text is kept only when it is plain prose', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-run-prose-'));
+  const keep = 'Anyone who can reach the admin route can delete accounts (no role check).';
+  const sentences = {
+    auth: 'return request.headers.authorization;',
+    py: 'from app.auth import verify_token',
+    example: `${'ghp_'}a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8 example`,
+    exampleWords: 'the example token AKIA2E4C6G8I0K2M4O6Q is live',
+    longToken: 'rotate the key abcdefghij0123456789xyz now',
+    plain: keep,
+  };
+  try {
+    fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ repo: 'r', run_id: 'run-1', engines: {}, coverage: {}, counts: {} }));
+    fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify(Object.entries(sentences).map(([k, v]) => ({ verdict: 'confirmed', fingerprint: k, title: v, severity: { overall: 'low' }, trace: [{ file: 'app/auth.py', line: 12 }], remediation: { strategy: v } }))));
+    fs.writeFileSync(path.join(dir, 'REPORT.md'), `## Hardening notes (not findings)\n\n- ${sentences.py}\n- ${keep}\n`);
+    const body = cloud.buildUploadBody(dir);
+    const byTitle = body.findings.map((f) => f.title);
+    assert.deepStrictEqual(byTitle, [cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, keep]);
+    assert.ok(body.findings.every((f) => f.location === 'app/auth.py:12'));
+    assert.strictEqual(body.findings[5].fix, keep);
+    assert.deepStrictEqual(body.hardening, [cloud.FALLBACK_SENTENCE, keep]);
+    assert.ok(!JSON.stringify(body).includes('authorization') && !JSON.stringify(body).includes('verify_token'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a private key inside an allowed file never reaches an atris model', async () => {
+  const root = makeRepo();
+  const begin = ['-----BEGIN', 'RSA PRIVATE KEY-----'].join(' ');
+  const end = ['-----END', 'RSA PRIVATE KEY-----'].join(' ');
+  const body = ['MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun', 'VTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u+qKhbwKfBstIs+bMY2Zkp18gnTxK', 'LxoS2tFczGkPLPgizskuemMghRniWaoLcyehkd3qqGElvW/VDL5AaWTg0nLVkjRo'];
+  fs.writeFileSync(path.join(root, 'lib', 'keys.js'), ['const { execSync } = require(\'child_process\');', 'const key = `', begin, ...body, end, '`;', 'execSync(process.argv[2]);', 'module.exports = { key };', ''].join('\n'));
+  execFileSync('git', ['add', 'lib/keys.js'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'keys'], { cwd: root });
+  const backend = await fakeBackend({ verdict: 'rejected' });
+  try {
+    await withEnv(backend, async () => {
+      await auditCommand(['--engine', 'atris', '--yes', '--no-upload'], { root, token: 'tok', env: NO_LOCAL });
+      const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
+      assert.ok(turns.some((t) => t.body.message.includes('### lib/keys.js')), 'the file itself was sent');
+      for (const t of turns) {
+        assert.ok(!t.body.message.includes('PRIVATE KEY'), 'no key markers');
+        for (const b of body) assert.ok(!t.body.message.includes(b.slice(0, 30)), 'no key body');
+      }
+      assert.ok(turns.some((t) => t.body.message.includes('module.exports = { key };')), 'lines after the key still go');
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('redaction hides long encoded runs but keeps paths and prose', () => {
+  const hex = 'a'.repeat(20) + '0123456789abcdef0123';
+  const b64 = 'QWxhZGRpbjpvcGVuIHNlc2FtZQ0K3k9z+Lm2Pq8Rt5Uv7Wx';
+  const { text } = cloud.redactOutgoing([`sha ${hex}`, `blob = "${b64}"`, '  starting paths: src/components/dashboard/widgets/charts/LineChart.jsx', 'plain words stay'].join('\n'));
+  assert.deepStrictEqual(text.split('\n'), ['[line hidden: looks like a secret]', '[line hidden: looks like a secret]', '  starting paths: src/components/dashboard/widgets/charts/LineChart.jsx', 'plain words stay']);
 });
