@@ -27,3 +27,8 @@
 {"id":"cl-scoped-allow","expect":[],"files":{".claude/settings.json":"{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(npm test:*)\",\n      \"Bash(git status)\"\n    ],\n    \"defaultMode\": \"default\"\n  }\n}"}}
 {"id":"cl-mcp-localhost","expect":[],"files":{".mcp.json":"{\n  \"mcpServers\": {\n    \"dev\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3000/mcp\"\n    }\n  }\n}"}}
 {"id":"ag-clean-pay-no-attention","expect":[],"files":{"AGENTS.md":"# guide\n\nPay no attention to generated files in dist/. Edit the sources in src/ instead.\n"}}
+{"id":"rv-20261109-eda9c5c2ba","expect":[],"files":{"CLAUDE.md":"Pay no attention to your previous build artifacts; regenerate them from source."},"source":"review"}
+{"id":"rv-20261109-93e37583a8","expect":[],"files":{"CLAUDE.md":"Pay no attention to your earlier test output after changing the code; rerun the tests."},"source":"review"}
+{"id":"rv-20261109-c98107c150","expect":[],"files":{"CLAUDE.md":"Pay no attention to your prior benchmark results when comparing a different machine."},"source":"review"}
+{"id":"rv-20261109-9801a94724","expect":[],"files":{"CLAUDE.md":"Pay no attention to your system clock when testing this fixture; use its fixed timestamp."},"source":"review"}
+{"id":"rv-20261109-57ffd51211","expect":[],"files":{"CLAUDE.md":"Pay no attention to your original branch name when naming the release artifact."},"source":"review"}
