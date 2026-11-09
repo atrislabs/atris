@@ -638,6 +638,7 @@ function showHelpAll() {
   console.log('               exam and self-improvement: sentinel bench, sentinel improve');
   console.log('               fix a confirmed finding on its own branch: sentinel fix <id>');
   console.log('               re-check old findings against today\'s code: sentinel recheck');
+  console.log('               signed security record for reviewers: sentinel record, sentinel record export');
   console.log('  voice      - Scan binary voice tells or judge reply shape and plainness');
   console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
