@@ -10,7 +10,7 @@ tags:
 
 # atris-design
 
-Start at [../taste/SKILL.md](../taste/SKILL.md) for the short list of what the owner likes. This file holds the full visual rules for building it.
+Start with the taste files that [../taste/SKILL.md](../taste/SKILL.md) points to for what the people you work for like. This file holds the full visual rules for building it.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 

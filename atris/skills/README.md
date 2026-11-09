@@ -28,7 +28,7 @@ Each line says what the skill does and when to open it. A skill with a review po
 ### Working in a workspace
 
 - Find files through MAP.md, check tasks and answer where-is-X questions. Open [atris](atris/SKILL.md) when you start in an Atris repo. Policy: `policies/ANTISLOP.md`.
-- How the owner likes things to look and read. Open [taste](taste/SKILL.md) before you make copy, pages, buttons or decks.
+- Where the taste of the people you work for lives and how to keep it. Open [taste](taste/SKILL.md) before you make copy, pages, buttons or decks.
 - Keep project memory as small linked notes: ingest, query, lint and reorganize. Open [wiki](wiki/SKILL.md) when you save knowledge or a note has grown too big.
 - Search past journals and decisions. Open [memory](memory/SKILL.md) when someone asks what happened before or why.
 - Clean stale docs, broken refs and abandoned tasks. Open [tidy](tidy/SKILL.md) when the workspace feels messy.

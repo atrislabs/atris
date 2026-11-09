@@ -21,4 +21,4 @@ How finished work is judged. Each line gives the rule and says when to open the 
 - Advanced technology made calm: help without possession and proactivity that is earned. Open [product-design-principles.md](product-design-principles.md) when you decide how a product feature should behave for a person.
 - Atris must protect the person who says it is wrong. Open [genesis.md](genesis.md) when a decision touches power, dissent or what Atris is for.
 
-How the owner likes things to look and read lives in [../skills/taste/SKILL.md](../skills/taste/SKILL.md).
+How the people you work for like things to look and read lives in their taste files. [../skills/taste/SKILL.md](../skills/taste/SKILL.md) says where they are.

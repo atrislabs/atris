@@ -103,7 +103,7 @@ Knowledge lives in small linked notes. Each area has a one-screen index whose li
 
 What you ship should not read as generated. If someone would believe an AI made it at a glance, that is the bug.
 
-- **Read the taste first.** Before making anything a person will see, read `atris/skills/taste/SKILL.md` if it exists. It is a one-screen list of how the owner likes buttons, copy, layout and more, and each line links to a short note you open only when your work touches it (`expected`).
+- **Read the taste first.** Before making anything a person will see, read `atris/taste/TASTE.md` in this project and `~/.atris/taste/TASTE.md` in the person's home folder, whichever exist, project first. Each is a one-screen list whose lines link to short notes you open only when your work touches them. `atris/skills/taste/SKILL.md` says how to read and keep them; write corrections into those taste files, never into the skill (`expected`).
 
 - **Gate it.** `atris slop detect <path>` is deterministic: exit 1 on a tell (file:line + rule), built for CI and review (`guarded`).
 - **Name the move.** Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, restraint.

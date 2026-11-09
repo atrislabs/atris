@@ -13,4 +13,4 @@ How one note should look. Back to [SKILL.md](SKILL.md).
 
 ## Example
 
-The taste skill is the model. `atris/skills/taste/SKILL.md` is one screen of rules. Each line links to a note like `copy.md` that holds the reason and the real copy picks that won or lost.
+Taste files are the model. `atris/taste/TASTE.md` is one screen of rules. Each line links to a note like `copy.md` that holds the reason and the real picks that won or lost. `atris/skills/taste/notes.md` spells out the shape.

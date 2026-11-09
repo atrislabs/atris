@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { ensureProjectTasteFile } = require('../lib/taste-notes');
 const path = require('path');
 const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
@@ -506,6 +507,9 @@ function initAtris() {
 `);
     markReady('workspace', 'lessons.md', '✓ Created lessons.md');
   }
+
+  // Project taste starts empty and is never overwritten; sync leaves it alone.
+  if (ensureProjectTasteFile(targetDir)) markReady('workspace', 'taste/TASTE.md', '✓ Created taste/TASTE.md');
 
   // Create features directory and README
   const featuresDir = path.join(targetDir, 'features');

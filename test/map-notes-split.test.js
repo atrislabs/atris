@@ -99,3 +99,34 @@ test('this repo indexes every area note from MAP-NOTES.md and each note links ba
     assert.match(fs.readFileSync(path.join(repoRoot, doc), 'utf8'), /\[MAP-NOTES\.md\]\(\.\.\/MAP-NOTES\.md\)/, `${doc} links back`);
   }
 });
+
+function splitWorkspace(t) {
+  const root = tempDir(t, 'atris-map-split-read-');
+  write(root, 'atris/MAP.md', '# map\n');
+  write(root, 'atris/refs/MAP-NOTES.md', '# notes\n\n- Auth and login. Open [auth.md](map/auth.md) when you sign in.\n- Sync and review. Open [sync.md](map/sync.md) when you sync.\n');
+  // The auth note sorts first and mentions the workflow word many times, so a
+  // reader that fills in file order runs out of room before the sync note.
+  write(root, 'atris/refs/map/auth.md', '# Auth\n\n' + Array.from({ length: 60 }, (_, i) => `- workflow step ${i} for login tokens in \`utils/auth.js\``).join('\n') + '\n');
+  write(root, 'atris/refs/map/sync.md', '# Sync\n\n- The sync review workflow picks local, cloud or merge per conflicting file in `commands/business-sync.js`.\n');
+  return root;
+}
+
+test('the excerpt ranks area notes by match and fills from the best one first', (t) => {
+  const { mapNotesExcerpt } = require('../lib/map-refs');
+  const root = splitWorkspace(t);
+  const excerpt = mapNotesExcerpt(root, 'Explain the sync review workflow', 400);
+  assert.ok(excerpt.length <= 400);
+  assert.match(excerpt.split('\n')[0], /sync review workflow picks local, cloud or merge/);
+  assert.doesNotMatch(excerpt, /Open \[auth\.md\]/, 'index descriptions are not spent from the budget');
+  assert.equal(mapNotesExcerpt(root, 'the and', 400), '');
+});
+
+test('the blindspot pass reads the area notes that match the problem', (t) => {
+  const { gatherTerritoryContext } = require('../commands/unknowns');
+  const root = splitWorkspace(t);
+  const context = gatherTerritoryContext(root, null, 'change the sync review conflict flow');
+  assert.match(context, /map notes lines that match the problem/);
+  assert.match(context, /picks local, cloud or merge per conflicting file/);
+  const fallback = gatherTerritoryContext(root, null, '');
+  assert.match(fallback, /atris\/refs\/MAP-NOTES\.md first 100 lines/);
+});

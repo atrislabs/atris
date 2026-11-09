@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { MAP_REF_DOCS, existingMapDocs } = require('../lib/map-refs');
+const { mapNotesExcerpt } = require('../lib/map-refs');
 const { spawnSync } = require('child_process');
 const { getLogPath } = require('../lib/journal');
 const { ensureValidCredentials } = require('../utils/auth');
@@ -193,18 +193,6 @@ function findRelevantContextFiles(cwd, prompt) {
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 4);
-}
-
-// The deep map is large: keep only the lines that share a word with the prompt.
-function mapNotesExcerpt(cwd, prompt, maxChars) {
-  // The notes file and any area notes it indexes; the boot map is read elsewhere.
-  const notes = existingMapDocs(cwd).filter(doc => doc !== MAP_REF_DOCS[0]);
-  if (!notes.length) return '';
-  const words = promptWords(prompt);
-  if (!words.size) return '';
-  const lines = notes.flatMap(doc => fs.readFileSync(path.join(cwd, doc), 'utf8').split(/\r?\n/))
-    .filter(line => [...words].some(word => line.toLowerCase().includes(word)));
-  return lines.join('\n').slice(0, maxChars);
 }
 
 function collectWorkspaceContext(prompt, cwd = process.cwd()) {

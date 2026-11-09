@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { mapNotesPath } = require('../lib/map-refs');
+const { mapNotesPath, mapNotesExcerpt } = require('../lib/map-refs');
 const { spawnSync } = require('child_process');
 const taskDb = require('../lib/task-db');
 const {
@@ -166,10 +166,14 @@ function formatTaskEvents(rows) {
   }).join('\n');
 }
 
-function gatherTerritoryContext(root, db) {
+function gatherTerritoryContext(root, db, problem = '') {
   const map = readFileBestEffort(path.join(root, 'atris', 'MAP.md'), { lines: 100 });
   const notesPath = mapNotesPath(root);
-  const notes = notesPath ? readFileBestEffort(path.join(root, notesPath), { lines: 100 }) : '';
+  // Follow the notes index to the area notes that match the problem; with no
+  // match, fall back to the top of the notes file.
+  const matched = notesPath ? mapNotesExcerpt(root, problem, READ_LIMIT) : '';
+  const notes = matched || (notesPath ? readFileBestEffort(path.join(root, notesPath), { lines: 100 }) : '');
+  const notesTitle = matched ? 'map notes lines that match the problem' : `${notesPath} first 100 lines`;
   const lessonsMd = readFileBestEffort(path.join(root, 'atris', 'lessons.md'), { maxChars: READ_LIMIT });
   const lessonsJson = readFileBestEffort(path.join(root, 'atris', 'lessons.json'), { maxChars: READ_LIMIT });
   const journals = readRecentJournals(root);
@@ -179,7 +183,7 @@ function gatherTerritoryContext(root, db) {
   return [
     section('workspace_root', root),
     section('atris/MAP.md first 100 lines', map),
-    ...(notesPath ? [section(`${notesPath} first 100 lines`, notes)] : []),
+    ...(notesPath ? [section(notesTitle, notes)] : []),
     section('atris/lessons.md', lessonsMd),
     section('atris/lessons.json', lessonsJson),
     section('last 3 daily journals', journals),
@@ -617,7 +621,7 @@ async function unknownsCommand(args = []) {
     return 1;
   }
 
-  const territoryContext = gatherTerritoryContext(root, db);
+  const territoryContext = gatherTerritoryContext(root, db, problem);
   const analysis = analyzeWithModel(root, problem, territoryContext);
   const unknowns = normalizeUnknowns(analysis);
   const questions = normalizeQuestions(analysis, problem);

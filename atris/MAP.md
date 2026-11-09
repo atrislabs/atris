@@ -29,7 +29,7 @@ that matches. `atris doc-health` checks the refs in every one of these files;
 | document health and recall exam | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/recall-seen.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs; `--recall` scores found, files opened, wrong opens and tokens read |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
-| taste notes | `atris/skills/taste/SKILL.md` | one-screen list of how the owner likes copy, buttons and layout; each line links to a short note |
+| taste notes | `atris/skills/taste/SKILL.md`, `lib/taste-notes.js` | how taste files work; the taste itself lives in each project's `atris/taste/TASTE.md` and the person's `~/.atris/taste/TASTE.md`; sync never touches either |
 | security audit (sentinel) | `lib/security-audit.js`, `lib/security-audit-classes.js`, `commands/security-review.js` | `atris sentinel` = `security-review audit`; engines hunt, another model verifies; member `atris/team/sentinel/` |
 | workspace tree hash | `commands/tree.js`, `lib/tree-hash.js` | `atris tree hash` over the doctrine files |
 | task database and TODO markdown renderer | `lib/task-db.js`, `lib/todo-fallback.js` | SQLite task store, claim leases and expiry, `renderTodoMarkdown`, legacy fallback |

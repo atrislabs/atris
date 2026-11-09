@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { ensureProjectTasteFile } = require('../lib/taste-notes');
 const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
@@ -566,6 +567,11 @@ function syncAtris(options = {}) {
   if (!fs.existsSync(policiesDir)) {
     if (!dryRun) fs.mkdirSync(policiesDir, { recursive: true });
     console.log(`${dryRun ? 'Would create' : '✓ Created'} atris/policies/ folder`);
+  }
+
+  // Project taste is the project's own; create a starter only when missing.
+  if (ensureProjectTasteFile(targetDir, { dryRun })) {
+    console.log(`${dryRun ? 'Would create' : '✓ Created'} atris/taste/TASTE.md`);
   }
 
   const filesToSync = [
