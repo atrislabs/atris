@@ -256,6 +256,16 @@ test('engine runs drop api key variables so only subscriptions are used', () => 
   assert.deepStrictEqual(Object.keys(env).sort(), ['GITHUB_TOKEN', 'HOME', 'PATH']);
 });
 
+test('claude proposers are denied reads under ~/.atris and codex runs read-only', () => {
+  const c = improve.engineInvocation({ engine: 'claude', prompt: 'p', cwd: os.tmpdir(), timeoutMs: 1000 });
+  const i = c.args.indexOf('--disallowedTools');
+  assert.ok(i > c.args.indexOf('-p'));
+  assert.deepStrictEqual(c.args.slice(i + 1), ['Read(~/.atris/**)', 'Grep(~/.atris/**)', 'Glob(~/.atris/**)', 'Bash', 'WebFetch']);
+  const x = improve.engineInvocation({ engine: 'codex', prompt: 'p', cwd: os.tmpdir(), timeoutMs: 1000 });
+  assert.ok(!x.args.includes('--disallowedTools'));
+  assert.ok(x.args.includes('read-only'));
+});
+
 test('the json answer is found inside engine chatter', () => {
   const p = improve.extractJsonObject('sure, here it is:\n```json\n{"title":"t","file":"lib/sentinel-guard.js","edits":[{"old_string":"a {","new_string":"b"}]}\n```');
   assert.strictEqual(p.title, 't');
@@ -351,6 +361,15 @@ test('end to end: a change that lifts held-out catch is kept on its own branch w
   assert.strictEqual(execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(), 'master');
   assert.match(fs.readFileSync(res.receipt, 'utf8'), /result: kept on its branch for review/);
   assert.doesNotMatch(fs.readFileSync(res.receipt, 'utf8'), /h-nc|192\.0\.2\.4/);
+  // A killed run's empty leftovers are swept by the next run. The kept branch stays.
+  const leftover = path.join(tmp('sb-left-'), 'atris-sentinel-improve-dead');
+  execFileSync('git', ['worktree', 'add', '-q', '-b', 'sentinel-improve/dead', leftover, 'master'], { cwd: repo, stdio: 'ignore' });
+  const again = await runImprove(repo, held, { ...NC_EDIT, edits: [{ old_string: "const WORDS = ['rm -rf /'];", new_string: "const WORDS = ['rm -rf /', 'ls'];" }] });
+  assert.strictEqual(again.res.kept, false);
+  const left = execFileSync('git', ['branch', '--list', 'sentinel-improve/*'], { cwd: repo, encoding: 'utf8' });
+  assert.match(left, new RegExp(res.branch.replace(/[/]/g, '\\/')));
+  assert.doesNotMatch(left, /sentinel-improve\/dead/);
+  assert.strictEqual(fs.existsSync(leftover), false);
 });
 
 test('end to end: a change that wrongly blocks a held-out everyday command is rejected and its branch removed', async () => {
