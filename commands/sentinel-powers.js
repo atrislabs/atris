@@ -124,7 +124,7 @@ function holdForBranch(branch) {
 async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
   const watch = require('../lib/sentinel-watch');
   const events = require('../lib/sentinel-events');
-  const result = await watch.runWatch(root, { base: deps.osvBase || process.env.ATRIS_OSV_BASE || watch.OSV_BASE, ...(deps.request ? { request: deps.request } : {}) });
+  const result = await watch.runWatch(root, { base: deps.osvBase || process.env.ATRIS_OSV_BASE || watch.OSV_BASE, ...(deps.request ? { request: deps.request } : {}), ...(deps.maxLockfileBytes ? { maxBytes: deps.maxLockfileBytes } : {}) });
   const evs = watch.toEvents(result, { repo: deps.repo });
   let branch = null;
   try { branch = watch.branchState(root, { run: deps.run }); } catch { branch = { git: true, onDefault: false, liveFingerprints: null }; }
@@ -132,15 +132,18 @@ async function runWatchCheck(root, { upload = true, deps = {} } = {}) {
   if (result.offline) res = { ok: true, skipped: 'offline', sent: 0 };
   else {
     try {
-      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold: holdForBranch(branch) });
+      // A scan that skipped a lockfile keeps every earlier finding open.
+      const hold = result.incomplete ? () => true : holdForBranch(branch);
+      res = await events.reportFindings(root, 'threat', evs, { token: upload ? tokenFor(deps) : '', base: deps.base, env: deps.env || process.env, upload, hold });
     } catch (e) { res = { ok: false, reason: e.message }; }
   }
   return { result, events: evs, upload: res, branch };
 }
 
-function heldLine(upload, branch) {
+function heldLine(upload, branch, result) {
   const n = upload && upload.held;
   if (!n) return null;
+  if (result && result.incomplete) return `  this check did not read every lockfile. ${n} earlier threat${n === 1 ? '' : 's'} not seen this time ${n === 1 ? 'stays' : 'stay'} open on your dashboard`;
   const target = (branch && branch.defaultBranch) || 'the default branch';
   return `  fixed on this branch, not yet live: ${n} threat${n === 1 ? '' : 's'}. ${n === 1 ? 'it stays' : 'they stay'} open on your dashboard until the fix is merged into ${target}`;
 }
@@ -173,7 +176,7 @@ async function watchCommand(argv, deps = {}) {
   } else {
     console.log(watch.renderReport(result));
     if (upload.skipped !== 'offline') console.log(uploadLine(upload, 'the threats'));
-    const held = heldLine(upload, branch);
+    const held = heldLine(upload, branch, result);
     if (held) console.log(held);
     if (fix) {
       console.log('');

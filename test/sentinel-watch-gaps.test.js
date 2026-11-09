@@ -238,7 +238,7 @@ test('gap 3: when the tool moves a safe copy anyway the change is undone and lis
   const run = fakeTools({ npm(args, cwd) { write(cwd, 'package-lock.json', scopedLock({ globMinimatch: '9.0.5', eslintMinimatch: '9.0.5' })); } });
   try {
     const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
-    assert.match(r.out, /minimatch 9\.0\.3 to 9\.0\.5 in package-lock\.json: the update also moved a safe copy of minimatch \(3\.1\.2\)\. it was undone/);
+    assert.match(r.out, /minimatch 9\.0\.3 to 9\.0\.5 in package-lock\.json: the update also changed more than the affected copy: minimatch 3\.1\.2 at node_modules\/minimatch changed\. it was undone/);
     assert.strictEqual(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'), lockBefore);
     assert.match(r.out, /the fix changed nothing/);
   } finally { restoreEnv(); await srv.close(); }
@@ -515,4 +515,142 @@ test('gap 8: on the default branch a fix resolves right away', async () => {
     assert.deepStrictEqual(srv.sent().map((e) => e.status), ['resolved']);
     assert.ok(!/not yet live/.test(r.out));
   } finally { await srv.close(); }
+});
+
+// ---------------------------------------------------------------- review fixes
+
+test('review 1: a lockfile naming a folder outside the repo is refused before any tool runs', async () => {
+  const srv = await fakeOsv(API_OSV);
+  const restoreEnv = withGitEnv();
+  const outer = tmp('swg-outer-');
+  const other = path.join(outer, 'other-project');
+  write(other, 'package.json', { name: 'other', dependencies: { undici: '^5.0.0' } });
+  const otherBefore = fs.readFileSync(path.join(other, 'package.json'), 'utf8');
+  const repo = path.join(outer, 'a', 'repo');
+  fs.mkdirSync(repo, { recursive: true });
+  const lock = NPM_LOCK();
+  lock.packages['../../other-project'] = { name: 'other', dependencies: { undici: '^5.0.0' } };
+  write(repo, 'package.json', API_PKG);
+  write(repo, 'package-lock.json', lock);
+  sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'init');
+  const calls = [];
+  const run = fakeTools({ npm(args, cwd) { write(other, 'package.json', { name: 'other', dependencies: { undici: '^5.28.4' } }); } }, calls);
+  try {
+    const r = await capture(() => powers.watchCommand([repo, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assertVoice(r.out);
+    assert.strictEqual(calls.length, 0, 'npm never ran');
+    assert.strictEqual(fs.readFileSync(path.join(other, 'package.json'), 'utf8'), otherBefore);
+    assert.match(r.out, /package-lock\.json names a folder outside this repo or behind a symlink \(\.\.\/\.\.\/other-project\)\. nothing was changed/);
+    assert.strictEqual(sh(repo, 'status', '--porcelain'), '');
+  } finally { restoreEnv(); await srv.close(); }
+});
+
+test('review 1: a workspace behind a symlink is refused and a stray file the tool writes is undone', async () => {
+  const srv = await fakeOsv(API_OSV);
+  const restoreEnv = withGitEnv();
+  const away = tmp('swg-away-');
+  write(away, 'package.json', { name: 'away' });
+  const lock = NPM_LOCK();
+  lock.packages['packages/linked'] = { name: 'away' };
+  const root = gitRepo({ 'package.json': API_PKG, 'package-lock.json': lock });
+  fs.mkdirSync(path.join(root, 'packages'));
+  fs.symlinkSync(away, path.join(root, 'packages', 'linked'));
+  sh(root, 'add', '.'); sh(root, 'commit', '-qm', 'link');
+  const calls = [];
+  try {
+    const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run: fakeTools({ npm() {} }, calls), env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assert.strictEqual(calls.length, 0);
+    assert.match(r.out, /names a folder outside this repo or behind a symlink \(packages\/linked\)/);
+  } finally { srv.close(); }
+
+  const srv2 = await fakeOsv(MINIMATCH);
+  const root2 = gitRepo({ 'package.json': SCOPED_PKG, 'package-lock.json': scopedLock(), 'README.md': 'hello\n' });
+  const run = fakeTools({ npm(args, cwd) { write(cwd, 'package-lock.json', scopedLock({ globMinimatch: '9.0.5' })); write(cwd, 'README.md', 'changed\n'); write(cwd, 'extra.txt', 'new\n'); } });
+  try {
+    const r = await capture(() => powers.watchCommand([root2, '--fix', '--no-upload'], { osvBase: srv2.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assert.match(r.out, /minimatch 9\.0\.3 to 9\.0\.5 in package-lock\.json: npm also changed (?:README\.md|extra\.txt) and 1 more\. it was undone/);
+    assert.strictEqual(fs.readFileSync(path.join(root2, 'README.md'), 'utf8'), 'hello\n');
+    assert.ok(!fs.existsSync(path.join(root2, 'extra.txt')));
+    assert.strictEqual(readJson(path.join(root2, 'package-lock.json')).packages['node_modules/glob/node_modules/minimatch'].version, '9.0.3');
+    assert.strictEqual(sh(root2, 'status', '--porcelain'), '');
+  } finally { restoreEnv(); await srv2.close(); }
+});
+
+test('review 2 + 5: a vulnerable lockfile pushed past the cap or over the size limit stays open', async () => {
+  const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
+  const srv = await fakeOsv(osv);
+  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const root = tmp('swg-cap-');
+  write(root, 'zz/requirements.txt', 'requests==2.19.0\n');
+  const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
+  try {
+    await capture(() => powers.watchCommand([root], deps));
+    const opened = srv.sent();
+    assert.deepStrictEqual(opened.map((e) => e.status), ['open']);
+    for (let i = 0; i < 20; i++) write(root, `a${String(i).padStart(2, '0')}/requirements.txt`, 'flask==2.0.0\n');
+    srv.calls.length = 0;
+    const capped = await capture(() => powers.watchCommand([root], deps));
+    assertVoice(capped.out);
+    assert.ok(!srv.sent().some((e) => e.status === 'resolved'), 'nothing resolved from a capped scan');
+    assert.match(capped.out, /this check did not read every lockfile\. 1 earlier threat not seen this time stays open on your dashboard/);
+    for (let i = 0; i < 20; i++) fs.rmSync(path.join(root, `a${String(i).padStart(2, '0')}`), { recursive: true });
+
+    // Over the byte limit: skipped with a warning and still held open.
+    write(root, 'zz/requirements.txt', `requests==2.19.0\n${'# pad\n'.repeat(50)}`);
+    srv.calls.length = 0;
+    const big = await capture(() => powers.watchCommand([root], { ...deps, maxLockfileBytes: 100 }));
+    assert.match(big.out, /warning: skipped zz\/requirements\.txt: it is larger than 0 MB/);
+    assert.ok(!srv.sent().some((e) => e.status === 'resolved'));
+    assert.match(big.out, /stays open on your dashboard/);
+    const direct = await watch.runWatch(root, { base: srv.base, maxBytes: 100 });
+    assert.strictEqual(direct.incomplete, true);
+    assert.deepStrictEqual(direct.tooBig, ['zz/requirements.txt']);
+
+    // A full scan that no longer finds it resolves it.
+    write(root, 'zz/requirements.txt', 'requests==2.20.0\n');
+    srv.calls.length = 0;
+    await capture(() => powers.watchCommand([root], deps));
+    assert.deepStrictEqual(srv.sent().map((e) => [e.fingerprint, e.status]), [[opened[0].fingerprint, 'resolved']]);
+  } finally { await srv.close(); }
+});
+
+test('review 3: any change outside the affected copies undoes that lockfile', async () => {
+  const srv = await fakeOsv(MINIMATCH);
+  const restoreEnv = withGitEnv();
+  const root = gitRepo({ 'package.json': SCOPED_PKG, 'package-lock.json': scopedLock() });
+  const lockBefore = fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8');
+  const run = fakeTools({ npm(args, cwd) { const l = scopedLock({ globMinimatch: '9.0.5' }); l.packages['node_modules/eslint'].version = '8.57.1'; write(cwd, 'package-lock.json', l); } });
+  try {
+    const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assert.match(r.out, /the update also changed more than the affected copy: eslint 8\.57\.0 at node_modules\/eslint changed\..* it was undone/);
+    assert.strictEqual(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'), lockBefore);
+  } finally { restoreEnv(); await srv.close(); }
+
+  const srv2 = await fakeOsv(API_OSV);
+  const restore2 = withGitEnv();
+  const root2 = gitRepo({ 'package.json': API_PKG, 'pnpm-lock.yaml': PNPM_LOCK() });
+  const pnpmBefore = PNPM_LOCK();
+  const run2 = fakeTools({ pnpm(args, cwd) { write(cwd, 'pnpm-lock.yaml', PNPM_LOCK('3.22.3', '5.28.4').replace('  e2b@1.0.0:\n    resolution', '  left-pad@1.3.0:\n    resolution: {integrity: z}\n\n  e2b@1.0.0:\n    resolution')); } });
+  try {
+    const r = await capture(() => powers.watchCommand([root2, '--fix', '--no-upload'], { osvBase: srv2.base, run: run2, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assert.match(r.out, /left-pad 1\.3\.0 is new/);
+    assert.strictEqual(fs.readFileSync(path.join(root2, 'pnpm-lock.yaml'), 'utf8'), pnpmBefore);
+  } finally { restore2(); await srv2.close(); }
+});
+
+test('review 4: an open range becomes ^fixed and a tool that crosses a major anyway is refused', async () => {
+  const srv = await fakeOsv(API_OSV);
+  const restoreEnv = withGitEnv();
+  const pkg = { name: 'api', dependencies: { e2b: '^1.0.0', undici: '>=5.0.0' } };
+  const lock = NPM_LOCK();
+  lock.packages[''].dependencies.undici = '>=5.0.0';
+  const root = gitRepo({ 'package.json': pkg, 'package-lock.json': lock });
+  const seen = [];
+  const run = fakeTools({ npm(args, cwd) { seen.push(readJson(path.join(cwd, 'package.json'))); const l = NPM_LOCK('3.22.3', '6.0.0'); l.packages[''].dependencies.undici = '>=5.0.0'; write(cwd, 'package-lock.json', l); } });
+  try {
+    const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
+    assert.strictEqual(seen[0].dependencies.undici, '^5.28.4', 'never >=');
+    assert.match(r.out, /undici went to 6\.0\.0\. that is not a fixed version on the line this fix allows/);
+    assert.strictEqual(readJson(path.join(root, 'package.json')).dependencies.undici, '>=5.0.0', 'put back');
+  } finally { restoreEnv(); await srv.close(); }
 });
