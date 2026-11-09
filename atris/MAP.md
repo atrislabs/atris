@@ -21,6 +21,7 @@ that matches. `atris doc-health` checks the refs in every one of these files;
 | plain english to a command | `lib/intents.js`, `commands/guide.js` | `atris guide`; maps natural phrases to CLI commands |
 | project initialization | `commands/init.js`, `commands/sync.js`, `lib/gitignore.js`, `lib/init-commit.js` | project initialization implemented here; `init` and `update` scaffold user projects and initial setup commit |
 | first minute boot flow | `lib/first-minute.js`, `commands/activate.js`, `lib/context-gatherer.js` | bare `atris` screen, context activation, and first-contact gatherer |
+| current evidence for the next work decision | `lib/next-work-context.js`, `lib/first-minute.js`, `lib/member-context.js`, `commands/task.js` | `task next --json` and autonomous prompts share goals, existing paths, candidates, prior outcomes, lessons and evidence gaps |
 | atris done command | `commands/done.js` | land what a coding agent built: check, accept, sign |
 | working values | `atris.md`, `lib/values.js`, `lib/opening-lines.js` | the four values (acceleration, accuracy, ambition, agency) shown at boot |
 | boot files an agent starts with | `commands/init.js`, `scripts/member-lab.js`, `scripts/boot-tokens.js`, `scripts/boot-usage.js` | lean agent instructions, member benchmark lab, and boot token measurements |

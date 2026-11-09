@@ -84,7 +84,7 @@ test('falls back to the local projection when no task db exists, and writes no d
   }
 });
 
-test('an open projection task beats done-only db rows', () => {
+test('an unknown open projection task is kept alongside done-only db evidence', () => {
   const ctx = setupRoom();
   try {
     addDbTask(ctx.dbPath, ctx.root, { title: 'old win', status: 'done' });
@@ -94,7 +94,7 @@ test('an open projection task beats done-only db rows', () => {
 
     const tasks = loadLocalTasks(ctx.root);
 
-    assert.deepStrictEqual(tasks.map((task) => task.title), ['next up']);
+    assert.deepStrictEqual(tasks.map((task) => task.title), ['next up', 'old win']);
   } finally {
     taskDb.close();
     fs.rmSync(ctx.dir, { recursive: true, force: true });

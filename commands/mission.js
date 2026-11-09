@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
-const { memberProcessPrompt } = require('../lib/member-context');
+const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
@@ -8147,6 +8147,8 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ...turnDownLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
     ...preloadedContextLines,
+    '',
+    currentWorkPrompt(cwd, { ...mission, verifier: frozen.verifier }),
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
