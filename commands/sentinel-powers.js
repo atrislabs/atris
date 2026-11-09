@@ -142,7 +142,7 @@ function guardHelp() {
 
     atris sentinel guard install            guard claude code in this project
     atris sentinel guard install --global   guard every claude code session on this computer
-    atris sentinel guard status [--global]  is it on, and what it stopped today
+    atris sentinel guard status [--global]  is it on and what it stopped today
     atris sentinel guard test               run sample commands through the rules
     atris sentinel guard uninstall [--global]
 
@@ -150,6 +150,12 @@ function guardHelp() {
   push to main, drop databases or turn off security. normal curl, git push
   and rm in project folders still run. it uses fixed rules and no model.
   trusted sites for secrets can be added in ~/.atris/sentinel/guard.json.
+
+  what it promises: it stops the common ways an agent leaks a key or runs a
+  destructive command. what it cannot promise: a program that hides its
+  intent can still get past fixed rules. it does not read encoded payloads
+  or scripts written to disk and then run. it does not read interpreters
+  like python -c either. it is a seatbelt, not a sandbox.
 `);
   return 0;
 }
