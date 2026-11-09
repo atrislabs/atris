@@ -48,7 +48,7 @@ const CANDIDATE = {
   ],
   conditions: [{ kind: 'authorization_role', description: 'can create a task' }],
   severity: { likelihood: { score: 'medium', reason: 'tasks come from other people' }, impact: { score: 'high', reason: 'code execution' }, overall: 'high' },
-  remediation: { strategy: 'use execFileSync with an argv array', regression_test: 'a title with $(touch x) creates no file' },
+  remediation: { strategy: 'use execFileSync with an argv array', summary: 'Pass the command and its arguments separately instead of building one shell string.', regression_test: 'a title with $(touch x) creates no file' },
 };
 
 // What a model would answer for each sentinel prompt.
@@ -230,8 +230,11 @@ test('after a yes, hunters run on atris:fast and checks on atris:pro, then the s
       assert.ok(!Number.isNaN(Date.parse(body.started_at)) && !Number.isNaN(Date.parse(body.finished_at)));
       assert.strictEqual(body.counts.confirmed, 1);
       assert.strictEqual(body.counts.severity.high, 1);
-      // The fix names execFileSync (camelCase), so it is replaced, never cleaned.
-      assert.deepStrictEqual(body.findings.map(({ id, ...f }) => f), [{ severity: 'high', title: CANDIDATE.title, location: 'lib/run.js:4', fix: cloud.FALLBACK_SENTENCE, status: 'open' }]);
+      // The plain summary leaves; the code-level strategy (execFileSync) stays local.
+      assert.deepStrictEqual(body.findings.map(({ id, ...f }) => f), [{ severity: 'high', title: CANDIDATE.title, location: 'lib/run.js:4', fix: CANDIDATE.remediation.summary, status: 'open' }]);
+      assert.ok(!JSON.stringify(body).includes('execFileSync'));
+      const hunterTurn2 = turns.find((t) => t.body.model === 'atris:fast');
+      assert.ok(hunterTurn2.body.message.includes('Pass the command and its arguments separately instead of building one shell string'), 'hunters are asked for a plain fix sentence');
       assert.match(body.findings[0].id, /^f-[0-9a-f]{12}$/);
       assert.deepStrictEqual(body.needs_validation, []);
       assert.deepStrictEqual(body.hardening, [cloud.FALLBACK_SENTENCE]);
@@ -541,6 +544,9 @@ test('upload text is kept only when it is plain prose', () => {
     py: 'from app.auth import verify_token',
     example: `${'ghp_'}a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8 example`,
     exampleWords: 'the example token AKIA2E4C6G8I0K2M4O6Q is live',
+    call: "connect('production', 'administrator', 'Swordfish7')",
+    callSpaced: 'call connect (production, administrator) at boot',
+    quoted: "the password is 'Swordfish7' here",
     longToken: 'rotate the key abcdefghij0123456789xyz now',
     plain: keep,
   };
@@ -550,9 +556,9 @@ test('upload text is kept only when it is plain prose', () => {
     fs.writeFileSync(path.join(dir, 'REPORT.md'), `## Hardening notes (not findings)\n\n- ${sentences.py}\n- ${keep}\n`);
     const body = cloud.buildUploadBody(dir);
     const byTitle = body.findings.map((f) => f.title);
-    assert.deepStrictEqual(byTitle, [cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, cloud.FALLBACK_SENTENCE, keep]);
+    assert.deepStrictEqual(byTitle, [...Array(8).fill(cloud.FALLBACK_SENTENCE), keep]);
     assert.ok(body.findings.every((f) => f.location === 'app/auth.py:12'));
-    assert.strictEqual(body.findings[5].fix, keep);
+    assert.strictEqual(body.findings[8].fix, cloud.FALLBACK_SENTENCE, 'no plain summary, no fix text');
     assert.deepStrictEqual(body.hardening, [cloud.FALLBACK_SENTENCE, keep]);
     assert.ok(!JSON.stringify(body).includes('authorization') && !JSON.stringify(body).includes('verify_token'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -586,4 +592,16 @@ test('redaction hides long encoded runs but keeps paths and prose', () => {
   const b64 = 'QWxhZGRpbjpvcGVuIHNlc2FtZQ0K3k9z+Lm2Pq8Rt5Uv7Wx';
   const { text } = cloud.redactOutgoing([`sha ${hex}`, `blob = "${b64}"`, '  starting paths: src/components/dashboard/widgets/charts/LineChart.jsx', 'plain words stay'].join('\n'));
   assert.deepStrictEqual(text.split('\n'), ['[line hidden: looks like a secret]', '[line hidden: looks like a secret]', '  starting paths: src/components/dashboard/widgets/charts/LineChart.jsx', 'plain words stay']);
+});
+
+test('plain sentences with status codes and apostrophes survive', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-run-ok-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ repo: 'r', run_id: 'run-1', engines: {}, coverage: {}, counts: {} }));
+    const ok = ['Reject requests from non-admins (403).', "Never write the user's token to the log.", "Don't trust the caller's role header."];
+    fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify(ok.map((t, i) => ({ verdict: 'confirmed', fingerprint: `k${i}`, title: t, severity: { overall: 'low' }, trace: [{ file: 'a.js', line: 1 }], remediation: { strategy: 'x()', summary: t } }))));
+    const body = cloud.buildUploadBody(dir);
+    assert.deepStrictEqual(body.findings.map((f) => f.title), ok);
+    assert.deepStrictEqual(body.findings.map((f) => f.fix), ok);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
