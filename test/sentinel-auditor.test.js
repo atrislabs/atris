@@ -625,3 +625,35 @@ test('two copies of one project count a fix once: the record is keyed by project
     });
   } finally { await backend.close(); fs.rmSync(a, { recursive: true, force: true }); fs.rmSync(b, { recursive: true, force: true }); }
 });
+
+test('a moved severe finding whose re-check timed out still shows in the terminal, counts, report and upload', async () => {
+  const backend = await fakeBackend();
+  const root = makeRepo();
+  try {
+    await withBackend(backend, async ({ out, env }) => {
+      await firstReview(root);
+      fs.writeFileSync(path.join(root, 'lib', 'run.js'), "module.exports = require('./task');\n");
+      fs.writeFileSync(path.join(root, 'lib', 'task.js'), "const { execSync } = require('child_process');\nmodule.exports = { runTask: (t) => execSync(`echo ${t.title}`) };\n");
+      const runJobs = async (jobs) => jobs.map((j) => (j.prompt.includes('You are the auditor') ? { ok: false, stdout: '', reason: 'timed out' } : { ok: true, stdout: answerFor(j.prompt, { clean: true }) }));
+      const code = await auditCommand(['--quick', '--engine', 'local'], { root, token: 'tok', env, runJobs });
+      assert.strictEqual(code, 1, out.join('\n'));
+      const text = out.join('\n');
+      // Terminal.
+      assert.ok(text.includes('1 confirmed (1 high)'), text);
+      assert.ok(text.includes(`${CANDIDATE.title} (last seen at lib/run.js:4, still open`), text);
+      // Counts.
+      const last = audit.latestRun(root);
+      assert.strictEqual(last.meta.counts.confirmed, 1);
+      assert.strictEqual(last.meta.counts.severity.high, 1);
+      // Report.
+      const report = fs.readFileSync(path.join(last.dir, 'REPORT.md'), 'utf8');
+      assert.ok(report.startsWith('# Security audit') && report.includes('1 confirmed problem (1 high)'), report.slice(0, 400));
+      assert.ok(report.includes(`- high: ${CANDIDATE.title} (lib/run.js:4). Still open:`), report);
+      // Upload.
+      const body = backend.log.filter((e) => e.path === '/api/sentinel/runs').pop().body;
+      assert.strictEqual(body.counts.confirmed, 1);
+      assert.strictEqual(body.counts.severity.high, 1);
+      assert.deepStrictEqual(body.findings.map(({ id, ...f }) => f), [{ severity: 'high', title: CANDIDATE.title, location: 'lib/run.js:4', fix: CANDIDATE.remediation.summary, status: 'open' }]);
+    });
+  } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});

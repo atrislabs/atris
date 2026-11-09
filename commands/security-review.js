@@ -457,13 +457,15 @@ function renderAuditLanding({ dir, meta, records }) {
     if (hunters < 1) L.push('  this budget is too small to send a hunter; try --budget 8 or more');
     else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
   } else {
-    L.push(`  ${confirmed.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
+    const waiting = meta.waiting || [];
+    L.push(`  ${confirmed.length + waiting.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
     L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
     L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}${meta.credits_used ? ` · ${meta.credits_used} credits used` : ''}`);
     for (const r of confirmed.slice(0, 6)) {
       const sink = r.trace[r.trace.length - 1];
       L.push(`    ${r.severity.overall.padEnd(8)} ${r.title} (${sink.file}:${sink.line})`);
     }
+    for (const w of waiting.slice(0, 6)) L.push(`    ${w.severity.padEnd(8)} ${w.title} (last seen at ${w.location}, still open: ${w.why})`);
     if (meta.run_status === 'incomplete') L.push(`  incomplete: ${String(meta.incomplete_reason).replace(/_/g, ' ')}`);
   }
   L.push(`  report: ${tildePath(path.join(dir, 'REPORT.md'))}`, '');
