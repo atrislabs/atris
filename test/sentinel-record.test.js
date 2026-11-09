@@ -50,7 +50,7 @@ function seed(ctx) {
 }
 
 function browserFromHtml(html) {
-  const m = html.match(/<script>\n([\s\S]*?)\n\(async function \(\) \{/);
+  const m = html.match(/<script>\n([\s\S]*?)\nwindow\.recordChecked = /);
   assert.ok(m, 'html holds the verifier');
   // eslint-disable-next-line no-new-func
   return new Function(`${m[1]}\nreturn browserVerify;`)();
@@ -101,7 +101,7 @@ test('editing, deleting, reordering, inserting or cutting any entry breaks verif
     const swapped = clone(doc); [swapped.entries[1], swapped.entries[2]] = [swapped.entries[2], swapped.entries[1]];
     let r = await both(swapped, html);
     assert.deepStrictEqual([r.ok, r.entry, r.code], [false, 2, 'seq']);
-    assert.match(r.label, /^entry 2 \(/);
+    assert.strictEqual(r.label, 'entry 2');
 
     // An attacker without the key builds a perfect-looking entry 2.
     const other = crypto.generateKeyPairSync('ed25519').privateKey;
@@ -171,7 +171,7 @@ test('the key lives outside the repo with 0600 and backfill marks old runs once'
   const ctx = setup();
   try {
     const doc = seed(ctx);
-    const kp = rec.keyPath('shop', ctx.opts);
+    const kp = rec.keyPath(rec.projectId(ctx.root), ctx.opts);
     assert.ok(!kp.startsWith(ctx.root));
     assert.strictEqual(fs.statSync(kp).mode & 0o777, 0o600);
     assert.strictEqual(doc.entries[0].backfilled, true);
@@ -219,7 +219,7 @@ test('cli: show, export html and json, verify names the broken entry', async () 
     fs.writeFileSync(json, JSON.stringify(doc));
     lines.length = 0;
     assert.strictEqual(await recordCommand(['verify', json], deps), 1);
-    assert.match(lines.join('\n'), /broken at entry 3 \(agent check from \d{4}-\d\d-\d\d\): its contents were changed/);
+    assert.match(lines.join('\n'), /broken at entry 3: its contents were changed/);
     for (const l of lines) { assert.doesNotMatch(l, /—/); assert.doesNotMatch(l, /, (and|but|so|then|because|which|when) /); }
   } finally { console.log = log; console.error = err; ctx.cleanup(); }
 });
@@ -239,5 +239,87 @@ test('sentinel commands add an entry when they finish', async () => {
     assert.strictEqual(entries[1].atris_version, require('../package.json').version);
     assert.match(entries[1].exam_version, /^rules-[0-9a-f]{12}/);
     assert.strictEqual(rec.verifyDoc(rec.buildExport(ctx.root, ctx.opts)).ok, true);
+  } finally { ctx.cleanup(); }
+});
+
+// A tiny stand-in for the browser page: runs the page's own script.
+function fakePage(html) {
+  const make = (tag) => ({ tag, children: [], textContent: '', className: '', appendChild(c) { this.children.push(c); return c; } });
+  const json = html.match(/<script type="application\/json" id="record">([\s\S]*?)<\/script>/)[1];
+  const els = { status: make('div'), report: make('div'), record: { textContent: json } };
+  const document = { getElementById: (id) => els[id], createElement: make };
+  const window = { crypto: globalThis.crypto };
+  const script = html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
+  // eslint-disable-next-line no-new-func
+  new Function('document', 'window', script)(document, window);
+  const text = (el) => [el.textContent, ...(el.children || []).map(text)].join(' ');
+  return window.recordChecked.then(() => ({ status: els.status.textContent, ok: els.status.className === 'ok', report: text(els.report), drawn: els.report.children.length }));
+}
+
+test('the page shows nothing from the record until it verifies', async () => {
+  const ctx = setup();
+  try {
+    const doc = seed(ctx);
+    const html = rec.renderHtml(doc);
+    const outside = html.replace(/<script type="application\/json" id="record">[\s\S]*?<\/script>/, '');
+    for (const e of doc.entries) assert.ok(!outside.includes(e.summary), 'no pre-rendered entry text');
+    assert.ok(!outside.includes(doc.key_fingerprint), 'no pre-rendered key');
+    assert.match(outside, /atris sentinel record verify FILE/, 'the page names the check to trust');
+
+    const good = await fakePage(html);
+    assert.strictEqual(good.ok, true);
+    assert.ok(good.report.includes(doc.entries[1].summary));
+    assert.ok(good.report.includes(doc.key_fingerprint));
+
+    // Editing visible text changes nothing the page shows about the record.
+    const visible = await fakePage(html.replace('this page checks the signed record', 'this page was audited by a big firm and checks the signed record'));
+    assert.deepStrictEqual(visible, good);
+
+    // Editing the record breaks it and nothing is drawn.
+    const changed = await fakePage(html.replace('2 problems were confirmed fixed', '9 problems were confirmed fixed').replace(/1 problem was confirmed fixed/, '9 problems were confirmed fixed'));
+    assert.strictEqual(changed.ok, false);
+    assert.match(changed.status, /^broken at entry 2: /);
+    assert.strictEqual(changed.drawn, 0);
+  } finally { ctx.cleanup(); }
+});
+
+test('two folders with the same name get their own key and record', () => {
+  const ctx = setup();
+  try {
+    const other = path.join(ctx.tmp, 'elsewhere', 'shop');
+    fs.mkdirSync(other, { recursive: true });
+    assert.notStrictEqual(rec.projectId(ctx.root), rec.projectId(other));
+    rec.append(ctx.root, { kind: 'guard', summary: 'One.' }, ctx.opts);
+    rec.append(other, { kind: 'guard', summary: 'Two.' }, ctx.opts);
+    assert.notStrictEqual(rec.recordPath(ctx.root, ctx.opts), rec.recordPath(other, ctx.opts));
+    assert.notStrictEqual(rec.buildExport(ctx.root, ctx.opts).key_fingerprint, rec.buildExport(other, ctx.opts).key_fingerprint);
+    assert.strictEqual(rec.buildExport(other, ctx.opts).project, 'shop', 'the readable name is kept for display');
+    assert.strictEqual(rec.readEntries(rec.recordPath(other, ctx.opts)).length, 1);
+  } finally { ctx.cleanup(); }
+});
+
+test('a threat is fixed only when its own lockfile was read and is clean', () => {
+  const ctx = setup();
+  try {
+    const threat = { ecosystem: 'npm', name: 'left-pad', version: '1.0.0', severity: 'high', lockfile: 'web/package-lock.json' };
+    const scan = (lockfiles, affected, extra = {}) => rec.append(ctx.root, rec.entryFromWatch(ctx.root, { lockfiles: lockfiles.map((file) => ({ file })), affected, ...extra }, ctx.opts), ctx.opts);
+    scan(['web/package-lock.json', 'package-lock.json'], [threat]);
+    // The lockfile was removed: the threat was not checked, so it stays open.
+    let e = scan(['package-lock.json'], []);
+    assert.deepStrictEqual(e.findings, []);
+    assert.strictEqual(e.counts.held, 1);
+    // A side branch with the threat still live on the default branch: open.
+    const id = e && rec.summarize(rec.readEntries(rec.recordPath(ctx.root, ctx.opts))).findings[0].id;
+    e = rec.append(ctx.root, rec.entryFromWatch(ctx.root, { lockfiles: [{ file: 'web/package-lock.json' }], affected: [] }, { ...ctx.opts, branch: { onDefault: false, liveFingerprints: new Set([id]) } }), ctx.opts);
+    assert.strictEqual(e.counts.held, 1);
+    let s = rec.summarize(rec.readEntries(rec.recordPath(ctx.root, ctx.opts)));
+    assert.strictEqual(s.open.high, 1);
+    assert.strictEqual(s.fixed.high, 0);
+    // Its own lockfile read on the default branch and clean: fixed.
+    e = scan(['web/package-lock.json'], []);
+    assert.deepStrictEqual(e.findings.map((f) => f.status), ['fixed']);
+    s = rec.summarize(rec.readEntries(rec.recordPath(ctx.root, ctx.opts)));
+    assert.strictEqual(s.open.high, 0);
+    assert.strictEqual(s.fixed.high, 1);
   } finally { ctx.cleanup(); }
 });

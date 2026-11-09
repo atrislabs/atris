@@ -92,11 +92,12 @@ async function recordCommand(argv = [], deps = {}) {
   let root;
   try { root = rootOf(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const project = rec.projectName(root);
+  const id = rec.projectId(root);
 
   if (sub === 'key') {
     let key;
-    try { key = rec.loadKey(project, lo); } catch (e) { console.error(`  could not open the record key: ${e.message}`); return 1; }
-    if (opts.json) { console.log(JSON.stringify({ project, public_key: key.publicKey, fingerprint: key.fingerprint }, null, 2)); return 0; }
+    try { key = rec.loadKey(id, { ...lo, name: project }); } catch (e) { console.error(`  could not open the record key: ${e.message}`); return 1; }
+    if (opts.json) { console.log(JSON.stringify({ project, project_id: id, public_key: key.publicKey, fingerprint: key.fingerprint }, null, 2)); return 0; }
     console.log(`\n  record key for ${project}${key.created ? ' (made just now)' : ''}`);
     console.log(`  public key: ${key.publicKey}`);
     console.log(`  fingerprint: ${key.fingerprint}`);
@@ -129,8 +130,8 @@ async function recordCommand(argv = [], deps = {}) {
   // show
   let entries;
   try { entries = rec.readEntries(rec.recordPath(root, lo)); } catch (e) { console.error(`  could not read the record: ${e.message}`); return 1; }
-  const key = rec.loadKey(project, { ...lo, create: false });
-  if (opts.json) { console.log(JSON.stringify({ project, key_fingerprint: key ? key.fingerprint : null, ...rec.summarize(entries) }, null, 2)); return 0; }
+  const key = rec.loadKey(id, { ...lo, create: false });
+  if (opts.json) { console.log(JSON.stringify({ project, project_id: id, key_fingerprint: key ? key.fingerprint : null, ...rec.summarize(entries) }, null, 2)); return 0; }
   console.log(rec.renderShow(project, entries, key));
   return 0;
 }
