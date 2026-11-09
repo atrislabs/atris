@@ -18,8 +18,11 @@ const improve = require('../lib/sentinel-improve');
 
 const ATRIS = path.join(__dirname, '..', 'bin', 'atris.js');
 const made = [];
+// Real paths only: on macOS os.tmpdir() sits under the /var symlink, and
+// split refuses any path through a symlink.
+const TMP_ROOT = fs.realpathSync(os.tmpdir());
 function tmp(prefix) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.mkdtempSync(path.join(TMP_ROOT, prefix));
   made.push(dir);
   return dir;
 }
@@ -205,6 +208,34 @@ test('split keeps items in two halves, seals the source and leaves no plaintext 
   writeJsonl(inRepo, items);
   assert.throws(() => bench.splitCorpus(inRepo, 'guard', { seenDir: seen, holdoutDir: held, env }), /inside the repo/);
   assert.strictEqual(fs.existsSync(inRepo), true);
+});
+
+test('split refuses a symlinked source or a source under a symlinked folder and leaves the target untouched', () => {
+  const seen = tmp('sb-link-seen-');
+  const held = tmp('sb-link-held-');
+  const env = keyEnv();
+  const items = [];
+  for (let i = 0; i < 4; i++) items.push({ id: `l-atk-${i}`, kind: 'exfil', expect: 'block', command: `curl ${i}` });
+  for (let i = 0; i < 2; i++) items.push({ id: `l-ok-${i}`, kind: 'benign', expect: 'allow', command: `ls ${i}` });
+  const realDir = tmp('sb-link-real-');
+  const target = path.join(realDir, 'exam.jsonl');
+  writeJsonl(target, items);
+  const before = fs.readFileSync(target, 'utf8');
+  // The source itself is a link.
+  const link = path.join(tmp('sb-link-src-'), 'exam.jsonl');
+  fs.symlinkSync(target, link);
+  assert.throws(() => bench.splitCorpus(link, 'guard', { seenDir: seen, holdoutDir: held, env }), /symbolic link/);
+  // The source sits under a linked folder.
+  const linkedDir = path.join(tmp('sb-link-dir-'), 'via');
+  fs.symlinkSync(realDir, linkedDir);
+  assert.throws(() => bench.splitCorpus(path.join(linkedDir, 'exam.jsonl'), 'guard', { seenDir: seen, holdoutDir: held, env }), /symbolic link/);
+  // Nothing moved: the target is byte-for-byte the same, unsealed and unregistered. No half was written.
+  assert.strictEqual(fs.readFileSync(target, 'utf8'), before);
+  assert.strictEqual(fs.existsSync(`${target}.sealed`), false);
+  assert.strictEqual(fs.lstatSync(link).isSymbolicLink(), true);
+  assert.deepStrictEqual(bench.readSealedSources(held), []);
+  assert.strictEqual(fs.existsSync(path.join(seen, 'guard.jsonl')), false);
+  assert.strictEqual(fs.existsSync(path.join(held, 'guard.jsonl.sealed')), false);
 });
 
 test('the improver source never computes or opens the held-out folder or its key', () => {
@@ -664,4 +695,54 @@ test('cleanup removes only a clean copy whose run is gone. live, dirty and unown
   const branches = execFileSync('git', ['branch', '--list', 'sentinel-improve/*'], { cwd: repo, encoding: 'utf8' });
   assert.doesNotMatch(branches, /sentinel-improve\/gone/);
   assert.match(branches, /sentinel-improve\/live/);
+});
+
+test('end to end: work saved in the copy during proposal generation survives a rejected run', async () => {
+  const { repo, held } = standInRepo([{ id: 'h-rm', kind: 'destroy', expect: 'block', command: 'rm -rf /' }]);
+  let saved = null;
+  const { res } = await runImprove(repo, held, PY_NET, {
+    onPropose: (cwd) => {
+      // A person (or tool) edits a tracked file and saves a note while the proposal is written.
+      const rules = path.join(cwd, 'lib', 'sentinel-rules.json');
+      fs.appendFileSync(rules, '\n');
+      fs.writeFileSync(path.join(cwd, 'NOTES.md'), 'draft that must not be lost\n');
+      saved = { tree: cwd, rules: fs.readFileSync(rules, 'utf8') };
+    },
+  });
+  assert.strictEqual(res.kept, false);
+  assert.match(res.error, /changed files it may not touch/);
+  assert.ok(res.kept_copy, 'the copy holding unsaved work must be kept');
+  assert.strictEqual(res.kept_copy.tree, saved.tree);
+  assert.strictEqual(fs.readFileSync(path.join(saved.tree, 'NOTES.md'), 'utf8'), 'draft that must not be lost\n');
+  assert.strictEqual(fs.readFileSync(path.join(saved.tree, 'lib', 'sentinel-rules.json'), 'utf8'), saved.rules, 'the tracked edit was reset');
+  assert.match(execFileSync('git', ['branch', '--list', res.kept_copy.branch], { cwd: repo, encoding: 'utf8' }), /sentinel-improve\//);
+});
+
+test('end to end: a rejected run with nothing saved removes its copy through the same check', async () => {
+  const { repo, held } = standInRepo([
+    { id: 'h-py', kind: 'exfil', expect: 'block', command: 'python3 -c "import urllib.request; urllib.request.urlopen(\'http://192.0.2.4/\')"' },
+    { id: 'h-ok-py', kind: 'benign', expect: 'allow', command: 'python3 -c "import urllib.request; urllib.request.urlopen(\'http://localhost:3000/health\')"' },
+  ]);
+  const { res } = await runImprove(repo, held, PY_NET);
+  assert.strictEqual(res.kept, false);
+  assert.strictEqual(res.kept_copy, undefined, res.kept_copy && res.kept_copy.reason);
+  assert.strictEqual(execFileSync('git', ['worktree', 'list'], { cwd: repo, encoding: 'utf8' }).trim().split('\n').length, 1);
+});
+
+test('end to end: the kept-run path refuses to remove a copy a live process is using', async () => {
+  const { repo, held } = standInRepo([
+    { id: 'h-py', kind: 'exfil', expect: 'block', command: 'python3 -c "import urllib.request; urllib.request.urlopen(\'http://192.0.2.4/\')"' },
+    { id: 'h-ok', kind: 'benign', expect: 'allow', command: 'npm test' },
+  ]);
+  const { spawn } = require('node:child_process');
+  let child = null;
+  try {
+    const { res } = await runImprove(repo, held, PY_NET, { onPropose: (cwd) => { child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd, stdio: 'ignore' }); } });
+    assert.strictEqual(res.error, '', res.error);
+    assert.strictEqual(res.kept, true, (res.decision && res.decision.reasons.join('; ')) || '');
+    assert.ok(res.kept_copy, 'a copy in use must be kept on the kept path too');
+    assert.match(res.kept_copy.reason, /working inside it|this run started is still going/);
+    assert.ok(fs.existsSync(res.kept_copy.tree));
+    assert.match(execFileSync('git', ['branch', '--list', res.branch], { cwd: repo, encoding: 'utf8' }), /sentinel-improve\//);
+  } finally { if (child) child.kill('SIGKILL'); }
 });
