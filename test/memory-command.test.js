@@ -291,3 +291,111 @@ test('atris memory is a real command with help and a clear unknown-subcommand an
   assert.match(status.stderr, /has not been pulled yet/);
   fs.rmSync(cwd, { recursive: true, force: true });
 });
+
+// The fake server plus DELETE /memory/file, answered the way the real one answers it.
+function deletingServer(initial, { canDelete = true } = {}) {
+  const server = fakeServer(initial);
+  const inner = server.request;
+  server.request = async (pathname, options = {}) => {
+    if (options.method !== 'DELETE') return inner(pathname, options);
+    const url = new URL(pathname, 'https://x.test');
+    const rel = url.searchParams.get('path');
+    server.calls.push(`DELETE ${url.pathname} ${rel}`);
+    assert.ok(options.token, 'every call carries the login token');
+    if (!canDelete || url.pathname !== '/memory/file') return { ok: false, status: 405, data: null, error: 'Method Not Allowed' };
+    if (!/^(wiki|files)\//.test(rel) || rel === 'wiki/learning.md') {
+      return { ok: false, status: 400, data: null, error: 'Only pages under wiki/ and files under files/ can be deleted.' };
+    }
+    if (!server.files.has(rel)) return { ok: false, status: 404, data: null, error: `No file at ${rel}.` };
+    server.files.delete(rel);
+    return { ok: true, status: 200, data: { path: rel, deleted: true } };
+  };
+  return server;
+}
+
+const deletes = (server) => server.calls.filter((call) => call.startsWith('DELETE'));
+
+test('push --prune removes pages deleted here, only under wiki/ and files/, and lists them first', async () => {
+  const dir = tmp();
+  const server = deletingServer(START);
+  await run('pull', dir, server);
+  for (const rel of ['wiki/people/sam.md', 'files/notes/todo.txt', 'now.md', 'wiki/learning.md']) {
+    fs.rmSync(path.join(dir, rel));
+  }
+
+  const plain = await run('push', dir, server);
+  assert.equal(plain.code, 0);
+  assert.deepEqual(deletes(server), []);
+  assert.match(plain.text, /files\/notes\/todo.txt, wiki\/people\/sam.md\) and are still in your Atris memory\. To remove them there too, run: atris memory push --prune/);
+  assert.match(plain.text, /now.md, wiki\/learning.md were deleted here\. Notes and daily pages can't be deleted/);
+  const before = (await run('status', dir)).text;
+  assert.match(before, /deleted\s+wiki\/people\/sam.md\s+\(atris memory push --prune removes it from Atris\)/);
+  assert.match(before, /deleted\s+now.md\s+\(notes and daily pages stay; pull brings it back\)/);
+  assert.match(before, /deleted\s+wiki\/learning.md\s+\(notes and daily pages stay/);
+
+  const out = [];
+  const code = await memoryCommand(['push', dir, '--prune'], {
+    log: (line) => out.push({ line, deletesSoFar: deletes(server).length }),
+    err: (line) => out.push({ line }),
+    apiRequestJson: server.request,
+    getToken: async () => ({ token: 'secret-token-123', account: 'acct-1' }),
+  });
+  assert.equal(code, 0);
+  const text = out.map((o) => o.line).join('\n');
+  assert.match(text, /^Removing 2 files from your Atris memory, because you deleted them here:\n {2}files\/notes\/todo.txt\n {2}wiki\/people\/sam.md\n/);
+  assert.ok(out.slice(0, 3).every((o) => o.deletesSoFar === 0), 'the list prints before anything is removed');
+  assert.match(text, /Removed 2 files from your Atris memory: files\/notes\/todo.txt, wiki\/people\/sam.md\./);
+  assert.match(text, /Not removed: now.md, wiki\/learning.md\. Notes and daily pages can't be deleted/);
+  assert.deepEqual(deletes(server).sort(), ['DELETE /memory/file files/notes/todo.txt', 'DELETE /memory/file wiki/people/sam.md']);
+  assert.equal(server.files.has('wiki/people/sam.md'), false);
+  assert.equal(server.files.has('files/notes/todo.txt'), false);
+  assert.equal(server.files.get('now.md'), START['now.md']);
+  assert.equal(server.files.get('wiki/learning.md'), START['wiki/learning.md']);
+
+  const after = (await run('status', dir)).text;
+  assert.doesNotMatch(after, /sam.md|todo.txt/);
+  assert.match(after, /deleted\s+now.md/);
+  const again = JSON.parse((await run('push', dir, server, ['--prune', '--json'])).text);
+  assert.deepEqual(again.removed, []);
+  assert.deepEqual(again.notRemovable, ['now.md', 'wiki/learning.md']);
+  assert.equal(deletes(server).length, 2);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('push --prune never removes a page changed on the server since the pull, and copes with one already gone', async () => {
+  const dir = tmp();
+  const server = deletingServer(START);
+  await run('pull', dir, server);
+  fs.rmSync(path.join(dir, 'wiki/people/sam.md'));
+  fs.rmSync(path.join(dir, 'files/notes/todo.txt'));
+  server.files.set('wiki/people/sam.md', '# Sam\nedited on another laptop\n');
+  server.files.delete('files/notes/todo.txt');
+  const r = await run('push', dir, server, ['--prune']);
+  assert.equal(r.code, 1);
+  assert.match(r.text, /Not removed: wiki\/people\/sam.md changed on the server since your last pull, so nothing was lost/);
+  assert.match(r.text, /Already gone from your Atris memory: files\/notes\/todo.txt\./);
+  assert.equal(server.files.get('wiki/people/sam.md'), '# Sam\nedited on another laptop\n');
+  assert.deepEqual(deletes(server), []);
+  const pulled = await run('pull', dir, server);
+  assert.equal(pulled.code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/people/sam.md'), 'utf8'), '# Sam\nedited on another laptop\n');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('push --prune on a server that cannot delete yet removes nothing and says so; --prune is push only', async () => {
+  const dir = tmp();
+  const server = deletingServer(START, { canDelete: false });
+  await run('pull', dir, server);
+  fs.rmSync(path.join(dir, 'wiki/people/sam.md'));
+  const r = await run('push', dir, server, ['--prune']);
+  assert.equal(r.code, 1);
+  assert.match(r.text, /Could not remove wiki\/people\/sam.md: the Atris server cannot delete pages yet/);
+  assert.equal(server.files.has('wiki/people/sam.md'), true);
+  assert.match((await run('status', dir)).text, /deleted\s+wiki\/people\/sam.md/);
+  for (const sub of ['pull', 'status']) {
+    const wrong = await run(sub, dir, server, ['--prune']);
+    assert.equal(wrong.code, 2);
+    assert.match(wrong.errs, /--prune only works with push/);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
