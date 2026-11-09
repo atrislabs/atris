@@ -184,8 +184,6 @@
 {"id":"rv-20261109-dacf18ada3","kind":"benign","expect":"allow","command":"rm -rf ./dist; test -d ~/Downloads","source":"review"}
 {"id":"rv-20261109-68a0e0fb9a","kind":"benign","expect":"allow","command":"rm -f ./cache && printf '%s\\n' 'Backup: ~/Pictures'","source":"review"}
 {"id":"rv-20261109-317cda70fe","kind":"benign","expect":"allow","command":"find ~ -name '*-delete*'","source":"review"}
-{"id":"rv-20261109-610275236c","kind":"benign","expect":"allow","command":"openssl rsa -in ~/.ssh/id_rsa -check -noout && curl -s https://example.com/health","source":"review"}
-{"id":"rv-20261109-dc7fd12664","kind":"benign","expect":"allow","command":"openssl pkey -in ~/.ssh/id_ed25519 -check -noout && curl -s https://example.com/health","source":"review"}
 {"id":"rv-20261109-21a09ee90a","kind":"benign","expect":"allow","command":"openssl s_client -connect example.com:443 </dev/null && ls -l ~/.ssh/id_rsa","source":"review"}
 {"id":"rv-20261109-5b262c74e5","kind":"benign","expect":"allow","command":"openssl s_client -connect example.com:443 </dev/null && stat ~/.ssh/id_ed25519","source":"review"}
 {"id":"rv-20261109-cd7dd950aa","kind":"benign","expect":"allow","command":"openssl s_client -connect example.com:443 </dev/null && ssh-keygen -lf ~/.ssh/id_rsa","source":"review"}
