@@ -12,7 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
-const { reapPushedCopy, sweepWorkspace } = require('../lib/worktree-core');
+const { reapPushedCopy, sweepSchedulePlan, sweepWorkspace } = require('../lib/worktree-core');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,6 +37,8 @@ function workspace(t) {
   git(app, ['config', 'user.email', 'test@example.com']);
   fs.writeFileSync(path.join(app, '.gitignore'), '.atris/\nnode_modules/\n.env\nbuild/\nuploads/\n');
   fs.writeFileSync(path.join(app, 'app.js'), 'module.exports = 1;\n');
+  // node_modules counts as throwaway only beside the package file that makes it.
+  fs.writeFileSync(path.join(app, 'package.json'), '{"name":"app"}\n');
   git(app, ['add', '.']);
   git(app, ['commit', '-qm', 'initial']);
   git(app, ['branch', '-M', 'master']);
@@ -144,7 +146,7 @@ test('sweep saves a stale dirty copy to its branch on origin, then removes it', 
   makeDirty(copy);
   age(copy, 8);
 
-  const dry = sweepWorkspace({ workspace: ws.root, apply: false });
+  const dry = sweepWorkspace({ workspace: ws.root, rescue: true, apply: false });
   const planned = repoReport(dry).rescueCandidates;
   assert.equal(planned.length, 1, JSON.stringify(repoReport(dry).kept));
   assert.match(planned[0].rescue_branch, /^atris-rescue\/abandoned-\d{8}-\d{6}-[0-9a-f]{4}$/);
@@ -152,7 +154,7 @@ test('sweep saves a stale dirty copy to its branch on origin, then removes it', 
   assert.equal(fs.existsSync(copy), true, 'a dry run touches nothing');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/atris-rescue']), '', 'a dry run pushes nothing');
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
   assert.equal(fs.existsSync(copy), false, 'the copy folder is gone');
@@ -182,7 +184,7 @@ test('sweep keeps a stale dirty copy when the push fails, and loses nothing', (t
   git(ws.app, ['remote', 'set-url', '--push', 'origin', path.join(ws.root, 'missing-remote.git')]);
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 0);
   const kept = repo.kept.find((item) => item.path === copy);
@@ -201,7 +203,7 @@ test('sweep keeps a stale dirty copy while a program runs inside it', async (t) 
   t.after(() => child.kill('SIGKILL'));
   await new Promise((resolve) => child.once('spawn', resolve));
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'active_process');
   assert.equal(fs.existsSync(path.join(copy, 'notes.md')), true);
@@ -214,7 +216,7 @@ test('sweep keeps a dirty copy that is still inside the idle limit', (t) => {
   makeDirty(copy);
   age(copy, 2);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const repo = repoReport(report);
   const kept = repo.kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'dirty');
@@ -222,7 +224,7 @@ test('sweep keeps a dirty copy that is still inside the idle limit', (t) => {
   assert.equal(repo.rescued.length, 0);
   assert.equal(fs.existsSync(path.join(copy, 'notes.md')), true);
 
-  const shorter = sweepWorkspace({ workspace: ws.root, apply: false, rescueIdleMs: 1 * DAY_MS });
+  const shorter = sweepWorkspace({ workspace: ws.root, rescue: true, apply: false, rescueIdleMs: 1 * DAY_MS });
   assert.equal(repoReport(shorter).rescueCandidates.length, 1, 'the idle limit can be changed');
 });
 
@@ -233,7 +235,7 @@ test('sweep keeps a stale dirty copy holding an ignored secret', (t) => {
   fs.writeFileSync(path.join(copy, '.env'), 'TOKEN=local\n');
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'ignored_data');
   assert.deepEqual(kept.files, ['.env']);
@@ -289,7 +291,7 @@ test('sweep keeps a stale copy holding ignored user files under build/ or upload
   fs.writeFileSync(path.join(copy, 'uploads', 'photo.png'), 'png');
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'ignored_data');
   assert.deepEqual(kept.files.sort(), ['build/local.db', 'uploads/photo.png']);
@@ -306,7 +308,7 @@ test('sweep keeps both a staged version and a different version on disk', (t) =>
   fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = "on disk";\n');
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
   assert.equal(fs.existsSync(copy), false);
@@ -332,7 +334,7 @@ test('a cache folder counts as throwaway only at its known place, not by name an
   fs.writeFileSync(path.join(copy, 'uploads', 'node_modules', 'photo.png'), 'png');
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'ignored_data');
   assert.deepEqual(kept.files.sort(), ['uploads/.cache/local.db', 'uploads/node_modules/photo.png']);
@@ -352,7 +354,7 @@ test('sweep keeps a copy holding an untracked nested git repository', (t) => {
   git(inner, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'unpublished']);
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'unprovable');
   assert.match(kept.why, /nested git repository vendor\/lib/);
@@ -369,7 +371,7 @@ test('sweep keeps a copy whose index hides edits with assume-unchanged or skip-w
     fs.writeFileSync(path.join(copy, 'notes.md'), 'visible edit\n');
     age(copy, 8);
 
-    const report = sweepWorkspace({ workspace: ws.root, apply: true });
+    const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
     const kept = repoReport(report).kept.find((item) => item.path === copy);
     assert.equal(kept.reason, 'unprovable', flag);
     assert.match(kept.why, /index entries hide their edits.*app\.js/);
@@ -396,7 +398,7 @@ test('a rescue lands on a new branch and never moves the copy branch, here or on
   fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
   age(copy, 8);
 
-  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
   const rescueBranch = repo.rescued[0].rescue_branch;
@@ -420,7 +422,105 @@ test('a copy whose index lists more than a megabyte of paths is still read, not 
 
   // Five thousand fresh files draw the system file indexer in; the process
   // check is covered above, so this one reports no running programs.
-  const dry = sweepWorkspace({ workspace: ws.root, apply: false, activeCwds: [] });
+  const dry = sweepWorkspace({ workspace: ws.root, rescue: true, apply: false, activeCwds: [] });
   const repo = repoReport(dry);
   assert.equal(repo.rescueCandidates.length, 1, JSON.stringify(repo.kept));
+});
+
+// Round three: dirty rescue is opt-in, and three more byte-changing cases keep the copy.
+test('without --rescue the sweep only reports a stale dirty copy, and the timer never rescues', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'report-only');
+  makeDirty(copy);
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const repo = repoReport(report);
+  const kept = repo.kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'stale_dirty');
+  assert.equal(kept.idle_days, 8);
+  assert.equal(repo.rescued.length, 0);
+  assert.equal(fs.readFileSync(path.join(copy, 'notes.md'), 'utf8'), 'half-finished idea\n');
+  noRescuePushed(ws);
+
+  const text = spawnSync(process.execPath, [CLI, 'worktree', 'sweep', '--apply', '--workspace', ws.root], { encoding: 'utf8', timeout: 60000, env: SHIP_ENV() });
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /stale: .*report-only \(idle 8 days; atris worktree sweep --rescue --apply saves and removes it\)/);
+  assert.equal(fs.existsSync(copy), true);
+  noRescuePushed(ws);
+
+  const plan = sweepSchedulePlan({ workspace: ws.root, homeDir: ws.root, platform: 'darwin', atrisBin: '/opt/atris/bin/atris.js' });
+  assert.doesNotMatch(JSON.stringify(plan), /--rescue/);
+});
+
+test('a top-level .cache with no package file beside it keeps the copy', (t) => {
+  const ws = workspace(t);
+  fs.rmSync(path.join(ws.app, 'package.json'));
+  git(ws.app, ['commit', '-qam', 'no package file']);
+  git(ws.app, ['push', '-q', 'origin', 'master']);
+  fs.appendFileSync(path.join(ws.app, '.git', 'info', 'exclude'), '.cache/\n');
+  const copy = addCopy(ws, 'top-cache');
+  fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
+  fs.mkdirSync(path.join(copy, '.cache'));
+  fs.writeFileSync(path.join(copy, '.cache', 'local.db'), 'rows');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'ignored_data');
+  assert.deepEqual(kept.files, ['.cache/local.db']);
+  assert.equal(fs.readFileSync(path.join(copy, '.cache', 'local.db'), 'utf8'), 'rows');
+  noRescuePushed(ws);
+});
+
+test('a submodule that hides edits with index flags keeps the copy', (t) => {
+  const ws = workspace(t);
+  const subRemote = path.join(ws.root, 'sub.git');
+  const subSrc = path.join(ws.root, 'sub-src');
+  git(ws.root, ['init', '--bare', '-q', subRemote]);
+  fs.mkdirSync(subSrc);
+  git(subSrc, ['init', '-q']);
+  fs.writeFileSync(path.join(subSrc, 'conf.txt'), 'original\n');
+  git(subSrc, ['add', '.']);
+  git(subSrc, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'sub']);
+  git(subSrc, ['branch', '-M', 'master']);
+  git(subSrc, ['push', '-q', subRemote, 'master']);
+  git(ws.app, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', subRemote, 'lib']);
+  git(ws.app, ['commit', '-qm', 'add submodule']);
+  git(ws.app, ['push', '-q', 'origin', 'master']);
+  const copy = addCopy(ws, 'sub-hidden');
+  git(copy, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init']);
+  const lib = path.join(copy, 'lib');
+  git(lib, ['update-index', '--assume-unchanged', 'conf.txt']);
+  fs.writeFileSync(path.join(lib, 'conf.txt'), 'hidden edit\n');
+  fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'unprovable', JSON.stringify(kept));
+  assert.match(kept.why, /submodule lib: index entries hide their edits.*conf\.txt/);
+  assert.equal(fs.readFileSync(path.join(lib, 'conf.txt'), 'utf8'), 'hidden edit\n');
+  noRescuePushed(ws);
+});
+
+test('a content filter, from an attribute or from repo config, keeps the copy', (t) => {
+  for (const kind of ['attribute', 'config']) {
+    const ws = workspace(t);
+    const copy = addCopy(ws, `filter-${kind}`);
+    if (kind === 'attribute') {
+      fs.writeFileSync(path.join(copy, '.gitattributes'), '*.txt filter=strip\n');
+    } else {
+      git(ws.app, ['config', 'filter.strip.clean', 'sed s/secret//']);
+    }
+    fs.writeFileSync(path.join(copy, 'notes.txt'), 'the secret part\n');
+    age(copy, 8);
+
+    const report = sweepWorkspace({ workspace: ws.root, rescue: true, apply: true });
+    const kept = repoReport(report).kept.find((item) => item.path === copy);
+    assert.equal(kept.reason, 'unprovable', `${kind}: ${JSON.stringify(kept)}`);
+    assert.match(kept.why, kind === 'attribute' ? /git attributes can change bytes.*filter=strip/ : /content filter is set in this repo/);
+    assert.equal(fs.readFileSync(path.join(copy, 'notes.txt'), 'utf8'), 'the secret part\n');
+    noRescuePushed(ws);
+  }
 });

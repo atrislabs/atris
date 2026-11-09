@@ -504,14 +504,14 @@ function sweep(args) {
     console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>]');
     return 2;
   }
-  const rescueDays = hasFlag(args, '--no-rescue') ? 0
-    : Number(readFlag(args, '--rescue-after-days', process.env.ATRIS_WORKTREE_RESCUE_DAYS || String(RESCUE_IDLE_MS / 86400000)));
-  if (!Number.isFinite(rescueDays) || rescueDays < 0) {
-    console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>] [--rescue-after-days <n>] [--no-rescue]');
+  const rescueDays = Number(readFlag(args, '--rescue-after-days', process.env.ATRIS_WORKTREE_RESCUE_DAYS || String(RESCUE_IDLE_MS / 86400000)));
+  if (!Number.isFinite(rescueDays) || rescueDays <= 0) {
+    console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>] [--rescue] [--rescue-after-days <n>]');
     return 2;
   }
   const apply = hasFlag(args, '--apply');
-  const report = sweepWorkspace({ workspace, apply, idleMs: idleHours * 3600000, rescueIdleMs: rescueDays * 86400000 });
+  const rescue = hasFlag(args, '--rescue');
+  const report = sweepWorkspace({ workspace, apply, rescue, idleMs: idleHours * 3600000, rescueIdleMs: rescueDays * 86400000 });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
     return report.error ? 1 : 0;
@@ -552,6 +552,7 @@ function sweep(args) {
     for (const item of repo.kept) {
       if (item.reason === 'rescue_push_failed') console.log(`  kept: ${item.path} (could not push its work to origin/${item.rescue_branch}: ${item.error})`);
       if (item.reason === 'unprovable') console.log(`  kept: ${item.path} (${item.why})`);
+      if (item.reason === 'stale_dirty' || item.reason === 'stale_unpushed') console.log(`  stale: ${item.path} (idle ${item.idle_days} days; atris worktree sweep --rescue --apply saves and removes it)`);
       if (item.reason === 'ignored_data' && item.files) console.log(`  kept: ${item.path} (ignored files atris cannot rebuild: ${item.files.join(', ')})`);
     }
     for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
@@ -631,7 +632,7 @@ function guide() {
   console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
   console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
   console.log('A shipped copy is removed as soon as its work is merged or on origin and nothing else runs in it; if something does, a merged copy goes once it has been quiet for 10 minutes (--keep-copy or ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
-  console.log('The sweep saves an abandoned copy (idle 7 days, nothing running in it) to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it. It removes a copy only when it can prove every byte is saved; anything unusual keeps the copy for a person. Rescues are logged in .atris/state/worktree_removals.jsonl.');
+  console.log('The sweep reports abandoned copies with unsaved work (idle 7 days). With --rescue it saves one to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it; it removes a copy only when it can prove every byte is saved, and anything unusual keeps the copy for a person. The timer never rescues. Rescues are logged in .atris/state/worktree_removals.jsonl.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
@@ -654,8 +655,8 @@ function help() {
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
-  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue-after-days 7] [--no-rescue]');
-  console.log('    removes merged, idle copies in every repo; saves abandoned copies to their branch on origin, then removes them');
+  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue] [--rescue-after-days 7]');
+  console.log('    removes merged or pushed idle copies in every repo and reports abandoned ones; --rescue saves those to a new branch on origin, then removes them');
   console.log('  atris worktree sweep --install [--every 3] | --uninstall  run the sweep on a timer');
 }
 

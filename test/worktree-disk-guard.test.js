@@ -178,7 +178,7 @@ test('start clones node_modules from a matching install and the copy stays clean
 
 test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   const ws = workspace(t);
-  const app = makeRepo(ws, 'app');
+  const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const chosen = addCopy(app, 'chosen');
   const other = addCopy(app, 'other');
   const scoped = cleanupWorktrees({ root: app, base: 'origin/master', apply: true, activeCwds: [], onlyPaths: [chosen] });
@@ -217,7 +217,7 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
 
 test('the sweep removes merged idle copies in every repo, clears webpack caches in copies it keeps, and keeps the rest', (t) => {
   const ws = workspace(t);
-  const app = makeRepo(ws, 'app');
+  const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const other = makeRepo(ws, 'other');
   const local = makeRepo(ws, 'local', { origin: false });
   const merged = addCopy(app, 'merged');
