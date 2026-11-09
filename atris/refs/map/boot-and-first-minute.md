@@ -102,7 +102,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 **Purpose:** First-time setup checks Node.js, login state, businesses, and optional business pull.
 
 - **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
-- **Help:** `bin/atris.js:1097-1100` (`showSetupHelp`) prints setup usage without entering setup
+- **Help:** `bin/atris.js:1110-1113` (`showSetupHelp`) prints setup usage without entering setup
 - **Dispatch:** `bin/atris.js:1498-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands-2.test.js:1468-1479` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
@@ -115,7 +115,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
 - **Routing:** `bin/atris.js:1160-1159`
-- **Help:** `bin/atris.js:940-943` (`showActivateHelp`) prints usage before context loading or journal creation
+- **Help:** `bin/atris.js:953-956` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands-2.test.js:1499-1513` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
