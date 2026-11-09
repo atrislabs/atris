@@ -830,6 +830,25 @@ function acceptedNotLandedNote(receipt) {
   return `, ${rows.length} accepted but not proven landed (${rows.map((r) => `${r.ref} ${r.status}`).join(', ')})`;
 }
 
+// Every job a run leaves waiting keeps its reason. Counts alone hid one cause
+// holding every finished job for five days: the record said "8 skipped" and
+// nothing on disk said why.
+function waitingReasonRows(results) {
+  return (Array.isArray(results) ? results : [])
+    .filter((row) => row && row.action === 'skipped' && row.ref)
+    .map((row) => ({ ref: String(row.ref), reason: String(row.reason || 'unknown') }));
+}
+
+function waitingReasonSummary(receipt) {
+  const rows = Array.isArray(receipt.waiting_reasons) ? receipt.waiting_reasons : [];
+  const counts = new Map();
+  for (const row of rows) counts.set(row.reason, (counts.get(row.reason) || 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(', ');
+}
+
 function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);
@@ -838,7 +857,8 @@ function stuckBacklogNote(receipt) {
   // separately (accepted_not_landed), not misread as a wedged queue.
   const accepted = Array.isArray(receipt.accepted) ? receipt.accepted.length : receipt.landed.length;
   if (scanned > 0 && accepted === 0) {
-    parts.push(`${certified}/${scanned} certified in review, none landed`);
+    const why = waitingReasonSummary(receipt);
+    parts.push(`${certified}/${scanned} certified in review, none landed${why ? ` (${why})` : ''}`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
   if (unrunnable > 0) {
@@ -1118,6 +1138,8 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.scanned = parsed.scanned ?? null;
     receipt.revised = parsed.revised ?? null;
     receipt.skipped = parsed.skipped ?? null;
+    const waiting = waitingReasonRows(results);
+    if (waiting.length) receipt.waiting_reasons = waiting;
     receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
@@ -1513,6 +1535,8 @@ module.exports = {
   hasAgentJargon,
   runEngineAnswerValidation,
   runTickBody,
+  stuckBacklogNote,
+  waitingReasonRows,
   acceptCommandArgs,
   runSshAgentSweep,
   sshAgentSweepNote,

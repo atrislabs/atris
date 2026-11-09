@@ -12,7 +12,7 @@ const {
   skillEvalGate,
 } = require('../lib/skill-eval-gate');
 const { skillEvalCommand } = require('../commands/skill-eval');
-const { repoHygieneGate } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, repoHygieneGate } = require('../lib/auto-accept-certified');
 
 const SKILL_PATH = 'atris/skills/example/SKILL.md';
 const CHANGE_TIME = Date.parse('2026-08-26T12:00:00.000Z');
@@ -183,4 +183,110 @@ test('skill eval command fails honestly when no independent engine is available'
   assert.equal(result.value, 2);
   assert.match(result.output.join('\n'), /no independent judge engine is available/);
   assert.equal(skillEvalGate(root).ok, false);
+}));
+
+const LEARNER_NOTE = 'atris/team/navigator/skills/auto-learned/SKILL.md';
+
+function writeLearnerNote(root) {
+  const file = path.join(root, LEARNER_NOTE);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '---\nname: auto-learned\n---\n\n- **2026-10-22 (capabilities)**: keep proof short.\n');
+}
+
+// A finished job as the hourly approval run sees it: checked twice, by two
+// different actors, with a check the machine can run again.
+function finishedJob(root, changedFiles = null) {
+  return {
+    id: 'task-1',
+    display_id: 'SKL-TEST',
+    status: 'review',
+    tag: 'build',
+    workspace_root: root,
+    metadata: {
+      approval_status: 'pending',
+      agent_certified: true,
+      agent_review_pass_count: 2,
+      latest_agent_proof: 'npm run test:team-overall passed; git diff --check passed',
+      verify: 'node --check lib/plain.js',
+      ...(changedFiles ? { changed_files: changedFiles } : {}),
+    },
+    review: {
+      approval_status: 'pending',
+      agent_certified: true,
+      agent_review_pass_count: 2,
+      proof: 'npm run test:team-overall passed; git diff --check passed',
+    },
+    events: [
+      { event_type: 'proof_ready', actor: 'codex' },
+      { event_type: 'reviewed', actor: 'validator' },
+    ],
+  };
+}
+
+test('a skill the job never touched does not hold a job whose files are on record', () => withRepo((root) => {
+  changeSkill(root);
+  fs.appendFileSync(path.join(root, 'lib', 'plain.js'), 'module.exports.two = 2;\n');
+  const result = evaluateAutoAccept(finishedJob(root, ['lib/plain.js']));
+  assert.equal(result.eligible, true, JSON.stringify(result));
+}));
+
+test('a job that changes a skill still waits for its evaluation', () => withRepo((root) => {
+  changeSkill(root);
+  const byFile = evaluateAutoAccept(finishedJob(root, [SKILL_PATH]));
+  assert.equal(byFile.eligible, false);
+  assert.equal(byFile.reason, 'skill_eval_receipt_required');
+  assert.deepEqual(byFile.offenders, [SKILL_PATH]);
+
+  const byFolder = skillEvalGate(root, { paths: ['atris/skills/example/'] });
+  assert.equal(byFolder.ok, false);
+  assert.deepEqual(byFolder.offenders, [SKILL_PATH]);
+
+  appendSkillEvalReceipt(root, receipt());
+  const evaluated = evaluateAutoAccept(finishedJob(root, [SKILL_PATH]));
+  assert.equal(evaluated.eligible, true, JSON.stringify(evaluated));
+}));
+
+test('notes the learner wrote do not hold a job whose files are not on record', () => withRepo((root) => {
+  writeLearnerNote(root);
+  const result = evaluateAutoAccept(finishedJob(root));
+  assert.equal(result.eligible, true, JSON.stringify(result));
+}));
+
+test('a hand-written skill change still holds a job whose files are not on record', () => withRepo((root) => {
+  writeLearnerNote(root);
+  changeSkill(root);
+  const result = evaluateAutoAccept(finishedJob(root));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'skill_eval_receipt_required');
+  assert.deepEqual(result.offenders, [SKILL_PATH]);
+}));
+
+test('a learner note inside the job\'s own files still needs its evaluation', () => withRepo((root) => {
+  writeLearnerNote(root);
+  const result = evaluateAutoAccept(finishedJob(root, [LEARNER_NOTE]));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'skill_eval_receipt_required');
+  assert.deepEqual(result.offenders, [LEARNER_NOTE]);
+}));
+
+test('skill changes are read where the job\'s branch is checked out', () => withRepo((root) => {
+  const branchCopy = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-skill-gate-branch-'));
+  fs.rmSync(branchCopy, { recursive: true, force: true });
+  try {
+    git(root, ['worktree', 'add', '-b', 'job', branchCopy]);
+    fs.appendFileSync(path.join(branchCopy, SKILL_PATH), '\nUse concrete proof.\n');
+    git(branchCopy, ['commit', '-am', 'change the skill on the job branch']);
+
+    assert.equal(skillEvalGate(root).ok, true, 'the main copy itself has no changed skill');
+    const scope = { changeRoot: branchCopy, paths: [SKILL_PATH] };
+    const waiting = skillEvalGate(root, scope);
+    assert.equal(waiting.ok, false);
+    assert.deepEqual(waiting.offenders, [SKILL_PATH]);
+    assert.equal(skillEvalGate(root, { changeRoot: branchCopy, paths: ['lib/plain.js'] }).ok, true);
+
+    appendSkillEvalReceipt(root, receipt({ ts: new Date(Date.now() + 60000).toISOString() }));
+    assert.equal(skillEvalGate(root, scope).ok, true);
+  } finally {
+    fs.rmSync(branchCopy, { recursive: true, force: true, maxRetries: 5 });
+  }
 }));
