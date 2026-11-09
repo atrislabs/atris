@@ -144,7 +144,8 @@ const jsonRequested = process.argv.slice(2).includes('--json');
 const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 // Local-only commands make no registry call and start no background install.
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99'].includes(updateCommand)))) {
+// sentinel prints its own one-line notice at the end of the run instead.
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99', 'sentinel'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {
@@ -3378,8 +3379,10 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'sentinel') {
   // Sentinel: the full security audit (engines hunt, another model verifies). Same as `security-review audit`.
+  // A stale install gets one plain upgrade line at the end of every sentinel command.
+  const sentinelNotice = require('../commands/sentinel-powers').startUpdateNotice(process.argv.slice(3));
   Promise.resolve().then(() => require('../commands/security-review').securityReviewCommand(['audit', ...process.argv.slice(3)]))
-    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .then(async (code) => { try { await sentinelNotice.print(); } catch {} exitAfterStdoutDrain(typeof code === 'number' ? code : 0); })
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'security-review' || command === 'secure') {
   // Security review: deterministic secrets/PII/code-risk scan (no LLM). Exit 1 = HIGH finding,
