@@ -25,9 +25,13 @@ const GUARD_FILE = path.join(__dirname, '..', 'lib', 'sentinel-guard.js');
 const FAKE_GH = ['gh', 'p_', 'Zq8Lm3Vt7Rk2Wx9Pn4Hc6Jb1Fd5Gs0Ya3Ue8Io'].join('');
 const FAKE_VALUE = ['Zk3pQ9vL', '2mX8rT5w', 'N7bH4cJ6'].join('');
 
+const made = [];
 function tmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  made.push(dir);
+  return dir;
 }
+test.after(() => { for (const dir of made) fs.rmSync(dir, { recursive: true, force: true }); });
 
 function write(root, rel, text) {
   const file = path.join(root, rel);
