@@ -549,8 +549,10 @@ function sweep(args) {
       console.log(`  ${apply ? 'saved' : 'save'}: ${item.path} -> origin/${item.rescue_branch} (${what}, ${formatKib(item.size_kib)})`);
     }
     for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path}`);
-    for (const item of repo.kept.filter((entry) => entry.reason === 'rescue_push_failed')) {
-      console.log(`  kept: ${item.path} (could not push its work to origin/${item.rescue_branch}: ${item.error})`);
+    for (const item of repo.kept) {
+      if (item.reason === 'rescue_push_failed') console.log(`  kept: ${item.path} (could not push its work to origin/${item.rescue_branch}: ${item.error})`);
+      if (item.reason === 'unprovable') console.log(`  kept: ${item.path} (${item.why})`);
+      if (item.reason === 'ignored_data' && item.files) console.log(`  kept: ${item.path} (ignored files atris cannot rebuild: ${item.files.join(', ')})`);
     }
     for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
   }
@@ -629,7 +631,7 @@ function guide() {
   console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
   console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
   console.log('A shipped copy is removed as soon as its work is merged or on origin and nothing else runs in it; if something does, a merged copy goes once it has been quiet for 10 minutes (--keep-copy or ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
-  console.log('The sweep saves an abandoned copy (idle 7 days, nothing running in it) to a commit on its branch, pushes it, and removes the copy only after origin has it. Rescues are logged in .atris/state/worktree_removals.jsonl.');
+  console.log('The sweep saves an abandoned copy (idle 7 days, nothing running in it) to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it. It removes a copy only when it can prove every byte is saved; anything unusual keeps the copy for a person. Rescues are logged in .atris/state/worktree_removals.jsonl.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }

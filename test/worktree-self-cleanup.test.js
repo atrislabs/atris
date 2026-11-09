@@ -147,26 +147,30 @@ test('sweep saves a stale dirty copy to its branch on origin, then removes it', 
   const dry = sweepWorkspace({ workspace: ws.root, apply: false });
   const planned = repoReport(dry).rescueCandidates;
   assert.equal(planned.length, 1, JSON.stringify(repoReport(dry).kept));
-  assert.equal(planned[0].rescue_branch, 'codex/abandoned');
+  assert.match(planned[0].rescue_branch, /^atris-rescue\/abandoned-\d{8}-\d{6}-[0-9a-f]{4}$/);
   assert.equal(planned[0].changed_files, 2);
   assert.equal(fs.existsSync(copy), true, 'a dry run touches nothing');
-  assert.equal(spawnSync('git', ['--git-dir', ws.remote, 'rev-parse', '--verify', '-q', 'refs/heads/codex/abandoned']).status, 1, 'a dry run pushes nothing');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/atris-rescue']), '', 'a dry run pushes nothing');
 
   const report = sweepWorkspace({ workspace: ws.root, apply: true });
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
   assert.equal(fs.existsSync(copy), false, 'the copy folder is gone');
-  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', 'codex/abandoned:app.js']), 'module.exports = 2;');
-  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', 'codex/abandoned:notes.md']), 'half-finished idea');
-  const tree = git(ws.app, ['--git-dir', ws.remote, 'ls-tree', '-r', '--name-only', 'codex/abandoned']);
+  const rescueBranch = repo.rescued[0].rescue_branch;
+  assert.match(rescueBranch, /^atris-rescue\/abandoned-/);
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${rescueBranch}:app.js`]), 'module.exports = 2;');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${rescueBranch}:notes.md`]), 'half-finished idea');
+  const tree = git(ws.app, ['--git-dir', ws.remote, 'ls-tree', '-r', '--name-only', rescueBranch]);
   assert.doesNotMatch(tree, /node_modules/, 'ignored installs are not rescued');
   const rescueCommit = repo.rescued[0].rescue_commit;
-  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', 'refs/heads/codex/abandoned']), rescueCommit);
-  assert.equal(git(ws.app, ['rev-parse', 'refs/heads/codex/abandoned']), rescueCommit, 'the local branch has it too');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `refs/heads/${rescueBranch}`]), rescueCommit);
+  assert.equal(git(ws.app, ['rev-parse', `refs/heads/${rescueBranch}`]), rescueCommit, 'the local rescue branch has it too');
+  assert.equal(git(ws.app, ['rev-parse', 'refs/heads/codex/abandoned']), git(ws.app, ['rev-parse', 'master']), 'the copy branch never moves');
   assert.match(git(ws.app, ['log', '-1', '--format=%B', rescueCommit]), /Co-authored-by: Atris/);
   const record = removals(ws.app).find((row) => row.path === copy);
   assert.equal(record.reason, 'rescued_to_branch');
-  assert.equal(record.rescue.branch, 'codex/abandoned');
+  assert.equal(record.rescue.branch, rescueBranch);
+  assert.equal(record.rescue.copy_branch, 'codex/abandoned');
   assert.equal(record.rescue.commit, rescueCommit);
   assert.equal(record.rescue.remote, ws.remote);
 });
@@ -201,7 +205,7 @@ test('sweep keeps a stale dirty copy while a program runs inside it', async (t) 
   const kept = repoReport(report).kept.find((item) => item.path === copy);
   assert.equal(kept.reason, 'active_process');
   assert.equal(fs.existsSync(path.join(copy, 'notes.md')), true);
-  assert.equal(spawnSync('git', ['--git-dir', ws.remote, 'rev-parse', '--verify', '-q', 'refs/heads/codex/busy']).status, 1, 'nothing was pushed');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/atris-rescue']), '', 'nothing was pushed');
 });
 
 test('sweep keeps a dirty copy that is still inside the idle limit', (t) => {
@@ -291,7 +295,7 @@ test('sweep keeps a stale copy holding ignored user files under build/ or upload
   assert.deepEqual(kept.files.sort(), ['build/local.db', 'uploads/photo.png']);
   assert.equal(fs.readFileSync(path.join(copy, 'build', 'local.db'), 'utf8'), 'rows');
   assert.equal(fs.readFileSync(path.join(copy, 'uploads', 'photo.png'), 'utf8'), 'png');
-  assert.equal(spawnSync('git', ['--git-dir', ws.remote, 'rev-parse', '--verify', '-q', 'refs/heads/codex/user-files']).status, 1, 'nothing was pushed');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/atris-rescue']), '', 'nothing was pushed');
 });
 
 test('sweep keeps both a staged version and a different version on disk', (t) => {
@@ -306,8 +310,99 @@ test('sweep keeps both a staged version and a different version on disk', (t) =>
   const repo = repoReport(report);
   assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
   assert.equal(fs.existsSync(copy), false);
-  const tip = git(ws.app, ['--git-dir', ws.remote, 'rev-parse', 'refs/heads/codex/staged']);
+  const tip = git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `refs/heads/${repo.rescued[0].rescue_branch}`]);
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${tip}:app.js`]), 'module.exports = "on disk";');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${tip}^:app.js`]), 'module.exports = "staged";');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `${tip}~2`]), git(ws.app, ['rev-parse', 'master']));
+});
+
+// Round two: the sweep removes a dirty copy only when it can prove every byte
+// is saved; anything unusual keeps the copy for a person.
+function noRescuePushed(ws) {
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/atris-rescue']), '', 'nothing was pushed');
+}
+
+test('a cache folder counts as throwaway only at its known place, not by name anywhere', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'nested-cache');
+  makeDirty(copy);
+  fs.mkdirSync(path.join(copy, 'uploads', '.cache'), { recursive: true });
+  fs.writeFileSync(path.join(copy, 'uploads', '.cache', 'local.db'), 'rows');
+  fs.mkdirSync(path.join(copy, 'uploads', 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(copy, 'uploads', 'node_modules', 'photo.png'), 'png');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'ignored_data');
+  assert.deepEqual(kept.files.sort(), ['uploads/.cache/local.db', 'uploads/node_modules/photo.png']);
+  assert.equal(fs.readFileSync(path.join(copy, 'uploads', '.cache', 'local.db'), 'utf8'), 'rows');
+  noRescuePushed(ws);
+});
+
+test('sweep keeps a copy holding an untracked nested git repository', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'nested-repo');
+  makeDirty(copy);
+  const inner = path.join(copy, 'vendor', 'lib');
+  fs.mkdirSync(inner, { recursive: true });
+  git(inner, ['init', '-q']);
+  fs.writeFileSync(path.join(inner, 'lib.js'), 'local only\n');
+  git(inner, ['add', 'lib.js']);
+  git(inner, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'unpublished']);
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const kept = repoReport(report).kept.find((item) => item.path === copy);
+  assert.equal(kept.reason, 'unprovable');
+  assert.match(kept.why, /nested git repository vendor\/lib/);
+  assert.equal(fs.readFileSync(path.join(inner, 'lib.js'), 'utf8'), 'local only\n');
+  noRescuePushed(ws);
+});
+
+test('sweep keeps a copy whose index hides edits with assume-unchanged or skip-worktree', (t) => {
+  for (const flag of ['--assume-unchanged', '--skip-worktree']) {
+    const ws = workspace(t);
+    const copy = addCopy(ws, `hidden${flag.replace(/-/g, '_')}`);
+    git(copy, ['update-index', flag, 'app.js']);
+    fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = "hidden edit";\n');
+    fs.writeFileSync(path.join(copy, 'notes.md'), 'visible edit\n');
+    age(copy, 8);
+
+    const report = sweepWorkspace({ workspace: ws.root, apply: true });
+    const kept = repoReport(report).kept.find((item) => item.path === copy);
+    assert.equal(kept.reason, 'unprovable', flag);
+    assert.match(kept.why, /index entries hide their edits.*app\.js/);
+    assert.equal(fs.readFileSync(path.join(copy, 'app.js'), 'utf8'), 'module.exports = "hidden edit";\n');
+    noRescuePushed(ws);
+  }
+});
+
+test('a rescue lands on a new branch and never moves the copy branch, here or on origin', (t) => {
+  const ws = workspace(t);
+  const copy = addCopy(ws, 'moved');
+  // Someone else pushed the copy's branch ahead, and the local branch has its own commit.
+  fs.writeFileSync(path.join(copy, 'app.js'), 'module.exports = "local commit";\n');
+  git(copy, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qam', 'local only']);
+  const localTip = git(copy, ['rev-parse', 'HEAD']);
+  const other = path.join(ws.root, 'other');
+  git(ws.root, ['clone', '-q', ws.remote, other]);
+  git(other, ['switch', '-q', '-c', 'codex/moved']);
+  fs.writeFileSync(path.join(other, 'other.txt'), 'theirs\n');
+  git(other, ['add', 'other.txt']);
+  git(other, ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-qm', 'theirs']);
+  git(other, ['push', '-q', 'origin', 'codex/moved']);
+  const originTip = git(ws.app, ['--git-dir', ws.remote, 'rev-parse', 'refs/heads/codex/moved']);
+  fs.writeFileSync(path.join(copy, 'notes.md'), 'half-finished idea\n');
+  age(copy, 8);
+
+  const report = sweepWorkspace({ workspace: ws.root, apply: true });
+  const repo = repoReport(report);
+  assert.equal(repo.rescued.length, 1, JSON.stringify(repo.kept));
+  const rescueBranch = repo.rescued[0].rescue_branch;
+  assert.match(rescueBranch, /^atris-rescue\/moved-/);
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', 'refs/heads/codex/moved']), originTip, 'origin copy branch untouched');
+  assert.equal(git(ws.app, ['rev-parse', 'refs/heads/codex/moved']), localTip, 'local copy branch untouched');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'rev-parse', `${rescueBranch}^`]), localTip, 'the rescue sits on top of the local commit');
+  assert.equal(git(ws.app, ['--git-dir', ws.remote, 'show', `${rescueBranch}:notes.md`]), 'half-finished idea');
 });
