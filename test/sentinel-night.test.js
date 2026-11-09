@@ -417,7 +417,7 @@ test('night: a union with a conflict is not tried and the best single lands', as
     },
   });
   const res = await runNight(repo, nightEnv(bin, held), { rounds: 1, parallel: 2, review: 'codex', focus: 'exfil' });
-  assert.match(res.rounds[0].union.result, /not tried: .*set differently/);
+  assert.match(res.rounds[0].union.result, /not tried: two changes conflict/);
   assert.strictEqual(res.rounds[0].landed.title, 'block shred');
   assert.strictEqual(bin.calls('codex').length, 2, 'no review is spent on a union that cannot exist');
 });
@@ -449,7 +449,7 @@ test('night: a FIX rejects the change, its false positives guard the next round 
   // Round three starts from the grown exam: its prompt carries the review lesson.
   const r3prompt = claude[2].prompt;
   assert.match(r3prompt, /must run: shred -u notes\.txt/);
-  assert.match(r3prompt, /rejected by the reviewer: "block shred"/);
+  assert.match(r3prompt, /rejected by the reviewer: the destroy proposal from round 2. it changed: added to guard.command_blocks/);
   const r3 = res.rounds[2];
   assert.strictEqual(r3.landed.title, 'block truncate to zero');
   const rules = JSON.parse(showFile(repo, res.night_branch, 'lib/sentinel-rules.json'));
@@ -630,7 +630,7 @@ test('night: reviewer reason text reaches no proposer, receipt or commit', async
   assert.strictEqual(res.rounds.length, 2);
   const claude = bin.calls('claude');
   assert.strictEqual(claude.length, 2);
-  assert.match(claude[1].prompt, /rejected by the reviewer: "block python urlopen"/);
+  assert.match(claude[1].prompt, /rejected by the reviewer: the exfil proposal from round 1/);
   for (const c of claude) { assert.ok(!c.prompt.includes('REASONMARK')); assert.ok(!c.prompt.includes(HELD_MARK)); }
   const receipt = fs.readFileSync(res.receipt, 'utf8');
   assert.ok(!receipt.includes('REASONMARK') && !receipt.includes(HELD_MARK));
@@ -659,4 +659,58 @@ test('night and single runs: a proposal whose exam items hold a token-shaped str
   });
   assert.match(single.error, /looks like a real key/);
   assert.strictEqual(single.kept, false);
+});
+
+// Every file the run wrote: exam files, receipts, commit messages, refs.
+function everythingWritten(repo, res) {
+  const git = execFileSync('git', ['log', '--all', '-p', '--format=%B%n%D'], { cwd: repo, encoding: 'utf8' });
+  const refs = execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: repo, encoding: 'utf8' });
+  return `${git}\n${refs}\n${fs.readFileSync(res.receipt, 'utf8')}`;
+}
+
+test('the one gate: a password in an item, a token in a title and hidden text in a field name reach no written file', async () => {
+  const pw = ['Zr8Tq3', 'Lm6Wn1', 'Ks4Hd7'].join('');
+  const token = ['gh', 'p_', 'Zr8Tq3Lm6Wn1Ks4Hd7Fj2Pv9Bx5Cy0Ga3Ne8R'].join('');
+  // One: a proposer item with password="..." (quotes that json would escape).
+  const pwItem = { ...proposal('block python urlopen', [PY]), new_items: [{ set: 'guard', id: 'pw', kind: 'benign', expect: 'allow', command: `mysql -u app password="${pw}" -e "select 1"` }] };
+  // Two: a token in the title of a change that would otherwise ship.
+  const titled = { ...proposal(`block shred ${token}`, [SHRED]) };
+  // Three: a reviewer answer whose unknown field name is a held-out command.
+  const answer = `{"verdict":"FIX","false_positives":[{"command":"git log --oneline -2"}],"bypasses":[],"agent_false_alarms":[],"reason":"r",${JSON.stringify(HELD_PY.command)}:1}`;
+  // A reviewer item with password="..." too.
+  const pwReview = JSON.stringify({ verdict: 'FIX', false_positives: [{ command: `psql "host=db password=\\"${pw}\\""` }, { command: `export DB_PASSWORD="${pw}"` }, { command: 'git status -s' }], bypasses: [], agent_false_alarms: [], reason: 'r' });
+  const { repo, held } = standIn([HELD_PY, HELD_SHRED, HELD_OK]);
+  const bin = fakeBin({
+    proposals: { exfil: [pwItem, proposal('block python urlopen', [PY])], destroy: [titled] },
+    reviews: { default: pwReview, rules: [{ match: 'The change: block python urlopen', answer }] },
+  });
+  const res = await runNight(repo, nightEnv(bin, held), { rounds: 2, parallel: 2, review: 'codex', focus: 'exfil' });
+  assert.strictEqual(res.error, undefined, res.error);
+  const r1 = res.rounds[0];
+  assert.strictEqual(r1.proposals.find((p) => p.focus === 'exfil').error, improve.SECRET_ITEM_ERROR);
+  assert.strictEqual(r1.proposals.find((p) => p.focus === 'destroy').error, improve.SECRET_PROPOSAL_ERROR);
+  const r2 = res.rounds[1];
+  const ex2 = r2.proposals.find((p) => p.focus === 'exfil');
+  assert.strictEqual(ex2.review.verdict, 'FIX');
+  assert.strictEqual(ex2.review.reason, 'the reviewer answer had unknown fields');
+  const written = everythingWritten(repo, res);
+  assert.ok(!written.includes(pw), 'a password reached a written file');
+  assert.ok(!written.includes(token), 'a token reached a written file');
+  assert.ok(!written.includes(HELD_MARK), 'hidden text reached a written file');
+  assert.ok(!written.includes('block shred') && !written.includes('block python urlopen'), 'a proposal title reached a written file');
+  for (const c of bin.calls('claude')) assert.ok(!c.prompt.includes(HELD_MARK) && !c.prompt.includes(pw));
+});
+
+test('single runs: a token in the title stops the proposal and titles never reach the commit or receipt', async () => {
+  const token = ['gh', 'p_', 'Zr8Tq3Lm6Wn1Ks4Hd7Fj2Pv9Bx5Cy0Ga3Ne8R'].join('');
+  const { repo, held } = standIn([HELD_PY, HELD_OK]);
+  const bin = fakeBin({ proposals: {} });
+  const env = nightEnv(bin, held);
+  const bad = await improve.improve({ root: repo, engine: 'claude', env, signals: {}, propose: async () => ({ stdout: JSON.stringify({ title: `t ${token}`, file: 'lib/sentinel-rules.json', rules: rulesWith([PY]) }) }) });
+  assert.strictEqual(bad.error, improve.SECRET_PROPOSAL_ERROR);
+  assert.ok(!fs.readFileSync(bad.receipt, 'utf8').includes(token));
+  const good = await improve.improve({ root: repo, engine: 'claude', env, signals: {}, propose: async () => ({ stdout: JSON.stringify({ title: 'TITLEMARK python', why: 'WHYMARK', file: 'lib/sentinel-rules.json', rules: rulesWith([PY]) }) }) });
+  assert.strictEqual(good.kept, true, good.error || (good.decision && good.decision.reasons.join('; ')));
+  const all = execFileSync('git', ['log', '--all', '-p'], { cwd: repo, encoding: 'utf8' }) + fs.readFileSync(good.receipt, 'utf8');
+  assert.ok(!all.includes('TITLEMARK') && !all.includes('WHYMARK'));
 });

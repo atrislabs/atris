@@ -623,7 +623,7 @@ test('end to end: a javascript change or a stray file is rejected before the exa
   // kept and reported rather than force-removed.
   const two = await runImprove(repo, held, PY_NET, { onPropose: (cwd) => fs.writeFileSync(path.join(cwd, 'lib', 'sentinel-guard.js'), 'module.exports = {};\n') });
   assert.strictEqual(two.res.kept, false);
-  assert.match(two.res.error, /changed files it may not touch: lib\/sentinel-guard\.js/);
+  assert.strictEqual(two.res.error, 'the proposer changed files it may not touch');
   assert.strictEqual(two.judged, 1);
   assert.ok(two.res.kept_copy, 'a copy with a stray file must be kept');
   assert.match(two.res.kept_copy.reason, /holds files the run did not write: lib\/sentinel-guard\.js/);
