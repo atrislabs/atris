@@ -261,14 +261,14 @@ test('needs_validation carries no severity and lands in its own report', () => w
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
 
-test('second run skips unchanged covered areas and re-checks the old finding without re-hunting it', () => withHome(async () => {
+test('second run skips unchanged covered areas and keeps the unchanged old finding without a call', () => withHome(async () => {
   const root = makeRepo();
   try {
     await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines([]) });
     const calls = [];
     const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines(calls) });
     assert.ok(!calls.some((c) => c.prompt.includes('security hunter')), 'nothing left to hunt');
-    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier')).length, 1);
+    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier') || c.prompt.includes('You are the auditor')).length, 0, 'unchanged code costs no call');
     assert.strictEqual(res.records.filter((r) => r.verdict === 'confirmed').length, 1);
     assert.ok(res.meta.coverage.carried >= 1);
     assert.deepStrictEqual(audit.validateLedger(res.ledger), []);
@@ -353,12 +353,12 @@ test('a run too small to re-check an old finding keeps it for the next run', () 
     assert.strictEqual(thin.meta.run_status, 'incomplete');
     const calls = [];
     const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines(calls) });
-    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier')).length, 1);
+    assert.strictEqual(calls.filter((c) => c.prompt.includes('independent security verifier')).length, 0, 'unchanged code costs no call');
     assert.ok(res.records.some((r) => r.verdict === 'confirmed' && r.fingerprint === CANDIDATE.fingerprint));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
 
-test('two old findings on one area: one rejected, one confirmed, the area keeps the confirmed one', () => {
+test('two old findings on one area: the lead is carried for the verifier, the confirmed one is left to the auditor', () => {
   const units = [{ coverage_id: 'a', status: 'candidate', source_digest: 'd', starting_paths: ['lib/run.js'] }];
   const now = [{ coverage_id: 'a', status: 'planned', source_digest: 'd', priority: 0, starting_paths: ['lib/run.js'], agent_id: null, reviewed_paths: [], local_checks: [], result_fingerprints: [], unresolved: [] }];
   const prior = { dir: 'p', ledger: units, findings: [
@@ -366,8 +366,8 @@ test('two old findings on one area: one rejected, one confirmed, the area keeps 
     { verdict: 'needs_validation', fingerprint: 'x:two', coverage_ids: ['a'] },
   ] };
   const { carried } = audit.mergePrior(now, prior);
-  assert.strictEqual(carried.length, 2);
-  assert.deepStrictEqual(now[0].reserved_for, ['x:one', 'x:two']);
+  assert.deepStrictEqual(carried.map((r) => r.fingerprint), ['x:two']);
+  assert.deepStrictEqual(now[0].reserved_for, ['x:two']);
 });
 
 test('an area a hunter could not settle is named in the report', () => withHome(async () => {

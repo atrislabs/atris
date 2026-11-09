@@ -538,10 +538,10 @@ test('watch: batch query, threat events and the plain title', async () => {
     const lp = evs.find((e) => /left-pad/.test(e.title));
     assert.strictEqual(lp.title, 'A known security hole affects the left-pad package you use. Version 1.3.1 fixes it.');
     assert.match(lp.detail, /Update to version 1\.3\.1 or later/);
-    assert.match(lp.detail, /GHSA-lp00-0000-0001/);
+    assert.ok(!/GHSA-/.test(lp.detail), 'advisory codes stay in the local report');
     assert.ok(!/Prototype|`/.test(lp.detail), 'advisory free text never goes into the event');
-    const mal = evs.find((e) => /@scope\/util/.test(e.title));
-    assert.match(mal.title, /^A published attack affects the @scope\/util package you use\./);
+    const mal = evs.find((e) => /scope-util/.test(e.title));
+    assert.match(mal.title, /^A published attack affects the scope-util package you use\./);
     assertVoice(watch.renderReport(result));
   } finally { await srv.close(); }
 });
