@@ -137,3 +137,45 @@ test('malformed snapshot identities and invalid caller names stay bounded and ca
   assert.equal(invalid.command, null);
   assert.ok(Buffer.byteLength(JSON.stringify(invalid)) < 16000);
 });
+
+test('normalized and historical contributors cannot be offered an independent review', () => {
+  const alias = task('1', { built_by: 'Codex_Review' }, { status: 'review', claimed_by: 'builder' });
+  assert.notEqual(choose([alias], { member: 'codex-review', job: 'review' }).action, 'review');
+  for (const event of [
+    { event_type: 'claimed', actor: 'Codex_Review', payload: { claimed_by: 'Codex_Review' } },
+    { event_type: 'proof_ready', actor: 'builder', payload: { handed_in_by: 'builder', built_with: ['Codex_Review'] } },
+  ]) {
+    const history = task('2', { built_by: 'builder' }, { status: 'review', claimed_by: 'builder', events: [event] });
+    assert.notEqual(choose([history], { member: 'codex-review', job: 'review' }).action, 'review');
+  }
+});
+
+test('bound untrusted owner and status fields cannot escape the outer packet budget', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-next-owner-bounds-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const huge = 'x'.repeat(50000);
+  const row = task('1', { ...readyPlan, assigned_to: huge }, { claimed_by: huge, status: huge });
+  const value = buildAgentNext({ root, args: ['--agent', 'builder', '--task', row.id], snapshot: { source: 'projection', tasks: [row] } });
+  assert.ok(value.task.claimed_by === null, 'oversized claimant is withheld');
+  assert.ok(value.task.assigned_to === null, 'oversized assignee is withheld');
+  assert.ok(value.task.status === null, 'unknown status is withheld');
+  assert.equal(value.action, 'discover');
+  assert.equal(value.command, null);
+  assert.ok(Buffer.byteLength(JSON.stringify({ ...value, next_action: value.command }, null, 2) + '\n') <= 16000);
+});
+
+test('oversized preloaded evidence fails closed within the final formatted packet budget', (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-next-evidence-bounds-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const evidence = { task_source: 'x'.repeat(50000), next_step: { kind: 'discover' }, goal: { text: 'x'.repeat(50000) }, parts: [], candidates: [], recent_outcomes: [], gaps: [] };
+  const value = buildAgentNext({ root, args: ['--agent', 'builder'], snapshot: { source: 'projection', tasks: [] }, evidence });
+  assert.equal(value.action, 'discover');
+  assert.equal(value.command, null);
+  assert.ok(Buffer.byteLength(JSON.stringify({ ...value, next_action: value.command }, null, 2) + '\n') <= 16000);
+});

@@ -224,3 +224,76 @@ test('a finished display reference stays bound outside the recent outcome window
     assert.deepEqual(c.snapshot(), before);
   } finally { c.close(); }
 });
+
+test('review recommendations use complete prior claims and built-with history', sqlite, () => {
+  for (const history of ['claim', 'built-with']) {
+    const c = room();
+    try {
+      const work = c.add({ title: 'Review the saved note repair', metadata: { assigned_to: 'builder' } });
+      if (history === 'claim') {
+        assert.equal(taskDb.claimTask(c.db, { id: work.id, claimedBy: 'Codex_Review' }).claimed, true);
+        assert.equal(taskDb.releaseTask(c.db, { id: work.id, actor: 'Codex_Review' }).released, true);
+      }
+      assert.equal(taskDb.claimTask(c.db, { id: work.id, claimedBy: 'builder' }).claimed, true);
+      const handIn = (builtWith = []) => taskDb.readyTask(c.db, {
+        id: work.id, actor: 'builder', builtWith,
+        proof: 'commit 0123456789012345678901234567890123456789: isolated fixture evidence passed with exit 0',
+        result: 'The note can be read, so the saved text can be recovered.',
+      });
+      assert.equal(handIn(history === 'built-with' ? ['Codex_Review'] : []).ready, true);
+      if (history === 'built-with') {
+        assert.equal(taskDb.reviseTask(c.db, { id: work.id, actor: 'operator', note: 'Revise the note repair' }).revised, true);
+        if (taskDb.getTask(c.db, work.id).status === 'open') {
+          assert.equal(taskDb.claimTask(c.db, { id: work.id, claimedBy: 'builder' }).claimed, true);
+        }
+        assert.equal(handIn().ready, true);
+      }
+      const before = c.snapshot();
+      const contributor = c.cli(['task', 'next', '--agent', 'codex-review', '--json']);
+      assert.notEqual(contributor.action, 'review', history);
+      const independent = c.cli(['task', 'next', '--agent', 'validator', '--json']);
+      assert.equal(independent.action, 'review', history);
+      assert.equal(independent.task_id, work.id);
+      assert.deepEqual(c.snapshot(), before);
+    } finally { c.close(); }
+  }
+});
+
+test('an oversized saved projection remains a bounded read-only discovery response', sqlite, () => {
+  const c = room();
+  try {
+    const huge = 'x'.repeat(50000);
+    const row = { id: 'PROJECTED1', display_id: 'ROOM-1', title: 'Inspect saved evidence', status: huge, claimed_by: huge, metadata: { assigned_to: huge } };
+    const file = path.join(c.root, '.atris', 'state', 'tasks.projection.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const saved = JSON.stringify({ generated_at: new Date().toISOString(), workspace_root: c.root, tasks: [row] });
+    fs.writeFileSync(file, saved);
+    const before = c.snapshot();
+    const result = runCli(['next', '--agent', 'builder', '--task', row.id, '--json'], { cwd: c.root, env: c.env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Buffer.byteLength(result.stdout) <= 16000);
+    const value = JSON.parse(result.stdout);
+    assert.equal(value.action, 'discover');
+    assert.equal(value.command, null);
+    assert.ok(value.task.claimed_by === null);
+    assert.ok(value.task.assigned_to === null);
+    assert.ok(value.task.status === null);
+    assert.equal(fs.readFileSync(file, 'utf8'), saved);
+    assert.deepEqual(c.snapshot(), before);
+  } finally { c.close(); }
+});
+
+test('legacy first-proof authors remain excluded when no current builder is stamped', sqlite, () => {
+  const c = room();
+  try {
+    const work = c.add({ title: 'Legacy note result', status: 'review' });
+    const note = taskDb.noteTask(c.db, { id: work.id, actor: 'Codex_Review', content: 'Legacy hand-in' });
+    assert.equal(note.noted, true);
+    c.db.prepare("UPDATE task_events SET event_type = 'proof_ready', payload = '{}' WHERE task_id = ? AND version = ?")
+      .run(work.id, note.event.version);
+    const before = c.snapshot();
+    assert.notEqual(c.cli(['task', 'next', '--agent', 'codex-review', '--json']).action, 'review');
+    assert.equal(c.cli(['task', 'next', '--agent', 'validator', '--json']).action, 'review');
+    assert.deepEqual(c.snapshot(), before);
+  } finally { c.close(); }
+});

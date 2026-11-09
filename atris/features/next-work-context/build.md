@@ -227,3 +227,21 @@ approval-plus-follow-up case, plan/claim/continue, caller modes, protected and
 foreign work, an old assigned task behind 205 foreign rows, and a fresh look
 that must not create a database. Independent review and final proof remain
 required. No speedup or general autonomous effectiveness is claimed yet.
+
+Independent review found two additional gaps despite the focused checks
+passing. Contributor identity must use the shared normalized, cumulative
+authorship contract, including every prior claim and hand-in's built-with
+list. The recommendation now composes review-integrity with the store's
+complete relevant history through isAuthorOfTask, sharing the same reader
+as authorsOfTask. This also preserves the legacy first-proof fallback;
+unavailable history cannot establish independence.
+
+The outer packet also needed its own budget. Owner and status fields from
+a saved snapshot are now validated rather than copied without bounds.
+The final pretty-printed response, including its longest command alias and
+newline, stays within 16,000 bytes. If evidence still cannot fit, the action
+becomes discovery with no executable command and an explicit evidence gap.
+Four added regressions failed before these repairs and passed afterward;
+the CLI additionally exercises the complete historical authorship store and
+an oversized on-disk projection. The first review remains dated history;
+fresh independent signoff is required for the repaired bytes.
