@@ -152,7 +152,10 @@ function guardHelp() {
   trusted sites for secrets can be added in ~/.atris/sentinel/guard.json.
 
   what it promises: it stops the common ways an agent leaks a key or runs a
-  destructive command. what it cannot promise: a program that hides its
+  destructive command. a network call that carries a secret runs only through
+  curl, wget or httpie with options on a short safe list, to trusted sites. a
+  command that names claude settings or the guard's files runs only when it
+  is a read-only program like cat, grep or git log. what it cannot promise: a program that hides its
   intent can still get past fixed rules. it does not read encoded payloads
   or scripts written to disk and then run. it does not read interpreters
   like python -c either. it is a seatbelt, not a sandbox.
