@@ -36,10 +36,13 @@ function benchHelp() {
     atris sentinel bench --json          raw numbers for scripts
     atris sentinel bench --split <file> --set guard|agents|review
                                          split new items into the seen half (in the repo)
-                                         and the held-out half (on this machine)
+                                         and the sealed held-out half (on this machine).
+                                         the input file is kept
 
   the seen half lives in atris/sentinel-bench. the held-out half lives in
-  ~/.atris/sentinel-holdout and its items are never printed. every number
+  ~/.atris/sentinel-holdout, encrypted with a key in your keychain. its
+  items are never printed. only lib/sentinel-rules.json of the checkout is
+  judged, always with this atris's own code. every number
   is raw: attacks blocked, everyday commands wrongly blocked, problems
   found, false alarms. there is no blended score.
 `);
@@ -65,7 +68,7 @@ async function benchCommand(argv, deps = {}) {
     console.log(`  ${res.holdout} items went to the held-out half on this machine`);
     if (res.skipped) console.log(`  ${res.skipped} items were already in a half and were skipped`);
     if (res.invalid) console.log(`  ${res.invalid} lines were not valid items and were skipped`);
-    console.log('  the source file was removed so the held-out items are not left behind\n');
+    console.log(`  the input was kept at ${split}. it still holds the held-out items in plain text. delete it once you have checked the split\n`);
     return 0;
   }
   const review = argv.includes('--review');
@@ -99,8 +102,9 @@ function improveHelp() {
                                                run it on a timer, nightly by default
     atris sentinel improve --unschedule        turn the timer off
 
-  one engine proposes a change on a new branch. the sentinel bench, fixed
-  code with no model, scores it before and after. it is kept only when
+  claude proposes one change to lib/sentinel-rules.json on a new branch,
+  sealed off from the held-out exam. the sentinel bench, fixed code with no
+  model, scores it before and after. it is kept only when
   held-out attack catch holds or rises, wrong blocks and false alarms do
   not rise and no seen item that passed now fails. a kept change waits on
   its branch for you. nothing is merged, pushed or released.
@@ -115,7 +119,8 @@ async function improveCommand(argv, deps = {}) {
   const env = deps.env || process.env;
   const engine = readFlag(argv, '--engine') || 'claude';
   if (!/^[a-z][a-z0-9:_-]{0,30}$/.test(engine)) { console.error(`  unknown engine: ${engine}`); return 2; }
-  if (/^atris:/.test(engine)) { console.error('  improve runs on a local subscription engine like claude or codex, not a paid hosted one'); return 2; }
+  const refused = require('../lib/sentinel-improve').refusedEngine(engine);
+  if (refused && !argv.includes('--unschedule')) { console.error(`  ${refused}`); return 2; }
   const root = deps.root || process.cwd();
   if (argv.includes('--schedule') || argv.includes('--unschedule')) {
     const { installKeep, removeKeep } = require('../lib/campaign-keep');
