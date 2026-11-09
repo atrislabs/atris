@@ -4,7 +4,8 @@
 //
 //   atris sentinel bench [--summary] [--json] [--review] [--sets guard,agents]
 //   atris sentinel bench --split <file> --set guard|agents|review
-//   atris sentinel improve [--engine claude] [--offline] [--json]
+//   atris sentinel improve [--engine claude] [--focus exfil|destroy|disarm|agents] [--offline] [--json]
+//   atris sentinel improve --rounds N --parallel K --review codex [--max-minutes 120] [--max-calls N] [--push]
 //   atris sentinel improve --schedule [--every 24] [--engine claude] | --unschedule
 
 const path = require('path');
@@ -97,24 +98,41 @@ function improveHelp() {
   atris sentinel improve, one exam-checked change to the sentinel
 
     atris sentinel improve [--engine claude]   propose one change and judge it
+    atris sentinel improve --focus exfil       point the proposer at one area:
+                                               exfil, destroy, disarm or agents
     atris sentinel improve --offline           skip the published advisory lookup
     atris sentinel improve --schedule [--every 24] [--engine claude]
                                                run it on a timer, nightly by default
     atris sentinel improve --unschedule        turn the timer off
+
+  a night run, many changes in one sitting:
+
+    atris sentinel improve --rounds 4 --parallel 3 --review codex
+        --rounds N        up to N rounds. each starts from what shipped before
+        --parallel K      K proposers at once, each on its own area (up to 4)
+        --review codex    codex reviews every change the exam keeps. SHIP keeps
+                          it. FIX rejects it and its examples join the exam
+        --max-minutes M   stop after M minutes (120 by default)
+        --max-calls C     stop after C proposer and reviewer calls
+        --push            push the two night branches by name when done
+
+  shipped rules land on sentinel-improve/night-<date>. new exam items land
+  apart on sentinel-exam/<date>. you can review them on their own. the
+  run stops early after two rounds with nothing shipped or no held-out gain.
 
   claude proposes one change to lib/sentinel-rules.json on a new branch,
   sealed off from the held-out exam. the sentinel bench, fixed code with no
   model, scores it before and after. it is kept only when
   held-out attack catch holds or rises, wrong blocks and false alarms do
   not rise and no seen item that passed now fails. a kept change waits on
-  its branch for you. nothing is merged, pushed or released.
+  its branch for you. nothing is merged or released. nothing is pushed without --push.
 `);
   return 0;
 }
 
 async function improveCommand(argv, deps = {}) {
   if (argv.includes('--help') || argv.includes('-h') || argv[0] === 'help') return improveHelp();
-  try { checkFlags(argv, ['--json', '--offline', '--schedule', '--unschedule'], ['--engine', '--every']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { checkFlags(argv, ['--json', '--offline', '--schedule', '--unschedule', '--push'], ['--engine', '--every', '--focus', '--rounds', '--parallel', '--review', '--max-minutes', '--max-calls']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const improve = require('../lib/sentinel-improve');
   const env = deps.env || process.env;
   const engine = readFlag(argv, '--engine') || 'claude';
@@ -148,9 +166,14 @@ async function improveCommand(argv, deps = {}) {
     console.log('  each run leaves a receipt in ~/.atris/sentinel-improve/receipts. kept changes wait on their branch for you');
     return 0;
   }
+  const focus = readFlag(argv, '--focus');
+  if (argv.includes('--focus') && !focus) { console.error('  --focus needs exfil, destroy, disarm or agents'); return 2; }
+  if (focus && !improve.FOCI.includes(focus)) { console.error(`  unknown focus: ${focus}. use exfil, destroy, disarm or agents`); return 2; }
+  const nightFlags = ['--rounds', '--parallel', '--review', '--max-minutes', '--max-calls', '--push'];
+  if (argv.some((a) => nightFlags.includes(String(a).split('=')[0]))) return nightCommand(argv, { root, engine, env, focus, deps });
   let res;
   try {
-    res = await improve.improve({ root, engine, env, offline: argv.includes('--offline'), log: argv.includes('--json') ? () => {} : (m) => console.log(`  ${m}`), ...(deps.improveOpts || {}) });
+    res = await improve.improve({ root, engine, env, focus, offline: argv.includes('--offline'), log: argv.includes('--json') ? () => {} : (m) => console.log(`  ${m}`), ...(deps.improveOpts || {}) });
   } catch (e) { console.error(`  improve did not run: ${e.message}`); return 1; }
   if (argv.includes('--json')) {
     console.log(JSON.stringify({ ok: !res.error, kept: res.kept, branch: res.branch, error: res.error || null, decision: res.decision, receipt: res.receipt }, null, 2));
@@ -166,6 +189,46 @@ async function improveCommand(argv, deps = {}) {
     for (const r of res.decision.reasons) console.log(`  stop: ${r}`);
   }
   console.log(`  receipt: ${res.receipt.replace(require('os').homedir(), '~')}\n`);
+  return res.error ? 1 : 0;
+}
+
+function numFlag(argv, name) {
+  const v = readFlag(argv, name);
+  if (v === null) return argv.includes(name) ? NaN : undefined;
+  return Number(v);
+}
+
+async function nightCommand(argv, { root, engine, env, focus, deps }) {
+  const improve = require('../lib/sentinel-improve');
+  const review = readFlag(argv, '--review');
+  if (argv.includes('--review') && !review) { console.error('  --review needs codex'); return 2; }
+  if (review && review !== 'codex') { console.error('  --review takes codex only'); return 2; }
+  const opts = { root, engine, env, focus, review, push: argv.includes('--push'), offline: argv.includes('--offline') };
+  for (const [flag, key] of [['--rounds', 'rounds'], ['--parallel', 'parallel'], ['--max-minutes', 'maxMinutes'], ['--max-calls', 'maxCalls']]) {
+    const n = numFlag(argv, flag);
+    if (n === undefined) continue;
+    if (!Number.isFinite(n) || n <= 0) { console.error(`  ${flag} needs a number above 0`); return 2; }
+    if (key !== 'maxMinutes' && !Number.isInteger(n)) { console.error(`  ${flag} needs a whole number`); return 2; }
+    if (key === 'parallel' && n > improve.FOCI.length) { console.error(`  --parallel goes up to ${improve.FOCI.length}, one proposer per focus area`); return 2; }
+    opts[key] = n;
+  }
+  const json = argv.includes('--json');
+  let res;
+  try {
+    res = await require('../lib/sentinel-night').night({ ...opts, log: json ? () => {} : (m) => console.log(`  ${m}`), ...(deps.nightOpts || {}) });
+  } catch (e) { console.error(`  improve did not run: ${e.message}`); return 1; }
+  if (json) {
+    console.log(JSON.stringify({ ok: !res.error, shipped: res.landed, stop: res.stop, night_branch: res.night_branch, exam_branch: res.exam_branch, exam_added: res.exam_added, calls: res.calls, minutes: res.minutes, pushed: res.pushed, error: res.error || null, receipt: res.receipt }, null, 2));
+    return res.error ? 1 : 0;
+  }
+  const home = require('os').homedir();
+  console.log('');
+  console.log(`  ${res.landed} ${res.landed === 1 ? 'change' : 'changes'} shipped in ${res.rounds.length} ${res.rounds.length === 1 ? 'round' : 'rounds'}. stopped because ${res.stop}`);
+  if (res.night_branch) console.log(`  rules wait on ${res.night_branch}`);
+  if (res.exam_branch) console.log(`  ${res.exam_added} new exam items wait on ${res.exam_branch}`);
+  if (res.pushed.length) console.log(`  pushed: ${res.pushed.join(', ')}`);
+  console.log(`  used ${res.calls} engine calls in ${res.minutes} minutes`);
+  console.log(`  receipt: ${res.receipt.replace(home, '~')}\n`);
   return res.error ? 1 : 0;
 }
 
