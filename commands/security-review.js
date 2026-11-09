@@ -614,6 +614,7 @@ async function auditCommand(argv, deps = {}) {
     const run = { agents: powers.agentsCommand, guard: powers.guardCommand, watch: powers.watchCommand, flush: powers.flushCommand }[argv[0]];
     return run(argv.slice(1), deps);
   }
+  if (argv[0] === 'fix') return require('./sentinel-fix').fixCommand(argv.slice(1), deps);
   if (argv[0] === 'upload') return auditUploadCommand(argv.slice(1), deps);
   if (argv[0] === 'schedule') return auditScheduleCommand(argv.slice(1), deps);
   let opts;
@@ -728,6 +729,12 @@ function printAuditHelp() {
 
   results go to your atris dashboard when you are logged in. add --no-upload
   to keep them on this machine. secret values and file contents never leave.
+
+  turning a confirmed finding into a fix:
+
+    atris sentinel fix                          list confirmed findings you can fix
+    atris sentinel fix <id> [path]              smallest fix plus a regression test on a new branch
+    atris sentinel fix help                     how a fix is proved before it is committed
 
   reviews on a timer:
 
