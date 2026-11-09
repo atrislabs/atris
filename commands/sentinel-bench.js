@@ -157,6 +157,7 @@ async function improveCommand(argv, deps = {}) {
   else console.log('  rejected. the branch was removed');
   if (res.decision) {
     for (const g of res.decision.gains) console.log(`  gain: ${g}`);
+    for (const n of res.decision.notes || []) console.log(`  note: ${n}`);
     for (const r of res.decision.reasons) console.log(`  stop: ${r}`);
   }
   console.log(`  receipt: ${res.receipt.replace(require('os').homedir(), '~')}\n`);
