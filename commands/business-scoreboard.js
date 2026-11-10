@@ -18,10 +18,15 @@ function showScoreboardHelp(log = console.log) {
   log('usage: atris business scoreboard [business] [--days N] [--json]');
   log('       atris business scoreboard [business] --doc [--out FILE]');
   log('       atris business scoreboard [business] add "Label" [--kind money|count|percent] [--id slug] [--target N]');
+  log('       atris business scoreboard [business] add "Label" --event signup [--people]');
+  log('       atris business scoreboard [business] add "Label" --formula "revenue / customers"');
   log('       atris business scoreboard [business] set <unit> <value> [--day YYYY-MM-DD]');
+  log('       atris business scoreboard [business] target <unit> <N|none>');
   log('       atris business scoreboard [business] layout <unit,unit,...>');
   log('       atris business scoreboard [business] remove <unit>');
   log('revenue, payments, orders, visitors and credits for one business, plus your own numbers.');
+  log('  --event    count an event your site sends (atris business track); --people counts distinct visitors');
+  log('  --formula  a number made from other units with + - * / and parentheses');
   log('  --days   window for the time-boxed units (default 30)');
   log('  --doc    print the board as an Atris doc with metric, gauge and chart blocks');
   log('  --out    write the doc to a file instead of printing it');
@@ -81,7 +86,7 @@ function readFlags(args, names) {
   return { flags, rest };
 }
 
-const ACTIONS = new Set(['add', 'set', 'layout', 'remove']);
+const ACTIONS = new Set(['add', 'set', 'layout', 'remove', 'target']);
 
 function failure(result) {
   const status = Number(result && result.status);
@@ -103,7 +108,7 @@ async function scoreboardCommand(args = [], deps = {}) {
     return 1;
   };
 
-  const { flags, rest } = readFlags(args, ['--days', '--out', '--kind', '--id', '--target', '--day']);
+  const { flags, rest } = readFlags(args, ['--days', '--out', '--kind', '--id', '--target', '--day', '--event', '--formula']);
   // The business is the first word unless that word is an action, then it comes from the folder.
   let business = null;
   if (rest.length && !ACTIONS.has(rest[0])) business = rest.shift();
@@ -128,10 +133,29 @@ async function scoreboardCommand(args = [], deps = {}) {
         body.target = Number(flags.target);
         if (!Number.isFinite(body.target)) return fail('--target takes a number');
       }
+      if (flags.event && flags.formula) return fail('a unit reads an event or a formula, not both');
+      if (flags.event) {
+        body.event = String(flags.event).trim();
+        body.measure = args.includes('--people') ? 'people' : 'count';
+      }
+      if (flags.formula) body.formula = String(flags.formula).trim();
       const result = await request(`${base}/units`, { method: 'POST', token, retries: 0, body });
       if (!result || !result.ok) return fail(failure(result), { status: result && result.status });
       const unit = result.data || {};
-      printResult({ json, ok: true, text: `added ${unit.label} (${unit.id}). record one: atris business scoreboard set ${unit.id} <value>`, payload: { ok: true, unit } }, io);
+      const next = unit.event
+        ? `it counts ${unit.measure === 'people' ? 'people who send' : 'every'} ${unit.event}`
+        : unit.formula ? `it is ${unit.formula}` : `record one: atris business scoreboard set ${unit.id} <value>`;
+      printResult({ json, ok: true, text: `added ${unit.label} (${unit.id}). ${next}`, payload: { ok: true, unit } }, io);
+      return 0;
+    }
+    if (action === 'target') {
+      const [unit, raw] = rest.slice(1);
+      if (!unit || raw === undefined) return fail('say the unit and the goal: atris business scoreboard target revenue 5000 (or none)');
+      const target = raw === 'none' ? null : Number(raw);
+      if (target !== null && !(Number.isFinite(target) && target > 0)) return fail('the target has to be a number above zero, or none');
+      const result = await request(`${base}/units/${encodeURIComponent(unit)}/target`, { method: 'PUT', token, retries: 0, body: { target } });
+      if (!result || !result.ok) return fail(failure(result), { status: result && result.status });
+      printResult({ json, ok: true, text: target === null ? `${unit} has no target now` : `${unit} aims for ${target}`, payload: { ok: true, unit, target } }, io);
       return 0;
     }
     if (action === 'set') {

@@ -107,3 +107,30 @@ test('--json prints the whole board once', async () => {
   assert.strictEqual(parsed.ok, true);
   assert.strictEqual(parsed.units.length, 5);
 });
+
+test('add sends an event unit, a people unit, or a formula unit', async () => {
+  const ev = await run(['sunset-ink', 'add', 'Signups', '--event', 'signup'], { result: { ok: true, status: 201, data: { id: 'signups', label: 'Signups', event: 'signup', measure: 'count' } } });
+  assert.deepStrictEqual(ev.calls[0].options.body, { label: 'Signups', kind: 'count', event: 'signup', measure: 'count' });
+  assert.match(ev.out, /counts every signup/);
+  const people = await run(['sunset-ink', 'add', 'Signers', '--event', 'signup', '--people'], { result: { ok: true, status: 201, data: { id: 'signers', label: 'Signers', event: 'signup', measure: 'people' } } });
+  assert.strictEqual(people.calls[0].options.body.measure, 'people');
+  const formula = await run(['sunset-ink', 'add', 'Revenue per lead', '--kind', 'money', '--formula', 'revenue / leads'], { result: { ok: true, status: 201, data: { id: 'revenue_per_lead', label: 'Revenue per lead', formula: 'revenue / leads' } } });
+  assert.strictEqual(formula.calls[0].options.body.formula, 'revenue / leads');
+  assert.match(formula.out, /it is revenue \/ leads/);
+  const both = await run(['sunset-ink', 'add', 'Bad', '--event', 'x', '--formula', 'y']);
+  assert.strictEqual(both.code, 1);
+  assert.strictEqual(both.calls.length, 0);
+});
+
+test('target sets or clears a goal on any unit', async () => {
+  const set = await run(['sunset-ink', 'target', 'revenue', '5000'], { result: { ok: true, status: 200, data: { unit: 'revenue', target: 5000 } } });
+  assert.strictEqual(set.calls[0].options.method, 'PUT');
+  assert.strictEqual(set.calls[0].path, '/business/sunset-ink/scoreboard/units/revenue/target');
+  assert.deepStrictEqual(set.calls[0].options.body, { target: 5000 });
+  assert.match(set.out, /revenue aims for 5000/);
+  const clear = await run(['sunset-ink', 'target', 'revenue', 'none'], { result: { ok: true, status: 200, data: { unit: 'revenue', target: null } } });
+  assert.deepStrictEqual(clear.calls[0].options.body, { target: null });
+  const bad = await run(['sunset-ink', 'target', 'revenue', '-3']);
+  assert.strictEqual(bad.code, 1);
+  assert.strictEqual(bad.calls.length, 0);
+});
