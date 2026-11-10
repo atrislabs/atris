@@ -134,6 +134,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris/skills/drive/SKILL.md`: Google Drive + Sheets integration v1.0.0 (files, sheets CRUD)
 - `atris/skills/README.md`: Skills pattern + Claude symlink instructions
 - `atris/skills/copy-editor/SKILL.md`: Repo-owned anti-slop copy editor skill, including memo-specific slop gate
+- `atris/skills/clean-copy/SKILL.md`: Repo-owned skill for cutting interface copy that should not exist, before any rewording
 - `commands/skill.js` and `test/skill-audit-codeblocks.test.js` - Skill audit checks and code-block XML regression coverage
 - `atris skill eval <skill-path>` routes through `commands/skill-eval.js`, runs an independent bench engine in a neutral temporary directory, and appends an `atris.skill_eval.v1` row to `.atris/state/scorecards.jsonl`
 - `lib/skill-eval-gate.js` finds changed `SKILL.md` files and requires a newer passing receipt whose judge differs from the worker model; `lib/auto-accept-certified.js` runs it through the shared landing hygiene gate
