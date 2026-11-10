@@ -1943,6 +1943,19 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   const cloudOptions = parsed.options;
   const sub = args[0];
 
+  if (sub === 'login') {
+    const { computerLogin } = require('./computer-login');
+    // The shared option reader takes --business wherever it sits, so hand it
+    // on; otherwise a flag typed before `login` would be dropped silently.
+    const code = await computerLogin(argv.slice(argv.indexOf('login') + 1), {
+      readBusinessBinding,
+      business: cloudOptions.businessSlug || '',
+      ...deps,
+    });
+    if (code !== 0) process.exitCode = code;
+    return code;
+  }
+
   if (sub === 'setup') {
     const code = await computerSetup(deps);
     if (code !== 0) process.exitCode = code;
