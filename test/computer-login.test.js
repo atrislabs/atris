@@ -268,3 +268,17 @@ test('codex is chosen by name and an unknown option is refused', async () => {
   assert.match(parseLoginArgs(['--nope']).error, /unknown option/);
   assert.equal(findComputer(COMPUTERS, 'BETA').business_id, 'biz-b');
 });
+
+test('the computer help does not list login: it works for anyone who knows it, and is not advertised', async () => {
+  const lines = [];
+  const realLog = console.log;
+  console.log = (...parts) => lines.push(parts.join(' '));
+  try {
+    await runComputer(['--help'], {});
+  } finally {
+    console.log = realLog;
+  }
+  const modes = lines.filter((line) => /^\s{2}\S/.test(line));
+  assert.ok(modes.some((line) => /^\s{2}setup\s/.test(line)), 'help printed its list');
+  assert.equal(modes.some((line) => /^\s{2}login\s/.test(line)), false);
+});

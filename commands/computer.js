@@ -2067,7 +2067,6 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('');
     console.log('Modes:');
     console.log('  (default)       Choose CLOUD vs LOCAL when both are available');
-    console.log('  login           Put your own Claude or Codex subscription on the computers you own');
     console.log('  setup           Connect named Codex or Claude accounts to a computer');
     console.log('  card            Show the local owner/computer card, no login required');
     console.log('  local           Open LOCAL Atris mode; cloud brain edits this folder');
