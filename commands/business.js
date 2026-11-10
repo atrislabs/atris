@@ -1158,93 +1158,6 @@ async function businessTeam(slug) {
   console.log('');
 }
 
-async function connectService(connector, ...flags) {
-  if (!connector) {
-    console.log('Usage: atris business connect <service> [--business <slug>]');
-    console.log('');
-    console.log('Available connectors:');
-    // List skills that look like integrations
-    const skillDirs = [
-      path.join(__dirname, '..', '..', '.claude', 'skills'),
-      path.join(require('os').homedir(), '.claude', 'skills'),
-    ];
-    const seen = new Set();
-    for (const dir of skillDirs) {
-      if (!fs.existsSync(dir)) continue;
-      for (const name of fs.readdirSync(dir)) {
-        const skillFile = path.join(dir, name, 'SKILL.md');
-        if (fs.existsSync(skillFile) && !seen.has(name)) {
-          seen.add(name);
-        }
-      }
-    }
-    const integrations = [...seen].filter(s =>
-      ['slack', 'hubspot', 'linear', 'notion', 'google-drive', 'github',
-       'calendar', 'email-agent', 'x-search', 'youtube', 'ramp'].includes(s)
-    ).sort();
-    for (const s of integrations) {
-      console.log(`  ${s}`);
-    }
-    if (integrations.length === 0) console.log('  (none found, install skills first)');
-    return;
-  }
-
-  // Parse --business flag
-  let bizSlug = null;
-  for (let i = 0; i < flags.length; i++) {
-    if ((flags[i] === '--business' || flags[i] === '-b') && flags[i + 1]) {
-      bizSlug = flags[i + 1];
-      i++;
-    }
-  }
-
-  // Find the skill
-  const skillDirs = [
-    path.join(__dirname, '..', '..', '.claude', 'skills', connector),
-    path.join(require('os').homedir(), '.claude', 'skills', connector),
-  ];
-  let skillPath = null;
-  for (const dir of skillDirs) {
-    const p = path.join(dir, 'SKILL.md');
-    if (fs.existsSync(p)) { skillPath = p; break; }
-  }
-
-  if (!skillPath) {
-    console.error(`Skill "${connector}" not found.`);
-    console.error('Check: .claude/skills/ or ~/.claude/skills/');
-    process.exit(1);
-  }
-
-  console.log(`\n  Connecting: ${connector}`);
-  console.log(`  Skill:     ${skillPath}`);
-  if (bizSlug) console.log(`  Business:  ${bizSlug}`);
-
-  // Read skill to check for required secrets
-  const skillContent = fs.readFileSync(skillPath, 'utf8');
-  const secretMatches = skillContent.match(/[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD|API_KEY)/g) || [];
-  const uniqueSecrets = [...new Set(secretMatches)];
-
-  if (uniqueSecrets.length > 0) {
-    console.log(`\n  Required secrets:`);
-    for (const secret of uniqueSecrets) {
-      console.log(`    ${secret}`);
-    }
-    console.log(`\n  Store secrets with: atris computer run "echo $${uniqueSecrets[0]}"`);
-    console.log(`  Or set in: ~/.atris/secrets/${connector}/`);
-  }
-
-  // Create local secrets directory
-  const secretsDir = path.join(stateHome(), '.atris', 'secrets', connector);
-  if (!fs.existsSync(secretsDir)) {
-    fs.mkdirSync(secretsDir, { recursive: true });
-    console.log(`\n  Created secrets dir: ${secretsDir}/`);
-  }
-
-  console.log(`\n  Connected "${connector}" skill.`);
-  console.log(`  Agent can now use ${connector} capabilities.`);
-  console.log('');
-}
-
 async function setNotificationMode(mode, ...flags) {
   const validModes = ['digest', 'silent', 'push'];
   if (!mode || !validModes.includes(mode)) {
@@ -1597,7 +1510,7 @@ function printBusinessHelp() {
   console.log('  health [slug]        Full health dashboard');
   console.log('  audit                Audit all businesses');
   console.log('  doctor [--fix]       Find stale business cache, alias, and folder bindings');
-  console.log('  connect <service>    Connect a skill/integration');
+  console.log('  connect [service]    See or make a business connection (slack, telegram, discord, whatsapp, google-drive, hubspot)');
   console.log('  notify <mode>        Set notification mode (digest/silent/push)');
   console.log('  deploy <slug>        Push local business to cloud');
   console.log('  onboard              Seed brief, person, first loop, safe next action, and one-pager from sparse input');
@@ -1713,7 +1626,7 @@ async function businessCommand(subcommand, ...args) {
       await businessDoctor(...args);
       break;
     case 'connect':
-      await connectService(args[0], ...args.slice(1));
+      process.exitCode = await require('./business-connect').connectCommand(args);
       break;
     case 'notify':
     case 'notification':
