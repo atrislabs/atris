@@ -1588,6 +1588,7 @@ function printBusinessHelp() {
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
   console.log('  room [slug]          Show wallet, members, apps, store, and recent orders');
+  console.log('  scoreboard [slug]    Revenue, orders, visitors, credits and your own numbers as one board (--doc, --json, add, set, layout)');
   console.log('  products [slug]      List store products');
   console.log('  orders [slug]        List store orders');
   console.log('  store on [slug]      Enable the store with its current catalog');
@@ -1678,6 +1679,13 @@ async function businessCommand(subcommand, ...args) {
     case 'room':
       await businessRoom(args[0]);
       break;
+    case 'scoreboard':
+    case 'board':
+    case 'numbers': {
+      const code = await require('./business-scoreboard').scoreboardCommand(args);
+      if (code) process.exitCode = code;
+      break;
+    }
     case 'products':
     case 'product':
       await businessProducts(args[0]);
