@@ -15,12 +15,38 @@ const {
 
 function showUsageHelp() {
   console.log('usage: atris usage [--json]');
-  console.log('show developer api usage for the logged-in account.');
+  console.log('show developer api usage: every key you own when signed in, or one key with ATRIS_API_KEY.');
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+// Signed in as a person, the server answers with every developer key you own
+// plus a total. One line per key, then the total.
+function renderKeyBreakdown(usage) {
+  const total = usage.total && typeof usage.total === 'object' ? usage.total : {};
+  const days = Number(total.period_days) || 30;
+  const lines = [`last ${days} days, ${plural(usage.keys.length, 'developer key')}:`];
+  for (const entry of usage.keys) {
+    const u = (entry && entry.usage) || {};
+    const label = `${entry.agent_name || 'key'} (${u.api_key || 'key'})`;
+    const errors = Number(u.error_count) || 0;
+    lines.push(`  ${label}: ${plural(Number(u.total_requests) || 0, 'request')}${errors ? `, ${plural(errors, 'error')}` : ''}`);
+  }
+  const totalErrors = Number(total.error_count) || 0;
+  lines.push(`total: ${plural(Number(total.total_requests) || 0, 'request')}${totalErrors ? `, ${plural(totalErrors, 'error')} (${total.error_rate}%)` : ''}`);
+  const endpoints = Object.entries(total.endpoints || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (endpoints.length) lines.push(`busiest: ${endpoints.map(([name, count]) => `${name} ${count}`).join(', ')}`);
+  return lines.join('\n');
 }
 
 function renderUsage(data = {}) {
   const raw = data && typeof data === 'object' ? data : {};
   const usage = raw.usage && typeof raw.usage === 'object' ? raw.usage : raw;
+  if (Array.isArray(usage.keys)) {
+    return usage.keys.length ? renderKeyBreakdown(usage) : 'no developer keys yet. make one with atris api-key create';
+  }
   const lines = [];
   if (raw.agent_name || raw.agent_id) {
     lines.push(`${raw.agent_name || 'agent'} ${raw.agent_id || ''}`.trim());

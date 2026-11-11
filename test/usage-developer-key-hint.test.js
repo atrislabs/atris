@@ -32,3 +32,28 @@ test('with ATRIS_API_KEY set, usage sends it as X-API-Key even when not signed i
   assert.equal(calls[0].headers['X-API-Key'], 'atris_devkey');
   assert.equal(calls[0].token, undefined);
 });
+
+test('signed in, usage shows one line per key and a total, not raw data', async () => {
+  const out = [];
+  const code = await usageCommand([], {
+    env: {},
+    log: (line) => out.push(String(line)),
+    err: () => {},
+    loadCredentials: () => ({ token: 'eyJ.login.jwt' }),
+    apiRequestJson: async () => ({ ok: true, data: { agent_id: null, agent_name: null, usage: {
+      keys: [
+        { agent_id: 'a1', agent_name: 'memory', usage: { api_key: 'atris_aLBO...', total_requests: 3, error_count: 1 } },
+        { agent_id: 'a2', agent_name: 'smoke', usage: { api_key: 'atris_yYPV...', total_requests: 0, error_count: 0 } },
+      ],
+      total: { period_days: 30, total_requests: 3, error_count: 1, error_rate: 33.33, endpoints: { '/v1/chat': 3 } },
+    } } }),
+  });
+  assert.equal(code, 0);
+  const text = out.join('\n');
+  assert.match(text, /^last 30 days, 2 developer keys:/);
+  assert.match(text, /memory \(atris_aLBO\.\.\.\): 3 requests, 1 error/);
+  assert.match(text, /smoke \(atris_yYPV\.\.\.\): 0 requests$/m);
+  assert.match(text, /total: 3 requests, 1 error \(33\.33%\)/);
+  assert.match(text, /busiest: \/v1\/chat 3/);
+  assert.doesNotMatch(text, /\{"/);
+});
