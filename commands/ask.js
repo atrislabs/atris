@@ -7,10 +7,26 @@
  */
 
 const readline = require('readline');
-const { getApiBaseUrl, httpRequest, apiRequestJson } = require('../utils/api');
+const api = require('../utils/api');
 const auth = require('../utils/auth');
 
+const { getApiBaseUrl, apiRequestJson } = api;
+
 const TIMEOUT_MS = 300000;
+
+// A request like "run date on my computer" can come back as a started job
+// instead of an answer. These keep the terminal open until the job is done.
+const JOB_FIRST_POLL_MS = 1500;
+const JOB_MAX_POLL_MS = 3000;
+const JOB_WAIT_CAP_MS = 5 * 60 * 1000;
+const JOB_POLL_TIMEOUT_MS = 20000;
+// Consecutive polls that may fail (network drop, 5xx) before we give up.
+const JOB_POLL_FAILURE_LIMIT = 4;
+// Consecutive 404s before we say the job is gone. One is tolerated in case
+// the first read lands before the saved job is visible.
+const JOB_NOT_FOUND_LIMIT = 2;
+const CHECK_COMMAND = 'atris chat --personal "how is it going"';
+const JOB_INTENTS = new Set(['mission_start', 'mission_answer', 'mission_approve', 'mission_correction']);
 
 function stripEvents(text) {
   // Drop inline [[EVENT]]{...} tool chatter; keep only the spoken reply.
@@ -52,13 +68,14 @@ function stripEvents(text) {
 }
 
 function startSpinner(label) {
-  if (!process.stdout.isTTY) return { stop: () => {} };
+  if (!process.stdout.isTTY) return { stop: () => {}, setLabel: () => {} };
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const started = Date.now();
   let i = 0;
+  let current = label;
   const timer = setInterval(() => {
     const secs = Math.floor((Date.now() - started) / 1000);
-    process.stdout.write(`\r${frames[i % frames.length]} ${label}${secs > 2 ? ` · ${secs}s` : ''}   `);
+    process.stdout.write(`\r\x1b[2K${frames[i % frames.length]} ${current}${secs > 2 ? ` · ${secs}s` : ''}`);
     i += 1;
   }, 90);
   return {
@@ -66,6 +83,7 @@ function startSpinner(label) {
       clearInterval(timer);
       process.stdout.write('\r\x1b[2K');
     },
+    setLabel: (next) => { if (next) current = String(next); },
   };
 }
 
@@ -83,7 +101,7 @@ async function typeOut(text) {
 }
 
 async function sendMessage(token, message) {
-  const res = await httpRequest(`${getApiBaseUrl()}/message/incoming`, {
+  const res = await api.httpRequest(`${getApiBaseUrl()}/message/incoming`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -100,7 +118,165 @@ async function sendMessage(token, message) {
   return JSON.parse(res.body.toString('utf8'));
 }
 
-async function askAtris(args) {
+// The job id when this reply started (or restarted) a job the person should
+// wait for. Replies that only report on a job (status, stop) carry no wait.
+function startedJobId(body) {
+  if (!body || typeof body !== 'object' || body.success === false) return null;
+  if (!JOB_INTENTS.has(body.intent)) return null;
+  const id = body.card && body.card.mission_id;
+  return typeof id === 'string' && id ? id : null;
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJob(token, jobId) {
+  const url = `${getApiBaseUrl()}/atris2/missions/${encodeURIComponent(jobId)}?details=true`;
+  let res;
+  try {
+    res = await api.httpRequest(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      timeoutMs: JOB_POLL_TIMEOUT_MS,
+    });
+  } catch (err) {
+    return { transient: true, error: err && err.message ? err.message : String(err) };
+  }
+  const status = res && res.status;
+  if (status === 200) {
+    try {
+      return { job: JSON.parse(res.body.toString('utf8')) };
+    } catch (_) {
+      return { transient: true, error: 'unreadable reply' };
+    }
+  }
+  if (status === 404) return { notFound: true };
+  if (status === 401 || status === 403) return { signedOut: true };
+  return { transient: true, error: `HTTP ${status}` };
+}
+
+// What a polled job says right now: done (with its answer), needs the person,
+// stopped, failed, waiting for a computer, or still working.
+function readJob(job) {
+  const result = job && typeof job.result === 'object' && job.result ? job.result : {};
+  const proof = job && typeof job.proof === 'object' && job.proof ? job.proof : {};
+  const state = String((job && job.state) || '').toLowerCase();
+  const status = String((job && job.status) || '').toLowerCase();
+  const text = [result.response, result.summary, proof.summary, job && job.summary]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find(Boolean) || '';
+  if (status === 'completed' || state === 'done') return { kind: 'done', text };
+  if (status === 'cancelled') return { kind: 'stopped' };
+  const detail = [result.message, result.error]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find(Boolean) || '';
+  if (status === 'failed') {
+    // A hard-capped job that failed reads "stopped"; any other failure is a failure.
+    return state === 'stopped' ? { kind: 'stopped', detail } : { kind: 'failed', detail };
+  }
+  if (state === 'stopped') return { kind: 'stopped', detail };
+  if (state === 'your_turn') {
+    const needs = job.needs && typeof job.needs === 'object' ? job.needs : {};
+    const question = String(needs.question || job.next || '').trim();
+    const options = Array.isArray(needs.options) ? needs.options.map(String).filter(Boolean) : [];
+    return { kind: 'needs', question: question || 'The job is waiting on you.', options };
+  }
+  if (state === 'waiting_for_computer') return { kind: 'no_computer' };
+  return { kind: 'working', label: typeof job.working_on === 'string' ? job.working_on : '' };
+}
+
+// Poll a started job until it ends, asks a question, or the wait cap passes.
+// Never throws: every way this can go wrong comes back as an outcome.
+async function waitForJob(token, jobId, { spinner, sleep = defaultSleep, now = Date.now, capMs = JOB_WAIT_CAP_MS } = {}) {
+  const startedAt = now();
+  let attempt = 0;
+  let failures = 0;
+  let notFound = 0;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const polled = await fetchJob(token, jobId);
+    if (polled.signedOut) return { kind: 'signed_out' };
+    if (polled.notFound) {
+      notFound += 1;
+      failures = 0;
+      if (notFound >= JOB_NOT_FOUND_LIMIT) return { kind: 'lost' };
+    } else if (polled.transient) {
+      failures += 1;
+      notFound = 0;
+      if (failures >= JOB_POLL_FAILURE_LIMIT) return { kind: 'disconnected' };
+    } else {
+      failures = 0;
+      notFound = 0;
+      const read = readJob(polled.job);
+      if (read.kind !== 'working') return read;
+      if (spinner && read.label) spinner.setLabel(read.label);
+    }
+    const remaining = capMs - (now() - startedAt);
+    if (remaining <= 0) return { kind: 'timeout' };
+    attempt += 1;
+    const delay = Math.min(JOB_FIRST_POLL_MS + (attempt - 1) * 500, JOB_MAX_POLL_MS, remaining);
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(delay);
+  }
+}
+
+// Plain words for each way a wait can end. `failed` ones are errors for a
+// script (exit code 1); the rest are answers or a request for the person.
+function describeOutcome(outcome, { interactive = false } = {}) {
+  switch (outcome.kind) {
+    case 'done':
+      return { text: stripEvents(outcome.text) || 'The job finished, but it did not leave a written answer.' };
+    case 'needs': {
+      const lines = [`The job needs your answer: ${outcome.question}`];
+      if (outcome.options.length) lines.push(`Choices: ${outcome.options.join(', ')}`);
+      lines.push(interactive
+        ? 'Type your answer below.'
+        : 'Answer with: atris chat --personal "<your answer>"');
+      return { text: lines.join('\n') };
+    }
+    case 'timeout':
+      return { text: `Still working after ${Math.round(JOB_WAIT_CAP_MS / 60000)} minutes, and it keeps running. Check on it with: ${CHECK_COMMAND}` };
+    case 'no_computer':
+      return { text: 'This job is waiting for a computer to run on. It starts once your computer is running.' };
+    case 'stopped':
+      return { text: `That job was stopped before it finished.${outcome.detail ? ` ${outcome.detail}` : ''}`, failed: true };
+    case 'failed':
+      return {
+        text: `The job did not finish${outcome.detail ? `: ${outcome.detail}` : '.'} Say it a little differently to start a fresh try.`,
+        failed: true,
+      };
+    case 'lost':
+      return { text: 'I lost track of that job, so I cannot tell you how it went. Ask again to start a new one.', failed: true };
+    case 'signed_out':
+      return { text: 'Your sign-in no longer works for this job. Run "atris login", then ask for an update.', failed: true };
+    case 'disconnected':
+    default:
+      return {
+        text: `Lost the connection while the job was running. It may still be working. Check with: ${CHECK_COMMAND}`,
+        failed: true,
+      };
+  }
+}
+
+// One person's message, start to finish: send it, and when the reply is a
+// started job, wait for the job's real answer instead of stopping at "I'm starting now".
+async function askOnce(token, message, { spinner, interactive = false, wait = {} } = {}) {
+  const body = await sendMessage(token, message);
+  const jobId = startedJobId(body);
+  if (!jobId) return { text: stripEvents(body.response) || JSON.stringify(body) };
+  if (spinner) spinner.setLabel('working on it');
+  const outcome = await waitForJob(token, jobId, { spinner, ...wait });
+  const described = describeOutcome(outcome, { interactive });
+  // The same words always map to the same job, so asking again can return a finished one.
+  if (outcome.kind === 'done' && body.intent === 'mission_start'
+    && body.card && String(body.card.state || '').toLowerCase() === 'done') {
+    described.note = 'This is the answer from the last time you asked this. Reword it to run it again.';
+  }
+  return described;
+}
+
+async function askAtris(args, options = {}) {
   const ensured = await auth.ensureValidCredentials(apiRequestJson);
   if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
     console.error('✗ Not logged in. Run "atris login" first.');
@@ -125,15 +301,23 @@ async function askAtris(args) {
 
   if (oneShot) {
     const spinner = startSpinner('thinking');
+    let answer;
     try {
-      const body = await sendMessage(token, oneShot);
-      spinner.stop();
-      await typeOut(stripEvents(body.response) || JSON.stringify(body));
+      answer = await askOnce(token, oneShot, { spinner, wait: options });
     } catch (err) {
       spinner.stop();
       console.error(`✗ ${err.message}`);
       process.exit(1);
+      return;
     }
+    spinner.stop();
+    if (answer.note) console.error(answer.note);
+    if (answer.failed) {
+      console.error(`✗ ${answer.text}`);
+      process.exit(1);
+      return;
+    }
+    await typeOut(answer.text);
     return;
   }
 
@@ -150,11 +334,16 @@ async function askAtris(args) {
     busy = true;
     const spinner = startSpinner('thinking');
     try {
-      const body = await sendMessage(token, message);
+      const answer = await askOnce(token, message, { spinner, interactive: true, wait: options });
       spinner.stop();
-      process.stdout.write('\natris › ');
-      await typeOut(stripEvents(body.response) || JSON.stringify(body));
-      process.stdout.write('\n');
+      if (answer.note) console.error(answer.note);
+      if (answer.failed) {
+        console.error(`✗ ${answer.text}\n`);
+      } else {
+        process.stdout.write('\natris › ');
+        await typeOut(answer.text);
+        process.stdout.write('\n');
+      }
     } catch (err) {
       spinner.stop();
       console.error(`✗ ${err.message}\n`);
@@ -172,4 +361,4 @@ async function askAtris(args) {
   });
 }
 
-module.exports = { askAtris };
+module.exports = { askAtris, readJob, startedJobId, waitForJob, describeOutcome };
