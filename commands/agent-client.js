@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { apiRequestJson } = require('../utils/api');
-const { ensureValidCredentials, readActiveCredentials, listProfiles, loadProfile } = require('../utils/auth');
+const { ensureValidCredentials, readActiveCredentials, listProfiles, loadProfile, getSessionProfile } = require('../utils/auth');
 const agentClient = require('../utils/agent-client');
 const { readFlag } = require('../lib/arg-parser');
 const { wantsJson, wantsHelp, oneLine } = require('../lib/developer-api');
@@ -41,11 +41,22 @@ function humanProfileNames(deps = {}) {
   }
 }
 
+// The switch command that actually reaches the login in use. ATRIS_PROFILE
+// beats everything, then this terminal's own pick, then the global login, so
+// a --global switch would not help a terminal that picked its own account.
+function switchCommandFor(name, deps = {}) {
+  const env = deps.env || process.env;
+  if (String(env.ATRIS_PROFILE || '').trim()) return `export ATRIS_PROFILE=${name}`;
+  let session = null;
+  try { session = (deps.getSessionProfile || getSessionProfile)(); } catch { session = null; }
+  return session ? `atris switch ${name}` : `atris switch ${name} --global`;
+}
+
 function cannotManageMessage(deps = {}) {
   const names = humanProfileNames(deps);
   const lead = 'agent clients are managed with your own login, not an agent client.';
-  if (names.length === 1) return `${lead} switch back: atris switch ${names[0]} --global`;
-  if (names.length > 1) return `${lead} switch back with one of: ${names.map((n) => `atris switch ${n} --global`).join(' | ')}`;
+  if (names.length === 1) return `${lead} switch back: ${switchCommandFor(names[0], deps)}`;
+  if (names.length > 1) return `${lead} switch back with one of: ${names.map((n) => switchCommandFor(n, deps)).join(' | ')}`;
   return `${lead} sign in as yourself: atris login --force`;
 }
 

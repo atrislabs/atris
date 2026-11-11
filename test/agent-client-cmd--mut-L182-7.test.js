@@ -75,6 +75,8 @@ test('the error names the saved login to switch back to, not a placeholder', asy
     readActiveCredentials: () => ({ auth_type: 'agent_client', client_id: 'atc_x' }),
     listProfiles: () => Object.keys(profiles),
     loadProfile: (name) => profiles[name],
+    getSessionProfile: () => null,
+    env: {},
     apiRequestJson: async () => { throw new Error('must not call the server'); },
   });
   assert.strictEqual(code, 1);
@@ -94,4 +96,21 @@ test('an unknown scope from the server comes back with the scopes you can use', 
   assert.strictEqual(code, 1);
   assert.match(errLines.join('\n'), /Unknown scope: mcp:read\. scopes you can use: x-search, youtube/);
   assert.match(errLines.join('\n'), /mcp:workspace:read/);
+});
+
+test('a terminal that picked its own account is told the switch that reaches it', async () => {
+  const profiles = { keshavrao250: { token: 'jwt' } };
+  const base = {
+    log: () => {},
+    readActiveCredentials: () => ({ auth_type: 'agent_client', client_id: 'atc_x' }),
+    listProfiles: () => Object.keys(profiles),
+    loadProfile: (name) => profiles[name],
+    apiRequestJson: async () => { throw new Error('must not call the server'); },
+  };
+  const session = [];
+  await agentClientCommand(['list'], { ...base, err: (m) => session.push(String(m)), env: {}, getSessionProfile: () => 'nightly' });
+  assert.match(session[0], /switch back: atris switch keshavrao250$/);
+  const pinned = [];
+  await agentClientCommand(['list'], { ...base, err: (m) => pinned.push(String(m)), env: { ATRIS_PROFILE: 'nightly' }, getSessionProfile: () => null });
+  assert.match(pinned[0], /switch back: export ATRIS_PROFILE=keshavrao250$/);
 });
