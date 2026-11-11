@@ -42,8 +42,9 @@ test('askOwner forwards the owner, prompt, engine and model and returns the answ
 test('askOwner defaults to claude and an empty model when no engine is selected', async (t) => {
   const { root, run } = fixture(t, null, []);
 
+  // no_engine: the stall line can say the fallback was tried (lib/campaign-engine-stall.js).
   assert.deepStrictEqual(await askOwner(root, { owner: 'planner', id: 'empty' }, ''), {
-    text: '', engine: 'claude', ok: false,
+    text: '', engine: 'claude', ok: false, no_engine: true,
   });
   assert.deepStrictEqual(run.mock.calls[0].arguments[0], [{
     engine: 'claude', model: '', prompt: '', label: 'campaign empty plan',
