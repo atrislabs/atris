@@ -81,7 +81,7 @@ function showLines(d) {
 
 function commandLines(c, id) {
   const status = c.status || 'unknown';
-  if (status === 'done') return ['Done. The edit was accepted by the editor.'];
+  if (status === 'done') return ['Done. Your suggestion reached the editor and is waiting for the person to approve it.'];
   if (status === 'refused') return [`Refused: ${oneLine(c.error)}`];
   if (status === 'expired') return ['Expired: the editor Mac did not pick it up in time. Try again when it is on.'];
   return [`${status}. Check later: atris film status ${id}`];
