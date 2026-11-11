@@ -774,6 +774,7 @@ function showHelpAll() {
   console.log('  switch     - Switch account globally (atris switch <name>)');
   console.log('  use        - Set account for this terminal only (atris use <name>)');
   console.log('  accounts   - Manage accounts (list, add, remove)');
+  console.log('  film       - See film projects and suggest edits (list, show, propose, status; --json)');
   console.log('  balance    - Show credit balance in dollars');
   console.log('  usage      - Show developer API usage');
   console.log('  api-key    - Create, list, rotate, or revoke a developer API key');
@@ -2529,6 +2530,10 @@ if (command === 'guide') {
   require('../commands/auth').accountsCmd(args);
 } else if (command === 'memory') {
   Promise.resolve().then(() => require('../commands/memory').memoryCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'film') {
+  Promise.resolve().then(() => require('../commands/film').filmCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'balance') {
