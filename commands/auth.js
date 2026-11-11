@@ -633,6 +633,21 @@ function looksLikeCliCode(value) {
   return CLI_CODE_PATTERN.test(String(value || '').trim());
 }
 
+// readFlag treats a value starting with "-" as the next flag, but one code in
+// 64 starts with a dash. Take --code=<v> as is, and the next arg when it is
+// code-shaped or not a flag. "-" or nothing means read stdin.
+function readCodeFlag(args = []) {
+  const eq = args.find((arg) => String(arg).startsWith('--code='));
+  if (eq !== undefined) {
+    const value = String(eq).slice('--code='.length);
+    return value === '-' ? '' : value;
+  }
+  const next = args[args.indexOf('--code') + 1];
+  if (next === undefined || next === '-') return '';
+  if (looksLikeCliCode(next) || !String(next).startsWith('-')) return String(next);
+  return '';
+}
+
 function headlessLoginHelp() {
   const url = `${getAppBaseUrl()}/auth/cli`;
   return [
@@ -673,7 +688,7 @@ function readPipedLoginInput(timeoutMs = 1500) {
   });
 }
 
-async function exchangeCliCodeAndSave(code, { asJson = false, note = null } = {}) {
+async function exchangeCliCodeAndSave(code, { asJson = false, note = null, quiet = false } = {}) {
   if (note && !asJson) console.log(note);
   const exchange = await apiRequestJson('/auth/cli/exchange', {
     method: 'POST',
@@ -698,6 +713,7 @@ async function exchangeCliCodeAndSave(code, { asJson = false, note = null } = {}
   }
   const email = payload.email || null;
   saveCredentials(payload.token, payload.refresh_token, email, payload.user_id || null, payload.provider || 'atris');
+  if (quiet) return 0;
   if (asJson) {
     console.log(JSON.stringify({ ok: true, logged_in: true, email, user_id: payload.user_id || null, provider: payload.provider || 'atris', next: 'atris whoami --json' }, null, 2));
     return 0;
@@ -731,7 +747,11 @@ async function loginAtris(options = {}) {
     const existing = loadCredentials();
 
     if (wantsAgentToken(args)) {
-      if (directToken) {
+      if (directToken && looksLikeCliCode(directToken)) {
+        // sign in with the code first, then mint from that real login
+        const exchanged = await exchangeCliCodeAndSave(directToken, { asJson, note: CODE_NOT_TOKEN_NOTE, quiet: true });
+        if (exchanged !== 0) process.exit(exchanged);
+      } else if (directToken) {
         saveCredentials(
           String(directToken).trim(),
           existing?.refresh_token || null,
@@ -749,8 +769,8 @@ async function loginAtris(options = {}) {
     // even over an existing login.
     const codeFlagPresent = args.some((arg) => arg === '--code' || String(arg).startsWith('--code='));
     if (codeFlagPresent) {
-      let code = readFlag(args, '--code', '');
-      if (!code || code === '-' || String(code).startsWith('-')) code = await readPipedLoginInput(5000);
+      let code = readCodeFlag(args);
+      if (!code) code = await readPipedLoginInput(5000);
       if (!code) {
         const error = 'no code given.';
         if (asJson) console.log(JSON.stringify({ ok: false, logged_in: false, error, next: 'atris login --code <code>' }, null, 2));
@@ -780,6 +800,13 @@ async function loginAtris(options = {}) {
       process.exit(0);
     }
 
+    // echo <code> | atris login signs in with no terminal, over an existing
+    // login too. Read once here so the shortcut below cannot swallow it.
+    const piped = (!process.stdin.isTTY && !directToken) ? await readPipedLoginInput() : '';
+    if (piped && looksLikeCliCode(piped)) {
+      process.exit(await exchangeCliCodeAndSave(piped, { asJson }));
+    }
+
     // Already signed in without --force: behave like whoami (no menu).
     // Print local identity without waiting on the network so headless agents
     // never hang on a stale token validation.
@@ -807,11 +834,6 @@ async function loginAtris(options = {}) {
     }
 
     if (nonInteractive) {
-      // echo <code> | atris login signs in with no terminal.
-      const piped = process.stdin.isTTY ? '' : await readPipedLoginInput();
-      if (piped && looksLikeCliCode(piped)) {
-        process.exit(await exchangeCliCodeAndSave(piped, { asJson }));
-      }
       if (asJson) {
         console.log(JSON.stringify({
           ok: false,

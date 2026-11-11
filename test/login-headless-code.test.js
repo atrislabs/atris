@@ -15,6 +15,9 @@ const { spawn } = require('node:child_process');
 const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
 const CODE = 'Ab3_dE5-gH7iJ9kL1mN3oP5qR7sT9uV1wX3yZ5aB7cd'; // 43 url-safe chars, like token_urlsafe(32)
 const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl';
+const OTHER_JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTIifQ.c2lnbmF0dXJm';
+const DASH_CODE = '-b3_dE5-gH7iJ9kL1mN3oP5qR7sT9uV1wX3yZ5aB7cd'; // one code in 64 starts with a dash
+const OTHER_CODE = 'Qq3_dE5-gH7iJ9kL1mN3oP5qR7sT9uV1wX3yZ5aB7cd';
 
 function fakeBackend(t) {
   const calls = [];
@@ -26,8 +29,10 @@ function fakeBackend(t) {
       res.setHeader('content-type', 'application/json');
       if (req.url.endsWith('/auth/cli/exchange')) {
         const sent = JSON.parse(body || '{}').code;
-        if (sent === CODE) {
+        if (sent === CODE || sent === DASH_CODE) {
           res.end(JSON.stringify({ token: JWT, refresh_token: 'refresh-1', email: 'person@example.com', user_id: 'user-1', provider: 'atris' }));
+        } else if (sent === OTHER_CODE) {
+          res.end(JSON.stringify({ token: OTHER_JWT, refresh_token: 'refresh-2', email: 'other@example.com', user_id: 'user-2', provider: 'atris' }));
         } else {
           res.statusCode = 400;
           res.end(JSON.stringify({ detail: 'Invalid or expired code' }));
@@ -45,9 +50,13 @@ function fakeBackend(t) {
   });
 }
 
-function run(t, args, { api, stdin = null } = {}) {
+function makeHome(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'login-headless-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  return home;
+}
+
+function run(t, args, { api, stdin = null, home = makeHome(t) } = {}) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, ATRIS_TEST_STATE_DIR: home, ATRIS_API_URL: api, ATRIS_APP_URL: 'https://app.example' };
   for (const name of ['ATRIS_TOKEN', 'ATRIS_CLIENT_ID', 'ATRIS_CLIENT_SECRET', 'ATRIS_CLIENT_SECRET_FILE', 'ATRIS_PROFILE', 'ATRIS_SKIP_UPDATE_CHECK', 'NO_UPDATE_NOTIFIER', 'ATRIS_NONINTERACTIVE']) delete env[name];
   return new Promise((resolve) => {
@@ -139,4 +148,35 @@ test('login never asks the registry for updates', async (t) => {
   assert.equal(res.code, 0, res.out);
   assert.equal(fs.existsSync(path.join(marker, 'hit')), false, 'login made an update request');
   assert.doesNotMatch(res.out, /update available|updating/i);
+});
+
+test('a code that starts with a dash still works, in both flag forms', async (t) => {
+  const { url } = await fakeBackend(t);
+  for (const args of [['--code', DASH_CODE], [`--code=${DASH_CODE}`]]) {
+    const res = await run(t, args, { api: url });
+    assert.equal(res.code, 0, `${args.join(' ')}\n${res.out}`);
+    assert.equal(res.creds.token, JWT);
+  }
+});
+
+test('a code piped in while signed in switches to that account', async (t) => {
+  const { url } = await fakeBackend(t);
+  const home = makeHome(t);
+  const first = await run(t, ['--code', CODE], { api: url, home });
+  assert.equal(first.code, 0, first.out);
+  const second = await run(t, [], { api: url, home, stdin: `${OTHER_CODE}\n` });
+  assert.equal(second.code, 0, second.out);
+  assert.equal(second.creds.token, OTHER_JWT);
+  assert.match(second.out, /other@example\.com/);
+});
+
+test('--agent --token with a browser code signs in with the code, never saves it', async (t) => {
+  const { url, calls } = await fakeBackend(t);
+  const res = await run(t, ['--agent', '--token', CODE], { api: url });
+  assert.ok(calls.some((c) => c.url.endsWith('/auth/cli/exchange')), res.out);
+  assert.ok(res.creds, res.out);
+  assert.notEqual(res.creds.token, CODE);
+  const exchangeAt = calls.findIndex((c) => c.url.endsWith('/auth/cli/exchange'));
+  const mintAt = calls.findIndex((c) => c.url.includes('/auth/agent-token'));
+  if (mintAt !== -1) assert.ok(exchangeAt < mintAt, 'minted before signing in');
 });
