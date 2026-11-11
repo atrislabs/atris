@@ -9,6 +9,17 @@ const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { assertSafeWorkspaceRoot } = require('../lib/workspace-safety');
 
+// The server's own words for a refused request. It used to be dropped, so a
+// refusal for any reason read as "you can only push to your team/ folder".
+function refusalText(result) {
+  if (!result) return '';
+  const raw = result.errorMessage || result.error || (result.data && result.data.detail) || '';
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw === 'Request failed' ? '' : raw;
+  if (typeof raw === 'object' && typeof raw.message === 'string') return raw.message;
+  try { return JSON.stringify(raw); } catch { return String(raw); }
+}
+
 function resolvePushSourceDir({ slug, argv = process.argv, cwd = process.cwd() }) {
   const fromIdx = argv.indexOf('--from');
   if (fromIdx !== -1 && argv[fromIdx + 1]) {
@@ -858,13 +869,15 @@ async function pushAtris() {
               pushed = landedPaths.size;
               break;
             } else {
-              console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
+              console.error(`\n  Push failed: ${refusalText(retry) || retry.status}`);
+              if (refusalText(result)) console.error(`  The first refusal said: ${refusalText(result)}`);
               await emit('access_denied', { error_detail: `403 retry failed: ${retry.status}` });
               process.exit(1);
             }
           } else {
-            console.error('\n  Access denied: you can only push to your team/ folder.');
-            await emit('access_denied');
+            const reason = refusalText(result);
+            console.error(`\n  Access denied: ${reason || 'the server refused this push and gave no reason.'}`);
+            await emit('access_denied', reason ? { error_detail: reason } : undefined);
             process.exit(1);
           }
         } else if (result.status === 409) {
@@ -1052,6 +1065,7 @@ async function pushAtris() {
 }
 
 module.exports = {
+  refusalText,
   pushAtris,
   buildPushChangePlan,
   buildPushUploadBatches,
