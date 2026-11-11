@@ -41,6 +41,8 @@ function renderUsage(data = {}) {
   return lines.join('\n');
 }
 
+const USAGE_NEEDS_KEY = 'usage is counted per developer key, not per sign-in. make one with atris api-key create, then run ATRIS_API_KEY=<key> atris usage';
+
 async function usageCommand(args = [], deps = {}) {
   if (wantsHelp(args)) {
     showUsageHelp();
@@ -51,14 +53,21 @@ async function usageCommand(args = [], deps = {}) {
   const io = { log: deps.log || console.log, err: deps.err || console.error };
   const load = deps.loadCredentials || loadCredentials;
   const request = deps.apiRequestJson || apiRequestJson;
+  const devKeyEarly = String(((deps.env || process.env).ATRIS_API_KEY) || '').trim();
   const token = tokenFrom(load());
-  if (!token) {
+  if (!token && !devKeyEarly) {
     printResult({ json, ok: false, error: NOT_LOGGED_IN, payload: { ok: false, error: NOT_LOGGED_IN } }, io);
     return 1;
   }
 
   try {
-    const result = await request('/developer/usage', { method: 'GET', token });
+    // The usage endpoint reads only X-API-Key: it reports one developer key's
+    // usage. Send a developer key when one is set; a sign-in token is refused.
+    const env = deps.env || process.env;
+    const devKey = String(env.ATRIS_API_KEY || '').trim();
+    const result = devKey
+      ? await request('/developer/usage', { method: 'GET', headers: { 'X-API-Key': devKey } })
+      : await request('/developer/usage', { method: 'GET', token });
     if (isNotFound(result)) {
       printResult({
         json,
@@ -69,7 +78,8 @@ async function usageCommand(args = [], deps = {}) {
       return 1;
     }
     if (!result || !result.ok) {
-      const error = oneLine(result && result.error);
+      let error = oneLine(result && result.error);
+      if (!devKey && [401, 403, 422].includes(result && result.status)) error = `${error}. ${USAGE_NEEDS_KEY}`;
       printResult({ json, ok: false, error, payload: { ok: false, error, status: result && result.status } }, io);
       return 1;
     }

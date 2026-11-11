@@ -269,7 +269,7 @@ The owner makes the client once. The secret is shown one time, or written to a
 private file with `--secret-file`:
 
 ```bash
-atris agent-client create --name nightly-bot --scopes mcp:read,x-search --secret-file ./bot.secret
+atris agent-client create --name nightly-bot --scopes mcp:workspace:read,x-search --secret-file ./bot.secret
 atris agent-client list
 atris agent-client rotate <client_id>
 atris agent-client revoke <client_id>

@@ -54,11 +54,17 @@ test('env key wins and is trimmed without touching other sources', () => {
   assert.deepStrictEqual(deps.calls, { creds: 0, file: 0 });
 });
 
-test('blank env key falls through to the login token, trimmed', () => {
-  const deps = stubDeps({ creds: { token: '  login-token\t' }, fileKey: 'from-file' });
+test('blank env key and no key file fall through to the login token, trimmed', () => {
+  const deps = stubDeps({ creds: { token: '  login-token\t' }, fileKey: null });
   assert.strictEqual(resolveDesignKey({ ATRIS_API_KEY: '   ' }, deps), 'login-token');
   assert.strictEqual(deps.calls.creds, 1);
-  assert.strictEqual(deps.calls.file, 0);
+  assert.strictEqual(deps.calls.file, 1);
+});
+
+test('a saved developer key wins over the login token', () => {
+  const deps = stubDeps({ creds: { token: 'login-token' }, fileKey: 'atris_saved' });
+  assert.strictEqual(resolveDesignKey({}, deps), 'atris_saved');
+  assert.strictEqual(deps.calls.creds, 0);
 });
 
 test('missing env var uses the login token', () => {
@@ -66,15 +72,11 @@ test('missing env var uses the login token', () => {
   assert.strictEqual(resolveDesignKey({}, deps), 'login-token');
 });
 
-test('unusable credentials fall through to the key file', () => {
+test('unusable credentials with no key file give null', () => {
   const badCreds = [null, undefined, {}, { token: '' }, { token: '   ' }, { token: 42 }, { token: null }];
   for (const creds of badCreds) {
-    const deps = stubDeps({ creds, fileKey: 'file-key' });
-    assert.strictEqual(
-      resolveDesignKey({}, deps),
-      'file-key',
-      `creds ${JSON.stringify(creds)} should fall through`
-    );
+    const deps = stubDeps({ creds, fileKey: null });
+    assert.strictEqual(resolveDesignKey({}, deps), null, `creds ${JSON.stringify(creds)} should give null`);
     assert.strictEqual(deps.calls.file, 1);
   }
 });
