@@ -1,6 +1,6 @@
 'use strict';
 
-// atris memory show, search, read, ls, remember, write, rm, usage, log, lesson
+// atris memory show, search, ask, read, ls, remember, write, rm, usage, log, lesson
 // and agents: the person's Atris memory from any terminal, so any agent can
 // read it, search it and save to it. One request per command. The login and
 // network modules load only when a command needs the server.
@@ -13,6 +13,7 @@ const { NOT_LOGGED_IN, oneLine, tokenFrom } = require('../lib/developer-api');
 const MAX_WRITE_BYTES = 1000000;
 const STDIN_WAIT_MS = 5000;
 const REMEMBER_MAX_CHARS = 1000;
+const ASK_MAX_CHARS = 500;
 const REMEMBER_FILES = ['journal', 'now', 'learning'];
 const LEARNING_SECTIONS = ['want', 'understand', 'shaky'];
 
@@ -135,6 +136,20 @@ const COMMANDS = {
     async run(ctx, { query, folder }) {
       const data = await ctx.call(`/memory/grep?q=${enc(query)}${folder ? `&folder=${enc(folder)}` : ''}`);
       return { data: { query, folder, ...data }, lines: live.searchLines(query, data) };
+    },
+  },
+
+  ask: {
+    check(ctx) {
+      const question = ctx.words.join(' ').replace(/\s+/g, ' ').trim();
+      if (!question) throw new UsageError('ask a question, like atris memory ask "where does Sam work?"');
+      if (question.length > ASK_MAX_CHARS) throw new UsageError('keep the question under 500 characters');
+      return { question, folder: ctx.flags['--in'] || '' };
+    },
+    async run(ctx, { question, folder }) {
+      // The server reads for up to 75 seconds; asking twice would count twice.
+      const data = await ctx.call(`/memory/ask?q=${enc(question)}${folder ? `&folder=${enc(folder)}` : ''}`, { timeoutMs: 90000, retries: 0 });
+      return { data, lines: live.askLines(data) };
     },
   },
 
