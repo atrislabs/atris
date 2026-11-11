@@ -43,9 +43,9 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 **Purpose:** Optional cloud features - auth with Atris backend
 
 - **Entry point (modular):** `commands/auth.js`
-- `commands/auth.js:625` (`loginAtris`): OAuth code exchange + manual token entry + `--token`/`--force` flags
-- `commands/auth.js:806` (`logoutAtris`): Delete credentials
-- `commands/auth.js:835` (`whoamiAtris`): Show auth status via `displayAccountSummary`
+- `commands/auth.js:727` (`loginAtris`): OAuth code exchange + manual token entry + `--token`/`--force` flags
+- `commands/auth.js:920` (`logoutAtris`): Delete credentials
+- `commands/auth.js:949` (`whoamiAtris`): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
 - **Help:** `bin/atris.js:1017-1046` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
 - **Dispatch:** `bin/atris.js:1205-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
