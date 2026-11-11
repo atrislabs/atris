@@ -32,7 +32,7 @@ test('normalizeBash: strips the label from embedded paths', () => {
 
 test('fileOpCommand: blocks .. traversal in args.path, rejects unknown ops', () => {
   assert.equal(fileOpCommand({ type: 'read', path: '../secrets' }, LABEL), null);
-  assert.equal(fileOpCommand({ type: 'write', path: 'a.md' }, LABEL), null);
+  assert.equal(fileOpCommand({ type: 'chmod', path: 'a.md' }, LABEL), null);
   assert.match(fileOpCommand({ type: 'read', path: 'a.md' }, LABEL), /head -c 12000/);
   assert.match(fileOpCommand({ type: 'list', path: '.' }, LABEL), /find/);
 });
