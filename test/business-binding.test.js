@@ -347,6 +347,7 @@ test('business init --here creates the business and binds the current directory'
   writeCredentials(home);
 
   const requests = [];
+  let created = null;
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -354,15 +355,19 @@ test('business init --here creates the business and binds the current directory'
       const rawBody = Buffer.concat(chunks).toString('utf8');
       requests.push({ method: req.method, url: req.url, body: rawBody ? JSON.parse(rawBody) : null });
       res.setHeader('Content-Type', 'application/json');
+      // Like the real cloud, it knows the business once it has been created.
       if (req.method === 'GET' && req.url.startsWith('/api/business/by-slug/')) {
-        res.statusCode = 404;
-        res.end(JSON.stringify({ detail: 'not found' }));
+        if (created) {
+          res.end(JSON.stringify(created));
+        } else {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ detail: 'not found' }));
+        }
       } else if (req.method === 'GET' && req.url === '/api/business/') {
-        res.end(JSON.stringify([]));
+        res.end(JSON.stringify(created ? [created] : []));
       } else if (req.method === 'POST' && req.url === '/api/business/') {
-        res.end(JSON.stringify({
-          id: 'biz-42', workspace_id: 'ws-42', name: 'Acme Co', slug: 'acme-co', agent_id: 'agent-42',
-        }));
+        created = { id: 'biz-42', workspace_id: 'ws-42', name: 'Acme Co', slug: 'acme-co', agent_id: 'agent-42' };
+        res.end(JSON.stringify(created));
       } else {
         res.statusCode = 500;
         res.end(JSON.stringify({ detail: `unexpected ${req.method} ${req.url}` }));

@@ -52,38 +52,38 @@ const {
   findAtrisDir,
 } = require('../lib/business-core');
 
-async function findExistingBusinessBySlug(slug, token) {
+async function findExistingBusinessBySlug(slug, token, { api = apiRequestJson, loadLocal = loadBusinesses } = {}) {
   if (!slug) return null;
 
-  // Local cache first, no network round-trip needed.
-  const local = loadBusinesses();
-  if (local[slug]) {
-    return { id: local[slug].business_id, name: local[slug].name, slug, source: 'local' };
-  }
-  for (const v of Object.values(local)) {
-    if (businessMatchesSlug(v, slug)) {
-      return { id: v.business_id, name: v.name, slug, source: 'local' };
-    }
-  }
+  const local = loadLocal();
+  const localMatch = local[slug]
+    ? { id: local[slug].business_id, name: local[slug].name, slug, source: 'local' }
+    : (() => {
+      const v = Object.values(local).find((b) => businessMatchesSlug(b, slug));
+      return v ? { id: v.business_id, name: v.name, slug, source: 'local' } : null;
+    })();
 
-  if (!token) return null;
+  if (!token) return localMatch;
 
-  // Cloud lookup, covers businesses the user is a member of but hasn't added.
-  const direct = await apiRequestJson(`/business/by-slug/${encodeURIComponent(slug)}`, {
-    method: 'GET',
-    token,
-  });
+  // The cloud is the truth. The Mac's list can hold a business that was
+  // deleted, and trusting it refused to recreate one that no longer existed.
+  const direct = await api(`/business/by-slug/${encodeURIComponent(slug)}`, { method: 'GET', token });
   if (direct.ok && direct.data && direct.data.id) {
     return { id: direct.data.id, name: direct.data.name, slug: direct.data.slug || slug, source: 'cloud' };
   }
 
-  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  const list = await api('/business/', { method: 'GET', token });
   if (list.ok && Array.isArray(list.data)) {
     const match = list.data.find(b => businessMatchesSlug(b, slug));
     if (match) return { id: match.id, name: match.name, slug: match.slug, source: 'cloud' };
+    if (localMatch) {
+      console.warn(`  Note: this Mac still lists "${slug}", but the cloud has no such business. Run: atris business doctor --fix`);
+    }
+    return null;
   }
 
-  return null;
+  // Cloud unreachable: fall back to the Mac's list rather than risk a duplicate.
+  return localMatch;
 }
 
 async function addBusiness(slug) {
@@ -1665,6 +1665,7 @@ async function businessCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  findExistingBusinessBySlug,
   businessCommand,
   businessWorkspaceBase,
   loadBusinesses,
