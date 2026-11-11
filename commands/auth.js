@@ -622,6 +622,92 @@ async function loginAgentClient(request, deps = {}) {
   return 0;
 }
 
+// The browser page at /auth/cli shows a one-time code: secrets.token_urlsafe(32)
+// in the backend, so 43 url-safe characters with no dots. Tokens are JWTs
+// (three dot-joined parts) and API keys start with atris_. A code pasted where
+// a token belongs used to be saved as a token and fail later with a JWT error.
+const CLI_CODE_PATTERN = /^(?!atris_)[A-Za-z0-9_-]{43}$/;
+const CODE_NOT_TOKEN_NOTE = 'that is the one-time code from the browser, not a token. signing you in with it.';
+
+function looksLikeCliCode(value) {
+  return CLI_CODE_PATTERN.test(String(value || '').trim());
+}
+
+function headlessLoginHelp() {
+  const url = `${getAppBaseUrl()}/auth/cli`;
+  return [
+    `open ${url}, sign in, then pass the one-time code it shows:`,
+    '  atris login --code <code>      or      echo <code> | atris login',
+    'agents without a person: atris login --client-id <atc_...> --client-secret-file <path>',
+  ];
+}
+
+// Reads a code piped into stdin. Only reads a pipe, socket, or file, and
+// gives up after a short wait so an open, silent stdin never hangs login.
+function readPipedLoginInput(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let stat;
+    try { stat = fs.fstatSync(0); } catch { resolve(''); return; }
+    // Node-launched agents hand stdin over as a socket, shells as a FIFO.
+    if (!stat || !(stat.isFIFO() || stat.isFile() || stat.isSocket())) { resolve(''); return; }
+    let data = '';
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      process.stdin.removeAllListeners('data');
+      process.stdin.pause();
+      resolve(data.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '');
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    if (timer.unref) timer.unref();
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 8192 || /\n/.test(data)) finish();
+    });
+    process.stdin.on('end', finish);
+    process.stdin.on('error', finish);
+    process.stdin.resume();
+  });
+}
+
+async function exchangeCliCodeAndSave(code, { asJson = false, note = null } = {}) {
+  if (note && !asJson) console.log(note);
+  const exchange = await apiRequestJson('/auth/cli/exchange', {
+    method: 'POST',
+    body: { code: String(code).trim() },
+  });
+  const payload = exchange && exchange.ok ? exchange.data : null;
+  if (!payload || !payload.token || !payload.refresh_token) {
+    const error = !payload
+      ? (exchange && exchange.error) || 'invalid or expired code'
+      : 'the server did not return tokens. try again.';
+    const unreachable = !exchange || !exchange.status;
+    const next = unreachable
+      ? `could not reach ${getApiBaseUrl()}. check the connection and run the same command again.`
+      : `get a fresh code at ${getAppBaseUrl()}/auth/cli. codes last five minutes and work once.`;
+    if (asJson) {
+      console.log(JSON.stringify({ ok: false, logged_in: false, error, next }, null, 2));
+    } else {
+      console.error(`Error: ${error}`);
+      console.error(next);
+    }
+    return 1;
+  }
+  const email = payload.email || null;
+  saveCredentials(payload.token, payload.refresh_token, email, payload.user_id || null, payload.provider || 'atris');
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, logged_in: true, email, user_id: payload.user_id || null, provider: payload.provider || 'atris', next: 'atris whoami --json' }, null, 2));
+    return 0;
+  }
+  const name = profileNameFromEmail(email);
+  console.log(`\n✓ Signed in as ${email || 'unknown'}${name ? ` (profile: ${name})` : ''}`);
+  await displayAccountSummary(apiRequestJson);
+  return 0;
+}
+
 async function loginAtris(options = {}) {
   // Support: atris login --token <token> --force
   const args = process.argv.slice(3);
@@ -658,7 +744,26 @@ async function loginAtris(options = {}) {
       process.exit(code);
     }
 
+    // One-time code from the browser, no prompt: --code <code>, --code=<code>,
+    // or --code - to read it from stdin. An explicit code means sign in now,
+    // even over an existing login.
+    const codeFlagPresent = args.some((arg) => arg === '--code' || String(arg).startsWith('--code='));
+    if (codeFlagPresent) {
+      let code = readFlag(args, '--code', '');
+      if (!code || code === '-' || String(code).startsWith('-')) code = await readPipedLoginInput(5000);
+      if (!code) {
+        const error = 'no code given.';
+        if (asJson) console.log(JSON.stringify({ ok: false, logged_in: false, error, next: 'atris login --code <code>' }, null, 2));
+        else { console.error(`Error: ${error}`); headlessLoginHelp().forEach((line) => console.error(line)); }
+        process.exit(1);
+      }
+      process.exit(await exchangeCliCodeAndSave(code, { asJson }));
+    }
+
     // Direct token mode (non-interactive)
+    if (directToken && looksLikeCliCode(directToken)) {
+      process.exit(await exchangeCliCodeAndSave(directToken, { asJson, note: CODE_NOT_TOKEN_NOTE }));
+    }
     if (directToken) {
       const trimmed = directToken.trim();
       saveCredentials(trimmed, null, existing?.email || null, existing?.user_id || null, existing?.provider || 'manual');
@@ -702,17 +807,26 @@ async function loginAtris(options = {}) {
     }
 
     if (nonInteractive) {
+      // echo <code> | atris login signs in with no terminal.
+      const piped = process.stdin.isTTY ? '' : await readPipedLoginInput();
+      if (piped && looksLikeCliCode(piped)) {
+        process.exit(await exchangeCliCodeAndSave(piped, { asJson }));
+      }
       if (asJson) {
         console.log(JSON.stringify({
           ok: false,
           logged_in: false,
-          error: 'login requires --token in non-interactive mode',
-          next: 'atris login --token <token>',
+          error: piped
+            ? 'what came in on stdin is not a one-time code from the browser'
+            : 'login has no terminal here. pass the one-time code from the browser.',
+          next: 'atris login --code <code>',
+          code_url: `${getAppBaseUrl()}/auth/cli`,
+          agents: 'atris login --client-id <atc_...> --client-secret-file <path>',
         }, null, 2));
       } else {
         console.log('Not signed in.');
-        console.log('login needs a terminal for browser OAuth, or pass a token.');
-        console.log('Next: atris login --token <token>');
+        if (piped) console.log('what came in on stdin is not a one-time code from the browser. for an API token use --token.');
+        headlessLoginHelp().forEach((line) => console.log(line));
       }
       process.exit(1);
     }
@@ -723,7 +837,7 @@ async function loginAtris(options = {}) {
 
     console.log('Choose login method:');
     console.log('  1. Browser OAuth (recommended)');
-    console.log('  2. Paste existing API token');
+    console.log('  2. Paste an API token');
     console.log('  3. Cancel');
 
     const methodChoice = await promptUser('\nEnter choice (1-3): ');
@@ -743,38 +857,16 @@ async function loginAtris(options = {}) {
         process.exit(1);
       }
 
-      const exchange = await apiRequestJson('/auth/cli/exchange', {
-        method: 'POST',
-        body: { code: code.trim() },
-      });
-
-      if (!exchange.ok || !exchange.data) {
-        console.error(`Error: ${exchange.error || 'Invalid or expired code'}`);
-        process.exit(1);
-      }
-
-      const payload = exchange.data;
-      const token = payload.token;
-      const refreshToken = payload.refresh_token;
-
-      if (!token || !refreshToken) {
-        console.error('Error: Backend did not return tokens. Try again.');
-        process.exit(1);
-      }
-
-      const email = payload.email || null;
-      const userId = payload.user_id || null;
-      const provider = payload.provider || 'atris';
-
-      saveCredentials(token, refreshToken, email, userId, provider);
-      const name = profileNameFromEmail(email);
-      console.log(`\n✓ Signed in as ${email || 'unknown'}${name ? ` (profile: ${name})` : ''}`);
-      await displayAccountSummary(apiRequestJson);
-      process.exit(0);
+      process.exit(await exchangeCliCodeAndSave(code));
     } else if (methodChoice === '2') {
-      console.log('\nGet your token from: https://atris.ai/auth/cli\n');
+      console.log('\nPaste an API token (starts with atris_) or a saved session token.');
+      console.log('The one-time code from the browser works here too.\n');
 
       const tokenInput = await promptUser('API token: ', { secret: true });
+
+      if (tokenInput && looksLikeCliCode(tokenInput)) {
+        process.exit(await exchangeCliCodeAndSave(tokenInput, { note: CODE_NOT_TOKEN_NOTE }));
+      }
 
       if (!tokenInput) {
         console.error('Error: Token is required.');

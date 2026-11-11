@@ -153,7 +153,7 @@ const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 // Local-only commands make no registry call and start no background install.
 // sentinel prints its own one-line notice at the end of the run instead.
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99', 'sentinel'].includes(updateCommand)))) {
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99', 'sentinel', 'login'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {
@@ -1047,7 +1047,7 @@ function showReleaseHelp() {
 
 function showAuthHelp(commandName) {
   const usage = {
-    login: 'Usage: atris login [--token <token>] [--force] [--agent] [--client-id <atc_...> --client-secret-file <path>]',
+    login: 'Usage: atris login [--code <code>] [--token <token>] [--force] [--agent] [--client-id <atc_...> --client-secret-file <path>]',
     logout: 'Usage: atris logout',
     whoami: 'Usage: atris whoami [--json]',
     switch: 'Usage: atris switch [account] [--global]',
@@ -1059,10 +1059,13 @@ function showAuthHelp(commandName) {
   console.log('');
   console.log('Description:');
   if (commandName === 'login') {
-    console.log('  Sign in with browser OAuth or a pasted API token.');
-    console.log('  --agent mints a scoped agent token from stored credentials. No browser.');
-    console.log('  --client-id signs an agent in by itself with an agent client (see atris agent-client).');
-    console.log('  The token renews on its own; the secret is never printed.');
+    console.log('  Pick the one that fits you:');
+    console.log('  A person: run atris login. It opens the browser, then you paste the one-time code.');
+    console.log('    No terminal? Open atris.ai/auth/cli and run atris login --code <code>.');
+    console.log('  An agent on its own: atris login --client-id <atc_...> --client-secret-file <path>.');
+    console.log('    Make the client once with atris agent-client. It renews itself and never prints the secret.');
+    console.log('  A script calling the API: atris login --token <atris_... key>.');
+    console.log('  The one-time code is not a token. If you paste it as one, login signs you in with it.');
   } else if (commandName === 'logout') {
     console.log('  Sign out of the current Atris account.');
   } else if (commandName === 'whoami') {
@@ -1077,6 +1080,7 @@ function showAuthHelp(commandName) {
   console.log('');
   console.log('Options:');
   if (commandName === 'login') {
+    console.log('  --code <code>             Sign in with the one-time code from atris.ai/auth/cli. --code - reads it from stdin.');
     console.log('  --token <token>           Save an API token without prompting.');
     console.log('  --force, -f               Re-run login even if credentials already exist.');
     console.log('  --agent                   Mint a scoped agent token from the stored login.');
