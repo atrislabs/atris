@@ -59,6 +59,12 @@ function fakeServer({ notes = NOTES, files = {}, fail = {} } = {}) {
       }
       return ok({ hits, files: store.size, truncated: false });
     }
+    if (key === 'GET /memory/ask') {
+      const ask = q('q');
+      if (/nobody/.test(ask)) return ok({ question: ask, answer: 'Nothing about that.', found: false, sources: [], steps: 2 });
+      if (/busy/.test(ask)) return ok({ question: ask, answer: null, found: false, sources: [], note: 'The reader is busy, so here is what a search found.', search: { hits: [{ path: 'wiki/lease.md', n: 2, text: 'landlord is Pat' }] } });
+      return ok({ question: ask, answer: 'Pat is the landlord.', found: true, sources: [{ path: 'wiki/lease.md', n: 2, text: 'landlord is Pat', by: 'read' }], steps: 2 });
+    }
     if (key === 'GET /memory/read') {
       if (!store.has(q('path'))) return no(400, `No file at ${q('path')}.`);
       const lines = store.get(q('path')).split('\n');
@@ -210,6 +216,31 @@ test('search sends the words split by | and the folder, and prints path:line: te
   const missing = await run(['search'], server);
   assert.equal(missing.code, 2);
   assert.match(missing.errs, /say what to look for/);
+});
+
+test('ask sends the whole question once and prints the answer with the lines it rests on', async () => {
+  const server = fakeServer({ files: FILES });
+  const r = await run(['ask', 'who is', 'my landlord?', '--in', 'wiki'], server);
+  assert.equal(r.code, 0);
+  assert.equal(server.calls[0].path, '/memory/ask');
+  assert.equal(server.calls[0].query.q, 'who is my landlord?');
+  assert.equal(server.calls[0].query.folder, 'wiki');
+  assert.equal(server.calls[0].options.retries, 0, 'a slow answer is not asked twice');
+  assert.ok(server.calls[0].options.timeoutMs >= 80000, 'waits for the reader');
+  assert.equal(r.text, 'Pat is the landlord.\n\nFrom:\n  wiki/lease.md:2: landlord is Pat');
+
+  const none = await run(['ask', 'who is nobody?'], server);
+  assert.match(none.text, /^Nothing about that\.\n\nNot found for certain\./);
+
+  const busy = await run(['ask', 'busy now?'], server);
+  assert.match(busy.text, /^The reader is busy.*\n\nLines that may hold it:\n  wiki\/lease\.md:2: landlord is Pat$/);
+
+  const j = JSON.parse((await run(['ask', 'landlord?', '--json'], server)).text);
+  assert.equal(j.found, true);
+  assert.equal(j.sources[0].path, 'wiki/lease.md');
+
+  assert.match((await run(['ask'], server)).errs, /ask a question/);
+  assert.equal((await run(['ask', 'x'.repeat(501)], server)).code, 2);
 });
 
 test('read prints numbered lines a page at a time, --raw prints the file exactly', async () => {
@@ -376,7 +407,7 @@ test('usage prints the server\'s plain line', async () => {
 
 test('not logged in: every server command stops with one plain line, and --json says the same', async () => {
   const server = fakeServer({ files: FILES });
-  const cases = [['show'], ['search', 'x'], ['read', 'a.md'], ['ls'], ['remember', 'x'], ['write', 'wiki/a.md'], ['rm', 'wiki/a.md'], ['usage'], ['log', 'x', '--as', 'a'], ['lesson', 'x', '--before', '1', '--after', '2', '--as', 'a']];
+  const cases = [['show'], ['search', 'x'], ['ask', 'x?'], ['read', 'a.md'], ['ls'], ['remember', 'x'], ['write', 'wiki/a.md'], ['rm', 'wiki/a.md'], ['usage'], ['log', 'x', '--as', 'a'], ['lesson', 'x', '--before', '1', '--after', '2', '--as', 'a']];
   for (const args of cases) {
     const r = await run(args, server, { getAuth: async () => ({ token: '' }), readStdin: async () => { throw new Error('stdin is not read before login'); } });
     assert.equal(r.code, 1, args[0]);
@@ -514,7 +545,7 @@ test('atris memory routes the new commands and shows every command in one groupe
   for (const group of ['read', 'save', 'notebook (an agent\'s own; --as defaults to $ATRIS_AGENT)', 'copy to laptop: atris memory <pull|push|status> [folder] [--json]']) {
     assert.ok(screen.split('\n').includes(group), group);
   }
-  for (const sub of ['show', 'search', 'read', 'ls', 'remember', 'write', 'rm', 'usage', 'log', 'lesson', 'agents', 'pull', 'push', 'status']) {
+  for (const sub of ['show', 'search', 'ask', 'read', 'ls', 'remember', 'write', 'rm', 'usage', 'log', 'lesson', 'agents', 'pull', 'push', 'status']) {
     assert.match(screen, new RegExp(`^ {2}${sub}\\b`, 'm'), sub);
   }
   assert.ok(screen.split('\n').length <= 30, 'fits one screen');
