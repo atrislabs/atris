@@ -285,3 +285,10 @@ test('a bad place refuses the whole change, engine swap included', () => withTea
   assert.match(res.err, /is not a place/);
   assert.deepEqual(teamLines(), ['- cosmo: claude code, model: opus 5.5']);
 }));
+
+test('a member name in any case finds its card', () => withTeam([], ({ cli }) => {
+  const res = cli('set', '--member', 'Cosmo', 'muse', 'wonder', '--on', 'local');
+  assert.equal(res.exit, 0, res.err);
+  // no line for cosmo yet, so the swap goes in the all-projects roster
+  assert.match(fs.readFileSync(process.env.ATRIS_MACHINE_ROSTER_MD_PATH, 'utf8'), /^- cosmo: muse, model: muse-wonder-1\.0$/m);
+}));

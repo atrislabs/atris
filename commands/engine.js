@@ -1605,6 +1605,8 @@ function runRosterSetCommand(args, root) {
       const { readMemberCard, teamLineFor } = require('../lib/member-engine');
       const reg = require('../lib/engine-registry');
       reg.setTeamPlaceCheck(place);
+      // member names are lowercase on disk, the same way swapMember reads them
+      member = member.trim().toLowerCase();
       const line = teamLineFor(reg.readRosterState(root), member);
       if (!line && !readMemberCard(root, member).found) throw new Error(`there is no team member named ${member}`);
       if (line && line.scope) lineScope = line.scope;
