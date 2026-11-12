@@ -47,7 +47,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 - `commands/auth.js:920` (`logoutAtris`): Delete credentials
 - `commands/auth.js:949` (`whoamiAtris`): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
-- **Help:** `bin/atris.js:1017-1046` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
+- **Help:** `bin/atris.js:1050-1079` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
 - **Dispatch:** `bin/atris.js:1205-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands-2.test.js:1438-1483` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `utils/auth.js:113` (`decodeJwtClaims`), `utils/auth.js:150` (`shouldRefreshToken`)
