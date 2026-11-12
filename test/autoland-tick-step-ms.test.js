@@ -78,6 +78,25 @@ async function captureLines(fn) {
 
 const isWholeMs = (value) => Number.isInteger(value) && value >= 0;
 
+// The real command, as cron runs it. NODE_TEST_CONTEXT stays set (withTick
+// guarantees it): without it the tick's ssh-agent sweep would stop real
+// agents on the machine running the test. In --json mode stdout must be one
+// JSON document and nothing else. The whole of it is parsed.
+function spawnTick(repo, args) {
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const res = spawnSync(process.execPath, [CLI, 'autoland', 'tick', ...args], { cwd: repo, encoding: 'utf8', env, timeout: 120000 });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  return { receipt: JSON.parse(res.stdout), stdout: res.stdout, stderr: res.stderr };
+}
+
+function assertTimed(receipt, label) {
+  assert.equal(typeof receipt.step_ms, 'object', `${label}: step_ms`);
+  assert.ok(receipt.step_ms && !Array.isArray(receipt.step_ms), `${label}: step_ms is an object`);
+  assert.ok(isWholeMs(receipt.total_ms), `${label}: total_ms ${receipt.total_ms}`);
+  assert.ok(Number.isFinite(Date.parse(receipt.ended_at)), `${label}: ended_at ${receipt.ended_at}`);
+  assert.ok(Date.parse(receipt.ended_at) >= Date.parse(receipt.at), `${label}: ended_at is not before at`);
+}
+
 // Steps that run on every tick for a policy with nothing switched off and no
 // phone number. No message goes out, which keeps live_update and alarm absent.
 const ALWAYS_STEPS = [
@@ -132,16 +151,45 @@ test('a real tick writes a whole-millisecond time for every step, a total that c
 test('the real command prints the same timing in its json receipt', async () => {
   await withTick(async ({ repo }) => {
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
-    // NODE_TEST_CONTEXT stays set (withTick guarantees it): without it the tick's
-    // ssh-agent sweep would stop real agents on the machine running the test.
-    const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
-    const res = spawnSync(process.execPath, [CLI, 'autoland', 'tick', '--json'], { cwd: repo, encoding: 'utf8', env, timeout: 120000 });
-    assert.equal(res.status, 0, res.stderr || res.stdout);
-    const receipt = JSON.parse(res.stdout.trim().split('\n').pop());
+    const { receipt } = spawnTick(repo, ['--json']);
     for (const name of ['accept_certify', 'landing_sweep', 'wish_dispatch']) assert.ok(isWholeMs(receipt.step_ms[name]), `${name}: ${JSON.stringify(receipt.step_ms)}`);
     assert.ok(receipt.total_ms >= Math.max(...Object.values(receipt.step_ms)));
     const saved = JSON.parse(fs.readFileSync(path.join(repo, receipt.receipt_path), 'utf8'));
     assert.deepEqual(saved.step_ms, receipt.step_ms);
+  });
+});
+
+test('a tick that is switched off still prints its timing in json', async () => {
+  await withTick(async ({ repo }) => {
+    autoland.writePolicy(repo, { enabled: false, enabled_by: 'keshav' });
+    const { receipt } = spawnTick(repo, ['--json']);
+    assert.equal(receipt.enabled, false);
+    assertTimed(receipt, 'off');
+    assert.deepEqual(receipt.step_ms, {}, 'nothing ran: no step has a time');
+  });
+});
+
+test('a tick skipped for a held lock still prints its timing in json', async () => {
+  await withTick(async ({ repo }) => {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const lockPath = path.join(repo, '.atris', 'state', 'autoland.tick.lock');
+    // This test process is alive and the stamp is fresh: the lock is held.
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, at: Date.now() }));
+    const { receipt } = spawnTick(repo, ['--json']);
+    assert.equal(receipt.skipped_reason, 'tick_already_running');
+    assertTimed(receipt, 'lock held');
+    assert.deepEqual(receipt.step_ms, {});
+    assert.equal(fs.existsSync(lockPath), true, 'a held lock is left for its owner');
+  });
+});
+
+test('a dry run prints its timing in json and writes no receipt file', async () => {
+  await withTick(async ({ repo }) => {
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const { receipt } = spawnTick(repo, ['--json', '--dry-run']);
+    assert.equal(receipt.dry_run, true);
+    assertTimed(receipt, 'dry run');
+    assert.equal(fs.existsSync(path.join(repo, 'atris', 'runs')), false);
   });
 });
 
@@ -183,6 +231,31 @@ test('a step that runs over a minute is named, with the exact time from the cloc
       assert.match(lines[at], /, took 90s(, receipt |$)/);
       assert.equal(lines[at + 1], 'slow step: wish_dispatch took 90s');
       assert.equal(lines.filter((line) => line.startsWith('slow step:')).length, 1);
+    } finally {
+      wish.sweepWishes = original;
+    }
+  });
+});
+
+test('in json mode a slow step stays out of stdout: it is one pure json line and the receipt carries the time', async () => {
+  await withTick(async ({ repo }) => {
+    const policy = { enabled: true, enabled_by: 'keshav', strict_verify: false, janitor: false, green_landing: false, map_fold: false, daily_experiment: false, digest_hour: (new Date().getHours() + 12) % 24 };
+    autoland.writePolicy(repo, policy);
+    const wish = require('../commands/wish');
+    const original = wish.sweepWishes;
+    let now = 1000000;
+    wish.sweepWishes = () => {
+      now += 90000;
+      return { scanned: 0, dispatched: 0, fulfilled: 0, fulfilled_results: [], results: [] };
+    };
+    try {
+      const receipt = freshReceipt();
+      const lines = await captureLines(() => commandsAutoland.runTickBody(repo, { json: true, policy, receipt, clock: () => now }));
+      assert.equal(lines.length, 1, lines.join('\n'));
+      assert.equal(lines.some((line) => line.includes('slow step')), false);
+      const printed = JSON.parse(lines[0]);
+      assert.equal(printed.step_ms.wish_dispatch, 90000);
+      assert.equal(printed.total_ms, 90000);
     } finally {
       wish.sweepWishes = original;
     }

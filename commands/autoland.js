@@ -736,12 +736,17 @@ async function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
   const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_due: false, digest_sent: false, enabled: Boolean(policy && policy.enabled) };
+  // The clock starts before the off and lock checks. Every receipt this
+  // command prints carries step_ms, total_ms and ended_at, including the ones
+  // where nothing ran (step_ms is empty there).
+  const timer = createTickTimer(receipt);
   if (!policy || policy.enabled !== true) {
+    timer.finish();
     if (json) console.log(JSON.stringify(receipt));
     else console.log('autoland is off; tick did nothing.');
     return 0;
   }
-  if (args.includes('--dry-run')) return runTickPreview(root, { json, receipt });
+  if (args.includes('--dry-run')) return runTickPreview(root, { json, receipt, timer });
 
   // One live tick at a time: verify re-runs can take minutes each, and a
   // second hourly cron firing into the same snapshot double-accepts,
@@ -756,12 +761,13 @@ async function runTick(root, args) {
   }
   if (lock && !lock.ok) {
     receipt.skipped_reason = 'tick_already_running';
+    timer.finish();
     if (json) console.log(JSON.stringify(receipt));
     else console.log('autoland tick: another tick is still running; skipped.');
     return 0;
   }
   try {
-    return await runTickBody(root, { json, policy, receipt });
+    return await runTickBody(root, { json, policy, receipt, timer });
   } finally {
     // Only removes the lock while it is still this tick's.
     if (lock) lock.release();
@@ -771,7 +777,7 @@ async function runTick(root, args) {
 // `atris autoland tick --dry-run`: what the hourly pass would close, send
 // back, and check, read only. No lock, no receipt, no GitHub writes, no job
 // changes, no fetch.
-function runTickPreview(root, { json, receipt }) {
+function runTickPreview(root, { json, receipt, timer }) {
   receipt.dry_run = true;
   runMergedWorkClose(root, receipt, { dryRun: true });
   // The second check's next turn, in the order it would take the jobs.
@@ -786,6 +792,7 @@ function runTickPreview(root, { json, receipt }) {
   } catch (err) {
     receipt.second_check_error = String((err && err.message) || err).slice(0, 200);
   }
+  if (timer) timer.finish();
   if (json) {
     console.log(JSON.stringify(receipt));
     return 0;
@@ -1121,8 +1128,10 @@ function greenVerdictRow(v) {
   return row;
 }
 
-async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {}, clock }) {
-  const { timed, finish } = createTickTimer(receipt, clock);
+async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {}, clock, timer }) {
+  // runTick hands in the timer it started before the lock check. The total
+  // covers the wait for the lock too. Called alone, the body starts its own.
+  const { timed, finish } = timer || createTickTimer(receipt, clock);
 
   timed('engine_receipt_sweep', () => {
     try {
