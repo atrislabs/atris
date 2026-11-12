@@ -68,12 +68,12 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Dispatch:** `bin/atris.js:1931` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
 - **Help:** `bin/atris.js:1165` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
-- **JSON payload:** `commands/clean.js:260` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
+- **JSON payload:** `commands/clean.js:266` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:616`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
-- `checkPageStaleness()` (`commands/clean.js:689`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
+- `findStalePages()` (`commands/clean.js:705`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
+- `checkPageStaleness()` (`commands/clean.js:778`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
 - dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions); a file guarded by `require.main === module` counts as an entrypoint, so a server started with `node lib/x.js` is never called test-only
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections
