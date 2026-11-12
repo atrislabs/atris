@@ -506,6 +506,33 @@ test('recording a new commit or pull request starts the catch-up count and retry
   });
 });
 
+test('a branch reused for a new pull request drops the jobs and mission of the old one', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    writeQueue(fx, { [BRANCH]: {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed,
+      mission_id: 'mission-1', task_ids: ['task-1'], requeued_at: '2026-11-01T00:00:00.000Z',
+    } });
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 9, pushed: fx.pushed });
+    assert.equal(entry.number, 9);
+    assert.equal(entry.task_ids, undefined);
+    assert.equal(entry.mission_id, undefined);
+    assert.equal(entry.requeued_at, undefined);
+    assert.equal(entry.requeues, 0);
+    assert.equal(entry.reran, false);
+    assert.deepEqual(readQueue(fx)[BRANCH], entry);
+
+    // The new pull request merging must not close the old pull request's job.
+    setView(fx, { number: 9, state: 'MERGED', mergedAt: new Date().toISOString() });
+    const closed = [];
+    const out = requeueDroppedAutolands({ cwd: fx.main, closeTask: (id) => { closed.push(id); return { updated: true }; } });
+    assert.equal(out.results[0].state, 'merged', out.results[0].line);
+    assert.deepEqual(closed, []);
+    assert.equal(readQueue(fx)[BRANCH], undefined);
+  });
+});
+
 test('recording leaves other branches in the list alone', () => {
   const fx = fixture();
   withFakeGh(fx, () => {

@@ -207,10 +207,12 @@ function shipHelp() {
 function recordPendingShip(root, { branch, targetRef, number }) {
   try {
     const pushed = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
-    require('../lib/member-autoland').recordQueuedPullRequest(root, {
-      branch, base: baseBranchName(targetRef), number, pushed,
-    });
-    console.log(`queue: recorded pull request ${number} for the tick's catch-up`);
+    const autoland = require('../lib/member-autoland');
+    autoland.recordQueuedPullRequest(root, { branch, base: baseBranchName(targetRef), number, pushed });
+    // The tick skips the whole list while self-landing is off.
+    console.log(autoland.policyOn(root)
+      ? `queue: recorded pull request ${number} for the tick's catch-up`
+      : `queue: recorded pull request ${number}, catch-up is off until self-landing is on`);
   } catch (error) {
     console.log(`queue: not recorded (${String(error.message || error).split('\n')[0]})`);
   }

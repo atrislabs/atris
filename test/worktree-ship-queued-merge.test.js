@@ -59,6 +59,11 @@ else process.exit(1);
   return { root, remote, primary, work, git, run };
 }
 
+const selfLandingOn = ({ primary }) => {
+  fs.mkdirSync(path.join(primary, '.atris', 'policy'), { recursive: true });
+  fs.writeFileSync(path.join(primary, '.atris', 'policy', 'autoland.json'), '{"enabled":true}');
+};
+
 const queueFileOf = (fx) => path.join(fx.primary, '.atris', 'state', 'autoland-queue.json');
 
 test('a queued merge keeps the real remote source branch and reports pending', (t) => {
@@ -108,7 +113,7 @@ test('a confirmed merge hands the build copy to removal, and a pending one does 
 });
 
 test('a pending merge is recorded so the tick can queue it again if github drops it', (t) => {
-  const fx = setup(t, 'pending');
+  const fx = setup(t, 'pending', {}, selfLandingOn);
   assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
   assert.match(fx.run.stdout, /merge: pending[\s\S]*queue: recorded pull request 41 for the tick's catch-up/);
   const head = fx.git(['rev-parse', 'HEAD'], fx.work).stdout.trim();
@@ -123,6 +128,20 @@ test('a pending merge is recorded so the tick can queue it again if github drops
   assert.equal(entry.pushed, head);
   assert.equal(entry.requeues, 0);
   assert.ok(Number.isFinite(Date.parse(entry.queued_at)));
+});
+
+test('a pending merge is still recorded while self-landing is off, with a line saying catch-up waits', (t) => {
+  for (const policy of [null, '{"enabled":false}']) {
+    const fx = setup(t, 'pending', {}, ({ primary }) => {
+      if (policy === null) return;
+      fs.mkdirSync(path.join(primary, '.atris', 'policy'), { recursive: true });
+      fs.writeFileSync(path.join(primary, '.atris', 'policy', 'autoland.json'), policy);
+    });
+    assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
+    assert.match(fx.run.stdout, /^queue: recorded pull request 41, catch-up is off until self-landing is on$/m);
+    assert.doesNotMatch(fx.run.stdout, /for the tick's catch-up/);
+    assert.equal(JSON.parse(fs.readFileSync(queueFileOf(fx), 'utf8')).entries['queued-change'].number, 41);
+  }
 });
 
 test('a merged change writes no queue entry', (t) => {
