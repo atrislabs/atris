@@ -111,7 +111,8 @@ test('sync-checkout refuses unstaged and staged tracked changes without fetching
       assert.equal(result.status, 1);
       assert.equal(
         result.stdout.trim(),
-        'this checkout has tracked changes; sync-checkout refused to touch it.'
+        'this checkout has tracked changes; sync-checkout refused to touch it.\n' +
+          'run: atris sync-checkout --backup   (saves your edits as a patch, then syncs)'
       );
       assert.equal(git(checkout, 'rev-parse', 'HEAD'), beforeHead);
       assert.equal(git(checkout, 'rev-parse', 'origin/master'), beforeOrigin);
@@ -131,6 +132,39 @@ test('sync-checkout fetches and fast-forwards a clean current branch', () => {
     const result = runCli(checkout, 'sync-checkout');
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), 'this checkout is up to date with origin/master.');
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
+    assert.equal(fs.readFileSync(path.join(checkout, 'tracked.txt'), 'utf8'), 'second\n');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('sync-checkout --backup saves edits to a patch through the real command, then syncs', () => {
+  const { base, checkout } = createBehindCheckout();
+  const home = path.join(base, 'home');
+  fs.mkdirSync(home);
+  try {
+    fs.writeFileSync(path.join(checkout, 'tracked.txt'), 'my edit\n');
+    const result = run(process.execPath, [cliPath, 'sync-checkout', '--backup'], checkout, {
+      ...process.env,
+      HOME: home,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const backups = path.join(home, '.atris', 'backups', 'checkout');
+    const patches = fs.readdirSync(backups).filter((name) => name.endsWith('.patch'));
+    assert.equal(patches.length, 1);
+    const patchPath = path.join(backups, patches[0]);
+    assert.match(fs.readFileSync(patchPath, 'utf8'), /\+my edit/);
+    assert.equal(
+      result.stdout.trim(),
+      [
+        `saved your edits to ${patchPath}`,
+        `to restore them: git apply ${patchPath}`,
+        'this checkout is up to date with origin/master.',
+      ].join('\n')
+    );
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
     assert.equal(fs.readFileSync(path.join(checkout, 'tracked.txt'), 'utf8'), 'second\n');
   } finally {

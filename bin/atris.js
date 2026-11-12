@@ -723,7 +723,7 @@ function showHelpAll() {
   console.log('  pull       - Pull journals + member data from cloud');
   console.log('  push       - Push workspace files to cloud');
   console.log('  memory     - Your Atris memory for any agent: show, search, remember, notebook; pull/push a laptop copy');
-  console.log('  sync-checkout - fetch and fast-forward a clean current branch');
+  console.log('  sync-checkout - fetch and fast-forward the current branch (--backup saves edits first)');
   console.log('  zen        - make this repo calm and current, keeping everything (--check to only look)');
   console.log('  cloud      - Delete cloud files not present locally (cloud clean --dry-run|--yes)');
   console.log('  live       - Keep a business brain fresh (doctor, pull, watch, push)');
