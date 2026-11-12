@@ -9000,6 +9000,38 @@ function appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count, ids 
   return logPath;
 }
 
+// --work-root <path>, or ATRIS_WORK_ROOT only when the flag is absent. Nothing named gives
+// undefined. The job then records the main folder's commit as before. A flag that is present
+// but empty is an error, never a quiet fall back to the env var. A relative path resolves
+// from the current folder. The folder must be a real checkout with a commit, because that
+// commit is what the job records.
+function readyWorkRoot(args) {
+  const at = args.indexOf('--work-root');
+  let named;
+  if (at !== -1) {
+    named = String(args[at + 1] === undefined ? '' : args[at + 1]).trim();
+    if (!named) {
+      console.error('work root is empty');
+      process.exit(1);
+    }
+  } else {
+    named = String(process.env.ATRIS_WORK_ROOT || '').trim();
+  }
+  if (!named) return undefined;
+  const resolved = path.resolve(named);
+  let isDir = false;
+  try { isDir = fs.statSync(resolved).isDirectory(); } catch (_) { isDir = false; }
+  if (!isDir) {
+    console.error(`work root not found: ${resolved}`);
+    process.exit(1);
+  }
+  if (!getTaskDb().workspaceHead(resolved)) {
+    console.error(`work root has no git commit: ${resolved}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
 function cmdReady(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -9007,9 +9039,12 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   const resultFlag = textFlag(args, ['--result']);
   if (!id || (!proofFlag && !verifyFlag && !resultFlag)) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)');
     process.exit(2);
   }
+  // The copy the builder actually built in. Its commit is the one the job records.
+  // Without it the job records the main folder's commit, as before.
+  const workRoot = readyWorkRoot(args);
   // Two ways to prove: --proof "<note>" (claimed, pattern-checked) or
   // --verify "<command>" which actually RUNS the command and gates ready on exit 0.
   // If --proof names npm test, node --test, or git diff --check, this process
@@ -9086,7 +9121,9 @@ function cmdReady(args) {
     // gate in lib/receipt-evidence.js can validate the exact path named in
     // the proof, not just trust the prose.
     const { writeTaskReceipt } = require('../lib/task-receipt');
-    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: process.cwd() });
+    // The check runs in the copy the work was built in. Its receipt still lands under the
+    // folder ready ran from, because that is where a reviewer looks for the path in the proof.
+    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: workRoot || process.cwd(), receiptRoot: process.cwd() });
     if (!receipt.passed) {
       const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
       console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
@@ -9149,7 +9186,7 @@ function cmdReady(args) {
   }
   const readyPolicyTask = {
     ...beforeTask,
-    workspace_root: process.cwd(),
+    workspace_root: workRoot || process.cwd(),
     metadata: {
       ...(beforeTask && beforeTask.metadata || {}),
       ...(resultFields.files ? { changed_files: resultFields.files } : {}),
@@ -9174,6 +9211,7 @@ function cmdReady(args) {
     merge,
     result: resultSentence,
     builtWith,
+    workRoot,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -12264,7 +12302,7 @@ async function run(args) {
   // `task ready --help` is a help request, not a run. Ready mutates
   // review state, so never list or ready just to show usage.
   if (sub === 'ready' && argsWantHelp(raw.slice(1))) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)');
     return;
   }
   // `task step --help` is a help request, not a run. Step mutates
