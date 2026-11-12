@@ -57,7 +57,7 @@ The first worker that is ready and not expired leads; the rest are backups in or
 - amara: on: grok bot
 ```
 
-No `on:` means this machine. `on: atris computer` is the computer Atris hosts; any other name (`grok bot`, `claude duet`, `dots`) is a bot on its own machine. A member that works elsewhere never runs here: its missions pause with "runs on <place>", and the roster shows a RUNS ON column. Set it with `atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]`; moving a member keeps its engine, and swapping its engine keeps its place.
+No `on:` means this machine. `on: atris computer` is the computer Atris hosts; any other name (`grok bot`, `claude duet`, `dots`) is a bot on its own machine. A member that works elsewhere never runs here: its missions pause with "runs on <place>", and the roster shows a RUNS ON column. Set it with `atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]`; moving a member keeps its engine, and swapping its engine keeps its place. The machine that is that place says so with `ATRIS_RUNS_AS="grok bot"` or one line in `~/.atris/RUNS_AS`; there the member runs, and everywhere else it is skipped.
 
 **Heavy models.** Astra and Fable should judge, not explore. Give their line `prep: search`: the search lead writes a brief of at most 300 lines first, and if prep fails the worker runs as usual.
 

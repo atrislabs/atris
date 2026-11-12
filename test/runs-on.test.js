@@ -44,8 +44,9 @@ function withTeam(team, fn) {
   process.env.HOME = home;
   process.env.ATRIS_MACHINE_ROSTER_MD_PATH = machineRoster;
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
-  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_COLOR: '1', ATRIS_MACHINE_NAME: 'Test Mac' };
   const cli = (...args) => {
+    // read at call time, so a test can change ATRIS_RUNS_AS between calls
+    const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_COLOR: '1', ATRIS_MACHINE_NAME: 'Test Mac' };
     const res = spawnSync(process.execPath, [CLI, 'engine', 'roster', ...args], { cwd: root, env, encoding: 'utf8' });
     return { exit: res.status, out: res.stdout.trim(), err: res.stderr.trim() };
   };
@@ -291,4 +292,53 @@ test('a member name in any case finds its card', () => withTeam([], ({ cli }) =>
   assert.equal(res.exit, 0, res.err);
   // no line for cosmo yet, so the swap goes in the all-projects roster
   assert.match(fs.readFileSync(process.env.ATRIS_MACHINE_ROSTER_MD_PATH, 'utf8'), /^- cosmo: muse, model: muse-wonder-1\.0$/m);
+}));
+
+// --- a seat on another machine runs there --------------------------------------
+
+test('the machine a seat names runs it, and every other machine skips it', () => withTeam([
+  'cosmo: claude code, model: opus 5.5, on: grok bot',
+  'benji: claude code, model: opus 5.5, on: atris computer',
+], ({ root, cli }) => {
+  const { resolveMissionTickRunner } = require('../lib/mission-core');
+  const saved = process.env.ATRIS_RUNS_AS;
+  try {
+    delete process.env.ATRIS_RUNS_AS;
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'cosmo' }, root).runs_elsewhere, 'Grok bot');
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'benji' }, root).runs_elsewhere, 'Atris computer');
+
+    process.env.ATRIS_RUNS_AS = 'Grok Bot';
+    const there = resolveMissionTickRunner({ runner: 'auto', owner: 'cosmo' }, root);
+    assert.equal(there.runs_elsewhere, undefined);
+    assert.equal(there.engine_id, 'claude');
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'benji' }, root).runs_elsewhere, 'Atris computer');
+
+    process.env.ATRIS_RUNS_AS = 'cloud, grok bot';
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'benji' }, root).runs_elsewhere, undefined);
+
+    // the roster table and its json say so too, on that machine
+    const res = cli('--json');
+    const team = JSON.parse(res.out).team;
+    assert.equal(team.find((row) => row.member === 'cosmo').runs_here, true);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_RUNS_AS;
+    else process.env.ATRIS_RUNS_AS = saved;
+  }
+}));
+
+test('a machine can keep the names it answers to in ~/.atris/RUNS_AS', () => withTeam([
+  'cosmo: claude code, model: opus 5.5, on: grok bot',
+], ({ root }) => {
+  const { resolveMissionTickRunner } = require('../lib/mission-core');
+  const saved = process.env.ATRIS_RUNS_AS;
+  delete process.env.ATRIS_RUNS_AS;
+  const file = path.join(process.env.HOME, '.atris', 'RUNS_AS');
+  try {
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'cosmo' }, root).runs_elsewhere, 'Grok bot');
+    fs.writeFileSync(file, 'grok bot\n');
+    assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'cosmo' }, root).runs_elsewhere, undefined);
+  } finally {
+    fs.rmSync(file, { force: true });
+    if (saved !== undefined) process.env.ATRIS_RUNS_AS = saved;
+  }
 }));
