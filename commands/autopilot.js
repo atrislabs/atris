@@ -190,7 +190,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false, problem
     ? { unhealable: [] }
     : healBrokenMapRefs(cwd, atrisDir, true); // dry-run
   if (unhealable.length > 0 && !skipped.has('fix-map-refs')) {
-    const sample = unhealable.slice(0, 3).map(r => `${r.file}:${r.line}`).join(', ');
+    const sample = unhealable.slice(0, 3).map(r => (r.line == null ? r.file : `${r.file}:${r.line}`)).join(', ');
     suggestions.push({
       task: `Fix ${unhealable.length} broken reference${unhealable.length > 1 ? 's' : ''} in MAP.md`,
       why: `These file:line references point to code that moved or was deleted: ${sample}. MAP.md is the navigation, it needs to be accurate.`,

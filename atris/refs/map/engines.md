@@ -16,7 +16,7 @@ rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|
 
 - `atris/policies/ANTISLOP.md`: Template copy for user projects
 
-- `atris/policies/LESSONS.md`: Short lessons after REVIEW misses
+- `atris/lessons.md`: Short lessons after REVIEW misses (folded in from the old policies/LESSONS.md)
 
 - `atris/policies/genesis.md`: Governing philosophy for standing, agency, power, dissent, plurality, and correction
 
