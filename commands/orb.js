@@ -89,6 +89,7 @@ function showHelp() {
   console.log('Usage: atris orb [--once] [--json] [--engine claude|codex|fast]');
   console.log('       atris orb <n> | atris orb --pick <n>');
   console.log('       atris orb scorecard [--days N]');
+  console.log('       atris orb chat | atris orb new | atris orb say "text" | atris orb pick <n>');
   console.log('');
   console.log('Choose a next move while background engine jobs keep working.');
   console.log('--json emits {moves:[{n,label,command}]} and exits.');
@@ -160,6 +161,11 @@ async function runOrb(args = []) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showHelp();
     return 0;
+  }
+
+  if (['chat', 'say', 'pick', 'new'].includes(args[0])) {
+    const { runOrbChat } = require('./orb-chat');
+    return runOrbChat(args[0] === 'chat' ? args.slice(1) : args);
   }
 
   if (args[0] === 'scorecard') {
