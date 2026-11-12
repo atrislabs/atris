@@ -163,6 +163,29 @@ test('runShipNets drops a net the verify command already names, so nothing runs 
   }
 });
 
+test('runShipNets drops a net only when verify names its exact path, never a lookalike', () => {
+  const dir = makeTempDir();
+  try {
+    writeFiles(dir, Object.fromEntries(NET_FILES.map((file) => [file, PASSING_NET])));
+    const lookalike = capture(() => runShipNets(dir, {
+      verify: 'node --test other/not-repo-hygiene.test.js other/not-no-hardcoded-home-paths.test.js other/not-map-refs-accurate.test.js',
+      dryRun: true,
+      env: {},
+    }));
+    assert.deepEqual(lookalike.result.files, NET_FILES, 'lookalike paths must not hide a net');
+    assert.doesNotMatch(lookalike.stdout, /covered by --verify/);
+    const nested = capture(() => runShipNets(dir, { verify: 'node --test sub/test/repo-hygiene.test.js test/repo-hygiene.test.js.bak', dryRun: true, env: {} }));
+    assert.deepEqual(nested.result.files, NET_FILES);
+
+    const exact = capture(() => runShipNets(dir, { verify: 'node --test test/repo-hygiene.test.js', dryRun: true, env: {} }));
+    assert.deepEqual(exact.result.files, NET_FILES.slice(1));
+    const dotted = capture(() => runShipNets(dir, { verify: 'node --test ./test/no-hardcoded-home-paths.test.js "test/map-refs-accurate.test.js"', dryRun: true, env: {} }));
+    assert.deepEqual(dotted.result.files, ['test/repo-hygiene.test.js']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('runShipNets runs the nets for real: a passing set is ok and a failing set is not', () => {
   const dir = makeTempDir();
   try {
