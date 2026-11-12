@@ -71,9 +71,11 @@ test('recorded GitHub costs are balanced without losing a discovered file', () =
   assert.deepEqual(shards.flatMap(s => s.files).sort(), files);
   const costs = shards.map(s => s.milliseconds);
   assert.ok(Math.max(...costs) / Math.min(...costs) < 1.05, costs.join(', '));
-  const expensive = ['test/commands-6.test.js', 'test/commands-5.test.js',
-    'test/mission-status.test.js', 'test/autoland.test.js'];
-  assert.equal(new Set(expensive.map(f => shards.findIndex(s => s.files.includes(f)))).size, expensive.length);
+  // largest first onto the lightest shard puts the eight heaviest files on eight different shards
+  const durations = require('./ci-file-durations.json');
+  const expensive = Object.keys(durations).filter(f => files.includes(f)).sort((x, y) => durations[y] - durations[x]).slice(0, 8);
+  assert.equal(expensive.length, 8);
+  assert.equal(new Set(expensive.map(f => shards.findIndex(s => s.files.includes(f)))).size, expensive.length, expensive.join(', '));
 });
 
 test('a failing real test returns failure and an empty group runs nothing', (t) => {

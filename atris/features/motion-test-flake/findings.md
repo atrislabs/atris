@@ -10,7 +10,7 @@ The checks measure how far opacity moves between two animation frames and compar
 
 page-open check (test/gm-phone-motion.test.js:102, failing line 111). `openTrace` in scripts/gm-phone-paths.js opens the page on a card over a link with 250ms delay each way. It records every animation frame. `card_fade` is the biggest change in the card's opacity between two frames in a row. The limit is 0.15 and at least 6 frames must be mid-fade.
 
-That number is raw. It is not divided by how long the frame took. No long frame is skipped as a stall. The card fades in over 0.45s with ease-out. By my arithmetic from the page's css (lib/gm-phone-page.js:251) the biggest one-frame step is about 0.06 at 17ms, 0.12 at 33ms, 0.14 at 40ms and 0.18 at 50ms. A single frame near 45ms during the fade fails the check. A normal local run reads 0.09.
+That number is raw. It is not divided by how long the frame took. No long frame is skipped as a stall. A card that is on the page when it opens fades in with a 300ms ease-out animation (lib/gm-phone-page.js:2272). The biggest one-frame step is 0.09 at a normal 17ms frame. It grows with the frame length: 0.135 at 25ms, 0.15 at 28ms and 0.18 at 33ms. A single frame of about 28ms or more at the steepest part of the fade fails the check. A normal local run reads 0.09.
 
 reduced-motion check (test/gm-phone-motion.test.js:167, failing line 177). `pathsTrace` runs all 13 paths with reduced motion on. `summarizePath` turns each path's frames into numbers. `line_fade` is the biggest change in the opacity of the line under the orb between two frames, scaled to a 60fps frame. Frames longer than max(50ms, twice the typical frame) are skipped. The limit is 0.15. Under reduced motion the line fades over 0.2s linear, which is 0.083 per 60fps frame. The margin is 1.8 times.
 
@@ -64,7 +64,7 @@ AssertionError [ERR_ASSERTION]: {
 at test/gm-phone-motion.test.js:111:10
 ```
 
-Everything the check cares about is right except one frame step of 0.16 against a limit of 0.15. That fits one frame of about 45ms.
+Everything the check cares about is right except one frame step of 0.16 against a limit of 0.15. That fits one frame of about 30ms.
 
 Extra runs with 14 busy loops added (one per core and more):
 
@@ -73,7 +73,7 @@ Extra runs with 14 busy loops added (one per core and more):
 
 ## strongest hypothesis
 
-Chrome gets a slow frame during the 0.45s card fade, on a machine with other work running. The page-open check reads the raw step. One slow frame turns a smooth fade into a number over 0.15. CI runs this beside heavy tests in the same shard. Slow frames are more common there. The failures look random across branches because the motion test is placed by an accident of file order. The load on its machine depends on which other files landed with it.
+Chrome gets a slow frame during the 0.3s card fade, on a machine with other work running. The page-open check reads the raw step. One slow frame turns a smooth fade into a number over 0.15. CI runs this beside heavy tests in the same shard. Slow frames are more common there. The failures look random across branches because the motion test is placed by an accident of file order. The load on its machine depends on which other files landed with it.
 
 For the reduced-motion line check and the one-second still, the same cause (a starved Chrome) is likely. The mechanism is not shown.
 
@@ -90,3 +90,34 @@ Four. If one and two do not settle it, move the Chrome tests to their own job in
 Not recommended: derive the limits from 20 CI runs. The limits would then follow the noise. A real jump of a few frames would pass.
 
 My pick is one and two together, then three.
+
+## what was built on this branch
+
+One. `openTrace` and `summarizePath` in scripts/gm-phone-paths.js now report how long the frames were. The page-open check scales each card step to a 16.7ms frame by that frame's own length. A frame over 50ms is counted as a stall and left out. The limit is still 0.15. A card cut in one frame still fails, because the check also needs at least 6 fading frames. The reduced-motion line check already scaled by frame time and already left out stalls. It only gained a stall count.
+
+Two. Every failure message from these traces now carries `frame_ms`, `max_frame_ms`, `stall_frames`, `cuts` and `big_steps`. The page-open message also carries `card_fade_raw`, the old unscaled number. The counting checks (frames in a one second window) carry `window_ms` and `frame_ms`.
+
+Three. test/ci-file-durations.json now weighs the seven Chrome tests. Motion is the median of six full runs (158s). The other six are one local run each: gm-phone-health 250s, gm-phone-layout 246s, gm-phone 178s, gm-phone-hands 173s, gm-bet 40s, team-tables-agree 9s. These are local times, not CI times. The shard test pinned the four old heaviest files to four shards. It now checks that the eight heaviest files in the weights file land on eight shards, which is what largest-first assignment guarantees.
+
+before and after, with 14 busy loops running:
+
+| | before | after |
+| --- | --- | --- |
+| full motion file | 1 of 6 failed (bare, load 118) | 6 of 6 passed, 138 to 140s each |
+| page-open measure | 5 of 6 read 0.09, one read 0.36 | 10 of 10 read 0.09, no stalls |
+| main thread held busy 70ms of every 100ms | raw step 0.18, fails the old check | scaled step 0.09, passes |
+| card cut in one frame, same stall | not tried | fails, 3 of 3 |
+
+The ten probes under load saw no stall at all. By themselves they do not show the fix. The injected stall does. It holds the page's main thread busy for 70ms of every 100ms during the fade, which gives frames of 50 to 67ms.
+
+## second flake: the calm line's open box (gm-phone-layout.test.js:251)
+
+The coordinator named gm-phone-health.test.js near line 317. That line is a zoom check. The test with this title is in test/gm-phone-layout.test.js and it failed on my first layout run.
+
+It is not a race. I read the same probe at 0, 100, 300, 700, 1500 and 3000ms after the page is at rest, at all five sizes. Every number was the same at every moment. Fonts were loaded from the start and the page uses no web fonts.
+
+The cause is the measurement. The probe computed the room for the hint as `input.clientWidth` minus the input's left and right padding. In Chrome 157 a padded `<input>` reports a `clientWidth` that already leaves the padding out (118 for a 270px box with 76px padding each side). A padded `<div>` reports 270. So the padding was taken off twice. The room read 36px at 390 wide against a 174px hint. The real room is 188px.
+
+So on a Chrome with this behaviour the check fails every time. On an older Chrome it passes. A CI runner image that picks up a newer Chrome part way through the day would make it look like a flake. I could not read the CI Chrome version. That last step is a guess.
+
+Fix, in the same style: the probe waits for fonts, for every animation shorter than 3 seconds and for two drawn frames before it reads. It measures the room as the input's box less border and padding, which does not depend on `clientWidth`. The failure message now carries the box, `clientWidth`, padding, border, running animations, font status and the Chrome version. The real page passes at all five sizes (room 178, 233, 188, 228 and 342 against a 174px hint). With the input's padding squeezed to 120px the check fails. It still catches a hint that does not fit. At 320px wide the room is only 4px over the hint on this Mac. A different system font could still fail it there for a real reason.

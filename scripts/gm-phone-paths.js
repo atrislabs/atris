@@ -124,6 +124,9 @@ const AFTER_REST = `new Promise(function (done) {
 
 // ---- the summary -----------------------------------------------------------------------
 
+// a nominal 60fps frame, and how many of them long a frame must be to count as a stall
+const NOMINAL_FRAME_MS = 16.7;
+const STALL_FRAMES = 3;
 const near = (a, b, px = 0.25) => (!a && !b) || Boolean(a && b && Math.abs(a.x - b.x) <= px && Math.abs(a.y - b.y) <= px && Math.abs(a.w - b.w) <= px && Math.abs(a.h - b.h) <= px);
 const mid = a => (a ? { x: a.x + a.w / 2, y: a.y + a.h / 2 } : null);
 const stepOf = (a, b) => (a && b ? Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) : 0);
@@ -148,10 +151,14 @@ function summarizePath(frames, from) {
   let prevLava = null, prevDots = null;
   let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0;
   const cuts = [];
+  const bigSteps = [];
   const lines = [];
+  let stalls = 0, longest = 0;
   for (let i = 1; i < span.length; i++) {
     const a = span[i - 1], b = span[i];
     const ms = b.ft - a.ft, k = per(ms);
+    longest = Math.max(longest, ms);
+    if (ms > stall) stalls += 1;
     const dots = b.sphere > 0.05 && b.orb.frame > a.orb.frame && b.orb.mean > 0.12;
     const moved = dots || !near(a.stage, b.stage) || Math.abs(a.sphere - b.sphere) > 0.003
       || Boolean((a.lava || b.lava) && (!a.lava || !b.lava || !near(a.lava.r, b.lava.r) || Math.abs(a.lava.o - b.lava.o) > 0.004))
@@ -185,6 +192,8 @@ function summarizePath(frames, from) {
     const fade = (what, x, y, covered) => {
       const d = covered || ms > stall ? 0 : Math.abs(x - y) * k;
       if (d > 0.3) cuts.push({ what, at_ms: at, from: round(x), to: round(y) });
+      // every step past the 0.15 the checks allow, with the frame it came in
+      else if (d > 0.15) bigSteps.push({ what, at_ms: at, from: round(x), to: round(y), frame_ms: Math.round(ms) });
       return d;
     };
     out.card_fade = Math.max(out.card_fade, fade('card', seen(a), seen(b), Math.max(a.ghost, b.ghost) > 0.5));
@@ -216,6 +225,9 @@ function summarizePath(frames, from) {
   return {
     ms: span.length ? Math.round(span[span.length - 1].t - from) : null,
     pace_frame_ms: Math.round(pace),
+    // the longest frame, and how many were over the stall line and left out of the fades
+    max_frame_ms: Math.round(longest),
+    stall_frames: stalls,
     longest_still_moving_ms: Math.round(still),
     longest_still_at_ms: stillAt,
     reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
@@ -226,6 +238,7 @@ function summarizePath(frames, from) {
     lava_still_ms: lavaLast < 0 ? null : Math.round(span[lavaLast].t - from),
     ...out,
     cuts: cuts.slice(0, 12),
+    big_steps: bigSteps.slice(0, 12),
     // the words the line under the orb showed while something was on its way
     lines_while_moving: lines,
   };
@@ -323,12 +336,12 @@ async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1,
 // the card took to fade in. first: the card on screen, or null for the big orb.
 const OPEN_RECORDER = `(function () {
   var T = window.__open = [];
-  (function rec() {
+  (function rec(now) {
     var canvas = document.getElementById('orb'), box = document.getElementById('bet'), foot = document.getElementById('foot'), line = document.getElementById('line');
     if (canvas && canvas.__orb && box && foot) {
       var stage = getComputedStyle(document.getElementById('stage')), ln = getComputedStyle(line), fb = foot.getBoundingClientRect();
       var ghost = document.querySelector('.bet.ghost');
-      T.push({ t: performance.now(), opening: document.body.classList.contains('opening'), ghost: ghost ? Number(getComputedStyle(ghost).opacity) : 0, dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
+      T.push({ t: performance.now(), ft: typeof now === 'number' ? now : performance.now(), opening: document.body.classList.contains('opening'), ghost: ghost ? Number(getComputedStyle(ghost).opacity) : 0, dots: canvas.__orb.frame, sphere: stage.display !== 'none' && getComputedStyle(canvas).visibility !== 'hidden', line: ln.display !== 'none' && Boolean(line.textContent) ? Number(ln.opacity) : 0, card: document.body.classList.contains('has-card') && !box.hidden ? Number(getComputedStyle(box).opacity) : 0, foot: { y: fb.top, o: Number(getComputedStyle(foot).opacity) } });
     }
     requestAnimationFrame(rec);
   })();
@@ -375,11 +388,28 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
     const frames = await p.run('window.__open');
     const at = frames.findIndex(f => f.card > 0);
     const before = at < 0 ? frames : frames.slice(0, at);
-    let footJump = 0, cardFade = 0;
+    // The card's opacity step is scaled to a nominal 16.7ms frame by that
+    // frame's own length, so a slow frame is not read as a jump. A frame over
+    // three times nominal (50ms) cannot tell a fade from a cut: it is counted
+    // as a stall and left out. The card still has to show in at least 6
+    // fading frames, so a card cut in one frame cannot hide behind a stall.
+    let footJump = 0, cardFade = 0, rawFade = 0, stalls = 0, longest = 0;
+    const cuts = [], bigSteps = [];
+    const gaps = frames.slice(1).map((f, i) => f.ft - frames[i].ft).sort((x, y) => x - y);
     for (let i = 1; i < frames.length; i++) {
       const a = frames[i - 1], b = frames[i];
+      const ms = b.ft - a.ft;
+      // the longest frame and the stalls are read where the card is on its way in, not while the page loads
+      const fading = Math.max(a.card, b.card) > 0 && Math.min(a.card, b.card) < 1;
+      if (fading) longest = Math.max(longest, ms);
       if (Math.abs(a.foot.y - b.foot.y) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, Math.abs(a.foot.y - b.foot.y));
-      cardFade = Math.max(cardFade, Math.abs(a.card - b.card));
+      if (ms > STALL_FRAMES * NOMINAL_FRAME_MS) { if (fading) stalls += 1; continue; }
+      rawFade = Math.max(rawFade, Math.abs(a.card - b.card));
+      const step = Math.abs(a.card - b.card) * NOMINAL_FRAME_MS / Math.max(8, ms);
+      cardFade = Math.max(cardFade, step);
+      const seenStep = { what: 'card', at_ms: Math.round(a.t - frames[0].t), from: round(a.card), to: round(b.card), frame_ms: Math.round(ms) };
+      if (step > 0.3) cuts.push(seenStep);
+      else if (step > 0.15) bigSteps.push(seenStep);
     }
     const shown = frames.filter(f => f.dots > 0 || f.sphere);
     return {
@@ -389,6 +419,14 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
       line_frames_before_card: at < 0 ? null : before.filter(f => f.line > 0.05).length,
       card_frames_fading: frames.filter(f => f.card > 0.02 && f.card < 0.98).length,
       card_fade: Math.round(cardFade * 100) / 100,
+      // the biggest step as the frames came, with no scaling by their length: what the check read before it read time
+      card_fade_raw: Math.round(rawFade * 100) / 100,
+      // the machine's pace (the median frame), its worst frame while the card faded in, and the frames left out as stalls
+      frame_ms: gaps.length ? Math.round(gaps[Math.floor(0.5 * (gaps.length - 1))]) : null,
+      max_frame_ms: Math.round(longest),
+      stall_frames: stalls,
+      cuts: cuts.slice(0, 12),
+      big_steps: bigSteps.slice(0, 12),
       footer_seen_jump: Math.round(footJump * 10) / 10,
       dots_drawn: shown.length ? frames[frames.length - 1].dots : 0,
       line_at_end: frames.length ? frames[frames.length - 1].line : 0,
