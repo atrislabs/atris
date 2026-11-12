@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { healBrokenMapRefs } = require('../commands/clean');
+const { healBrokenMapRefs, unhealableLine } = require('../commands/clean');
 
 const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -50,6 +50,7 @@ test('a plain backticked path to a missing file is reported, with the map line',
     { file: 'commands/gone.js', line: null, mapLine: 4, map: 'atris/MAP.md', reason: 'missing file', plain: true },
   ]);
   assert.equal(fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8'), map, 'plain paths are never rewritten');
+  assert.equal(unhealableLine(result.unhealable[0]), 'commands/gone.js: missing file (atris/MAP.md:4)');
 
   const stdout = runCleanCli(dir);
   assert.match(stdout, /commands\/gone\.js: missing file \(atris\/MAP\.md:4\)/);

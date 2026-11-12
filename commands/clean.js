@@ -983,6 +983,7 @@ module.exports = {
   cleanResultPayload,
   findStaleTasks,
   healBrokenMapRefs,
+  unhealableLine,
   findStalePages,
   checkPageStaleness
 };

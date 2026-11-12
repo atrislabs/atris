@@ -99,7 +99,6 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 
 **Purpose:** Make tasks production-ready as the shared work object across CLI, Obelisk/web, Supabase, Swarlo, CodeOps, and RL episodes.
 
-- **Short update:** `atris/reports/task-production-update.md`
 - **Core rule:** durable task/event state is truth; UI, markdown, Swarlo, and cloud views are projections.
 - Compact `atris task status` titles close at a readable clause for both text and JSON instead of slicing a word with an ellipsis. Regression: `test/commands-1.test.js` (`task status closes long current titles at a clause`).
 - **Launch gate:** one task moves from creation -> claim -> proof -> review -> RL episode -> next task, with local and cloud projections intact.
