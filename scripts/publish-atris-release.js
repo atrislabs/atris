@@ -157,12 +157,17 @@ function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// 120 tries 15 seconds apart: about 30 minutes for npm to show a release.
+const DEFAULT_VERIFY_ATTEMPTS = 120;
+
 function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = {}) {
-  // npm latest can lag the registry for several minutes after a publish that
-  // already succeeded. Poll for about 10 minutes. On each try, a matching
+  // npm latest can lag the registry well after a publish that already
+  // succeeded: 3.82.19 and 3.82.20 (2026-11-12) each took more than 10
+  // minutes to appear, so a 10 minute wait marked both shipped releases
+  // failed. Poll for about 30 minutes. On each try, a matching
   // latest tag wins. If latest is still old but the exact version is already
   // on the registry, stop and let the caller treat the release as successful.
-  const attempts = Math.max(1, Number(options.attempts || 40));
+  const attempts = Math.max(1, Number(options.attempts || DEFAULT_VERIFY_ATTEMPTS));
   const delayMs = Math.max(0, Number(options.delayMs ?? 15000));
   const sleep = typeof options.sleep === 'function' ? options.sleep : sleepMs;
   const totalMinutes = Math.max(1, Math.round((attempts * delayMs) / 60000));
