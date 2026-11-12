@@ -60,6 +60,7 @@ const {
   repoRoot,
   restoreRegeneratedAdapterChurn,
   runCommand,
+  runShipNets,
   runGit,
   runShipHealthCheck,
   scheduleShippedCopyRemoval,
@@ -186,13 +187,15 @@ function startWorktree(args) {
 }
 
 function shipHelp() {
-  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
+  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local] [--skip-nets]');
   console.log('');
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  protected-lane tasks (billing, money, deploy, feedback, ...) can be pushed for review without --merge;');
   console.log('  landing one with --merge or --local needs --allow-denied-lane on written order');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
+  console.log('  --skip-nets     skip the repo hygiene tests that run before --verify (or set ATRIS_SHIP_SKIP_NETS=1)');
+  console.log('  nets run first: repo-hygiene, no-hardcoded-home-paths and map-refs-accurate, for repos that have them; a failure stops the ship before the push');
   console.log('  --keep-copy     keep this build copy; by default it is removed once the work lands or is pushed');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
@@ -292,6 +295,9 @@ function shipWorktree(args) {
   } else {
     refreshMovedMapRefs(root, args);
   }
+
+  const nets = runShipNets(root, { verify, skip: hasFlag(args, '--skip-nets'), dryRun });
+  if (!nets.ok) return 1;
 
   if (verify) {
     const beforeVerify = dryRun ? [] : statusSnapshot(root);
@@ -619,6 +625,7 @@ function guide() {
   console.log('4. Ship only from the isolated worktree:');
   console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge [--target <ref>]');
   console.log('   --target <ref> overrides the default landing target (default: branch atris-base, else origin default branch)');
+  console.log('   ship runs the repo hygiene nets first (repo-hygiene, no-hardcoded-home-paths, map-refs-accurate); --skip-nets or ATRIS_SHIP_SKIP_NETS=1 skips them');
   console.log('   recommended verify: npm run test:fast && node --test <focused files>');
   console.log('');
   console.log('5. Cleanup is part of creation, shipping, and the sweep; run it directly any time:');
@@ -645,10 +652,11 @@ function help() {
   console.log('    --force         start even when another recent flight shares a task word');
   console.log('    --former-task   the task\'s older name; a branch left unfinished under it is named, never resumed');
   console.log('    --no-deps       do not clone node_modules from a matching install');
-  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local]');
+  console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge] [--target <ref>] [--local] [--skip-nets]');
   console.log('    --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('    --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('    --no-map-refresh  skip the automatic refresh of moved map line references');
+  console.log('    --skip-nets     skip the repo hygiene tests that run before --verify; they run first by default');
   console.log('    --keep-copy     keep this build copy after it ships');
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
   console.log('  atris worktree status');
