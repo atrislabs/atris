@@ -13,8 +13,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # a normal publish finishes in about 2 minutes. the npm read-back can wait 10 more.
-    timeout-minutes: 30
+    # a normal publish finishes in about 2 minutes. the npm read-back can wait
+    # 30 more (npm took over 10 minutes to show 3.82.19 and 3.82.20).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 

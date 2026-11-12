@@ -401,7 +401,8 @@ test('publish helper fails only after the full window when latest and the exact 
   }
 });
 
-test('publish helper polls for about ten minutes by default', () => {
+test('publish helper polls for about thirty minutes by default', () => {
+  // npm took over 10 minutes to show 3.82.19 and 3.82.20, so 10 was too short.
   const stderr = [];
   const originalStderrWrite = process.stderr.write;
   process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
@@ -416,13 +417,13 @@ test('publish helper polls for about ten minutes by default', () => {
       return { status: 0, stdout: JSON.stringify({ version: '1.0.0', gitHead: 'old' }) };
     }, { sleep: (ms) => { sleeps.push(ms); } });
     assert.equal(verification.ok, false);
-    assert.equal(latestCalls, 40);
-    assert.equal(sleeps.length, 39);
+    assert.equal(latestCalls, 120);
+    assert.equal(sleeps.length, 119);
     assert.ok(sleeps.every((ms) => ms === 15000));
     const lines = stderr.join('').trim().split('\n').filter(Boolean);
-    assert.equal(lines[0], 'waiting for npm to show atris@9.9.9, 1 of 10 minutes');
-    assert.equal(lines[lines.length - 1], 'waiting for npm to show atris@9.9.9, 9 of 10 minutes');
-    assert.equal(lines.length, 9);
+    assert.equal(lines[0], 'waiting for npm to show atris@9.9.9, 1 of 30 minutes');
+    assert.equal(lines[lines.length - 1], 'waiting for npm to show atris@9.9.9, 29 of 30 minutes');
+    assert.equal(lines.length, 29);
   } finally {
     process.stderr.write = originalStderrWrite;
   }
@@ -496,7 +497,8 @@ test('trusted publish workflow uses OIDC without npm token secrets', () => {
   assert.match(workflow, /node scripts\/check-command-regression\.js/);
   assert.match(workflow, /npm run publish:release -- --dry-run/);
   assert.match(workflow, /npm run publish:release/);
-  assert.match(workflow, /timeout-minutes:\s*30/);
+  assert.match(workflow, /timeout-minutes:\s*45/);
   assert.match(workflow, /Block duplicate npm versions/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|NPM_CONFIG_TOKEN/);
 });
+
