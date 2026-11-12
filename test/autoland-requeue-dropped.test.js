@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { autolandMemberRun, requeueDroppedAutolands } = require('../lib/member-autoland');
+const { autolandMemberRun, recordQueuedPullRequest, requeueDroppedAutolands } = require('../lib/member-autoland');
 
 function git(args, cwd) {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -400,5 +400,137 @@ test('a first landing writes the queued commit down so a later sweep can find it
     assert.equal(entry.pushed, fx.pushed);
     assert.equal(entry.base, 'master');
     assert.equal(entry.requeues, 0);
+  });
+});
+
+// `atris worktree ship --merge` records a pull request GitHub left open for its
+// checks. The entry has no mission or job ids. The sweep must still treat it
+// like any other dropped change.
+test('a pull request recorded by worktree ship is queued again once github drops it', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    // Recorded from the build copy, the way ship does it.
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const recorded = readQueue(fx)[BRANCH];
+    assert.deepEqual(Object.keys(recorded).sort(), ['base', 'branch', 'number', 'pushed', 'queued_at', 'requeues', 'reran']);
+
+    // The merge-line run failed: open, no auto-merge, not in the line.
+    setView(fx, { state: 'OPEN', autoMergeRequest: null, headRefOid: recorded.pushed }, { inQueue: false });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.requeued, 1, out.line);
+    assert.equal(out.results[0].state, 'requeued', out.results[0].line);
+    assert.deepEqual(ghCalls(fx).filter((c) => c[1] === 'merge'),
+      [['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', fx.pushed]]);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 1);
+    assert.equal(readQueue(fx)[BRANCH].pushed, fx.pushed);
+  });
+});
+
+test('a pull request recorded by worktree ship that is still in the merge line is left alone', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    setView(fx, { autoMergeRequest: null }, { inQueue: true });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued', out.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 0);
+  });
+});
+
+test('a pull request recorded by worktree ship still stops at the catch-up cap', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const states = [];
+    for (let i = 0; i < 4; i += 1) {
+      setView(fx, { autoMergeRequest: null }, { inQueue: false });
+      states.push(requeueDroppedAutolands({ cwd: fx.main }).results[0].state);
+    }
+    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'gave-up']);
+    assert.equal(readQueue(fx)[BRANCH], undefined);
+  });
+});
+
+test('recording a pull request creates the entry in the main checkout from any copy', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const ledger = JSON.parse(fs.readFileSync(queuePath(fx), 'utf8'));
+    assert.equal(ledger.schema, 'atris.autoland_queue.v1');
+    assert.deepEqual(ledger.entries[BRANCH], entry);
+    assert.deepEqual({ ...entry, queued_at: null }, {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0, reran: false, queued_at: null,
+    });
+    assert.ok(Number.isFinite(Date.parse(entry.queued_at)));
+  });
+});
+
+test('recording the same commit again keeps its catch-up count, its retry mark and its job ids', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    writeQueue(fx, { [BRANCH]: {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed,
+      mission_id: 'mission-1', task_ids: ['task-1'], queued_at: '2026-11-01T00:00:00.000Z',
+    } });
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    assert.equal(entry.requeues, 2);
+    assert.equal(entry.reran, fx.pushed);
+    assert.equal(entry.mission_id, 'mission-1');
+    assert.deepEqual(entry.task_ids, ['task-1']);
+    assert.notEqual(entry.queued_at, '2026-11-01T00:00:00.000Z');
+  });
+});
+
+test('recording a new commit or pull request starts the catch-up count and retry mark over', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const seeded = { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed, task_ids: ['task-1'] };
+    writeQueue(fx, { [BRANCH]: seeded });
+    const next = 'b'.repeat(40);
+    const moved = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: next });
+    assert.equal(moved.pushed, next);
+    assert.equal(moved.requeues, 0);
+    assert.equal(moved.reran, false);
+    assert.deepEqual(moved.task_ids, ['task-1'], 'job ids stay with the branch');
+
+    writeQueue(fx, { [BRANCH]: seeded });
+    const reopened = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 9, pushed: fx.pushed });
+    assert.equal(reopened.number, 9);
+    assert.equal(reopened.requeues, 0);
+    assert.equal(reopened.reran, false);
+    assert.equal(Object.keys(readQueue(fx)).length, 1);
+  });
+});
+
+test('recording leaves other branches in the list alone', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    const other = { branch: 'codex/other', base: 'master', number: 8, pushed: 'c'.repeat(40), requeues: 1 };
+    writeQueue(fx, { ...readQueue(fx), 'codex/other': other });
+    recordQueuedPullRequest(fx.worktree, { branch: 'codex/third', base: 'master', number: 9, pushed: 'd'.repeat(40) });
+    const entries = readQueue(fx);
+    assert.deepEqual(Object.keys(entries).sort(), [BRANCH, 'codex/other', 'codex/third'].sort());
+    assert.deepEqual(entries['codex/other'], other);
+  });
+});
+
+test('recording refuses details it cannot trust and writes nothing', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const good = { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed };
+    for (const bad of [{ number: 0 }, { number: undefined }, { number: '7' }, { pushed: 'abc123' }, { base: '' }, { branch: '' }]) {
+      assert.throws(() => recordQueuedPullRequest(fx.worktree, { ...good, ...bad }), /could not be read/);
+    }
+    assert.equal(fs.existsSync(queuePath(fx)), false);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-not-git-'));
+    try {
+      assert.throws(() => recordQueuedPullRequest(outside, good), /not inside a git checkout/);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
