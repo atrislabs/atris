@@ -787,6 +787,7 @@ function showHelpAll() {
   console.log('  hire       - Hire an agent in one step: name, job, inbox, allowance, nightly work loop');
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
+  console.log('  channel    - The team\'s shared channels: read, post, claim, done (atris channel <name>)');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
   console.log('');
@@ -2578,6 +2579,11 @@ if (command === 'guide') {
 } else if (command === 'mail') {
   // Agent inboxes (@atrismail.com), not Gmail. Send asks first unless --yes.
   Promise.resolve().then(() => require('../commands/mail').mailCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'channel') {
+  // The team's shared channels on the hosted server: read, post, claim, report by name.
+  Promise.resolve().then(() => require('../commands/channel').channelCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'transactions') {
