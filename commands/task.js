@@ -9041,6 +9041,46 @@ function cmdReady(args) {
     proof = proof.trim() ? `${proof.trim()} ${attested}` : attested;
   }
   const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
+  const landing = landingFlags(args);
+  // What this process can refuse from the flags and the task alone is refused before the verifier
+  // runs. Wording or a name the gate would turn away never costs a test run. The verifier's own
+  // wording, the actor, the task lookup and the landing sentence only need the flags and the task
+  // row. Without --verify nothing slow comes first. The actor, task and landing checks then keep
+  // their place after the proof checks below.
+  let readyTarget = null;
+  const resolveReadyTarget = () => {
+    if (readyTarget) return readyTarget;
+    guardExplicitActor('atris task ready', flag(args, '--as'));
+    const taskDb = getTaskDb();
+    const db = taskDb.open();
+    const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+    const beforeTask = taskDetail(taskDb, db, taskId);
+    requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+    readyTarget = { taskDb, db, taskId, beforeTask };
+    return readyTarget;
+  };
+  // The start of the proof written once the verifier passes. It is built from the flags alone. A
+  // proof that names a command the verifier did not run is refused before the verifier runs. The
+  // command's output and the receipt path follow it. Then the same check runs again on the whole
+  // proof.
+  const verifiedLead = usedVerify
+    ? `[verified] \`${verifyFlag}\` passed (exit 0)${proof.trim() ? `, ${proof.trim()}` : ''}`
+    : '';
+  if (usedVerify) {
+    if (!hasFlag(args, '--no-falsify-check')) {
+      const { classifyVerifier } = require('../lib/verifier-quality');
+      const quality = classifyVerifier(verifyFlag);
+      if (!quality.ok) {
+        console.error(`atris task ready: weak verifier, ${quality.reason}`);
+        console.error(`  command: ${verifyFlag}`);
+        console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
+        console.error('  or pass --no-falsify-check to accept anyway.');
+        process.exit(1);
+      }
+    }
+    requireRanNamedProofCommand('atris task ready', verifiedLead, usedVerify);
+    resolveReadyTarget();
+  }
   if (usedVerify) {
     // Run the verifier once and write a receipt (pass or fail) so the review
     // gate in lib/receipt-evidence.js can validate the exact path named in
@@ -9060,15 +9100,6 @@ function cmdReady(args) {
     // this codebase fails there, and one that passes anywhere passes there too.
     if (!hasFlag(args, '--no-falsify-check')) {
       const { probeVerifierCanFail } = require('../lib/falsifier-probe');
-      const { classifyVerifier } = require('../lib/verifier-quality');
-      const quality = classifyVerifier(verifyFlag);
-      if (!quality.ok) {
-        console.error(`atris task ready: weak verifier, ${quality.reason}`);
-        console.error(`  command: ${verifyFlag}`);
-        console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
-        console.error('  or pass --no-falsify-check to accept anyway.');
-        process.exit(1);
-      }
       const probe = probeVerifierCanFail({ command: verifyFlag });
       if (probe.probed && probe.canFail === false) {
         console.error(`atris task ready: this check cannot fail, ${probe.reason}`);
@@ -9078,8 +9109,7 @@ function cmdReady(args) {
       }
       if (!probe.probed && !wantsJson(args)) console.log(`  ${probe.reason}`);
     }
-    const base = proof.trim();
-    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? `, ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
+    proof = `${verifiedLead}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
     if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
@@ -9090,9 +9120,7 @@ function cmdReady(args) {
   requireRanNamedProofCommand('atris task ready', proof, usedVerify);
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
-  const landing = landingFlags(args);
   const merge = readyMergeFlags(args);
-  guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   // The others who built the work with --as, by name, comma apart: a flight that ran for a member
   // hands in under the member's name and names the engines that ran here. Only a hand-in uses it.
@@ -9109,11 +9137,12 @@ function cmdReady(args) {
     files: textFlag(args, ['--files']),
     commands: textFlag(args, ['--commands', '--command']),
   };
-  const taskDb = getTaskDb();
-  const db = taskDb.open();
-  const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
-  const beforeTask = taskDetail(taskDb, db, taskId);
-  requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+  const { taskDb, db, taskId } = resolveReadyTarget();
+  // The verifier may have run for a while. The task is read again after it. Without one, nothing
+  // elapsed and the read from the checks above stands. The landing sentence is checked against the
+  // refreshed title too, since a verifier can rename the task.
+  const beforeTask = usedVerify ? taskDetail(taskDb, db, taskId) : readyTarget.beforeTask;
+  if (usedVerify) requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
