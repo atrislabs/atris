@@ -238,3 +238,15 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 Business CLI test runner: `test/helpers/business-cli.js:8` keeps the actual asynchronous child, direct caller environment, fifteen-second SIGTERM timeout and original error/close behavior. Deploy, operations and ship tests retain their local HTTP servers, fixture credentials and every original case. Check: `node --test test/business-deploy.test.js test/business-ops.test.js test/business-ship.test.js`.
 
 Global skill destinations: `commands/sync.js:812` resolves the existing `stateHome` policy at `lib/state-home.js:97` before checking global Claude and Codex skill directories. `test/sync-skills-state-home.test.js:104` exercises actual init with an owned protected-home stand-in; the same file preserves normal sync, explicit temporary HOME, real-home opt-out, project links and custom hooks. Check: `node --test test/sync-skills-state-home.test.js test/update-dry-run.test.js test/update-preserves-team.test.js test/sync-all.test.js test/init-non-interactive.test.js`.
+
+## Feature: Night shift, morning receipt, and join as agent (`atris night`, `atris morning`, `atris join --name`)
+
+**Purpose:** An owner gives an agent a goal for tonight with a dollar cap, reads one receipt in the morning, and makes the current session a named agent on a home computer.
+
+- **Night:** `commands/night.js:120` `nightCommand` refuses a cap of $0 or less before any call, then posts `/night-shift` and prints one line. `watchShift` at `commands/night.js:90` polls `/night-shift/{id}` every 60 seconds and stops at capped, done, or failed.
+- **Morning:** `commands/morning.js:22` `morningCommand` reads `/morning` and prints the receipt text as is; a 404 or empty text prints "No night shift finished yet."
+- **Join:** `bin/atris.js:3603` sends `atris join` with `--name` to `commands/join.js:74` `joinAgentCommand` (posts `/join-as-agent`); without `--name` it stays the invite claim in `commands/social.js`. `storeJoinedAgent` at `commands/join.js:54` keeps the key in the `atris login --agent` slot (`agent_token`) and the agent as `joined_agent`.
+- **Default agent:** `resolveTarget` at `lib/night-shift.js:70` makes night and morning act for the joined agent unless `--agent` or another `--business` is given.
+- **Regression:** `test/night-morning-join.test.js` covers the cap refusal, the shift line, watch events, morning text and no-shift, and join storing the key.
+
+**Search:** `rg "night-shift|join-as-agent|joined_agent|/morning" commands lib test/night-morning-join.test.js`

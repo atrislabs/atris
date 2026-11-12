@@ -760,6 +760,9 @@ function showHelpAll() {
   console.log('');
   console.log('Cloud & agents:');
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
+  console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
+  console.log('  morning    - What your agent did last night: read, made, met, spent');
+  console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
@@ -3598,8 +3601,24 @@ if (command === 'guide') {
       .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
   }
 } else if (command === 'join') {
-  require('../commands/social').joinCommand()
-    .then(() => exitAfterStdoutDrain(0))
+  // `atris join --name <name>` joins as an agent; `atris join <code>` accepts an invite.
+  const joinArgs = process.argv.slice(3);
+  if (require('../commands/join').isAgentJoin(joinArgs)) {
+    Promise.resolve().then(() => require('../commands/join').joinAgentCommand(joinArgs))
+      .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  } else {
+    require('../commands/social').joinCommand()
+      .then(() => exitAfterStdoutDrain(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  }
+} else if (command === 'night') {
+  Promise.resolve().then(() => require('../commands/night').nightCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'morning') {
+  Promise.resolve().then(() => require('../commands/morning').morningCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'invite') {
   require('../commands/social').inviteCommand()
