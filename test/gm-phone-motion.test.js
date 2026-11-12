@@ -108,6 +108,8 @@ test('browser: a page that opens on a card shows the card fading in, never the b
   assert.equal(card.sphere_frames_before_card, 0, said);
   assert.equal(card.line_frames_before_card, 0, said);
   assert.equal(card.footer_seen_jump, 0, said);
+  // a capture made mostly of stalls shows too little of the fade to judge, so it cannot pass
+  assert.equal(card.unreliable, null, `${card.unreliable}\n${said}`);
   assert.ok(card.card_frames_fading >= 6 && card.card_fade <= 0.15, said);
   assert.equal(card.dots_drawn, 0, said);
   // with no card the big orb starts and its line fades in

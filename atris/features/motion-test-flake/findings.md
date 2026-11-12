@@ -121,3 +121,15 @@ The cause is the measurement. The probe computed the room for the hint as `input
 So on a Chrome with this behaviour the check fails every time. On an older Chrome it passes. A CI runner image that picks up a newer Chrome part way through the day would make it look like a flake. I could not read the CI Chrome version. That last step is a guess.
 
 Fix, in the same style: the probe waits for fonts, for every animation shorter than 3 seconds and for two drawn frames before it reads. It measures the room as the input's box less border and padding, which does not depend on `clientWidth`. The failure message now carries the box, `clientWidth`, padding, border, running animations, font status and the Chrome version. The real page passes at all five sizes (room 178, 233, 188, 228 and 342 against a 174px hint). With the input's padding squeezed to 120px the check fails. It still catches a hint that does not fit. At 320px wide the room is only 4px over the hint on this Mac. A different system font could still fail it there for a real reason.
+
+## review fixes: stalls must not hide a cut or pass a thin capture
+
+The first version of the scaled check skipped every frame over 50ms. Two holes came out of that.
+
+A cut inside a stalled frame was skipped with it. A card going 1 to 0 across a 60ms frame and back across another 60ms read as card_fade 0. Now a stalled frame is left out only when it moved no more than the fade could in that time: the fastest step seen in the frames that were not stalls, scaled to the stall's length, with half again as much room. It is never less than 0.3 and never more than 0.9 in one frame. Past that it counts as a cut, at its full size, with its frame length in the report. A flat 0.3 would have brought the original flake back, because a real fade moves 0.31 to 0.36 in a 58 to 67ms frame.
+
+A capture made of stalls passed with card_fade 0. Now it is unreliable when stalls are over a quarter of the frames in the fade, or when fewer than 6 fading frames were not stalls. The check fails on it and the message names the stall count and the frame count. A starved capture now fails with that message and does not pass. It does not retry.
+
+`card_fade_raw` now reads every step including stalled frames, which is what the old check read.
+
+The reading is a pure function, `readOpenFade` in scripts/gm-phone-paths.js. test/gm-phone-open-fade.test.js feeds it frames made by hand and needs no Chrome. Each probe fails when its fix is taken out.

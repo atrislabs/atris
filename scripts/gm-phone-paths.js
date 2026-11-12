@@ -347,6 +347,84 @@ const OPEN_RECORDER = `(function () {
   })();
 })();`;
 
+// How the card came in on a page that opens on one, read from the frames the
+// page recorded (t, ft: the frame's own clock, card: its opacity, foot: where
+// the footer sat). Pure, so a test can feed it frames made by hand.
+//
+// The card's opacity step is scaled to a nominal 16.7ms frame by that frame's
+// own length, so a slow frame is not read as a jump. A frame over three times
+// nominal (50ms) is a stall: it cannot tell a fade from a cut by its length.
+// It is left out only when it moved no more than a fade could in that time:
+// the fastest the fade was seen to go in the frames that were not stalls, times
+// the stall's length, with half again as much room, and never less than 0.3 or
+// more than 0.9 in one frame. Anything past that is a cut and is read as one,
+// at its full size, whatever the frame's length.
+//
+// A capture where stalls make up over a quarter of the frames in the fade, or
+// where fewer than 6 fading frames were not stalls, shows too little of the
+// fade to judge. It is reported in unreliable (null when the capture is good)
+// and the check fails on it.
+const FADE_LIMIT = 0.15;
+const CUT_STEP = 0.3;
+const STALL_SHARE = 0.25;
+const FADE_FRAMES_NEEDED = 6;
+function readOpenFade(frames) {
+  const stallMs = STALL_FRAMES * NOMINAL_FRAME_MS;
+  const pairs = [];
+  for (let i = 1; i < frames.length; i++) {
+    const a = frames[i - 1], b = frames[i];
+    const ms = b.ft - a.ft, raw = Math.abs(a.card - b.card);
+    pairs.push({ a, b, ms, raw, stalled: ms > stallMs, scaled: raw * NOMINAL_FRAME_MS / Math.max(8, ms), fading: Math.max(a.card, b.card) > 0 && Math.min(a.card, b.card) < 1, showing: b.card > 0.02 && b.card < 0.98 });
+  }
+  // the fastest the fade went in a frame that was not a stall (a cut among them is not a pace)
+  let pace = 0;
+  for (const q of pairs) if (!q.stalled && q.fading && q.scaled <= CUT_STEP) pace = Math.max(pace, q.scaled);
+  if (!pace) pace = FADE_LIMIT;
+  let footJump = 0, cardFade = 0, rawFade = 0, stalls = 0, longest = 0, fadeFrames = 0, steady = 0;
+  const cuts = [], bigSteps = [];
+  const sorted = pairs.map(q => q.ms).sort((x, y) => x - y);
+  for (const q of pairs) {
+    const { a, b, ms, raw } = q;
+    // the old check read every step as it came, stalls too: kept to show what it would have said
+    rawFade = Math.max(rawFade, raw);
+    if (q.fading) { longest = Math.max(longest, ms); fadeFrames += 1; }
+    if (a.foot && b.foot && Math.abs(a.foot.y - b.foot.y) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, Math.abs(a.foot.y - b.foot.y));
+    const seen = { what: 'card', at_ms: Math.round(a.ft - frames[0].ft), from: round(a.card), to: round(b.card), frame_ms: Math.round(ms) };
+    if (q.stalled) {
+      if (q.fading) stalls += 1;
+      const room = Math.min(0.9, Math.max(CUT_STEP, 1.5 * pace * ms / NOMINAL_FRAME_MS));
+      if (raw > room) {
+        cardFade = Math.max(cardFade, raw);
+        cuts.push({ ...seen, stalled: true });
+      }
+      continue;
+    }
+    if (q.showing) steady += 1;
+    cardFade = Math.max(cardFade, q.scaled);
+    if (q.scaled > CUT_STEP) cuts.push(seen);
+    else if (q.scaled > FADE_LIMIT) bigSteps.push(seen);
+  }
+  let unreliable = null;
+  if (frames.some(f => f.card > 0) && (stalls > STALL_SHARE * fadeFrames || steady < FADE_FRAMES_NEEDED)) {
+    unreliable = `capture unreliable: ${stalls} of ${fadeFrames} frames while the card faded in were stalls (over ${Math.round(stallMs)}ms), and ${steady} fading frames were not (${FADE_FRAMES_NEEDED} needed), out of ${frames.length} frames in all`;
+  }
+  return {
+    card_frames_fading: frames.filter(f => f.card > 0.02 && f.card < 0.98).length,
+    card_fade: Math.round(cardFade * 100) / 100,
+    // the biggest step as the frames came, stalls too, with no scaling by their length: what the check read before it read time
+    card_fade_raw: Math.round(rawFade * 100) / 100,
+    // the machine's pace (the median frame), its worst frame while the card faded in, and the frames left out as stalls
+    frame_ms: sorted.length ? Math.round(sorted[Math.floor(0.5 * (sorted.length - 1))]) : null,
+    max_frame_ms: Math.round(longest),
+    stall_frames: stalls,
+    fade_frames: fadeFrames,
+    unreliable,
+    cuts: cuts.slice(0, 12),
+    big_steps: bigSteps.slice(0, 12),
+    footer_seen_jump: Math.round(footJump * 10) / 10,
+  };
+}
+
 // flipAt: ms after the card first shows, the arrow that flips a deck card.
 // stall: 'first' holds the page's first look for the card forever, 'all'
 // holds every look, as a link that drops a request does
@@ -388,46 +466,14 @@ async function openTrace({ chromePath = findChrome(), first = CARDS.b1, latency 
     const frames = await p.run('window.__open');
     const at = frames.findIndex(f => f.card > 0);
     const before = at < 0 ? frames : frames.slice(0, at);
-    // The card's opacity step is scaled to a nominal 16.7ms frame by that
-    // frame's own length, so a slow frame is not read as a jump. A frame over
-    // three times nominal (50ms) cannot tell a fade from a cut: it is counted
-    // as a stall and left out. The card still has to show in at least 6
-    // fading frames, so a card cut in one frame cannot hide behind a stall.
-    let footJump = 0, cardFade = 0, rawFade = 0, stalls = 0, longest = 0;
-    const cuts = [], bigSteps = [];
-    const gaps = frames.slice(1).map((f, i) => f.ft - frames[i].ft).sort((x, y) => x - y);
-    for (let i = 1; i < frames.length; i++) {
-      const a = frames[i - 1], b = frames[i];
-      const ms = b.ft - a.ft;
-      // the longest frame and the stalls are read where the card is on its way in, not while the page loads
-      const fading = Math.max(a.card, b.card) > 0 && Math.min(a.card, b.card) < 1;
-      if (fading) longest = Math.max(longest, ms);
-      if (Math.abs(a.foot.y - b.foot.y) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, Math.abs(a.foot.y - b.foot.y));
-      if (ms > STALL_FRAMES * NOMINAL_FRAME_MS) { if (fading) stalls += 1; continue; }
-      rawFade = Math.max(rawFade, Math.abs(a.card - b.card));
-      const step = Math.abs(a.card - b.card) * NOMINAL_FRAME_MS / Math.max(8, ms);
-      cardFade = Math.max(cardFade, step);
-      const seenStep = { what: 'card', at_ms: Math.round(a.t - frames[0].t), from: round(a.card), to: round(b.card), frame_ms: Math.round(ms) };
-      if (step > 0.3) cuts.push(seenStep);
-      else if (step > 0.15) bigSteps.push(seenStep);
-    }
+    const fade = readOpenFade(frames);
     const shown = frames.filter(f => f.dots > 0 || f.sphere);
     return {
       first: first ? first.kind : 'big orb',
       frames: frames.length,
       sphere_frames_before_card: at < 0 ? null : before.filter(f => f.sphere && f.dots > 0).length,
       line_frames_before_card: at < 0 ? null : before.filter(f => f.line > 0.05).length,
-      card_frames_fading: frames.filter(f => f.card > 0.02 && f.card < 0.98).length,
-      card_fade: Math.round(cardFade * 100) / 100,
-      // the biggest step as the frames came, with no scaling by their length: what the check read before it read time
-      card_fade_raw: Math.round(rawFade * 100) / 100,
-      // the machine's pace (the median frame), its worst frame while the card faded in, and the frames left out as stalls
-      frame_ms: gaps.length ? Math.round(gaps[Math.floor(0.5 * (gaps.length - 1))]) : null,
-      max_frame_ms: Math.round(longest),
-      stall_frames: stalls,
-      cuts: cuts.slice(0, 12),
-      big_steps: bigSteps.slice(0, 12),
-      footer_seen_jump: Math.round(footJump * 10) / 10,
+      ...fade,
       dots_drawn: shown.length ? frames[frames.length - 1].dots : 0,
       line_at_end: frames.length ? frames[frames.length - 1].line : 0,
       // a flip soon after: how strong the new card is the first frame its old copy covers it
@@ -528,7 +574,7 @@ async function hiddenTrace({ chromePath = findChrome(), first = null, holdMs = 6
   }
 }
 
-module.exports = { pathsTrace, summarizePath, openTrace, resizeTrace, hiddenTrace, PATHS, PATH_RECORDER };
+module.exports = { pathsTrace, summarizePath, openTrace, readOpenFade, resizeTrace, hiddenTrace, PATHS, PATH_RECORDER };
 
 if (require.main === module) {
   const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
