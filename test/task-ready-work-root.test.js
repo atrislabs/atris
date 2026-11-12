@@ -181,6 +181,8 @@ test('--verify that passes in the work root readies the job and records its comm
     const receipt = JSON.parse(fs.readFileSync(path.join(p.root, named[1]), 'utf8'));
     assert.equal(receipt.result.passed, true);
     assert.equal(receipt.commit, copyHead);
+    assert.equal(receipt.work_root, p.copy);
+    assert.equal(receipt.receipt_root, p.root);
     assert.equal(fs.existsSync(path.join(p.copy, 'atris', 'runs')), false);
   } finally {
     p.cleanup();
