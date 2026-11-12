@@ -9000,6 +9000,21 @@ function appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count, ids 
   return logPath;
 }
 
+// --work-root <path>, or ATRIS_WORK_ROOT when the flag is absent. Nothing named means
+// undefined, so the job keeps recording the main folder's commit.
+function readyWorkRoot(args) {
+  const named = textFlag(args, ['--work-root']) || String(process.env.ATRIS_WORK_ROOT || '').trim();
+  if (!named) return undefined;
+  const resolved = path.resolve(named);
+  let isDir = false;
+  try { isDir = fs.statSync(resolved).isDirectory(); } catch (_) { isDir = false; }
+  if (!isDir) {
+    console.error(`work root not found: ${resolved}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
 function cmdReady(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -9007,9 +9022,12 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   const resultFlag = textFlag(args, ['--result']);
   if (!id || (!proofFlag && !verifyFlag && !resultFlag)) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>]');
     process.exit(2);
   }
+  // The copy the builder actually built in. Its commit is the one the job records.
+  // Without it the job records the main folder's commit, as before.
+  const workRoot = readyWorkRoot(args);
   // Two ways to prove: --proof "<note>" (claimed, pattern-checked) or
   // --verify "<command>" which actually RUNS the command and gates ready on exit 0.
   // If --proof names npm test, node --test, or git diff --check, this process
@@ -9174,6 +9192,7 @@ function cmdReady(args) {
     merge,
     result: resultSentence,
     builtWith,
+    workRoot,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -12264,7 +12283,7 @@ async function run(args) {
   // `task ready --help` is a help request, not a run. Ready mutates
   // review state, so never list or ready just to show usage.
   if (sub === 'ready' && argsWantHelp(raw.slice(1))) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>]');
     return;
   }
   // `task step --help` is a help request, not a run. Step mutates
