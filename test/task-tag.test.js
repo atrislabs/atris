@@ -161,6 +161,67 @@ test('atris task tag requires an id and at least one --add/--remove', () => {
   }
 });
 
+test('atris task new --tag stores the tag and the help lists it', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = makeEnv(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const created = runCli(['task', 'new', 'Tag me at creation', '--tag', 'x', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    assert.equal(task.tag, 'x');
+    const shown = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(shown.tag, 'x');
+    const help = runCli(['task', '--help'], { cwd: dir, env });
+    assert.match(help.stdout, /atris task new "<title>" \[--tag <tag>\]/);
+    assert.match(help.stdout, /atris task tag <id> <tag>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris task tag <id> <tag> sets the tag on an existing task and logs an event', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = makeEnv(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const task = JSON.parse(runCli(['task', 'new', 'Tag me afterward', '--json'], { cwd: dir, env }).stdout).task;
+    assert.ok(!task.tag);
+
+    const set = runCli(['task', 'tag', task.display_id, 'y', '--as', 'keshav', '--json'], { cwd: dir, env });
+    assert.equal(set.status, 0, set.stderr);
+    const payload = JSON.parse(set.stdout);
+    assert.equal(payload.action, 'tag_set');
+    assert.equal(payload.tag, 'y');
+    assert.equal(payload.previous_tag, null);
+    assert.equal(payload.task.tag, 'y');
+
+    // Setting again replaces the tag; setting the same tag is a no-op.
+    const replaced = JSON.parse(runCli(['task', 'tag', task.display_id, 'z', '--json'], { cwd: dir, env }).stdout);
+    assert.equal(replaced.previous_tag, 'y');
+    const same = JSON.parse(runCli(['task', 'tag', task.display_id, 'z', '--json'], { cwd: dir, env }).stdout);
+    assert.equal(same.action, 'unchanged');
+
+    const shown = JSON.parse(runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(shown.tag, 'z');
+
+    const events = JSON.parse(runCli(['task', 'events', task.display_id, '--json'], { cwd: dir, env }).stdout).events;
+    const setEvents = events.filter((event) => event.event_type === 'task_tag_set');
+    assert.equal(setEvents.length, 2);
+    assert.equal(setEvents[0].actor, 'keshav');
+    assert.equal(setEvents[0].payload.tag, 'y');
+
+    // A positional tag and --add in one call is ambiguous and refused.
+    const both = runCli(['task', 'tag', task.display_id, 'q', '--add', 'r'], { cwd: dir, env });
+    assert.notEqual(both.status, 0);
+    assert.match(both.stdout + both.stderr, /not both/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task sweep --auto-accept honors a needs-human tag added after creation', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
