@@ -29,7 +29,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'mercury', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy', 'opencode']);
+    assert.deepEqual(names, ['atris-fast', 'mercury', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'muse', 'agy', 'opencode']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -121,7 +121,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, mercury, claude, codex, cursor, fable, composer, haiku, devin, grok, agy, opencode/);
+    assert.match(bad.stderr, /atris-fast, mercury, claude, codex, cursor, fable, composer, haiku, devin, grok, muse, agy, opencode/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

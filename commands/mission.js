@@ -9577,6 +9577,11 @@ async function executeMissionRunTicksPhase(context) {
       let cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
       let cachedVerifierResult = cachedStep ? cachedStep.verifier_result : null;
       const tickSelection = resolveMissionTickRunner(runtimeMission, cwd);
+      if (tickSelection.runs_elsewhere) {
+        console.error(`${mission.owner} runs on ${tickSelection.runs_elsewhere}, so this machine leaves the work for it.`);
+        pauseReason = 'member-runs-elsewhere';
+        break;
+      }
       const tickRuntimeMission = tickSelection.mission;
       const tickRunnerName = String(tickRuntimeMission.runner || '').trim().toLowerCase();
       const tickCallerSessionRunner = runnerUsesCallerSession(tickRunnerName);

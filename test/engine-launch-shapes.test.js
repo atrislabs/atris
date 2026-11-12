@@ -25,12 +25,12 @@ const DOING = 'Review the diff for PR 7 Keep it short.';
 
 // The program name at the front of a launch -> the engine the view shows.
 const BINARY_ENGINE = {
-  codex: 'codex', claude: 'claude', 'cursor-agent': 'cursor', devin: 'devin', grok: 'grok', agy: 'agy',
+  codex: 'codex', claude: 'claude', 'cursor-agent': 'cursor', devin: 'devin', grok: 'grok', muse: 'muse', agy: 'agy',
   opencode: 'opencode', ax: 'atris-fast', cmd: 'commandcode', droid: 'droid',
 };
 const MODEL_FOR_BIN = {
   codex: 'gpt-6.1-sol', claude: 'claude-opus-5-5', 'cursor-agent': 'composer-2.5', devin: 'swe-2-max',
-  grok: 'grok-4.7', agy: 'gemini-3.8-flash-high', opencode: 'opencode/muse-spark-1.3', cmd: 'cmd-model-2',
+  grok: 'grok-4.7', muse: 'muse-wonder-1.0', agy: 'gemini-3.8-flash-high', opencode: 'opencode/muse-spark-1.3', cmd: 'cmd-model-2',
   droid: 'glm-5.2',
 };
 const RUNNER_ENV = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
@@ -168,7 +168,7 @@ test('every launch in the engines skill reads back', () => {
   const skill = fs.readFileSync(path.join(ROOT, 'atris', 'skills', 'engines', 'SKILL.md'), 'utf8');
   const expected = {
     'Atris Fast': 'atris-fast', Claude: 'claude', Codex: 'codex', Cursor: 'cursor', Fable: 'fable', Composer: 'cursor',
-    Haiku: 'claude', 'Devin (build)': 'devin', 'Devin (search)': 'devin', Grok: 'grok', 'Antigravity (agy)': 'agy', opencode: 'opencode',
+    Haiku: 'claude', 'Devin (build)': 'devin', 'Devin (search)': 'devin', Grok: 'grok', Muse: 'muse', 'Antigravity (agy)': 'agy', opencode: 'opencode',
   };
   // The exact-command table: rows whose second column starts with a program.
   const rows = [...skill.matchAll(/^\| ([^|]+?) \| `([a-z][^`]*)`/gm)];
