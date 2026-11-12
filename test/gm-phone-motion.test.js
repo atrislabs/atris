@@ -22,7 +22,7 @@ const IN_PLACE = new Set(['deck flip']);
 
 test('browser: every orb path glides, with no jump, no cut, and no frozen moment, and nothing runs once a card lands', { skip, timeout: 240000 }, async () => {
   const out = await paths.pathsTrace({ chromePath: CHROME });
-  assert.equal(out.paths.length, paths.PATHS.length);
+  assert.equal(out.paths.length, paths.PATHS.length, show(out.paths.map(p => p.name)));
   for (const p of out.paths) {
     assert.equal(p.error, undefined, show(p));
     // only the beat the chosen answer holds is still
@@ -66,7 +66,7 @@ test('trace: a cut in the frames reads as a cut, and a fade as a fade', () => {
   // a line that pops in reads as a cut, and its words are kept
   const popped = paths.summarizePath([frame(0, 0, null), frame(16.7, 0, { text: 'tap to think', o: 1 })], 0);
   assert.equal(popped.line_fade, 1, show(popped));
-  assert.deepEqual(popped.lines_while_moving, ['tap to think']);
+  assert.deepEqual(popped.lines_while_moving, ['tap to think'], show(popped));
 });
 
 test('browser: on a phone six times slower the sphere re-forms in about the same time as at full speed', { skip, timeout: 120000 }, async () => {
@@ -90,7 +90,7 @@ test('browser: the big orb sets its fill color once a brightness level, not once
     await send('Page.reload');
     await p.until("document.readyState === 'complete' && document.getElementById('line').textContent === 'tap to think'", 'the big orb');
     await new Promise(r => setTimeout(r, 600));
-    return p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, s0 = window.__draw.styles, a0 = window.__draw.arcs; setTimeout(function () { var n = o.frame - f0; done({ frames: n, styles: (window.__draw.styles - s0) / n, arcs: (window.__draw.arcs - a0) / n }); }, 1000); })");
+    return p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, s0 = window.__draw.styles, a0 = window.__draw.arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)), styles: (window.__draw.styles - s0) / n, arcs: (window.__draw.arcs - a0) / n }); }, 1000); })");
   }, undefined, { firstCard: false });
   const said = show(out);
   assert.ok(out.frames > 20, said);
@@ -108,6 +108,8 @@ test('browser: a page that opens on a card shows the card fading in, never the b
   assert.equal(card.sphere_frames_before_card, 0, said);
   assert.equal(card.line_frames_before_card, 0, said);
   assert.equal(card.footer_seen_jump, 0, said);
+  // a capture made mostly of stalls shows too little of the fade to judge, so it cannot pass
+  assert.equal(card.unreliable, null, `${card.unreliable}\n${said}`);
   assert.ok(card.card_frames_fading >= 6 && card.card_fade <= 0.15, said);
   assert.equal(card.dots_drawn, 0, said);
   // with no card the big orb starts and its line fades in
@@ -130,7 +132,7 @@ test('browser: turning the phone keeps the small orb centred over the card, and 
 test('browser: turning a phone with the big orb up gives the sphere the dots its new size holds, every frame on the way draws it, and turning back brings the upright 5500 back', { skip, timeout: 90000 }, async () => {
   const { onPhone, cardDesk, PHONE } = require('../scripts/gm-phone-trace');
   const COUNT = "(function () { var P = CanvasRenderingContext2D.prototype, arc = P.arc; window.__arcs = 0; window.__frames = []; P.arc = function () { window.__arcs += 1; return arc.apply(this, arguments); }; (function tick() { window.__frames.push(window.__arcs); requestAnimationFrame(tick); })(); })();";
-  const DRAWN = "new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ size: Math.round(document.getElementById('orb').getBoundingClientRect().width), per_frame: Math.round((window.__arcs - a0) / (o.frame - f0)) }); }, 500); })";
+  const DRAWN = "new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ size: Math.round(document.getElementById('orb').getBoundingClientRect().width), per_frame: Math.round((window.__arcs - a0) / n), frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)) }); }, 500); })";
   const out = await onPhone(cardDesk(null, async () => ({ card: null })), CHROME, async (p, send) => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: COUNT });
     await send('Page.reload');
@@ -214,7 +216,7 @@ test('browser: with the pointer at any corner, the brightest dots are still draw
       await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
       // the light eases toward the pointer; once there, count what each frame draws
       await new Promise(r => setTimeout(r, 1500));
-      seen.push(await p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ frames: o.frame - f0, per_frame: (window.__arcs - a0) / (o.frame - f0) }); }, 500); })"));
+      seen.push(await p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)), per_frame: (window.__arcs - a0) / n }); }, 500); })"));
     }
     return seen;
   }, undefined, { firstCard: false });
