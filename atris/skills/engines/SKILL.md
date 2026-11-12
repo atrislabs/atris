@@ -1,6 +1,6 @@
 ---
 name: engines
-description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build."
+description: "Dispatch work to an installed terminal agent or named Atris engine profile. Supports Atris Fast, Claude, Codex, Cursor, Fable, Composer, Haiku, Devin, Grok, Muse, Antigravity (agy), and opencode. Triggers on: use codex, use cursor, use devin, use grok, use muse, use agy, use antigravity, use gemini, gemini session, use fable, use claude, use opencode, use atris, engine, dispatch to, worker agent, second opinion build."
 version: 1.7.0
 tags:
   - engines
@@ -12,6 +12,7 @@ tags:
   - haiku
   - devin
   - grok
+  - muse
   - agy
   - antigravity
   - gemini
@@ -22,7 +23,7 @@ tags:
 
 # Engines: interchangeable terminal workers
 
-One contract, eleven live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
+One contract, twelve live profiles. The orchestrator writes a bounded task prompt, dispatches it to an engine, then **independently verifies, lands, and pushes** the result. Engines never self-certify.
 
 ## Pick the job owner first
 
@@ -45,6 +46,18 @@ The first worker that is ready and not expired leads; the rest are backups in or
 **Changing it.** Edit the file, or: `atris engine assign <job> <tool> [--model --effort --max --prep search --days N]` sets the lead and keeps the rest; `--add`, `--remove <tool>`, `--promote <tool>` (move an existing worker to the top, line unchanged), `--clear`; `--everywhere` writes the machine file; `--session` (with `ATRIS_ROSTER_SESSION=<name>`) changes this shell only. `atris engine roster --available` lists installed tools and models.
 
 **What happens on its own.** A worker that stalls or loses its connection sits out 30 minutes ("cooling") and the next worker takes the job; a failed task (tests failed) is not handed over and does not bench anyone. Every run is recorded; `atris engine roster --runs` lists them and the roster shows each worker's recent record. When the record says the order is wrong, the roster prints one suggestion with the exact command. It never edits the file: run it only when the owner says so.
+
+**Team members: model and runs on.** A line under `## team` gives one member its own model, and an `on:` part says where it works:
+
+```
+## team
+- cosmo: claude code, model: opus 5.5
+- vannevar: muse, model: muse wonder
+- walsh: claude code, model: opus 5.5, on: atris computer
+- amara: on: grok bot
+```
+
+No `on:` means this machine. `on: atris computer` is the computer Atris hosts; any other name (`grok bot`, `claude duet`, `dots`) is a bot on its own machine. A member that works elsewhere never runs here: its missions pause with "runs on <place>", and the roster shows a RUNS ON column. Set it with `atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]`; moving a member keeps its engine, and swapping its engine keeps its place. The machine that is that place says so with `ATRIS_RUNS_AS="grok bot"` or one line in `~/.atris/RUNS_AS`; there the member runs, and everywhere else it is skipped.
 
 **Heavy models.** Astra and Fable should judge, not explore. Give their line `prep: search`: the search lead writes a brief of at most 300 lines first, and if prep fails the worker runs as usual.
 
@@ -99,6 +112,7 @@ Smoke: `reply with the word OK`, run from `$HOME`, 120s cap, one at a time on a 
 | Devin (build) | `devin -p --permission-mode dangerous --model swe-2-max --prompt-file <brief>` (run from an isolated worktree) | `swe-2-max` (Free tag in `devin models list`, 2026-09-23) | 2026-09-23 | 14.0 | In `-p` mode the default permission mode rejects shell commands too, so even a read-only audit dies after one step (2026-09-23). Keep the brief outside the worktree. Long runs (5+ min) can print nothing even on success: judge by the worktree diff. `devin cloud` outlives this machine. |
 | Devin (search) | `devin -p --permission-mode dangerous --model swe-1.7-lightning -- "<prompt>"` | `swe-1.7-lightning` (paid, no Free tag on 2026-09-23) | 2026-09-23 | 13.9 | |
 | Grok | `grok --always-approve --model grok-4.7 -p "<prompt>"` (run from the target repo) | `grok-4.7` | 2026-09-23 | 11.7 | Unpinned default is now `grok-4.7-build-fast`; `grok models` lists the menu. Uses grok.com login. `--best-of-n <N>` for tricky bounded builds. |
+| Muse | `muse exec --sandbox-network enabled --trust-workspace --model muse-wonder-1.0 "<prompt>"` (run from the target repo) | `muse-wonder-1.0` | 2026-11-11 | - | Meta's Muse Code. Runs only Muse models (`muse wonder`, `muse spark`). Its sandbox proxies the network by default, which blocks atris calls; `enabled` keeps the sandbox and approval judge on. Read-only asks add `--disable-write`. |
 | Antigravity (agy) | `agy --mode accept-edits --add-dir "$PWD" --model gemini-3.8-flash-high --output-format json -p "<prompt>"` (run from the target repo) | `gemini-3.8-flash-high` | 2026-09-23 | 15.9 | **`--add-dir` is mandatory for writes**: without it agy edits `~/.gemini/antigravity-cli/scratch/` and the project never changes (2026-08-28). `--mode plan --sandbox` for read-only review. Also answers to "gemini". |
 | opencode | `opencode run -m opencode/muse-spark-1.3-contributor-free "<prompt>"` (read-only: add `--agent plan`) | `opencode/muse-spark-1.3-contributor-free` | 2026-09-23 | 41.1 | Build work needs `--auto` (isolated worktree only). `opencode models` lists the live menu. |
 
@@ -123,6 +137,7 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 | Devin | `--model <id>` | `swe-2-max`, `swe-2-high`, `swe-2-medium` (Free); `claude-opus-5-5-high`, `gpt-6-sol` (paid) |
 | Cursor | `--model <id>` | `composer-2.5`, `grok-4.7-xhigh`, `claude-opus-5-thinking-high`; `--list-models` |
 | Grok | `--model <id>` | `grok-4.7`, `grok-4.7-build-fast` (default), `grok-4.6`, `grok-4.5`; `grok models` |
+| Muse | `--model <id>` | `muse-wonder-1.0`, `muse-spark-1.3`; `muse model-profile show <id>` |
 | Codex | `-m <id>` | `gpt-6-sol` is the `~/.codex/config.toml` default |
 
 Pins expire 30 days after their verified date. Re-verify on a new model: run the CLI's model list, smoke one prompt, update the row.

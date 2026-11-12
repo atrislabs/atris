@@ -1374,12 +1374,22 @@ function teamActivityTag(activity) {
 function renderTeamRoster(rows, { width } = {}) {
   if (!rows.length) return '';
   const showActivity = rows.some((row) => row.activity !== undefined);
-  const columns = [{ header: 'MEMBER' }, { header: 'JOB' }, { header: 'ENGINE · MODEL' }, { header: 'SOURCE' }];
+  // RUNS ON shows once any member works on another machine; an all-local
+  // team reads exactly as before.
+  const showPlace = rows.some((row) => row.runs_here === false);
+  const columns = [{ header: 'MEMBER' }, { header: 'JOB' }, { header: 'ENGINE · MODEL' }];
+  if (showPlace) columns.push({ header: 'RUNS ON' });
+  columns.push({ header: 'SOURCE' });
   if (showActivity) columns.push({ header: 'LAST 7 DAYS', clip: true, min: 11 });
   const cells = rows.map((row) => {
-    const engine = row.engine ? workerCellText(engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' })) : 'no ready engine';
+    const elsewhere = row.runs_here === false;
+    const engine = row.engine
+      ? workerCellText(engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }))
+      : elsewhere ? 'its own model' : 'no ready engine';
     const stale = row.stale_model && row.newer_model ? ` (newer ${modelLabel(row.newer_model)} out)` : '';
-    const cell = [row.member, row.job || '-', `${engine}${stale}`, row.source === 'file' ? (row.file || 'roster file') : 'automatic'];
+    const cell = [row.member, row.job || '-', `${engine}${stale}`];
+    if (showPlace) cell.push(row.runs_on_label || row.runs_on || '-');
+    cell.push(row.source === 'file' ? (row.file || 'roster file') : 'automatic');
     if (showActivity) cell.push(teamActivityTag(row.activity));
     return cell;
   });
@@ -1520,7 +1530,7 @@ function runRosterRunsCommand(job, json, root, now) {
   return 0;
 }
 
-const ROSTER_SET_USAGE = 'usage: atris engine roster set <job> <tool> <model>, or atris engine roster set --member <name> <tool> <model>. the tools and models come from atris engine roster --available';
+const ROSTER_SET_USAGE = 'usage: atris engine roster set <job> <tool> <model>, or atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]. --on is where the member works: "atris computer", "local", or a bot on another machine like "grok bot". the tools and models come from atris engine roster --available';
 
 // The words after set: the job (one quoted argument, or every word before
 // the first one that names a tool), the tool (one word, or two like "claude
@@ -1569,19 +1579,51 @@ function runRosterSetCommand(args, root) {
       return 2;
     }
   }
+  let place = null;
+  const onAt = words.indexOf('--on');
+  if (onAt !== -1) {
+    place = words[onAt + 1] || '';
+    words.splice(onAt, 2);
+    if (!member || !place || place.startsWith('--')) {
+      console.error(ROSTER_SET_USAGE);
+      return 2;
+    }
+  }
   if (words.some((word) => String(word).startsWith('--'))) {
     console.error(ROSTER_SET_USAGE);
     return 2;
   }
-  const parts = splitSetWords(words, !member);
+  const parts = place !== null && !words.length ? {} : splitSetWords(words, !member);
   if (!parts || (!member && !parts.job)) {
     console.error(ROSTER_SET_USAGE);
     return 2;
   }
   try {
-    const out = member
+    let lineScope = 'project';
+    if (place !== null) {
+      // a bad place or an unknown member is refused before anything is written
+      const { readMemberCard, teamLineFor } = require('../lib/member-engine');
+      const reg = require('../lib/engine-registry');
+      reg.setTeamPlaceCheck(place);
+      // member names are lowercase on disk, the same way swapMember reads them
+      member = member.trim().toLowerCase();
+      const line = teamLineFor(reg.readRosterState(root), member);
+      if (!line && !readMemberCard(root, member).found) throw new Error(`there is no team member named ${member}`);
+      if (line && line.scope) lineScope = line.scope;
+    }
+    let out = member && parts.tool
       ? swapMember(root, member, parts.tool, parts.model)
-      : swapJob(root, parts.job, parts.tool, parts.model);
+      : member ? null : swapJob(root, parts.job, parts.tool, parts.model);
+    if (place !== null) {
+      const { setTeamPlace } = require('../lib/engine-registry');
+      // the place goes on the line that decides for this member
+      const scope = out && out.scope ? out.scope : lineScope;
+      const placed = setTeamPlace(member, place, scope === 'session' ? { session: true } : scope === 'machine' ? { everywhere: true } : {}, root);
+      const { runsOnText } = require('../lib/runs-on');
+      const where = runsOnText(placed.place, placed.place.engine || '');
+      out = { ...(out || { member }), runs_on: placed.place.id, runs_on_label: placed.place.label, runs_here: placed.place.here, value: placed.value,
+        line: `${out && out.changed ? `${out.line} ` : ''}${member} now works on ${where}.` };
+    }
     console.log(json ? JSON.stringify(out, null, 2) : out.line);
     return 0;
   } catch (err) {

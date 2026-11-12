@@ -8217,6 +8217,9 @@ function detectUnavailableModel(text) {
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
+  if (pauseReason === 'member-runs-elsewhere') {
+    return 'left for the machine its owner works on; to run it here, move the owner back: atris engine roster set --member <name> --on local';
+  }
   if (pauseReason === 'protected-lane-review') {
     return `review the protected diff and its receipt before resuming: atris mission run ${missionId}`;
   }
@@ -9577,6 +9580,11 @@ async function executeMissionRunTicksPhase(context) {
       let cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
       let cachedVerifierResult = cachedStep ? cachedStep.verifier_result : null;
       const tickSelection = resolveMissionTickRunner(runtimeMission, cwd);
+      if (tickSelection.runs_elsewhere) {
+        console.error(`${mission.owner} runs on ${tickSelection.runs_elsewhere}, so this machine leaves the work for it.`);
+        pauseReason = 'member-runs-elsewhere';
+        break;
+      }
       const tickRuntimeMission = tickSelection.mission;
       const tickRunnerName = String(tickRuntimeMission.runner || '').trim().toLowerCase();
       const tickCallerSessionRunner = runnerUsesCallerSession(tickRunnerName);
@@ -10406,7 +10414,9 @@ function completeMissionRunPhase(context) {
     // 'no-progress' is a clean stop the run diagnosed itself, never route it
     // through handleMissionBlocker (that would file a blocker task and
     // dispatch an engine to "fix" a mission that correctly stopped itself).
-    const blockerReason = ['no-progress', 'budget-exhausted'].includes(pauseReason)
+    // 'member-runs-elsewhere' is the same: the owner's own machine does the
+    // work, so nothing here is broken and nothing local should "fix" it.
+    const blockerReason = ['no-progress', 'budget-exhausted', 'member-runs-elsewhere'].includes(pauseReason)
       ? null
       : (pauseReason || mission.stop_reason || (mission.status === 'blocked' ? 'verifier-failed' : null));
     if (selfDrive && blockerReason) {

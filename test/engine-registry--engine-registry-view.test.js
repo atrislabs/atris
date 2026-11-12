@@ -29,6 +29,7 @@ const PROFILES = [
   { id: 'haiku', bin: 'claude', tier: 'fast', roles: ['validator', 'navigator'], models: ['haiku'], duty: '', fallback_order: 70 },
   { id: 'devin', bin: 'devin', tier: 'max', roles: ['executor'], models: ['built-in router'], duty: 'errands', fallback_order: 40 },
   { id: 'grok', bin: 'grok', tier: 'pro', roles: ['executor'], models: ['grok 4.7 fast', 'grok 4.7'], duty: '', fallback_order: 45 },
+  { id: 'muse', bin: 'muse', tier: 'pro', roles: ['executor'], models: ['muse-wonder-1.0', 'muse-spark-1.3'], duty: '', fallback_order: 97 },
   {
     id: 'agy',
     bin: 'agy',

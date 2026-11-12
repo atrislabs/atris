@@ -446,7 +446,10 @@ test('each member resolves to its job pick automatically, and the view shows the
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   const { activity, ...closer } = json.team.find((row) => row.member === 'closer');
   assert.deepEqual(closer, {
-    member: 'closer', job: 'build', engine: 'claude', model: 'claude-opus-5-5', effort: null, max_seconds: null, source: 'auto', file: null, reason: 'closer does build: claude opus 5.5',
+    member: 'closer', job: 'build', engine: 'claude', model: 'claude-opus-5-5', effort: null, max_seconds: null,
+    // no on: part, so the member works here, named the way this machine names itself
+    runs_on: 'local', runs_on_label: require('../lib/runs-on').machineName(), runs_here: true,
+    source: 'auto', file: null, reason: 'closer does build: claude opus 5.5',
   });
   // A member with no logs, commits, runs, or events in 14 days reads as idle.
   assert.equal(activity.status, 'idle');
