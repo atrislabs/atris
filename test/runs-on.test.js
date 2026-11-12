@@ -342,3 +342,11 @@ test('a machine can keep the names it answers to in ~/.atris/RUNS_AS', () => wit
     if (saved !== undefined) process.env.ATRIS_RUNS_AS = saved;
   }
 }));
+
+test('this Mac is named the same with or without /usr/sbin on PATH', { skip: process.platform !== 'darwin' }, () => {
+  const probe = "delete process.env.ATRIS_MACHINE_NAME; process.stdout.write(require('./lib/runs-on').machineName())";
+  const run = (PATH) => spawnSync(process.execPath, ['-e', probe], { cwd: path.join(__dirname, '..'), env: { HOME: process.env.HOME, PATH }, encoding: 'utf8' }).stdout;
+  const full = run('/usr/bin:/bin:/usr/sbin:/sbin');
+  assert.ok(full, 'a name comes back');
+  assert.equal(run('/usr/bin:/bin'), full);
+});
