@@ -49,7 +49,7 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
 - **Entry point:** command routing in `bin/atris.js:1911`
-- **Handler:** `commands/task.js:12205` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:5438`; full desk is `cmdHome` at `commands/task.js:5457`
+- **Handler:** `commands/task.js:12287` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:5438`; full desk is `cmdHome` at `commands/task.js:5457`
 - **Store:** `lib/task-db.js:409` (`addTask`), `lib/task-db.js:548` (`listTasks`), `lib/task-db.js:712` (`claimTask`), `lib/task-db.js:1143` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
