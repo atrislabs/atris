@@ -5,12 +5,10 @@
 // the sign-in they already have. Backend: /api/swarlo/{business}/... (the
 // business may be its slug or its id; the server takes both).
 
-const fs = require('fs');
-const path = require('path');
 const { apiRequestJson } = require('../utils/api');
-const { NOT_LOGGED_IN, oneLine } = require('../lib/developer-api');
+const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const { parseArgs, loginToken, relativeTime, clip } = require('../lib/business-target');
-const { stateHome } = require('../lib/state-home');
+const { resolveChannelBusiness, boardWhy, memberName, lookupMember } = require('../lib/team-board');
 
 // Words that are verbs here, so no channel can be called one of them.
 const REPORTS = ['done', 'failed', 'blocked'];
@@ -41,60 +39,6 @@ options:
 
 the team's channels on the hosted Atris server, shared by every agent on every
 computer. uses your existing sign-in (atris login).`);
-}
-
-function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-}
-
-function registeredBusinesses(homeDir) {
-  const raw = readJson(path.join(homeDir, '.atris', 'businesses.json'));
-  if (!raw || typeof raw !== 'object') return [];
-  return Object.entries(raw)
-    .filter(([, b]) => b && typeof b === 'object' && b.business_id)
-    .map(([key, b]) => ({ id: String(b.business_id), slug: String(b.slug || key), name: String(b.name || b.slug || key) }));
-}
-
-function boundBusiness(startDir) {
-  let dir = path.resolve(startDir);
-  for (;;) {
-    const parsed = readJson(path.join(dir, '.atris', 'business.json'));
-    if (parsed && parsed.business_id) {
-      const slug = String(parsed.slug || parsed.name || parsed.business_id);
-      return { id: String(parsed.business_id), slug, name: String(parsed.name || slug) };
-    }
-    const up = path.dirname(dir);
-    if (up === dir) return null;
-    dir = up;
-  }
-}
-
-const PICK = 'add --business <slug>, set ATRIS_BUSINESS=<slug>, or run inside a business folder';
-
-// Which business, in order: --business, ATRIS_BUSINESS, the nearest
-// .atris/business.json, then the only one in ~/.atris/businesses.json.
-// A slug is looked up locally; one this computer does not know goes to the
-// server as is. Returns { id, slug, name } or { error }.
-function resolveChannelBusiness(flags = {}, deps = {}) {
-  const env = deps.env || process.env;
-  const known = registeredBusinesses(deps.homeDir || stateHome());
-  const lookup = (value) => known.find((b) => b.slug === value || b.id === value)
-    || { id: value, slug: value, name: value };
-
-  if (Object.prototype.hasOwnProperty.call(flags, 'business')) {
-    const given = typeof flags.business === 'string' ? flags.business.trim() : '';
-    if (!given) return { error: '--business needs a business slug' };
-    return lookup(given);
-  }
-  const fromEnv = String(env.ATRIS_BUSINESS || '').trim();
-  if (fromEnv) return lookup(fromEnv);
-  const bound = boundBusiness(deps.cwd || process.cwd());
-  if (bound) return bound;
-  if (known.length === 1) return known[0];
-  if (!known.length) return { error: `no business picked: ${PICK}.` };
-  const names = known.map((b) => b.slug);
-  const shown = names.length > 8 ? `${names.slice(0, 8).join(', ')}, and ${names.length - 8} more` : names.join(', ');
-  return { error: `more than one business on this computer (${shown}): ${PICK}.` };
 }
 
 function postLine(post, now, width = 400) {
@@ -144,14 +88,7 @@ async function channelCommand(args = [], deps = {}) {
   const request = deps.apiRequestJson || apiRequestJson;
   const base = `/swarlo/${encodeURIComponent(business.id)}`;
   const call = (route, options = {}) => request(`${base}${route}`, { method: 'GET', ...options, token });
-  const why = (res) => {
-    if (!res) return 'no answer from the server';
-    const detail = res.data && (res.data.detail || res.data.error);
-    if (res.status === 401) return 'your sign-in was refused. run: atris login';
-    if (res.status === 403) return `you are not on ${business.slug}'s team`;
-    if (res.status === 404 && detail === 'Business not found') return `no business called "${business.slug}"`;
-    return oneLine(detail || res.error || `request failed (${res.status})`);
-  };
+  const why = (res) => boardWhy(res, business);
   const say = (res) => log(JSON.stringify(res.data));
   const channelList = async () => {
     const res = await call('/channels');
@@ -200,14 +137,14 @@ async function channelCommand(args = [], deps = {}) {
   // member that cannot be found stops the write; it never falls back to you.
   const writes = (verb && verb !== 'list') || (name && text);
   const env = deps.env || process.env;
-  const asWho = String((typeof flags.as === 'string' ? flags.as : env.ATRIS_AGENT) || '').trim().replace(/^@/, '').toLowerCase();
+  const asWho = memberName(flags, env);
   let member = null;
   if (writes && asWho) {
-    const res = await request(`/business/${encodeURIComponent(business.id)}/team/${encodeURIComponent(asWho)}`, { method: 'GET', token });
-    if (res && res.status === 404) { err(`no member called "${asWho}" in ${business.slug}, so nothing was sent. check the name, or leave off --as to post as yourself`); return 1; }
-    if (!res || !res.ok) { err(`could not look up member "${asWho}", so nothing was sent: ${why(res)}`); return 1; }
-    if (!res.data || !res.data.agent_id) { err(`member "${asWho}" in ${business.slug} has no agent id, so nothing was sent`); return 1; }
-    member = { id: String(res.data.agent_id), name: String(res.data.name || asWho) };
+    const found = await lookupMember(request, business, asWho, token);
+    if (found.missing) { err(`no member called "${asWho}" in ${business.slug}, so nothing was sent. check the name, or leave off --as to post as yourself`); return 1; }
+    if (found.failed !== undefined) { err(`could not look up member "${asWho}", so nothing was sent: ${why(found.failed)}`); return 1; }
+    if (found.noId) { err(`member "${asWho}" in ${business.slug} has no agent id, so nothing was sent`); return 1; }
+    member = found.member;
   }
   const signed = (body) => (member ? { ...body, agent_id: member.id } : body);
   const byline = member ? ` as ${member.name}` : '';
