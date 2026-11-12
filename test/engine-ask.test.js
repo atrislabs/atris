@@ -228,6 +228,51 @@ test('engine claude --model "opus 5.5" hands the claude cli the id, not the disp
   assert.ok(buildReadOnlyEngineInvocation('devin', 'q', 'swe-2-max').args.includes('swe-2-max'));
 });
 
+test('agy asks run in edit mode from an empty scratch folder on carbon medium', async () => {
+  // Plan mode hangs headless (a one-line ask timed out at 60s and 300s,
+  // 2026-11-11) while edit mode answers in about 10s. Edit mode may only
+  // touch an empty folder made for this one ask, never the repo.
+  const invocation = buildReadOnlyEngineInvocation('agy', 'what is 2+2?');
+  const mode = invocation.args[invocation.args.indexOf('--mode') + 1];
+  assert.equal(mode, 'accept-edits');
+  assert.ok(!invocation.args.includes('plan'), 'plan mode hangs headless');
+  assert.ok(invocation.args.includes('--sandbox'));
+  assert.equal(invocation.args[invocation.args.indexOf('--model') + 1], 'gemini-4-carbon-medium');
+  assert.equal(invocation.scratchCwd, true);
+  const askRoot = tempRoot();
+  try {
+    const [job] = parseEngineAskArgs(['what is 2+2?', '--engine', 'agy'], { root: askRoot }).jobs;
+    assert.equal(job.model, 'gemini-4-carbon-medium', 'the receipt names the model that answered');
+  } finally {
+    fs.rmSync(askRoot, { recursive: true, force: true });
+  }
+  assert.equal(
+    buildReadOnlyEngineInvocation('agy', 'q', 'gemini-4-carbon-high').args[invocation.args.indexOf('--model') + 1],
+    'gemini-4-carbon-high',
+    'a named model still wins',
+  );
+
+  const repo = path.resolve(__dirname, '..');
+  let seen;
+  const result = await runAskProcess(
+    { ...invocation, bin: process.execPath, args: ['-e', 'console.log("4")'] },
+    {
+      cwd: repo,
+      timeoutMs: ASK_REPLY_TIMEOUT_MS,
+      spawnProcess: (bin, args, options) => {
+        seen = { cwd: options.cwd, existed: fs.existsSync(options.cwd), entries: fs.readdirSync(options.cwd) };
+        return spawn(bin, args, options);
+      },
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.notEqual(path.resolve(seen.cwd), repo, 'agy must never run from the repo');
+  assert.ok(!path.resolve(seen.cwd).startsWith(`${repo}${path.sep}`));
+  assert.equal(seen.existed, true);
+  assert.deepEqual(seen.entries, [], 'the scratch folder starts empty');
+  assert.equal(fs.existsSync(seen.cwd), false, 'the scratch folder is removed after the ask');
+});
+
 test('explicit long agy asks receive the same deadline and classify its native timeout', async () => {
   const parsed = parseEngineAskArgs(['audit 21 review items', '--engine', 'agy', '--timeout', '1800']);
   assert.equal(parsed.timeoutMs, 30 * 60 * 1000);
@@ -310,14 +355,14 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.doesNotMatch(devin.args.join(' '), /(?:dangerous|accept-edits)/);
 
   const agy = buildReadOnlyEngineInvocation('agy', 'inspect the router', 'gemini-3.1-pro-high');
-  // Read-only safety comes from the sandbox; skip-permissions must ride WITH
-  // it because agy prompts even in plan mode and a headless ask has no one to
-  // answer (it denied its own `ls` and failed every ask, live 2026-08-19).
-  assert.deepEqual(agy.args.slice(0, 4), ['--mode', 'plan', '--sandbox', '--dangerously-skip-permissions']);
+  // Edit mode, sandboxed, from an empty scratch folder; never plan mode (it
+  // hangs headless) and never skip-permissions (edit mode would then approve
+  // writes outside the scratch folder too).
+  assert.deepEqual(agy.args.slice(0, 3), ['--mode', 'accept-edits', '--sandbox']);
   assert.equal(agy.args[agy.args.indexOf('--print-timeout') + 1], '120s');
-  assert.deepEqual(agy.args.slice(6, 8), ['--model', 'gemini-3.1-pro-high']);
-  assert.doesNotMatch(agy.args.join(' '), /accept-edits/);
-  assert.ok(agy.args.includes('--sandbox'), 'skip-permissions is only acceptable inside the sandbox');
+  assert.deepEqual(agy.args.slice(5, 7), ['--model', 'gemini-3.1-pro-high']);
+  assert.doesNotMatch(agy.args.join(' '), /dangerously-skip-permissions/);
+  assert.equal(agy.scratchCwd, true);
 
   const grok = buildReadOnlyEngineInvocation('grok', 'inspect the router', 'grok-composer-2.5-fast');
   assert.deepEqual(grok.args.slice(4, 6), ['--sandbox', 'read-only']);
