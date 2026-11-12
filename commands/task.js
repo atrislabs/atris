@@ -9139,8 +9139,10 @@ function cmdReady(args) {
   };
   const { taskDb, db, taskId } = resolveReadyTarget();
   // The verifier may have run for a while. The task is read again after it. Without one, nothing
-  // elapsed and the read from the checks above stands.
+  // elapsed and the read from the checks above stands. The landing sentence is checked against the
+  // refreshed title too, since a verifier can rename the task.
   const beforeTask = usedVerify ? taskDetail(taskDb, db, taskId) : readyTarget.beforeTask;
+  if (usedVerify) requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);

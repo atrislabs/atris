@@ -28,7 +28,20 @@ function fixture(t) {
     path.join(dir, 'write-marker.js'),
     "require('fs').appendFileSync(require('path').join(__dirname, 'marker.txt'), 'ran\\n');\n",
   );
-  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'tester' };
+  fs.writeFileSync(
+    path.join(dir, 'rename-task.js'),
+    "const { spawnSync } = require('child_process');\n"
+    + "const [ref, title] = process.argv.slice(2);\n"
+    + "const res = spawnSync(process.execPath, [process.env.PREFLIGHT_CLI, 'task', 'retitle', ref, title], { encoding: 'utf8' });\n"
+    + "if (res.status !== 0) { console.error(res.stderr || res.stdout); process.exit(1); }\n",
+  );
+  const env = {
+    ...process.env,
+    ATRIS_SKIP_UPDATE_CHECK: '1',
+    ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+    ATRIS_AGENT_ID: 'tester',
+    PREFLIGHT_CLI: cliPath,
+  };
   delete env.NODE_TEST_CONTEXT;
   const run = (args) => spawnSync(process.execPath, [cliPath, ...args], { cwd: dir, encoding: 'utf8', env });
   const claimed = (title) => {
@@ -39,11 +52,12 @@ function fixture(t) {
     assert.equal(claim.status, 0, claim.stderr || claim.stdout);
     return ref;
   };
-  const status = (ref) => {
+  const shownTask = (ref) => {
     const shown = run(['task', 'show', ref, '--json']);
     assert.equal(shown.status, 0, shown.stderr || shown.stdout);
-    return JSON.parse(shown.stdout).status;
+    return JSON.parse(shown.stdout);
   };
+  const status = (ref) => shownTask(ref).status;
   const markerLines = () => {
     const file = path.join(dir, 'marker.txt');
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0;
@@ -52,7 +66,7 @@ function fixture(t) {
     const runs = path.join(dir, 'atris', 'runs');
     return fs.existsSync(runs) ? fs.readdirSync(runs).filter((name) => name.endsWith('.json')) : [];
   };
-  return { dir, run, claimed, status, markerLines, receipts };
+  return { dir, run, claimed, status, shownTask, markerLines, receipts };
 }
 
 function assertRefusedBeforeVerifier(f, ref, res, { code, pattern }) {
@@ -131,6 +145,24 @@ test('valid text still runs the verifier exactly once with its receipt kept and 
   assert.equal(receipt.command, VERIFY);
   assert.equal(receipt.result.passed, true);
   assert.match(res.stdout, new RegExp(receipts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('a landing sentence that only matches the title after the verifier renamed the task is refused', (t) => {
+  const f = fixture(t);
+  const ref = f.claimed('hand in work whose title changes mid run');
+  const renamed = 'Someone can now see which reviews still need a check because the list is plain';
+  const res = f.run([
+    'task', 'ready', ref,
+    '--verify', `git diff --check && node rename-task.js ${ref} "${renamed}"`,
+    '--landing', `Completed: ${renamed}.`,
+    '--result', RESULT, '--as', 'tester',
+  ]);
+  assert.equal(res.status, 2, res.stderr || res.stdout);
+  assert.match(res.stderr, /landing needs one plain sentence/);
+  const task = f.shownTask(ref);
+  assert.equal(task.title, renamed, 'the verifier should have renamed the task');
+  assert.equal(task.status, 'claimed', 'the refused task changed state');
+  assert.equal(f.receipts().length, 1, 'the verifier ran once before the landing was checked against the new title');
 });
 
 test('a verifier that fails still writes its receipt and leaves the task claimed', (t) => {
