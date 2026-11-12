@@ -44,7 +44,7 @@ const VERBS = [
   },
   {
     verb: 'ready',
-    usage: 'Usage: atris task ready <id> --proof "..." --result "<sentence>"',
+    usage: 'Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)',
     listed: /atris task ready <id> --proof "\.\.\." --result "<sentence>"/,
     noise: /durable local task state|Confidence Gate|TASK DESK|atris task list|atris task claim|say yes:/,
     acted: /id required|proof required|verifier failed|ready:/i,
