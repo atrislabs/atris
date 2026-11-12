@@ -1599,14 +1599,23 @@ function runRosterSetCommand(args, root) {
     return 2;
   }
   try {
+    let lineScope = 'project';
+    if (place !== null) {
+      // a bad place or an unknown member is refused before anything is written
+      const { readMemberCard, teamLineFor } = require('../lib/member-engine');
+      const reg = require('../lib/engine-registry');
+      reg.setTeamPlaceCheck(place);
+      const line = teamLineFor(reg.readRosterState(root), member);
+      if (!line && !readMemberCard(root, member).found) throw new Error(`there is no team member named ${member}`);
+      if (line && line.scope) lineScope = line.scope;
+    }
     let out = member && parts.tool
       ? swapMember(root, member, parts.tool, parts.model)
       : member ? null : swapJob(root, parts.job, parts.tool, parts.model);
     if (place !== null) {
-      const { readMemberCard } = require('../lib/member-engine');
-      if (!out && !readMemberCard(root, member).found) throw new Error(`there is no team member named ${member}`);
       const { setTeamPlace } = require('../lib/engine-registry');
-      const scope = out && out.scope ? out.scope : 'project';
+      // the place goes on the line that decides for this member
+      const scope = out && out.scope ? out.scope : lineScope;
       const placed = setTeamPlace(member, place, scope === 'session' ? { session: true } : scope === 'machine' ? { everywhere: true } : {}, root);
       const { runsOnText } = require('../lib/runs-on');
       const where = runsOnText(placed.place, placed.place.engine || '');

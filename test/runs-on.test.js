@@ -217,3 +217,71 @@ test('a running muse exec is seen as a muse engine run', () => {
   assert.equal(run && run.engine, 'muse');
   assert.equal(parseEngineProcess({ pid: 2, ppid: 0, elapsed_seconds: 5, command: 'muse skills list' }), null);
 });
+
+// --- review findings, 2026-11-11 ----------------------------------------------
+
+test('a member elsewhere is left alone even when the mission names an engine or a preferred one', () => withTeam([
+  'cosmo: on: grok bot',
+], ({ root }) => {
+  const { resolveMissionTickRunner } = require('../lib/mission-core');
+  assert.equal(resolveMissionTickRunner({ runner: 'claude', owner: 'cosmo' }, root).runs_elsewhere, 'Grok bot');
+  assert.equal(resolveMissionTickRunner({ runner: 'auto', owner: 'cosmo', preferred_engine: 'codex' }, root).runs_elsewhere, 'Grok bot');
+}));
+
+test('an engine that cannot do the member\'s job still leaves its place standing', () => withTeam([
+  'cosmo: haiku, on: grok bot',
+], ({ root }) => {
+  // haiku cannot build, so the engine part is refused, but the place counts
+  const { resolveEngineForMember } = require('../lib/member-engine');
+  const picked = resolveEngineForMember('cosmo', root);
+  assert.ok(picked.warning, 'the bad engine part is still reported');
+  assert.equal(picked.runs_here, false);
+  assert.equal(picked.runs_on_label, 'Grok bot');
+}));
+
+test('a member elsewhere pauses without filing a blocker or starting a repair run', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
+  assert.match(source, /\['no-progress', 'budget-exhausted', 'member-runs-elsewhere'\]\.includes\(pauseReason\)/);
+});
+
+test('a place-only change lands on the line that decides for the member', () => withTeam([], ({ root, cli }) => {
+  const machine = process.env.ATRIS_MACHINE_ROSTER_MD_PATH;
+  fs.writeFileSync(machine, '# roster\n\n## build\n- codex, model: gpt-6.1-sol\n\n## team\n- cosmo: claude code, model: opus 5.5, max: 20 min\n');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n');
+  const res = cli('set', '--member', 'cosmo', '--on', 'grok bot');
+  assert.equal(res.exit, 0, res.err);
+  assert.match(fs.readFileSync(machine, 'utf8'), /^- cosmo: claude code, model: opus 5\.5, max: 20 min, on: grok bot$/m);
+  assert.ok(!/cosmo/.test(fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8')), 'no shadowing project line');
+}));
+
+test('an engine swap keeps every part of a line whose place comes first', () => withTeam([
+  'cosmo: on: grok bot, claude code, model: opus 5.5, max: 20 min',
+], ({ cli, teamLines }) => {
+  const res = cli('set', '--member', 'cosmo', 'muse', 'wonder');
+  assert.equal(res.exit, 0, res.err);
+  const [line] = teamLines();
+  assert.match(line, /^- cosmo: muse, model: muse-wonder-1\.0, /);
+  assert.match(line, /max: 20 min/);
+  assert.match(line, /backup claude code opus 5\.5/);
+  assert.match(line, /on: grok bot$/);
+}));
+
+test('moving a member whose place named its engine keeps that engine', () => withTeam([
+  'cosmo: on: muse',
+], ({ cli, teamLines }) => {
+  let res = cli('set', '--member', 'cosmo', '--on', 'grok bot');
+  assert.equal(res.exit, 0, res.err);
+  assert.deepEqual(teamLines(), ['- cosmo: muse, on: grok bot']);
+  res = cli('set', '--member', 'cosmo', '--on', 'local');
+  assert.equal(res.exit, 0, res.err);
+  assert.deepEqual(teamLines(), ['- cosmo: muse']);
+}));
+
+test('a bad place refuses the whole change, engine swap included', () => withTeam([
+  'cosmo: claude code, model: opus 5.5',
+], ({ cli, teamLines }) => {
+  const res = cli('set', '--member', 'cosmo', 'muse', 'wonder', '--on', 'a, b');
+  assert.equal(res.exit, 2);
+  assert.match(res.err, /is not a place/);
+  assert.deepEqual(teamLines(), ['- cosmo: claude code, model: opus 5.5']);
+}));
