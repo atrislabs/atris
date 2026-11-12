@@ -164,7 +164,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 - Reads `.atris/business.json` when present for owner/workspace metadata
 - Falls back to `package.json` and folder name for project workspaces
 - Detects memory paths (`atris/MAP.md`, `atris/TODO.md`, wiki, logs), validation command, proof command, and visual command
-- `--write` saves markdown to `atris/reports/computer-card.md`
+- `--write` saves markdown to `computer-card.md` in `atris/reports/` (or the project root when there is no `atris/` folder)
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
 **Search:** `rg "buildComputerCard|computerCard" commands/computer.js lib/computer-core.js`

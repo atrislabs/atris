@@ -43,7 +43,7 @@ Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposa
 
 - `test/strings.test.js`: extraction precision, variant clustering, and scan→variants→term→check round trip
 
-- `lib/taste-lessons.js` (`addTaste`, `listTaste`, `matchTaste`) - stores scoped operator verdicts in `atris/taste.json`, ranks keyword and surface matches, and caps the owner's taste section appended by `lib/fleet.js`; CLI: `commands/taste.js`, routing/help: `bin/atris.js`, regression: `test/taste.test.js`
+- `lib/taste-lessons.js` (`addTaste`, `listTaste`, `matchTaste`) - stores scoped operator verdicts in `taste.json` in the project's `atris/` folder, ranks keyword and surface matches, and caps the owner's taste section appended by `lib/fleet.js`; CLI: `commands/taste.js`, routing/help: `bin/atris.js`, regression: `test/taste.test.js`
 
 **Search:** `rg "slop|kill list|outbound artifact gate" policies/ scripts/outbound-artifact-gate.js` · commands: `rg "stringsCommand|variantClusters|isUserFacing" commands/strings.js`
 
@@ -53,7 +53,6 @@ Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposa
 - Static preview: `lib/site.js:104`, GET/HEAD only, loopback Host checks and binding, rejects malformed URLs and request bodies.
 - Credential gateway: `lib/secret-gateway.js:240`, unchanged read-only grant, placeholder credential, local Host checks, body rejection and loopback binding.
 - Benchmark denial listener: `scripts/det/xsearch-bench.js:129`, loopback only and unconditional 401, exported for real HTTP tests.
-- Proof and user-visible changes: `atris/receipts/local-http-security.md`.
 
 ## Sentinel security audit
 

@@ -6,7 +6,7 @@ Member runs, wake announcements, goal loops, assigned jobs and member maintenanc
 
 | Route | Paths | Purpose |
 | --- | --- | --- |
-| Shared member behavior | `lib/member-context.js` reads the execution workspace's `atris/team/MEMBER_PROCESS.md` for mission prompts, wake proposals, and manual activation. Regression: `test/member-context.test.js`. | from origin/master |
+| Shared member behavior | `lib/member-context.js` reads the shared process file (`MEMBER_PROCESS.md` in the execution workspace's `atris/team/` folder, when it has one) for mission prompts, wake proposals, and manual activation. Regression: `test/member-context.test.js`. | from origin/master |
 
 - Member alive dispatcher lookup: `lib/member-alive.js:64` prefers workspace scripts, then the packaged `scripts/member-operate.mjs`; `test/member-alive.test.js` verifies installed dispatch, workspace cwd, and override precedence.
 
