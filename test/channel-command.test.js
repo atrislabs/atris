@@ -244,6 +244,15 @@ test('an unknown member is refused in one sentence and nothing is posted as the 
   assert.equal(env.calls.filter((c) => c.method === 'POST').length, 0);
 });
 
+test('a 404 "Business not found" on the member lookup names the business, not a missing member', async () => {
+  const handler = fakeServer({ [`GET /business/${LABS_ID}/team/walsh`]: () => ({ ok: false, status: 404, data: { detail: 'Business not found' } }) });
+  const h = harness({ handler });
+  assert.equal(await channelCommand(['general', 'hi', '--as', 'walsh'], h.deps), 1);
+  assert.match(h.stderr.join('\n'), /no business called "atris-labs"/);
+  assert.doesNotMatch(h.stderr.join('\n'), /no member called/);
+  assert.equal(h.calls.filter((c) => c.method === 'POST').length, 0);
+});
+
 test('reads never look up a member, even with ATRIS_AGENT set', async () => {
   const h = harness({ env: { ATRIS_AGENT: 'walsh' } });
   assert.equal(await channelCommand(['general'], h.deps), 0);

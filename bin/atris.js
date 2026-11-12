@@ -153,7 +153,8 @@ const dryRunRequested = updateArgs.includes('--dry-run');
 const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 // Local-only commands make no registry call and start no background install.
 // sentinel prints its own one-line notice at the end of the run instead.
-if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99', 'sentinel', 'login'].includes(updateCommand)))) {
+// listen is polled by scripts every minute and its stdout is read by them.
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp', 'recap', '99', 'sentinel', 'login', 'listen'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {

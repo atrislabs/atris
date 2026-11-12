@@ -295,3 +295,192 @@ test('the installed command reads, acks, and exits 0/1/2 through a real HTTP ser
     server.close();
   }
 });
+
+// ── review fixes: numbers, sign-in, errors, speed, quiet stdout ─────────
+
+test('--ack and --limit take plain whole numbers only: 0, 1e2, 0x2a, 4.0 are refused before any request', async () => {
+  const bad = [['--ack', '0'], ['--ack', '1e2'], ['--ack', '0x2a'], ['--ack', '4.0'], ['--ack', '+5'], ['--ack', '07'], ['--limit', '1e1'], ['--limit', '0x10'], ['--limit', '51'], ['--limit', '0']];
+  for (const extra of bad) {
+    const h = harness();
+    assert.equal(await listenCommand(['--as', 'walsh', ...extra], h.deps), 2, extra.join(' '));
+    assert.equal(h.calls.length, 0, extra.join(' '));
+  }
+  const ok = harness();
+  assert.equal(await listenCommand(['--as', 'walsh', '--ack', '7'], ok.deps), 0);
+  assert.deepEqual(ok.calls.find((c) => c.method === 'POST').body, { agent_id: 'agent-walsh-id', seq: 7 });
+});
+
+test('a sign-in check that fails on the server reports that error, not "not logged in"', async () => {
+  const h = harness();
+  h.deps.token = '';
+  h.deps.ensureCredentials = async () => ({ error: 'token_invalid', detail: 'Internal Server Error' });
+  assert.equal(await listenCommand(['--as', 'walsh'], h.deps), 2);
+  const said = h.stderr.join('\n');
+  assert.doesNotMatch(said, /not logged in/);
+  assert.match(said, /Internal Server Error/);
+});
+
+test('a 404 "Business not found" on the member lookup names the business, not a missing member', async () => {
+  const handler = async (pathname) => (pathname.startsWith('/business/')
+    ? { ok: false, status: 404, data: { detail: 'Business not found' } }
+    : { ok: true, status: 200, data: { items: [], read_up_to: 0 } });
+  const h = harness({ handler });
+  assert.equal(await listenCommand(['--as', 'walsh'], h.deps), 2);
+  assert.match(h.stderr.join('\n'), /no business called "atris-labs"/);
+  assert.doesNotMatch(h.stderr.join('\n'), /no member called/);
+  assert.ok(h.calls.every((c) => !c.pathname.includes('/inbox')));
+});
+
+test('the real server wording for a missing member ("Agent not found: x") still reads as a missing member', async () => {
+  const handler = async () => ({ ok: false, status: 404, data: { detail: 'Agent not found: nobody' } });
+  const h = harness({ handler });
+  assert.equal(await listenCommand(['--as', 'nobody'], h.deps), 2);
+  assert.match(h.stderr.join('\n'), /no member called "nobody"/);
+});
+
+test('every request uses a short timeout and no retry, so a run every minute never overlaps', async () => {
+  const seen = [];
+  const h = harness();
+  const inner = h.deps.apiRequestJson;
+  h.deps.apiRequestJson = async (p, o = {}) => { seen.push(o); return inner(p, o); };
+  await listenCommand(['--as', 'walsh'], h.deps);
+  await listenCommand(['--as', 'walsh', '--ack', '42'], h.deps);
+  assert.ok(seen.length >= 4);
+  for (const o of seen) {
+    assert.ok(typeof o.timeoutMs === 'number' && o.timeoutMs <= 10000, `timeout ${o.timeoutMs}`);
+    assert.equal(o.retries, 0);
+  }
+});
+
+test('--watch says when 50 or more are waiting, once, instead of going quiet', async () => {
+  const page = Array.from({ length: 50 }, (_, i) => ({ seq: i + 1, reason: 'mention', channel: 'general', content: `item ${i + 1}`, author_name: 'thorp', created_at: '2026-11-11T19:00:00Z' }));
+  let round = 0;
+  const handler = fakeServer({ overrides: { [`GET /swarlo/${LABS_ID}/inbox`]: () => ({ ok: true, status: 200, data: { items: page, read_up_to: 0 } }) } });
+  const h = harness({ handler });
+  h.deps.sleep = async () => { round += 1; };
+  h.deps.keepGoing = () => round < 2;
+  assert.equal(await listenCommand(['--as', 'walsh', '--watch'], h.deps), 0);
+  const out = h.stdout.join('\n');
+  assert.equal((out.match(/50\+ waiting/g) || []).length, 1, out);
+  assert.match(out, /--ack 50/);
+  assert.equal((out.match(/item 1\b/g) || []).length, 1, out);
+});
+
+// A real HTTP server for the end-to-end checks below. `route(req, body)`
+// returns [status, data], or null to never answer.
+async function withServer(route, fn) {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      seen.push({ method: req.method, url: req.url, body });
+      const answer = route(req, body);
+      if (!answer) return;
+      res.writeHead(answer[0], { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(answer[1]));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}/api`, seen);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+const inboxRoute = (req) => {
+  if (req.url === '/api/business/atris-labs/team/walsh') return [200, { agent_id: 'agent-walsh-id', name: 'walsh' }];
+  if (req.method === 'GET' && req.url.startsWith('/api/swarlo/atris-labs/inbox?')) return [200, { items: ITEMS, read_up_to: 39 }];
+  if (req.method === 'POST' && req.url === '/api/swarlo/atris-labs/inbox/ack') return [200, { read_up_to: 42 }];
+  if (req.url === '/api/auth/validate') return [200, { valid: true, user: { id: 'u1' } }];
+  return [404, { detail: 'Not Found' }];
+};
+
+test('one run is two requests (member, inbox) with no separate sign-in check when the token comes from env', async () => {
+  await withServer(inboxRoute, async (api, seen) => {
+    const env = { HOME: makeHome(), ATRIS_API_URL: api, ATRIS_TOKEN: TOKEN, ATRIS_BUSINESS: 'atris-labs' };
+    const read = await runCli(['listen', '--as', 'walsh'], { cwd: makeDir('cwd-'), env });
+    assert.equal(read.status, 0, read.stderr);
+    assert.deepEqual(seen.map((s) => `${s.method} ${s.url.split('?')[0]}`), ['GET /api/business/atris-labs/team/walsh', 'GET /api/swarlo/atris-labs/inbox']);
+    seen.length = 0;
+    const ack = await runCli(['listen', '--as', 'walsh', '--ack', '42'], { cwd: makeDir('cwd-'), env });
+    assert.equal(ack.status, 0, ack.stderr);
+    assert.deepEqual(seen.map((s) => `${s.method} ${s.url}`), ['GET /api/business/atris-labs/team/walsh', 'POST /api/swarlo/atris-labs/inbox/ack']);
+  });
+});
+
+test('a 500 from the sign-in check reports the server error and exits 2', async () => {
+  const route = (req) => (req.url === '/api/auth/validate' ? [500, { detail: 'Internal Server Error' }] : inboxRoute(req));
+  await withServer(route, async (api, seen) => {
+    // A stored sign-in with no known expiry, so the CLI has to check it.
+    const home = makeHome();
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({ token: 'opaque-stored-token', email: 'a@example.com' }));
+    const res = await runCli(['listen', '--as', 'walsh'], { cwd: makeDir('cwd-'), env: { HOME: home, ATRIS_API_URL: api, ATRIS_BUSINESS: 'atris-labs' } });
+    assert.equal(res.status, 2, res.stderr);
+    assert.doesNotMatch(res.stderr, /not logged in/);
+    assert.match(res.stderr, /Internal Server Error/);
+    assert.ok(seen.every((s) => !s.url.includes('/inbox')));
+  });
+});
+
+test('network down reports the network error, not "not logged in", and gives up fast', async () => {
+  const probe = http.createServer();
+  await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+  const { port } = probe.address();
+  await new Promise((r) => probe.close(r));
+  const started = Date.now();
+  const res = await runCli(['listen', '--as', 'walsh'], { cwd: makeDir('cwd-'), env: { HOME: makeHome(), ATRIS_API_URL: `http://127.0.0.1:${port}/api`, ATRIS_TOKEN: TOKEN, ATRIS_BUSINESS: 'atris-labs' } });
+  assert.equal(res.status, 2, res.stderr);
+  assert.doesNotMatch(res.stderr, /not logged in/);
+  assert.match(res.stderr, /ECONNREFUSED|connect/i);
+  assert.ok(Date.now() - started < 4000, `took ${Date.now() - started} ms`);
+});
+
+test('with the update check left on, no update notice reaches stdout (plain or --json)', async () => {
+  await withServer(inboxRoute, async (api) => {
+    const home = makeHome();
+    // A cached "newer version" makes the notice print if the check runs.
+    fs.writeFileSync(path.join(home, '.atris', '.update-check'), JSON.stringify({ lastCheck: new Date().toISOString(), latestVersion: '999.0.0' }));
+    const env = { HOME: home, ATRIS_API_URL: api, ATRIS_TOKEN: TOKEN, ATRIS_BUSINESS: 'atris-labs', ATRIS_SKIP_UPDATE_CHECK: '', NO_UPDATE_NOTIFIER: '', ATRIS_AUTO_UPDATE: 'off' };
+    const json = await runCli(['listen', '--as', 'walsh', '--json'], { cwd: makeDir('cwd-'), env });
+    assert.equal(json.status, 0, json.stderr);
+    assert.deepEqual(JSON.parse(json.stdout), { items: ITEMS, read_up_to: 39 });
+    const plain = await runCli(['listen', '--as', 'walsh'], { cwd: makeDir('cwd-'), env });
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.doesNotMatch(plain.stdout + plain.stderr, /update available|999\.0\.0/);
+    assert.equal(plain.stdout.trim().split('\n').length, 3, plain.stdout);
+  });
+});
+
+test('--watch --json stops on Ctrl-C with nothing but items on stdout', async () => {
+  await withServer(inboxRoute, async (api) => {
+    const env = { ...process.env, HOME: makeHome(), ATRIS_API_URL: api, ATRIS_TOKEN: TOKEN, ATRIS_BUSINESS: 'atris-labs', ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_AGENT: '' };
+    const child = spawn(process.execPath, [cliPath, 'listen', '--as', 'walsh', '--watch', '--json'], { cwd: makeDir('cwd-'), env });
+    let stdout = '';
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+    const closed = new Promise((r) => child.on('close', (status) => r(status)));
+    await new Promise((resolve) => child.stdout.on('data', (d) => { stdout += d; if (stdout.split('\n').length > 2) resolve(); }));
+    child.kill('SIGINT');
+    const status = await closed;
+    assert.equal(status, 0);
+    const lines = stdout.trim().split('\n');
+    assert.deepEqual(lines.map((l) => JSON.parse(l).seq), [40, 42]);
+    assert.match(stderr, /stopped listening/);
+  });
+});
+
+test('a stored sign-in that is not near expiry is used without a separate check', async () => {
+  await withServer(inboxRoute, async (api, seen) => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: 'u1', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+    const home = makeHome();
+    fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({ token: jwt, email: 'a@example.com' }));
+    const res = await runCli(['listen', '--as', 'walsh'], { cwd: makeDir('cwd-'), env: { HOME: home, ATRIS_API_URL: api, ATRIS_BUSINESS: 'atris-labs' } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(seen.length, 2, seen.map((s) => s.url).join(', '));
+    assert.ok(seen.every((s) => !s.url.includes('/auth/')));
+  });
+});

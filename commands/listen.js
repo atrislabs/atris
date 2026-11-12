@@ -8,8 +8,8 @@
 //   if atris listen --as walsh --json > new.json; then ...; fi
 
 const { apiRequestJson } = require('../utils/api');
-const { NOT_LOGGED_IN } = require('../lib/developer-api');
-const { parseArgs, loginToken, relativeTime, clip } = require('../lib/business-target');
+const { NOT_LOGGED_IN, oneLine } = require('../lib/developer-api');
+const { parseArgs, relativeTime, clip } = require('../lib/business-target');
 const { resolveChannelBusiness, boardWhy, memberName, lookupMember } = require('../lib/team-board');
 
 const FLAGS = { switches: ['watch'], values: ['as', 'limit', 'ack'] };
@@ -17,6 +17,35 @@ const NEW = 0;
 const NOTHING = 1;
 const FAILED = 2;
 const WATCH_MS = 30000;
+const SERVER_MAX = 50;
+// Scripts run this every minute: each request gives up after 10 seconds and
+// is never retried, so one run cannot outlast the next.
+const QUICK = { timeoutMs: 10000, retries: 0 };
+const WHOLE = /^[1-9]\d*$/;
+
+// The sign-in token, or { error }. A token from ATRIS_TOKEN or one that is
+// not near expiry is used as is: the inbox request's own 401 is the check,
+// which saves a round trip per run. Anything else (expired, unknown expiry,
+// an agent client) goes through the full check. When that check fails for a
+// reason other than "never signed in", say the real reason.
+async function listenToken(deps, request) {
+  if (deps.token) return { token: deps.token };
+  if (!deps.ensureCredentials) {
+    const auth = require('../utils/auth');
+    const { isAgentClientCredential } = require('../utils/agent-client');
+    const creds = auth.readActiveCredentials();
+    const fresh = creds && creds.token && !isAgentClientCredential(creds)
+      && (creds.source === 'env' || (auth.getTokenExpiryEpochSeconds(creds.token) && !auth.shouldRefreshToken(creds.token)));
+    if (fresh) return { token: creds.token };
+  }
+  const ensure = deps.ensureCredentials
+    || (() => require('../utils/auth').ensureValidCredentials((p, o = {}) => request(p, { ...o, ...QUICK })));
+  let auth;
+  try { auth = await ensure(); } catch (e) { return { error: `could not check your sign-in: ${oneLine((e && e.message) || e)}` }; }
+  if (auth && !auth.error && auth.credentials && auth.credentials.token) return { token: auth.credentials.token };
+  if (!auth || auth.error === 'not_logged_in') return { error: NOT_LOGGED_IN };
+  return { error: `could not check your sign-in: ${oneLine(auth.detail || auth.error)}. if this keeps happening, run: atris login` };
+}
 
 function listenHelp(log = console.log) {
   log(`usage: atris listen --as <member>                 what was sent to that member, oldest first
@@ -66,19 +95,21 @@ async function listenCommand(args = [], deps = {}) {
 
   const who = memberName(flags, env);
   if (!who) { err('say who is listening: atris listen --as <member>'); return FAILED; }
-  const limit = flags.limit == null ? 20 : Number(flags.limit);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) { err('--limit takes a whole number from 1 to 50'); return FAILED; }
-  const ack = flags.ack == null ? null : Number(flags.ack);
-  if (ack !== null && (!Number.isInteger(ack) || ack < 0)) { err('--ack takes the number shown on the last line, like: atris listen --as ' + who + ' --ack 42'); return FAILED; }
+  const limit = flags.limit == null ? 20 : (WHOLE.test(flags.limit) ? Number(flags.limit) : NaN);
+  if (!(limit >= 1 && limit <= SERVER_MAX)) { err('--limit takes a whole number from 1 to 50'); return FAILED; }
+  const ack = flags.ack == null ? null : (WHOLE.test(flags.ack) ? Number(flags.ack) : NaN);
+  if (ack !== null && !Number.isSafeInteger(ack)) { err(`--ack takes the number shown on the last line, like: atris listen --as ${who} --ack 42`); return FAILED; }
   if (ack !== null && flags.watch) { err('--ack and --watch do not go together: --watch never marks anything handled'); return FAILED; }
 
   const business = resolveChannelBusiness(flags, deps);
   if (business.error) { err(business.error); return FAILED; }
-  const token = await loginToken(deps);
-  if (!token) { err(NOT_LOGGED_IN); return FAILED; }
+  const raw = deps.apiRequestJson || apiRequestJson;
+  const request = (p, o = {}) => raw(p, { ...o, ...QUICK });
+  const signIn = await listenToken(deps, raw);
+  if (signIn.error) { err(signIn.error); return FAILED; }
+  const token = signIn.token;
   secret = token;
 
-  const request = deps.apiRequestJson || apiRequestJson;
   const why = (res) => boardWhy(res, business);
   const found = await lookupMember(request, business, who, token);
   if (found.missing) { err(`no member called "${who}" in ${business.slug}, so nothing was checked. check the spelling of the name`); return FAILED; }
@@ -106,7 +137,7 @@ async function listenCommand(args = [], deps = {}) {
   const fetchInbox = async () => {
     // --watch asks for the most the server gives, since it never marks
     // anything handled and would otherwise keep seeing the same oldest few.
-    const n = flags.watch ? 50 : limit;
+    const n = flags.watch ? SERVER_MAX : limit;
     const res = await request(`${base}?agent_id=${encodeURIComponent(member.id)}&limit=${n}`, { method: 'GET', token });
     if (!res || !res.ok) return { failed: inboxWhy(res), res };
     if (!res.data || !Array.isArray(res.data.items)) return { failed: 'the server answered without an items list' };
@@ -129,10 +160,12 @@ async function listenCommand(args = [], deps = {}) {
   // (sign-in, access, no such business) stop it; the rest wait for the next round.
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const keepGoing = deps.keepGoing || (() => true);
-  if (!deps.sleep) process.once('SIGINT', () => { (deps.log || console.log)('stopped listening.'); process.exit(0); });
+  // stderr, so --watch --json leaves nothing but items on stdout.
+  if (!deps.sleep) process.once('SIGINT', () => { (deps.err || console.error)('stopped listening.'); process.exit(0); });
   if (!flags.json) log(`listening for ${member.name} in ${business.slug}. checks every 30 seconds; Ctrl-C to stop.`);
   let shown = -Infinity;
   let first = true;
+  let full = false;
   for (;;) {
     const got = await fetchInbox();
     if (got.failed) {
@@ -148,6 +181,11 @@ async function listenCommand(args = [], deps = {}) {
       } else if (first && !flags.json) {
         log(`nothing new for ${member.name} yet.`);
       }
+      // The server gives the oldest 50 unhandled; newer ones stay hidden
+      // until some are marked handled. Say so once, not every round.
+      const nowFull = got.items.length >= SERVER_MAX;
+      if (nowFull && !full) (flags.json ? err : log)(`${SERVER_MAX}+ waiting for ${member.name}; newer ones show after these are marked handled: ${again} --ack ${shown}`);
+      full = nowFull;
     }
     first = false;
     if (!keepGoing()) return 0;
