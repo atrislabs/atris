@@ -68,6 +68,9 @@ atris/features/*
 !atris/features/verify-falsifiability/**
 !atris/features/plan-review-by-validator/
 !atris/features/plan-review-by-validator/**
+# Phone approval for atris login: shared plan across three repos.
+!atris/features/phone-approval-login/
+!atris/features/phone-approval-login/**
 !atris/features/company-brain-sync/
 !atris/features/company-brain-sync/**
 !atris/features/forge-loop/
