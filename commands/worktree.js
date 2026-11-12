@@ -201,6 +201,23 @@ function shipHelp() {
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
 
+// A pull request GitHub left open for its checks goes on the list the autoland
+// tick watches. A flaky merge-line run that drops it is then queued again
+// without a person. Failing to write the list never fails the ship.
+function recordPendingShip(root, { branch, targetRef, number }) {
+  try {
+    const pushed = runGit(['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
+    const autoland = require('../lib/member-autoland');
+    autoland.recordQueuedPullRequest(root, { branch, base: baseBranchName(targetRef), number, pushed });
+    // The tick skips the whole list while self-landing is off.
+    console.log(autoland.policyOn(root)
+      ? `queue: recorded pull request ${number} for the tick's catch-up`
+      : `queue: recorded pull request ${number}, catch-up is off until self-landing is on`);
+  } catch (error) {
+    console.log(`queue: not recorded (${String(error.message || error).split('\n')[0]})`);
+  }
+}
+
 function shipWorktree(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     shipHelp();
@@ -396,6 +413,7 @@ function shipWorktree(args) {
         }
         if (state.state === 'OPEN' && !state.mergedAt) {
           console.log('merge: pending; kept the source branch while required checks finish');
+          recordPendingShip(root, { branch, targetRef, number: state.number });
           finishShippedCopy({ root, primary, branch, keep: keepCopy });
           return 0;
         }
