@@ -2470,7 +2470,7 @@ test('clean dry-run shows MAP refs it would heal', () => {
 
     const text = runCli(['clean', '--dry-run'], { cwd: dir });
     assert.equal(text.status, 0, text.stderr);
-    assert.match(text.stdout, /Would heal 1 MAP\.md reference/);
+    assert.match(text.stdout, /would heal 1 MAP\.md reference/);
     assert.match(text.stdout, /`src\/app\.js:20` -> `src\/app\.js:1` \(main\)/);
   } finally {
     cleanupTempDir(dir);

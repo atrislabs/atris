@@ -72,8 +72,8 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:705`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
-- `checkPageStaleness()` (`commands/clean.js:778`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
+- `findStalePages()` (`commands/clean.js:748`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
+- `checkPageStaleness()` (`commands/clean.js:821`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
 - dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions); a file guarded by `require.main === module` counts as an entrypoint, so a server started with `node lib/x.js` is never called test-only
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections

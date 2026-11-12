@@ -54,7 +54,7 @@ test('a plain backticked path to a missing file is reported, with the map line',
   const stdout = runCleanCli(dir);
   assert.match(stdout, /commands\/gone\.js: missing file \(atris\/MAP\.md:4\)/);
   assert.match(stdout, /checked 2 refs/);
-  assert.doesNotMatch(stdout, /All MAP\.md refs valid/);
+  assert.doesNotMatch(stdout, /all MAP\.md refs valid/i);
 });
 
 test('a map with nothing checkable says it checked zero refs, never all valid', (t) => {
@@ -67,7 +67,7 @@ test('a map with nothing checkable says it checked zero refs, never all valid', 
 
   const stdout = runCleanCli(dir);
   assert.match(stdout, /checked 0 refs, nothing to validate/);
-  assert.doesNotMatch(stdout, /All MAP\.md refs valid/);
+  assert.doesNotMatch(stdout, /all MAP\.md refs valid/i);
 });
 
 test('a map where every ref checks out says all valid with the count', (t) => {
@@ -76,7 +76,8 @@ test('a map where every ref checks out says all valid with the count', (t) => {
   write(dir, 'atris/MAP.md', '`lib/entry.js:1` (entry function) and `lib/entry.js`\n');
 
   const stdout = runCleanCli(dir);
-  assert.match(stdout, /All MAP\.md refs valid \(checked 2 refs\)/);
+  assert.match(stdout, /all MAP\.md refs valid \(checked 2 refs\)/);
+  assert.doesNotMatch(stdout, /All MAP\.md/);
 });
 
 test('a path whose first folder is not in this project is skipped, not flagged', (t) => {
@@ -139,4 +140,65 @@ test('plain paths inside a notes file are reported with that notes file as the m
   assert.equal(result.unhealable[0].file, 'commands/dead.md');
   assert.equal(result.unhealable[0].map, 'atris/refs/MAP-NOTES.md');
   assert.equal(result.unhealable[0].mapLine, 3);
+});
+
+test('a missing path written from the map folder is flagged when that folder holds its first folder', (t) => {
+  const { dir, atrisDir } = makeTempAtris(t);
+  write(dir, 'atris/refs/MAP-NOTES.md', '# notes\n');
+  write(dir, 'atris/MAP.md', 'Notes: `refs/map/missing.md`\nOther project: `ecosystem/openclaw/README.md`\n');
+
+  const result = healBrokenMapRefs(dir, atrisDir, true);
+
+  assert.equal(result.unhealable.length, 1);
+  assert.equal(result.unhealable[0].file, 'refs/map/missing.md');
+  assert.equal(result.unhealable[0].mapLine, 1);
+  assert.equal(result.skipped, 1, 'the other project path is still skipped');
+});
+
+test('a path that resolves outside the project is skipped, however it is spelled', (t) => {
+  const { dir, atrisDir } = makeTempAtris(t);
+  write(dir, 'lib/real.js', '');
+  write(dir, 'atris/MAP.md', 'Outside: `./../../lib/missing.js` and `../../lib/missing.js`\n');
+
+  const result = healBrokenMapRefs(dir, atrisDir, true);
+
+  assert.deepEqual(result.unhealable, []);
+  assert.equal(result.checked, 0);
+  assert.equal(result.skipped, 2);
+});
+
+test('a climbing path that lands inside the project from the map folder is still checked', (t) => {
+  const { dir, atrisDir } = makeTempAtris(t);
+  write(dir, 'lib/real.js', '');
+  write(dir, 'atris/MAP.md', 'Sibling: `./../lib/missing.js` and `../lib/real.js`\n');
+
+  const result = healBrokenMapRefs(dir, atrisDir, true);
+
+  assert.equal(result.checked, 2);
+  assert.deepEqual(result.unhealable.map((entry) => entry.file), ['./../lib/missing.js']);
+});
+
+test('paths inside fenced code blocks are examples, not map references', (t) => {
+  const { dir, atrisDir } = makeTempAtris(t);
+  write(dir, 'commands/real.js', '');
+  const map = [
+    '# MAP',
+    '',
+    '```js',
+    "const x = require('`commands/example-one.js`');",
+    '```',
+    '',
+    '~~~',
+    '`commands/example-two.js`',
+    '~~~',
+    '',
+    'Real: `commands/missing.js`',
+    '',
+  ].join('\n');
+  write(dir, 'atris/MAP.md', map);
+
+  const result = healBrokenMapRefs(dir, atrisDir, true);
+
+  assert.deepEqual(result.unhealable.map((entry) => [entry.file, entry.mapLine]), [['commands/missing.js', 11]]);
+  assert.equal(result.checked, 1);
 });

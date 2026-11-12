@@ -112,7 +112,7 @@ function cleanAtris(options = {}) {
   // Healed refs
   const countText = refCountText(checked, skipped);
   if (healed > 0) {
-    const verb = options.dryRun ? 'Would heal' : 'Healed';
+    const verb = options.dryRun ? 'would heal' : 'healed';
     console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'} (${countText})`);
     (results.healedRefDetails || []).slice(0, 3).forEach(ref => {
       console.log(`   • ${ref.old} -> ${ref.new}${ref.symbol ? ` (${ref.symbol})` : ''}`);
@@ -135,7 +135,7 @@ function cleanAtris(options = {}) {
   } else if (checked === 0) {
     console.log(`○ ${countText}, nothing to validate`);
   } else if (healed === 0) {
-    console.log(`✓ All MAP.md refs valid (${countText})`);
+    console.log(`✓ all MAP.md refs valid (${countText})`);
   }
 
   // Repo-local map scripts
@@ -540,16 +540,38 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
 // follow the extension. That keeps `file.js:12` and `file.jsonl` from matching here.
 const PLAIN_PATH_PATTERN = /`((?:\.\.?\/)*[A-Za-z0-9_@.\-]+(?:\/[A-Za-z0-9_@.\-]+)+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml))`/g;
 
-function plainPathExists(cwd, mapFile, rel) {
-  const root = path.resolve(cwd);
-  if (fs.existsSync(path.join(root, rel))) return true;
-  // Notes files cite paths from their own folder or any folder above it.
+// A plain path can be written from the project root, the map's own folder, or any
+// folder between them. Each of those is a base the path is resolved against.
+function plainPathBases(root, mapFile) {
+  const bases = [root];
   let dir = path.dirname(path.resolve(mapFile));
   while (dir.startsWith(root + path.sep)) {
-    if (fs.existsSync(path.join(dir, rel))) return true;
+    bases.push(dir);
     dir = path.dirname(dir);
   }
-  return false;
+  return bases;
+}
+
+function insideRoot(root, target) {
+  return target === root || target.startsWith(root + path.sep);
+}
+
+// Fenced code blocks hold examples, not navigation. Blank their lines, keeping
+// every line number. The plain-path pass then never reads them.
+function maskFencedBlocks(content) {
+  let fence = null;
+  return content.split('\n').map((line) => {
+    const opener = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (opener && opener[1][0] === fence.char && opener[1].length >= fence.length && opener[2].trim() === '') fence = null;
+      return '';
+    }
+    if (opener && !(opener[1][0] === '`' && opener[2].includes('`'))) {
+      fence = { char: opener[1][0], length: opener[1].length };
+      return '';
+    }
+    return line;
+  }).join('\n');
 }
 
 function isDirectory(target) {
@@ -567,30 +589,51 @@ function gitIgnoredPaths(cwd, paths) {
   return new Set(String(out.stdout).split('\n').filter(Boolean));
 }
 
+// The first folder of a path, checked in the place it was resolved against. A path
+// that climbs out of its base is judged by its first folder under the project root.
+function firstFolderExists(root, base, target) {
+  let anchor = base;
+  let from = path.relative(base, target);
+  if (from === '..' || from.startsWith('..' + path.sep)) {
+    anchor = root;
+    from = path.relative(root, target);
+  }
+  const parts = from.split(path.sep);
+  return parts.length > 1 && isDirectory(path.join(anchor, parts[0]));
+}
+
 function checkPlainMapPaths(cwd, mapFile, content) {
   const root = path.resolve(cwd);
   const map = path.relative(root, path.resolve(mapFile)).split(path.sep).join('/');
+  const bases = plainPathBases(root, mapFile);
+  const scanned = maskFencedBlocks(content);
   const seen = new Set();
   const missing = [];
   let checked = 0;
   let skipped = 0;
   const pattern = new RegExp(PLAIN_PATH_PATTERN.source, 'g');
   let match;
-  while ((match = pattern.exec(content)) !== null) {
+  while ((match = pattern.exec(scanned)) !== null) {
     const rel = match[1];
     if (seen.has(rel)) continue;
     seen.add(rel);
-    if (plainPathExists(cwd, mapFile, rel)) { checked++; continue; }
-    // A path whose first folder is not in this project belongs to another project.
-    const first = rel.replace(/^(?:\.\.?\/)+/, '').split('/')[0];
-    if (rel.startsWith('../') || !isDirectory(path.join(root, first))) { skipped++; continue; }
-    const mapLine = content.slice(0, match.index).split('\n').length;
-    missing.push({ rel, mapLine });
+    // Anything that resolves outside the project belongs to another project.
+    const candidates = bases
+      .map((base) => ({ base, target: path.resolve(base, rel) }))
+      .filter((candidate) => insideRoot(root, candidate.target));
+    if (candidates.some((candidate) => fs.existsSync(candidate.target))) { checked++; continue; }
+    // A path whose first folder is in none of its bases belongs to another project.
+    const here = candidates
+      .filter((candidate) => firstFolderExists(root, candidate.base, candidate.target))
+      .map((candidate) => path.relative(root, candidate.target).split(path.sep).join('/'));
+    if (here.length === 0) { skipped++; continue; }
+    const mapLine = scanned.slice(0, match.index).split('\n').length;
+    missing.push({ rel, mapLine, here });
   }
-  const ignored = gitIgnoredPaths(root, missing.map((entry) => entry.rel));
+  const ignored = gitIgnoredPaths(root, missing.flatMap((entry) => entry.here));
   const unhealable = [];
-  for (const { rel, mapLine } of missing) {
-    if (ignored.has(rel)) { skipped++; continue; }
+  for (const { rel, mapLine, here } of missing) {
+    if (here.every((candidate) => ignored.has(candidate))) { skipped++; continue; }
     checked++;
     unhealable.push({ file: rel, line: null, mapLine, map, reason: 'missing file', plain: true });
   }
