@@ -1674,6 +1674,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['topup', '--help'],
     ['buy', '--help'],
     ['transactions', '--help'],
+    ['channel', '--help'],
     ['integrations', '--help'],
     ['skill', '--help'],
     ['member', '--help'],
