@@ -6340,13 +6340,42 @@ function cmdTag(args) {
   if (!id) failTask('atris task tag', 'missing_id', 'task id required');
   const add = collectFlagValues(args, '--add');
   const remove = collectFlagValues(args, '--remove');
-  if (!add.length && !remove.length) {
-    failTask('atris task tag', 'missing_tags', 'at least one --add <tag> or --remove <tag> required');
+  const setTag = pos.slice(1).join(' ').trim();
+  if (!add.length && !remove.length && !setTag) {
+    failTask('atris task tag', 'missing_tags', 'a tag, or at least one --add <tag> or --remove <tag>, required');
+  }
+  if (setTag && (add.length || remove.length)) {
+    failTask('atris task tag', 'tag_conflict', 'use either `task tag <id> <tag>` or --add/--remove, not both');
   }
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task tag');
+  if (setTag) {
+    // Sets the primary tag, the same field `task add --tag` writes at creation.
+    const set = taskDb.setTaskTag(db, { id: taskId, actor: String(actor), tag: setTag });
+    if (!set.tagged && set.reason !== 'no_changes') {
+      failTask('atris task tag', set.reason || 'tag_failed', `tag failed: ${set.reason || 'unknown'}`, 1);
+    }
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const task = compactTaskFromProjection(projection, taskId);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: set.tagged ? 'tag_set' : 'unchanged',
+        task_id: taskId,
+        tag: set.tag,
+        previous_tag: set.tagged ? set.previous_tag : set.tag,
+        projection_path: outPath,
+        task,
+      });
+      return;
+    }
+    console.log(set.tagged
+      ? `tagged ${taskRef(task)} tag ${set.previous_tag || 'none'} -> ${set.tag}`
+      : `no change ${taskRef(task)} tag ${set.tag}`);
+    return;
+  }
   const result = taskDb.tagTask(db, { id: taskId, actor: String(actor), add, remove });
   if (!result.tagged) {
     if (result.reason === 'no_changes') {
