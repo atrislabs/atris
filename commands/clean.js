@@ -16,6 +16,7 @@ function parseCleanArgs(args = []) {
   let dryRun = false;
   let json = false;
   let apply = false;
+  let vaultOnly = false;
   let graceMinutes = 30;
   let error = null;
 
@@ -37,6 +38,10 @@ function parseCleanArgs(args = []) {
       apply = true;
       continue;
     }
+    if (arg === '--vault-only') {
+      vaultOnly = true;
+      continue;
+    }
     if (arg === '--grace-minutes' || arg.startsWith('--grace-minutes=')) {
       let raw = '';
       if (arg.startsWith('--grace-minutes=')) {
@@ -55,7 +60,7 @@ function parseCleanArgs(args = []) {
     }
   }
 
-  return { dryRun, json, apply, graceMinutes, error };
+  return { dryRun, json, apply, vaultOnly, graceMinutes, error };
 }
 
 function resolveGraceMinutes(options = {}) {
@@ -231,7 +236,17 @@ function cleanAtris(options = {}) {
   results.staleTasks = staleTasks;
 
   // 2. Find and HEAL broken MAP.md references
-  const { healed, unhealable, replacements, checked = 0, skipped = 0 } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
+  // Legacy mutators re-dirty HEAD after git vault/reset; --vault-only skips them.
+  const runLegacyMutators = !options.vaultOnly;
+  const {
+    healed,
+    unhealable,
+    replacements,
+    checked = 0,
+    skipped = 0,
+  } = runLegacyMutators
+    ? healBrokenMapRefs(cwd, atrisDir, options.dryRun)
+    : { healed: 0, unhealable: [], replacements: [], checked: 0, skipped: 0 };
   results.healedRefs = healed;
   results.checkedRefs = checked;
   results.skippedRefs = skipped;
@@ -239,15 +254,15 @@ function cleanAtris(options = {}) {
   results.unhealableRefs = unhealable;
 
   // 2b. Let the repo refresh and validate its own MAP.md, if it ships scripts for it
-  const mapScripts = runMapScripts(cwd, options.dryRun);
+  const mapScripts = runLegacyMutators ? runMapScripts(cwd, options.dryRun) : [];
   results.mapScripts = mapScripts;
 
   // 3. Archive old journals (>30 days)
-  const archived = archiveOldJournals(atrisDir, options.dryRun);
+  const archived = runLegacyMutators ? archiveOldJournals(atrisDir, options.dryRun) : 0;
   results.archivedJournals = archived;
 
   // 4. Clean empty sections in TODO.md
-  const cleaned = cleanEmptySections(atrisDir, options.dryRun);
+  const cleaned = runLegacyMutators ? cleanEmptySections(atrisDir, options.dryRun) : 0;
   results.cleanedSections = cleaned;
 
   // 5. Find stale wiki pages (source newer than last_compiled)
@@ -510,6 +525,7 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
     action: 'clean',
     dry_run: !!options.dryRun,
     apply: !!options.apply,
+    vault_only: !!options.vaultOnly,
     target_state: targetState,
     results: {
       stale_tasks: {

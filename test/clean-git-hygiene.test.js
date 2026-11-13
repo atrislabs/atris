@@ -204,6 +204,7 @@ test('atris clean --help, atris restore --help, and invalid --grace-minutes beha
   const cleanHelp = runCli(['clean', '--help'], dir, home);
   assert.equal(cleanHelp.status, 0, cleanHelp.stderr);
   assert.match(cleanHelp.stdout, /--apply, --vault/);
+  assert.match(cleanHelp.stdout, /--vault-only/);
   assert.match(cleanHelp.stdout, /--grace-minutes/);
 
   const restoreHelp = runCli(['restore', '--help'], dir, home);
@@ -263,4 +264,51 @@ test('atris clean --apply recovers crashed VAULTED WAL even when files fall insi
   assert.equal(payload.results.git_hygiene.remaining_dirty, 0);
   assert.equal(fs.existsSync(walPath), false);
   assert.equal(fs.existsSync(freshAbs), false);
+});
+
+test('atris clean --apply --vault-only cleans git dirt without running legacy MAP/TODO/journal mutators', (t) => {
+  const { dir, home } = makeDirtyRepo(t, { ageHours: 2 });
+
+  // Add legacy housekeeping targets that normal `atris clean` would mutate/dirty:
+  // 1) drifted MAP.md reference to a moved/renamed file
+  // 2) empty section in TODO.md
+  // 3) >30 day old journal in atris/logs/
+  // 4) repo-local scripts/validate_map.py that writes a marker file when invoked
+  fs.mkdirSync(path.join(dir, 'src/moved'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src/moved/target_unique_name.py'), 'def fn():\n    return 1\n');
+  fs.writeFileSync(path.join(dir, 'atris/MAP.md'), '# MAP\n\n- `src/old/target_unique_name.py`\n');
+  fs.writeFileSync(path.join(dir, 'atris/TODO.md'), '# TODO\n\n## Empty Section\n\n---\n');
+  const oldLogDir = path.join(dir, 'atris/logs/2025');
+  fs.mkdirSync(oldLogDir, { recursive: true });
+  fs.writeFileSync(path.join(oldLogDir, '2025-01-01.md'), '# old log\n');
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'scripts/validate_map.py'),
+    'import pathlib\npathlib.Path("map_script_ran.txt").write_text("ran")\n'
+  );
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'add legacy mutator fixtures');
+
+  const res = runCli(['clean', '--apply', '--vault-only', '--json'], dir, home);
+  assert.equal(res.status, 0, res.stderr);
+  const payload = JSON.parse(res.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.apply, true);
+  assert.equal(payload.vault_only, true);
+  assert.equal(payload.target_state, 0);
+  assert.equal(payload.results.git_hygiene.remaining_dirty, 0);
+  assert.equal(payload.results.map_refs.checked_count, 0);
+  assert.equal(payload.results.map_refs.healed_count, 0);
+  assert.equal(payload.results.journals.archived_count, 0);
+  assert.equal(payload.results.sections.cleaned_count, 0);
+  assert.equal(payload.results.map_scripts.count, 0);
+  assert.deepEqual(payload.results.map_scripts.items, []);
+
+  // Legacy files remain untouched at HEAD and git status stays clean
+  assert.match(fs.readFileSync(path.join(dir, 'atris/MAP.md'), 'utf8'), /src\/old\/target_unique_name\.py/);
+  assert.match(fs.readFileSync(path.join(dir, 'atris/TODO.md'), 'utf8'), /## Empty Section/);
+  assert.equal(fs.existsSync(path.join(oldLogDir, '2025-01-01.md')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'atris/logs/_archive/2025-01-01.md')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'map_script_ran.txt')), false);
+  assert.equal(git(dir, 'status', '--porcelain'), '');
 });

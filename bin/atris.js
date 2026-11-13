@@ -1168,7 +1168,7 @@ function showLoopHelp() {
 
 function showCleanHelp() {
   console.log('');
-  console.log('Usage: atris clean [--dry-run] [--apply|--vault] [--grace-minutes <N>] [--json]');
+  console.log('Usage: atris clean [--dry-run] [--apply|--vault] [--vault-only] [--grace-minutes <N>] [--json]');
   console.log('');
   console.log('Description:');
   console.log('  Check workspace housekeeping: stale tasks, MAP.md refs, old journals,');
@@ -1178,6 +1178,7 @@ function showCleanHelp() {
   console.log('Options:');
   console.log('  --dry-run, -n          Preview cleanup without changing files.');
   console.log('  --apply, --vault       Vault dirty git files to refs/atris/vault/* and clean checkout.');
+  console.log('  --vault-only           Skip legacy MAP/TODO/journal mutators; run git vault/reset only.');
   console.log('  --grace-minutes <N>    In-flight mtime grace window in minutes (default: 30).');
   console.log('  --json                 Print machine-readable cleanup results.');
   console.log('  --help, -h             Show this help.');

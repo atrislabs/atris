@@ -159,6 +159,10 @@ test('classifyEntry and scanGitHygiene cover all classification buckets and fenc
     // 6. AGENT_EXHAUST
     writeRel(root, 'atris/features/old-feat/spec.md', 'spec', { nowMs });
     writeRel(root, 'atris/campaigns/camp1/plan.md', 'camp', { nowMs });
+    writeRel(root, 'atris/security/audit-report.md', 'sec', { nowMs });
+    writeRel(root, 'atris/qa/test-run.md', 'qa', { nowMs });
+    writeRel(root, 'atris/runs/_archive/run1.json', '{}', { nowMs });
+    writeRel(root, '.codex/agents/helper.toml', 'name = "helper"\n', { nowMs });
     writeRel(root, 'output/pdf/deliverable.pdf', '%PDF', { nowMs });
 
     // 7. UNFINISHED_CODE
@@ -221,6 +225,10 @@ test('classifyEntry and scanGitHygiene cover all classification buckets and fenc
     // Agent exhaust
     assert.equal(classOf.get('atris/features/old-feat/spec.md'), 'AGENT_EXHAUST');
     assert.equal(classOf.get('atris/campaigns/camp1/plan.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/security/audit-report.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/qa/test-run.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/runs/_archive/run1.json'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('.codex/agents/helper.toml'), 'AGENT_EXHAUST');
     assert.equal(classOf.get('output/pdf/deliverable.pdf'), 'AGENT_EXHAUST');
 
     // Unfinished code
