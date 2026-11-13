@@ -53,7 +53,7 @@ function fakeServer(initial, { raw = true } = {}) {
     }
     if (url.pathname === '/memory/write') {
       const { path: rel, text } = options.body;
-      if (!/^(wiki|files)\//.test(rel)) return fail(400, 'Agents write under wiki/ or files/.');
+      if (!/^(wiki|files|features)\//.test(rel)) return fail(400, 'Agents write under wiki/, files/ or features/.');
       files.set(rel, text);
       return ok({ path: rel, bytes: Buffer.byteLength(text) });
     }
@@ -137,6 +137,19 @@ test('push sends only wiki/ and files/ changes, and says the rest change through
   assert.equal(server.files.get('logs/2026/2026-11-09.md'), START['logs/2026/2026-11-09.md']);
   const second = await run('push', dir, server);
   assert.doesNotMatch(second.text, /Pushed/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('push sends a page under features/, the folder for what they are building', async () => {
+  const dir = tmp();
+  const server = fakeServer(START);
+  await run('pull', dir, server);
+  fs.mkdirSync(path.join(dir, 'features/first-customer'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'features/first-customer/idea.md'), '# First customer\n');
+  const r = await run('push', dir, server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /Pushed 1 file: features\/first-customer\/idea.md/);
+  assert.equal(server.files.get('features/first-customer/idea.md'), '# First customer\n');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
