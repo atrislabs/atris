@@ -60,7 +60,7 @@ test('empty folder points at the first useful step', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(lines.length, 2);
   assert.strictEqual(lines[0], '');
-  assert.strictEqual(lines[1], `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}  (say it in your own words)`);
+  assert.strictEqual(lines[1], `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}`);
 });
 
 test('folder that does not exist still answers instead of throwing', () => {
@@ -69,7 +69,7 @@ test('folder that does not exist still answers instead of throwing', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(lines[0], '');
   assert.match(lines[1], /^hey sam, bakery is set up\./);
-  assert.ok(lines[1].endsWith(`next: ${FIRST_USE}  (say it in your own words)`));
+  assert.ok(lines[1].endsWith(`next: ${FIRST_USE}`));
   assert.strictEqual(fs.existsSync(root), false);
 });
 
@@ -97,7 +97,7 @@ test('open task is offered to claim under the operator name', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, "write the menu" is ready to start.\n\nnext: atris task claim T-1 --as sam  (start it)',
+    'hey sam, "write the menu" is ready to start.\n\nnext: atris task claim T-1 --as sam',
   );
 });
 
@@ -124,7 +124,7 @@ test('newest open task wins when two are waiting', () => {
   ]);
   const { lines } = speak({ root });
   assert.match(lines[1], /"fresh chore" is ready to start\./);
-  assert.ok(lines[1].endsWith('next: atris task claim T-2 --as sam  (start it)'));
+  assert.ok(lines[1].endsWith('next: atris task claim T-2 --as sam'));
 });
 
 test('claimed task gets the ready-with-verify command', () => {
@@ -136,7 +136,7 @@ test('claimed task gets the ready-with-verify command', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, you are working on "bake bread".\n\nnext: atris "add a test for the claimed task"  (ask for a test)',
+    'hey sam, you are working on "bake bread".\n\nnext: atris "add a test for the claimed task"',
   );
 });
 
@@ -146,7 +146,7 @@ test('claimed work beats an open task, and a certified review beats claimed work
     { display_id: 'T-4', title: 'Open one', status: 'open', updated_at: 30 },
     { display_id: 'T-5', title: 'Claimed one', status: 'claimed', updated_at: 20 },
   ]);
-  assert.ok(speak({ root }).lines[1].endsWith('next: atris "add a test for the claimed task"  (ask for a test)'));
+  assert.ok(speak({ root }).lines[1].endsWith('next: atris "add a test for the claimed task"'));
 
   writeTasks(root, [
     { display_id: 'T-4', title: 'Open one', status: 'open', updated_at: 30 },
@@ -162,7 +162,7 @@ test('claimed work beats an open task, and a certified review beats claimed work
   const { lines } = speak({ root });
   assert.strictEqual(
     lines[1],
-    'hey sam, "checked one" is waiting for your ok.\n\nnext: atris task accept T-6  (approve the finished work)',
+    'hey sam, "checked one" is waiting for your ok.\n\nnext: atris task accept T-6',
   );
 });
 
@@ -177,7 +177,7 @@ test('latest recap in atris/reports is named under the win line', () => {
   const { lines } = speak({ root });
   assert.strictEqual(
     lines[1],
-    'hey sam, "write the menu" is ready to start.\nlast recap: Weekly recap.\n\nnext: atris task claim T-1 --as sam  (start it)',
+    'hey sam, "write the menu" is ready to start.\nlast recap: Weekly recap.\n\nnext: atris task claim T-1 --as sam',
   );
 });
 
@@ -204,7 +204,7 @@ test('starter task with files written since it was claimed says atris done', () 
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, A page for the bakery has new work: index.html, notes.txt.\n\nnext: atris done  (finish the work)',
+    'hey sam, A page for the bakery has new work: index.html, notes.txt.\n\nnext: atris done',
   );
 
   const json = speak({ root, asJson: true });
@@ -229,7 +229,7 @@ test('shipped starter task asks what is next and reports no task in json', () =>
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    `hey sam, you already finished A page for the bakery.\n\nnext: ${WHATS_NEXT}  (say it in your own words)`,
+    `hey sam, you already finished A page for the bakery.\n\nnext: ${WHATS_NEXT}`,
   );
 
   const out = JSON.parse(speak({ root, asJson: true }).lines[0]);
@@ -244,7 +244,7 @@ test('broken task file is ignored and the folder reads as empty', () => {
   fs.writeFileSync(path.join(dir, 'tasks.projection.json'), '{ not json', 'utf8');
   const { code, lines } = speak({ root });
   assert.strictEqual(code, 0);
-  assert.strictEqual(lines[1], `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}  (say it in your own words)`);
+  assert.strictEqual(lines[1], `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}`);
 });
 
 test('looking writes nothing into the folder', () => {
@@ -267,5 +267,5 @@ test('prints through console.log when no log function is given', () => {
     console.log = original;
   }
   assert.strictEqual(code, 0);
-  assert.deepStrictEqual(seen, ['', `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}  (say it in your own words)`]);
+  assert.deepStrictEqual(seen, ['', `hey sam, bakery is set up.\n\nnext: ${FIRST_USE}`]);
 });

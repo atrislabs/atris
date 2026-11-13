@@ -1842,7 +1842,7 @@ function showWelcomeVisualization() {
 
   const checkoutWarning = require('../lib/checkout-sync').checkoutBehindMessage(cwd);
   if (checkoutWarning) {
-    console.log(`  ${checkoutWarning.replace(/this checkout is (\d+) commits? behind ([^;]+); run atris sync-checkout/, 'this copy is $1 changes behind $2; run atris sync-checkout (update this copy if it is safe)')}`);
+    console.log(`  ${checkoutWarning}`);
   }
 
   // Show the work itself, not counts. A newcomer in any domain (code, docs,

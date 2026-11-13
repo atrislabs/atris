@@ -192,7 +192,7 @@ test('26: atris stop in an empty folder talks first-talk and does not mint', () 
     });
     assert.equal(res.status, 0, res.stdout + res.stderr);
     assert.match(res.stdout, /^hey keshav, nothing is running\.$/m);
-    assert.match(res.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout + res.stderr, /cloud-computer|business\.json|init|Pass --mission|\bStopped\b|703h|ship the launch/i);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -252,7 +252,7 @@ test('26c: atris status in an empty folder talks first-talk and does not mint', 
     });
     assert.equal(res.status, 0, res.stdout + res.stderr);
     assert.match(res.stdout, /^hey keshav, nothing is running\.$/m);
-    assert.match(res.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(res.stdout + res.stderr, /Run "atris init"|folder not found|init --minimal|claim|cloud-computer|business\.json|Where we are|TASK BOARD/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -287,13 +287,13 @@ test('26d: atris status and stop in a file folder name the file and do not mint'
     assert.equal(status.status, 0, status.stdout + status.stderr);
     assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
     assert.equal(pad.status, 0, pad.stdout + pad.stderr);
-    assert.match(status.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
-    assert.match(status.stdout, /^next: atris do  \(.*\)$/m);
-    assert.match(stopped.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
-    assert.match(stopped.stdout, /^next: atris do  \(.*\)$/m);
+    assert.match(status.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(stopped.stdout, /^next: atris do$/m);
     assert.equal(pad.stdout.trim(), status.stdout.trim());
-    assert.match(pad.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
-    assert.match(pad.stdout, /^next: atris do  \(.*\)$/m);
+    assert.match(pad.stdout, /^hey keshav, notes.txt is already here\.$/m);
+    assert.match(pad.stdout, /^next: atris do$/m);
     assert.doesNotMatch(status.stdout + stopped.stdout + pad.stdout + status.stderr + stopped.stderr + pad.stderr, /nothing is running|what do you want here|Run "atris init"|Set up this workspace|cloud-computer|business\.json/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -348,17 +348,17 @@ test('26e: atris status after minting a file folder talks keep-working, not fact
     assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(status.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
-    assert.match(status.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(status.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(status.stdout, /^next: atris do\b/m);
     assert.match(recap.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
-    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.match(now.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
-    assert.match(now.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(now.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.match(pad.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
-    assert.match(pad.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(pad.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(pad.stdout, /^next: atris do\b/m);
     assert.match(stopped.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
-    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do\b/m);
     assert.doesNotMatch(
       status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + pad.stdout + pad.stderr + stopped.stdout + stopped.stderr,
@@ -395,8 +395,8 @@ test('26f: atris now in a file folder names the file and does not mint', () => {
     assert.equal(minute.status, 0, minute.stdout + minute.stderr);
     assert.equal(now.status, 0, now.stdout + now.stderr);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
-    assert.match(now.stdout, /^hey keshav, this folder already has notes.md\.$/m);
-    assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
+    assert.match(now.stdout, /^hey keshav, notes.md is already here\.$/m);
+    assert.match(now.stdout, /^next: atris do$/m);
     assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|map this folder|claim/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -530,7 +530,7 @@ test('26i: atris launchpad in an empty folder talks first-talk and does not mint
     assert.equal(pad.stdout.trim(), minute.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
     assert.match(pad.stdout, /^hey keshav, this folder is empty\.$/m);
-    assert.match(pad.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+    assert.match(pad.stdout, /^next: atris "what do you want here\?"$/m);
     assert.doesNotMatch(pad.stdout + pad.stderr, /Run "atris init"|Set up this workspace|WHAT HAPPENED|folder not found|init --minimal|claim/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -576,7 +576,7 @@ test('26j: atris stop after minting a file folder talks keep-working, not cloud-
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), recap.stdout.trim());
     assert.match(stopped.stdout, /^hey keshav, you are working on "notes\.txt"\.$/m);
-    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do\b/m);
     assert.doesNotMatch(
       stopped.stdout + stopped.stderr,
@@ -718,7 +718,7 @@ test('26k: atris stop after init and claim talks keep-working, not cloud-compute
 
     const before = runCli([], { cwd: dir, env });
     assert.equal(before.status, 0, before.stdout + before.stderr);
-    const claimLine = String(before.stdout).match(/^next: (atris task claim \S+ --as \S+)  \(.*\)$/m);
+    const claimLine = String(before.stdout).match(/^next: (atris task claim \S+ --as \S+)$/m);
     assert.ok(claimLine, before.stdout);
     const claimed = runCli(claimLine[1].replace(/^atris /, '').split(' '), { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stdout + claimed.stderr);
@@ -732,7 +732,7 @@ test('26k: atris stop after init and claim talks keep-working, not cloud-compute
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.match(stopped.stdout, /you are working on/);
-    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
+    assert.match(stopped.stdout, /^next: atris "add a test for the claimed task"$/m);
     assert.doesNotMatch(stopped.stdout, /^next: atris do\b/m);
     assert.doesNotMatch(
       stopped.stdout + stopped.stderr,

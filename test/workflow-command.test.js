@@ -131,7 +131,7 @@ test('plan in an uninitialized folder talks like first-minute', () => {
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(planned.status, 0, planned.stderr || planned.stdout);
   assert.match(planned.stdout, /this folder is empty/);
-  assert.match(planned.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+  assert.match(planned.stdout, /^next: atris "what do you want here\?"$/m);
   assert.equal(nextLine(planned.stdout), nextLine(minute.stdout));
   assert.equal(planned.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(planned.stdout)), 2);
@@ -163,7 +163,7 @@ test('review in an uninitialized folder talks like first-minute', () => {
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(review.status, 0, review.stderr || review.stdout);
   assert.match(review.stdout, /this folder is empty/);
-  assert.match(review.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+  assert.match(review.stdout, /^next: atris "what do you want here\?"$/m);
   assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
   assert.equal(review.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(review.stdout), 2);
@@ -202,7 +202,7 @@ test('do in an uninitialized folder talks like first-minute', () => {
   assert.equal(minute.status, 0, minute.stderr || minute.stdout);
   assert.equal(doit.status, 0, doit.stderr || doit.stdout);
   assert.match(doit.stdout, /this folder is empty/);
-  assert.match(doit.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+  assert.match(doit.stdout, /^next: atris "what do you want here\?"$/m);
   assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
   assert.equal(doit.stdout.trim(), minute.stdout.trim());
   assert.equal(spokenLineCount(spokenDoBody(doit.stdout)), 2);
@@ -641,7 +641,7 @@ test('renderReviewMinute names an open claim the same way first-minute does', ()
     }],
   });
   assert.match(text, /hey keshav, "map this folder so agents can find things" is ready to start\./);
-  assert.match(text, /^next: atris task claim LYG-1 --as keshav  \(start it\)$/m);
+  assert.match(text, /^next: atris task claim LYG-1 --as keshav$/m);
   assert.doesNotMatch(text, /nothing is waiting on you/);
   assert.equal(spokenLineCount(text), 2);
 });
@@ -659,7 +659,7 @@ test('renderReviewMinute names a claimed ready next instead of an empty desk', (
     }],
   });
   assert.match(text, /hey keshav, you are working on "ship the landing page"\./);
-  assert.match(text, /^next: atris task ready CLI-9 --verify "node --test test\/landing\.test\.js"  \(send it for a check once it works\)$/m);
+  assert.match(text, /^next: atris task ready CLI-9 --verify "node --test test\/landing\.test\.js"$/m);
   assert.doesNotMatch(text, /nothing is waiting on you/);
   assert.equal(spokenLineCount(text), 2);
 });

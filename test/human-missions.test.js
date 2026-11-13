@@ -463,7 +463,7 @@ test('stop in a folder with a file names the file and does not hit the cloud', a
     });
     const spoken = output.stdout.join('\n');
     assert.equal(code, 0);
-    assert.match(spoken, /this folder already has notes.txt/);
+    assert.match(spoken, /notes.txt is already here/);
     assert.match(spoken, /next: atris do/);
     assert.doesNotMatch(spoken, /nothing is running|what do you want here|cloud-computer|business\.json|Pass --mission/);
     assert.equal(fs.existsSync(path.join(root, 'atris')), false);

@@ -20,7 +20,7 @@ after(() => {
 });
 
 const ASK = 'say the next thing you want here, in your own words.';
-const NEXT = 'next: atris "<the next thing you want>"  (say it in your own words)';
+const NEXT = 'next: atris "<the next thing you want>"';
 
 test('names the shipped task, greets the person, and ends with the next command', () => {
   const out = renderWhatsNextAsk({

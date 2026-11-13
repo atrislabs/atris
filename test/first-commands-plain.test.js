@@ -22,8 +22,9 @@ test('first commands speak plainly in new folders', (t) => {
   const check = (output) => {
     assert.doesNotMatch(output, /^[A-Z][A-Z ]{2,}:/m);
     assert.doesNotMatch(output, /\u2014|already won|without a room|ready to claim|already yours|adapters|initialized/i);
+    // The greeting stays two lines and the command sits alone so it can be pasted as is.
     for (const line of output.split('\n').filter((line) => line.startsWith('next:'))) {
-      assert.match(line, /  \([^()]+\)$/);
+      assert.doesNotMatch(line, /\)$/);
     }
   };
   const empty = path.join(base, 'empty');
@@ -36,7 +37,7 @@ test('first commands speak plainly in new folders', (t) => {
   check(run(empty));
   const readmeOutput = run(readme);
   check(readmeOutput);
-  assert.match(readmeOutput, /this folder already has README\.md/);
+  assert.match(readmeOutput, /README\.md is already here/);
   check(run(setup, 'init', '--yes'));
   check(run(setup));
 });
@@ -47,7 +48,7 @@ test('workspace titles stay readable and command fields stay exact', () => {
   const command = 'atris task claim T-1 --as tester';
   const output = renderWorkspace({ task: { title, status: 'open' }, nextCommand: command });
   assert.match(output, /"recorded pull requests stop piling when reviewers can\.\.\." is ready to start\./);
-  assert.match(output, /next: atris task claim T-1 --as tester  \(start it\)$/);
+  assert.match(output, /next: atris task claim T-1 --as tester$/);
   const short = renderWorkspace({ task: { title: 'a title with more than five words', status: 'claimed' }, nextCommand: command });
   assert.match(short, /you are working on "a title with more than five words"\./);
 });

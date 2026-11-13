@@ -171,7 +171,7 @@ test('live-room default status matches bare mission; list keeps the archive', ()
     const status = runCli(['mission', 'status'], { cwd: dir, env });
     assert.equal(mission.stdout.trim(), minute.stdout.trim(), combined(mission));
     assert.equal(status.stdout.trim(), minute.stdout.trim(), combined(status));
-    assert.match(status.stdout, /something finished\. waiting on you\./);
+    assert.match(status.stdout, /is waiting for your ok\./);
     assert.equal(nextLine(status.stdout), nextLine(minute.stdout));
     assert.match(nextLine(status.stdout), /^atris task accept CLI-193$/);
     assert.equal(spokenLineCount(status.stdout), spokenLineCount(minute.stdout));

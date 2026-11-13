@@ -585,7 +585,7 @@ test('default entry auto-advances to plan when inbox has items', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /^next: atris plan  \(.*\)$/m);
+    assert.match(res.stdout, /^next: atris plan$/m);
     assert.doesNotMatch(res.stdout, /What do you want to build|Atris Plan/);
   } finally {
     cleanupTempDir(dir);
