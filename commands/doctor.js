@@ -179,22 +179,24 @@ function renderDoctor(payload) {
   const setUp = fs.existsSync(path.join(payload.workspace_root, 'atris', 'atris.md'))
     || fs.existsSync(path.join(payload.workspace_root, '.atris'));
   const problems = [];
-  if (!payload.task_support) problems.push(`install node ${TASK_NODE_MAJOR} or newer (allow atris tasks to run)`);
-  if (!payload.cli_runnable) problems.push('reinstall atris (restore the program files)');
-  if (!payload.bin.shim) problems.push('reinstall atris (restore the startup file)');
+  if (!payload.task_support) problems.push(`install node ${TASK_NODE_MAJOR} or newer  (atris tasks need it)`);
+  if (!payload.cli_runnable) problems.push('npm install -g atris  (reinstall atris; a program file is missing)');
+  if (!payload.bin.shim) problems.push('npm install -g atris  (reinstall atris; its startup file is damaged)');
   if (!payload.auth.signed_in) problems.push('atris login  (sign in)');
   if (!setUp) problems.push('atris init  (set up this folder)');
   if (setUp && m && !m.members) problems.push('atris init  (add a team to this folder)');
-  if (m && !m.git_installed) problems.push('install git (allow the team to work on copies)');
+  if (m && !m.git_installed) problems.push('install git  (the team works on safe copies with it)');
   else if (m && !m.git_repo) problems.push('git init  (let the team work on copies in this folder)');
   if (m && !m.tools.length && !m.built_in_tool && payload.auth.signed_in) {
-    problems.push('install claude code or codex (give the team a coding tool)');
+    problems.push('install claude code or codex  (the team needs one coding tool)');
   }
   const count = problems.length;
   const lines = [count ? `atris doctor: ${count === 1 ? 'one thing needs' : `${count} things need`} fixing.` : 'atris doctor: this computer is ready.', ''];
   const row = (label, value) => `  ${label.padEnd(14)}${value}`;
   lines.push(row('atris', `v${payload.version}`));
-  lines.push(row('node', `${payload.node.version} (${payload.task_support ? 'new enough' : 'too old'}; atris needs ${TASK_NODE_MAJOR} or newer; ${payload.node.exec_path || 'path unknown'})`));
+  lines.push(row('node', payload.task_support
+    ? `${payload.node.version} (new enough; atris needs ${TASK_NODE_MAJOR} or newer)`
+    : `${payload.node.version} (too old; atris needs ${TASK_NODE_MAJOR} or newer; found at ${payload.node.exec_path || 'an unknown path'})`));
   lines.push(row('signed in', payload.auth.signed_in ? (payload.auth.email || 'yes, account unknown') : 'no'));
   lines.push(row('this folder', `${payload.workspace_root} (${setUp ? 'set up' : 'not set up'})`));
   if (m) {

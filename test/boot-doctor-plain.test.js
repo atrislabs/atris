@@ -33,7 +33,7 @@ test('boot and doctor speak plainly in isolated folders', (t) => {
   fs.writeFileSync(path.join(empty, 'atris', 'doc-health', 'questions.jsonl'), JSON.stringify({ q: 'where is the guide', expect: 'guide.md' }) + '\n');
   const created = JSON.parse(run(empty, 'task', 'new', 'write a useful guide', '--json')).task;
   run(empty, 'task', 'claim', created.display_id, '--as', 'tester');
-  const busy = run(empty, 'atris.md'); plain(busy); assert.match(busy, /now\s+write a useful guide/); assert.match(busy, /docs\s+\d+\/100.*sample questions/);
+  const busy = run(empty, 'atris.md'); plain(busy); assert.match(busy, /now\s+write a useful guide/); assert.match(busy, /docs\s+\d+\/100 · the map answers .* tokens to read at start/);
   const notReady = run(empty, 'doctor'); plain(notReady); assert.match(notReady, /needs? fixing/);
   const json = JSON.parse(run(empty, 'doctor', '--json'));
   assert.deepEqual(Object.keys(json).sort(), ['action', 'auth', 'bin', 'cli_runnable', 'home', 'install_git', 'members', 'node', 'ok', 'task_support', 'task_support_requires', 'version', 'version_line', 'warnings', 'workspace_root'].sort());
@@ -47,8 +47,8 @@ test('doctor names each kind of failure and its first fix', () => {
   const base = { version: '1', node: { version: 'v22.0.0', exec_path: '/node' }, task_support: true, cli_runnable: true, bin: { shim: true, public_bin: 'bin/atris', shim_bytes: 10 }, auth: { signed_in: true, email: 'a' }, workspace_root: __dirname, members: { members: 1, git_installed: true, git_repo: true, tools: ['codex'], built_in_tool: true }, warnings: [] };
   const cases = [
     [{ task_support: false }, /node.*too old/, /fix: install node/],
-    [{ cli_runnable: false }, /program file is missing/, /fix: reinstall atris/],
-    [{ bin: { shim: false, public_bin: 'bin/atris', shim_bytes: null } }, /startup file.*missing/, /fix: reinstall atris/],
+    [{ cli_runnable: false }, /program file is missing/, /fix: npm install -g atris  \(reinstall atris/],
+    [{ bin: { shim: false, public_bin: 'bin/atris', shim_bytes: null } }, /startup file.*missing/, /fix: npm install -g atris  \(reinstall atris/],
     [{ auth: { signed_in: false } }, /signed in\s+no/, /fix: atris login/],
   ];
   for (const [change, row, fix] of cases) { const text = renderDoctor({ ...base, ...change }); assert.match(text, row); assert.match(text, fix); }

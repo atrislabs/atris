@@ -1738,7 +1738,7 @@ function showWelcomeVisualization() {
   const row = (label, value) => `  ${label.padEnd(9)}${value}`;
   const sub = (text) => `  ${' '.repeat(9)}- ${text}`;
   const trimTitle = (t) => {
-    const title = String(t).replace(/^Generate MAP\.md, scan codebase, create navigation index with file:line refs$/, 'create a guide to this project and where to find things');
+    const title = String(t);
     if (title.length <= 64) return title;
     const cut = title.slice(0, 61);
     const boundary = cut.lastIndexOf(' ');
@@ -1882,8 +1882,8 @@ function showWelcomeVisualization() {
     if (health.ok && map.trim() && !starterMap) {
       const score = health.lookup_hops.score;
       const detail = score === null
-        ? 'add sample questions to check whether the map helps people find answers'
-        : `${Math.round(score * 100)}% of sample questions can be answered from the map · about ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k estimated tokens across startup documents`;
+        ? 'add sample questions to test whether the map leads to answers'
+        : `the map answers ${Math.round(score * 100) >= 100 ? 'every sample question' : `${Math.round(score * 100)}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
       console.log(row('docs', `${Math.round(health.overall.total)}/100 · ${detail}`));
     }
   } catch {
@@ -1957,7 +1957,7 @@ function showWelcomeVisualization() {
     if (landInfo.due > 0) landText += ` (${landInfo.due} overdue)`;
     tidyBits.push(landText);
   }
-  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to review`);
+  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to clear out`);
   if (rotInfo && rotInfo.lessons > 0) tidyBits.push(`${rotInfo.lessons} open problem${rotInfo.lessons === 1 ? '' : 's'}`);
   if (tidyBits.length) {
     console.log(row('tidy', tidyBits.join(', ')));
