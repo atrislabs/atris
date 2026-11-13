@@ -1882,7 +1882,7 @@ function showWelcomeVisualization() {
     if (health.ok && map.trim() && !starterMap) {
       const score = health.lookup_hops.score;
       const detail = score === null
-        ? 'add sample questions to test whether the map leads to answers'
+        ? 'add sample questions to test the map: atris/doc-health/questions.jsonl'
         : `the map answers ${score >= 1 ? 'every sample question' : `${Math.min(99, Math.round(score * 100))}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
       console.log(row('docs', `${Math.round(health.overall.total)}/100 · ${detail}`));
     }

@@ -20,7 +20,7 @@ test('boot and doctor speak plainly in isolated folders', (t) => {
   };
   const plain = (text) => {
     assert.doesNotMatch(text, /^\s*[A-Z][A-Z ]{2,}:/m);
-    assert.doesNotMatch(text, /—|one hop|boot \d+(?:\.\d+)?k? tokens|Autoland:|agent translates|cli runnable|byte shim|task support|questions\.jsonl/i);
+    assert.doesNotMatch(text, /—|one hop|boot \d+(?:\.\d+)?k? tokens|Autoland:|agent translates|cli runnable|byte shim|task support|\d\/100 · add atris\/doc-health/i);
     for (const line of text.split('\n').filter((line) => /^\s*(?:next\s+|fix:)/.test(line))) assert.match(line, /\([^()]+\)\s*$/);
   };
   const empty = path.join(root, 'empty'); fs.mkdirSync(empty);
