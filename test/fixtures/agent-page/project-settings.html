@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project settings</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; line-height: 1.5; }
+    section, fieldset { margin: 1rem 0; }
+    .off { display: none; }
+  </style>
+  <script src="../../../lib/agent-page.js"></script>
+</head>
+<body>
+  <main>
+    <h1>Project settings</h1>
+    <p id="status" role="status"></p>
+    <p id="summary"></p>
+
+    <section aria-labelledby="general-heading">
+      <h2 id="general-heading">General</h2>
+      <label for="project-name">Project name</label>
+      <input id="project-name" type="text" value="Atlas">
+    </section>
+
+    <section aria-labelledby="members-heading">
+      <h2 id="members-heading">Members</h2>
+      <ul>
+        <li data-member="Ana">
+          <span>Ana</span>
+          <label>Role for Ana
+            <select data-member-role="Ana">
+              <option value="owner" selected>Owner</option>
+              <option value="admin">Admin</option>
+              <option value="member">Member</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <button type="button" aria-label="Remove Ana" data-remove="Ana">Remove</button>
+        </li>
+        <li data-member="Ben">
+          <span>Ben</span>
+          <select aria-label="Role for Ben" data-member-role="Ben">
+            <option value="owner">Owner</option>
+            <option value="admin">Admin</option>
+            <option value="member" selected>Member</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <button type="button" aria-label="Remove Ben" data-remove="Ben">Remove</button>
+        </li>
+      </ul>
+    </section>
+
+    <fieldset>
+      <legend>Notifications</legend>
+      <label><input type="checkbox" id="digest"> Weekly digest</label>
+      <label><input type="checkbox" id="mentions" checked> Mentions</label>
+    </fieldset>
+
+    <button type="button" id="save">Save</button>
+
+    <section aria-labelledby="security-heading">
+      <h2 id="security-heading">Security</h2>
+      <label for="webhook">Webhook secret</label>
+      <input id="webhook" type="text" data-agent-secret value="whsec-fixture-0001">
+      <label for="owner-pw">Owner password</label>
+      <input id="owner-pw" type="password" value="pw-fixture-0002">
+      <label for="card">Card number</label>
+      <input id="card" type="text" autocomplete="cc-number" value="4242 4242 4242 4242">
+      <label for="otp">Verification code</label>
+      <input id="otp" type="text" autocomplete="one-time-code">
+    </section>
+
+    <section aria-labelledby="danger-heading">
+      <h2 id="danger-heading">Danger zone</h2>
+      <button type="button" id="archive"
+              data-agent-confirm="Archiving hides this project from every member. Ask the person before you press this.">Archive project</button>
+    </section>
+
+    <section data-agent-hidden aria-labelledby="billing-heading">
+      <h2 id="billing-heading">Billing internals</h2>
+      <label for="ledger">Internal ledger id</label>
+      <input id="ledger" type="text" value="ledger-fixture-0003">
+      <button type="button">Export billing</button>
+    </section>
+    <div class="off">
+      <button type="button">Debug reset</button>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var settings = {
+        projectName: 'Atlas',
+        members: { Ana: 'Owner', Ben: 'Member' },
+        digest: false,
+        mentions: true,
+        archived: false,
+        saves: 0
+      };
+      window.__settings = settings;
+
+      var status = document.getElementById('status');
+      var summary = document.getElementById('summary');
+
+      function render() {
+        var members = Object.keys(settings.members).map(function (name) {
+          return name + ' (' + settings.members[name] + ')';
+        }).join(', ');
+        summary.textContent = 'Project ' + settings.projectName + '. Members: ' + members +
+          '. Weekly digest ' + (settings.digest ? 'on' : 'off') + '.';
+      }
+
+      // A controlled input the way a framework keeps one: the page remembers the value it
+      // last saw through the value property. A plain assignment therefore looks already seen,
+      // and only a change made by the native setter plus an input event reaches the page state.
+      var nameInput = document.getElementById('project-name');
+      var nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      var tracked = nameInput.value;
+      Object.defineProperty(nameInput, 'value', {
+        configurable: true,
+        get: function () { return nativeValue.get.call(this); },
+        set: function (next) { tracked = String(next); nativeValue.set.call(this, next); }
+      });
+      nameInput.addEventListener('input', function () {
+        var fromDom = nativeValue.get.call(nameInput);
+        if (fromDom === tracked) return;
+        tracked = fromDom;
+        settings.projectName = fromDom;
+        render();
+      });
+
+      document.querySelectorAll('[data-member-role]').forEach(function (select) {
+        select.addEventListener('change', function () {
+          var name = select.getAttribute('data-member-role');
+          var role = select.options[select.selectedIndex].text;
+          settings.members[name] = role;
+          status.textContent = 'Role for ' + name + ' is ' + role + '.';
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-remove]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var name = button.getAttribute('data-remove');
+          delete settings.members[name];
+          button.closest('li').remove();
+          status.textContent = 'Removed ' + name + '.';
+          render();
+        });
+      });
+
+      document.getElementById('digest').addEventListener('change', function (event) {
+        settings.digest = event.target.checked;
+        render();
+      });
+
+      document.getElementById('save').addEventListener('click', function (event) {
+        settings.saves += 1;
+        window.__lastClick = {
+          acting: document.documentElement.getAttribute('data-agent-acting'),
+          agentAct: event.agentAct || null
+        };
+        status.textContent = 'Saved ' + settings.projectName + '.';
+      });
+
+      document.getElementById('archive').addEventListener('click', function () {
+        settings.archived = true;
+        status.textContent = 'Project archived.';
+        render();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
