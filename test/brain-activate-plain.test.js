@@ -36,7 +36,7 @@ test('start-up cards are useful and read-only until saved', () => {
     assert.equal(spawnSync('git', ['diff'], { cwd: root, encoding: 'utf8' }).stdout, '');
     assert.equal(spawnSync('git', ['diff', '--cached'], { cwd: root, encoding: 'utf8' }).stdout, before);
     assert.equal(run('brain', 'activate', '--verify').status, 1);
-    assert.match(run('brain', 'activate', '--yes', '--verify').stdout, /checked: the saved notes are in place/);
+    assert.match(run('brain', 'activate', '--yes', '--verify').stdout, /\n\nchecked: the saved notes are in place/);
     assert.doesNotMatch(run('brain', 'activate').stdout, /notes are .* old|not saved yet/);
     const statePath = path.join(root, 'atris', 'brain', 'state.json');
     const state = JSON.parse(fs.readFileSync(statePath));

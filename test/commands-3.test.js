@@ -471,8 +471,8 @@ test('brain compile writes loadable status and ledger artifacts', () => {
     seedBrainWorkspace(dir);
     const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris brain compiled/);
-    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.match(res.stdout, /start-up notes saved for/);
+    assert.match(res.stdout, /status: atris\/brain\/STATUS.md/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'self_improvement_ledger.md')), true);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'now.md')), true);
@@ -481,10 +481,10 @@ test('brain compile writes loadable status and ledger artifacts', () => {
     assert.match(status, /atris\/MAP\.md/);
     assert.match(status, /atris\/TODO\.md/);
     assert.doesNotMatch(status, /sync-language\.md|activation\/SKILL\.md/);
-    assert.match(status, /First-message rule/);
+    assert.match(status, /First reply:/);
     assertAdvertisedAtrisPathsExist(dir, status);
     const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
-    assert.match(agents, /Atris Brain Compile/);
+    assert.match(agents, /Atris start-up notes/);
     assert.doesNotMatch(agents, /sync-language\.md|activation\/SKILL\.md/);
     assertAdvertisedAtrisPathsExist(dir, agents);
     const state = collectState(dir);
@@ -630,7 +630,7 @@ test('brain compile --json returns machine-readable missing-workspace errors', (
     assert.equal(res.stderr, '');
     const body = JSON.parse(res.stdout);
     assert.equal(body.ok, false);
-    assert.match(body.error, /atris\/ folder not found/);
+    assert.match(body.error, /this folder is not set up for atris yet/);
     assert.doesNotMatch(res.stdout + res.stderr, /at ensureAtrisDir|Node\.js/);
   } finally {
     cleanupTempDir(dir);
@@ -750,8 +750,8 @@ test('brain compile counts task review episodes as learning state', () => {
 
     const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /State rows: \d+ raw \/ \d+ valid/);
-    assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
+    assert.match(res.stdout, /status: atris\/brain\/STATUS.md/);
+    assert.match(res.stdout, /score finished work to help choose the next step/);
 
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
     const taskEpisodes = state.stateFiles.find(item => item.path.endsWith('task_episodes.jsonl'));
@@ -759,7 +759,7 @@ test('brain compile counts task review episodes as learning state', () => {
     assert.equal(taskEpisodes.validRows, 2);
 
     const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
-    assert.match(status, /2 episode row\(s\) are available/);
+    assert.match(status, /2 finished work records are available to score/);
     assert.doesNotMatch(status, /Capture one operator approval/);
   } finally {
     cleanupTempDir(dir);
@@ -807,8 +807,8 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
 
     const compile = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /State rows: \d+ raw \/ \d+ valid/);
-    assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
+    assert.match(compile.stdout, /status: atris\/brain\/STATUS.md/);
+    assert.doesNotMatch(compile.stdout, /score finished work to help choose the next step/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1038,12 +1038,14 @@ test('brain scorecard uses primary checkout state from thin worktrees', () => {
 
     const compile = runCli(['brain', 'compile', '--yes', '--root', worktreePath, '--verify'], { cwd: worktreePath });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /State rows: 8 raw \/ 8 valid/);
-    assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
+    assert.match(compile.stdout, /status: atris\/brain\/STATUS.md/);
+    assert.doesNotMatch(compile.stdout, /score finished work to help choose the next step/);
 
     const status = fs.readFileSync(path.join(worktreePath, 'atris', 'brain', 'STATUS.md'), 'utf8');
     assert.match(status, new RegExp(`State root: ${payload.stateRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(primary checkout\\)`));
     const state = collectState(worktreePath);
+    assert.equal(state.totalRows, 8);
+    assert.equal(state.validRows, 8);
     assert.equal(fs.realpathSync(state.stateRoot), fs.realpathSync(dir));
     assert.deepEqual(
       state.stateRoots.map(item => fs.realpathSync(item)),
@@ -1248,12 +1250,12 @@ test('brain activate prints a mission card from the compiled brain', () => {
     seedBrainWorkspace(dir);
     const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
-    assert.match(res.stdout, /OPERATOR: unknown/);
-    assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
-    assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
-    assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
-    assert.match(res.stdout, /VERIFY: brain artifacts present/);
+    assert.match(res.stdout, /is ready/);
+    assert.match(res.stdout, /right now:/);
+    assert.match(res.stdout, /read these first:/);
+    assert.match(res.stdout, /atris\/MAP.md/);
+    assert.match(res.stdout, /today's move:|right now:/);
+    assert.match(res.stdout, /checked: the saved notes are in place/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1266,10 +1268,10 @@ test('brain activate can target a member and print their next work block', () =>
     runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
-    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
-    assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
-    assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
+    assert.match(res.stdout, /is ready/);
+    assert.match(res.stdout, /is ready for justin/);
+    assert.match(res.stdout, /next: take one step toward a customer/);
+    assert.match(res.stdout, /how did it go: atris brain yes/);
     const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));
     assert.equal(remembered.member, 'justin');
   } finally {
@@ -1296,11 +1298,11 @@ test('brain activate --verify fails with a missing member setup card instead of 
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'missing-one', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stdout, /OPERATOR: missing-one \(missing\)/);
-    assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/missing-one\/MEMBER\.md or rerun with an existing member/);
-    assert.match(res.stdout, /AVAILABLE MEMBERS: justin, keshav/);
+    assert.match(res.stdout, /not ready for missing-one: there is no team member by that name/);
+    assert.match(res.stdout, /next: create atris\/team\/missing-one\/MEMBER\.md, or pick one of/);
+    assert.match(res.stdout, /pick one of: justin, keshav/);
     assert.doesNotMatch(res.stdout, /Draft the customer one-pager/);
-    assert.match(res.stderr, /brain activate non-executable member activation card: missing-one \(missing\)/);
+    assert.match(res.stderr, /missing-one: there is no team member by that name/);
     assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
   } finally {
     cleanupTempDir(dir);
@@ -1317,9 +1319,9 @@ test('brain activate --json --verify returns machine-readable readiness failures
     assert.equal(missing.stderr, '');
     const missingBody = JSON.parse(missing.stdout);
     assert.equal(missingBody.ok, false);
-    assert.match(missingBody.error, /brain activate non-executable member activation card: missing-one \(missing\)/);
-    assert.match(missingBody.card, /OPERATOR: missing-one \(missing\)/);
-    assert.match(missingBody.card, /AVAILABLE MEMBERS: justin, keshav/);
+    assert.match(missingBody.error, /missing-one: there is no team member by that name/);
+    assert.match(missingBody.card, /not ready for missing-one: there is no team member by that name/);
+    assert.match(missingBody.card, /pick one of: justin, keshav/);
 
     const memberDir = path.join(dir, 'atris', 'team', 'placeholder');
     fs.mkdirSync(memberDir, { recursive: true });
@@ -1337,8 +1339,8 @@ test('brain activate --json --verify returns machine-readable readiness failures
     assert.equal(notReady.stderr, '');
     const notReadyBody = JSON.parse(notReady.stdout);
     assert.equal(notReadyBody.ok, false);
-    assert.match(notReadyBody.error, /brain activate non-executable member activation card: Placeholder Member \(not ready\)/);
-    assert.match(notReadyBody.card, /PROFILE ISSUES: persona is still template text/);
+    assert.match(notReadyBody.error, /placeholder: the team member details still contain placeholders/);
+    assert.match(notReadyBody.card, /persona is still template text/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1369,11 +1371,11 @@ test('brain activate --verify fails with a placeholder member readiness card', (
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'placeholder', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stdout, /OPERATOR: Placeholder Member \(not ready\)/);
-    assert.match(res.stdout, /NEXT MOVE: Replace placeholder sections in atris\/team\/placeholder\/MEMBER\.md/);
-    assert.match(res.stdout, /PROFILE ISSUES: persona is still template text; workflow is still template text; rules are still template text/);
+    assert.match(res.stdout, /not ready for placeholder/);
+    assert.match(res.stdout, /next: fill in atris\/team\/placeholder\/MEMBER\.md/);
+    assert.match(res.stdout, /persona is still template text; workflow is still template text; rules are still template text/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
-    assert.match(res.stderr, /brain activate non-executable member activation card: Placeholder Member \(not ready\)/);
+    assert.match(res.stderr, /placeholder: the team member details still contain placeholders/);
     assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
   } finally {
     cleanupTempDir(dir);
@@ -1390,11 +1392,11 @@ test('brain activate --verify fails with a member missing START_HERE readiness c
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stdout, /OPERATOR: Executor \(not ready\)/);
-    assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/executor\/START_HERE\.md/);
-    assert.match(res.stdout, /first concrete work block, verifier, and proof target/);
+    assert.match(res.stdout, /not ready for executor/);
+    assert.match(res.stdout, /next: create atris\/team\/executor\/START_HERE\.md/);
+    assert.match(res.stdout, /first task, a way to check it and the expected result/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
-    assert.match(res.stderr, /brain activate non-executable member activation card: Executor \(not ready\)/);
+    assert.match(res.stderr, /executor: the starting instructions are missing/);
     assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
   } finally {
     cleanupTempDir(dir);
@@ -1412,8 +1414,8 @@ test('brain activate routes validator members to concrete review work', () => {
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Validator — Reviewer: review the highest-risk open or recently completed task/);
-    assert.match(res.stdout, /name residual risk/);
+    assert.match(res.stdout, /review the riskiest open or recently finished task/);
+    assert.match(res.stdout, /record any remaining risks/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1433,8 +1435,8 @@ test('brain activate routes validator away from fake review work when nothing is
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Validator — Reviewer: wait for one concrete artifact or ask Navigator to create a reviewable task/);
-    assert.doesNotMatch(res.stdout, /review the highest-risk open or recently completed task/);
+    assert.match(res.stdout, /wait for work to review or ask the planner for a task/);
+    assert.doesNotMatch(res.stdout, /review the riskiest open or recently finished task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1451,8 +1453,8 @@ test('brain activate routes executor members to concrete build work', () => {
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Executor — Builder: execute the highest-leverage claimed task one scoped step at a time/);
-    assert.match(res.stdout, /hand off proof for review/);
+    assert.match(res.stdout, /work on the most useful assigned task/);
+    assert.match(res.stdout, /hand the result over for review/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1472,8 +1474,8 @@ test('brain activate routes executor away from fake build work when no task is o
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Executor — Builder: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch/);
-    assert.doesNotMatch(res.stdout, /execute the highest-leverage claimed task/);
+    assert.match(res.stdout, /ask the planner for a task with exact files, a way to check it and when to stop/);
+    assert.doesNotMatch(res.stdout, /work on the most useful assigned task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1504,10 +1506,10 @@ test('brain activate routes executor to certified review before creating work', 
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Executor — Builder: hand off certified review CLI-9 to the operator/);
+    assert.match(res.stdout, /ask a person to review CLI-9/);
     assert.match(res.stdout, /atris task accept CLI-9/);
     assert.match(res.stdout, /atris task revise CLI-9 --note "<what must change>"/);
-    assert.doesNotMatch(res.stdout, /ask Navigator to create one bounded task/);
+    assert.doesNotMatch(res.stdout, /ask the planner for a task with exact files/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1551,12 +1553,12 @@ test('brain activate lets codex executor continue when review is human-only', ()
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'codex-executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Codex Executor — Builder: certified reviews CLI-9 are human-only/);
-    assert.match(res.stdout, /Create the next bounded Codex task from Endgame runner-swap-safe/);
+    assert.match(res.stdout, /reviews CLI-9 need a person to approve them/);
+    assert.match(res.stdout, /create the next task from the long-range goal runner-swap-safe/);
     assert.match(res.stdout, /runner swaps should be config-only/);
-    assert.match(res.stdout, /do not accept XP/);
+    assert.match(res.stdout, /do not approve your own work/);
     assert.doesNotMatch(res.stdout, /atris task accept CLI-9/);
-    assert.doesNotMatch(res.stdout, /do not create new work until this checkpoint is clear/);
+    assert.doesNotMatch(res.stdout, /wait until this is settled before starting new work/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1597,9 +1599,9 @@ test('brain activate routes executor to agent-safe review before human accept ro
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Executor — Builder: run the agent-safe review lane for CLI-8/);
+    assert.match(res.stdout, /review CLI-8 using/);
     assert.match(res.stdout, /atris task review-chat CLI-8 --as codex-review/);
-    assert.doesNotMatch(res.stdout, /hand off certified review CLI-9/);
+    assert.doesNotMatch(res.stdout, /ask a person to review CLI-9/);
     assert.doesNotMatch(res.stdout, /atris task accept CLI-9/);
   } finally {
     cleanupTempDir(dir);
@@ -1617,8 +1619,8 @@ test('brain activate routes navigator members to concrete planning work', () => 
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'navigator', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Navigator — Planner: turn one messy or unclaimed intent into a MAP-backed plan/);
-    assert.match(res.stdout, /review-ready task/);
+    assert.match(res.stdout, /turn one messy request into a plan with exact files/);
+    assert.match(res.stdout, /task ready for review/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1645,8 +1647,8 @@ test('brain activate routes launcher members to concrete closeout work', () => {
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Launcher — The Closer: close one validated task into release-ready proof/);
-    assert.match(res.stdout, /name the publish step/);
+    assert.match(res.stdout, /prepare one checked task for release/);
+    assert.match(res.stdout, /name the next step/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1666,8 +1668,8 @@ test('brain activate routes launcher away from fake closeout work when no task r
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Launcher — The Closer: wait for one validated task receipt before closeout/);
-    assert.doesNotMatch(res.stdout, /close one validated task into release-ready proof/);
+    assert.match(res.stdout, /wait for a checked task/);
+    assert.doesNotMatch(res.stdout, /prepare one checked task for release/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1698,9 +1700,9 @@ test('brain activate routes launcher to certified review before closeout fallbac
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Launcher — The Closer: hand off certified review CLI-10 to the operator/);
+    assert.match(res.stdout, /ask a person to review CLI-10/);
     assert.match(res.stdout, /atris task accept CLI-10/);
-    assert.doesNotMatch(res.stdout, /wait for one validated task receipt before closeout/);
+    assert.doesNotMatch(res.stdout, /wait for a checked task/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1717,8 +1719,8 @@ test('brain activate routes brainstormer members to concrete idea-shaping work',
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'brainstormer', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Brainstormer — Idea & Reality Shaper: shape one raw idea into a concise vision/);
-    assert.match(res.stdout, /navigator-ready next step/);
+    assert.match(res.stdout, /turn one idea into a clear goal/);
+    assert.match(res.stdout, /next step for the planner/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1737,8 +1739,8 @@ test('brain activate routes researcher members to concrete research work', () =>
 
     const res = runCli(['brain', 'activate', '--yes', '--member', 'researcher', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Researcher — Deep Researcher: answer one explicit research question with primary sources/);
-    assert.match(res.stdout, /unverified gaps/);
+    assert.match(res.stdout, /answer one research question with original sources/);
+    assert.match(res.stdout, /what remains uncertain/);
     assert.doesNotMatch(res.stdout, /\(not ready\)/);
     assert.doesNotMatch(res.stdout, /use your START_HERE/);
   } finally {
@@ -1762,11 +1764,11 @@ test('brain activate routes mission and overnight members to concrete work block
 
     const mission = runCli(['brain', 'activate', '--yes', '--member', 'mission-lead', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(mission.status, 0, mission.stderr);
-    assert.match(mission.stdout, /Mission Lead: choose or create one bounded mission step, run its verifier/);
+    assert.match(mission.stdout, /choose or create one step, run its check/);
 
     const opus = runCli(['brain', 'activate', '--yes', '--member', 'opus-overnight', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(opus.status, 0, opus.stderr);
-    assert.match(opus.stdout, /Opus Overnight Worker: run the next zero-spend `rl-exp2` tick/);
+    assert.match(opus.stdout, /run the next rl-exp2 experiment without spending money/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1779,8 +1781,8 @@ test('brain activate remembers the last operator after the first member run', ()
     runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
-    assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
+    assert.match(res.stdout, /is ready for justin/);
+    assert.match(res.stdout, /next: take one step toward a customer/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1792,12 +1794,12 @@ test('brain gallery previews activation cards for every team member', () => {
     seedBrainWorkspace(dir);
     const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
-    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
-    assert.match(res.stdout, /Justin McDonald: run one customer-moving GTM rep/);
-    assert.match(res.stdout, /Keshav Rao: act as Customer 0/);
+    assert.match(res.stdout, /is ready for justin/);
+    assert.match(res.stdout, /is ready for keshav/);
+    assert.match(res.stdout, /take one step toward a customer/);
+    assert.match(res.stdout, /choose one important decision or improvement/);
     assert.match(res.stdout, /---/);
-    assert.match(res.stdout, /VERIFY: brain artifacts and member readiness present/);
+    assert.match(res.stdout, /checked: the saved notes are in place/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1816,7 +1818,7 @@ test('brain activation does not treat a generic operator member as the owner', (
       env: { ATRIS_OPERATOR: 'alex' },
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.doesNotMatch(result.stdout, /Operator: act as Customer 0/);
+    assert.doesNotMatch(result.stdout, /choose one important decision or improvement/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1833,7 +1835,7 @@ test('brain gallery does not overwrite the remembered operator', () => {
 
     const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
+    assert.match(res.stdout, /is ready for keshav/);
     assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
   } finally {
     cleanupTempDir(dir);
@@ -1850,7 +1852,7 @@ test('brain gallery --verify fails on not-ready member cards', () => {
 
     const res = runCli(['brain', 'gallery', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stderr, /brain gallery not-ready member activation cards: Executor/);
+    assert.match(res.stderr, /executor: the starting instructions are missing/);
     assert.doesNotMatch(res.stderr, /at verifyActivationGallery|Node\.js/);
   } finally {
     cleanupTempDir(dir);
@@ -1870,9 +1872,9 @@ test('brain gallery --json --verify returns machine-readable readiness failures'
     assert.equal(res.stderr, '');
     const body = JSON.parse(res.stdout);
     assert.equal(body.ok, false);
-    assert.match(body.error, /brain gallery not-ready member activation cards: Executor \(not ready\)/);
+    assert.match(body.error, /executor: the starting instructions are missing/);
     assert.deepEqual(body.members, ['executor', 'justin', 'keshav']);
-    assert.match(body.gallery, /OPERATOR: Executor \(not ready\)/);
+    assert.match(body.gallery, /not ready for executor/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1905,11 +1907,11 @@ proof_needed: leave a receipt in contribution-score
 `, 'utf8');
     const res = runCli(['brain', 'activate', '--yes', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir, env: { ATRIS_OPERATOR: 'keshav' } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
-    assert.match(res.stdout, /NEXT MOVE: Keshav Rao: act as Customer 0/);
-    assert.match(res.stdout, /SCORE: Level 1 - Customer 0 loop started/);
-    assert.match(res.stdout, /NEXT REP: log one receipt with evidence and next owner/);
-    assert.match(res.stdout, /PROOF: leave a receipt in contribution-score/);
+    assert.match(res.stdout, /is ready for keshav/);
+    assert.match(res.stdout, /choose one important decision or improvement/);
+    assert.match(res.stdout, /score: Level 1 - Customer 0 loop started/);
+    assert.match(res.stdout, /next rep: log one receipt with evidence and next owner/);
+    assert.match(res.stdout, /done when: leave a receipt in contribution-score/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1928,11 +1930,11 @@ test('brain activate supports founder lab mode for Keshav', () => {
       '--yes',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
-    assert.match(res.stdout, /MODE: founder lab/);
-    assert.match(res.stdout, /crazy company idea/);
-    assert.match(res.stdout, /customer wedge hypothesis/);
-    assert.match(res.stdout, /delegated next action/);
+    assert.match(res.stdout, /is ready for keshav/);
+    assert.match(res.stdout, /mode: founder lab/);
+    assert.match(res.stdout, /develop one company idea/);
+    assert.match(res.stdout, /identify a customer/);
+    assert.match(res.stdout, /assigned next step/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1952,7 +1954,7 @@ test('brain feedback appends linked scorecard and episode rows', () => {
       '--verify',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris brain feedback recorded/);
+    assert.match(res.stdout, /feedback recorded/);
 
     const scorecard = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8').trim());
     const episode = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), 'utf8').trim());
@@ -1977,8 +1979,8 @@ test('brain yes records approval with a plain note', () => {
       '--verify',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Rating: approve/);
-    assert.match(res.stdout, /Next: atris brain compile/);
+    assert.match(res.stdout, /feedback recorded/);
+    assert.match(res.stdout, /refresh the notes: atris brain compile/);
 
     const scorecard = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8').trim());
     assert.equal(scorecard.human_rating, 'approve');
@@ -2002,9 +2004,9 @@ test('brain go records an approval row without writing feedback rows', () => {
       '--verify',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris brain approval recorded/);
-    assert.match(res.stdout, /Decision: go/);
-    assert.match(res.stdout, /Status: approved_to_proceed/);
+    assert.match(res.stdout, /approval recorded/);
+    assert.match(res.stdout, /approval recorded: go/);
+    assert.match(res.stdout, /work can proceed/);
 
     const approval = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'approvals.jsonl'), 'utf8').trim());
     assert.equal(approval.human_decision, 'go');
@@ -2030,8 +2032,8 @@ test('brain approval edit records approval edit without changing brain edit feed
       '--verify',
     ], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Decision: edit/);
-    assert.match(res.stdout, /Status: needs_adjustment_before_action/);
+    assert.match(res.stdout, /approval recorded: edit/);
+    assert.match(res.stdout, /review the work before proceeding/);
 
     const approval = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'approvals.jsonl'), 'utf8').trim());
     assert.equal(approval.human_decision, 'edit');
@@ -2044,8 +2046,8 @@ test('brain approval edit records approval edit without changing brain edit feed
       '--verify',
     ], { cwd: dir });
     assert.equal(feedback.status, 0, feedback.stderr);
-    assert.match(feedback.stdout, /Atris brain feedback recorded/);
-    assert.match(feedback.stdout, /Rating: edit/);
+    assert.match(feedback.stdout, /feedback recorded/);
+    assert.match(feedback.stdout, /feedback recorded/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')), true);
   } finally {
     cleanupTempDir(dir);

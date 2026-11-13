@@ -599,12 +599,16 @@ function buildLoopHealth(stateFiles) {
 function strongestSignal(state) {
   const scores = countStateRows(state, 'scorecards.jsonl');
   const finished = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
-  if (scores && finished) return 'finished work and its scores are available to guide the next step.';
-  if (scores) return 'scores from past work are available to guide the next step.';
-  if (finished) return 'finished work is available to score.';
-  if ((state.loopHealth || []).some(channel => channel.active)) return 'recent activity is available to guide the next step.';
-  if (countStateRows(state, 'agent_mail.jsonl')) return 'team messages are available to guide the next step.';
-  if (countStateRows(state, 'agent_tasks.jsonl')) return 'team tasks are available to guide the next step.';
+  const active = (state.loopHealth || buildLoopHealth(state.stateFiles || [])).filter(channel => channel.active);
+  const activity = active.length ? ` recent activity comes from ${active.length} sources: ${active.map(channel => channel.label).join(', ')}.` : '';
+  if (scores && finished) return `${scores} scores and ${finished} finished work records are available to guide the next step.${activity}`;
+  if (scores) return `${scores} scores from past work are available to guide the next step.${activity}`;
+  if (finished) return `${finished} finished work records are available to score.${activity}`;
+  if (active.length) return `recent activity comes from ${active.length} sources: ${active.map(channel => channel.label).join(', ')}.`;
+  const mail = countStateRows(state, 'agent_mail.jsonl');
+  if (mail) return `${mail} team messages are available to guide decisions and follow-ups.`;
+  const tasks = countStateRows(state, 'agent_tasks.jsonl');
+  if (tasks) return `${tasks} team tasks are available to guide the next step.`;
   return 'there is little scored work yet. record feedback after the next task.';
 }
 
@@ -763,37 +767,40 @@ function rememberOperator(root, member) {
 
 function memberNextMove(member, state = null) {
   if (!member) return null;
-  const identity = `${member.slug} ${member.name}`;
-  const context = `${member.startHere} ${member.goals}`;
+  const identity = `${member.slug}\n${member.name}`;
+  const context = `${member.startHere}\n${member.goals}`;
   const review = state?.taskProjection?.agentNeededReviewTasks?.[0];
   const certified = state?.taskProjection?.certifiedReviewTasks?.[0];
-  const reviewMove = review ? `review ${review.ref} using atris task review-chat ${review.ref} --as codex-review. run the named check and record the result.` : null;
-  const handoff = certified ? `ask a person to approve or revise ${certified.ref} before starting more work.` : null;
-  if (/justin/i.test(identity)) return 'take one step toward a customer and record what happened.';
+  const reviewMove = review ? `review ${review.ref} using atris task review-chat ${review.ref} --as codex-review. run the check named in the review notes and approve or send it back without approving your own work.` : null;
+  const handoff = certified ? `ask a person to review ${certified.ref}. if approved, they can run atris task accept ${certified.ref}. if changes are needed, they can run atris task revise ${certified.ref} --note "<what must change>". wait until this is settled before starting new work.` : null;
+  const refs = (state?.taskProjection?.certifiedReviewTasks || []).map(task => task.ref).filter(Boolean);
+  const nextGoal = refs.length && member.slug === 'codex-executor'
+    ? `reviews ${refs.slice(0, 3).join(', ')} need a person to approve them. do not approve your own work. create the next task from the long-range goal ${state?.endgame?.slug || 'current goal'}: ${state?.endgame?.horizon || 'the most important gap'}. include the files, a way to check it and when to stop before editing.` : null;
+  if (member.slug === 'justin' || /justin/i.test(member.name || '')) return 'take one step toward a customer, update the relevant notes within 10 minutes and record what happened.';
   if (ownerIdentity().names.includes(String(member.slug || '').toLowerCase()) || ownerIdentity().names.includes(String(member.name || '').toLowerCase())) return 'choose one important decision or improvement and name who will take the next step.';
-  if (/opus|overnight/i.test(identity)) return 'run the next experiment and record what changed.';
-  if (/mission[- ]lead|mission lead/i.test(identity)) return 'choose one step, check the result and record what comes next.';
-  if (/validator|reviewer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0 ? 'wait for work to review or ask the planner for a task with a way to check it.' : 'review the riskiest task, run its check and record any remaining risks.');
-  if (/executor|builder/i.test(identity)) return (state?.todo?.open || 0) === 0 ? (reviewMove || handoff || 'ask the planner for a task with exact files and a way to check it.') : 'work on the most useful assigned task, run its check and hand the result over for review.';
+  if (/opus|overnight/i.test(identity)) return 'run the next rl-exp2 experiment without spending money. finish one result, describe the improvement and record what happened.';
+  if (/mission[- ]lead|mission lead/i.test(identity)) return 'choose or create one step, run its check, record the result and what comes next.';
+  if (/validator|reviewer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0 ? 'wait for work to review or ask the planner for a task with a way to check it, an expected result and a list of remaining risks.' : 'review the riskiest open or recently finished task, run its check, record any remaining risks and approve or block it with the result.');
+  if (/executor|builder/i.test(identity)) return (state?.todo?.open || 0) === 0 ? (reviewMove || nextGoal || handoff || 'ask the planner for a task with exact files, a way to check it and when to stop before editing.') : 'work on the most useful assigned task, run its check and hand the result over for review.';
   if (/navigator|planner/i.test(identity)) return 'turn one messy request into a plan with exact files, a way to check it and a task ready for review.';
-  if (/launcher|closer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.done || 0) === 0 ? 'wait for a checked task or ask the reviewer for a decision.' : 'prepare one checked task for release, record what changed and name the next step.');
-  if (/brainstormer|idea shaper|reality shaper/i.test(identity)) return 'turn one idea into a clear goal, options, limits and a next step for the planner.';
-  if (/researcher|research/i.test(identity)) return 'answer one research question with original sources and note what remains uncertain.';
-  if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) return 'take one step toward a customer and record what happened.';
+  if (/launcher|closer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.done || 0) === 0 ? 'wait for a checked task or ask the reviewer for a decision.' : 'prepare one checked task for release, record what changed and the lesson, update the map or journal if needed and name the next step.');
+  if (/brainstormer|idea shaper|reality shaper/i.test(identity)) return 'turn one idea into a clear goal, the current situation, one or two options, limits, success criteria and a next step for the planner.';
+  if (/researcher|research/i.test(identity)) return 'answer one research question with original sources, supported findings, what remains uncertain and a short handoff.';
+  if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) return 'take one step toward a customer, update the relevant notes within 10 minutes and record what happened.';
   if (/ceo|lab/i.test(identity) || /ceo|lab|synthesis loop|decision queue|building|closing|investor/i.test(context)) return 'make one important decision or product improvement and record the result.';
-  if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) return 'run the next experiment and record what changed.';
-  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) return 'review the riskiest task, run its check and record any remaining risks.';
-  if (/bounded mission|mission step|proof target|verifier/i.test(context)) return 'choose one step, check the result and record what comes next.';
+  if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) return 'run the next rl-exp2 experiment without spending money. finish one result, describe the improvement and record what happened.';
+  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) return 'review the riskiest open or recently finished task, run its check, record any remaining risks and approve or block it with the result.';
+  if (/bounded mission|mission step|proof target|verifier/i.test(context)) return 'choose or create one step, run its check, record the result and what comes next.';
   return 'follow your starting notes, finish the first task and record how it went.';
 }
 
 function modeNextMove(member, mode) {
   if (!member || !mode) return null;
   const text = String(mode).toLowerCase().replace(/[_-]+/g, ' ');
-  if (/founder|lab|idea|strategy/.test(text)) return { move: 'develop one company idea, identify a customer and assign the next step.', proof: 'an idea, a customer and an assigned next step are recorded.' };
-  if (/build|builder|product|backend|code/.test(text)) return { move: 'make one product or system improvement.', proof: 'the change is made and its check passes.' };
-  if (/close|closer|whale|investor|customer/.test(text)) return { move: 'advance one customer or investor conversation with a clear next step.', proof: 'the conversation and next step are recorded.' };
-  if (/decision|queue|approve|approval/.test(text)) return { move: 'make one decision that needs you and assign the follow-up.', proof: 'the decision and follow-up are recorded.' };
+  if (/founder|lab|idea|strategy/.test(text)) return { label: 'founder lab', move: 'develop one company idea, identify a customer and assign the next step.', proof: 'an idea note, a customer target, an assigned next step and feedback are recorded.' };
+  if (/build|builder|product|backend|code/.test(text)) return { label: 'builder', move: 'make one product or system improvement.', proof: 'the change is made, its check passes and feedback is recorded.' };
+  if (/close|closer|whale|investor|customer/.test(text)) return { label: 'closer', move: 'advance one customer or investor conversation with a clear next step.', proof: 'a drafted or sent message, a relationship update, a next step and feedback are recorded.' };
+  if (/decision|queue|approve|approval/.test(text)) return { label: 'decision queue', move: 'make one decision that needs you and assign the follow-up.', proof: 'the decision, person responsible, follow-up and feedback are recorded.' };
   return null;
 }
 
@@ -832,14 +839,15 @@ function buildActivationCard(state, options = {}) {
   let reason = null;
   let fix = null;
   if (!member) { reason = 'there is no team member by that name'; const members = listMemberSlugs(state.root); fix = `create atris/team/${slug}/MEMBER.md${members.length ? `, or pick one of: ${members.join(', ')}` : ''}`; }
-  else if (memberProfileIssues(member).length) { reason = 'the team member details still contain placeholders'; fix = `fill in atris/team/${slug}/MEMBER.md`; }
-  else if (!member.startHere.trim()) { reason = 'the starting instructions are missing'; fix = `create atris/team/${slug}/START_HERE.md`; }
+  else if (memberProfileIssues(member).length) { reason = `the team member details still contain placeholders: ${memberProfileIssues(member).join('; ')}`; fix = `fill in atris/team/${slug}/MEMBER.md`; }
+  else if (!member.startHere.trim()) { reason = 'the starting instructions are missing'; fix = `create atris/team/${slug}/START_HERE.md with the first task, a way to check it and the expected result`;  }
   if (reason) return { ready: false, reason, member: slug, text: `${state.name} is not ready for ${slug}: ${reason}.\n\nnext: ${fix}`, readFirst, notes, summary };
   if (options.remember) rememberOperator(state.root, member);
   const mode = modeNextMove(member, options.mode);
   const score = memberScoreContext(state.root, member);
   const proof = mode?.proof || score?.proofNeeded || score?.nextRep || 'the task is finished and its result is recorded.';
   const lines = [`${state.name} is ready for ${slug}.`, '', `next: ${mode?.move || memberNextMove(member, state) || nextMove(state)}`, 'why: it is the next piece of work for this role, picked from the current notes, the task list and past feedback.', `done when: ${proof}`];
+  if (mode?.label) lines.push(`mode: ${mode.label}`);
   if (score?.score) lines.push(`score: ${score.score}`);
   if (score?.nextRep) lines.push(`next rep: ${score.nextRep}`);
   lines.push('how did it go: atris brain yes, atris brain edit "what to change", or atris brain no');
@@ -1505,7 +1513,7 @@ function brainCommand(args = process.argv.slice(3)) {
     } else {
       console.log(`\n${output}`);
       if (error) console.error(error);
-      else if (options.verify) console.log('checked: the saved notes are in place.');
+      else if (options.verify) console.log('\nchecked: the saved notes are in place.');
       console.log('');
     }
     return error ? 1 : 0;
