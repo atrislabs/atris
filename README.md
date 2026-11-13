@@ -471,6 +471,8 @@ Editable text regions (`contenteditable`) are not typed into. Plain ones are cou
 
 The tests here drive real Chrome. The controlled-input test imitates React with a hand-built value tracker. The dropdown tests use hand-built dropdowns. An automated check against real React is not done yet; one run by hand against a set of real React parts (a select, a combobox, and menus) passed.
 
+To see what the file saves an agent, run `node scripts/agent-page-measure.js`. It loads the settings fixture in headless Chrome and does one fixed task three ways: through this file, through the accessibility tree, and through the raw page. It prints how many calls each way takes and how many characters come back to the agent, and checks that all three end in the same page state. The plan is fixed, so it measures reading and steps, not a real model's time or cost, and no screenshots are involved. Pass a URL and `--task forms` to run the same kind of task on a React page, or `--json` for numbers a script can read.
+
 For agents that speak tools, `agentTools` lists three tools (`page_snapshot`, `page_act`, `page_query`) with JSON schemas. `registerTools(agent, { allow })` registers them on `document.modelContext` when the page offers it, and does nothing otherwise.
 
 The mark names and the snapshot, act, and query shape come from Vercel's UI SDK agent bridge. The code here is our own.
