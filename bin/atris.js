@@ -1738,7 +1738,11 @@ function showWelcomeVisualization() {
   const row = (label, value) => `  ${label.padEnd(9)}${value}`;
   const sub = (text) => `  ${' '.repeat(9)}- ${text}`;
   const trimTitle = (t) => {
-    const title = String(t);
+    // The first task every new folder gets is written for agents; show a
+    // newcomer what it means instead of its file names.
+    const title = /^Generate MAP\.md, scan codebase\b/.test(String(t))
+      ? 'map this folder so agents can find things'
+      : String(t);
     if (title.length <= 64) return title;
     const cut = title.slice(0, 61);
     const boundary = cut.lastIndexOf(' ');
