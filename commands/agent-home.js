@@ -15,6 +15,9 @@ const { parseArgs, loginToken } = require('../lib/business-target');
 const { frontmatterOf } = require('../lib/member-export');
 const home = require('../lib/agent-home');
 
+// The route for one part of an agent's stored folder.
+const homeRoute = (id, leaf) => ['/agents', encodeURIComponent(id), 'home', leaf].join('/');
+
 const HOME_VERBS = new Set(['pull', 'push', 'snapshot']);
 // Twice the 2,000 file limit, even if every answer moves by one file.
 const MAX_BUNDLE_ANSWERS = 4000;
@@ -142,7 +145,7 @@ async function pull({ ref, flags, cwd, env, call, log, err }) {
   let after = '';
   let gone = [];
   for (let answers = 1; ; answers += 1) {
-    const res = await call(`/agents/${encodeURIComponent(agent.id)}/home/bundle`, { method: 'POST', body: { have, after } });
+    const res = await call(homeRoute(agent.id, 'bundle'), { method: 'POST', body: { have, after } });
     if (!res || !res.ok) {
       if (answers > 1) home.saveState(rootReal, state);
       else if (made) fs.rmSync(rootReal, { recursive: true, force: true });
@@ -249,7 +252,7 @@ async function push({ flags, cwd, call, log, err }) {
   if (!groups.length) groups.push([]);
   for (let i = 0; i < groups.length; i += 1) {
     const body = { files: groups[i], delete: i === 0 ? deleted : [] };
-    const res = await call(`/agents/${encodeURIComponent(state.agent_id)}/home/files`, { method: 'PUT', body });
+    const res = await call(homeRoute(state.agent_id, 'files'), { method: 'PUT', body });
     if (!res || !res.ok || !res.data || !Array.isArray(res.data.written)) {
       if (result.written.length || result.deleted.length) home.saveState(dir, state);
       err(`could not push ${label}: ${res && res.ok ? 'the server sent an answer this version of atris cannot read' : why(res, label)}`);
@@ -297,7 +300,7 @@ async function snapshot({ ref, flags, cwd, env, call, log, err }) {
   if (!agent) return 1;
   const label = agent.handle || agent.id;
   const reason = typeof flags.reason === 'string' ? flags.reason : 'saved with atris agent snapshot';
-  const res = await call(`/agents/${encodeURIComponent(agent.id)}/home/snapshots`, { method: 'POST', body: { reason } });
+  const res = await call(homeRoute(agent.id, 'snapshots'), { method: 'POST', body: { reason } });
   if (!res || !res.ok) { err(`could not save a snapshot of ${label}: ${why(res, label)}`); return 1; }
   const id = res.data && (res.data.snapshot_id || res.data.id);
   if (flags.json) { log(JSON.stringify({ ok: true, agent_id: agent.id, snapshot_id: id || null }, null, 2)); return 0; }
