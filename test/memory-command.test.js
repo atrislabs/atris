@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const { memoryCommand } = require('../commands/memory');
@@ -13,9 +14,11 @@ const { cleanRel, STATE_FILE } = require('../lib/memory-folder');
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
 // A stand-in for the memory part of the Atris server, kept in a Map.
-function fakeServer(initial, { raw = true } = {}) {
+function fakeServer(initial, { raw = true, bundle = false, listingEtags = false, bundleSize = 1000 } = {}) {
   const files = new Map(Object.entries(initial));
   const calls = [];
+  const bodies = [];
+  const etag = (text) => crypto.createHash('md5').update(text).digest('hex');
   const fail = (status, error) => ({ ok: false, status, data: null, error });
   const ok = (data) => ({ ok: true, status: 200, data });
   const request = async (pathname, options = {}) => {
@@ -23,6 +26,18 @@ function fakeServer(initial, { raw = true } = {}) {
     const param = (name) => url.searchParams.get(name);
     calls.push(`${options.method || 'GET'} ${url.pathname}`);
     assert.ok(options.token, 'every call carries the login token');
+    if (url.pathname === '/memory/bundle' && bundle) {
+      bodies.push(options.body);
+      const { have, after } = options.body;
+      const changed = [...files].filter(([rel, text]) => have[rel] !== etag(text)).sort(([a], [b]) => a.localeCompare(b));
+      const offset = Number(after || 0);
+      return ok({
+        pages: changed.slice(offset, offset + bundleSize).map(([rel, text]) => ({ path: rel, text, etag: etag(text) })),
+        unchanged: Object.entries(have).filter(([rel, value]) => files.has(rel) && etag(files.get(rel)) === value).length,
+        gone: Object.keys(have).filter((rel) => !files.has(rel)), skipped: [],
+        next: offset + bundleSize < changed.length ? String(offset + bundleSize) : null,
+      });
+    }
     if (url.pathname === '/memory/ls') {
       const base = param('folder') ? `${param('folder')}/` : '';
       const seen = new Map();
@@ -30,7 +45,7 @@ function fakeServer(initial, { raw = true } = {}) {
         if (!key.startsWith(base)) continue;
         const [name, ...deeper] = key.slice(base.length).split('/');
         if (deeper.length) seen.set(`${name}/`, { name: `${name}/`, files: 1 });
-        else seen.set(name, { name, size: Buffer.byteLength(text) });
+        else seen.set(name, { name, size: Buffer.byteLength(text), ...(listingEtags ? { etag: etag(text) } : {}) });
       }
       return ok({ items: [...seen.values()] });
     }
@@ -59,7 +74,7 @@ function fakeServer(initial, { raw = true } = {}) {
     }
     return fail(404, 'Not Found');
   };
-  return { files, calls, request };
+  return { files, calls, bodies, request };
 }
 
 function run(sub, dir, server, extra = []) {
@@ -86,6 +101,108 @@ const START = {
   'logs/2026/2026-11-09.md': '# 2026-11-09\n\n- Applied to Wise\n',
   'files/notes/todo.txt': 'one\ntwo\n',
 };
+
+test('bundle pulls 200 pages in a handful of requests and follows cursors', async () => {
+  const dir = tmp();
+  const files = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`wiki/${String(i).padStart(3, '0')}.md`, `page ${i}\n`]));
+  const server = fakeServer(files, { bundle: true, bundleSize: 75 });
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 0);
+  assert.equal(server.calls.length, 3);
+  assert.deepEqual(server.bodies.map((body) => body.after), ['', '75', '150']);
+  for (const [rel, text] of Object.entries(files)) assert.equal(fs.readFileSync(path.join(dir, rel), 'utf8'), text);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an unchanged bundle uses one request and writes no files', async () => {
+  const dir = tmp();
+  const server = fakeServer(START, { bundle: true });
+  assert.equal((await run('pull', dir, server)).code, 0);
+  const paths = [STATE_FILE, ...Object.keys(START)].map((rel) => path.join(dir, rel));
+  const before = paths.map((abs) => fs.statSync(abs).mtimeMs);
+  server.calls.length = 0;
+  assert.equal((await run('pull', dir, server)).code, 0);
+  assert.deepEqual(server.calls, ['POST /memory/bundle']);
+  assert.deepEqual(paths.map((abs) => fs.statSync(abs).mtimeMs), before);
+  assert.equal(Object.keys(server.bodies.at(-1).have).length, Object.keys(START).length);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a changed bundle page is rewritten and local edits stay safe', async () => {
+  const dir = tmp();
+  const server = fakeServer(START, { bundle: true });
+  await run('pull', dir, server);
+  server.files.set('now.md', 'changed on server\n');
+  fs.writeFileSync(path.join(dir, 'about.md'), 'local edit\n');
+  server.files.set('wiki/learning.md', 'server edit\n');
+  fs.writeFileSync(path.join(dir, 'wiki/learning.md'), 'local edit\n');
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'now.md'), 'utf8'), 'changed on server\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'about.md'), 'utf8'), 'local edit\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/learning.md'), 'utf8'), 'local edit\n');
+  assert.match(result.text, /Left wiki\/learning.md alone/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('older servers fall back and avoid fetching matching listing etags', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'wiki/a.md': 'a\n', 'wiki/b.md': 'b\n' }, { listingEtags: true });
+  assert.equal((await run('pull', dir, server)).code, 0);
+  server.calls.length = 0;
+  server.files.set('wiki/b.md', 'new\n');
+  assert.equal((await run('pull', dir, server)).code, 0);
+  assert.equal(server.calls.filter((call) => call === 'GET /memory/file').length, 1);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/b.md'), 'utf8'), 'new\n');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bundle reports removed pages without removing local copies and restores deleted local pages', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'wiki/a.md': 'a\n', 'wiki/b.md': 'b\n' }, { bundle: true });
+  await run('pull', dir, server);
+  server.files.delete('wiki/a.md');
+  fs.unlinkSync(path.join(dir, 'wiki/b.md'));
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 0);
+  assert.match(result.text, /1 file is no longer on the server/);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/a.md'), 'utf8'), 'a\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/b.md'), 'utf8'), 'b\n');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE))).files['wiki/a.md'], undefined);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bundle skipped files use the existing download fallback', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'files/a.txt': 'hello\n' }, { bundle: true });
+  const request = server.request;
+  server.request = async (pathname, options) => {
+    if (pathname === '/memory/bundle') return { ok: true, status: 200, data: { pages: [], unchanged: 0, gone: [], skipped: [{ path: 'files/a.txt', size: 6, why: 'too big' }], next: null } };
+    return request(pathname, options);
+  };
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'files/a.txt'), 'utf8'), 'hello\n');
+  assert.ok(server.calls.includes('GET /memory/link'));
+  assert.ok(server.calls.includes('GET /memory/file'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a 405 bundle response falls back, while other errors stop the pull', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'wiki/a.md': 'a\n' });
+  const request = server.request;
+  let status = 405;
+  server.request = async (pathname, options) => pathname === '/memory/bundle'
+    ? { ok: false, status, error: 'unavailable' } : request(pathname, options);
+  assert.equal((await run('pull', dir, server)).code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/a.md'), 'utf8'), 'a\n');
+  server.calls.length = 0;
+  status = 429;
+  assert.equal((await run('pull', dir, server)).code, 1);
+  assert.deepEqual(server.calls, []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test('pull copies every file, keeps paths and exact bytes, and writes a hidden state file', async () => {
   const dir = tmp();
