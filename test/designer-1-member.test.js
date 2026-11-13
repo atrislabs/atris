@@ -208,9 +208,9 @@ test('install --update refreshes the skill and the parts table only', (t) => {
   assert.equal(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf8'), 'local soul\n');
 });
 
-test('the parts table has 18 rows and the skill names every one of them', () => {
+test('the parts table has 19 rows and the skill names every one of them', () => {
   const rows = tableRows();
-  assert.equal(rows.size, 18, [...rows.keys()].join(', '));
+  assert.equal(rows.size, 19, [...rows.keys()].join(', '));
   const skill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
   for (const name of rows.keys()) assert.match(skill, new RegExp(`\\b${name}\\b`), name);
   assert.match(skill, /parts\.md/);

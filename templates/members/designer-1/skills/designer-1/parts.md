@@ -1,4 +1,4 @@
-# The 18 parts
+# The 19 parts
 
 Reference for the designer-1 skill. Load it only when you place or build a part.
 
@@ -38,6 +38,7 @@ Every part also takes `id`, `className`, `style`, `ref` and `data-*` marks.
 | `SegmentedControl` | Pick one of a few views in a single pill. | `label` `options` | `label` `options` `value` `defaultValue` `name` `required` `readOnly` `disabled` `size` | `onValueChange` |
 | `Combobox` | Type to find and pick one choice from a long list. | `label` `options` | `label` `hideLabel` `options` `placeholder` `value` `defaultValue` `open` `defaultOpen` `name` `required` `readOnly` `disabled` `size` `emptyMessage` | `onValueChange` `onOpenChange` |
 | `Slider` | Set a number in a range by dragging or with the keys. | `label` | `label` `hideLabel` `min` `max` `step` `pageStep` `value` `defaultValue` `formatValue` `name` `readOnly` `disabled` `size` | `onValueChange` |
+| `RowList` | Show people or records as rows with one column of controls, a status and actions. | `label` `items` | `label` `items` `emptyMessage` `disabled` | `onSelect` |
 
 ## companions
 
@@ -50,5 +51,5 @@ Every part also takes `id`, `className`, `style`, `ref` and `data-*` marks.
 
 - `partSizes`: `small`, `default`, `large`.
 - `partTones`: `default`, `primary`, `quiet`, `success`, `danger`.
-- entry: `{ value, label, disabled?, data? }`. `Menu` items add `hint` and `tone`. `Select` and `RadioGroup` options add `hint`. `Tabs` and `Accordion` items add `content`.
+- entry: `{ value, label, disabled?, data? }`. `Menu` items add `hint` and `tone`. `Select` and `RadioGroup` options add `hint`. `Tabs` and `Accordion` items add `content`. `RowList` items add `hint`, `status` (`{ label, tone? }`), `controls` and `actions`.
 - empty choice: `null`.
