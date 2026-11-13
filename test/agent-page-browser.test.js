@@ -1457,3 +1457,133 @@ test('choices rendered elsewhere are found through aria-controls or aria-owns, n
   assert.equal(seen.input, 'Dark');
   assert.equal(seen.decoySelected, null, 'the decoy was not touched');
 });
+
+// Round five: review findings on the dropdown paths.
+test('opening a list never sends a form: a submit-type trigger involves its form, and a read does not open it', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const sent = { marked: 0, plain: 0 };
+    for (const [id, marked] of [['marked', true], ['plain', false]]) {
+      const form = document.createElement('form');
+      form.id = id + '-form';
+      form.innerHTML = '<input name="field" value="private"' + (marked ? ' data-agent-confirm="Sending this field needs a person."' : '') + '>';
+      form.addEventListener('submit', (event) => { event.preventDefault(); sent[id]++; });
+      document.body.append(form);
+      window.widget({ id: id + '-pick', label: id === 'marked' ? 'Marked send' : 'Plain send', type: 'select', place: 'portal', lazy: true,
+        value: 'old', parent: form.id, options: [{ label: 'Old', value: 'old' }, { label: 'Next', value: 'next' }] });
+      document.getElementById(id + '-pick').removeAttribute('type');
+    }
+    const agent = window.AgentPage.createAgent({});
+    const out = {};
+    out.snapshot = agent.snapshot().filter((item) => /send/.test(item.label));
+    out.queryMarked = (await agent.query({ text: 'Marked send' })).find((item) => item.label === 'Marked send');
+    out.queryPlain = (await agent.query({ text: 'Plain send' })).find((item) => item.label === 'Plain send');
+    out.afterReads = Object.assign({}, sent);
+    out.opensAfterReads = Object.assign({}, window.__state.opens);
+    out.setMarked = await agent.act({ steps: [{ label: 'Marked send', action: 'set', args: { value: 'Next' } }] });
+    out.sent = sent;
+    return out;
+  });
+  assert.deepEqual(seen.afterReads, { marked: 0, plain: 0 }, 'a read never sends a form');
+  assert.deepEqual(seen.opensAfterReads, {}, 'a read does not open a list whose opening could send a form');
+  for (const entry of [seen.queryMarked, seen.queryPlain]) {
+    assert.equal(entry.options, undefined);
+    assert.match(entry.note, /could send a form or leave the page/);
+  }
+  assert.equal(seen.snapshot.find((item) => item.label === 'Marked send').confirm, true, 'the form fields count for the trigger');
+  assert.equal(seen.setMarked.ok, false, JSON.stringify(seen.setMarked));
+  assert.match(seen.setMarked.steps[0].error, /needs a person/);
+  assert.equal(seen.sent.marked, 0, 'the marked form was not sent');
+});
+
+test('a query builds every entry at return, after the last answer from the person', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'audit-first', label: 'Audit first', type: 'select', place: 'inline', value: 'old', options: [
+      { label: 'PLANTED-FIRST-VALUE', value: 'old' }, { label: 'Spare', value: 'spare' }] });
+    window.widget({ id: 'audit-second', label: 'Audit second', type: 'select', place: 'inline', value: 'one', options: [
+      { label: 'One', value: 'one' }, { label: 'PLANTED-LATER-HIDDEN', value: 'two' }] });
+    window.widget({ id: 'audit-third', label: 'Audit third', type: 'select', place: 'portal', lazy: true, value: 'x', options: [
+      { label: 'Ex', value: 'x' }] });
+    const agent = window.AgentPage.createAgent({
+      allow: (request) => {
+        if (request.label === 'Audit third') {
+          document.getElementById('audit-first').setAttribute('data-agent-secret', '');
+          document.querySelector('#audit-second-list [data-value="two"]').setAttribute('data-agent-hidden', '');
+        }
+        return true;
+      },
+    });
+    return agent.query({ text: 'Audit' });
+  });
+  const byLabel = (label) => seen.find((item) => item.label === label);
+  assert.equal(byLabel('Audit first').value, '[redacted]', 'a control made secret during the call reads [redacted] at return');
+  assert.equal(byLabel('Audit first').options, undefined, 'and its choices are not returned');
+  assert.deepEqual(byLabel('Audit second').options.map((option) => option.label), ['One'], 'a choice hidden during the call is dropped at return');
+  assert.deepEqual(byLabel('Audit third').options.map((option) => option.label), ['Ex']);
+});
+
+test('a secret or hidden chosen choice keeps the value secret, however it was named', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'secret-pick', label: 'Secret pick', type: 'select', place: 'portal', lazy: true, value: 'old', options: [
+      { label: 'Old', value: 'old' }, { label: 'PLANTED-SECRET-CHOICE', value: 'next', attrs: { 'data-agent-secret': '' } }] });
+    window.widget({ id: 'secret-edit', label: 'Secret edit', type: 'edit', place: 'portal', lazy: true, value: 'old', options: [
+      { label: 'Old', value: 'old' }, { label: 'PLANTED-SECRET-TYPED', value: 'typed', attrs: { 'data-agent-secret': '' } }] });
+    window.widget({ id: 'hidden-pick', label: 'Hidden pick', type: 'select', place: 'inline', value: 'gone', options: [
+      { label: 'Shown', value: 'shown' }, { label: 'PLANTED-HIDDEN-CHOSEN', value: 'gone', attrs: { 'data-agent-hidden': '' } }] });
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const pick = await set('Secret pick', 'next');
+    const edit = await set('Secret edit', 'typed');
+    const shot = agent.snapshot();
+    const query = await agent.query({ text: 'Hidden pick' });
+    return { pick, edit, shot, query, values: window.__state.values };
+  });
+  assert.equal(seen.pick.ok, true, JSON.stringify(seen.pick));
+  assert.equal(seen.pick.steps[0].current.value, '[redacted]');
+  assert.deepEqual(seen.pick.steps[0].changes.map((change) => [change.from, change.to]), [['Old', '[redacted]']]);
+  assert.equal(seen.edit.ok, true, JSON.stringify(seen.edit));
+  assert.equal(seen.edit.steps[0].current.value, '[redacted]');
+  const byLabel = (label) => seen.shot.find((item) => item.label === label);
+  assert.equal(byLabel('Secret pick').value, '[redacted]', 'a later snapshot still hides it');
+  assert.equal(byLabel('Secret edit').value, '[redacted]');
+  assert.equal(byLabel('Hidden pick').value, '', 'a hidden chosen choice is not the value');
+  assert.equal(seen.query.find((item) => item.label === 'Hidden pick').value, '');
+  assert.deepEqual([seen.values['secret-pick'], seen.values['secret-edit']], ['next', 'typed']);
+});
+
+test('set is judged by the chosen option, never by a value that equals another label', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'tricky-refuse', label: 'Tricky refuse', type: 'select', place: 'portal', lazy: true, value: 'old', refuse: true,
+      options: [{ label: 'Basic', value: 'old' }, { label: 'Pro', value: 'Basic' }] });
+    window.widget({ id: 'tricky-pick', label: 'Tricky pick', type: 'select', place: 'portal', lazy: true, value: 'basic-label',
+      options: [{ label: 'Starter', value: 'starter' }, { label: 'Basic', value: 'basic-label' }, { label: 'Plus', value: 'Starter' }] });
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    return { refused: await set('Tricky refuse', 'Pro'), picked: await set('Tricky pick', 'Starter'), values: window.__state.values };
+  });
+  assert.equal(seen.refused.ok, false, JSON.stringify(seen.refused));
+  assert.equal(seen.refused.steps[0].error, 'the page did not keep the new choice.');
+  assert.equal(seen.values['tricky-refuse'], 'old');
+  assert.equal(seen.picked.ok, true, JSON.stringify(seen.picked));
+  assert.equal(seen.values['tricky-pick'], 'starter', 'the label wins over another choice\'s value');
+  assert.match(seen.picked.steps[0].note, /matches the label of one choice and the value of another\. The label was used\./);
+});
+
+test('two agents on one page cannot open the same list at once', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    document.getElementById('notes').focus();
+    const agents = [window.AgentPage.createAgent({}), window.AgentPage.createAgent({})];
+    const results = await Promise.all(agents.map((agent, i) => agent.act({ steps: [{ label: 'Fruit', action: 'set', args: { value: i ? 'Cherry' : 'Banana' } }] })));
+    return { results, focus: document.activeElement.id, open: document.getElementById('fruit').getAttribute('aria-expanded'), value: window.__state.values.fruit };
+  });
+  const oks = seen.results.filter((result) => result.ok);
+  assert.equal(oks.length, 1, JSON.stringify(seen.results));
+  const refused = seen.results.find((result) => !result.ok);
+  assert.match(refused.steps[0].error, /another step on this page is using a list/);
+  assert.equal(seen.open, 'false');
+  assert.equal(seen.focus, 'notes');
+});
