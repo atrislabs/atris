@@ -339,8 +339,7 @@ async function spawn({ ref, flags, cwd, env, call, log, err }) {
       ? `the server cannot spawn from ${label}: spawning is not turned on there yet, or this sign-in cannot see that agent`
       : why(res, label);
     err(`could not spawn ${name}: ${sentence}`);
-    if (!res || res.status === 0 || res.status >= 500) err(`run the same command again to retry; it reuses the same request, so the budget is never spent twice.`);
-    else fs.rmSync(keyFile, { force: true });
+    if (res && res.status !== 0 && res.status < 500) fs.rmSync(keyFile, { force: true });
     return 1;
   }
   const data = res.data || {};

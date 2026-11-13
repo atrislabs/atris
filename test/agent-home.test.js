@@ -162,6 +162,13 @@ test('push sends only what changed, says plainly that MEMBER.md was refused, and
   fs.writeFileSync(path.join(dir, 'memory', 'notes', '20261113T0600Z-s1.md'), 'learned a thing\n');
   fs.writeFileSync(path.join(dir, 'MEMBER.md'), MEMBER.replace('Finds new signal', 'Rules everything'));
   fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1\n');
+  const stateFile = path.join(dir, '.atris', 'agent-home.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.files['AGENTS.md'] = { etag: 'old', sha256: 'old' };
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  fs.unlinkSync(path.join(dir, 'AGENTS.md'));
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.writeFileSync(path.join(dir, '.git', 'config'), 'private');
   fs.mkdirSync(path.join(dir, 'secrets'));
   fs.writeFileSync(path.join(dir, 'secrets', 'k.md'), 'no\n');
   fs.rmSync(path.join(dir, 'old.md'));
@@ -261,4 +268,67 @@ test('folder rules and the adapter block', () => {
   assert.equal(movesForward('a', 'b'), true);
   assert.equal(movesForward('b', 'b'), false);
   assert.equal(movesForward('b', 'a'), false);
+});
+
+test('state refuses linked metadata folders and files', (t) => {
+  const home = require('../lib/agent-home');
+  const dir = tmp(t, 'state');
+  const outside = tmp(t, 'outside');
+  fs.symlinkSync(outside, path.join(dir, '.atris'));
+  assert.throws(() => home.saveState(dir, { agent_id: AGENT }), /link/);
+  assert.equal(fs.existsSync(path.join(outside, 'agent-home.json')), false);
+  fs.unlinkSync(path.join(dir, '.atris'));
+  fs.mkdirSync(path.join(dir, '.atris'));
+  fs.symlinkSync(path.join(outside, 'state'), path.join(dir, '.atris', 'agent-home.json'));
+  assert.throws(() => home.saveState(dir, { agent_id: AGENT }), /plain file/);
+  assert.equal(fs.existsSync(path.join(outside, 'state')), false);
+});
+
+test('adapters never read linked identity files', (t) => {
+  const home = require('../lib/agent-home');
+  const dir = tmp(t, 'identity');
+  const outside = tmp(t, 'private');
+  fs.writeFileSync(path.join(dir, 'MEMBER.md'), MEMBER);
+  fs.writeFileSync(path.join(outside, 'private'), 'private identity text');
+  for (const name of ['SOUL.md', 'MISSION.md', 'goals.md']) fs.symlinkSync(path.join(outside, 'private'), path.join(dir, name));
+  home.writeAdapters(dir);
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) assert.doesNotMatch(fs.readFileSync(path.join(dir, name), 'utf8'), /private identity text/);
+  fs.unlinkSync(path.join(dir, 'MEMBER.md'));
+  fs.symlinkSync(path.join(outside, 'private'), path.join(dir, 'MEMBER.md'));
+  assert.deepEqual(home.writeAdapters(dir), []);
+});
+
+test('private key temporary files are exclusive and owner-only from creation', (t) => {
+  const home = require('../lib/agent-home');
+  const dir = tmp(t, 'key');
+  const env = { HOME: dir };
+  const keyDir = path.join(dir, '.atris', 'agents');
+  fs.mkdirSync(keyDir, { recursive: true });
+  const existing = path.join(keyDir, `scout.json.${'00'.repeat(16)}.tmp`);
+  fs.writeFileSync(existing, 'untouched', { mode: 0o644 });
+  const randomBytes = crypto.randomBytes;
+  crypto.randomBytes = () => Buffer.alloc(16);
+  try {
+    assert.throws(() => home.writeKeyFile('scout', { private_key: PRIVATE_KEY }, env), { code: 'EEXIST' });
+    assert.equal(fs.readFileSync(existing, 'utf8'), 'untouched');
+    fs.unlinkSync(existing);
+    home.writeKeyFile('scout', { private_key: PRIVATE_KEY }, env);
+    assert.equal(fs.statSync(path.join(keyDir, 'scout.json')).mode & 0o777, 0o600);
+  } finally {
+    crypto.randomBytes = randomBytes;
+  }
+});
+
+test('network failure prints one line for spawn', async (t) => {
+  const { agentHomeCommand } = require('../commands/agent-home');
+  const dir = tmp(t, 'network');
+  const errors = [];
+  const status = await agentHomeCommand(['spawn', AGENT, '--name', 'scout', '--budget', '1'], {
+    cwd: dir, env: { HOME: dir }, token: TOKEN,
+    apiRequestJson: async () => ({ ok: false, status: 0, error: 'connection failed' }),
+    err: (line) => errors.push(line), log: () => {},
+  });
+  assert.equal(status, 1);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not reach the Atris server/);
 });
