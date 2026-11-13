@@ -117,3 +117,32 @@ test('foreign folder commands keep their target and role cards keep context', ()
     fs.rmSync(parent, { recursive: true, force: true });
   }
 });
+
+// A business file left over from another project once made this card greet
+// the wrong workspace. The folder name is always shown; a business name that
+// differs from it rides along in brackets.
+test('the card always shows the folder name, with a different business name in brackets', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-name-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-home-'));
+  const env = { ...process.env, HOME: home, ATRIS_HOME: home, NO_COLOR: '1' };
+  const card = (folder, business) => {
+    const root = path.join(base, folder);
+    fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'MAP.md'), '# MAP.md\n');
+    if (business) {
+      fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
+      fs.writeFileSync(path.join(root, '.atris', 'business.json'), JSON.stringify(business));
+    }
+    const result = spawnSync(process.execPath, [cli, 'brain', 'activate'], { cwd: root, env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  try {
+    assert.match(card('tool-shed', null), /^tool-shed is ready\.$/m);
+    assert.match(card('my-lab', { name: 'My Lab', slug: 'my-lab' }), /^My Lab is ready\.$/m);
+    assert.match(card('real-project', { name: 'Leftover Co', slug: 'leftover-co' }), /^real-project \(Leftover Co\) is ready\.$/m);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

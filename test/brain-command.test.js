@@ -85,7 +85,7 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     seedWorkspace(dir);
     const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /start-up notes saved for Brain Lab/);
+    assert.match(res.stdout, /start-up notes saved for \S+ \(Brain Lab\)\./);
     assert.match(res.stdout, /checked: the saved notes are in place/);
 
     const brainDir = path.join(dir, 'atris', 'brain');
@@ -196,7 +196,7 @@ test('brain activate --verify on a ready member exits 0 with an executable card'
     seedWorkspace(dir);
     const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Brain Lab is ready for justin/);
+    assert.match(res.stdout, /\(Brain Lab\) is ready for justin/);
     assert.match(res.stdout, /next: take one step toward a customer/);
     assert.match(res.stdout, /checked: the saved notes are in place/);
   } finally {
@@ -226,7 +226,7 @@ test('status reads from --root without writing in either folder', () => {
     seedWorkspace(dir);
     const res = runCli(['brain', 'status', '--yes', `--root=${dir}`], { cwd: elsewhere });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Brain Lab is ready/);
+    assert.match(res.stdout, /\(Brain Lab\) is ready/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain')), false);
     assert.equal(fs.existsSync(path.join(elsewhere, 'atris', 'brain')), false);
   } finally { cleanupTempDir(dir); cleanupTempDir(elsewhere); }

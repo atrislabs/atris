@@ -837,6 +837,17 @@ function notesInfo(root) {
   return { status: age > 3 ? 'stale' : 'fresh', age_days: age };
 }
 
+// The folder name is what a person sees on disk, so the card always shows it.
+// A business name that differs from the folder rides along in brackets, which
+// also makes a leftover business file easy to spot.
+function shownName(state) {
+  const folder = path.basename(state.root);
+  const name = state.name || folder;
+  const key = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (key(name) === key(folder) || key(state.slug) === key(folder)) return name;
+  return `${folder} (${name})`;
+}
+
 function buildActivationCard(state, options = {}) {
   const requested = options.member;
   const remembered = readRememberedOperator(state.root);
@@ -847,7 +858,7 @@ function buildActivationCard(state, options = {}) {
   const summary = buildActivationSummary(state.root);
   const contextLine = line => line && line.replace('atris task reviews', taskCommand(state.root, 'atris task reviews'));
   if (!requested) {
-    const lines = [`${state.name} is ready.`, '', ...summary.lines.map(contextLine), ...(summary.today ? [contextLine(summary.today)] : [])];
+    const lines = [`${shownName(state)} is ready.`, '', ...summary.lines.map(contextLine), ...(summary.today ? [contextLine(summary.today)] : [])];
     if (readFirst.length) lines.push('', 'read these first:', ...readFirst.map(file => `  ${file}`));
     if (remembered) lines.push('', `last role used here: ${remembered}. for its next step: atris brain activate --member ${remembered}${rootArg}`);
     if (notes.status === 'missing') lines.push('', `start-up notes are not saved yet. save them: atris brain compile --root ${rootArg ? shellQuote(state.root) : '.'} --yes`);
@@ -860,12 +871,12 @@ function buildActivationCard(state, options = {}) {
   if (!member) { reason = 'there is no team member by that name'; const members = listMemberSlugs(state.root); fix = `create atris/team/${slug}/MEMBER.md${members.length ? `, or pick one of: ${members.join(', ')}` : ''}`; }
   else if (memberProfileIssues(member).length) { reason = `the team member details still contain placeholders: ${memberProfileIssues(member).join('; ')}`; fix = `fill in atris/team/${slug}/MEMBER.md`; }
   else if (!member.startHere.trim()) { reason = 'the starting instructions are missing'; fix = `create atris/team/${slug}/START_HERE.md with the first task, a way to check it and the expected result`;  }
-  if (reason) return { ready: false, reason, member: slug, text: `${state.name} is not ready for ${slug}: ${reason}.\n\nnext: ${fix}`, readFirst, notes, summary };
+  if (reason) return { ready: false, reason, member: slug, text: `${shownName(state)} is not ready for ${slug}: ${reason}.\n\nnext: ${fix}`, readFirst, notes, summary };
   if (options.remember) rememberOperator(state.root, member);
   const mode = modeNextMove(member, options.mode);
   const score = memberScoreContext(state.root, member);
   const proof = mode?.proof || score?.proofNeeded || score?.nextRep || 'the task is finished and its result is recorded.';
-  const lines = [`${state.name} is ready for ${slug}.`, '', `next: ${mode?.move || memberNextMove(member, state) || nextMove(state)}`, 'why: it is the next piece of work for this role, picked from the current notes, the task list and past feedback.', `done when: ${proof}`];
+  const lines = [`${shownName(state)} is ready for ${slug}.`, '', `next: ${mode?.move || memberNextMove(member, state) || nextMove(state)}`, 'why: it is the next piece of work for this role, picked from the current notes, the task list and past feedback.', `done when: ${proof}`];
   if (mode?.label) lines.push(`mode: ${mode.label}`);
   if (score?.score) lines.push(`score: ${score.score}`);
   if (score?.nextRep && score.nextRep !== proof) lines.push(`next rep: ${score.nextRep}`);
@@ -1544,7 +1555,7 @@ function brainCommand(args = process.argv.slice(3)) {
     } else {
       console.log(`\n${output}`);
       if (error && !readinessError) console.error(error);
-      else if (options.verify) console.log('\nchecked: the saved notes are in place.');
+      else if (options.verify && !error) console.log('\nchecked: the saved notes are in place.');
       console.log('');
     }
     return error ? 1 : 0;
@@ -1554,7 +1565,7 @@ function brainCommand(args = process.argv.slice(3)) {
   const written = writeBrain(state);
   if (options.verify) verifyBrain(options.root);
   if (options.json) { console.log(JSON.stringify({ ok: true, state, written }, null, 2)); return 0; }
-  console.log(`start-up notes saved for ${state.name}.`);
+  console.log(`start-up notes saved for ${shownName(state)}.`);
   console.log(`  status: ${path.relative(options.root, written.statusPath)}`);
   console.log(`  history: ${state.totalRows} records read, ${state.validRows} usable`);
   console.log(`  history file: ${path.relative(options.root, written.ledgerPath)}`);

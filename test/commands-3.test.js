@@ -1258,7 +1258,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     fs.writeFileSync(path.join(dir, 'ROADMAP.md'), '# roadmap\n\n## Open loop items\n\n- [ ] make the first screen tell one story\n');
     const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Demo Lab is ready\./);
+    assert.match(res.stdout, /\(Demo Lab\) is ready\./);
     assert.match(res.stdout, /right now:/);
     assert.match(res.stdout, /read these first:/);
     assert.match(res.stdout, /atris\/MAP.md/);
@@ -1276,7 +1276,7 @@ test('brain activate can target a member and print their next work block', () =>
     runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Demo Lab is ready for justin\./);
+    assert.match(res.stdout, /\(Demo Lab\) is ready for justin\./);
     assert.match(res.stdout, /next: take one step toward a customer/);
     assert.match(res.stdout, /how did it go: atris brain yes/);
     const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));
@@ -1792,7 +1792,7 @@ test('brain activate remembers the last operator after the first member run', ()
     runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     const res = runCli(['brain', 'activate', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Demo Lab is ready\./);
+    assert.match(res.stdout, /\(Demo Lab\) is ready\./);
     assert.match(res.stdout, /last role used here: justin\. for its next step: atris brain activate --member justin/);
     assert.doesNotMatch(res.stdout, /is ready for justin/);
   } finally {
