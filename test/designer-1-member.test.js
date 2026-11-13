@@ -98,7 +98,7 @@ test('the list comes first and names every state', () => {
 test('every self-check step has a line in the report', () => {
   const steps = [...section('self-check').matchAll(/^\d+\. \*\*([a-z ]+)\*\*:/gm)].map((m) => m[1]);
   assert.ok(steps.length >= 8, steps.join(', '));
-  for (const step of ['list', 'failure path', 'flow by name']) assert.ok(steps.includes(step), step);
+  for (const step of ['list', 'failure path', 'flow by name', 'truth', 'targets', 'edges']) assert.ok(steps.includes(step), step);
   const report = section('report').match(/```\n([\s\S]*?)```/)[1];
   const keys = report.split('\n').filter(Boolean).map((line) => line.split(':')[0]);
   for (const step of steps) assert.ok(keys.includes(step), `report shows ${step}`);
@@ -129,9 +129,46 @@ test('every budget row is a number and the consequence budget says why', () => {
   assert.match(section('never'), new RegExp(`consequence confirmation gets ${confirm} because`));
 });
 
+// The body of one numbered self-check step.
+function step(name) {
+  const match = section('self-check').match(new RegExp(`^\\d+\\. \\*\\*${name}\\*\\*: (.*)$`, 'm'));
+  assert.ok(match, name);
+  return match[1];
+}
+
+test('targets and edges are measured in the running page at phone width', () => {
+  assert.match(step('targets'), /390px/);
+  assert.match(step('targets'), /measure every control's box in the running page/);
+  assert.match(step('targets'), /under 44px/);
+  assert.match(step('edges'), /390px, scroll to the bottom/);
+  assert.match(step('edges'), /last control and its label are fully visible/);
+  assert.match(section('spacing'), /^\d+\. Nothing fixed to a screen edge covers content: .*reserves its own height/m);
+});
+
+test('the page title outranks section headings by the stated ratio', () => {
+  const spacing = section('spacing');
+  const text = spacing.match(/^Text: .*$/m)[0];
+  const factor = Number(text.match(/calc\(var\(--atris-part-text-title\) \* ([\d.]+)\)` \((\d+)\)/)[1]);
+  const titlePx = Number(text.match(/page title `[^`]+` \((\d+)\)/)[1]);
+  const headingPx = Number(text.match(/section headings `--atris-part-text-title` \((\d+)\)/)[1]);
+  const stated = Number(text.match(/at least ([\d.]+) times a section heading/)[1]);
+  assert.equal(factor, stated);
+  assert.ok(stated >= 1.25, `ratio ${stated}`);
+  assert.ok(titlePx / headingPx >= stated, `${titlePx} / ${headingPx}`);
+});
+
+test('words follow the truth and a later risky action withdraws a conflicting undo', () => {
+  const words = section('words');
+  assert.match(words, /^Words follow the truth\. Never promise what the screen does not do\. Two places never contradict\. Text tied to a state changes with the state/m);
+  assert.match(words, /withdraw any earlier undo it would conflict with/);
+  assert.match(step('truth'), /after each failure path and each risky action, read every sentence on the screen/);
+  assert.match(step('truth'), /"words follow the truth"/i);
+  assert.match(step('truth'), /try each undo still offered/);
+});
+
 test('the skill stays short and names no single screen or test run', () => {
   const words = skillText().split(/\s+/).filter(Boolean).length;
-  assert.ok(words <= 1550, `${words} words`);
+  assert.ok(words <= 1660, `${words} words`);
   assert.doesNotMatch(skillText(), /\btrial\b|plain build|billing screen/i);
 });
 
