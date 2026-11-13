@@ -761,7 +761,7 @@ function showHelpAll() {
   console.log('Cloud & agents:');
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
-  console.log('  morning    - What your agent did last night: read, made, met, spent');
+  console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');

@@ -27,6 +27,9 @@ const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/wiki/concepts/agent-activation-contract.md',
   'atris/skills/atris/SKILL.md',
   'atris/PERSONA.md',
+  // A few lines an agent wrote about its own nights (`atris morning` saves
+  // them). Tiny on purpose: at most 12 short lines.
+  'atris/learned.md',
   'atris/MAP.md',
   'atris/TODO.md',
   'atris/wiki/index.md',

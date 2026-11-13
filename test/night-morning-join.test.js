@@ -113,16 +113,24 @@ test('night --watch prints each new event once and stops when capped', async () 
   ]);
 });
 
-test('morning prints the receipt text exactly', async () => {
+test('morning asks for the right night and prints the full receipt with --full', async () => {
   const text = 'Last night your agent read 4 files.\nIt made refunds.md.\nIt spent $0.62.';
   const api = fakeApi({
-    'GET /morning': { ok: true, status: 200, data: { text, receipt: { spent_usd: 0.62 } } },
+    'GET /morning': { ok: true, status: 200, data: { text, receipt: { goal: 'learn refunds', spent_usd: 0.62, cap_usd: 1 } } },
   });
-  const { sink, deps: d } = deps(api);
-  const code = await morningCommand(['--business', 'biz_1', '--agent', 'ag_7'], d);
+  const { sink, deps: d } = deps(api, { cwd: tmpHome });
+  const code = await morningCommand(['--business', 'biz_1', '--agent', 'ag_7', '--full', '--no-save'], d);
   assert.equal(code, 0);
-  assert.deepEqual(sink.out, [text]);
+  assert.equal(sink.out[0], 'Night on "learn refunds": not scored.');
+  assert.deepEqual(sink.out.slice(-3), ['Not saved to your folder (--no-save).', '', text]);
   assert.equal(api.calls[0].pathname, '/morning?business_id=biz_1&agent_id=ag_7');
+});
+
+test('morning prints the old text when the server sends no receipt', async () => {
+  const api = fakeApi({ 'GET /morning': { ok: true, status: 200, data: { text: 'plain text only', receipt: null } } });
+  const { sink, deps: d } = deps(api, { cwd: tmpHome });
+  assert.equal(await morningCommand([], d), 0);
+  assert.deepEqual(sink.out, ['plain text only']);
 });
 
 test('morning says so when no night shift has finished', async () => {
