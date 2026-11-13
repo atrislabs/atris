@@ -5,6 +5,7 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
 const { gateForHuman, numberWord } = require('../lib/voice-gate');
+const { plainTitle } = require('../lib/first-minute');
 
 const CLARITY_FIELDS = [
   { key: 'focus', label: 'Focus' },
@@ -120,7 +121,7 @@ function activeWorkSentence(state, context) {
   const tasks = Array.isArray(context?.inProgressTasks) ? context.inProgressTasks : [];
   if (tasks.length) {
     const count = tasks.length;
-    const focus = focusFragment(tasks[0]);
+    const focus = focusFragment(plainTitle(tasks[0]));
     const subject = count === 1 ? 'task is' : 'tasks are';
     return humanSentence(`right now: ${countWord(count)} ${subject} in progress; the focus is ${closeSentence(focus)}`);
   }
@@ -268,7 +269,7 @@ function buildActivationSummary(workspaceDir) {
     }
   }
   const nextMove = moves[0] || briefData?.moves?.[0];
-  const nextMoveTitle = focusFragment(nextMove?.title, 100);
+  const nextMoveTitle = focusFragment(plainTitle(nextMove?.title), 100);
   const today = nextMoveTitle ? humanSentence(`today's move: ${closeSentence(nextMoveTitle)}`) : null;
   return {
     lines: statusLines,
