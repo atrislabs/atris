@@ -125,8 +125,8 @@ test('init keeps default output grouped and restores file details with --verbose
     assert.doesNotMatch(quiet.stdout, /✓ Copied skill:|\.claude\/skills\//);
     assert.match(quiet.stdout, /workspace files ready \(\d+\)/);
     assert.match(quiet.stdout, /team members ready \(6\)/);
-    assert.match(quiet.stdout, /^more members are available with atris member create <name>$/m);
-    assert.match(quiet.stdout, /agent adapters ready \(\d+\)/);
+    assert.match(quiet.stdout, /^add more members any time: atris member create <name>$/m);
+    assert.match(quiet.stdout, /set up for your coding tools \(\d+\)/);
     assert.match(quiet.stdout, /skills installed \(\d+\)/);
 
     const verbose = runInit(['--yes', '--verbose'], { cwd: verboseDir });
@@ -232,7 +232,7 @@ test('first-use command after init talks like first-minute instead of MAP homewo
     assert.equal(minute.status, 0, `stdout:\n${minute.stdout}\nstderr:\n${minute.stderr}`);
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
     assert.match(res.stdout, /generate map\.md/i);
-    assert.match(res.stdout, /ready to claim|already yours/);
+    assert.match(res.stdout, /ready to start|you are working on/);
     assert.match(res.stdout, /^next: atris task (claim|ready) /m);
     assert.equal(
       (res.stdout.match(/^next: (.+)$/m) || [])[1],
