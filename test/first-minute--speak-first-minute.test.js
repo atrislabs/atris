@@ -46,7 +46,7 @@ test('fresh empty folder speaks empty and points at the first talk', (t) => {
   assert.equal(code, 0);
   assert.deepEqual(lines, [
     '',
-    'hey dev, my-room is empty.\n\nnext: atris "what do you want here?"',
+    'hey dev, my-room is empty.\n\nnext: atris "what do you want here?"  (say it in your own words)',
   ]);
 });
 
@@ -57,8 +57,8 @@ test('fresh folder names one visible file and points at do', (t) => {
   const code = withCleanEnv(home, () => speakFirstMinute({ root: room, fresh: true, files: ['notes.txt'], log }));
   assert.equal(code, 0);
   assert.equal(lines[0], '');
-  assert.match(lines[1], /notes\.txt is already here\./);
-  assert.match(lines[1], /next: atris do$/);
+  assert.match(lines[1], /this folder already has notes\.txt\./);
+  assert.match(lines[1], /next: atris do  \(work on what is here\)$/);
 });
 
 test('dotfiles and local store noise are not spoken as visible work', (t) => {
@@ -72,7 +72,7 @@ test('dotfiles and local store noise are not spoken as visible work', (t) => {
     log,
   }));
   assert.equal(code, 0);
-  assert.match(lines[1], /notes\.txt is already here\./);
+  assert.match(lines[1], /this folder already has notes\.txt\./);
   assert.doesNotMatch(lines[1], /\.hidden|tasks\.db/);
 });
 
@@ -98,7 +98,7 @@ test('workspace with nothing live says set up and points at the first step', (t)
   const code = withCleanEnv(home, () => speakFirstMinute({ root: room, fresh: false, log }));
   assert.equal(code, 0);
   assert.match(lines[1], /hey dev, my-room is set up\./);
-  assert.match(lines[1], /next: atris "help me choose the first useful step for this project"$/);
+  assert.match(lines[1], /next: atris "help me choose the first useful step for this project"  \(say it in your own words\)$/);
 });
 
 test('json mode on a set-up folder reports its next action', (t) => {
