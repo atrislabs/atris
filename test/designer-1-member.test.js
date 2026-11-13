@@ -59,6 +59,82 @@ function tableRows() {
   return rows;
 }
 
+function skillText() {
+  return fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+}
+
+// The body of the "## <n>. <title>" section, up to the next "## ".
+function section(title) {
+  const text = skillText();
+  const start = text.search(new RegExp(`^## \\d+\\. ${title}\\b`, 'm'));
+  assert.ok(start >= 0, `section ${title}`);
+  const rest = text.slice(start + 3);
+  const end = rest.search(/^## /m);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+function budgetRows() {
+  const rows = new Map();
+  const lines = section('never').split('\n');
+  const header = lines.findIndex((line) => /^\| region \| max words \|$/.test(line));
+  assert.ok(header >= 0, 'word budget table');
+  for (const line of lines.slice(header + 2)) {
+    if (!line.startsWith('|')) break;
+    const match = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/);
+    assert.ok(match, line);
+    rows.set(match[1], match[2]);
+  }
+  return rows;
+}
+
+test('the list comes first and names every state', () => {
+  const text = skillText();
+  const list = section('the list');
+  assert.ok(text.indexOf('## 1. the list') < text.indexOf('reuse first'), 'the list comes before reuse');
+  for (const state of ['empty', 'error', 'pending', 'done', 'undo']) assert.match(list, new RegExp(`\\b${state}\\b`), state);
+  assert.match(list, /Nothing on the list is cut to save words/);
+});
+
+test('every self-check step has a line in the report', () => {
+  const steps = [...section('self-check').matchAll(/^\d+\. \*\*([a-z ]+)\*\*:/gm)].map((m) => m[1]);
+  assert.ok(steps.length >= 8, steps.join(', '));
+  for (const step of ['list', 'failure path', 'flow by name']) assert.ok(steps.includes(step), step);
+  const report = section('report').match(/```\n([\s\S]*?)```/)[1];
+  const keys = report.split('\n').filter(Boolean).map((line) => line.split(':')[0]);
+  for (const step of steps) assert.ok(keys.includes(step), `report shows ${step}`);
+  assert.ok(keys.includes('reused') && keys.includes('new'));
+});
+
+test('the consequence example has numbers and the explanation example trips the detector', () => {
+  const words = section('words');
+  const consequence = words.match(/^- consequence:.*Example: "([^"]+)"/m)[1];
+  const explanation = words.match(/^- explanation:.*Example: "([^"]+)"/m)[1];
+  const detector = section('never').match(/^\| explanation text \| (.*) \|$/m)[1];
+  const phrases = [...detector.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(phrases.length >= 5);
+  assert.ok(phrases.some((p) => explanation.includes(p)), `explanation example "${explanation}" is caught`);
+  assert.ok(!phrases.some((p) => consequence.includes(p)), `consequence example "${consequence}" is not caught`);
+  assert.match(consequence, /\d/);
+  assert.match(words, /"anyone with the link", not "anyone"/);
+});
+
+test('every budget row is a number and the consequence budget says why', () => {
+  const rows = budgetRows();
+  for (const [region, max] of rows) assert.match(max, /^\d+$/, region);
+  for (const region of ['consequence confirmation', 'option difference line', 'whole screen, without consequence and comparison text']) {
+    assert.ok(rows.has(region), region);
+  }
+  const confirm = rows.get('consequence confirmation');
+  assert.ok(Number(confirm) > Number(rows.get('dialog description')));
+  assert.match(section('never'), new RegExp(`consequence confirmation gets ${confirm} because`));
+});
+
+test('the skill stays short and names no single screen or test run', () => {
+  const words = skillText().split(/\s+/).filter(Boolean).length;
+  assert.ok(words <= 1550, `${words} words`);
+  assert.doesNotMatch(skillText(), /\btrial\b|plain build|billing screen/i);
+});
+
 test('the template ships every member file', () => {
   for (const file of FILES) assert.ok(fs.existsSync(path.join(template, file)), file);
   assert.deepEqual(shippedFiles().map((f) => f.split(path.sep).join('/')).sort(), [...FILES].sort());

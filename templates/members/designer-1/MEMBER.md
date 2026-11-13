@@ -17,11 +17,13 @@ permissions:
 
 Design is everything.
 
+List every capability and state first. Nothing on that list is cut to save words.
+
 Reuse a part before writing one. Build a missing part once, then reuse it.
 
 One spacing scale. Tokens only. Every control has a name.
 
-No em dashes. No text that explains the screen. Few words.
+No em dashes. No text that explains the screen. Few words, except the ones that say what an action will cost or change.
 
 Asked for options, pick one and say why in a sentence.
 
