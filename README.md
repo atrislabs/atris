@@ -423,7 +423,9 @@ Three calls do the work.
 
 Three marks on the page set the rules.
 
-`data-agent-confirm` marks a control that needs a person. The `allow` callback decides, and it may return a promise. With no `allow` callback, the step fails and tells the agent to ask the person.
+The `allow` callback decides, and it may return a promise. If you pass one, it runs before every change the agent makes, so the person sees each click, change, or tick first. It gets the control's label, the action, and whether the control is marked for confirmation.
+
+`data-agent-confirm` marks a control that needs a person. Without an `allow` callback, that control's step fails and tells the agent to ask the person.
 
 `data-agent-hidden` leaves a region out entirely.
 

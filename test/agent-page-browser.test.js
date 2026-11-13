@@ -98,7 +98,12 @@ const pageAct = async ({ steps, answer, timeout }) => {
   const options = { timeout };
   if (answer !== 'none') {
     options.allow = (request) => {
-      calls.push({ label: request.label, action: request.action });
+      calls.push({
+        label: request.label,
+        action: request.action,
+        confirm: request.confirm,
+        before: JSON.stringify(window.__settings),
+      });
       if (answer === 'hang') return new Promise(() => {});
       return answer === 'yes';
     };
@@ -245,14 +250,17 @@ test('secret fields read [redacted] and their values never reach the agent', BRO
 
 test('rename the project by its label through a React-style controlled input', BROWSER, async () => {
   const cdp = await browserPage();
-  const { result } = await inPage(cdp, pageAct, {
+  const { result, calls } = await inPage(cdp, pageAct, {
     steps: [{ label: 'Project name', action: 'set', args: { value: 'Atlas Garden' } }],
-    answer: 'none',
+    answer: 'yes',
   });
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.steps[0].current.value, 'Atlas Garden');
   const settings = await inPage(cdp, pageSettings);
   assert.equal(settings.projectName, 'Atlas Garden', 'the page state changed, not just the box');
+  assert.equal(calls.length, 1, 'the person was asked before the plain change');
+  assert.equal(calls[0].confirm, false, 'a plain change is not marked for confirmation');
+  assert.match(calls[0].before, /"projectName":"Atlas"/, 'the page had not changed yet when the person was asked');
 });
 
 test('change a role by its label', BROWSER, async () => {
@@ -300,6 +308,21 @@ test('press save, and the page can tell the press came from the agent', BROWSER,
   assert.equal(click.acting, 'true', 'the page sees the agent is acting');
   assert.equal(click.agentAct.action, 'click');
   assert.equal(click.agentAct.ref, result.steps[0].ref);
+});
+
+test('a plain change the person refuses does not happen', BROWSER, async () => {
+  const cdp = await browserPage();
+  const before = await inPage(cdp, pageSettings);
+  const { result, calls } = await inPage(cdp, pageAct, {
+    steps: [{ label: 'Save', action: 'click' }],
+    answer: 'no',
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.steps[0].error, /did not confirm/);
+  assert.equal(calls.length, 1, 'the person was asked before the press');
+  assert.equal(calls[0].confirm, false);
+  const settings = await inPage(cdp, pageSettings);
+  assert.equal(settings.saves, before.saves, 'the press did not happen');
 });
 
 test('the archive button refuses without a person', BROWSER, async () => {
