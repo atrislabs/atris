@@ -105,11 +105,12 @@ test('the fixture page carries every mark and the script tag the browser test ne
 
 test('the readme section states the limits in plain words', () => {
   const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-  const start = readme.indexOf('## Agent page');
+  const start = readme.indexOf('## Agent page (beta)');
   assert.ok(start !== -1, 'the readme has an agent page section');
   const section = readme.slice(start, readme.indexOf('\n## ', start + 1));
   for (const limit of [/iframes/, /shadow root/, /contenteditable/, /unread/, /cannot be detected/,
-    /Frames from other sites/, /trusts the page/, /data-agent-hidden/, /imitates React/, /not done yet/]) {
+    /Frames from other sites/, /trusts the page/, /data-agent-hidden/, /imitates React/, /not done yet/,
+    /in beta/, /not security/, /enforce its real rules on its server/, /middle of an event/, /out of scope/]) {
     assert.match(section, limit);
   }
   assert.doesNotMatch(section, /any page|any framework/i, 'no unbounded claim');

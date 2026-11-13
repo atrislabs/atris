@@ -393,9 +393,11 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
 
-## Agent page
+## Agent page (beta)
 
-Agent page is one small browser file. An AI agent reads the controls on a page by their names, and presses them, without screenshots. It works on the page a person already has when that page is built from normal form controls and ARIA roles. It has no dependencies. The limits are listed below.
+Agent page is one small browser file, in beta. An AI agent reads the controls on a page by their names, and presses them, without screenshots. It works on the page a person already has when that page is built from normal form controls and ARIA roles. It has no dependencies. The limits are listed below.
+
+The marks are a guardrail for well-behaved agents, not security. A page must still enforce its real rules on its server. Do not put real secrets in a page and rely on a mark to hide them: any software running in that page can read them.
 
 Load it with a plain script tag, or `require` it in Node and bundlers:
 
@@ -417,27 +419,29 @@ Three calls do the work.
 
 `snapshot()` lists the controls. Each one has a ref, a kind, a label, its value or checked or open state, and the actions it accepts right now. The list is capped at 100. A disabled or read-only control says so and accepts no actions.
 
-`act({ steps })` runs steps in order and stops at the first failure. Each step names a control by `ref` (from a snapshot) or by `label`, and gives an `action`: `click`, `set`, `check`, or `uncheck`. Each result shows the changes, the current value, and any error. A step says ok only when the change took effect: a typed value, a tick, or a choice the page put back reads as a failure, and so does a press on something that should open or close but did not. A plain press on a button or link says ok once it is delivered; the changes list shows what the page did with it. A disabled choice is refused.
+`act({ steps })` runs steps in order and stops at the first failure. Each step names a control by `ref` (from a snapshot) or by `label`, and gives an `action`: `click`, `set`, `check`, or `uncheck`. Each result shows the changes, the current value, and any error.
 
-A select or listbox that holds more than one choice shows every chosen value as a list. To change it, send `set` the full list of choices to keep, for example `args: { value: ['Email', 'Chat'] }`. A single value is refused when it would clear other choices, so nothing is cleared unless the agent names the whole list.
+After a change, the file finds the control again in the live page (the same element, or else the one visible control with the same kind and name) and reads its value there. A typed value, a tick, or a choice that did not stick reads as a failure, and so does a press on something that should open or close but did not. A plain press on a button or link says ok once it is delivered; the changes list shows what the page did with it. A disabled choice is refused.
+
+A select or listbox that holds more than one choice shows every chosen value as a list. To change it, send `set` the full list of choices to keep, for example `args: { value: ['Email', 'Chat'] }`. A single value is refused when it would clear other choices, so nothing is cleared unless the agent names the whole list. Hidden choices in such a list are left as they are.
 
 `query({ text, within, kind })` finds controls and lists the choices of a select or listbox. The list is capped at 50. With `text`, only the matching choices are listed, so a choice past the cap can still be found.
 
-Three marks on the page set the rules.
+Three marks on the page set the rules, with the `allow` callback.
 
 The `allow` callback decides, and it may return a promise. If you pass one, it runs before every change the agent makes, so the person sees each click, change, or tick first. It gets the control's label, the action and its args, whether the step is marked for confirmation, and the page's own confirm sentences in `reasons`. If the callback throws, the step fails with a fixed sentence; the error's own message is never passed to the agent.
 
-An approval covers exactly what the person saw. Before asking, the file lists every element the step touches and every confirm mark around them. After the answer it lists them again. If anything differs (a mark added, removed or reworded, or the control moved under a different mark), the step is refused and the agent is told to run it again.
+Before asking, the file lists the elements the step involves and the confirm marks around them. It lists them again after the answer and refuses the step if anything differs: a mark added, removed or reworded, or the control moved under a different mark. It reads the marks again before each part of the change too (after focus, between events, and before each choice it clicks), and stops with the rest undone if a new mark appears.
 
 One approval at a time per page. While a step waits for the person, every other agent on the page is refused, so one agent cannot press another's confirm button. A host's own confirm dialog should still carry `data-agent-hidden`, so no agent can see it at all.
 
-`data-agent-confirm` marks a control that needs a person. It counts on the control, anything around it, its labels, the form it belongs to (also through the `form` attribute), each choice the step picks, and each choice or radio the step clears. Without an `allow` callback, that step fails and tells the agent to ask the person.
+`data-agent-confirm` marks a control that needs a person. A step involves the control, its labels (wrapping and `for`), the form it belongs to (also through the `form` attribute), every field of that form when the press submits or resets it, each choice the step picks, and each choice or radio the step clears, hidden ones included, with their labels. A mark on any of these, or around them, counts. Without an `allow` callback, that step fails and tells the agent to ask the person.
 
-`data-agent-hidden` leaves a region out entirely. On a single choice, it leaves out that choice.
+`data-agent-hidden` leaves a region out entirely. On a single choice, it leaves out that choice. A choice hidden by the `hidden` attribute or by css is left out the same way.
 
-`data-agent-secret` hides the value and all state of the marked control and everything inside it: value, checked, selected, open, and its choices all read `[redacted]`, and its actions do not change with its state. Its name stays visible, and comes only from a label element, `aria-label`, or `aria-labelledby`; placeholder, title, alt and the control's own text are never used. To hide the name too, use `data-agent-hidden`. Other text inside a secret mark is never read. The agent can still type into a secret field or pick a secret choice it already knows. Password, card, and one-time-code fields count as secret without a mark.
+`data-agent-secret` hides the value and all state of the marked control and everything inside it: value, checked, selected, open, and its choices all read `[redacted]`, and its actions do not change with its state. Its name stays visible, and comes only from a label element, `aria-label`, or `aria-labelledby`; placeholder, title, alt and the control's own text are never used. To hide the name too, use `data-agent-hidden`. Other text inside a secret mark is not read. The agent can still type into a secret field or pick a secret choice it already knows. Password, card, and one-time-code fields count as secret without a mark.
 
-A mark covers the element and everything inside it. Every label, value, change and error sentence is built at the moment it is returned, with the marks as they are then: a control hidden by the step itself is absent from the result, and a value that became secret reads `[redacted]` even as the earlier value.
+A mark covers the element and everything inside it. Labels, values, changes and error sentences are built when the result is returned, with the marks as they are then: a value that became secret reads `[redacted]` on both sides of a change, and a control that is gone or hidden is reported by its ref only.
 
 A page can tell when the agent is acting. While an act step runs, `document.documentElement` has `data-agent-acting="true"`. Every event the agent fires carries `event.agentAct = { ref, action }`.
 
@@ -446,6 +450,8 @@ What it cannot do:
 It reads the main page only. Controls inside iframes and shadow roots are not listed, so the agent cannot reach them. Snapshot and query add an entry of kind `unread` that counts what was skipped, so the agent knows. A custom element may hold a closed shadow root, so each one is counted as possibly unread.
 
 These limits are accepted. A closed shadow root on an ordinary element, or one made before this file loads, cannot be detected at all. Frames from other sites cannot be read. The file trusts the page it runs in: page scripts can always change anything, including the marks.
+
+A page whose own scripts add, remove or move marks, or swap controls, in the middle of an event is handled only as far as the checks above go: marks read again before each part of a change, and the control found again after it. Beyond that it is out of scope.
 
 Editable text regions (`contenteditable`) are not typed into. Plain ones are counted as unread. One with a textbox role is listed with its text and no actions.
 
