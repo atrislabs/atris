@@ -30,12 +30,13 @@ function fakeServer(initial, { raw = true, bundle = false, listingEtags = false,
       bodies.push(options.body);
       const { have, after } = options.body;
       const changed = [...files].filter(([rel, text]) => have[rel] !== etag(text)).sort(([a], [b]) => a.localeCompare(b));
-      const offset = Number(after || 0);
+      const offset = after ? changed.findIndex(([rel]) => rel > after) : 0;
+      const start = offset < 0 ? changed.length : offset;
       return ok({
-        pages: changed.slice(offset, offset + bundleSize).map(([rel, text]) => ({ path: rel, text, etag: etag(text) })),
+        pages: changed.slice(start, start + bundleSize).map(([rel, text]) => ({ path: rel, text, etag: etag(text) })),
         unchanged: Object.entries(have).filter(([rel, value]) => files.has(rel) && etag(files.get(rel)) === value).length,
         gone: Object.keys(have).filter((rel) => !files.has(rel)), skipped: [],
-        next: offset + bundleSize < changed.length ? String(offset + bundleSize) : null,
+        next: start + bundleSize < changed.length ? changed[start + bundleSize - 1][0] : null,
       });
     }
     if (url.pathname === '/memory/ls') {
@@ -109,8 +110,92 @@ test('bundle pulls 200 pages in a handful of requests and follows cursors', asyn
   const result = await run('pull', dir, server);
   assert.equal(result.code, 0);
   assert.equal(server.calls.length, 3);
-  assert.deepEqual(server.bodies.map((body) => body.after), ['', '75', '150']);
+  assert.deepEqual(server.bodies.map((body) => body.after), ['', 'wiki/074.md', 'wiki/149.md']);
   for (const [rel, text] of Object.entries(files)) assert.equal(fs.readFileSync(path.join(dir, rel), 'utf8'), text);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an interrupted bundle saves written baselines without applying unfinished removals', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'wiki/a.md': 'v0', 'wiki/gone.md': 'old' }, { bundle: true });
+  await run('pull', dir, server);
+  server.files.set('wiki/a.md', 'v1');
+  server.files.delete('wiki/gone.md');
+  const request = server.request;
+  let interrupted = true;
+  server.request = async (pathname, options) => {
+    if (pathname === '/memory/bundle' && interrupted) {
+      if (options.body.after) return { ok: false, status: 503, error: 'connection dropped' };
+      return { ok: true, status: 200, data: { pages: [{ path: 'wiki/a.md', text: 'v1', etag: 'v1-tag' }], gone: ['wiki/gone.md'], skipped: [], next: 'wiki/a.md' } };
+    }
+    return request(pathname, options);
+  };
+  assert.equal((await run('pull', dir, server)).code, 1);
+  const state = JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE)));
+  assert.equal(state.files['wiki/a.md'].sha256, crypto.createHash('sha256').update('v1').digest('hex'));
+  assert.ok(state.files['wiki/gone.md']);
+  interrupted = false;
+  const retry = await run('pull', dir, server);
+  assert.equal(retry.code, 0);
+  assert.doesNotMatch(retry.text, /Left wiki\/a.md alone/);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/a.md'), 'utf8'), 'v1');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bundle stops when a cursor moves backwards in path order', async () => {
+  const dir = tmp();
+  let calls = 0;
+  const server = { request: async () => ({ ok: true, status: 200, data: { pages: [], gone: [], skipped: [], next: ++calls === 1 ? 'wiki/z.md' : 'wiki/a.md' } }) };
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 1);
+  assert.match(result.errs, /cursor.*forward/);
+  assert.equal(calls, 2);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bundle stops after 10000 answers even if cursors keep advancing', async () => {
+  const dir = tmp();
+  let calls = 0;
+  const server = { request: async () => ({ ok: true, status: 200, data: { pages: [], gone: [], skipped: [], next: ++calls <= 10000 ? `wiki/${String(calls).padStart(5, '0')}` : null } }) };
+  const result = await run('pull', dir, server);
+  assert.equal(result.code, 1);
+  assert.match(result.errs, /too many bundle answers/);
+  assert.equal(calls, 10000);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an old baseline gains the remote etag while keeping local edits', async () => {
+  const dir = tmp();
+  const server = fakeServer({ 'wiki/a.md': 'base' }, { bundle: true });
+  await run('pull', dir, server);
+  const statePath = path.join(dir, STATE_FILE);
+  const state = JSON.parse(fs.readFileSync(statePath));
+  delete state.files['wiki/a.md'].etag;
+  delete state.files['wiki/a.md'].page;
+  fs.writeFileSync(statePath, JSON.stringify(state));
+  fs.writeFileSync(path.join(dir, 'wiki/a.md'), 'local');
+  assert.equal((await run('pull', dir, server)).code, 0);
+  assert.equal(fs.readFileSync(path.join(dir, 'wiki/a.md'), 'utf8'), 'local');
+  assert.equal(JSON.parse(fs.readFileSync(statePath)).files['wiki/a.md'].etag, crypto.createHash('md5').update('base').digest('hex'));
+  await run('pull', dir, server);
+  assert.ok(server.bodies.at(-1).have['wiki/a.md']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bundle advertises no more than 5000 tracked files', async () => {
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, 'wiki'));
+  const files = {};
+  for (let i = 0; i < 5001; i++) {
+    const rel = `wiki/${String(i).padStart(4, '0')}.md`;
+    files[rel] = { sha256: crypto.createHash('sha256').update('x').digest('hex'), etag: 'tag', page: true };
+    fs.writeFileSync(path.join(dir, rel), 'x');
+  }
+  fs.writeFileSync(path.join(dir, STATE_FILE), JSON.stringify({ version: 1, files }));
+  const server = fakeServer({}, { bundle: true });
+  assert.equal((await run('pull', dir, server)).code, 0);
+  assert.equal(Object.keys(server.bodies[0].have).length, 5000);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE))).files['wiki/5000.md']);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
