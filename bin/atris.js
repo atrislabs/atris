@@ -824,6 +824,7 @@ function showHelpAll() {
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
   console.log('  member list          - Show all team members');
+  console.log('  member install <n>   - Add a ready-made member: host, designer-1');
   console.log('  member activate <n>  - Activate a member (link skills, show context)');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
   console.log('  member result <n>    - Newest run of a member: run record, receipt, artifacts, result number');

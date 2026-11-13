@@ -137,6 +137,15 @@ atris host import people.jsonl       # bulk add people and who already knows who
 atris host room                      # the host's weekly read
 ```
 
+### Design screens with Designer-1
+
+Designer-1 is a team member that builds web screens from a fixed set of 18 parts (button, field, select, dialog, tabs and the rest). It reuses a part before writing one, keeps one spacing scale, writes very few words, and checks its work by keyboard, by control name, and at phone and desktop widths before it reports. A project's own taste files in `atris/taste/` win over its defaults.
+
+```bash
+atris member install designer-1
+atris member install designer-1 --update   # pick up the latest skill; your edits to its other files stay
+```
+
 ### Put members to work
 
 Members are helpers that work in their own copy of the repo. Three words cover it.
