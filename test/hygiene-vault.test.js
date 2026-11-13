@@ -692,3 +692,44 @@ test('vaultAndCleanCheckout and recoverInterruptedVault gracefully skip EACCES/E
     fs.rmSync(quarantineRoot, { recursive: true, force: true });
   }
 });
+
+test('restoreFromVault --force unlinks existing live or dangling symlink before writing regular file', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-symforce-q-');
+  const outsideDir = makeTempDir('atris-hv-symforce-out-');
+  try {
+    writeRel(root, 'src/live_target.py', 'restored_live = 1\n', { ageMs: 60 * 60 * 1000 });
+    writeRel(root, 'src/dangling_target.py', 'restored_dangling = 2\n', { ageMs: 60 * 60 * 1000 });
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+    assert.equal(out.applied, true);
+
+    const outsideFile = path.join(outsideDir, 'precious.txt');
+    fs.writeFileSync(outsideFile, 'DO_NOT_OVERWRITE\n', 'utf8');
+    const liveDest = path.join(root, 'src/live_target.py');
+    const danglingDest = path.join(root, 'src/dangling_target.py');
+    fs.mkdirSync(path.dirname(liveDest), { recursive: true });
+    fs.symlinkSync(outsideFile, liveDest);
+    fs.symlinkSync(path.join(outsideDir, 'missing.txt'), danglingDest);
+
+    const restored = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      slice: 'code',
+      force: true,
+      quarantineRoot,
+    });
+    assert.equal(restored.ok, true);
+    assert.equal(fs.lstatSync(liveDest).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(danglingDest).isSymbolicLink(), false);
+    assert.equal(fs.readFileSync(liveDest, 'utf8'), 'restored_live = 1\n');
+    assert.equal(fs.readFileSync(danglingDest, 'utf8'), 'restored_dangling = 2\n');
+    assert.equal(fs.readFileSync(outsideFile, 'utf8'), 'DO_NOT_OVERWRITE\n');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
