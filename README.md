@@ -393,6 +393,50 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
 
+## Agent page
+
+Agent page is one small browser file. An AI agent reads the controls on a page by their names, and presses them, without screenshots. It works on the page a person already has, built from normal form controls and ARIA roles, with any framework. It has no dependencies.
+
+Load it with a plain script tag, or `require` it in Node and bundlers:
+
+```html
+<script src="node_modules/atris/lib/agent-page.js"></script>
+```
+
+```js
+const agent = AgentPage.createAgent({
+  allow: (request) => window.confirm(`Let the agent ${request.action} "${request.label}"?`),
+  timeout: 5 * 60 * 1000,
+});
+agent.snapshot();
+await agent.act({ steps: [{ label: 'Project name', action: 'set', args: { value: 'Atlas' } }] });
+await agent.query({ text: 'Role', kind: 'select' });
+```
+
+Three calls do the work.
+
+`snapshot()` lists the controls. Each one has a ref, a kind, a label, its value or checked or open state, and the actions it accepts right now. The list is capped at 100.
+
+`act({ steps })` runs steps in order and stops at the first failure. Each step names a control by `ref` (from a snapshot) or by `label`, and gives an `action`: `click`, `set`, `check`, or `uncheck`. Each result shows the changes, the current value, and any error.
+
+`query({ text, within, kind })` finds controls and lists the choices of a select or listbox. The list is capped at 50.
+
+Three marks on the page set the rules.
+
+`data-agent-confirm` marks a control that needs a person. The `allow` callback decides, and it may return a promise. With no `allow` callback, the step fails and tells the agent to ask the person.
+
+`data-agent-hidden` leaves a region out entirely.
+
+`data-agent-secret` shows the value as `[redacted]`. Password, card, and one-time-code fields count as secret without a mark.
+
+A page can tell when the agent is acting. While an act step runs, `document.documentElement` has `data-agent-acting="true"`. Every event the agent fires carries `event.agentAct = { ref, action }`.
+
+It reads the main page only. Controls inside shadow DOM or iframes are not listed, so the agent cannot reach them.
+
+For agents that speak tools, `agentTools` lists three tools (`page_snapshot`, `page_act`, `page_query`) with JSON schemas. `registerTools(agent, { allow })` registers them on `document.modelContext` when the page offers it, and does nothing otherwise.
+
+The mark names and the snapshot, act, and query shape come from Vercel's UI SDK agent bridge. The code here is our own.
+
 ## Engines
 
 An engine is the intelligence that builds a mission. Every installed headless coding CLI is a swappable worker behind one contract: a bounded prompt goes in, verified proof comes out, and engines never self-certify their own work. The house default is `atris-fast` (`ax`); `claude`, `codex`, `cursor`, `devin`, `grok`, and others join when their CLIs are installed.
