@@ -175,34 +175,45 @@ function collectDoctor(options = {}) {
 }
 
 function renderDoctor(payload) {
-  const lines = [];
-  lines.push('atris doctor');
-  lines.push('');
-  lines.push(`version: ${payload.version_line || payload.version}`);
-  lines.push(`node: ${payload.node.version} (${payload.node.exec_path || 'unknown'})`);
-  lines.push(`task support (22+): ${payload.task_support ? 'yes' : 'no'}`);
-  lines.push(`auth: ${payload.auth.signed_in ? `signed in as ${payload.auth.email || 'unknown'}` : 'signed out'}`);
-  lines.push(`workspace: ${payload.workspace_root}`);
-  lines.push(`cli runnable: ${payload.cli_runnable ? 'yes' : 'no'}`);
-  lines.push(`public bin: ${payload.bin.public_bin} (${payload.bin.shim ? `${payload.bin.shim_bytes} byte shim` : 'not a shim'})`);
   const m = payload.members;
+  const setUp = fs.existsSync(path.join(payload.workspace_root, 'atris', 'atris.md'))
+    || fs.existsSync(path.join(payload.workspace_root, '.atris'));
+  const problems = [];
+  if (!payload.task_support) problems.push(`install node ${TASK_NODE_MAJOR} or newer  (atris tasks need it)`);
+  if (!payload.cli_runnable) problems.push('npm install -g atris  (reinstall atris; a program file is missing)');
+  if (!payload.bin.shim) problems.push('npm install -g atris  (reinstall atris; its startup file is damaged)');
+  if (!payload.auth.signed_in) problems.push('atris login  (sign in)');
+  if (!setUp) problems.push('atris init  (set up this folder)');
+  if (setUp && m && !m.members) problems.push('atris init  (add a team to this folder)');
+  if (m && !m.git_installed) problems.push('install git  (the team works on safe copies with it)');
+  else if (m && !m.git_repo) problems.push('git init  (let the team work on copies in this folder)');
+  if (m && !m.tools.length && !m.built_in_tool && payload.auth.signed_in) {
+    problems.push('install claude code or codex  (the team needs one coding tool)');
+  }
+  const count = problems.length;
+  const lines = [count ? `atris doctor: ${count === 1 ? 'one thing needs' : `${count} things need`} fixing.` : 'atris doctor: this computer is ready.', ''];
+  const row = (label, value) => `  ${label.padEnd(14)}${value}`;
+  lines.push(row('atris', `v${payload.version}`));
+  lines.push(row('node', payload.task_support
+    ? `${payload.node.version} (new enough; atris needs ${TASK_NODE_MAJOR} or newer)`
+    : `${payload.node.version} (too old; atris needs ${TASK_NODE_MAJOR} or newer; found at ${payload.node.exec_path || 'an unknown path'})`));
+  lines.push(row('signed in', payload.auth.signed_in ? (payload.auth.email || 'yes, account unknown') : 'no'));
+  lines.push(row('this folder', `${payload.workspace_root} (${setUp ? 'set up' : 'not set up'})`));
   if (m) {
-    const toolNames = m.tools.concat(m.built_in_tool ? ['built-in'] : []);
-    lines.push('');
-    lines.push(`members: ${m.ready ? 'ready' : 'not ready yet'}`);
-    lines.push(`  team: ${m.members ? `${m.members} member${m.members === 1 ? '' : 's'}` : 'none'}`);
-    lines.push(`  git: ${!m.git_installed ? 'not installed' : (m.git_repo ? 'yes' : 'installed, but this folder is not a git repo')}`);
-    lines.push(`  coding tool: ${toolNames.length ? toolNames.join(', ') : 'none'}`);
-    if (m.next) lines.push(`  next: ${m.next}`);
+    const tools = m.tools.concat(m.built_in_tool ? ['built-in'] : []);
+    lines.push(row('team', m.members ? `${m.members} member${m.members === 1 ? '' : 's'}` : 'none'));
+    lines.push(row('git', !m.git_installed ? 'not installed' : (m.git_repo ? 'yes' : 'installed; this folder has no git history')));
+    lines.push(row('coding tools', tools.length ? tools.join(', ') : 'none'));
   }
+  if (!payload.cli_runnable) lines.push(row('atris files', 'the program file is missing'));
+  if (!payload.bin.shim) lines.push(row('startup file', `${payload.bin.public_bin} is missing or unexpected (${payload.bin.shim_bytes === null ? 'size unknown' : `${payload.bin.shim_bytes} bytes`})`));
   if (payload.warnings && payload.warnings.length) {
-    lines.push('');
-    for (const warning of payload.warnings) lines.push(`warning: ${warning}`);
+    for (const warning of payload.warnings) {
+      const plain = warning.replace('cli install is a dirty git checkout', 'the installed atris copy has unsaved changes').replace('cli install is a detached git checkout', 'the installed atris copy is not on a named branch');
+      lines.push(row('note', plain));
+    }
   }
-  if (!payload.task_support) {
-    lines.push('');
-    lines.push(`install Node ${TASK_NODE_MAJOR}+ before running atris task.`);
-  }
+  if (count) lines.push('', `fix: ${problems[0]}`);
   return lines.join('\n');
 }
 

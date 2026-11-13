@@ -167,7 +167,7 @@ test('boot panel shows tidy counts for stale worktrees and unresolved lessons', 
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /tidy\s+2 old copies to toss, 1 open problem/);
+    assert.match(boot.stdout, /tidy\s+2 old copies to clear out, 1 open problem/);
   } finally {
     cleanupTempDir(base);
   }
@@ -223,7 +223,7 @@ test('boot panel flags landings a human had to fix this week', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /1 landing this week needed a human fix; run atris improve revisions/);
+    assert.match(boot.stdout, /1 finished change needed a human fix this week; run atris improve revisions/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -255,7 +255,7 @@ test('boot panel drops the put-away nag while the hourly autoland tick is alive'
     fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-2026-10-06T12-00-00.json'), '{}\n');
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.doesNotMatch(boot.stdout, /old cop(y|ies) to toss/);
+    assert.doesNotMatch(boot.stdout, /old cop(y|ies) to clear out/);
     assert.doesNotMatch(boot.stdout, /finished pieces? to put away/);
     assert.doesNotMatch(boot.stdout, /atris land --reap/);
   } finally {
@@ -291,8 +291,8 @@ test('boot panel shows the latest plain cleanup summary from the journal', () =>
     assert.equal(boot.status, 0, boot.stderr);
     const line = boot.stdout.split('\n').find((l) => /^\s*lately\s/.test(l));
     assert.ok(line, boot.stdout);
-    assert.match(line, /Landed 12 finished items/);
-    assert.match(line, /2 agent branches parked for you/);
+    assert.match(line, /completed 12 finished items/);
+    assert.match(line, /2 pieces of agent work set aside for you/);
     assert.ok(line.length <= 170, line);
   } finally {
     cleanupTempDir(dir);

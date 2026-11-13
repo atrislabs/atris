@@ -116,7 +116,7 @@ function printedAtrisArgs(output, label) {
     .map((row) => row.trimStart())
     .find((row) => row.toLowerCase().startsWith(prefix) && /\batris\s/.test(row));
   assert.ok(line, `missing ${label} Atris command in output:\n${output}`);
-  return parseShellWords(line.slice(line.toLowerCase().indexOf('atris ') + 'atris '.length));
+  return parseShellWords(line.slice(line.toLowerCase().indexOf('atris ') + 'atris '.length).replace(/  \([^()]+\)$/, ''));
 }
 
 function assertOk(result, label) {
@@ -246,7 +246,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
     const status = runCli(['status'], { cwd: workspace, env });
     assertOk(status, 'status');
     assert.equal(status.stdout.trim(), minute.stdout.trim());
-    assert.match(status.stdout, /ready to claim/);
+    assert.match(status.stdout, /ready to start/);
     assert.match(status.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(status.stdout, /Where we are|Decision: let it run/);
   } finally {
@@ -327,7 +327,7 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     const firstRun = runInstalled([]);
     assertGoldenPathStep(firstRun, 'first run');
     assert.match(firstRun.stdout, /initial toy repo is already here\./);
-    assert.match(firstRun.stdout, /^next: atris do$/m);
+    assert.match(firstRun.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(firstRun.stdout, /README\.md is already here|what do you want here|git log|HEAD/);
 
     const doArgs = printedAtrisArgs(firstRun.stdout, 'next');
@@ -336,22 +336,22 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
     const talk = runInstalled(doArgs, { timeout: 30000 });
     assertGoldenPathStep(talk, 'printed do from files already here');
     assert.match(talk.stdout, /is started\. nothing is built yet\./);
-    assert.match(talk.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
+    assert.match(talk.stdout, /^next: atris task ready \S+ --verify "npm test"  \(.*\)$/m);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
 
     const doit = runInstalled(doArgs);
     assertGoldenPathStep(doit, 'second do after first-talk');
-    assert.match(doit.stdout, /already yours/);
-    assert.match(doit.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
-    assert.doesNotMatch(doit.stdout, /^next: atris do$/m);
+    assert.match(doit.stdout, /you are working on/);
+    assert.match(doit.stdout, /^next: atris task ready \S+ --verify "npm test"  \(.*\)$/m);
+    assert.doesNotMatch(doit.stdout, /^next: atris do\b/m);
     assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|You are the Executor|executor\.md/);
 
     const afterDo = runInstalled([]);
     assertGoldenPathStep(afterDo, 'first minute after do');
     assert.doesNotMatch(afterDo.stdout, /No open tasks/);
-    assert.match(afterDo.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
+    assert.match(afterDo.stdout, /^next: atris task ready \S+ --verify "npm test"  \(.*\)$/m);
 
     const listed = parseJson(runInstalled(['task', 'list', '--json']), 'task list');
     const starter = (listed.tasks || []).find((row) => row && row.status === 'claimed');

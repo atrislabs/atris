@@ -45,8 +45,8 @@ test('doctor says members are ready when team, git, and a coding tool are all th
   assert.deepEqual(payload.members.tools, ['codex']);
   assert.equal(payload.members.next, null);
   const text = renderDoctor(payload);
-  assert.match(text, /members: ready/);
-  assert.match(text, /coding tool: codex/);
+  assert.match(text, /team\s+1 member/);
+  assert.match(text, /coding tools\s+codex/);
 });
 
 test('doctor names the first missing piece in one plain fix line', () => {
@@ -65,7 +65,7 @@ test('doctor names the first missing piece in one plain fix line', () => {
   if (!noTool.auth.signed_in) {
     assert.equal(noTool.members.ready, false);
     assert.match(noTool.members.next, /claude code or codex/);
-    assert.match(renderDoctor(noTool), /next: install claude code or codex/);
+    assert.match(renderDoctor(noTool), /coding tools\s+none/);
   } else {
     assert.equal(noTool.members.built_in_tool, true, 'a sign-in unlocks the built-in tool');
     assert.equal(noTool.members.ready, true);

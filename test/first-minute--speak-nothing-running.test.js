@@ -7,7 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { speakNothingRunning } = require('../lib/first-minute');
 
-const NOTHING = 'hey ada, nothing is running.\n\nnext: atris "what do you want here?"';
+const NOTHING = 'hey ada, nothing is running.\n\nnext: atris "what do you want here?"  (say it in your own words)';
 const NOTHING_JSON = {
   schema: 'atris.one_lap.v1',
   ok: false,
@@ -91,7 +91,7 @@ test('a file already here is named, and a saved note stays open', () => {
     assert.strictEqual(code, 0);
     assert.deepStrictEqual(spoken.lines, [
       '',
-      'hey ada, notes.txt is already here.\n\nnext: atris do',
+      'hey ada, this folder already has notes.txt.\n\nnext: atris do  (work on what is here)',
     ]);
 
     const json = capture();
@@ -101,7 +101,7 @@ test('a file already here is named, and a saved note stays open', () => {
       schema: 'atris.one_lap.v1',
       ok: false,
       status: 'stuck',
-      reason: 'notes.txt is already here',
+      reason: 'this folder already has notes.txt',
       next_action: 'atris do',
     }, null, 2)]);
     assert.strictEqual(fs.existsSync(path.join(room, 'atris')), false);
@@ -115,7 +115,7 @@ test('a file already here is named, and a saved note stays open', () => {
     assert.strictEqual(code, 0);
     assert.deepStrictEqual(spoken.lines, [
       '',
-      'hey ada, buy milk is still open.\n\nnext: atris do',
+      'hey ada, buy milk is still open.\n\nnext: atris do  (work on what is here)',
     ]);
 
     const many = capture();
@@ -127,7 +127,7 @@ test('a file already here is named, and a saved note stays open', () => {
     assert.strictEqual(manyCode, 0);
     assert.deepStrictEqual(many.lines, [
       '',
-      'hey ada, buy milk is still open.\n\nnext: atris',
+      'hey ada, buy milk is still open.\n\nnext: atris  (see where things stand)',
     ]);
   });
 
@@ -141,7 +141,7 @@ test('a file already here is named, and a saved note stays open', () => {
     assert.strictEqual(code, 0);
     assert.deepStrictEqual(spoken.lines, [
       '',
-      'hey ada, this folder already has work.\n\nnext: atris do',
+      'hey ada, this folder already has work.\n\nnext: atris do  (work on what is here)',
     ]);
   });
 });

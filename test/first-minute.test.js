@@ -56,7 +56,7 @@ function writeAccount(home, account) {
 
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
-  return match ? match[1] : '';
+  return match ? match[1].replace(/  \([^()]+\)$/, '') : '';
 }
 
 function keepWorkingNext(ref) {
@@ -75,9 +75,9 @@ function assertKeepWorkingNext(stdout, ref) {
 }
 
 function assertDeskAcceptsReview(stdout, id = 'CLI-193') {
-  assert.match(stdout, /something finished\. waiting on you\./);
-  assert.doesNotMatch(stdout, /write a feature map for/i);
-  assert.doesNotMatch((String(stdout).split('\n').find((line) => /something finished/.test(line)) || ''), new RegExp(id));
+  assert.match(stdout, /.+ is waiting for your ok\./);
+  assert.match(stdout, /write a feature map for/i);
+  assert.doesNotMatch((String(stdout).split('\n').find((line) => /waiting for your ok/.test(line)) || ''), new RegExp(id));
   assert.match(stdout, new RegExp(id));
   assert.match(nextLine(stdout), new RegExp(`^atris task accept ${id}$`));
 }
@@ -150,7 +150,7 @@ test('fresh first-minute copy starts a conversation and stays short', () => {
   assert.match(text, /hey keshav, this folder is empty\./);
   assert.doesNotMatch(text, /I'll set this up when you want/);
   assert.doesNotMatch(text, /atris init --minimal/);
-  assert.match(text, /^next: atris "what do you want here\?"$/m);
+  assert.match(text, /^next: atris "what do you want here\?"  \(.*\)$/m);
   assert.equal(spokenLineCount(text), 2);
   assert.ok(text.length < 200);
   const json = freshMinuteJson();
@@ -172,21 +172,21 @@ test('keep-working minute is claimed ready, and the win line drops the greeting'
   }), false);
   assert.equal(isClaimMinute(null), false);
   assert.equal(
-    spokenWinReason('hey keshav, "notes.md" is already yours.\n\nnext: atris "add a test for the claimed task"'),
-    '"notes.md" is already yours',
+    spokenWinReason('hey keshav, you are working on "notes.md".\n\nnext: atris "add a test for the claimed task"'),
+    'you are working on "notes.md"',
   );
 });
 
 test('fresh first-minute names a file already here instead of empty', () => {
   const text = renderFresh({ person: 'keshav', folder: 'this folder', files: ['notes.txt'] });
   assert.equal(text, [
-    'hey keshav, notes.txt is already here.',
+    'hey keshav, this folder already has notes.txt.',
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
   assert.equal(spokenLineCount(text), 2);
   const json = freshMinuteJson('this folder', ['notes.txt']);
-  assert.equal(json.reason, 'notes.txt is already here');
+  assert.equal(json.reason, 'this folder already has notes.txt');
   assert.equal(json.next_action, 'atris do');
 });
 
@@ -200,7 +200,7 @@ test('fresh first-minute names a git commit already here instead of files', () =
   assert.equal(text, [
     'hey keshav, add notes app is already here.',
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
   assert.equal(spokenLineCount(text), 2);
   const json = freshMinuteJson('this folder', ['notes.txt', 'draft.md', 'readme.md'], {
@@ -217,7 +217,7 @@ test('fresh first-minute names a git commit already here instead of files', () =
   });
   assert.match(clipped, /hey keshav, .+\.\.\. is already here\./);
   assert.doesNotMatch(clipped, /home screen|git log|master|[0-9a-f]{7,}/);
-  assert.match(clipped, /^next: atris do$/m);
+  assert.match(clipped, /^next: atris do  \(.*\)$/m);
   const hiddenOnly = renderFresh({
     person: 'keshav',
     folder: 'this folder',
@@ -225,7 +225,7 @@ test('fresh first-minute names a git commit already here instead of files', () =
     commit: 'add notes app',
   });
   assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
-  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"  \(.*\)$/m);
 });
 
 test('fresh first-minute names dirty git work instead of the last commit', () => {
@@ -239,7 +239,7 @@ test('fresh first-minute names dirty git work instead of the last commit', () =>
   assert.equal(one, [
     'hey keshav, notes.txt is still open.',
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
   assert.equal(spokenLineCount(one), 2);
   const json = freshMinuteJson('this folder', ['notes.txt'], {
@@ -256,7 +256,7 @@ test('fresh first-minute names dirty git work instead of the last commit', () =>
     dirty: ['notes.txt', 'draft.md'],
   });
   assert.match(two, /hey keshav, draft.md and notes.txt are still open\./);
-  assert.match(two, /^next: atris do$/m);
+  assert.match(two, /^next: atris do  \(.*\)$/m);
   assert.doesNotMatch(two, /add notes app|already here|readme\.md|git status|git log/);
   const many = renderFresh({
     person: 'keshav',
@@ -266,7 +266,7 @@ test('fresh first-minute names dirty git work instead of the last commit', () =>
     dirty: ['a.txt', 'b.txt', 'c.txt'],
   });
   assert.match(many, /hey keshav, this folder still has open work\./);
-  assert.match(many, /^next: atris do$/m);
+  assert.match(many, /^next: atris do  \(.*\)$/m);
   assert.doesNotMatch(many, /add notes app|already here|a\.txt|b\.txt|c\.txt|git status| M |\?\? /);
   const hiddenDirty = renderFresh({
     person: 'keshav',
@@ -299,7 +299,7 @@ test('fresh first-minute names a feature branch already here instead of the last
   assert.equal(text, [
     'hey keshav, notes-app is already here.',
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
   assert.equal(spokenLineCount(text), 2);
   const json = freshMinuteJson('this folder', ['notes.txt', 'draft.md', 'readme.md'], {
@@ -318,7 +318,7 @@ test('fresh first-minute names a feature branch already here instead of the last
   });
   assert.match(clipped, /hey keshav, .+\.\.\. is already here\./);
   assert.doesNotMatch(clipped, /home-screen-for-later|git log|origin\/|[0-9a-f]{7,}/);
-  assert.match(clipped, /^next: atris do$/m);
+  assert.match(clipped, /^next: atris do  \(.*\)$/m);
   const fromOrigin = renderFresh({
     person: 'keshav',
     folder: 'this folder',
@@ -348,7 +348,7 @@ test('fresh first-minute names a feature branch already here instead of the last
     dirty: ['notes.txt'],
   });
   assert.match(dirtyWins, /hey keshav, notes.txt is still open\./);
-  assert.match(dirtyWins, /^next: atris do$/m);
+  assert.match(dirtyWins, /^next: atris do  \(.*\)$/m);
   assert.doesNotMatch(dirtyWins, /notes-app|tweak readme|already here/);
   const hiddenOnly = renderFresh({
     person: 'keshav',
@@ -358,7 +358,7 @@ test('fresh first-minute names a feature branch already here instead of the last
     branch: 'notes-app',
   });
   assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
-  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"  \(.*\)$/m);
 });
 
 test('fresh first-minute names one or two files and never dumps a listing', () => {
@@ -367,8 +367,8 @@ test('fresh first-minute names one or two files and never dumps a listing', () =
     folder: 'this folder',
     files: ['notes.txt', 'draft.md'],
   });
-  assert.match(two, /hey keshav, draft.md and notes.txt are already here\./);
-  assert.match(two, /^next: atris do$/m);
+  assert.match(two, /hey keshav, this folder already has draft.md and notes.txt\./);
+  assert.match(two, /^next: atris do  \(.*\)$/m);
   assert.equal(spokenLineCount(two), 2);
   const many = renderFresh({
     person: 'keshav',
@@ -376,7 +376,7 @@ test('fresh first-minute names one or two files and never dumps a listing', () =
     files: ['a.txt', 'b.txt', 'c.txt', 'd.txt'],
   });
   assert.match(many, /hey keshav, this folder already has work\./);
-  assert.match(many, /^next: atris do$/m);
+  assert.match(many, /^next: atris do  \(.*\)$/m);
   assert.doesNotMatch(many, /a\.txt|b\.txt|c\.txt|d\.txt|what do you want here/);
   assert.equal(spokenLineCount(many), 2);
 });
@@ -391,7 +391,7 @@ test('later note wins over files, git, branch, and dirty work', () => {
   assert.equal(remembered, [
     'hey keshav, finish the notes app is still open.',
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
   const withFiles = renderFresh({
     person: 'keshav',
@@ -405,7 +405,7 @@ test('later note wins over files, git, branch, and dirty work', () => {
   assert.equal(withFiles, [
     'hey keshav, finish the notes app is still open.',
     '',
-    'next: atris',
+    'next: atris  (see where things stand)',
   ].join('\n'));
   assert.doesNotMatch(withFiles, /already here|notes\.txt is still open|notes-app/);
   const json = freshMinuteJson('this folder', ['notes.txt'], { later });
@@ -419,7 +419,7 @@ test('later note wins over files, git, branch, and dirty work', () => {
   assert.equal(remember, [
     "hey keshav, I'll remember finish the notes app.",
     '',
-    'next: atris do',
+    'next: atris do  (work on what is here)',
   ].join('\n'));
 });
 
@@ -429,8 +429,8 @@ test('hidden names do not count as work in a fresh folder', () => {
     folder: 'this folder',
     files: ['.DS_Store', '.git', 'notes.txt', 'tasks.db'],
   });
-  assert.match(text, /hey keshav, notes.txt is already here\./);
-  assert.match(text, /^next: atris do$/m);
+  assert.match(text, /hey keshav, this folder already has notes.txt\./);
+  assert.match(text, /^next: atris do  \(.*\)$/m);
   assert.doesNotMatch(text, /this folder is empty|this folder already has work|\.DS_Store|\.git|tasks\.db/);
   const hiddenOnly = renderFresh({
     person: 'keshav',
@@ -438,7 +438,7 @@ test('hidden names do not count as work in a fresh folder', () => {
     files: ['.DS_Store', '.git', 'tasks.db', 'tasks.db-wal'],
   });
   assert.match(hiddenOnly, /hey keshav, this folder is empty\./);
-  assert.match(hiddenOnly, /^next: atris "what do you want here\?"$/m);
+  assert.match(hiddenOnly, /^next: atris "what do you want here\?"  \(.*\)$/m);
 });
 
 test('fresh next is do when files are here and talk when empty', () => {
@@ -467,8 +467,8 @@ test('claimed task first-minute names the person or title and one next command',
     task: { title: 'Ship the landing page', status: 'claimed', display_id: 'CLI-9' },
     nextCommand: keepWorkingNext('CLI-9'),
   });
-  assert.match(text, /hey keshav, "ship the landing page" is already yours\./);
-  assert.match(text, /^next: atris "add a test for the claimed task"$/m);
+  assert.match(text, /hey keshav, you are working on "ship the landing page"\./);
+  assert.match(text, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
   assert.equal(text.match(/^next:/mg).length, 1);
   assert.ok(spokenLineCount(text) <= 4);
 });
@@ -486,12 +486,12 @@ test('ready review task first-minute waits for a human ok', () => {
     recap: { title: 'week one loop' },
     nextCommand: 'atris task accept UNW-2',
   });
-  assert.match(text, /hey keshav, something finished\. waiting on you\./);
+  assert.match(text, /hey keshav, .+ is waiting for your ok\./);
   assert.doesNotMatch(text.split('\n')[0], /UNW-2/);
-  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
   assert.doesNotMatch(text, /so the count is easy to read/);
   assert.match(text, /last recap: week one loop/);
-  assert.match(text, /^next: atris task accept UNW-2$/m);
+  assert.match(text, /^next: atris task accept UNW-2  \(.*\)$/m);
   assert.ok(spokenLineCount(text) <= 4);
 });
 
@@ -562,11 +562,11 @@ test('uncertified review task first-minute still waits for a human ok', () => {
     },
     nextCommand: 'atris task accept UNW-4',
   });
-  assert.match(text, /hey keshav, something finished\. waiting on you\./);
+  assert.match(text, /hey keshav, .+ is waiting for your ok\./);
   assert.doesNotMatch(text.split('\n')[0], /UNW-4/);
-  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
   assert.doesNotMatch(text, /review-chat/);
-  assert.match(text, /^next: atris task accept UNW-4$/m);
+  assert.match(text, /^next: atris task accept UNW-4  \(.*\)$/m);
 });
 
 test('headless flags never auto-init without an explicit yes', () => {
@@ -637,7 +637,7 @@ test('named empty folder under tmp keeps the room name', () => {
   const text = renderFresh({ person: 'keshav', folder: folderName('/tmp/launch-day') });
   assert.match(text, /hey keshav, launch-day is empty\./);
   assert.doesNotMatch(text, /I'll set this up when you want/);
-  assert.match(text, /^next: atris "what do you want here\?"$/m);
+  assert.match(text, /^next: atris "what do you want here\?"  \(.*\)$/m);
   assert.doesNotMatch(text, /atris init --minimal/);
   assert.equal(spokenLineCount(text), 2);
   assert.equal(firstTalkCommand('launch-day'), 'atris "what do you want here?"');
@@ -708,9 +708,9 @@ test('buildFirstMinute prefers a certified review over a newer uncertified one',
       folder: 'this folder',
     });
     assert.equal(screen.nextCommand, 'atris task accept UNW-2');
-    assert.match(screen.text, /something finished\. waiting on you\./);
+    assert.match(screen.text, /.+ is waiting for your ok\./);
     assert.doesNotMatch(screen.text.split('\n')[0], /UNW-2/);
-    assert.doesNotMatch(screen.text, /you already shipped/);
+    assert.doesNotMatch(screen.text, /you already (shipped|finished)/);
     assert.doesNotMatch(screen.text, /review-chat/);
   } finally {
     cleanupTempDir(dir);
@@ -756,7 +756,7 @@ test('empty named folder under tmp greets with the room name', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /hey keshav, launch-day is empty\./);
     assert.doesNotMatch(res.stdout, /I'll set this up when you want/);
-    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(res.stdout, /atris init --minimal/);
     assert.doesNotMatch(res.stdout, /this folder is empty/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -798,7 +798,7 @@ test('empty dir no-interactive without --yes does not init', () => {
       },
     });
     assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
-    assert.match(blocked.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(blocked.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(blocked.stdout, /atris init --minimal/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
@@ -825,7 +825,7 @@ test('empty dir --yes inits even under no-interactive', () => {
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'lessons.md')));
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'INTUITION.md')), false);
-    assert.match(started.stdout, /atris initialized/);
+    assert.match(started.stdout, /atris is set up in this folder/);
     assert.match(started.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(started.stdout, /I'll set this up when you want/);
     assert.doesNotMatch(started.stdout, /What do you want to build/);
@@ -857,7 +857,7 @@ test('workspace with a claimed task names the person or title and one next comma
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /keshav|ship the landing page/i);
-    assert.match(res.stdout, /^next: atris "add a test for the claimed task"$/m);
+    assert.match(res.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
     assert.doesNotMatch(res.stdout, /What do you want to build|context   loaded|Atris Do/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
@@ -922,11 +922,11 @@ test('workspace with a ready task names the win and points at accept', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /hey keshav,/);
     assert.doesNotMatch(res.stdout, /keshavrao/);
-    assert.match(res.stdout, /something finished\. waiting on you\./);
+    assert.match(res.stdout, /.+ is waiting for your ok\./);
     assert.doesNotMatch(res.stdout.split('\n').find((line) => line.includes('hey keshav')) || '', /UNW-2/);
-    assert.match(res.stdout, /^next: atris task accept UNW-2$/m);
+    assert.match(res.stdout, /^next: atris task accept UNW-2  \(.*\)$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
-    assert.doesNotMatch(res.stdout, /you already shipped/);
+    assert.doesNotMatch(res.stdout, /you already (shipped|finished)/);
     assert.doesNotMatch(res.stdout, /review-chat/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
@@ -944,7 +944,7 @@ test('first talk files the user sentence and names it as the win', () => {
     const empty = runCli([], { cwd: dir, env });
     assert.equal(empty.status, 0, empty.stderr || empty.stdout);
     assert.match(empty.stdout, /hey keshav, this folder is empty\./);
-    assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(empty.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(empty.stdout, /I saved a first step|first useful step/i);
 
     for (const leftover of ['brainstorm hi', 'wish hi', 'task next']) {
@@ -957,7 +957,7 @@ test('first talk files the user sentence and names it as the win', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /already won\. one next step/);
+    assert.match(help.stdout, /get one next step/);
     assert.doesNotMatch(help.stdout, /this folder is empty|I saved a first step|is ready\./);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -985,13 +985,13 @@ test('first talk files the user sentence and names it as the win', () => {
 
     const after = runCli([], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr || after.stdout);
-    assert.match(after.stdout, /"a notes app for keshav" is already yours/);
+    assert.match(after.stdout, /you are working on "a notes app for keshav"/);
     assert.equal(nextLine(after.stdout), keepWorking);
-    assert.doesNotMatch(after.stdout, /ready to claim|atris task (claim|show) |first useful step/i);
+    assert.doesNotMatch(after.stdout, /ready to start|atris task (claim|show) |first useful step/i);
 
     const doit = runCli(['do'], { cwd: dir, env });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-    assert.match(doit.stdout, /"a notes app for keshav" is already yours/);
+    assert.match(doit.stdout, /you are working on "a notes app for keshav"/);
     assert.equal(nextLine(doit.stdout), keepWorking);
     assert.notEqual(nextLine(doit.stdout), 'atris do');
     assert.equal(spokenLineCount(doit.stdout), 2);
@@ -1012,7 +1012,7 @@ test('later remembers words in an unbound folder without minting a room', () => 
     const empty = runCli([], { cwd: dir, env });
     assert.equal(empty.status, 0, empty.stderr || empty.stdout);
     assert.match(empty.stdout, /hey keshav, notes is empty\./);
-    assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(empty.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(fs.existsSync(laterNotePath(dir)), false);
 
     const missing = runCli(['later'], { cwd: dir, env });
@@ -1033,7 +1033,7 @@ test('later remembers words in an unbound folder without minting a room', () => 
     assert.equal(remembered.stdout.trim(), [
       "hey keshav, I'll remember finish the notes app.",
       '',
-      'next: atris do',
+      'next: atris do  (work on what is here)',
     ].join('\n'));
     assert.equal(spokenLineCount(remembered.stdout), 2);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1045,7 +1045,7 @@ test('later remembers words in an unbound folder without minting a room', () => 
     assert.equal(minute.stdout.trim(), [
       'hey keshav, finish the notes app is still open.',
       '',
-      'next: atris do',
+      'next: atris do  (work on what is here)',
     ].join('\n'));
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1064,7 +1064,7 @@ test('later remembers words in an unbound folder without minting a room', () => 
     const withFiles = runCli([], { cwd: dir, env });
     assert.equal(withFiles.status, 0, withFiles.stderr || withFiles.stdout);
     assert.match(withFiles.stdout, /hey keshav, finish the notes app is still open\./);
-    assert.match(withFiles.stdout, /^next: atris$/m);
+    assert.match(withFiles.stdout, /^next: atris  \(.*\)$/m);
     assert.doesNotMatch(withFiles.stdout, /notes\.txt is already here|what do you want here/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1101,11 +1101,11 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.equal(mission.status, 0, mission.stderr || mission.stdout);
-    assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /hey keshav, this folder already has notes.txt\./);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /hey keshav, notes.txt is already here\./);
-    assert.match(mission.stdout, /^next: atris do$/m);
+    assert.match(mission.stdout, /hey keshav, this folder already has notes.txt\./);
+    assert.match(mission.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /this folder is empty|this folder already has work|\.DS_Store|\.git/);
@@ -1127,12 +1127,12 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
     const jsonPayload = JSON.parse(jsonMinute.stdout);
     assert.equal(jsonMinute.status, 2);
     assert.equal(jsonPayload.next_action, 'atris do');
-    assert.equal(jsonPayload.reason, 'notes.txt is already here');
+    assert.equal(jsonPayload.reason, 'this folder already has notes.txt');
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /already won\. one next step/);
+    assert.match(help.stdout, /get one next step/);
     assert.doesNotMatch(help.stdout, /notes.txt is already here|this folder is empty/);
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
@@ -1158,7 +1158,7 @@ test('unbound folder of only hidden files still says empty', () => {
     const minute = runCli([], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /hey keshav, this folder is empty\./);
-    assert.match(minute.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(minute.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(minute.stdout, /already here|already has work|still open|\.DS_Store|\.git/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
   } finally {
@@ -1176,8 +1176,8 @@ test('unbound folder names a directory that already has work', () => {
   try {
     const minute = runCli([], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
-    assert.match(minute.stdout, /hey keshav, src is already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /hey keshav, this folder already has src\./);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(minute.stdout, /what do you want here/);
     assert.doesNotMatch(minute.stdout, /this folder is empty|home is already here|app\.js/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1200,7 +1200,7 @@ test('unbound folder with a few files names work without a listing', () => {
     const planned = runCli(['plan'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /hey keshav, this folder already has work\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(minute.stdout, /notes\.txt|draft\.md|readme\.md|this folder is empty|what do you want here/);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
     assert.equal(planned.stdout.trim(), minute.stdout.trim());
@@ -1230,7 +1230,7 @@ test('unbound git folder names the last commit and does not mint', () => {
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.match(minute.stdout, /hey keshav, add notes app is already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /this folder already has work|still open|notes\.txt|draft\.md|git log|master|HEAD|what do you want here/);
     assert.doesNotMatch(minute.stdout, /[0-9a-f]{7,}/);
@@ -1257,7 +1257,7 @@ test('unbound git folder names the last commit and does not mint', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /already won\. one next step/);
+    assert.match(help.stdout, /get one next step/);
     assert.doesNotMatch(help.stdout, /add notes app is already here|this folder is empty/);
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
@@ -1289,7 +1289,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.match(minute.stdout, /hey keshav, notes.txt is still open\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /add notes app|already here|git status|git log|master|HEAD| M |\?\? |what do you want here/);
     assert.doesNotMatch(minute.stdout, /[0-9a-f]{7,}/);
@@ -1316,7 +1316,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /already won\. one next step/);
+    assert.match(help.stdout, /get one next step/);
     assert.doesNotMatch(help.stdout, /notes.txt is still open|add notes app is already here|this folder is empty/);
 
     const extraParent = makeTempDir();
@@ -1331,7 +1331,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
       const untracked = runCli([], { cwd: extra, env: extraEnv });
       assert.equal(untracked.status, 0, untracked.stderr || untracked.stdout);
       assert.match(untracked.stdout, /hey keshav, extra.txt is still open\./);
-      assert.match(untracked.stdout, /^next: atris do$/m);
+      assert.match(untracked.stdout, /^next: atris do  \(.*\)$/m);
       assert.doesNotMatch(untracked.stdout, /add notes app|already here|notes\.txt|git status|\?\? /);
       assert.equal(fs.existsSync(path.join(extra, 'atris')), false);
     } finally {
@@ -1357,7 +1357,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
       const crowded = runCli([], { cwd: many, env: manyEnv });
       assert.equal(crowded.status, 0, crowded.stderr || crowded.stdout);
       assert.match(crowded.stdout, /hey keshav, this folder still has open work\./);
-      assert.match(crowded.stdout, /^next: atris do$/m);
+      assert.match(crowded.stdout, /^next: atris do  \(.*\)$/m);
       assert.doesNotMatch(crowded.stdout, /add notes app|already here|a\.txt|b\.txt|c\.txt|git status| M /);
       assert.equal(fs.existsSync(path.join(many, 'atris')), false);
     } finally {
@@ -1373,7 +1373,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
 
     const after = runCli([], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr || after.stdout);
-    assert.match(after.stdout, /"a notes app for keshav" is already yours/);
+    assert.match(after.stdout, /you are working on "a notes app for keshav"/);
     assertKeepWorkingNext(after.stdout);
     assert.doesNotMatch(after.stdout, /still open|notes\.txt is already here/);
   } finally {
@@ -1402,7 +1402,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.match(minute.stdout, /hey keshav, notes-app is already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(minute.stdout), 2);
     assert.doesNotMatch(minute.stdout, /tweak readme|this folder already has work|still open|notes\.txt|draft\.md|git log|master|HEAD|origin\/|what do you want here/);
     assert.doesNotMatch(minute.stdout, /[0-9a-f]{7,}/);
@@ -1429,14 +1429,14 @@ test('unbound git folder on a feature branch names the branch and does not mint'
 
     const help = runCli(['--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /already won\. one next step/);
+    assert.match(help.stdout, /get one next step/);
     assert.doesNotMatch(help.stdout, /notes-app is already here|tweak readme is already here|this folder is empty/);
 
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'still writing\n', 'utf8');
     const dirty = runCli([], { cwd: dir, env });
     assert.equal(dirty.status, 0, dirty.stderr || dirty.stdout);
     assert.match(dirty.stdout, /hey keshav, notes.txt is still open\./);
-    assert.match(dirty.stdout, /^next: atris do$/m);
+    assert.match(dirty.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(dirty.stdout, /notes-app|tweak readme|already here|git status|origin\//);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     gitOk(dir, ['checkout', '-q', '--', 'notes.txt']);
@@ -1445,7 +1445,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
     const detached = runCli([], { cwd: dir, env });
     assert.equal(detached.status, 0, detached.stderr || detached.stdout);
     assert.match(detached.stdout, /hey keshav, tweak readme is already here\./);
-    assert.match(detached.stdout, /^next: atris do$/m);
+    assert.match(detached.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(detached.stdout, /notes-app|still open|origin\/|HEAD|what do you want here/);
     assert.doesNotMatch(detached.stdout, /[0-9a-f]{7,}/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1454,7 +1454,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
     const trunk = runCli([], { cwd: dir, env });
     assert.equal(trunk.status, 0, trunk.stderr || trunk.stdout);
     assert.match(trunk.stdout, /hey keshav, tweak readme is already here\./);
-    assert.match(trunk.stdout, /^next: atris do$/m);
+    assert.match(trunk.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(trunk.stdout, /notes-app|still open|origin\//);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1462,7 +1462,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
     const long = runCli([], { cwd: dir, env });
     assert.equal(long.status, 0, long.stderr || long.stdout);
     assert.match(long.stdout, /hey keshav, .+\.\.\. is already here\./);
-    assert.match(long.stdout, /^next: atris do$/m);
+    assert.match(long.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(long.stdout, /home-screen-for-later|tweak readme|origin\//);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1476,7 +1476,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
 
     const after = runCli([], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr || after.stdout);
-    assert.match(after.stdout, /"a notes app for keshav" is already yours/);
+    assert.match(after.stdout, /you are working on "a notes app for keshav"/);
     assertKeepWorkingNext(after.stdout);
     assert.doesNotMatch(after.stdout, /notes-app is already here|notes\.txt is already here/);
   } finally {
@@ -1497,8 +1497,8 @@ test('unbound git folder with no commits still names files and does not mint', (
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'already writing\n', 'utf8');
     const noCommit = runCli([], { cwd: dir, env });
     assert.equal(noCommit.status, 0, noCommit.stderr || noCommit.stdout);
-    assert.match(noCommit.stdout, /hey keshav, notes.txt is already here\./);
-    assert.match(noCommit.stdout, /^next: atris do$/m);
+    assert.match(noCommit.stdout, /hey keshav, this folder already has notes.txt\./);
+    assert.match(noCommit.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(noCommit.stdout, /add notes app|this folder already has work|git log/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1511,7 +1511,7 @@ test('unbound git folder with no commits still names files and does not mint', (
       const empty = runCli([], { cwd: emptyGit, env: emptyEnv });
       assert.equal(empty.status, 0, empty.stderr || empty.stdout);
       assert.match(empty.stdout, /hey keshav, this folder is empty\./);
-      assert.match(empty.stdout, /^next: atris "what do you want here\?"$/m);
+      assert.match(empty.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
       assert.equal(fs.existsSync(path.join(emptyGit, 'atris')), false);
     } finally {
       cleanupTempDir(emptyGit);
@@ -1525,7 +1525,7 @@ test('unbound git folder with no commits still names files and does not mint', (
       env: { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(child, 'tasks.db') },
     });
     assert.equal(nested.status, 0, nested.stderr || nested.stdout);
-    assert.match(nested.stdout, /hey keshav, notes.txt is already here\./);
+    assert.match(nested.stdout, /hey keshav, this folder already has notes.txt\./);
     assert.doesNotMatch(nested.stdout, /parent win|add notes app|this folder already has work/);
     assert.equal(fs.existsSync(path.join(child, 'atris')), false);
   } finally {
@@ -1544,7 +1544,7 @@ test('atris test in an empty folder still names init', () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /this folder is empty/);
-    assert.match(res.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(res.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(res.stdout, /BOOTSTRAP REQUIRED|For an agent|generate a complete `atris\/MAP\.md`/);
     assert.doesNotMatch(res.stdout, /Got it\. I saved your first direction|First useful step: test/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1565,7 +1565,7 @@ test('atris recap in an empty folder talks like first-minute', () => {
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.equal(recap.stdout.trim(), minute.stdout.trim());
     assert.match(recap.stdout, /this folder is empty/);
-    assert.match(recap.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(recap.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(recap.stdout, /atris init --minimal|no task history yet/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
 
@@ -1596,7 +1596,7 @@ test('atris plan in an empty folder talks like first-minute', () => {
     assert.equal(planned.status, 0, planned.stderr || planned.stdout);
     assert.equal(planned.stdout.trim(), minute.stdout.trim());
     assert.match(planned.stdout, /this folder is empty/);
-    assert.match(planned.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(planned.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(planned.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(planned.stdout, /navigator\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1624,7 +1624,7 @@ test('atris review in an empty folder talks like first-minute', () => {
     assert.equal(review.status, 0, review.stderr || review.stdout);
     assert.equal(review.stdout.trim(), minute.stdout.trim());
     assert.match(review.stdout, /this folder is empty/);
-    assert.match(review.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(review.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
     assert.notEqual(review.stdout.trim(), 'nothing is waiting on you.');
     assert.doesNotMatch(review.stdout, /^nothing is waiting on you\.$/m);
@@ -1651,8 +1651,8 @@ test('atris do in an unbound folder starts from files already here', () => {
   try {
     const minute = runCli([], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
-    assert.match(minute.stdout, /hey keshav, notes.txt is already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /hey keshav, this folder already has notes.txt\./);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
@@ -1678,10 +1678,10 @@ test('atris do in an unbound folder starts from files already here', () => {
     assert.equal(again.status, 0, again.stderr || again.stdout);
     assert.equal(after.status, 0, after.stderr || after.stdout);
     assert.equal(again.stdout.trim(), after.stdout.trim());
-    assert.match(after.stdout, /"notes\.txt" is already yours/);
+    assert.match(after.stdout, /you are working on "notes\.txt"/);
     assert.equal(nextLine(after.stdout), keepWorking);
     assert.notEqual(nextLine(after.stdout), 'atris do');
-    assert.doesNotMatch(after.stdout, /notes\.txt is already here|this folder is empty|atris task (claim|show) |ready to claim/);
+    assert.doesNotMatch(after.stdout, /notes\.txt is already here|this folder is empty|atris task (claim|show) |ready to start/);
     assert.equal(nextLine(again.stdout), nextLine(doit.stdout));
   } finally {
     cleanupTempDir(dir);
@@ -1697,8 +1697,8 @@ test('atris do in an unbound folder starts from a few files with one title', () 
   const env = { HOME: home, USER: 'keshav', ATRIS_TASKS_DB: path.join(dir, 'tasks.db') };
   try {
     const minute = runCli([], { cwd: dir, env });
-    assert.match(minute.stdout, /hey keshav, draft.md and notes.txt are already here\./);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /hey keshav, this folder already has draft.md and notes.txt\./);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
@@ -1740,7 +1740,7 @@ test('atris do in an empty folder talks like first-minute', () => {
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
     assert.match(doit.stdout, /this folder is empty/);
-    assert.match(doit.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(doit.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(doit.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(doit.stdout, /executor\.md|Run "atris init"/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1778,7 +1778,7 @@ test('atris do after init and claim stays in the room', () => {
     assert.equal(doit.stdout.trim(), minute.stdout.trim());
     assert.equal(planned.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
-    assert.match(minute.stdout, /already yours/);
+    assert.match(minute.stdout, /you are working on/);
     assertKeepWorkingNext(doit.stdout);
     assert.equal(nextLine(doit.stdout), nextLine(minute.stdout));
     assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
@@ -1815,7 +1815,7 @@ test('atris task next in an empty folder talks like first-minute', () => {
     assert.equal(task.stdout.trim(), minute.stdout.trim());
     assert.equal(next.stdout.trim(), minute.stdout.trim());
     assert.match(next.stdout, /this folder is empty/);
-    assert.match(next.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(next.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(next.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(next.stdout, /No open tasks|atris task new/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -1844,7 +1844,7 @@ test('atris task new in an empty folder talks like first-minute', () => {
     assert.equal(created.status, 0, created.stderr || created.stdout);
     assert.equal(created.stdout.trim(), minute.stdout.trim());
     assert.match(created.stdout, /this folder is empty/);
-    assert.match(created.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(created.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(created.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(created.stdout, /count the words/);
     assert.doesNotMatch(created.stdout, /TH\d|WRK-|CLI-|Warning: put the why|No open tasks|TASK DESK/);
@@ -1887,8 +1887,8 @@ test('atris ask and mission in an empty folder talk like first-minute', () => {
     assert.equal(missionList.stdout.trim(), minute.stdout.trim());
     assert.match(asked.stdout, /this folder is empty/);
     assert.match(mission.stdout, /this folder is empty/);
-    assert.match(asked.stdout, /^next: atris "what do you want here\?"$/m);
-    assert.match(mission.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(asked.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
+    assert.match(mission.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(asked.stdout), spokenLineCount(minute.stdout));
     assert.equal(spokenLineCount(mission.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(asked.stdout, /business\.json|cloud-computer|--mission|Start one with|Atris needs to know what you want/);
@@ -1924,7 +1924,7 @@ test('atris stop in an empty folder talks first-talk, not cloud-computer', () =>
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
     assert.match(stopped.stdout, /^hey keshav, nothing is running\.$/m);
-    assert.match(stopped.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(stopped.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
     assert.equal(spokenLineCount(stopped.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(stopped.stdout + stopped.stderr, /cloud-computer|business\.json|init|Pass --mission|Atris left your work unchanged/);
@@ -1963,7 +1963,7 @@ test('atris status in an empty folder talks first-talk, not init', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /^hey keshav, nothing is running\.$/m);
-    assert.match(status.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(status.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(nextLine(status.stdout), nextLine(minute.stdout));
     assert.equal(spokenLineCount(status.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(status.stdout + status.stderr, /Run "atris init"|folder not found|init --minimal|claim|cloud-computer|business\.json|Where we are|TASK BOARD/);
@@ -1983,7 +1983,7 @@ test('atris status in an empty folder talks first-talk, not init', () => {
     const quick = runCli(['status', '--quick'], { cwd: dir, env });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
     assert.match(quick.stdout, /^hey keshav, nothing is running\.$/m);
-    assert.match(quick.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(quick.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(quick.stdout + quick.stderr, /Run "atris init"|folder not found|📋/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -1999,7 +1999,7 @@ test('atris status in an empty folder talks first-talk, not init', () => {
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
     assert.match(now.stdout, /^hey keshav, this folder is empty\.$/m);
-    assert.match(now.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(now.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -2020,9 +2020,9 @@ test('atris now in an empty folder talks first-talk, not init', () => {
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
     assert.match(now.stdout, /^hey keshav, this folder is empty\.$/m);
-    assert.match(now.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(now.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(now.stdout), spokenLineCount(minute.stdout));
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|map this folder/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -2063,10 +2063,10 @@ test('atris status and stop in a folder with a file name the file, not empty fir
     assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
-    assert.match(status.stdout, /^hey keshav, notes.txt is already here\.$/m);
-    assert.match(status.stdout, /^next: atris do$/m);
-    assert.match(stopped.stdout, /^hey keshav, notes.txt is already here\.$/m);
-    assert.match(stopped.stdout, /^next: atris do$/m);
+    assert.match(status.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
+    assert.match(status.stdout, /^next: atris do  \(.*\)$/m);
+    assert.match(stopped.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
+    assert.match(stopped.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(status.stdout + stopped.stdout, /nothing is running|what do you want here|this folder is empty|Run "atris init"|cloud-computer|business\.json/);
     assert.equal(spokenLineCount(status.stdout), spokenLineCount(minute.stdout));
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -2079,9 +2079,9 @@ test('atris status and stop in a folder with a file name the file, not empty fir
     assert.equal(jsonStop.status, jsonMinute.status);
     const statusPayload = JSON.parse(jsonStatus.stdout);
     const stopPayload = JSON.parse(jsonStop.stdout);
-    assert.equal(statusPayload.reason, 'notes.txt is already here');
+    assert.equal(statusPayload.reason, 'this folder already has notes.txt');
     assert.equal(statusPayload.next_action, 'atris do');
-    assert.equal(stopPayload.reason, 'notes.txt is already here');
+    assert.equal(stopPayload.reason, 'this folder already has notes.txt');
     assert.equal(stopPayload.next_action, 'atris do');
     assert.doesNotMatch(jsonStatus.stdout + jsonStop.stdout, /nothing is running|what do you want here|init|claim/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -2103,9 +2103,9 @@ test('atris status and stop in a folder with a file name the file, not empty fir
     const now = runCli(['now'], { cwd: dir, env });
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
-    assert.match(now.stdout, /^hey keshav, notes.txt is already here\.$/m);
-    assert.match(now.stdout, /^next: atris do$/m);
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md/);
+    assert.match(now.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
+    assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|map this folder/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
@@ -2128,10 +2128,10 @@ test('atris now in a folder with a file names the file, not init', () => {
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
     assert.equal(now.stdout.trim(), status.stdout.trim());
-    assert.match(now.stdout, /^hey keshav, notes.md is already here\.$/m);
-    assert.match(now.stdout, /^next: atris do$/m);
+    assert.match(now.stdout, /^hey keshav, this folder already has notes.md\.$/m);
+    assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(now.stdout), spokenLineCount(minute.stdout));
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|nothing is running|what do you want here/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|map this folder|nothing is running|what do you want here/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -2140,7 +2140,7 @@ test('atris now in a folder with a file names the file, not init', () => {
     assert.equal(jsonNow.status, jsonMinute.status);
     const payload = JSON.parse(jsonNow.stdout);
     assert.equal(payload.ok, false);
-    assert.equal(payload.current, 'notes.md is already here');
+    assert.equal(payload.current, 'this folder already has notes.md');
     assert.equal(payload.next, 'atris do');
     assert.doesNotMatch(jsonNow.stdout, /folder not found|init|claim|# now/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -2170,7 +2170,7 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2181,8 +2181,8 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(status.stdout.trim(), now.stdout.trim());
-    assert.match(status.stdout, /generate map\.md/i);
-    assert.match(status.stdout, /ready to claim/);
+    assert.match(status.stdout, /map this folder so agents can find things/);
+    assert.match(status.stdout, /ready to start/);
     assert.match(status.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(status.stdout), nextLine(minute.stdout));
     assert.match(nextLine(status.stdout), /^atris task claim \S+ --as \S+$/);
@@ -2203,12 +2203,12 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
     const verbose = runCli(['status', '--verbose'], { cwd: dir, env });
     assert.equal(verbose.status, 0, verbose.stderr || verbose.stdout);
     assert.match(verbose.stdout, /TASK BOARD|Backlog/i);
-    assert.doesNotMatch(verbose.stdout, /ready to claim/);
+    assert.doesNotMatch(verbose.stdout, /ready to start/);
 
     const help = runCli(['status', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris status/);
-    assert.doesNotMatch(help.stdout, /ready to claim|Where we are|Decision: let it run|clean start/);
+    assert.doesNotMatch(help.stdout, /ready to start|Where we are|Decision: let it run|clean start/);
 
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
     const nowStamp = new Date().toISOString();
@@ -2225,7 +2225,7 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
     assert.equal(live.status, 0, live.stderr || live.stdout);
     assert.match(live.stdout, /Where we are:/);
     assert.match(live.stdout, /Decision: let it run/);
-    assert.doesNotMatch(live.stdout, /ready to claim/);
+    assert.doesNotMatch(live.stdout, /ready to start/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2245,7 +2245,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2253,8 +2253,8 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
-    assert.match(now.stdout, /generate map\.md/i);
-    assert.match(now.stdout, /ready to claim/);
+    assert.match(now.stdout, /map this folder so agents can find things/);
+    assert.match(now.stdout, /ready to start/);
     assert.match(now.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(now.stdout), nextLine(minute.stdout));
     assert.match(nextLine(now.stdout), /^atris task claim \S+ --as \S+$/);
@@ -2271,7 +2271,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
     assert.equal(jsonNow.status, 0, jsonNow.stderr || jsonNow.stdout);
     const payload = JSON.parse(jsonNow.stdout);
     assert.equal(payload.ok, true);
-    assert.match(String(payload.current || ''), /ready to claim/);
+    assert.match(String(payload.current || ''), /ready to start/);
     assert.match(String(payload.next || ''), /^atris task claim \S+ --as \S+$/);
     assert.equal(payload.next, nextLine(now.stdout));
     assert.doesNotMatch(jsonNow.stdout, /# now|Current operating truth|What Matters Now|Open TODO items/);
@@ -2279,7 +2279,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
     const help = runCli(['now', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris now/);
-    assert.doesNotMatch(help.stdout, /ready to claim|# now|Current operating truth/);
+    assert.doesNotMatch(help.stdout, /ready to start|# now|Current operating truth/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2300,7 +2300,7 @@ test('atris launchpad in an empty folder talks first-talk, not factory init', ()
     assert.equal(pad.stdout.trim(), minute.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
     assert.match(pad.stdout, /^hey keshav, this folder is empty\.$/m);
-    assert.match(pad.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(pad.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(pad.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(
       pad.stdout + pad.stderr,
@@ -2348,8 +2348,8 @@ test('atris launchpad in a folder with a file names the file, not init', () => {
     assert.equal(pad.stdout.trim(), minute.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
-    assert.match(pad.stdout, /^hey keshav, notes.txt is already here\.$/m);
-    assert.match(pad.stdout, /^next: atris do$/m);
+    assert.match(pad.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
+    assert.match(pad.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(pad.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(
       pad.stdout + pad.stderr,
@@ -2362,7 +2362,7 @@ test('atris launchpad in a folder with a file names the file, not init', () => {
     const jsonMinute = runCli(['--json'], { cwd: dir, env });
     assert.equal(jsonPad.status, jsonMinute.status);
     const payload = JSON.parse(jsonPad.stdout);
-    assert.equal(payload.reason, 'notes.txt is already here');
+    assert.equal(payload.reason, 'this folder already has notes.txt');
     assert.equal(payload.next_action, 'atris do');
     assert.doesNotMatch(jsonPad.stdout, /folder not found|init|claim|atris\.launchpad\.v1|bootstrap|what do you want here/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -2399,7 +2399,7 @@ test('atris engine in an empty folder talks first-talk and does not mint engines
     const desk = runCli([], { cwd: work, env });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
     assert.match(desk.stdout, /^hey keshav, this folder is empty\.$/m);
-    assert.match(desk.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(desk.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.deepEqual(fs.readdirSync(work).sort(), before);
 
     for (const args of [['engine'], ['engines'], ['engine', '--json'], ['founder'], ['founder', '--json']]) {
@@ -2467,8 +2467,8 @@ test('atris engine in a folder with a file names the file and does not mint', ()
     const before = fs.readdirSync(work).sort();
     const desk = runCli([], { cwd: work, env });
     assert.equal(desk.status, 0, desk.stderr || desk.stdout);
-    assert.match(desk.stdout, /^hey keshav, notes.txt is already here\.$/m);
-    assert.match(desk.stdout, /^next: atris do$/m);
+    assert.match(desk.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
+    assert.match(desk.stdout, /^next: atris do  \(.*\)$/m);
 
     for (const args of [['engine'], ['engines'], ['engine', '--json'], ['founder'], ['founder', '--json']]) {
       const res = runCli(args, { cwd: work, env });
@@ -2477,7 +2477,7 @@ test('atris engine in a folder with a file names the file and does not mint', ()
         assert.equal(res.status, jsonDesk.status, res.stderr || res.stdout);
         assert.equal(res.stdout.trim(), jsonDesk.stdout.trim());
         const payload = JSON.parse(res.stdout);
-        assert.equal(payload.reason, 'notes.txt is already here');
+        assert.equal(payload.reason, 'this folder already has notes.txt');
         assert.equal(payload.next_action, 'atris do');
       } else {
         assert.equal(res.status, desk.status, res.stderr || res.stdout);
@@ -2593,20 +2593,20 @@ test('atris launchpad after minting a file folder talks keep-working, not factor
     assert.equal(pad.stdout.trim(), again.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
-    assert.match(pad.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(pad.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
     assert.equal(nextLine(pad.stdout), keepWorking);
     assert.notEqual(nextLine(pad.stdout), 'atris do');
     assert.equal(spokenLineCount(pad.stdout), 2);
     assert.doesNotMatch(
       pad.stdout + pad.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|WHAT HAPPENED|RUN THIS|atris init|nothing is running|what do you want here|ready to claim|# now|\+---/,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|Set up this workspace|WHAT HAPPENED|RUN THIS|atris init|nothing is running|what do you want here|ready to start|# now|\+---/,
     );
 
     const jsonPad = runCli(['launchpad', '--json'], { cwd: dir, env });
     assert.equal(jsonPad.status, 0, jsonPad.stderr || jsonPad.stdout);
     const payload = JSON.parse(jsonPad.stdout);
     assert.equal(payload.next_action, keepWorking);
-    assert.equal(payload.reason, '"notes.md" is already yours');
+    assert.equal(payload.reason, 'you are working on "notes.md"');
     assert.doesNotMatch(jsonPad.stdout, /Where we are|let it run|Generate MAP|atris\.launchpad\.v1|bootstrap|atris init/);
   } finally {
     cleanupTempDir(dir);
@@ -2627,7 +2627,7 @@ test('atris launchpad after init --yes --minimal talks the claim, not factory in
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2641,8 +2641,8 @@ test('atris launchpad after init --yes --minimal talks the claim, not factory in
     assert.equal(pad.stdout.trim(), minute.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
-    assert.match(pad.stdout, /generate map\.md/i);
-    assert.match(pad.stdout, /ready to claim/);
+    assert.match(pad.stdout, /map this folder so agents can find things/);
+    assert.match(pad.stdout, /ready to start/);
     assert.match(pad.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(pad.stdout), nextLine(minute.stdout));
     assert.match(nextLine(pad.stdout), /^atris task claim \S+ --as \S+$/);
@@ -2695,9 +2695,9 @@ test('atris status and stop in a git folder name the last commit, not empty firs
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.match(status.stdout, /^hey keshav, add notes app is already here\.$/m);
-    assert.match(status.stdout, /^next: atris do$/m);
+    assert.match(status.stdout, /^next: atris do  \(.*\)$/m);
     assert.match(stopped.stdout, /^hey keshav, add notes app is already here\.$/m);
-    assert.match(stopped.stdout, /^next: atris do$/m);
+    assert.match(stopped.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(status.stdout + stopped.stdout, /nothing is running|what do you want here|notes\.txt|draft\.md|this folder is empty/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -2756,21 +2756,21 @@ test('atris status after minting a file folder talks keep-working, not factory l
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(now.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
-    assert.match(status.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(status.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
     assert.equal(nextLine(status.stdout), keepWorking);
     assert.notEqual(nextLine(status.stdout), 'atris do');
-    assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(recap.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
     assert.equal(nextLine(recap.stdout), keepWorking);
-    assert.match(now.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(now.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
     assert.equal(nextLine(now.stdout), keepWorking);
-    assert.match(stopped.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
+    assert.match(stopped.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
     assert.equal(nextLine(stopped.stdout), keepWorking);
     assert.notEqual(nextLine(stopped.stdout), 'atris do');
     assert.equal(spokenLineCount(status.stdout), 2);
     assert.equal(spokenLineCount(stopped.stdout), 2);
     assert.doesNotMatch(
       status.stdout + status.stderr + recap.stdout + recap.stderr + now.stdout + now.stderr + stopped.stdout + stopped.stderr,
-      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here|ready to claim|# now|Current operating truth|cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/,
+      /Where we are|Decision: let it run|Generate MAP\.md|TASK BOARD|nothing is running|what do you want here|ready to start|# now|Current operating truth|cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/,
     );
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
 
@@ -2778,29 +2778,29 @@ test('atris status after minting a file folder talks keep-working, not factory l
     assert.equal(jsonStatus.status, 0, jsonStatus.stderr || jsonStatus.stdout);
     const payload = JSON.parse(jsonStatus.stdout);
     assert.equal(payload.next_action, keepWorking);
-    assert.equal(payload.reason, '"notes.md" is already yours');
-    assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP/);
+    assert.equal(payload.reason, 'you are working on "notes.md"');
+    assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP|map this folder/);
 
     const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
     assert.equal(jsonRecap.status, 0, jsonRecap.stderr || jsonRecap.stdout);
     const recapPayload = JSON.parse(jsonRecap.stdout);
     assert.equal(recapPayload.next_action, keepWorking);
-    assert.equal(recapPayload.reason, '"notes.md" is already yours');
-    assert.doesNotMatch(jsonRecap.stdout, /Where we are|let it run|Generate MAP|ready to claim/);
+    assert.equal(recapPayload.reason, 'you are working on "notes.md"');
+    assert.doesNotMatch(jsonRecap.stdout, /Where we are|let it run|Generate MAP|ready to start/);
 
     const jsonNow = runCli(['now', '--json'], { cwd: dir, env });
     assert.equal(jsonNow.status, 0, jsonNow.stderr || jsonNow.stdout);
     const nowPayload = JSON.parse(jsonNow.stdout);
     assert.equal(nowPayload.ok, true);
     assert.equal(nowPayload.next, keepWorking);
-    assert.equal(nowPayload.current, '"notes.md" is already yours');
+    assert.equal(nowPayload.current, 'you are working on "notes.md"');
     assert.doesNotMatch(jsonNow.stdout, /Where we are|let it run|Generate MAP|# now/);
 
     const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
     assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
     const stopPayload = JSON.parse(jsonStop.stdout);
     assert.equal(stopPayload.next_action, keepWorking);
-    assert.equal(stopPayload.reason, '"notes.md" is already yours');
+    assert.equal(stopPayload.reason, 'you are working on "notes.md"');
     assert.doesNotMatch(jsonStop.stdout, /Where we are|let it run|cloud-computer|business\.json|Pass --mission/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
 
@@ -2843,13 +2843,13 @@ test('atris stop after minting a file folder talks keep-working, not cloud-compu
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), recap.stdout.trim());
-    assert.match(stopped.stdout, /^hey keshav, "notes\.txt" is already yours\.$/m);
+    assert.match(stopped.stdout, /^hey keshav, you are working on "notes\.txt"\.$/m);
     assert.equal(nextLine(stopped.stdout), keepWorking);
     assert.notEqual(nextLine(stopped.stdout), 'atris do');
     assert.equal(spokenLineCount(stopped.stdout), 2);
     assert.doesNotMatch(
       stopped.stdout + stopped.stderr,
-      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|ready to claim|spaceship|autopilot|hours/,
+      /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|Where we are|Decision: let it run|nothing is running|what do you want here|ready to start|spaceship|autopilot|hours/,
     );
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
@@ -2857,7 +2857,7 @@ test('atris stop after minting a file folder talks keep-working, not cloud-compu
     const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
     assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
     const payload = JSON.parse(jsonStop.stdout);
-    assert.equal(payload.reason, '"notes.txt" is already yours');
+    assert.equal(payload.reason, 'you are working on "notes.txt"');
     assert.equal(payload.next_action, keepWorking);
     assert.doesNotMatch(jsonStop.stdout, /cloud-computer|business\.json|Pass --mission/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2880,7 +2880,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2896,8 +2896,8 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), now.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
-    assert.match(stopped.stdout, /generate map\.md/i);
-    assert.match(stopped.stdout, /ready to claim/);
+    assert.match(stopped.stdout, /map this folder so agents can find things/);
+    assert.match(stopped.stdout, /ready to start/);
     assert.match(stopped.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
     assert.match(nextLine(stopped.stdout), /^atris task claim \S+ --as \S+$/);
@@ -2912,7 +2912,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
 
     const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
     assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
-    assert.match(jsonStop.stdout, /ready to claim/);
+    assert.match(jsonStop.stdout, /ready to start/);
     assert.equal(JSON.parse(jsonStop.stdout).next_action, nextLine(stopped.stdout));
     assert.doesNotMatch(jsonStop.stdout + jsonStop.stderr, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2920,7 +2920,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
     const help = runCli(['stop', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris stop/);
-    assert.doesNotMatch(help.stdout, /ready to claim|cloud-computer|nothing is running|clean start/);
+    assert.doesNotMatch(help.stdout, /ready to start|cloud-computer|nothing is running|clean start/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2940,7 +2940,7 @@ test('atris recap after init --yes --minimal talks the claim, not silent next', 
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2957,8 +2957,8 @@ test('atris recap after init --yes --minimal talks the claim, not silent next', 
     assert.equal(recap.stdout.trim(), now.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(recap.stdout.trim(), stopped.stdout.trim());
-    assert.match(recap.stdout, /generate map\.md/i);
-    assert.match(recap.stdout, /ready to claim/);
+    assert.match(recap.stdout, /map this folder so agents can find things/);
+    assert.match(recap.stdout, /ready to start/);
     assert.match(recap.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(recap.stdout), nextLine(minute.stdout));
     assert.match(nextLine(recap.stdout), /^atris task claim \S+ --as \S+$/);
@@ -2987,7 +2987,7 @@ test('atris recap after init --yes --minimal talks the claim, not silent next', 
     const help = runCli(['recap', '--help'], { cwd: dir, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /spoken lines/);
-    assert.doesNotMatch(help.stdout, /ready to claim|this folder is empty/);
+    assert.doesNotMatch(help.stdout, /ready to start|this folder is empty/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3029,7 +3029,7 @@ test('atris stop after init and claim talks keep-working, not cloud-computer', (
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
     assert.equal(stopped.stdout.trim(), recap.stdout.trim());
-    assert.match(stopped.stdout, /already yours/);
+    assert.match(stopped.stdout, /you are working on/);
     const keepWorking = assertKeepWorkingNext(stopped.stdout);
     assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
     assert.equal(nextLine(stopped.stdout), nextLine(status.stdout));
@@ -3044,7 +3044,7 @@ test('atris stop after init and claim talks keep-working, not cloud-computer', (
     const jsonStop = runCli(['stop', '--json'], { cwd: dir, env });
     assert.equal(jsonStop.status, 0, jsonStop.stderr || jsonStop.stdout);
     const payload = JSON.parse(jsonStop.stdout);
-    assert.match(String(payload.reason || ''), /already yours/);
+    assert.match(String(payload.reason || ''), /you are working on/);
     assert.equal(payload.next_action, keepWorking);
     assert.doesNotMatch(jsonStop.stdout, /cloud-computer|business\.json|Pass --mission/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -3085,7 +3085,7 @@ test('atris status after mint still tells the truth when a live mission is runni
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /Where we are:/);
     assert.match(status.stdout, /Decision: let it run/);
-    assert.doesNotMatch(status.stdout, /"notes\.md" is already yours/);
+    assert.doesNotMatch(status.stdout, /you are working on "notes\.md"/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3108,7 +3108,7 @@ test('atris wish in an empty folder talks like first-minute', () => {
     assert.equal(wish.status, 0, wish.stderr || wish.stdout);
     assert.equal(wish.stdout.trim(), minute.stdout.trim());
     assert.match(wish.stdout, /this folder is empty/);
-    assert.match(wish.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(wish.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(wish.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(wish.stdout, /Usage: atris wish|wish list|wish grant|wish stats|wish board|wish rewards/);
     assert.doesNotMatch(wish.stdout, /Run "atris init"/);
@@ -3118,7 +3118,7 @@ test('atris wish in an empty folder talks like first-minute', () => {
     assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout, /Got it/);
     assert.doesNotMatch(leftover.stdout, /Usage: atris wish|wish list|wish grant|waiting on you/);
@@ -3152,7 +3152,7 @@ test('atris log in an empty folder talks like first-minute', () => {
     assert.equal(logged.stdout.trim(), minute.stdout.trim());
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -3205,7 +3205,7 @@ test('atris brainstorm in an empty folder talks like first-minute', () => {
     assert.equal(leftover.status, 0, leftover.stderr || leftover.stdout);
     assert.equal(leftover.stdout.trim(), minute.stdout.trim());
     assert.match(leftover.stdout, /this folder is empty/);
-    assert.match(leftover.stdout, /^next: atris "what do you want here\?"$/m);
+    assert.match(leftover.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(leftover.stdout), spokenLineCount(minute.stdout));
     assert.doesNotMatch(leftover.stdout + leftover.stderr, /folder not found|Run "atris init"|captured I|journal:|Describe the desired outcome/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
@@ -3256,15 +3256,15 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
     const verb = runCli(['test'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(verb.status, 0, verb.stderr || verb.stdout);
-    assert.match(verb.stdout, /generate map\.md/i);
-    assert.match(verb.stdout, /ready to claim|already yours/);
+    assert.match(verb.stdout, /map this folder so agents can find things/);
+    assert.match(verb.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(verb.stdout), nextLine(minute.stdout));
     assert.match(nextLine(verb.stdout), /^atris task (claim|show|ready) |^atris do$/);
     assert.equal(verb.stdout.match(/^next:/mg).length, 1);
@@ -3280,7 +3280,7 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
     const afterVerb = runCli(['test'], { cwd: dir, env });
     assert.equal(afterMinute.status, 0, afterMinute.stderr || afterMinute.stdout);
     assert.equal(afterVerb.status, 0, afterVerb.stderr || afterVerb.stdout);
-    assert.match(afterVerb.stdout, /already yours/);
+    assert.match(afterVerb.stdout, /you are working on/);
     assert.equal(nextLine(afterVerb.stdout), nextLine(afterMinute.stdout));
     assertKeepWorkingNext(afterVerb.stdout);
     assert.notEqual(nextLine(afterVerb.stdout), 'atris do');
@@ -3372,7 +3372,7 @@ test('atris review after init --minimal matches bare atris claim next', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(review.status, 0, review.stderr || review.stdout);
     assert.equal(review.stdout.trim(), minute.stdout.trim());
-    assert.match(review.stdout, /ready to claim/);
+    assert.match(review.stdout, /ready to start/);
     assert.match(nextLine(review.stdout), /^atris task claim \S+ --as \S+$/);
     assert.equal(nextLine(review.stdout), nextLine(minute.stdout));
     assert.equal(spokenLineCount(review.stdout), spokenLineCount(minute.stdout));
@@ -3444,8 +3444,8 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(asked.status, 0, asked.stderr || asked.stdout);
     assert.equal(asked.stdout.trim(), minute.stdout.trim());
-    assert.match(asked.stdout, /generate map\.md/i);
-    assert.match(asked.stdout, /ready to claim|already yours/);
+    assert.match(asked.stdout, /map this folder so agents can find things/);
+    assert.match(asked.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(asked.stdout), nextLine(minute.stdout));
     assert.match(nextLine(asked.stdout), /^atris task (claim|show|ready) /);
     assert.equal(asked.stdout.match(/^next:/mg).length, 1);
@@ -3458,8 +3458,8 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
     assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
     assert.match(listed.stdout, /No missions yet/i);
-    assert.match(mission.stdout, /generate map\.md/i);
-    assert.match(mission.stdout, /ready to claim|already yours/);
+    assert.match(mission.stdout, /map this folder so agents can find things/);
+    assert.match(mission.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task (claim|show|ready) /);
     assert.equal(mission.stdout.match(/^next:/mg).length, 1);
@@ -3469,7 +3469,7 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     const missionHelp = runCli(['mission', '--help'], { cwd: dir, env });
     assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
     assert.match(missionHelp.stdout, /Usage: atris mission|atris mission /);
-    assert.doesNotMatch(missionHelp.stdout, /clean start|generate map|business\.json|Start one with/);
+    assert.doesNotMatch(missionHelp.stdout, /clean start|generate map|map this folder|business\.json|Start one with/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
 
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
@@ -3487,7 +3487,7 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     const livePayload = JSON.parse(live.stdout);
     assert.equal(livePayload.action, 'mission_status');
     assert.equal(livePayload.missions[0].id, 'mission-live');
-    assert.doesNotMatch(live.stdout, /ready to claim|Start one with|atris ask/);
+    assert.doesNotMatch(live.stdout, /ready to start|Start one with|atris ask/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3554,7 +3554,7 @@ test('bare mission after init talks the claim, not a finished other-room mission
     assert.equal(listed.status, 0, listed.stderr || listed.stdout);
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
     assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
-    assert.match(mission.stdout, /ready to claim/);
+    assert.match(mission.stdout, /ready to start/);
     assert.match(nextLine(mission.stdout), /^atris task claim \S+ --as \S+$/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.equal(spokenLineCount(mission.stdout), 2);
@@ -3594,7 +3594,7 @@ test('bare mission after init talks the claim, not a finished other-room mission
     const live = runCli(['mission'], { cwd: dir, env });
     assert.equal(live.status, 0, live.stderr || live.stdout);
     assert.match(live.stdout, /mission-live|Keep the live mission visible/);
-    assert.doesNotMatch(live.stdout, /ready to claim|Ship leftover from another room|Review the proof/);
+    assert.doesNotMatch(live.stdout, /ready to start|Ship leftover from another room|Review the proof/);
     assert.equal(currentHits, 0);
   } finally {
     if (server && server.listening) await new Promise((resolve) => server.close(resolve));
@@ -3815,14 +3815,14 @@ test('leftover review in a shared db does not hijack a git room first-minute', (
 
     const leftoverMinute = runCli([], { cwd: leftover, env });
     assert.equal(leftoverMinute.status, 0, leftoverMinute.stderr || leftoverMinute.stdout);
-    assert.match(leftoverMinute.stdout, /something finished\. waiting on you\.|waiting for your ok/);
+    assert.match(leftoverMinute.stdout, /.+ is waiting for your ok\.|waiting for your ok/);
     assert.match(nextLine(leftoverMinute.stdout), /^atris task accept /);
 
     commitIn(room, 'initial toy repo', { 'README.md': '# Toy repo\n' });
     const minute = runCli([], { cwd: room, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.match(minute.stdout, /initial toy repo is already here/);
-    assert.match(minute.stdout, /^next: atris do$/m);
+    assert.match(minute.stdout, /^next: atris do  \(.*\)$/m);
     assert.doesNotMatch(minute.stdout, /waiting for your ok|waiting on you|write a feature map|atris task accept|Rebased Pack Co|CLI-193/);
   } finally {
     try { taskDb.close(); } catch { /* already closed */ }
@@ -3849,8 +3849,8 @@ test('atris wish after init --minimal stays in the room', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(wish.status, 0, wish.stderr || wish.stdout);
     assert.equal(wish.stdout.trim(), minute.stdout.trim());
-    assert.match(wish.stdout, /generate map\.md/i);
-    assert.match(wish.stdout, /ready to claim|already yours/);
+    assert.match(wish.stdout, /map this folder so agents can find things/);
+    assert.match(wish.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(wish.stdout), nextLine(minute.stdout));
     assert.match(nextLine(wish.stdout), /^atris task (claim|show|ready) /);
     assert.equal(wish.stdout.match(/^next:/mg).length, 1);
@@ -3879,9 +3879,9 @@ test('completed history does not say shipped when other work is still live', () 
     nextCommand: 'atris do',
     liveWork: true,
   });
-  assert.match(text, /launch-day has work in motion/);
-  assert.doesNotMatch(text, /you already shipped/);
-  assert.match(text, /^next: atris do$/m);
+  assert.match(text, /launch-day has work in progress/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
+  assert.match(text, /^next: atris do  \(.*\)$/m);
 });
 
 test('completed-only TODO is history even when leftover context still names work', () => {
@@ -3914,7 +3914,7 @@ test('completed-only TODO is history even when leftover context still names work
         completedTasks: ['validate thing'],
       },
     });
-    assert.match(screen.text, /you already shipped "validate thing"/);
+    assert.match(screen.text, /you already finished "validate thing"/);
     assert.doesNotMatch(screen.text, /generate map\.md|is waiting/);
   } finally {
     cleanupTempDir(dir);
@@ -3951,8 +3951,8 @@ test('TODO backlog is named before completed history', () => {
       },
     });
     assert.match(screen.text, /"build the useful thing" is waiting/);
-    assert.doesNotMatch(screen.text, /you already shipped/);
-    assert.match(screen.text, /^next: atris do$/m);
+    assert.doesNotMatch(screen.text, /you already (shipped|finished)/);
+    assert.match(screen.text, /^next: atris do  \(.*\)$/m);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3969,7 +3969,7 @@ test('named empty folder next command starts a first task when pasted', () => {
     const first = runCli([], { cwd: dir, env });
     assert.equal(first.status, 0, first.stderr || first.stdout);
     assert.match(first.stdout, /hey keshav, launch-day is empty\./);
-    const next = String(first.stdout).match(/^next: (.+)$/m);
+    const next = String(first.stdout).match(/^next: (.+?)  \([^()]+\)$/m);
     assert.ok(next, first.stdout);
     assert.equal(next[1], 'atris "what do you want here?"');
     assert.doesNotMatch(first.stdout, /atris init --minimal/);
@@ -3992,7 +3992,7 @@ test('named empty folder next command starts a first task when pasted', () => {
 
     const shown = runCli(['do'], { cwd: dir, env });
     assert.equal(shown.status, 0, shown.stderr || shown.stdout);
-    assert.match(shown.stdout, /already yours/);
+    assert.match(shown.stdout, /you are working on/);
     assert.equal(nextLine(shown.stdout), keepWorking);
     assert.doesNotMatch(shown.stdout + shown.stderr, /No open tasks|id required|unknown/i);
     assert.doesNotMatch(shown.stdout, /PROMPT ONLY|Atris Do|executor\.md/);
@@ -4018,7 +4018,7 @@ test('named empty folder next command starts a first task when pasted', () => {
     }), [
       'hey keshav, launch-day is started. nothing is built yet.',
       '',
-      `next: ${keepWorkingNext('LDY-1')}`,
+      `next: ${keepWorkingNext('LDY-1')}  (ask for a test)`,
     ].join('\n'));
   } finally {
     cleanupTempDir(parent);
@@ -4031,7 +4031,7 @@ test('first talk makes building the one next step, or installing a builder', () 
   assert.equal(withCodex, [
     'hey keshav, a landing page for my "dog" walking is started. nothing is built yet.',
     '',
-    'next: codex "a landing page for my \\"dog\\" walking"',
+    'next: codex "a landing page for my \\"dog\\" walking"  (ask your coding tool to work on it)',
   ].join('\n'));
   assert.equal(nextLine(renderFirstTalk({ person: 'keshav', folder: 'dog', starter, builder: null })),
     'npm install -g @anthropic-ai/claude-code');

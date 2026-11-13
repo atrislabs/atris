@@ -109,7 +109,7 @@ test('boot asks git for commit files once, then not at all on the next boot', { 
   const cold = boot(repo, logger);
   assert.equal(cold.count('diff-tree'), 1, `a cold boot batches commit files: ${cold.calls.join(', ')}`);
   assert.equal(cold.stdout, first.stdout);
-  assert.match(first.stdout, /landings? this week needed a human fix/);
+  assert.match(first.stdout, /finished changes? needed a human fix this week/);
 
   // The saved caches exist and can never be committed by accident.
   assert.ok(fs.existsSync(path.join(repo, '.atris', 'cache', 'revision-files.json')));

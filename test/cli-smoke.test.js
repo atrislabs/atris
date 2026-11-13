@@ -152,7 +152,7 @@ test('atris.md boot visualization does not create an empty daily journal', () =>
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /atris v\d+\.\d+\.\d+/);
-    assert.match(res.stdout, /say\s+"what should i do next" or "keep going while i'm away"\s+\(your agent translates\)/);
+    assert.match(res.stdout, /say\s+"what should i do next" or "keep going while i'm away"\s+\(say it to your agent in your own words\)/);
     assert.match(res.stdout, /next\s+atris/);
     assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
   } finally {
@@ -585,7 +585,7 @@ test('default entry auto-advances to plan when inbox has items', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /^next: atris plan$/m);
+    assert.match(res.stdout, /^next: atris plan  \(.*\)$/m);
     assert.doesNotMatch(res.stdout, /What do you want to build|Atris Plan/);
   } finally {
     cleanupTempDir(dir);
@@ -612,7 +612,7 @@ test('default entry keeps placeholder MAP on first-minute and gathers after MAP 
     // placeholder MAP stays on first-minute. `test` is not a new first task.
     const verb = runCli(['test'], { cwd: dir, env });
     assert.equal(verb.status, 0, verb.stderr);
-    assert.match(verb.stdout, /generate map\.md/i);
+    assert.match(verb.stdout, /map this folder so agents can find things/);
     assert.match(verb.stdout, /^next: atris task (claim|ready) /m);
     assert.doesNotMatch(verb.stdout, /BOOTSTRAP REQUIRED|Got it\. I saved your first direction|First useful step: test|next setup:/);
 
@@ -869,10 +869,10 @@ test('help lists essential commands', () => {
   try {
     const res = runCli(['help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /already won\. one next step/);
+    assert.match(res.stdout, /get one next step/);
     assert.match(res.stdout, /atris later "/);
     assert.match(res.stdout, /atris do\b/);
-    assert.match(res.stdout, /Keep working/);
+    assert.match(res.stdout, /plan .*work/);
     assert.match(res.stdout, /atris spaceship/);
     assert.match(res.stdout, /atris autopilot/);
     assert.match(res.stdout, /atris mission/);
@@ -1152,10 +1152,10 @@ test('help shows 6 essential commands', () => {
     cleanupTempDir(dir);
   }
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /already won\. one next step/);
+  assert.match(res.stdout, /get one next step/);
   assert.match(res.stdout, /atris later "/);
   assert.match(res.stdout, /atris do\b/);
-  assert.match(res.stdout, /Keep working/);
+  assert.match(res.stdout, /plan .*work/);
   assert.match(res.stdout, /atris spaceship/);
   assert.match(res.stdout, /atris autopilot/);
   assert.match(res.stdout, /atris mission/);
