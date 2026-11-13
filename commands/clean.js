@@ -6,6 +6,145 @@ const escapeRegExp = require('../lib/escape-regexp');
 const { localDay } = require('../lib/local-day');
 const { wikiMetabolismNudge } = require('../lib/wiki');
 
+const PRESERVED_HYGIENE_CLASSES = new Set(['ACTIVE_IN_FLIGHT', 'UNPROVABLE_KEEP']);
+
+/**
+ * Parse CLI arguments for `atris clean`.
+ */
+function parseCleanArgs(args = []) {
+  const list = Array.isArray(args) ? args : [];
+  let dryRun = false;
+  let json = false;
+  let apply = false;
+  let graceMinutes = 30;
+  let error = null;
+
+  const setError = (msg) => {
+    if (!error) error = msg;
+  };
+
+  for (let i = 0; i < list.length; i += 1) {
+    const arg = String(list[i]);
+    if (arg === '--dry-run' || arg === '-n') {
+      dryRun = true;
+      continue;
+    }
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--apply' || arg === '--vault') {
+      apply = true;
+      continue;
+    }
+    if (arg === '--grace-minutes' || arg.startsWith('--grace-minutes=')) {
+      let raw = '';
+      if (arg.startsWith('--grace-minutes=')) {
+        raw = arg.slice('--grace-minutes='.length);
+      } else if (i + 1 < list.length && !String(list[i + 1]).startsWith('--')) {
+        raw = String(list[i + 1]);
+        i += 1;
+      }
+      const parsed = raw === '' ? NaN : Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setError('--grace-minutes requires a non-negative number.');
+      } else {
+        graceMinutes = parsed;
+      }
+      continue;
+    }
+  }
+
+  return { dryRun, json, apply, graceMinutes, error };
+}
+
+function resolveGraceMinutes(options = {}) {
+  if (options.graceMinutes === undefined || options.graceMinutes === null) return 30;
+  const n = Number(options.graceMinutes);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+function preservedHygieneEntries(gitHygiene) {
+  return (gitHygiene?.entries || []).filter((e) => PRESERVED_HYGIENE_CLASSES.has(e.cls));
+}
+
+function gitClassSuffix(cls) {
+  if (PRESERVED_HYGIENE_CLASSES.has(cls)) return ' (preserved)';
+  if (cls === 'SECRET_OR_FAT_QUARANTINE') return ' (quarantine)';
+  return '';
+}
+
+function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}) {
+  if (!gitHygiene || !gitHygiene.isGitRepo) return;
+
+  const preserved = preservedHygieneEntries(gitHygiene);
+  if (vaultOutcome && vaultOutcome.applied && vaultOutcome.vaultId) {
+    const vaultedFiles = vaultOutcome.receipt?.vaulted_files || [];
+    const quarantinedFiles = vaultOutcome.receipt?.quarantine_files || [];
+    const slices = Object.keys(vaultOutcome.refs || {});
+    const sliceText = slices.length ? ` (slices: ${slices.join(', ')})` : '';
+    console.log(`✓ Vaulted ${vaultedFiles.length} dirty git ${vaultedFiles.length === 1 ? 'file' : 'files'} to ${vaultOutcome.vaultId}${sliceText}`);
+    if (quarantinedFiles.length > 0 && vaultOutcome.quarantineDir) {
+      console.log(`✓ Quarantined ${quarantinedFiles.length} secret/fat ${quarantinedFiles.length === 1 ? 'file' : 'files'} to ${vaultOutcome.quarantineDir}`);
+    }
+    const stats = vaultOutcome.resetStats;
+    if (stats) {
+      console.log(`  reset ${stats.resetCount || 0} tracked, removed ${stats.unlinkedCount || 0} untracked`);
+      if ((stats.skippedConcurrentEdit || []).length > 0) {
+        console.log(`⚠ Skipped ${stats.skippedConcurrentEdit.length} concurrently modified ${stats.skippedConcurrentEdit.length === 1 ? 'file' : 'files'}:`);
+        stats.skippedConcurrentEdit.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+        if (stats.skippedConcurrentEdit.length > 5) {
+          console.log(`   ... and ${stats.skippedConcurrentEdit.length - 5} more`);
+        }
+      }
+    }
+    if (preserved.length > 0) {
+      console.log(`⚠ Preserved ${preserved.length} in-flight/unprovable ${preserved.length === 1 ? 'file' : 'files'} on disk:`);
+      preserved.slice(0, 5).forEach((e) => console.log(`   • ${e.relPath} (${e.cls})`));
+      if (preserved.length > 5) {
+        console.log(`   ... and ${preserved.length - 5} more`);
+      }
+    }
+    if (gitHygiene.remainingDirty === 0) {
+      console.log('✓ Working tree is clean (0 dirty git files)');
+    }
+    console.log('');
+    return;
+  }
+
+  if (gitHygiene.dirtyCount === 0) {
+    console.log('✓ Working tree is clean (0 dirty git files)');
+    return;
+  }
+
+  const preservedCount = preserved.length;
+  const modeHint = options.apply && options.dryRun && gitHygiene.actionableCount > 0
+    ? '; dry-run would vault actionable files'
+    : '';
+  console.log(`⚠ ${gitHygiene.dirtyCount} dirty git ${gitHygiene.dirtyCount === 1 ? 'file' : 'files'} (${gitHygiene.actionableCount} actionable, ${preservedCount} preserved${modeHint}):`);
+  const entriesByClass = Object.entries(gitHygiene.byClass || {})
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const [cls, count] of entriesByClass) {
+    console.log(`   • ${cls}: ${count}${gitClassSuffix(cls)}`);
+  }
+  if ((gitHygiene.topBundles || []).length > 0) {
+    const bundleSummary = gitHygiene.topBundles
+      .slice(0, 3)
+      .map((b) => `${b.bundle} (${b.count})`)
+      .join(', ');
+    console.log(`   top bundles: ${bundleSummary}`);
+  }
+  if (preserved.length > 0) {
+    console.log('   preserved on disk:');
+    preserved.slice(0, 5).forEach((e) => console.log(`     • ${e.relPath} (${e.cls})`));
+    if (preserved.length > 5) {
+      console.log(`     ... and ${preserved.length - 5} more`);
+    }
+  }
+  console.log('');
+}
+
 /**
  * atris clean - Workspace housekeeping with auto-heal
  *
@@ -40,6 +179,21 @@ function cleanAtris(options = {}) {
     archivedJournals: 0,
     cleanedSections: 0
   };
+
+  // 0. Git working-tree hygiene scan (and atomic vault + reset on --apply)
+  const { scanGitHygiene, vaultAndCleanCheckout } = require('../lib/hygiene-vault');
+  const graceMs = resolveGraceMinutes(options) * 60 * 1000;
+  let gitHygiene = scanGitHygiene(cwd, { graceMs });
+  let vaultOutcome = null;
+  if (options.apply && !options.dryRun && gitHygiene.isGitRepo && gitHygiene.actionableCount > 0) {
+    vaultOutcome = vaultAndCleanCheckout(cwd, {
+      graceMs,
+      ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
+    });
+    gitHygiene = vaultOutcome.scan;
+  }
+  results.gitHygiene = gitHygiene;
+  results.vault = vaultOutcome;
 
   // 1. Check for stale tasks in TODO.md
   const staleTasks = findStaleTasks(atrisDir);
@@ -179,7 +333,15 @@ function cleanAtris(options = {}) {
     console.log('✓ No dead code');
   }
 
-  const hasIssues = staleTasks.length > 0 || unhealable.length > 0 || stalePages.length > 0;
+  // Git working-tree hygiene
+  renderGitHygieneText(gitHygiene, vaultOutcome, options);
+
+  const hasGitDirt = Boolean(gitHygiene && gitHygiene.isGitRepo && gitHygiene.remainingDirty > 0);
+  const hasIssues = staleTasks.length > 0
+    || unhealable.length > 0
+    || stalePages.length > 0
+    || (results.deadFiles || []).length > 0
+    || hasGitDirt;
   if (hasIssues) {
     console.log('Manual action needed:');
     if (staleTasks.length > 0) {
@@ -190,6 +352,16 @@ function cleanAtris(options = {}) {
     }
     if (stalePages.length > 0) {
       console.log('  • Re-compile stale pages (re-read sources, update content + last_compiled)');
+    }
+    if ((results.deadFiles || []).length > 0) {
+      console.log('  • Delete dead files (atris slop dead)');
+    }
+    if (hasGitDirt) {
+      if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
+        console.log(`  • Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git ${gitHygiene.actionableCount === 1 ? 'file' : 'files'}`);
+      } else {
+        console.log(`  • ${gitHygiene.remainingDirty} dirty git ${gitHygiene.remainingDirty === 1 ? 'file' : 'files'} preserved on disk (active in-flight, unprovable, or concurrently modified)`);
+      }
     }
   } else {
     console.log('Workspace is clean. Target state: 0 ✓');
@@ -264,15 +436,44 @@ function mapScriptLine(step) {
 }
 
 function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
+  const gitHygiene = results.gitHygiene || {
+    isGitRepo: false,
+    dirtyCount: 0,
+    actionableCount: 0,
+    remainingDirty: 0,
+    byClass: {},
+    entries: [],
+    topBundles: [],
+  };
+  const vaultOutcome = results.vault || null;
+  const preserved = preservedHygieneEntries(gitHygiene);
+  const hasGitDirt = Boolean(gitHygiene.isGitRepo && gitHygiene.remainingDirty > 0);
+
   const manualAction = [];
   if (results.staleTasks.length > 0) manualAction.push('Delete stale tasks or finish them');
   if (results.unhealableRefs.length > 0) manualAction.push('Manually fix unhealable MAP.md refs');
   if (results.stalePages.length > 0) manualAction.push('Re-compile stale pages');
   if ((results.deadFiles || []).length > 0) manualAction.push('Delete dead files (atris slop dead)');
+  if (hasGitDirt) {
+    if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
+      manualAction.push(`Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git file(s)`);
+    } else {
+      manualAction.push(`${gitHygiene.remainingDirty} dirty git file(s) preserved on disk (active in-flight, unprovable, or concurrently modified)`);
+    }
+  }
+
+  const targetState = results.staleTasks.length
+    + results.unhealableRefs.length
+    + results.stalePages.length
+    + (results.deadFiles || []).length
+    + (hasGitDirt ? gitHygiene.remainingDirty : 0);
+
   return {
     ok: manualAction.length === 0,
     action: 'clean',
     dry_run: !!options.dryRun,
+    apply: !!options.apply,
+    target_state: targetState,
     results: {
       stale_tasks: {
         count: results.staleTasks.length,
@@ -310,6 +511,24 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
       map_scripts: {
         count: (results.mapScripts || []).length,
         items: results.mapScripts || [],
+      },
+      git_hygiene: {
+        is_git_repo: Boolean(gitHygiene.isGitRepo),
+        dirty_count: gitHygiene.dirtyCount || 0,
+        actionable_count: gitHygiene.actionableCount || 0,
+        remaining_dirty: gitHygiene.remainingDirty || 0,
+        by_class: gitHygiene.byClass || {},
+        top_bundles: gitHygiene.topBundles || [],
+        preserved: preserved.map((e) => ({ path: e.relPath, cls: e.cls })),
+        vault: vaultOutcome ? {
+          applied: Boolean(vaultOutcome.applied),
+          vault_id: vaultOutcome.vaultId || null,
+          refs: vaultOutcome.refs || null,
+          quarantine_dir: vaultOutcome.quarantineDir || null,
+          vaulted_count: vaultOutcome.receipt ? (vaultOutcome.receipt.vaulted_files || []).length : 0,
+          quarantined_count: vaultOutcome.receipt ? (vaultOutcome.receipt.quarantine_files || []).length : 0,
+          reset_stats: vaultOutcome.resetStats || null,
+        } : null,
       },
     },
     manual_action: manualAction,
@@ -981,6 +1200,7 @@ function cleanEmptySections(atrisDir, dryRun = false) {
 module.exports = {
   cleanAtris,
   cleanResultPayload,
+  parseCleanArgs,
   findStaleTasks,
   healBrokenMapRefs,
   unhealableLine,

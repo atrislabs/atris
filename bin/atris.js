@@ -637,7 +637,8 @@ function showHelpAll() {
   console.log('  revisions  - show possible human revisions after atris-assisted landings');
   console.log('  tree hash  - hash the live agent text tree (--json for manifest)');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
-  console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
+  console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs, git vault)');
+  console.log('  restore    - Restore files from the Atris hygiene vault (--list, --slice, --worktree)');
   console.log('  close      - keep ten active loops and park the rest with their history');
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
@@ -1167,16 +1168,19 @@ function showLoopHelp() {
 
 function showCleanHelp() {
   console.log('');
-  console.log('Usage: atris clean [--dry-run] [--json]');
+  console.log('Usage: atris clean [--dry-run] [--apply|--vault] [--grace-minutes <N>] [--json]');
   console.log('');
   console.log('Description:');
   console.log('  Check workspace housekeeping: stale tasks, MAP.md refs, old journals,');
-  console.log('  empty TODO sections, and stale wiki pages.');
+  console.log('  empty TODO sections, stale wiki pages, and git working-tree hygiene.');
+  console.log('  Default is read-only for git dirt; pass --apply to vault and reset.');
   console.log('');
   console.log('Options:');
-  console.log('  --dry-run, -n   Preview cleanup without changing files.');
-  console.log('  --json          Print machine-readable cleanup results.');
-  console.log('  --help, -h      Show this help.');
+  console.log('  --dry-run, -n          Preview cleanup without changing files.');
+  console.log('  --apply, --vault       Vault dirty git files to refs/atris/vault/* and clean checkout.');
+  console.log('  --grace-minutes <N>    In-flight mtime grace window in minutes (default: 30).');
+  console.log('  --json                 Print machine-readable cleanup results.');
+  console.log('  --help, -h             Show this help.');
   console.log('');
 }
 
@@ -2977,9 +2981,29 @@ if (command === 'guide') {
     showCleanHelp();
     process.exit(0);
   }
-  const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
-  const json = process.argv.includes('--json');
-  require('../commands/clean').cleanAtris({ dryRun, json });
+  const cleanCmd = require('../commands/clean');
+  const parsed = cleanCmd.parseCleanArgs(args);
+  if (parsed.error) {
+    if (parsed.json) {
+      console.log(JSON.stringify({ ok: false, action: 'clean', error: parsed.error }, null, 2));
+    } else {
+      console.error(`✗ ${parsed.error}`);
+    }
+    process.exit(2);
+  }
+  try {
+    cleanCmd.cleanAtris(parsed);
+  } catch (err) {
+    if (parsed.json) {
+      console.log(JSON.stringify({ ok: false, action: 'clean', error: err.message || String(err) }, null, 2));
+    } else {
+      console.error(`✗ ${err.message || err}`);
+    }
+    process.exit(1);
+  }
+} else if (command === 'restore') {
+  const code = require('../commands/restore').restoreCommand(process.argv.slice(3));
+  process.exit(code);
 } else if (command === 'harvest') {
   Promise.resolve().then(() => require('../commands/harvest').harvestCommand(process.argv.slice(3)))
     .catch((err) => {
