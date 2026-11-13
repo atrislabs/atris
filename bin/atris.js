@@ -529,25 +529,25 @@ function showStartHelp() {
 }
 
 function showHelpShort() {
-  console.log('atris: you say what you want. already won. one next step.');
+  console.log('atris: say what you want. see what is already done. get one next step.');
   console.log('');
   console.log('Start here:');
   console.log('  1. atris init                    set up this folder');
   console.log('  2. atris doctor                  check this computer is ready');
-  console.log('  3. atris "what you want"         say it, the work starts');
+  console.log('  3. atris "what you want"         save what you want in plain words');
   console.log('');
-  console.log('  atris "what do you want here?"   empty folder');
-  console.log('  atris later "..."                remember without a room');
-  console.log('  atris idea "..."                 drop an idea; atris builds it later');
-  console.log('  atris guide "..."                translate your words');
-  console.log('  atris do                         work already here');
-  console.log('  atris done                       land what your agent built');
-  console.log('  atris spaceship                  Keep working for a few hours');
-  console.log('  atris autopilot                  Keep working until you stop');
-  console.log('  atris mission                    the one goal');
-  console.log('  atris gm                         play your team as a front office');
+  console.log('  atris                            see where things stand and the next step');
+  console.log('  atris later "..."                save a thought for later');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
+  console.log('  atris do                         see the next step for work here');
+  console.log('  atris done                       finish and keep what your agent built');
+  console.log('  atris spaceship                  plan a few hours of work');
+  console.log('  atris autopilot                  plan work that runs until you stop it');
+  console.log('  atris mission                    see the current goal');
+  console.log('  atris gm                         see your team like a sports front office');
   console.log('');
-  console.log('More: atris help --all   ·   machine list: atris help --json');
+  console.log('More: atris help --all   ·   command list for scripts: atris help --json');
 }
 
 function helpCatalog() {
@@ -571,24 +571,24 @@ function helpCatalog() {
 }
 
 function showHelpAll() {
-  console.log('you say what you want. already won. one next step.');
+  console.log('atris: say what you want. see what is already done. get one next step.');
   console.log('');
-  console.log('  atris later "..."                remember without a room');
-  console.log('  atris idea "..."                 drop an idea; atris builds it later');
-  console.log('  atris guide "..."                translate your words');
-  console.log('  atris do                         work already here');
-  console.log('  atris done                       land what your agent built');
-  console.log('  atris spaceship                  Keep working for a few hours');
-  console.log('  atris autopilot                  Keep working until you stop');
-  console.log('  atris mission                    the one goal');
+  console.log('  atris later "..."                save a thought for later');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
+  console.log('  atris do                         see the next step for work here');
+  console.log('  atris done                       finish and keep what your agent built');
+  console.log('  atris spaceship                  plan a few hours of work');
+  console.log('  atris autopilot                  plan work that runs until you stop it');
+  console.log('  atris mission                    see the current goal');
   console.log('  atris recap                      what your ai agent did today');
   console.log('  atris review                     check the work');
   console.log('  atris stop                       stop the live goal');
   console.log('');
-  console.log('Atris Computers:');
-  console.log('  Owner = User | Business');
-  console.log('  Owners have Computers: workspace + files + tools + secrets + memory + agents + validation');
-  console.log('  Types: code, research, CRM, reporting, events, support, business ops');
+  console.log('How it fits together:');
+  console.log('  you or your business can own computers.');
+  console.log('  a computer brings a workspace, files, tools, saved logins, memory, agents and checks together.');
+  console.log('  computers can be for code, research, sales, reporting, events, support or operations.');
   console.log('');
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');
@@ -845,7 +845,7 @@ function showHelpAll() {
   console.log('  version    - Show Atris version');
   console.log('  help       - you say what you want (help --all for every command)');
   console.log('');
-  console.log('Tip: Just run "atris" to get started');
+  console.log('tip: run "atris" to get started');
   console.log('');
 }
 

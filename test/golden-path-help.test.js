@@ -29,16 +29,16 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.equal(mainHelp.status, 0, mainHelp.stderr);
   const shortLines = mainHelp.stdout.split(/\r?\n/).filter((line) => line.trim()).length;
   assert.ok(shortLines <= 16, `default help should fit one screen, got ${shortLines} non-empty lines`);
-  assert.match(mainHelp.stdout, /atris: you say what you want\. already won\. one next step\./);
+  assert.match(mainHelp.stdout, /atris: say what you want\. see what is already done\. get one next step\./);
   assert.match(mainHelp.stdout, /atris later "/);
   assert.match(mainHelp.stdout, /atris do\b/);
-  assert.match(mainHelp.stdout, /Keep working/);
+  assert.match(mainHelp.stdout, /plan .*work/);
   assert.match(mainHelp.stdout, /atris spaceship/);
   assert.match(mainHelp.stdout, /atris autopilot/);
   assert.match(mainHelp.stdout, /atris mission/);
-  assert.match(mainHelp.stdout, /the one goal/);
-  assert.match(mainHelp.stdout, /^ {2}atris gm +play your team as a front office$/m);
-  assert.match(runCli(['help', 'all']).stdout, /^ {2}atris gm +play your team as a front office$/m);
+  assert.match(mainHelp.stdout, /the current goal/);
+  assert.match(mainHelp.stdout, /^ {2}atris gm +see your team like a sports front office$/m);
+  assert.match(runCli(['help', 'all']).stdout, /^ {2}atris gm +see your team like a sports front office$/m);
   assert.match(mainHelp.stdout, /help --all/);
   assert.doesNotMatch(mainHelp.stdout, /Golden path:/);
   assert.doesNotMatch(mainHelp.stdout, /task claim|task ready|--proof|MAP, tasks, journal/);
@@ -52,7 +52,7 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
 
   const allHelp = runCli(['help', '--all']);
   assert.equal(allHelp.status, 0, allHelp.stderr);
-  assert.match(allHelp.stdout, /^you say what you want\. already won\. one next step\./);
+  assert.match(allHelp.stdout, /^atris: say what you want\. see what is already done\. get one next step\./);
   assert.match(allHelp.stdout, /atris later "/);
   assert.match(allHelp.stdout, /atris do\b/);
   assert.match(allHelp.stdout, /atris spaceship/);
@@ -62,7 +62,7 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.match(allHelp.stdout, /^ {2}gm {9}- Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk$/m);
   assert.match(allHelp.stdout, /atris review/);
   assert.match(allHelp.stdout, /atris stop\b/);
-  assert.match(allHelp.stdout, /Keep working/);
+  assert.match(allHelp.stdout, /plan .*work/);
   assert.doesNotMatch(allHelp.stdout, /━/);
   assert.doesNotMatch(allHelp.stdout, /shows you proof/);
   assert.doesNotMatch(allHelp.stdout, /Quick start:/);

@@ -50,7 +50,7 @@ function runCli(args, { cwd, env, timeout = 60000 } = {}) {
 
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
-  return match ? match[1] : '';
+  return match ? match[1].replace(/  \([^()]+\)$/, '') : '';
 }
 
 function taskRows(room) {
@@ -192,7 +192,7 @@ test('claimed starter with no new files: next is the builder when one is known',
     process.env.HOME = room.home;
     const withCodex = buildFirstMinute({ root: room.dir, person: 'keshav', builder: 'codex' });
     assert.equal(withCodex.nextCommand, `codex "${WANT}"`);
-    assert.match(withCodex.text, /is already yours\./);
+    assert.match(withCodex.text, /you are working on/);
     const none = buildFirstMinute({ root: room.dir, person: 'keshav', builder: null });
     assert.equal(none.nextCommand, 'npm install -g @anthropic-ai/claude-code');
 

@@ -539,8 +539,8 @@ test('headless recap after a claimed file skips factory map.md and does not prom
     };
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
-    assert.match(recap.stdout, /^hey keshav, "notes\.md" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
+    assert.match(recap.stdout, /^hey keshav, you are working on "notes\.md"\.$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
     assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP|Share this/i);
     assert.doesNotMatch(recap.stdout, /\? $/m);
     assert.doesNotMatch(recap.stdout, /What do you want/);
@@ -550,7 +550,7 @@ test('headless recap after a claimed file skips factory map.md and does not prom
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.next_action, 'atris "add a test for the claimed task"');
-    assert.equal(payload.reason, '"notes.md" is already yours');
+    assert.equal(payload.reason, 'you are working on "notes.md"');
     assert.doesNotMatch(json.stdout, /generate map|ready to claim/i);
   } finally {
     resetDbEnv();
@@ -591,8 +591,8 @@ test('headless recap still names a claimed non-seed task when factory map.md is 
     };
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
-    assert.match(recap.stdout, /^hey keshav, "ship the landing page" is already yours\.$/m);
-    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"$/m);
+    assert.match(recap.stdout, /^hey keshav, you are working on "ship the landing page"\.$/m);
+    assert.match(recap.stdout, /^next: atris "add a test for the claimed task"  \(.*\)$/m);
     assert.doesNotMatch(recap.stdout, /generate map|ready to claim|RECAP/i);
     assert.equal(spokenLineCount(recap.stdout), 2);
   } finally {
@@ -626,8 +626,8 @@ test('headless recap after init-shaped claim keeps the next, not silent', () => 
     const recap = runCli(['recap'], { cwd: dir, env });
     assert.equal(recap.status, 0, recap.stderr || recap.stdout);
     assert.match(recap.stdout, /generate map\.md/i);
-    assert.match(recap.stdout, /ready to claim/);
-    assert.match(recap.stdout, /^next: atris task claim INT-1 --as keshav$/m);
+    assert.match(recap.stdout, /ready to start/);
+    assert.match(recap.stdout, /^next: atris task claim INT-1 --as keshav  \(.*\)$/m);
     assert.doesNotMatch(recap.stdout, /RECAP|Plain English|Share this|no task history yet|already yours/i);
     assert.equal(spokenLineCount(recap.stdout), 2);
 

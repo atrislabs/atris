@@ -1637,7 +1637,7 @@ test('status stays local even when .atris/business.json exists', () => {
 
     const res = runCli(['status'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ready to claim/);
+    assert.match(res.stdout, /ready to start/);
     assert.match(res.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(res.stdout, /last synced/i);
     assert.doesNotMatch(res.stdout, /Where we are|Decision: let it run/);

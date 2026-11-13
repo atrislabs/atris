@@ -101,7 +101,7 @@ test('doAtris in an empty folder says it is empty and writes nothing', async (t)
 
   assert.equal(run.thrown, null);
   assert.equal(run.exitCode, null);
-  assert.equal(run.stdout.trim(), 'hey tester, launch-day is empty.\n\nnext: atris "what do you want here?"');
+  assert.equal(run.stdout.trim(), 'hey tester, launch-day is empty.\n\nnext: atris "what do you want here?"  (say it in your own words)');
   assert.deepStrictEqual(fs.readdirSync(folder), []);
 });
 
@@ -126,7 +126,7 @@ test('doAtris with atris/ and no live task stays in prompt mode', async (t) => {
   const run = await runDo([]);
 
   assert.equal(run.thrown, null);
-  assert.equal(run.stdout.trim(), 'hey tester, launch-day is set up.\n\nnext: atris "help me choose the first useful step for this project"');
+  assert.equal(run.stdout.trim(), 'hey tester, launch-day is set up.\n\nnext: atris "help me choose the first useful step for this project"  (say it in your own words)');
   assert.equal(run.stdout.includes('ACTION TAKEN'), false);
   assert.equal(run.stdout.includes('AGENT MODE'), false);
 });
