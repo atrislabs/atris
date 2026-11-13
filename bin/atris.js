@@ -538,8 +538,8 @@ function showHelpShort() {
   console.log('');
   console.log('  atris                            see where things stand and the next step');
   console.log('  atris later "..."                save a thought for later');
-  console.log('  atris idea "..."                 save an idea for the idea runner');
-  console.log('  atris guide "..."                turn your words into the right command');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
   console.log('  atris do                         see the next step for work here');
   console.log('  atris done                       finish and keep what your agent built');
   console.log('  atris spaceship                  plan a few hours of work');
@@ -574,8 +574,8 @@ function showHelpAll() {
   console.log('atris: say what you want. see what is already done. get one next step.');
   console.log('');
   console.log('  atris later "..."                save a thought for later');
-  console.log('  atris idea "..."                 save an idea for the idea runner');
-  console.log('  atris guide "..."                turn your words into the right command');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
   console.log('  atris do                         see the next step for work here');
   console.log('  atris done                       finish and keep what your agent built');
   console.log('  atris spaceship                  plan a few hours of work');
