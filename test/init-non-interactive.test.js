@@ -231,7 +231,7 @@ test('first-use command after init talks like first-minute instead of MAP homewo
     const res = runCli(['help me choose the first useful step for this project'], { cwd: dir });
     assert.equal(minute.status, 0, `stdout:\n${minute.stdout}\nstderr:\n${minute.stderr}`);
     assert.equal(res.status, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-    assert.match(res.stdout, /generate map\.md/i);
+    assert.match(res.stdout, /map this folder so agents can find things/);
     assert.match(res.stdout, /ready to start|you are working on/);
     assert.match(res.stdout, /^next: atris task (claim|ready) /m);
     assert.equal(

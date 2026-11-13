@@ -2022,7 +2022,7 @@ test('atris now in an empty folder talks first-talk, not init', () => {
     assert.match(now.stdout, /^hey keshav, this folder is empty\.$/m);
     assert.match(now.stdout, /^next: atris "what do you want here\?"  \(.*\)$/m);
     assert.equal(spokenLineCount(now.stdout), spokenLineCount(minute.stdout));
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|map this folder/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -2105,7 +2105,7 @@ test('atris status and stop in a folder with a file name the file, not empty fir
     assert.equal(now.stdout.trim(), minute.stdout.trim());
     assert.match(now.stdout, /^hey keshav, this folder already has notes.txt\.$/m);
     assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|map this folder/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {
@@ -2131,7 +2131,7 @@ test('atris now in a folder with a file names the file, not init', () => {
     assert.match(now.stdout, /^hey keshav, this folder already has notes.md\.$/m);
     assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
     assert.equal(spokenLineCount(now.stdout), spokenLineCount(minute.stdout));
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|nothing is running|what do you want here/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|init --minimal|claim|# now|Current operating truth|Generate MAP\.md|map this folder|nothing is running|what do you want here/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
 
@@ -2170,7 +2170,7 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2181,7 +2181,7 @@ test('atris status after init --yes --minimal talks the claim, not factory let-i
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(status.stdout.trim(), minute.stdout.trim());
     assert.equal(status.stdout.trim(), now.stdout.trim());
-    assert.match(status.stdout, /generate map\.md/i);
+    assert.match(status.stdout, /map this folder so agents can find things/);
     assert.match(status.stdout, /ready to start/);
     assert.match(status.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(status.stdout), nextLine(minute.stdout));
@@ -2245,7 +2245,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2253,7 +2253,7 @@ test('atris now after init --yes --minimal talks the claim, not factory now.md',
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(now.status, 0, now.stderr || now.stdout);
     assert.equal(now.stdout.trim(), minute.stdout.trim());
-    assert.match(now.stdout, /generate map\.md/i);
+    assert.match(now.stdout, /map this folder so agents can find things/);
     assert.match(now.stdout, /ready to start/);
     assert.match(now.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(now.stdout), nextLine(minute.stdout));
@@ -2627,7 +2627,7 @@ test('atris launchpad after init --yes --minimal talks the claim, not factory in
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2641,7 +2641,7 @@ test('atris launchpad after init --yes --minimal talks the claim, not factory in
     assert.equal(pad.stdout.trim(), minute.stdout.trim());
     assert.equal(pad.stdout.trim(), now.stdout.trim());
     assert.equal(pad.stdout.trim(), status.stdout.trim());
-    assert.match(pad.stdout, /generate map\.md/i);
+    assert.match(pad.stdout, /map this folder so agents can find things/);
     assert.match(pad.stdout, /ready to start/);
     assert.match(pad.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(pad.stdout), nextLine(minute.stdout));
@@ -2779,7 +2779,7 @@ test('atris status after minting a file folder talks keep-working, not factory l
     const payload = JSON.parse(jsonStatus.stdout);
     assert.equal(payload.next_action, keepWorking);
     assert.equal(payload.reason, 'you are working on "notes.md"');
-    assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP/);
+    assert.doesNotMatch(jsonStatus.stdout, /Where we are|let it run|Generate MAP|map this folder/);
 
     const jsonRecap = runCli(['recap', '--json'], { cwd: dir, env });
     assert.equal(jsonRecap.status, 0, jsonRecap.stderr || jsonRecap.stdout);
@@ -2880,7 +2880,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2896,7 +2896,7 @@ test('atris stop after init --yes --minimal talks the claim, not cloud-computer'
     assert.equal(stopped.stdout.trim(), minute.stdout.trim());
     assert.equal(stopped.stdout.trim(), now.stdout.trim());
     assert.equal(stopped.stdout.trim(), status.stdout.trim());
-    assert.match(stopped.stdout, /generate map\.md/i);
+    assert.match(stopped.stdout, /map this folder so agents can find things/);
     assert.match(stopped.stdout, /ready to start/);
     assert.match(stopped.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(stopped.stdout), nextLine(minute.stdout));
@@ -2940,7 +2940,7 @@ test('atris recap after init --yes --minimal talks the claim, not silent next', 
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
@@ -2957,7 +2957,7 @@ test('atris recap after init --yes --minimal talks the claim, not silent next', 
     assert.equal(recap.stdout.trim(), now.stdout.trim());
     assert.equal(recap.stdout.trim(), status.stdout.trim());
     assert.equal(recap.stdout.trim(), stopped.stdout.trim());
-    assert.match(recap.stdout, /generate map\.md/i);
+    assert.match(recap.stdout, /map this folder so agents can find things/);
     assert.match(recap.stdout, /ready to start/);
     assert.match(recap.stdout, /^next: atris task claim /m);
     assert.equal(nextLine(recap.stdout), nextLine(minute.stdout));
@@ -3256,14 +3256,14 @@ test('atris test after init --minimal talks like first-minute, not bootstrap', (
   try {
     const init = runCli(['init', '--yes', '--minimal'], { cwd: dir, env, timeout: 60000 });
     assert.equal(init.status, 0, init.stderr || init.stdout);
-    assert.match(init.stdout, /generate map\.md/i);
+    assert.match(init.stdout, /map this folder so agents can find things/);
     assert.match(init.stdout, /^next: atris task claim /m);
 
     const minute = runCli([], { cwd: dir, env });
     const verb = runCli(['test'], { cwd: dir, env });
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(verb.status, 0, verb.stderr || verb.stdout);
-    assert.match(verb.stdout, /generate map\.md/i);
+    assert.match(verb.stdout, /map this folder so agents can find things/);
     assert.match(verb.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(verb.stdout), nextLine(minute.stdout));
     assert.match(nextLine(verb.stdout), /^atris task (claim|show|ready) |^atris do$/);
@@ -3444,7 +3444,7 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(asked.status, 0, asked.stderr || asked.stdout);
     assert.equal(asked.stdout.trim(), minute.stdout.trim());
-    assert.match(asked.stdout, /generate map\.md/i);
+    assert.match(asked.stdout, /map this folder so agents can find things/);
     assert.match(asked.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(asked.stdout), nextLine(minute.stdout));
     assert.match(nextLine(asked.stdout), /^atris task (claim|show|ready) /);
@@ -3458,7 +3458,7 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     assert.equal(mission.stdout.trim(), minute.stdout.trim());
     assert.equal(missionStatus.stdout.trim(), minute.stdout.trim());
     assert.match(listed.stdout, /No missions yet/i);
-    assert.match(mission.stdout, /generate map\.md/i);
+    assert.match(mission.stdout, /map this folder so agents can find things/);
     assert.match(mission.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(mission.stdout), nextLine(minute.stdout));
     assert.match(nextLine(mission.stdout), /^atris task (claim|show|ready) /);
@@ -3469,7 +3469,7 @@ test('atris ask and mission after init --minimal stay in the room', () => {
     const missionHelp = runCli(['mission', '--help'], { cwd: dir, env });
     assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
     assert.match(missionHelp.stdout, /Usage: atris mission|atris mission /);
-    assert.doesNotMatch(missionHelp.stdout, /clean start|generate map|business\.json|Start one with/);
+    assert.doesNotMatch(missionHelp.stdout, /clean start|generate map|map this folder|business\.json|Start one with/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
 
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
@@ -3849,7 +3849,7 @@ test('atris wish after init --minimal stays in the room', () => {
     assert.equal(minute.status, 0, minute.stderr || minute.stdout);
     assert.equal(wish.status, 0, wish.stderr || wish.stdout);
     assert.equal(wish.stdout.trim(), minute.stdout.trim());
-    assert.match(wish.stdout, /generate map\.md/i);
+    assert.match(wish.stdout, /map this folder so agents can find things/);
     assert.match(wish.stdout, /ready to start|you are working on/);
     assert.equal(nextLine(wish.stdout), nextLine(minute.stdout));
     assert.match(nextLine(wish.stdout), /^atris task (claim|show|ready) /);

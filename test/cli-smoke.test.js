@@ -612,7 +612,7 @@ test('default entry keeps placeholder MAP on first-minute and gathers after MAP 
     // placeholder MAP stays on first-minute. `test` is not a new first task.
     const verb = runCli(['test'], { cwd: dir, env });
     assert.equal(verb.status, 0, verb.stderr);
-    assert.match(verb.stdout, /generate map\.md/i);
+    assert.match(verb.stdout, /map this folder so agents can find things/);
     assert.match(verb.stdout, /^next: atris task (claim|ready) /m);
     assert.doesNotMatch(verb.stdout, /BOOTSTRAP REQUIRED|Got it\. I saved your first direction|First useful step: test|next setup:/);
 

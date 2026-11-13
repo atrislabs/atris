@@ -397,7 +397,7 @@ test('26f: atris now in a file folder names the file and does not mint', () => {
     assert.equal(now.stdout.trim(), minute.stdout.trim());
     assert.match(now.stdout, /^hey keshav, this folder already has notes.md\.$/m);
     assert.match(now.stdout, /^next: atris do  \(.*\)$/m);
-    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|claim/);
+    assert.doesNotMatch(now.stdout + now.stderr, /Run "atris init"|folder not found|# now|Current operating truth|Generate MAP\.md|map this folder|claim/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
   } finally {

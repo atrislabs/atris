@@ -640,7 +640,7 @@ test('renderReviewMinute names an open claim the same way first-minute does', ()
       updated_at: 20,
     }],
   });
-  assert.match(text, /hey keshav, "generate map.md scan codebase" is ready to start\./);
+  assert.match(text, /hey keshav, "map this folder so agents can find things" is ready to start\./);
   assert.match(text, /^next: atris task claim LYG-1 --as keshav  \(start it\)$/m);
   assert.doesNotMatch(text, /nothing is waiting on you/);
   assert.equal(spokenLineCount(text), 2);
