@@ -427,6 +427,14 @@ A select or listbox that holds more than one choice shows every chosen value as 
 
 `query({ text, within, kind })` finds controls and lists the choices of a select or listbox. The list is capped at 50. With `text`, only the matching choices are listed, so a choice past the cap can still be found.
 
+Dropdowns whose list shows only while open work too: a select-only combobox (a button with `role="combobox"`), an editable combobox (a text box with `role="combobox"` that names its list), and a menu button (`aria-haspopup="menu"`). Snapshot shows the value the control shows and a `popup` of `listbox` or `menu`. `set` picks one choice by its label or value: `args: { value: 'codex' }`. A press on a menu item names it: `{ label: 'Actions', action: 'click', args: { item: 'Rename' } }`. Query lists the choices when its `text` names the control.
+
+To read or pick, the file may open a closed list, then it closes it again and puts focus back where it was. Opening counts as a change, so it goes through the same check as any other step: a confirm mark on the control, its labels, its form, or a choice in the page that the step would pick or clear needs the person before anything opens. With an `allow` callback, the person is asked before a list opens, even just to read it. Once the list is open, the choices the step touches are checked again. A mark that appears only while the list is open closes it, and the person is asked before it opens again; without an `allow` callback the step fails.
+
+The list is found only through the control's `aria-controls` or `aria-owns`, so a list rendered elsewhere (a portal, the top layer, a popover) is read, and a list that merely sits nearby is not. A pick says ok only when the control shows the new choice after the list has closed. If the page keeps its old value, the step fails with "the page did not keep the new choice." A menu press says ok once the item is pressed and the menu is closed.
+
+A list that holds more than one choice and opens in a popup is not changed yet. An editable combobox that names its list takes only one of its choices; free text cannot be typed into it.
+
 Three marks on the page set the rules, with the `allow` callback.
 
 The `allow` callback decides, and it may return a promise. If you pass one, it runs before every change the agent makes, so the person sees each click, change, or tick first. It gets the control's label, the action and its args, whether the step is marked for confirmation, and the page's own confirm sentences in `reasons`. If the callback throws, the step fails with a fixed sentence; the error's own message is never passed to the agent.
@@ -437,9 +445,9 @@ One approval at a time per page. While a step waits for the person, every other 
 
 `data-agent-confirm` marks a control that needs a person. A step involves the control, its labels (wrapping and `for`), the form it belongs to (also through the `form` attribute), every field of that form when the press submits or resets it, each choice the step picks, and each choice or radio the step clears, hidden ones included, with their labels. A mark on any of these, or around them, counts. Without an `allow` callback, that step fails and tells the agent to ask the person.
 
-`data-agent-hidden` leaves a region out entirely. On a single choice, it leaves out that choice. A choice hidden by the `hidden` attribute or by css is left out the same way.
+`data-agent-hidden` leaves a region out entirely. On a single choice, it leaves out that choice. A choice hidden by the `hidden` attribute or by css is left out the same way. This holds for choices that exist only while a list is open: they are checked once it opens, and a hidden one is never listed or picked. A mark on a control also covers the list it opens.
 
-`data-agent-secret` hides the value and all state of the marked control and everything inside it: value, checked, selected, open, and its choices all read `[redacted]`, and its actions do not change with its state. Its name stays visible, and comes only from a label element, `aria-label`, or `aria-labelledby`; placeholder, title, alt and the control's own text are never used. To hide the name too, use `data-agent-hidden`. Other text inside a secret mark is not read. The agent can still type into a secret field or pick a secret choice it already knows. Password, card, and one-time-code fields count as secret without a mark.
+`data-agent-secret` hides the value and all state of the marked control and everything inside it: value, checked, selected, open, and its choices all read `[redacted]`, and its actions do not change with its state. Its name stays visible, and comes only from a label element, `aria-label`, or `aria-labelledby`; placeholder, title, alt and the control's own text are never used. To hide the name too, use `data-agent-hidden`. Other text inside a secret mark is not read. A secret control's list is covered too, wherever it is rendered: its choices are never listed, even while a person has it open. The agent can still type into a secret field or pick a secret choice it already knows. Password, card, and one-time-code fields count as secret without a mark.
 
 A mark covers the element and everything inside it. Labels, values, changes and error sentences are built when the result is returned, with the marks as they are then: a value that became secret reads `[redacted]` on both sides of a change, and a control that is gone or hidden is reported by its ref only.
 
@@ -455,7 +463,7 @@ A page whose own scripts add, remove or move marks, or swap controls, in the mid
 
 Editable text regions (`contenteditable`) are not typed into. Plain ones are counted as unread. One with a textbox role is listed with its text and no actions.
 
-The tests here drive real Chrome. The controlled-input test imitates React with a hand-built value tracker; a check against real React is planned and not done yet.
+The tests here drive real Chrome. The controlled-input test imitates React with a hand-built value tracker. The dropdown tests use hand-built dropdowns. An automated check against real React is not done yet; one run by hand against a set of real React parts (a select, a combobox, and menus) passed.
 
 For agents that speak tools, `agentTools` lists three tools (`page_snapshot`, `page_act`, `page_query`) with JSON schemas. `registerTools(agent, { allow })` registers them on `document.modelContext` when the page offers it, and does nothing otherwise.
 
