@@ -60,7 +60,7 @@ function runCli(args, { cwd, input, env } = {}) {
 
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
-  return match ? match[1].replace(/  \([^()]+\)$/, '') : '';
+  return match ? match[1] : '';
 }
 
 function spokenDoBody(stdout) {

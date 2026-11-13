@@ -50,7 +50,7 @@ function runCli(args, { cwd, env, timeout = 60000 } = {}) {
 
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
-  return match ? match[1].replace(/  \([^()]+\)$/, '') : '';
+  return match ? match[1] : '';
 }
 
 function taskRows(room) {

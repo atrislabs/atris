@@ -56,7 +56,7 @@ function writeAccount(home, account) {
 
 function nextLine(stdout) {
   const match = String(stdout || '').match(/^next: (.+)$/m);
-  return match ? match[1].replace(/  \([^()]+\)$/, '') : '';
+  return match ? match[1] : '';
 }
 
 function keepWorkingNext(ref) {
@@ -3969,7 +3969,7 @@ test('named empty folder next command starts a first task when pasted', () => {
     const first = runCli([], { cwd: dir, env });
     assert.equal(first.status, 0, first.stderr || first.stdout);
     assert.match(first.stdout, /hey keshav, launch-day is empty\./);
-    const next = String(first.stdout).match(/^next: (.+?)  \([^()]+\)$/m);
+    const next = String(first.stdout).match(/^next: (.+)$/m);
     assert.ok(next, first.stdout);
     assert.equal(next[1], 'atris "what do you want here?"');
     assert.doesNotMatch(first.stdout, /atris init --minimal/);

@@ -116,7 +116,7 @@ function printedAtrisArgs(output, label) {
     .map((row) => row.trimStart())
     .find((row) => row.toLowerCase().startsWith(prefix) && /\batris\s/.test(row));
   assert.ok(line, `missing ${label} Atris command in output:\n${output}`);
-  return parseShellWords(line.slice(line.toLowerCase().indexOf('atris ') + 'atris '.length).replace(/  \([^()]+\)$/, ''));
+  return parseShellWords(line.slice(line.toLowerCase().indexOf('atris ') + 'atris '.length));
 }
 
 function assertOk(result, label) {
