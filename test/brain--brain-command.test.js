@@ -10,14 +10,17 @@ const { spawnSync } = require('node:child_process');
 const { brainCommand } = require('../commands/brain');
 
 const USAGE = [
-  'Usage: atris brain compile [--root <workspace>] [--yes] [--verify] [--json]',
-  '       atris brain activate [--member <slug>] [--root <workspace>] [--yes] [--verify] [--json]',
-  '       atris brain gallery [--root <workspace>] [--yes] [--verify] [--json]',
-  '       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
-  '       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
-  '       atris brain scorecard [--root <workspace>] [--verify] [--json]',
-  '       atris brain feedback --rating approve|edit|reject [--recommendation <text>] [--note <text>] [--root <workspace>] [--verify]',
-  '       atris brain yes|edit|no [note] [--root <workspace>] [--verify]',
+  'atris brain: the notes every agent reads before it starts work in this folder.',
+  '',
+  '  atris brain activate                     show what is in progress, what is waiting and the next step',
+  '  atris brain activate --member <name>     the same, for one team member',
+  '  atris brain compile --yes                save fresh start-up notes into this folder',
+  '  atris brain gallery                      show the next step for every team member',
+  '  atris brain yes | edit | no ["note"]     say how the last suggestion went',
+  '  atris brain go | hold ["note"]           approve or pause a piece of work',
+  '  atris brain scorecard                    score finished tasks so later suggestions improve',
+  '',
+  'options: --root <folder>  --yes (allow saving files)  --verify (check the notes are in place)  --json',
 ];
 
 function makeTemp() {
@@ -124,7 +127,7 @@ test('bad rating, bad decision, and a missing atris folder fail before any write
       );
       assert.throws(
         () => brainCommand(['status', '--root', dir]),
-        { message: 'atris/ folder not found. Run "atris init" first.' },
+        { message: 'this folder is not set up for atris yet. set it up: atris init' },
       );
     });
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);

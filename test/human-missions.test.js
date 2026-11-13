@@ -258,8 +258,8 @@ test('a missing current route can fall back to the desk next', async () => {
       }),
     });
     assert.equal(missingCode, 0);
-    assert.match(missing.stdout.join('\n'), /generate map\.md/i);
-    assert.match(missing.stdout.join('\n'), /ready to claim/);
+    assert.match(missing.stdout.join('\n'), /map this folder so agents can find things/);
+    assert.match(missing.stdout.join('\n'), /ready to start/);
     assert.match(missing.stdout.join('\n'), /atris task claim TH1 --as /);
     assert.doesNotMatch(missing.stdout.join('\n') + missing.stderr.join('\n'), /could not find a running mission|Start one with|business\.json|--mission|atris ask/);
 
@@ -285,7 +285,7 @@ test('a missing current route can fall back to the desk next', async () => {
     });
     assert.equal(liveCode, 0);
     assert.equal(JSON.parse(live.stdout.join('\n')).mission_id, 'mission-live');
-    assert.doesNotMatch(live.stdout.join('\n'), /ready to claim|generate map/);
+    assert.doesNotMatch(live.stdout.join('\n'), /ready to claim|generate map|map this folder/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -508,8 +508,8 @@ test('stop after init with an open claim talks the claim and does not hit the cl
     });
     const spoken = output.stdout.join('\n');
     assert.equal(code, 0);
-    assert.match(spoken, /generate map\.md/i);
-    assert.match(spoken, /ready to claim/);
+    assert.match(spoken, /map this folder so agents can find things/);
+    assert.match(spoken, /ready to start/);
     assert.match(spoken, /next: atris task claim PIN-1 --as keshav/);
     assert.doesNotMatch(spoken, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|nothing is running|what do you want here|already yours/);
     assert.equal(fs.existsSync(path.join(root, '.atris', 'business.json')), false);
@@ -567,7 +567,7 @@ test('stop after a claimed file talks keep-working and does not hit the cloud', 
     });
     const spoken = output.stdout.join('\n');
     assert.equal(code, 0);
-    assert.match(spoken, /"notes.md" is already yours/);
+    assert.match(spoken, /you are working on "notes.md"/);
     assert.match(spoken, /next: atris "add a test for the claimed task"/);
     assert.doesNotMatch(spoken, /cloud-computer|business\.json|Pass --mission|Atris left your work unchanged|nothing is running|what do you want here|atris do/);
     assert.equal(fs.existsSync(path.join(root, '.atris', 'business.json')), false);

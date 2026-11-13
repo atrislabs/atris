@@ -344,16 +344,16 @@ function initAtris() {
     console.log(`workspace files ready (${ready.workspace.size})`);
     if (withTeam || ready.team.size > 0) {
       console.log(`team members ready (${ready.team.size})`);
-      console.log('more members are available with atris member create <name>');
+      console.log('add more members any time: atris member create <name>');
     }
     if (withAdapters || ready.adapters.size > 0) {
-      console.log(`agent adapters ready (${ready.adapters.size})`);
+      console.log(`set up for your coding tools (${ready.adapters.size})`);
     }
     if (withSkills || ready.skills.size > 0) {
       console.log(`skills installed (${ready.skills.size})`);
     }
     if (minimal) {
-      console.log('minimal scaffold (add --with-adapters / --with-skills or init --full for the rest)');
+      console.log('basic files ready (use --with-adapters or --with-skills to add more)');
     }
   };
   // GUARD: Refuse nested init.
@@ -1172,7 +1172,7 @@ Read atris/MAP.md. Begin iteration 1.`;
         if (saved.detail) console.log(`  git said: ${saved.detail.split('\n')[0]}`);
       }
     }
-    console.log('\natris initialized.');
+    console.log('\natris is set up in this folder.');
     console.log('no commands to learn. tell your agent what you want in plain words.');
   } else {
     console.error('✗ Error: atris.md not found in package');

@@ -65,7 +65,7 @@ test('real atris binary fast smoke covers core read-only commands', () => {
 
     const help = runCli(['--help'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /you say what you want\. already won\. one next step\./);
+    assert.match(help.stdout, /atris: say what you want\. see what is already done\. get one next step\./);
 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const engines = runCli(['engine', 'list', '--json'], { cwd: dir, env: { HOME: home, PATH: systemPath } });

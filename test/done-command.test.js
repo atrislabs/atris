@@ -159,7 +159,7 @@ test('after done, bare atris does not push the person onto the init seed task', 
     for (const args of [[], ['do'], ['done']]) {
       const home = runCli(args, { cwd: room.dir, env: room.env });
       assert.equal(home.status, 0, home.stderr || home.stdout);
-      assert.match(home.stdout, new RegExp(`you already shipped ${WANT}\\.`));
+      assert.match(home.stdout, new RegExp(`you already finished ${WANT}\\.`));
       assert.equal(nextLine(home.stdout), 'atris "what\'s next?"');
       assert.doesNotMatch(home.stdout, /Generate MAP|map\.md|task claim/i);
     }
@@ -192,7 +192,7 @@ test('claimed starter with no new files: next is the builder when one is known',
     process.env.HOME = room.home;
     const withCodex = buildFirstMinute({ root: room.dir, person: 'keshav', builder: 'codex' });
     assert.equal(withCodex.nextCommand, `codex "${WANT}"`);
-    assert.match(withCodex.text, /is already yours\./);
+    assert.match(withCodex.text, /you are working on ".+"\./);
     const none = buildFirstMinute({ root: room.dir, person: 'keshav', builder: null });
     assert.equal(none.nextCommand, 'npm install -g @anthropic-ai/claude-code');
 

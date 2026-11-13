@@ -203,7 +203,7 @@ test('brain --help prints usage without workspace state', () => {
     for (const flag of ['--help', '-h']) {
       const res = runCli(['brain', flag], { cwd: dir, env: { HOME: home } });
       assert.equal(res.status, 0, `brain ${flag}: ${res.stderr || res.stdout}`);
-      assert.match(res.stdout, /Usage: atris brain compile/);
+      assert.match(res.stdout, /atris brain: the notes every agent reads/);
       assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `brain ${flag} created atris/`);
       assert.equal(fs.existsSync(path.join(home, '.atris')), false, `brain ${flag} created ~/.atris`);
@@ -1637,7 +1637,7 @@ test('status stays local even when .atris/business.json exists', () => {
 
     const res = runCli(['status'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ready to claim/);
+    assert.match(res.stdout, /ready to start/);
     assert.match(res.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(res.stdout, /last synced/i);
     assert.doesNotMatch(res.stdout, /Where we are|Decision: let it run/);

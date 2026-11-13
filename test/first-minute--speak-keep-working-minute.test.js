@@ -97,7 +97,7 @@ test('open task is offered to claim under the operator name', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, "write the menu" is ready to claim.\n\nnext: atris task claim T-1 --as sam',
+    'hey sam, "write the menu" is ready to start.\n\nnext: atris task claim T-1 --as sam',
   );
 });
 
@@ -111,7 +111,7 @@ test('json mode carries the task id and title and a reason without the greeting'
   const out = JSON.parse(lines[0]);
   assert.strictEqual(out.ok, true);
   assert.strictEqual(out.status, 'started');
-  assert.strictEqual(out.reason, '"write the menu" is ready to claim');
+  assert.strictEqual(out.reason, '"write the menu" is ready to start');
   assert.strictEqual(out.next_action, 'atris task claim T-1 --as sam');
   assert.deepStrictEqual(out.task, { display_id: 'T-1', title: 'Write the menu.' });
 });
@@ -123,7 +123,7 @@ test('newest open task wins when two are waiting', () => {
     { display_id: 'T-2', title: 'Fresh chore', status: 'open', updated_at: 20 },
   ]);
   const { lines } = speak({ root });
-  assert.match(lines[1], /"fresh chore" is ready to claim\./);
+  assert.match(lines[1], /"fresh chore" is ready to start\./);
   assert.ok(lines[1].endsWith('next: atris task claim T-2 --as sam'));
 });
 
@@ -136,7 +136,7 @@ test('claimed task gets the ready-with-verify command', () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    'hey sam, "bake bread" is already yours.\n\nnext: atris "add a test for the claimed task"',
+    'hey sam, you are working on "bake bread".\n\nnext: atris "add a test for the claimed task"',
   );
 });
 
@@ -162,7 +162,7 @@ test('claimed work beats an open task, and a certified review beats claimed work
   const { lines } = speak({ root });
   assert.strictEqual(
     lines[1],
-    'hey sam, something finished. waiting on you.\n\nnext: atris task accept T-6',
+    'hey sam, "checked one" is waiting for your ok.\n\nnext: atris task accept T-6',
   );
 });
 
@@ -177,7 +177,7 @@ test('latest recap in atris/reports is named under the win line', () => {
   const { lines } = speak({ root });
   assert.strictEqual(
     lines[1],
-    'hey sam, "write the menu" is ready to claim.\nlast recap: Weekly recap.\n\nnext: atris task claim T-1 --as sam',
+    'hey sam, "write the menu" is ready to start.\nlast recap: Weekly recap.\n\nnext: atris task claim T-1 --as sam',
   );
 });
 
@@ -229,7 +229,7 @@ test('shipped starter task asks what is next and reports no task in json', () =>
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    `hey sam, you already shipped A page for the bakery.\n\nnext: ${WHATS_NEXT}`,
+    `hey sam, you already finished A page for the bakery.\n\nnext: ${WHATS_NEXT}`,
   );
 
   const out = JSON.parse(speak({ root, asJson: true }).lines[0]);

@@ -287,12 +287,12 @@ test('startup shows the direct document score after current work, with a missing
   });
   const missing = boot();
   assert.equal(missing.status, 0, missing.stderr);
-  assert.match(missing.stdout, /docs\s+70\/100 · add atris\/doc-health\/questions\.jsonl/);
+  assert.match(missing.stdout, /docs\s+70\/100 · add sample questions to test the map: atris\/doc-health\/questions\.jsonl/);
   write(root, 'atris/doc-health/questions.jsonl', JSON.stringify({ q: 'where is the guide', expect: 'atris/atris.md' }));
   const result = boot();
   assert.equal(result.status, 0, result.stderr);
   const health = require('../commands/doc-health').computeDocHealth(root);
-  const expected = `${health.overall.total}/100 · 100% one hop · boot ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens`;
+  const expected = `${Math.round(health.overall.total)}/100 · the map answers every sample question · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
   assert.ok(result.stdout.includes(expected), result.stdout);
   assert.ok(result.stdout.indexOf('Read the guide') < result.stdout.indexOf('docs '));
   assert.equal(fs.existsSync(path.join(root, 'missing.db')), false);

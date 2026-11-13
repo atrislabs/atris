@@ -5,6 +5,7 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
 const { gateForHuman, numberWord } = require('../lib/voice-gate');
+const { plainTitle } = require('../lib/first-minute');
 
 const CLARITY_FIELDS = [
   { key: 'focus', label: 'Focus' },
@@ -120,7 +121,7 @@ function activeWorkSentence(state, context) {
   const tasks = Array.isArray(context?.inProgressTasks) ? context.inProgressTasks : [];
   if (tasks.length) {
     const count = tasks.length;
-    const focus = focusFragment(tasks[0]);
+    const focus = focusFragment(plainTitle(tasks[0]));
     const subject = count === 1 ? 'task is' : 'tasks are';
     return humanSentence(`right now: ${countWord(count)} ${subject} in progress; the focus is ${closeSentence(focus)}`);
   }
@@ -152,8 +153,7 @@ function activeWorkSentence(state, context) {
   return null;
 }
 
-function activateAtris() {
-  const workspaceDir = process.cwd();
+function buildActivationSummary(workspaceDir) {
   const targetDir = path.join(workspaceDir, 'atris');
 
   if (!fs.existsSync(targetDir)) {
@@ -166,12 +166,7 @@ function activateAtris() {
   const todoFile = path.join(targetDir, 'TODO.md');
   const legacyTaskContextsFile = path.join(targetDir, 'TASK_CONTEXTS.md');
 
-  // Journal (create today's file if missing so the system is always runnable)
-  ensureLogDirectory();
-  const { logFile, dateFormatted } = getLogPath();
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-  }
+  const logFile = path.join(workspaceDir, 'atris', 'logs', path.relative(path.join(process.cwd(), 'atris', 'logs'), getLogPath().logFile));
 
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
@@ -247,7 +242,7 @@ function activateAtris() {
   try {
     const { nextMoves } = require('../lib/next-moves');
     const { profilePaths } = require('../lib/clarity');
-    const root = process.cwd();
+    const root = workspaceDir;
     moves = nextMoves(root, 3);
     const { profile, mdPath } = readActivationClarityProfile(root, profilePaths);
     clarityLine = formatClarityLine(profile, rel(mdPath));
@@ -258,19 +253,6 @@ function activateAtris() {
     const { buildBriefData } = require('./brief');
     briefData = buildBriefData(workspaceDir);
   } catch { /* brief is best-effort */ }
-  try {
-    const { syncStatus } = require('../lib/sync-status');
-    syncStatus(workspaceDir);
-  } catch { /* sync status is best-effort */ }
-
-  void dateFormatted;
-  void learningCount;
-  fs.existsSync(personaFile);
-  fs.existsSync(mapFile);
-  void taskFilePath;
-
-  console.log(humanSentence('atris is up.'));
-
   const statusLines = [
     handoffSentence(handoffContent),
     completionSentence(recentCompletions),
@@ -286,20 +268,44 @@ function activateAtris() {
       statusLines.push(`waiting on you: ${countWord(approvalCount)} ${approvalLabel}. see them: atris task reviews`);
     }
   }
-  if (statusLines.length) {
-    console.log('');
-    statusLines.forEach((line) => console.log(line));
-  }
-
-  console.log('');
-  console.log(clarityLine || 'Tip: run atris clarity once so agents learn how you work.');
-
   const nextMove = moves[0] || briefData?.moves?.[0];
-  const nextMoveTitle = focusFragment(nextMove?.title, 100);
-  if (nextMoveTitle) {
+  const nextMoveTitle = focusFragment(plainTitle(nextMove?.title), 100);
+  const today = nextMoveTitle ? humanSentence(`today's move: ${closeSentence(nextMoveTitle)}`) : null;
+  return {
+    lines: statusLines,
+    note: statusLines.find(line => line.startsWith('last session left a note:')) || null,
+    landed: statusLines.find(line => line.startsWith('since last time:')) || null,
+    right_now: statusLines.find(line => line.startsWith('right now:')) || null,
+    waiting: statusLines.find(line => line.startsWith('waiting on you:') || line === 'nothing is waiting on you.') || null,
+    today, clarityLine,
+  };
+}
+
+function activateAtris() {
+  const workspaceDir = process.cwd();
+  if (!fs.existsSync(path.join(workspaceDir, 'atris'))) {
+    console.log('✗ atris/ folder not found. Run "atris init" first.');
+    process.exit(1);
+  }
+  ensureLogDirectory();
+  const { logFile, dateFormatted } = getLogPath();
+  if (!fs.existsSync(logFile)) createLogFile(logFile, dateFormatted);
+  const summary = buildActivationSummary(workspaceDir);
+  try {
+    const { syncStatus } = require('../lib/sync-status');
+    syncStatus(workspaceDir);
+  } catch { /* sync status is best-effort */ }
+  console.log(humanSentence('atris is up.'));
+  if (summary.lines.length) {
     console.log('');
-    console.log(humanSentence(`today's move: ${closeSentence(nextMoveTitle)}`));
+    summary.lines.forEach((line) => console.log(line));
+  }
+  console.log('');
+  console.log(summary.clarityLine || 'tip: run atris clarity once so agents learn how you work.');
+  if (summary.today) {
+    console.log('');
+    console.log(summary.today);
   }
 }
 
-module.exports = { activateAtris, wikiHealthSentence };
+module.exports = { activateAtris, wikiHealthSentence, buildActivationSummary };

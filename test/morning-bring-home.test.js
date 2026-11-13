@@ -196,7 +196,7 @@ test('the brain boot list names atris/learned.md only when the file exists', (t)
   const dir = project(t);
   fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Map\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
-  const bootBlock = () => read(dir, 'CLAUDE.md').split('Load these first:')[1].split('First-message rule')[0];
+  const bootBlock = () => read(dir, 'CLAUDE.md').split('Then read these files in order:')[1].split('First reply:')[0];
 
   assert.equal(runCli(['brain', 'compile', '--yes', '--root', dir], { cwd: dir }).status, 0);
   assert.doesNotMatch(bootBlock(), /learned\.md/);
