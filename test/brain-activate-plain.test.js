@@ -28,7 +28,7 @@ test('start-up cards are useful and read-only until saved', () => {
     const assertClean = () => {
       const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
       assert.equal(status.status, 0);
-      assert.deepEqual(status.stdout.split('\n').filter(Boolean).filter(line => !line.slice(3).startsWith('.atris/')), []);
+      assert.deepEqual(status.stdout.split('\n').filter(Boolean).filter(line => !['.atris/state/usage.jsonl', '.atris/state/operator.json'].includes(line.slice(3))), []);
     };
     const initial = run('brain', 'activate');
     assert.equal(initial.status, 0);
@@ -140,7 +140,32 @@ test('the card always shows the folder name, with a different business name in b
   try {
     assert.match(card('tool-shed', null), /^tool-shed is ready\.$/m);
     assert.match(card('my-lab', { name: 'My Lab', slug: 'my-lab' }), /^My Lab is ready\.$/m);
+    assert.match(card('other-project', { name: 'Leftover Co', slug: 'other-project' }), /^other-project \(Leftover Co\) is ready\.$/m);
+    assert.match(card('blank-name', { name: '   ', slug: '' }), /^blank-name is ready\.$/m);
     assert.match(card('real-project', { name: 'Leftover Co', slug: 'leftover-co' }), /^real-project \(Leftover Co\) is ready\.$/m);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// A follow-up command printed for a folder the person is not standing in
+// once pointed at "." and saved notes into the wrong project.
+test('follow-up commands printed for another folder keep pointing at it', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-follow-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-home-'));
+  const env = { ...process.env, HOME: home, ATRIS_HOME: home, NO_COLOR: '1' };
+  const target = path.join(base, 'target notes');
+  const elsewhere = path.join(base, 'elsewhere');
+  try {
+    fs.mkdirSync(path.join(target, 'atris'), { recursive: true });
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.writeFileSync(path.join(target, 'atris', 'MAP.md'), '# MAP.md\n');
+    const far = spawnSync(process.execPath, [cli, 'brain', 'compile', '--root', target], { cwd: elsewhere, env, encoding: 'utf8' });
+    assert.match(far.stdout, /to save them: atris brain compile --root '.*target notes' --yes/);
+    assert.doesNotMatch(far.stdout, /--root \. /);
+    const near = spawnSync(process.execPath, [cli, 'brain', 'compile'], { cwd: target, env, encoding: 'utf8' });
+    assert.match(near.stdout, /to save them: atris brain compile --root \. --yes/);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });

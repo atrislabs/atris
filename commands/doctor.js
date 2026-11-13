@@ -176,8 +176,8 @@ function collectDoctor(options = {}) {
 
 function renderDoctor(payload) {
   const m = payload.members;
-  const setUp = fs.existsSync(path.join(payload.workspace_root, 'atris', 'atris.md'))
-    || fs.existsSync(path.join(payload.workspace_root, '.atris'));
+  // Same rule as the boot screen: a folder is set up when it has an atris/ folder.
+  const setUp = fs.existsSync(path.join(payload.workspace_root, 'atris'));
   const problems = [];
   if (!payload.task_support) problems.push(`install node ${TASK_NODE_MAJOR} or newer  (atris tasks need it)`);
   if (!payload.cli_runnable) problems.push('npm install -g atris  (reinstall atris; a program file is missing)');
@@ -221,9 +221,10 @@ function doctorCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('Usage: atris doctor [--json]');
     console.log('');
-    console.log('Reports node version, task-support (22+), auth, workspace root, and whether the CLI can run.');
-    console.log('Also checks what members need: a team, git, and a coding tool.');
-    console.log('Public install entry is bin/atris (tiny POSIX shim) -> bin/atris.js.');
+    console.log('Checks that this computer is ready: a new enough node, a working atris install,');
+    console.log('whether you are signed in and whether this folder is set up.');
+    console.log('Also checks what the team needs: members, git and a coding tool.');
+    console.log('--json prints the same facts for scripts.');
     return 0;
   }
   const payload = collectDoctor(options);

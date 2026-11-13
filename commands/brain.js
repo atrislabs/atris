@@ -776,6 +776,12 @@ function rootOption(root) {
   return canonical(root) === canonical(process.cwd()) ? '' : ` --root ${shellQuote(root)}`;
 }
 
+// The command that saves fresh notes, aimed at the folder being talked about
+// even when the person is standing somewhere else.
+function compileCommand(root) {
+  return `atris brain compile ${rootOption(root).trim() || '--root .'} --yes`;
+}
+
 function taskCommand(root, command) {
   return rootOption(root) ? `(cd ${shellQuote(root)} && ${command})` : command;
 }
@@ -842,9 +848,9 @@ function notesInfo(root) {
 // also makes a leftover business file easy to spot.
 function shownName(state) {
   const folder = path.basename(state.root);
-  const name = state.name || folder;
+  const name = String(state.name || '').trim();
   const key = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  if (key(name) === key(folder) || key(state.slug) === key(folder)) return name;
+  if (!name || key(name) === key(folder)) return name || folder;
   return `${folder} (${name})`;
 }
 
@@ -1390,7 +1396,7 @@ function refuseBrainWriteWithoutYes(state, options = {}) {
   } else {
     console.log('nothing saved yet. this would write:');
     for (const file of files) console.log(`  ${file}`);
-    console.log('to save them: atris brain compile --root . --yes');
+    console.log(`to save them: ${compileCommand(state.root)}`);
   }
   if (isNonInteractive()) process.exit(2);
   return { planned: true, files };
@@ -1443,12 +1449,12 @@ function verifyBrain(root) {
   ];
   const missing = required.filter(rel => !fs.existsSync(path.join(root, rel)));
   if (missing.length > 0) {
-    throw new Error(`missing: ${missing.join(', ')}. save them: atris brain compile --root . --yes`);
+    throw new Error(`missing: ${missing.join(', ')}. save them: ${compileCommand(root)}`);
   }
   const status = readText(path.join(root, 'atris', 'brain', 'STATUS.md'));
   const ledger = readText(path.join(root, 'atris', 'brain', 'self_improvement_ledger.md'));
   if (!status.includes('## Next Move') || !ledger.includes('## Run N -> Run N+1 Mechanism')) {
-    throw new Error('saved notes are missing required sections. refresh them: atris brain compile --root . --yes');
+    throw new Error(`saved notes are missing required sections. refresh them: ${compileCommand(root)}`);
   }
 }
 
@@ -1506,7 +1512,7 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }
-    console.log(`feedback recorded: ${result.scorecard.human_rating}. refresh the notes: atris brain compile --root . --yes`);
+    console.log(`feedback recorded: ${result.scorecard.human_rating}. refresh the notes: ${compileCommand(options.root)}`);
     if (options.verify) console.log('checked: the feedback was saved.');
     return;
   }
@@ -1518,7 +1524,7 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }
-    console.log(`finished work scored: ${result.written}. refresh the notes: atris brain compile --root . --yes`);
+    console.log(`finished work scored: ${result.written}. refresh the notes: ${compileCommand(options.root)}`);
     if (options.verify) console.log('checked: the scores were saved.');
     return;
   }
