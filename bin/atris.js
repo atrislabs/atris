@@ -770,6 +770,7 @@ function showHelpAll() {
   console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
   console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
+  console.log('               agent pull|push|snapshot: carry an agent\'s home folder; agent spawn --budget: make a child agent');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
   console.log('  login      - Sign in, add an account, or mint a scoped agent token (--agent)');
@@ -2294,6 +2295,12 @@ if (command === 'guide') {
       }
       process.exit(1);
     });
+} else if (command === 'agent' && require('../commands/agent-home').isHomeCommand(process.argv.slice(3))) {
+  // pull/push/snapshot/spawn --budget name one agent (by id, saved name, or the
+  // pulled folder), and the server checks ownership, so no --account gate.
+  Promise.resolve().then(() => require('../commands/agent-home').agentHomeCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agent') {
   {
     const gate = requireAccountBound(process.argv.slice(3));
@@ -3799,8 +3806,12 @@ async function agentAtris() {
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
     console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
+    console.log('       atris agent [pull|push|snapshot] and atris agent spawn <parent> --name <name> --budget <credits>');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
+    console.log('  Run `atris agent pull <agent> --dir <folder>` to copy an agent\'s home here; any engine started there becomes it.');
+    console.log('  Run `atris agent push` inside that folder to send changes back, `atris agent snapshot` to save a version.');
+    console.log('  Run `atris agent spawn <parent> --name <name> --budget <credits>` to make a child agent; its key goes to ~/.atris/agents.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');

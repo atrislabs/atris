@@ -118,3 +118,19 @@ test('atris update --yes exports the team in a business project and in a plain p
   assert.doesNotMatch(plan.stdout, /✓ Team:/);
   assert.equal(fs.existsSync(path.join(dry, '.claude', 'agents')), false);
 });
+
+test('export carries SOUL, MISSION and goals, not only MEMBER.md', (t) => {
+  const root = project(t, [['validator', VALIDATOR]]);
+  const dir = path.join(root, 'atris', 'team', 'validator');
+  fs.writeFileSync(path.join(dir, 'SOUL.md'), '---\nname: validator-soul\n---\n\n# Soul\n\nTruth before confidence.\n');
+  fs.writeFileSync(path.join(dir, 'MISSION.md'), '# Mission\n\n<!-- durable -->\n\nKeep every merge honest.\n');
+  fs.writeFileSync(path.join(dir, 'goals.md'), '# Goals\n\n- catch one real regression a week\n');
+  exportMembers(root);
+  const claude = fs.readFileSync(path.join(root, '.claude', 'agents', 'validator.md'), 'utf8');
+  assert.match(claude, /## Soul \(atris\/team\/validator\/SOUL\.md\)\n\n# Soul\n\nTruth before confidence\./);
+  assert.doesNotMatch(claude, /validator-soul/, 'the soul frontmatter is not repeated');
+  assert.match(claude, /## Mission \(atris\/team\/validator\/MISSION\.md\)\n\n# Mission\n\nKeep every merge honest\./);
+  assert.match(claude, /## Goals \(atris\/team\/validator\/goals\.md\)\n\n# Goals\n\n- catch one real regression a week/);
+  const codex = fs.readFileSync(path.join(root, '.codex', 'agents', 'validator.toml'), 'utf8');
+  assert.match(codex, /Truth before confidence\..*Keep every merge honest\..*catch one real regression a week/);
+});
