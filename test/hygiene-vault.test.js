@@ -624,3 +624,71 @@ test('staged secrets are stripped from refs/atris/vault/<id>/staged and quaranti
     fs.rmSync(quarantineRoot, { recursive: true, force: true });
   }
 });
+
+test('vaultAndCleanCheckout and recoverInterruptedVault gracefully skip EACCES/EPERM locked files, clean siblings, and remove WAL', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-perm-q-');
+  const lockedDir = path.join(root, 'atris', 'campaigns', 'locked-dir');
+  try {
+    const lockedAbs = writeRel(root, 'atris/campaigns/locked-dir/CONTRACT.md', 'locked\n', { ageMs: 60 * 60 * 1000 });
+    const siblingAbs = writeRel(root, 'atris/campaigns/other/note.md', 'unlocked\n', { ageMs: 60 * 60 * 1000 });
+    const scratchAbs = writeRel(root, 'loose.html', '<html></html>\n', { ageMs: 60 * 60 * 1000 });
+    fs.chmodSync(lockedDir, 0o555);
+
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+
+    assert.equal(out.applied, true);
+    assert.ok(out.vaultId);
+    assert.deepEqual(out.resetStats.skippedPermissionLocked, ['atris/campaigns/locked-dir/CONTRACT.md']);
+    assert.equal(out.resetStats.unlinkedCount, 2);
+    assert.equal(fs.existsSync(siblingAbs), false);
+    assert.equal(fs.existsSync(scratchAbs), false);
+    assert.equal(fs.existsSync(lockedAbs), true);
+    const walDir = path.join(root, '.atris', 'vault');
+    assert.equal(fs.existsSync(walDir) ? fs.readdirSync(walDir).length : 0, 0);
+
+    // Also verify recoverInterruptedVault replays a VAULTED WAL cleanly over a locked file and removes the WAL
+    const sibling2Abs = writeRel(root, 'atris/campaigns/other/note2.md', 'unlocked-2\n', { ageMs: 60 * 60 * 1000 });
+    const lstatLocked = fs.lstatSync(lockedAbs);
+    const lstatSibling2 = fs.lstatSync(sibling2Abs);
+    const replayId = '20261113-052123-2b0344';
+    run('git', ['update-ref', `refs/atris/vault/${replayId}/full`, 'HEAD'], root);
+    fs.mkdirSync(walDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(walDir, `wal-${replayId}.json`),
+      JSON.stringify({
+        vaultId: replayId,
+        status: 'VAULTED',
+        entries: [
+          {
+            xy: '??',
+            relPath: 'atris/campaigns/locked-dir/CONTRACT.md',
+            stat0: { ino: lstatLocked.ino, size: lstatLocked.size, mtimeMs: lstatLocked.mtimeMs },
+          },
+          {
+            xy: '??',
+            relPath: 'atris/campaigns/other/note2.md',
+            stat0: { ino: lstatSibling2.ino, size: lstatSibling2.size, mtimeMs: lstatSibling2.mtimeMs },
+          },
+        ],
+      })
+    );
+
+    const rec = recoverInterruptedVault(root, { quarantineRoot });
+    assert.equal(rec.recovered.length, 1);
+    assert.equal(rec.recovered[0].action, 'replayed_vaulted');
+    assert.deepEqual(rec.recovered[0].resetStats.skippedPermissionLocked, ['atris/campaigns/locked-dir/CONTRACT.md']);
+    assert.equal(rec.recovered[0].resetStats.unlinkedCount, 1);
+    assert.equal(fs.existsSync(sibling2Abs), false);
+    assert.equal(fs.existsSync(lockedAbs), true);
+    assert.equal(fs.readdirSync(walDir).length, 0);
+  } finally {
+    try { fs.chmodSync(lockedDir, 0o755); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+  }
+});

@@ -74,10 +74,17 @@ function gitClassSuffix(cls) {
   return '';
 }
 
-function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}) {
+function collectPermissionLocked(vaultOutcome, recoveredVaults = []) {
+  const fromVault = vaultOutcome?.resetStats?.skippedPermissionLocked || [];
+  const fromRecovered = (recoveredVaults || []).flatMap((r) => r.resetStats?.skippedPermissionLocked || []);
+  return [...new Set([...fromVault, ...fromRecovered])];
+}
+
+function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}, recoveredVaults = []) {
   if (!gitHygiene || !gitHygiene.isGitRepo) return;
 
   const preserved = preservedHygieneEntries(gitHygiene);
+  const replayLocked = (recoveredVaults || []).flatMap((r) => r.resetStats?.skippedPermissionLocked || []);
   if (vaultOutcome && vaultOutcome.applied && vaultOutcome.vaultId) {
     const vaultedFiles = vaultOutcome.receipt?.vaulted_files || [];
     const quarantinedFiles = vaultOutcome.receipt?.quarantine_files || [];
@@ -95,6 +102,13 @@ function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}) {
         stats.skippedConcurrentEdit.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
         if (stats.skippedConcurrentEdit.length > 5) {
           console.log(`   ... and ${stats.skippedConcurrentEdit.length - 5} more`);
+        }
+      }
+      if ((stats.skippedPermissionLocked || []).length > 0) {
+        console.log(`⚠ Skipped ${stats.skippedPermissionLocked.length} permission-locked ${stats.skippedPermissionLocked.length === 1 ? 'file' : 'files'} (EPERM/EACCES):`);
+        stats.skippedPermissionLocked.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+        if (stats.skippedPermissionLocked.length > 5) {
+          console.log(`   ... and ${stats.skippedPermissionLocked.length - 5} more`);
         }
       }
     }
@@ -140,6 +154,13 @@ function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}) {
     preserved.slice(0, 5).forEach((e) => console.log(`     • ${e.relPath} (${e.cls})`));
     if (preserved.length > 5) {
       console.log(`     ... and ${preserved.length - 5} more`);
+    }
+  }
+  if (replayLocked.length > 0) {
+    console.log(`⚠ Skipped ${replayLocked.length} permission-locked ${replayLocked.length === 1 ? 'file' : 'files'} during WAL replay (EPERM/EACCES):`);
+    replayLocked.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+    if (replayLocked.length > 5) {
+      console.log(`   ... and ${replayLocked.length - 5} more`);
     }
   }
   console.log('');
@@ -344,9 +365,10 @@ function cleanAtris(options = {}) {
   }
 
   // Git working-tree hygiene
-  renderGitHygieneText(gitHygiene, vaultOutcome, options);
+  renderGitHygieneText(gitHygiene, vaultOutcome, options, results.recoveredVaults);
 
   const hasGitDirt = Boolean(gitHygiene && gitHygiene.isGitRepo && gitHygiene.remainingDirty > 0);
+  const lockedFiles = collectPermissionLocked(vaultOutcome, results.recoveredVaults);
   const hasIssues = staleTasks.length > 0
     || unhealable.length > 0
     || stalePages.length > 0
@@ -369,6 +391,8 @@ function cleanAtris(options = {}) {
     if (hasGitDirt) {
       if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
         console.log(`  • Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git ${gitHygiene.actionableCount === 1 ? 'file' : 'files'}`);
+      } else if (lockedFiles.length > 0) {
+        console.log(`  • ${gitHygiene.remainingDirty} dirty git ${gitHygiene.remainingDirty === 1 ? 'file' : 'files'} preserved on disk (including ${lockedFiles.length} permission-locked/immutable)`);
       } else {
         console.log(`  • ${gitHygiene.remainingDirty} dirty git ${gitHygiene.remainingDirty === 1 ? 'file' : 'files'} preserved on disk (active in-flight, unprovable, or concurrently modified)`);
       }
@@ -464,9 +488,12 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
   if (results.unhealableRefs.length > 0) manualAction.push('Manually fix unhealable MAP.md refs');
   if (results.stalePages.length > 0) manualAction.push('Re-compile stale pages');
   if ((results.deadFiles || []).length > 0) manualAction.push('Delete dead files (atris slop dead)');
+  const lockedFiles = collectPermissionLocked(vaultOutcome, results.recoveredVaults);
   if (hasGitDirt) {
     if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
       manualAction.push(`Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git file(s)`);
+    } else if (lockedFiles.length > 0) {
+      manualAction.push(`${gitHygiene.remainingDirty} dirty git file(s) preserved on disk (including ${lockedFiles.length} permission-locked/immutable)`);
     } else {
       manualAction.push(`${gitHygiene.remainingDirty} dirty git file(s) preserved on disk (active in-flight, unprovable, or concurrently modified)`);
     }
@@ -539,6 +566,8 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
           quarantined_count: vaultOutcome.receipt ? (vaultOutcome.receipt.quarantine_files || []).length : 0,
           reset_stats: vaultOutcome.resetStats || null,
         } : null,
+        ...((results.recoveredVaults || []).length > 0 ? { recovered_vaults: results.recoveredVaults } : {}),
+        ...(lockedFiles.length > 0 ? { skipped_permission_locked: lockedFiles } : {}),
       },
     },
     manual_action: manualAction,
