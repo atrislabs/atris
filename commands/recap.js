@@ -312,8 +312,8 @@ function renderRecapMinute(data, { person } = {}) {
   if (shipped.length) {
     const named = recapSoftTitle(shipped[0].title);
     return named
-      ? `${greet}you already shipped ${named}.`
-      : `${greet}you already shipped the last finished thing.`;
+      ? `${greet}you already finished ${named}.`
+      : `${greet}you already finished the last piece of work.`;
   }
 
   if (inProgress.length) {

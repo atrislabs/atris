@@ -37,8 +37,8 @@ test('main help is short; help --all opens first-minute then the catalog', () =>
   assert.match(mainHelp.stdout, /atris autopilot/);
   assert.match(mainHelp.stdout, /atris mission/);
   assert.match(mainHelp.stdout, /the current goal/);
-  assert.match(mainHelp.stdout, /^ {2}atris gm +see your team like a sports front office$/m);
-  assert.match(runCli(['help', 'all']).stdout, /^ {2}atris gm +see your team like a sports front office$/m);
+  assert.match(mainHelp.stdout, /^ {2}atris gm +run your team like a sports front office$/m);
+  assert.match(runCli(['help', 'all']).stdout, /^ {2}atris gm +run your team like a sports front office$/m);
   assert.match(mainHelp.stdout, /help --all/);
   assert.doesNotMatch(mainHelp.stdout, /Golden path:/);
   assert.doesNotMatch(mainHelp.stdout, /task claim|task ready|--proof|MAP, tasks, journal/);

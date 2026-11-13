@@ -405,7 +405,7 @@ test('later note wins over files, git, branch, and dirty work', () => {
   assert.equal(withFiles, [
     'hey keshav, finish the notes app is still open.',
     '',
-    'next: atris  (see what to do next)',
+    'next: atris  (see where things stand)',
   ].join('\n'));
   assert.doesNotMatch(withFiles, /already here|notes\.txt is still open|notes-app/);
   const json = freshMinuteJson('this folder', ['notes.txt'], { later });
@@ -488,7 +488,7 @@ test('ready review task first-minute waits for a human ok', () => {
   });
   assert.match(text, /hey keshav, .+ is waiting for your ok\./);
   assert.doesNotMatch(text.split('\n')[0], /UNW-2/);
-  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
   assert.doesNotMatch(text, /so the count is easy to read/);
   assert.match(text, /last recap: week one loop/);
   assert.match(text, /^next: atris task accept UNW-2  \(.*\)$/m);
@@ -564,7 +564,7 @@ test('uncertified review task first-minute still waits for a human ok', () => {
   });
   assert.match(text, /hey keshav, .+ is waiting for your ok\./);
   assert.doesNotMatch(text.split('\n')[0], /UNW-4/);
-  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
   assert.doesNotMatch(text, /review-chat/);
   assert.match(text, /^next: atris task accept UNW-4  \(.*\)$/m);
 });
@@ -710,7 +710,7 @@ test('buildFirstMinute prefers a certified review over a newer uncertified one',
     assert.equal(screen.nextCommand, 'atris task accept UNW-2');
     assert.match(screen.text, /.+ is waiting for your ok\./);
     assert.doesNotMatch(screen.text.split('\n')[0], /UNW-2/);
-    assert.doesNotMatch(screen.text, /you already shipped/);
+    assert.doesNotMatch(screen.text, /you already (shipped|finished)/);
     assert.doesNotMatch(screen.text, /review-chat/);
   } finally {
     cleanupTempDir(dir);
@@ -926,7 +926,7 @@ test('workspace with a ready task names the win and points at accept', () => {
     assert.doesNotMatch(res.stdout.split('\n').find((line) => line.includes('hey keshav')) || '', /UNW-2/);
     assert.match(res.stdout, /^next: atris task accept UNW-2  \(.*\)$/m);
     assert.equal(res.stdout.match(/^next:/mg).length, 1);
-    assert.doesNotMatch(res.stdout, /you already shipped/);
+    assert.doesNotMatch(res.stdout, /you already (shipped|finished)/);
     assert.doesNotMatch(res.stdout, /review-chat/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
     assert.ok(spokenLineCount(res.stdout) <= 6);
@@ -3880,7 +3880,7 @@ test('completed history does not say shipped when other work is still live', () 
     liveWork: true,
   });
   assert.match(text, /launch-day has work in progress/);
-  assert.doesNotMatch(text, /you already shipped/);
+  assert.doesNotMatch(text, /you already (shipped|finished)/);
   assert.match(text, /^next: atris do  \(.*\)$/m);
 });
 
@@ -3951,7 +3951,7 @@ test('TODO backlog is named before completed history', () => {
       },
     });
     assert.match(screen.text, /"build the useful thing" is waiting/);
-    assert.doesNotMatch(screen.text, /you already shipped/);
+    assert.doesNotMatch(screen.text, /you already (shipped|finished)/);
     assert.match(screen.text, /^next: atris do  \(.*\)$/m);
   } finally {
     cleanupTempDir(dir);

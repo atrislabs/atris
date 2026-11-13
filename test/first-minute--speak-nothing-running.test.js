@@ -127,7 +127,7 @@ test('a file already here is named, and a saved note stays open', () => {
     assert.strictEqual(manyCode, 0);
     assert.deepStrictEqual(many.lines, [
       '',
-      'hey ada, buy milk is still open.\n\nnext: atris  (see what to do next)',
+      'hey ada, buy milk is still open.\n\nnext: atris  (see where things stand)',
     ]);
   });
 

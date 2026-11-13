@@ -229,7 +229,7 @@ test('shipped starter task asks what is next and reports no task in json', () =>
   assert.strictEqual(code, 0);
   assert.strictEqual(
     lines[1],
-    `hey sam, you already shipped A page for the bakery.\n\nnext: ${WHATS_NEXT}  (say it in your own words)`,
+    `hey sam, you already finished A page for the bakery.\n\nnext: ${WHATS_NEXT}  (say it in your own words)`,
   );
 
   const out = JSON.parse(speak({ root, asJson: true }).lines[0]);

@@ -545,7 +545,7 @@ function showHelpShort() {
   console.log('  atris spaceship                  plan a few hours of work');
   console.log('  atris autopilot                  plan work that runs until you stop it');
   console.log('  atris mission                    see the current goal');
-  console.log('  atris gm                         see your team like a sports front office');
+  console.log('  atris gm                         run your team like a sports front office');
   console.log('');
   console.log('More: atris help --all   ·   command list for scripts: atris help --json');
 }
@@ -1742,7 +1742,7 @@ function showWelcomeVisualization() {
     if (title.length <= 64) return title;
     const cut = title.slice(0, 61);
     const boundary = cut.lastIndexOf(' ');
-    return `${(boundary > 0 ? cut.slice(0, boundary) : '').trimEnd()}...`;
+    return `${(boundary > 0 ? cut.slice(0, boundary) : cut).trimEnd()}...`;
   };
 
   let glance = {
@@ -1883,7 +1883,7 @@ function showWelcomeVisualization() {
       const score = health.lookup_hops.score;
       const detail = score === null
         ? 'add sample questions to test whether the map leads to answers'
-        : `the map answers ${Math.round(score * 100) >= 100 ? 'every sample question' : `${Math.round(score * 100)}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
+        : `the map answers ${score >= 1 ? 'every sample question' : `${Math.min(99, Math.round(score * 100))}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
       console.log(row('docs', `${Math.round(health.overall.total)}/100 · ${detail}`));
     }
   } catch {
@@ -1896,7 +1896,7 @@ function showWelcomeVisualization() {
   try {
     const lately = require('../lib/cleanup-summary').latestCleanupLine(cwd);
     if (lately) {
-      const plain = lately.replace(/^[a-z][a-z -]{0,30}:\s*/i, '').replace(/\blanded\b/gi, 'completed').replace(/\bland on their own\b/gi, 'finish on their own').replace(/\b([0-9]+) agent branches? parked for you\b/g, '$1 pieces of agent work set aside for you');
+      const plain = lately.replace(/^[a-z][a-z -]{0,30}:\s*/i, '').replace(/\blanded\b/gi, 'completed').replace(/\bland on their own\b/gi, 'finish on their own').replace(/\b([0-9]+) agent branch(es)? parked for you\b/g, (m, n, many) => `${n} ${many ? 'pieces' : 'piece'} of agent work set aside for you`);
       console.log(row('lately', plain.charAt(0).toLowerCase() + plain.slice(1)));
     }
   } catch {
@@ -2040,7 +2040,7 @@ function showWelcomeVisualization() {
   } else if (landInfo && landInfo.due > 0) {
     next = `atris land --reap  (put away the overdue work)`;
   } else if (endgameState.slug !== 'unset') {
-    next = 'atris autopilot  (do the next piece of work)';
+    next = 'atris autopilot  (keep working on the goal; it asks before it starts)';
   } else {
     next = 'atris plan  (plan the first tasks)';
   }

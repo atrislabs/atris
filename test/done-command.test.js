@@ -159,7 +159,7 @@ test('after done, bare atris does not push the person onto the init seed task', 
     for (const args of [[], ['do'], ['done']]) {
       const home = runCli(args, { cwd: room.dir, env: room.env });
       assert.equal(home.status, 0, home.stderr || home.stdout);
-      assert.match(home.stdout, new RegExp(`you already shipped ${WANT}\\.`));
+      assert.match(home.stdout, new RegExp(`you already finished ${WANT}\\.`));
       assert.equal(nextLine(home.stdout), 'atris "what\'s next?"');
       assert.doesNotMatch(home.stdout, /Generate MAP|map\.md|task claim/i);
     }
