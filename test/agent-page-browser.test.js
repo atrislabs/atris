@@ -66,10 +66,21 @@ function connect(wsUrl) {
     };
     ws.onclose = () => failAll('devtools socket closed');
     ws.onopen = () => resolve({
-      send(method, params = {}) {
+      // Every call has a time limit, so a call the browser never answers (for example one
+      // sent while a page is being replaced) fails fast with a sentence instead of hanging.
+      send(method, params = {}, ms = 15000) {
         const id = ++nextId;
         ws.send(JSON.stringify({ id, method, params }));
-        return new Promise((res, rej) => pending.set(id, { resolve: res, reject: rej }));
+        return new Promise((res, rej) => {
+          const timer = setTimeout(() => {
+            pending.delete(id);
+            rej(new Error(`devtools call ${method} got no answer in ${ms} ms`));
+          }, ms);
+          pending.set(id, {
+            resolve: (value) => { clearTimeout(timer); res(value); },
+            reject: (error) => { clearTimeout(timer); rej(error); },
+          });
+        });
       },
       close() { ws.close(); },
     });
@@ -248,7 +259,7 @@ after(async () => {
   if (session) await closeSession(session);
 });
 
-const BROWSER = { skip: SKIP, timeout: 120000 };
+const BROWSER = { skip: SKIP, timeout: 60000 };
 
 test('snapshot lists the controls by name, with state and allowed actions', BROWSER, async () => {
   const cdp = await browserPage();
@@ -494,15 +505,32 @@ test('the lists are capped with a more count', BROWSER, async () => {
 const EDGE = path.join(__dirname, 'fixtures', 'agent-page', 'edge-cases.html');
 let edgeLoads = 0;
 
-async function edgePage() {
+// Loads a fixture fresh. Each poll has a short limit, and a load that stalls is asked for once
+// more, so one slow navigation cannot hang the rest of the file.
+async function loadFixture(file, what) {
   const cdp = await browserPage();
-  const url = `${pathToFileURL(EDGE).href}?load=${++edgeLoads}`;
-  await cdp.send('Page.navigate', { url });
-  await waitFor(async () => {
-    const state = await inPage(cdp, () => ({ href: location.href, ready: document.readyState }));
-    return state.href === url && state.ready === 'complete';
-  }, 20000, 'the edge-case page to load');
-  return cdp;
+  for (let attempt = 1; ; attempt++) {
+    const url = `${pathToFileURL(file).href}?load=${++edgeLoads}`;
+    let seen = null;
+    try {
+      await cdp.send('Page.navigate', { url });
+      await waitFor(async () => {
+        const result = await cdp.send('Runtime.evaluate', {
+          expression: '({ href: location.href, ready: document.readyState, agent: typeof window.AgentPage })',
+          returnByValue: true,
+        }, 2000);
+        seen = result.result && result.result.value;
+        return seen && seen.href === url && seen.ready === 'complete' && seen.agent === 'object';
+      }, 15000, what);
+      return cdp;
+    } catch (error) {
+      if (attempt >= 2) throw new Error(`${error.message}; last seen ${JSON.stringify(seen)}`);
+    }
+  }
+}
+
+async function edgePage() {
+  return loadFixture(EDGE, 'the edge-case page to load');
 }
 
 const edgeCounts = () => window.__counts;
@@ -705,13 +733,7 @@ test('snapshot and query report frames, shadow parts, and editable regions they 
 const SANDBOX = path.join(__dirname, 'fixtures', 'agent-page', 'sandbox.html');
 
 async function sandbox(html) {
-  const cdp = await browserPage();
-  const url = `${pathToFileURL(SANDBOX).href}?load=${++edgeLoads}`;
-  await cdp.send('Page.navigate', { url });
-  await waitFor(async () => {
-    const state = await inPage(cdp, () => ({ href: location.href, ready: document.readyState }));
-    return state.href === url && state.ready === 'complete';
-  }, 20000, 'the sandbox page to load');
+  const cdp = await loadFixture(SANDBOX, 'the sandbox page to load');
   await inPage(cdp, (markup) => {
     document.getElementById('sandbox').innerHTML = markup;
     return true;
