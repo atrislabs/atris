@@ -102,3 +102,15 @@ test('the fixture page carries every mark and the script tag the browser test ne
   assert.match(html, /autocomplete="one-time-code"/, 'a one-time code is secret by autocomplete');
   assert.doesNotMatch(html, /\u2014/, 'no em dashes in the fixture');
 });
+
+test('the readme section states the limits in plain words', () => {
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  const start = readme.indexOf('## Agent page');
+  assert.ok(start !== -1, 'the readme has an agent page section');
+  const section = readme.slice(start, readme.indexOf('\n## ', start + 1));
+  for (const limit of [/iframes/, /shadow root/, /contenteditable/, /unread/, /Real React is checked elsewhere/]) {
+    assert.match(section, limit);
+  }
+  assert.doesNotMatch(section, /any page|any framework/i, 'no unbounded claim');
+  assert.doesNotMatch(section, /\u2014/, 'no em dashes');
+});

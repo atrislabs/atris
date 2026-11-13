@@ -440,3 +440,216 @@ test('the lists are capped with a more count', BROWSER, async () => {
     await inPage(cdp, pageRemoveControls);
   }
 });
+
+// The edge-case page holds the cases review found: secrets in choices and labels, marked
+// choices, form-attribute buttons, refusing selects, multiple selects, and parts the file
+// cannot read. Each test loads it fresh, so no test depends on another.
+const EDGE = path.join(__dirname, 'fixtures', 'agent-page', 'edge-cases.html');
+let edgeLoads = 0;
+
+async function edgePage() {
+  const cdp = await browserPage();
+  const url = `${pathToFileURL(EDGE).href}?load=${++edgeLoads}`;
+  await cdp.send('Page.navigate', { url });
+  await waitFor(async () => {
+    const state = await inPage(cdp, () => ({ href: location.href, ready: document.readyState }));
+    return state.href === url && state.ready === 'complete';
+  }, 20000, 'the edge-case page to load');
+  return cdp;
+}
+
+const edgeCounts = () => window.__counts;
+
+const MARKERS = [
+  'sk-fixture-0101', 'KEY-TEXT-0102', 'sk-fixture-0103', 'KEY-TEXT-0104', 'region-secret-0105',
+  'REGION-SECRET-0106', 'region-hidden-0107', 'REGION-HIDDEN-0108', 'TOKEN-CHILD-0109',
+  'SUBMIT-SECRET-0110', 'LABELLEDBY-SECRET-0111', 'LABELLEDBY-HIDDEN-0112', 'LABEL-HIDDEN-0113',
+  'VAULT-SECRET-0114',
+];
+
+test('secret and hidden text never leaks through options, labels, query, or errors', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    return {
+      snapshot: agent.snapshot(),
+      all: await agent.query({}),
+      probe: await agent.query({ text: 'KEY-TEXT-0102' }),
+      probeRegion: await agent.query({ text: 'REGION-SECRET-0106' }),
+      badKey: await agent.act({ steps: [{ label: 'Signing key', action: 'set', args: { value: 'nope' } }] }),
+      badRegion: await agent.act({ steps: [{ label: 'Region', action: 'set', args: { value: 'nope' } }] }),
+      badVault: await agent.act({ steps: [{ label: 'Vaults', action: 'set', args: { value: 'nope' } }] }),
+      goodKey: await agent.act({ steps: [{ label: 'Signing key', action: 'set', args: { value: 'sk-fixture-0103' } }] }),
+      hiddenRegion: await agent.act({ steps: [{ label: 'Region', action: 'set', args: { value: 'REGION-HIDDEN-0108' } }] }),
+      regionValue: document.querySelector('[aria-label="Secrets"] label select').value,
+    };
+  });
+  // goodKey and hiddenRegion send a marker themselves, so only that one marker may come back.
+  const { goodKey, hiddenRegion, ...readBack } = seen;
+  const text = JSON.stringify(readBack);
+  for (const marker of MARKERS) {
+    assert.equal(text.includes(marker), false, `${marker} must not reach the agent`);
+  }
+  for (const [result, sent] of [[goodKey, 'sk-fixture-0103'], [hiddenRegion, 'REGION-HIDDEN-0108']]) {
+    for (const marker of MARKERS.filter((item) => item !== sent)) {
+      assert.equal(JSON.stringify(result).includes(marker), false, `${marker} must not come back after a set`);
+    }
+  }
+  assert.equal(goodKey.ok, true, JSON.stringify(goodKey));
+  const controls = (list) => list.filter((entry) => entry.kind !== 'unread');
+  assert.deepEqual(controls(seen.probe), [], 'a secret choice is not a search oracle');
+  assert.deepEqual(controls(seen.probeRegion), []);
+  assert.equal(hiddenRegion.ok, false, 'a hidden choice cannot be picked');
+  assert.match(hiddenRegion.steps[0].error, /no choice matches/);
+  assert.equal(seen.regionValue, 'west');
+  const byLabel = (label) => seen.snapshot.find((entry) => entry.label === label);
+  assert.ok(byLabel('Run'), 'the button keeps its readable words');
+  assert.ok(byLabel('Open vault'), 'a secret aria-labelledby falls back to the readable text');
+  assert.ok(byLabel('Fallback name'), 'a hidden aria-labelledby falls back to the readable text');
+  assert.ok(byLabel('Plain field'), 'a hidden label element is skipped');
+});
+
+test('a hidden or confirm-marked choice is never picked without the person', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const calls = [];
+    const plain = window.AgentPage.createAgent({});
+    const asking = window.AgentPage.createAgent({ allow: (request) => { calls.push(request); return !request.confirm; } });
+    return {
+      listed: (await plain.query({ text: 'Cleanup mode' }))[0].options.map((option) => option.label),
+      shred: await plain.act({ steps: [{ label: 'Cleanup mode', action: 'set', args: { value: 'Shred' } }] }),
+      purgeAlone: await plain.act({ steps: [{ label: 'Cleanup mode', action: 'set', args: { value: 'Purge' } }] }),
+      purgeAsked: await asking.act({ steps: [{ label: 'Cleanup mode', action: 'set', args: { value: 'Purge' } }] }),
+      compress: await plain.act({ steps: [{ label: 'Cleanup mode', action: 'set', args: { value: 'Compress' } }] }),
+      retention: await plain.act({ steps: [{ label: 'Retention', action: 'set', args: { value: '1 day' } }] }),
+      retentionValue: document.querySelector('[aria-label="Retention"]').value,
+      calls,
+      picked: window.__counts.picked,
+    };
+  });
+  assert.equal(seen.listed.includes('Shred'), false, 'a hidden choice is not listed');
+  assert.equal(seen.shred.ok, false);
+  assert.match(seen.shred.steps[0].error, /no choice matches/);
+  assert.equal(seen.purgeAlone.ok, false);
+  assert.match(seen.purgeAlone.steps[0].error, /needs a person/);
+  assert.equal(seen.purgeAsked.ok, false);
+  assert.equal(seen.calls.length, 1);
+  assert.equal(seen.calls[0].confirm, true, 'the person is told the choice is marked');
+  assert.match(seen.calls[0].reason, /Purging deletes every file/);
+  assert.equal(seen.compress.ok, false);
+  assert.match(seen.compress.steps[0].error, /disabled/);
+  assert.equal(seen.retention.ok, false);
+  assert.match(seen.retention.steps[0].error, /needs a person/);
+  assert.equal(seen.retentionValue, '30');
+  assert.deepEqual(seen.picked, {}, 'no marked, hidden, or disabled choice was clicked');
+});
+
+test('a button tied to a confirm form by the form attribute needs the person', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    return {
+      entry: agent.snapshot().find((item) => item.label === 'Close account'),
+      act: await agent.act({ steps: [{ label: 'Close account', action: 'click' }] }),
+    };
+  });
+  assert.equal(seen.entry.confirm, true);
+  assert.equal(seen.act.ok, false);
+  assert.match(seen.act.steps[0].error, /needs a person/);
+  assert.equal((await inPage(cdp, edgeCounts)).submitted, 0, 'the form was not sent');
+});
+
+test('a confirm mark added while the person is deciding still counts', BROWSER, async () => {
+  const cdp = await edgePage();
+  const act = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({
+      allow: async (request) => {
+        document.getElementById('publish').setAttribute('data-agent-confirm', 'Publishing is now public.');
+        return !request.confirm;
+      },
+    });
+    return agent.act({ steps: [{ label: 'Publish draft', action: 'click' }] });
+  });
+  assert.equal(act.ok, false);
+  assert.match(act.steps[0].error, /marked for a person/);
+  assert.equal((await inPage(cdp, edgeCounts)).published, 0, 'the press did not happen');
+});
+
+test('a select the page refuses is reported as not kept', BROWSER, async () => {
+  const cdp = await edgePage();
+  const act = await inPage(cdp, () => window.AgentPage.createAgent({})
+    .act({ steps: [{ label: 'Plan', action: 'set', args: { value: 'Team' } }] }));
+  assert.equal(act.ok, false, JSON.stringify(act));
+  assert.match(act.steps[0].error, /did not keep/);
+  assert.equal(act.steps[0].current.value, 'Free');
+});
+
+test('disabled choices and disabled or read-only controls are refused with a sentence', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    return {
+      fifty: await set('Seat count', 'Fifty'),
+      hundred: await set('Seat count', 'Hundred'),
+      seats: document.getElementById('seats').value,
+      workspace: await set('Workspace id', 'ws-2'),
+      legacy: await set('Legacy field', 'x'),
+      workspaceEntry: agent.snapshot().find((item) => item.label === 'Workspace id'),
+    };
+  });
+  assert.equal(seen.fifty.ok, false);
+  assert.match(seen.fifty.steps[0].error, /"Fifty" is disabled/);
+  assert.equal(seen.hundred.ok, false);
+  assert.match(seen.hundred.steps[0].error, /is disabled/);
+  assert.equal(seen.seats, 'one');
+  assert.match(seen.workspace.steps[0].error, /"Workspace id" is read-only/);
+  assert.match(seen.legacy.steps[0].error, /"Legacy field" is disabled/);
+  assert.equal(seen.workspaceEntry.readonly, true);
+});
+
+test('a multiple select shows every choice and set never clears others silently', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const selected = () => Array.from(document.getElementById('channels').selectedOptions, (option) => option.value);
+    const set = (value) => agent.act({ steps: [{ label: 'Channels', action: 'set', args: { value } }] });
+    const entry = agent.snapshot().find((item) => item.label === 'Channels');
+    const single = await set('Phone');
+    const afterSingle = selected();
+    const fax = await set(['Email', 'Fax']);
+    const all = await set(['Email', 'Chat', 'Phone']);
+    const afterAll = selected();
+    const narrow = await set(['Email']);
+    return { entry, single, afterSingle, fax, all, afterAll, narrow, afterNarrow: selected() };
+  });
+  assert.equal(seen.entry.multiple, true);
+  assert.deepEqual(seen.entry.value, ['Email', 'Chat']);
+  assert.equal(seen.single.ok, false, 'one value would clear the others, so it is refused');
+  assert.match(seen.single.steps[0].error, /full list/);
+  assert.deepEqual(seen.afterSingle, ['email', 'chat']);
+  assert.equal(seen.fax.ok, false);
+  assert.match(seen.fax.steps[0].error, /disabled/);
+  assert.equal(seen.all.ok, true, JSON.stringify(seen.all));
+  assert.deepEqual(seen.afterAll, ['email', 'chat', 'phone']);
+  assert.deepEqual(seen.all.steps[0].current.value, ['Email', 'Chat', 'Phone']);
+  assert.equal(seen.narrow.ok, true, 'a full list may clear choices on purpose');
+  assert.deepEqual(seen.narrow.steps[0].changes[0].to, ['Email']);
+  assert.deepEqual(seen.afterNarrow, ['email']);
+});
+
+test('snapshot and query report frames, shadow parts, and editable regions they did not read', BROWSER, async () => {
+  const cdp = await edgePage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    return { snapshot: agent.snapshot(), query: await agent.query({ within: 'Unreadable' }) };
+  });
+  for (const list of [seen.snapshot, seen.query]) {
+    const unread = Object.fromEntries(list.filter((item) => item.kind === 'unread').map((item) => [item.what, item]));
+    for (const what of ['frame', 'shadow', 'closed', 'editable']) {
+      assert.ok(unread[what], `${what} is reported: ${JSON.stringify(list)}`);
+      assert.equal(unread[what].count, 1);
+      assert.match(unread[what].label, /not read|cannot read/);
+    }
+  }
+});
