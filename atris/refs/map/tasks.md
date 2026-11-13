@@ -36,11 +36,11 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 
 ## Feature: Autoland (`atris autoland`)
 
-- **Meaningful certification:** `commands/task.js:9580` (`certifyVerifyCandidate`) reuses `lib/accept-verify-gate.js:58` (`nonFalsifyingIssue`) to refuse solo whitespace proof and retain chains containing a real check. Regression: `test/task-review-autoaccept.test.js:262`.
+- **Meaningful certification:** `commands/task.js:9609` (`certifyVerifyCandidate`) reuses `lib/accept-verify-gate.js:58` (`nonFalsifyingIssue`) to refuse solo whitespace proof and retain chains containing a real check. Regression: `test/task-review-autoaccept.test.js:262`.
 
 - **Meaningful automatic approval:** `lib/auto-accept-certified.js:1222` and `commands/task.js:10704` refuse stored solo whitespace commands with `non_falsifying_verify`; `commands/task.js:10778` diagnoses legacy proof-only commands after meaningful candidates are exhausted. Regressions: `test/auto-accept-certified.test.js:75`, `test/task-sweep-auto-accept.test.js:344`.
 
-- **Agent sweep refusal:** `commands/task.js:10351` (`cmdSweep`) applies `agentProofOnlyMode` before any database write, including when an unsupported dry-run flag is supplied. Regression: `test/agent-proof-only.test.js:104` checks agent markers, unchanged events, and the explicit human override.
+- **Agent sweep refusal:** `commands/task.js:10380` (`cmdSweep`) applies `agentProofOnlyMode` before any database write, including when an unsupported dry-run flag is supplied. Regression: `test/agent-proof-only.test.js:104` checks agent markers, unchanged events, and the explicit human override.
 
 - **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()`: the policy file is the standing human confirmation
 

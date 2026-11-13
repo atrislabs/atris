@@ -115,7 +115,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
 - **Routing:** `bin/atris.js:1160-1159`
-- **Help:** `bin/atris.js:953-956` (`showActivateHelp`) prints usage before context loading or journal creation
+- **Help:** `bin/atris.js:961-964` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands-2.test.js:1499-1513` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
