@@ -2292,7 +2292,7 @@ if (command === 'guide') {
       if (process.argv.slice(3).includes('--json')) {
         console.log(JSON.stringify({ ok: false, error: message }, null, 2));
       } else {
-        console.error(`\n✗ Error: ${message}`);
+        console.error(message);
       }
       process.exit(1);
     });

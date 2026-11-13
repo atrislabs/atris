@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
+const { buildActivationSummary } = require('./activate');
 const { ownerIdentity } = require('../utils/owner-identity');
 const escapeRegExp = require('../lib/escape-regexp');
 const { hasRenderedSections, isOpenSection, isDoneSection } = require('../lib/todo-sections');
@@ -121,7 +122,7 @@ function parseArgs(args) {
     }
   }
 
-  const subcommand = positional[0] || 'compile';
+  const subcommand = positional[0] || 'activate';
   if (!options.note && ['yes', 'no', 'edit', 'go', 'hold'].includes(subcommand) && positional.length > 1) {
     options.note = positional.slice(1).join(' ');
   }
@@ -529,7 +530,7 @@ function collectState(root) {
   return {
     generatedAt: new Date().toISOString(),
     root,
-    name: business.name || business.slug || firstHeading(status || mapText, path.basename(root)),
+    name: (business.business_id && (business.name || business.slug)) || path.basename(root),
     slug: business.slug || path.basename(root),
     business,
     todo: countWorkItems(root, todoText),
@@ -596,22 +597,15 @@ function buildLoopHealth(stateFiles) {
 }
 
 function strongestSignal(state) {
-  const mail = countStateRows(state, 'agent_mail.jsonl');
-  const tasks = countStateRows(state, 'agent_tasks.jsonl');
-  const scorecards = countStateRows(state, 'scorecards.jsonl');
-  const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
-  const activeLoops = (state.loopHealth || buildLoopHealth(state.stateFiles || []))
-    .filter(channel => channel.active);
-  const loopSuffix = activeLoops.length > 0
-    ? ` Loop health sees ${activeLoops.length} active channel(s): ${activeLoops.map(channel => channel.label).join(', ')}.`
-    : '';
-  if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.${loopSuffix}`;
-  if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.${loopSuffix}`;
-  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.${loopSuffix}`;
-  if (activeLoops.length > 0) return `Loop health sees ${activeLoops.length} active channel(s): ${activeLoops.map(channel => channel.label).join(', ')}.`;
-  if (mail > 0) return `${mail} agent-mail row(s) are available; compile them into decisions, follow-ups, and CRM memory.`;
-  if (tasks > 0) return `${tasks} agent-task row(s) are available; use them to choose the next action.`;
-  return 'Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.';
+  const scores = countStateRows(state, 'scorecards.jsonl');
+  const finished = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
+  if (scores && finished) return 'finished work and its scores are available to guide the next step.';
+  if (scores) return 'scores from past work are available to guide the next step.';
+  if (finished) return 'finished work is available to score.';
+  if ((state.loopHealth || []).some(channel => channel.active)) return 'recent activity is available to guide the next step.';
+  if (countStateRows(state, 'agent_mail.jsonl')) return 'team messages are available to guide the next step.';
+  if (countStateRows(state, 'agent_tasks.jsonl')) return 'team tasks are available to guide the next step.';
+  return 'there is little scored work yet. record feedback after the next task.';
 }
 
 function isActionableScorecardNextMove(value) {
@@ -639,23 +633,19 @@ function isActionableScorecardNextMove(value) {
 }
 
 function operatorActivationNextMove(state) {
-  return `Run \`atris brain activate --member <name> --root ${state.root} --verify\` to bind the operator and get a concrete work block.`;
+  return `pick a team member to get a specific next step: atris brain activate --member <name> --root ${state.root}`;
 }
 
 function nextMove(state) {
-  const scorecards = countStateRows(state, 'scorecards.jsonl');
-  const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
-  if (state.totalRows > 0 && scorecards === 0) {
-    if (episodes > 0) return 'Turn existing episode rows into the first scorecard so the next run has reward, not just traces.';
-    return 'Turn existing state rows into the first scorecard so the next run has a reward signal, not just memory.';
+  const scores = countStateRows(state, 'scorecards.jsonl');
+  const finished = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
+  if (state.totalRows > 0 && scores === 0) {
+    if (finished > 0) return 'score finished work to help choose the next step: atris brain scorecard';
+    return 'record feedback on the work so the next suggestion can improve.';
   }
-  if (episodes === 0) {
-    return 'Capture one operator approval, edit, or rejection as an episode so the brain has a learning trace.';
-  }
-  if (state.todo.open > 0) return 'Pick the highest-leverage open TODO item and leave a scorecard when done.';
-  if (state.latestScorecard && isActionableScorecardNextMove(state.latestScorecard.next_task_suggestion)) {
-    return state.latestScorecard.next_task_suggestion;
-  }
+  if (finished === 0) return 'record whether a suggestion was useful: atris brain yes, atris brain edit or atris brain no';
+  if (state.todo.open > 0) return 'pick the most useful open task and record how it went when done.';
+  if (state.latestScorecard && isActionableScorecardNextMove(state.latestScorecard.next_task_suggestion)) return state.latestScorecard.next_task_suggestion;
   return operatorActivationNextMove(state);
 }
 
@@ -773,127 +763,37 @@ function rememberOperator(root, member) {
 
 function memberNextMove(member, state = null) {
   if (!member) return null;
-  const name = member.name || member.slug;
-  const context = `${member.startHere}\n${member.goals}`;
-  const identity = `${member.slug}\n${member.name}`;
-  const agentNeededReview = state?.taskProjection?.agentNeededReviewTasks?.[0] || null;
-  const agentNeededReviewMove = agentNeededReview
-    ? `${name}: run the agent-safe review lane for ${agentNeededReview.ref}: ` +
-      `\`atris task review-chat ${agentNeededReview.ref} --as codex-review\`, then run the verifier named in the review packet and certify or revise without accepting XP.`
-    : null;
-  const certifiedReview = state?.taskProjection?.certifiedReviewTasks?.[0] || null;
-  const certifiedReviewRefs = (state?.taskProjection?.certifiedReviewTasks || [])
-    .map(task => task.ref)
-    .filter(Boolean);
-  const certifiedReviewMove = certifiedReview
-    ? `${name}: hand off certified review ${certifiedReview.ref} to the operator: run ` +
-      `\`atris task accept ${certifiedReview.ref}\` if approved or ` +
-      `\`atris task revise ${certifiedReview.ref} --note "<what must change>"\` if not; do not create new work until this checkpoint is clear.`
-    : null;
-  const codexEndgameMove = certifiedReviewRefs.length > 0 && member.slug === 'codex-executor'
-    ? `${name}: certified reviews ${certifiedReviewRefs.slice(0, 3).join(', ')} are human-only; do not accept XP. ` +
-      `Create the next bounded Codex task from Endgame ${state?.endgame?.slug || 'current-horizon'}: ` +
-      `${state?.endgame?.horizon || 'the highest-leverage system gap'}; include files, verifier, and stop rule before editing.`
-    : null;
-  if (member.slug === 'justin' || /justin/i.test(member.name || '')) {
-    return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
-  }
-  const ownerNames = ownerIdentity().names;
-  if (ownerNames.includes(String(member.slug || '').toLowerCase()) || ownerNames.includes(String(member.name || '').toLowerCase())) {
-    return `${name}: act as Customer 0: choose one allocation, narrative, system, or talent leverage move; leave proof and route the next owner.`;
-  }
-  if (/opus|overnight/i.test(identity)) {
-    return `${name}: run the next zero-spend ` +
-      '`rl-exp2` tick, land one artifact, name the 1% delta, and record the mission receipt.';
-  }
-  if (/mission[- ]lead|mission lead/i.test(identity)) {
-    return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
-  }
-  if (/validator|reviewer/i.test(identity)) {
-    if (agentNeededReviewMove) return agentNeededReviewMove;
-    if (certifiedReviewMove) return certifiedReviewMove;
-    if ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0) {
-      return `${name}: wait for one concrete artifact or ask Navigator to create a reviewable task with verifier, proof target, and residual-risk checklist.`;
-    }
-    return `${name}: review the highest-risk open or recently completed task, run its verifier, name residual risk, and approve or block with proof.`;
-  }
-  if (/executor|builder/i.test(identity)) {
-    if ((state?.todo?.open || 0) === 0) {
-      if (agentNeededReviewMove) return agentNeededReviewMove;
-      if (codexEndgameMove) return codexEndgameMove;
-      if (certifiedReviewMove) return certifiedReviewMove;
-      return `${name}: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch.`;
-    }
-    return `${name}: execute the highest-leverage claimed task one scoped step at a time, run the verifier after the patch, and hand off proof for review.`;
-  }
-  if (/navigator|planner/i.test(identity)) {
-    return `${name}: turn one messy or unclaimed intent into a MAP-backed plan with ASCII visualization, exact files, verifier, rollback, and a review-ready task.`;
-  }
-  if (/launcher|closer/i.test(identity)) {
-    if (agentNeededReviewMove) return agentNeededReviewMove;
-    if (certifiedReviewMove) return certifiedReviewMove;
-    if ((state?.todo?.done || 0) === 0) {
-      return `${name}: wait for one validated task receipt before closeout, or ask Validator to produce a review decision with proof.`;
-    }
-    return `${name}: close one validated task into release-ready proof: summarize the shipped change, capture the lesson, update MAP or journal if needed, and name the publish step.`;
-  }
-  if (/brainstormer|idea shaper|reality shaper/i.test(identity)) {
-    return `${name}: shape one raw idea into a concise vision: current reality, 1-2 options, constraints, success criteria, and a navigator-ready next step.`;
-  }
-  if (/researcher|research/i.test(identity)) {
-    return `${name}: answer one explicit research question with primary sources, source-backed findings, unverified gaps, and a short So What handoff.`;
-  }
-  if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) {
-    return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
-  }
-  if (/ceo|lab/i.test(identity) || /ceo|lab|synthesis loop|decision queue|building|closing|investor/i.test(context)) {
-    return `${name}: make one high-leverage CEO move: ship product, close a strategic loop, or make a queued decision; leave proof and a scorecard.`;
-  }
-  if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) {
-    return `${name}: run the next zero-spend ` +
-      '`rl-exp2` tick, land one artifact, name the 1% delta, and record the mission receipt.';
-  }
-  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) {
-    return `${name}: review the highest-risk open or recently completed task, run its verifier, name residual risk, and approve or block with proof.`;
-  }
-  if (/bounded mission|mission step|proof target|verifier/i.test(context)) {
-    return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
-  }
-  return `${name}: use your START_HERE, complete the first concrete work block, and leave a scorecard.`;
+  const identity = `${member.slug} ${member.name}`;
+  const context = `${member.startHere} ${member.goals}`;
+  const review = state?.taskProjection?.agentNeededReviewTasks?.[0];
+  const certified = state?.taskProjection?.certifiedReviewTasks?.[0];
+  const reviewMove = review ? `review ${review.ref} using atris task review-chat ${review.ref} --as codex-review. run the named check and record the result.` : null;
+  const handoff = certified ? `ask a person to approve or revise ${certified.ref} before starting more work.` : null;
+  if (/justin/i.test(identity)) return 'take one step toward a customer and record what happened.';
+  if (ownerIdentity().names.includes(String(member.slug || '').toLowerCase()) || ownerIdentity().names.includes(String(member.name || '').toLowerCase())) return 'choose one important decision or improvement and name who will take the next step.';
+  if (/opus|overnight/i.test(identity)) return 'run the next experiment and record what changed.';
+  if (/mission[- ]lead|mission lead/i.test(identity)) return 'choose one step, check the result and record what comes next.';
+  if (/validator|reviewer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0 ? 'wait for work to review or ask the planner for a task with a way to check it.' : 'review the riskiest task, run its check and record any remaining risks.');
+  if (/executor|builder/i.test(identity)) return (state?.todo?.open || 0) === 0 ? (reviewMove || handoff || 'ask the planner for a task with exact files and a way to check it.') : 'work on the most useful assigned task, run its check and hand the result over for review.';
+  if (/navigator|planner/i.test(identity)) return 'turn one messy request into a plan with exact files, a way to check it and a task ready for review.';
+  if (/launcher|closer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.done || 0) === 0 ? 'wait for a checked task or ask the reviewer for a decision.' : 'prepare one checked task for release, record what changed and name the next step.');
+  if (/brainstormer|idea shaper|reality shaper/i.test(identity)) return 'turn one idea into a clear goal, options, limits and a next step for the planner.';
+  if (/researcher|research/i.test(identity)) return 'answer one research question with original sources and note what remains uncertain.';
+  if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) return 'take one step toward a customer and record what happened.';
+  if (/ceo|lab/i.test(identity) || /ceo|lab|synthesis loop|decision queue|building|closing|investor/i.test(context)) return 'make one important decision or product improvement and record the result.';
+  if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) return 'run the next experiment and record what changed.';
+  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) return 'review the riskiest task, run its check and record any remaining risks.';
+  if (/bounded mission|mission step|proof target|verifier/i.test(context)) return 'choose one step, check the result and record what comes next.';
+  return 'follow your starting notes, finish the first task and record how it went.';
 }
 
 function modeNextMove(member, mode) {
   if (!member || !mode) return null;
-  const normalized = String(mode).toLowerCase().replace(/[_-]+/g, ' ').trim();
-  const name = member.name || member.slug;
-  if (/founder|lab|idea|strategy/.test(normalized)) {
-    return {
-      label: 'founder lab',
-      move: `${name}: think through one crazy company idea, turn it into a customer wedge hypothesis, then route execution to Justin or Build.`,
-      proof: 'one idea note, one customer target, one delegated next action, and one scorecard',
-    };
-  }
-  if (/build|builder|product|backend|code/.test(normalized)) {
-    return {
-      label: 'builder',
-      move: `${name}: ship one product or system improvement that makes Atris easier to sell, operate, or self-improve.`,
-      proof: 'one shipped diff or artifact, verification output, and one scorecard',
-    };
-  }
-  if (/close|closer|whale|investor|customer/.test(normalized)) {
-    return {
-      label: 'closer',
-      move: `${name}: advance one whale, investor, or strategic customer conversation with a concrete next step.`,
-      proof: 'one drafted or sent message, one relationship update, one next step, and one scorecard',
-    };
-  }
-  if (/decision|queue|approve|approval/.test(normalized)) {
-    return {
-      label: 'decision queue',
-      move: `${name}: clear one high-leverage yes/no decision that only you should make, then delegate the follow-through.`,
-      proof: 'one decision recorded, one owner assigned, one follow-up path, and one scorecard',
-    };
-  }
+  const text = String(mode).toLowerCase().replace(/[_-]+/g, ' ');
+  if (/founder|lab|idea|strategy/.test(text)) return { move: 'develop one company idea, identify a customer and assign the next step.', proof: 'an idea, a customer and an assigned next step are recorded.' };
+  if (/build|builder|product|backend|code/.test(text)) return { move: 'make one product or system improvement.', proof: 'the change is made and its check passes.' };
+  if (/close|closer|whale|investor|customer/.test(text)) return { move: 'advance one customer or investor conversation with a clear next step.', proof: 'the conversation and next step are recorded.' };
+  if (/decision|queue|approve|approval/.test(text)) return { move: 'make one decision that needs you and assign the follow-up.', proof: 'the decision and follow-up are recorded.' };
   return null;
 }
 
@@ -907,111 +807,52 @@ function memberProfileIssues(member) {
   return issues;
 }
 
-function renderMissingMemberCard(state, memberSlug) {
-  const slug = normalizeMemberSlug(memberSlug) || '<name>';
-  const members = listMemberSlugs(state.root);
-  const available = members.length > 0 ? members.join(', ') : 'none';
-  return `CONTEXT: ${state.name} Brain
-OPERATOR: ${slug} (missing)
-NEXT MOVE: Create atris/team/${slug}/MEMBER.md or rerun with an existing member.
-WHY: Activation can only route by operator after the member profile exists locally.
-PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
-AVAILABLE MEMBERS: ${available}
-FEEDBACK: yes / edit / no`;
+function notesInfo(root) {
+  const saved = readJson(path.join(root, 'atris', 'brain', 'state.json'));
+  const date = Date.parse(saved?.generatedAt);
+  if (!Number.isFinite(date)) return { status: 'missing', age_days: null };
+  const age = Math.max(0, Math.floor((Date.now() - date) / 86400000));
+  return { status: age > 3 ? 'stale' : 'fresh', age_days: age };
 }
 
-function renderPlaceholderMemberCard(state, member, issues) {
-  const slug = member.slug || '<name>';
-  return `CONTEXT: ${state.name} Brain
-OPERATOR: ${member.name || slug} (not ready)
-NEXT MOVE: Replace placeholder sections in atris/team/${slug}/MEMBER.md with the member's real workflow, rules, and proof standard.
-WHY: Activation should not turn template text into fake operator work.
-PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
-PROFILE ISSUES: ${issues.join('; ')}
-FEEDBACK: yes / edit / no`;
-}
-
-function renderMissingStartHereCard(state, member) {
-  const slug = member.slug || '<name>';
-  return `CONTEXT: ${state.name} Brain
-OPERATOR: ${member.name || slug} (not ready)
-NEXT MOVE: Create atris/team/${slug}/START_HERE.md with the member's first concrete work block, verifier, and proof target.
-WHY: Activation should not tell an operator to use START_HERE until that local contract exists.
-PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
-FEEDBACK: yes / edit / no`;
-}
-
-function renderActivationCard(state, options = {}) {
-  const requestedMember = options.member || readRememberedOperator(state.root);
-  const member = readMemberContext(state.root, requestedMember);
-  if (!member && requestedMember) {
-    return renderMissingMemberCard(state, requestedMember);
+function buildActivationCard(state, options = {}) {
+  const requested = options.member || readRememberedOperator(state.root);
+  const member = readMemberContext(state.root, requested);
+  const readFirst = ['atris/now.md', 'atris/MAP.md', 'atris/PERSONA.md'].filter(file => fs.existsSync(path.join(state.root, file)));
+  const notes = notesInfo(state.root);
+  const summary = buildActivationSummary(state.root);
+  if (!requested) {
+    const lines = [`${state.name} is ready.`, '', ...summary.lines, ...(summary.today ? [summary.today] : [])];
+    if (readFirst.length) lines.push('', 'read these first:', ...readFirst.map(file => `  ${file}`));
+    if (notes.status === 'missing') lines.push('', 'start-up notes are not saved yet. save them: atris brain compile --root . --yes');
+    if (notes.status === 'stale') lines.push('', `the saved start-up notes are ${notes.age_days} days old. refresh them: atris brain compile --root . --yes`);
+    return { ready: true, member: null, text: lines.join('\n'), readFirst, notes, summary };
   }
-  if (!member && !options.member) {
-    return `CONTEXT: ${state.name} Brain
-OPERATOR: unknown
-NEXT MOVE: Tell Atris who is operating: atris brain activate --member <name> --root ${state.root}
-WHY: The brain should route work by operator, customer, and proof path before it assigns the next move.
-PROOF: Activation re-runs with a known operator and produces a specific work block.
-FEEDBACK: yes / edit / no`;
-  }
-  const profileIssues = memberProfileIssues(member);
-  if (profileIssues.length > 0) {
-    return renderPlaceholderMemberCard(state, member, profileIssues);
-  }
-  if (!String(member.startHere || '').trim()) {
-    return renderMissingStartHereCard(state, member);
-  }
-  if (options.remember !== false) rememberOperator(state.root, member);
-  const modeMove = modeNextMove(member, options.mode);
-  const next = modeMove?.move || memberNextMove(member, state) || nextMove(state);
-  const scoreContext = memberScoreContext(state.root, member);
-  const proof = modeMove?.proof || scoreContext?.proofNeeded || scoreContext?.nextRep || `After the move, record feedback and recompile: atris brain yes|edit|no "note" --root ${state.root} --verify && atris brain compile --root ${state.root} --verify`;
-  const scoreLines = scoreContext
-    ? `${scoreContext.score ? `\nSCORE: ${scoreContext.score}` : ''}${scoreContext.nextRep ? `\nNEXT REP: ${scoreContext.nextRep}` : ''}`
-    : '';
-  return `CONTEXT: ${state.name} Brain${member ? `\nOPERATOR: ${member.name}` : ''}${modeMove ? `\nMODE: ${modeMove.label}` : ''}
-NEXT MOVE: ${next}
-WHY: This is the next business workflow to improve from atris/now.md, the compiled brain, MAP, TODO, wiki, state rows, and reward history.
-PROOF: ${proof}${scoreLines}
-FEEDBACK: yes / edit / no`;
-}
-
-function renderActivationGallery(state) {
-  const slugs = listMemberSlugs(state.root);
-  if (slugs.length === 0) {
-    return `CONTEXT: ${state.name} Brain
-TEAM: no members found
-NEXT MOVE: Add a member under atris/team/<name>/MEMBER.md, then run activation again.`;
-  }
-
-  return slugs.map(slug => renderActivationCard(state, { member: slug, remember: false })).join('\n\n---\n\n');
-}
-
-function galleryReadinessIssues(gallery) {
-  return String(gallery || '')
-    .split(/\n---\n/)
-    .flatMap(card => activationCardReadinessIssues(card));
-}
-
-function activationCardReadinessIssues(card) {
-  const operator = (String(card || '').match(/^OPERATOR:\s*(.+)$/m) || [null, 'unknown member'])[1];
-  if (/\((missing|not ready)\)/.test(operator)) return [operator];
-  return [];
-}
-
-function verifyActivationGallery(gallery) {
-  const issues = galleryReadinessIssues(gallery);
-  if (issues.length > 0) {
-    throw new Error(`brain gallery not-ready member activation cards: ${issues.join(', ')}`);
-  }
+  const slug = normalizeMemberSlug(requested);
+  let reason = null;
+  let fix = null;
+  if (!member) { reason = 'there is no team member by that name'; const members = listMemberSlugs(state.root); fix = `create atris/team/${slug}/MEMBER.md${members.length ? `, or pick one of: ${members.join(', ')}` : ''}`; }
+  else if (memberProfileIssues(member).length) { reason = 'the team member details still contain placeholders'; fix = `fill in atris/team/${slug}/MEMBER.md`; }
+  else if (!member.startHere.trim()) { reason = 'the starting instructions are missing'; fix = `create atris/team/${slug}/START_HERE.md`; }
+  if (reason) return { ready: false, reason, member: slug, text: `${state.name} is not ready for ${slug}: ${reason}.\n\nnext: ${fix}`, readFirst, notes, summary };
+  if (options.remember) rememberOperator(state.root, member);
+  const mode = modeNextMove(member, options.mode);
+  const score = memberScoreContext(state.root, member);
+  const proof = mode?.proof || score?.proofNeeded || score?.nextRep || 'the task is finished and its result is recorded.';
+  const lines = [`${state.name} is ready for ${slug}.`, '', `next: ${mode?.move || memberNextMove(member, state) || nextMove(state)}`, 'why: it is the next piece of work for this role, picked from the current notes, the task list and past feedback.', `done when: ${proof}`];
+  if (score?.score) lines.push(`score: ${score.score}`);
+  if (score?.nextRep) lines.push(`next rep: ${score.nextRep}`);
+  lines.push('how did it go: atris brain yes, atris brain edit "what to change", or atris brain no');
+  return { ready: true, member: slug, text: lines.join('\n'), readFirst, notes, summary };
 }
 
 function verifyActivationCard(card) {
-  const issues = activationCardReadinessIssues(card);
-  if (issues.length > 0) {
-    throw new Error(`brain activate non-executable member activation card: ${issues.join(', ')}`);
-  }
+  if (!card.ready) throw new Error(`${card.member}: ${card.reason}`);
+}
+
+function verifyActivationGallery(cards) {
+  const issues = cards.filter(card => !card.ready);
+  if (issues.length) throw new Error(issues.map(card => `${card.member}: ${card.reason}`).join(', '));
 }
 
 function printVerifyFailure(error) {
@@ -1391,10 +1232,8 @@ ${nextMove(state)}
 
 ${renderNumberedLoadOrder(state)}
 
-First-message rule: lead with the move before writing to the operator.
-Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
-Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
-Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
+First reply: open with the one thing most worth doing today. Then say why, what is already prepared and where to look for more.
+Shape: \`<name>, today is about <the one thing>\` -> \`I picked this because <why now>\` -> \`Ready: <what is prepared>\` -> \`Go deeper: <2 to 4 paths>\`.
 `;
 }
 
@@ -1444,25 +1283,23 @@ ${nextMove(state)}
 
 function generatedBootBlock(state, voiceCard = voiceCardForRoot(state.root)) {
   return `${GENERATED_START}
-## Atris Brain Compile
+## Atris start-up notes
 
-This workspace has a compiled agent brain.
+This folder keeps notes that give every agent the same starting context.
 
-On session start, activate it first:
-\`atris brain activate --root . --yes --verify\`
+At the start of a session, run this and read what it prints:
+\`atris brain activate --root .\`
 
-Load these first:
+Then read these files in order:
 ${renderBulletedLoadOrder(state)}
 
-First-message rule: lead with the move before writing to the operator.
-Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
-Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
-Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
+First reply: open with the one thing most worth doing today. Then say why, what is already prepared and where to look for more.
+Shape: \`<name>, today is about <the one thing>\` -> \`I picked this because <why now>\` -> \`Ready: <what is prepared>\` -> \`Go deeper: <2 to 4 paths>\`.
 
-Keep this voice beside every reply:
+Keep this voice in every reply:
 ${renderVoiceCardBlock(voiceCard)}
 
-Re-run after meaningful work:
+After meaningful work, save fresh notes:
 \`atris brain compile --root . --yes\`
 ${GENERATED_END}
 `;
@@ -1510,9 +1347,9 @@ function refuseBrainWriteWithoutYes(state, options = {}) {
       next_command: 'atris brain compile --yes',
     }, null, 2));
   } else {
-    console.log('Plan only. Would write:');
+    console.log('nothing saved yet. this would write:');
     for (const file of files) console.log(`  ${file}`);
-    console.log('Re-run with --yes to write these files.');
+    console.log('to save them: atris brain compile --root . --yes');
   }
   if (isNonInteractive()) process.exit(2);
   return { planned: true, files };
@@ -1565,25 +1402,28 @@ function verifyBrain(root) {
   ];
   const missing = required.filter(rel => !fs.existsSync(path.join(root, rel)));
   if (missing.length > 0) {
-    throw new Error(`brain compile missing: ${missing.join(', ')}`);
+    throw new Error(`missing: ${missing.join(', ')}. save them: atris brain compile --root . --yes`);
   }
   const status = readText(path.join(root, 'atris', 'brain', 'STATUS.md'));
   const ledger = readText(path.join(root, 'atris', 'brain', 'self_improvement_ledger.md'));
   if (!status.includes('## Next Move') || !ledger.includes('## Run N -> Run N+1 Mechanism')) {
-    throw new Error('brain compile artifacts are missing required sections');
+    throw new Error('saved notes are missing required sections. refresh them: atris brain compile --root . --yes');
   }
 }
 
 function brainUsageLines() {
   return [
-    'Usage: atris brain compile [--root <workspace>] [--yes] [--verify] [--json]',
-    '       atris brain activate [--member <slug>] [--root <workspace>] [--yes] [--verify] [--json]',
-    '       atris brain gallery [--root <workspace>] [--yes] [--verify] [--json]',
-    '       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
-    '       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
-    '       atris brain scorecard [--root <workspace>] [--verify] [--json]',
-    '       atris brain feedback --rating approve|edit|reject [--recommendation <text>] [--note <text>] [--root <workspace>] [--verify]',
-    '       atris brain yes|edit|no [note] [--root <workspace>] [--verify]',
+    'atris brain: the notes every agent reads before it starts work in this folder.',
+    '',
+    '  atris brain activate                     show what is in progress, what is waiting and the next step',
+    '  atris brain activate --member <name>     the same, for one team member',
+    '  atris brain compile --yes                save fresh start-up notes into this folder',
+    '  atris brain gallery                      show the next step for every team member',
+    '  atris brain yes | edit | no ["note"]     say how the last suggestion went',
+    '  atris brain go | hold ["note"]           approve or pause a piece of work',
+    '  atris brain scorecard                    score finished tasks so later suggestions improve',
+    '',
+    'options: --root <folder>  --yes (allow saving files)  --verify (check the notes are in place)  --json',
   ];
 }
 
@@ -1613,15 +1453,8 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, approval }, null, 2));
       return;
     }
-    console.log('');
-    console.log('Atris brain approval recorded.');
-    console.log(`  Approval: ${approval.approval_id}`);
-    console.log(`  Decision: ${approval.human_decision}`);
-    console.log(`  Status: ${approval.status}`);
-    console.log('  Wrote: .atris/state/approvals.jsonl');
-    console.log('  Next: proceed only if decision is go; otherwise edit or hold.');
-    if (options.verify) console.log('  Verify: passed');
-    console.log('');
+    console.log(`approval recorded: ${approval.human_decision}. ${approval.human_decision === 'go' ? 'work can proceed.' : 'review the work before proceeding.'}`);
+    if (options.verify) console.log('checked: the decision was saved.');
     return;
   }
 
@@ -1632,16 +1465,8 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }
-    console.log('');
-    console.log('Atris brain feedback recorded.');
-    console.log(`  Decision: ${result.scorecard.decision_id}`);
-    console.log(`  Rating: ${result.scorecard.human_rating}`);
-    console.log(`  Reward: ${result.scorecard.reward}`);
-    console.log('  Wrote: .atris/state/scorecards.jsonl');
-    console.log('  Wrote: .atris/state/episodes.jsonl');
-    console.log('  Next: atris brain compile');
-    if (options.verify) console.log('  Verify: passed');
-    console.log('');
+    console.log('feedback recorded. refresh the notes: atris brain compile --root . --yes');
+    if (options.verify) console.log('checked: the feedback was saved.');
     return;
   }
 
@@ -1652,133 +1477,54 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }
-    console.log('');
-    console.log('Atris brain scorecards recorded.');
-    console.log(`  Task episodes: ${result.taskEpisodes}`);
-    console.log(`  New scorecards: ${result.written}`);
-    console.log('  Wrote: .atris/state/scorecards.jsonl');
-    console.log('  Next: atris brain compile');
-    if (options.verify) console.log('  Verify: passed');
-    console.log('');
+    console.log(`finished work scored: ${result.written}. refresh the notes: atris brain compile --root . --yes`);
+    if (options.verify) console.log('checked: the scores were saved.');
     return;
   }
 
-  if (subcommand === 'activate') {
-    const state = prepareBrainState(options.root);
-    if (!options.yes) {
-      refuseBrainWriteWithoutYes(state, options);
-      return 0;
-    }
-    writeBrain(state);
-    if (options.verify) verifyBrain(options.root);
-    const card = renderActivationCard(state, options);
-    if (options.json) {
-      if (options.verify) {
-        try {
-          verifyActivationCard(card);
-        } catch (error) {
-          console.log(JSON.stringify({
-            ok: false,
-            error: error && error.message ? error.message : String(error),
-            state,
-            card,
-          }, null, 2));
-          process.exit(1);
-        }
-      }
-      console.log(JSON.stringify({ ok: true, state, card }, null, 2));
-      return 0;
-    }
-    console.log('');
-    console.log(card);
+  if (!fs.existsSync(path.join(options.root, 'atris'))) {
+    throw new Error('this folder is not set up for atris yet. set it up: atris init');
+  }
+  if (['activate', 'status', 'gallery'].includes(subcommand)) {
+    const state = options.yes && subcommand !== 'status' ? prepareBrainState(options.root) : collectState(options.root);
+    const wrote = Boolean(options.yes && subcommand !== 'status');
+    if (wrote) writeBrain(state);
+    const cards = subcommand === 'gallery'
+      ? listMemberSlugs(options.root).map(member => buildActivationCard(state, { member }))
+      : [buildActivationCard(state, { ...options, remember: wrote })];
+    const card = cards[0];
+    const output = subcommand === 'gallery' ? (cards.map(item => item.text).join('\n\n---\n\n') || 'no team members found. create one in atris/team/<name>/MEMBER.md') : card.text;
+    let error = null;
     if (options.verify) {
-      try {
-        verifyActivationCard(card);
-      } catch (error) {
-        printVerifyFailure(error);
-        return 1;
-      }
-      const operator = (card.match(/^OPERATOR:\s*(.+)$/m) || [null, 'unknown'])[1];
-      if (operator === 'unknown') {
-        console.log('VERIFY: brain artifacts present');
-      } else {
-        console.log('VERIFY: brain artifacts and member activation executable');
-      }
-    }
-    console.log('');
-    return 0;
-  }
-  if (subcommand === 'gallery') {
-    const state = prepareBrainState(options.root);
-    if (!options.yes) {
-      refuseBrainWriteWithoutYes(state, options);
-      return 0;
-    }
-    writeBrain(state);
-    if (options.verify) verifyBrain(options.root);
-    const gallery = renderActivationGallery(state);
-    if (options.verify) {
-      try {
-        verifyActivationGallery(gallery);
-      } catch (error) {
-        if (options.json) {
-          console.log(JSON.stringify({
-            ok: false,
-            error: error && error.message ? error.message : String(error),
-            members: listMemberSlugs(options.root),
-            gallery,
-          }, null, 2));
-          process.exit(1);
-        }
-        printVerifyFailure(error);
-        return 1;
-      }
+      try { verifyBrain(options.root); if (subcommand === 'gallery') verifyActivationGallery(cards); else verifyActivationCard(card); }
+      catch (err) { error = err.message; }
     }
     if (options.json) {
-      console.log(JSON.stringify({ ok: true, members: listMemberSlugs(options.root), gallery }, null, 2));
-      return 0;
+      const data = subcommand === 'gallery' ? { members: listMemberSlugs(options.root), gallery: output } : { state, card: output, name: state.name, member: card.member, ready: card.ready, wrote, read_first: card.readFirst, notes: card.notes, summary: card.summary, ...card.summary };
+      console.log(JSON.stringify({ ok: !error, ...data, ...(error ? { error } : {}) }, null, 2));
+    } else {
+      console.log(`\n${output}`);
+      if (error) console.error(error);
+      else if (options.verify) console.log('checked: the saved notes are in place.');
+      console.log('');
     }
-    console.log('');
-    console.log(gallery);
-    if (options.verify) console.log('\nVERIFY: brain artifacts and member readiness present');
-    console.log('');
-    return 0;
+    return error ? 1 : 0;
   }
-  if (subcommand !== 'compile' && subcommand !== 'status') {
-    if (options.json) {
-      console.log(JSON.stringify({
-        ok: false,
-        error: `unknown brain subcommand: ${subcommand}`,
-        usage: brainUsageLines(),
-      }, null, 2));
-      process.exit(1);
-    }
-    printBrainUsage(console.error);
-    process.exit(1);
+  if (subcommand !== 'compile') {
+    if (options.json) console.log(JSON.stringify({ ok: false, error: `unknown brain subcommand: ${subcommand}`, usage: brainUsageLines() }, null, 2));
+    else printBrainUsage(console.error);
+    return 1;
   }
-
-  const state = prepareBrainState(options.root);
-  if (!options.yes) {
-    refuseBrainWriteWithoutYes(state, options);
-    return 0;
-  }
+  const state = options.yes ? prepareBrainState(options.root) : collectState(options.root);
+  if (!options.yes) { refuseBrainWriteWithoutYes(state, options); return 0; }
   const written = writeBrain(state);
   if (options.verify) verifyBrain(options.root);
-
-  if (options.json) {
-    console.log(JSON.stringify({ ok: true, state, written }, null, 2));
-    return 0;
-  }
-
-  console.log('');
-  console.log('Atris brain compiled.');
-  console.log(`  Workspace: ${state.name}`);
-  console.log(`  State rows: ${state.totalRows} raw / ${state.validRows} valid`);
-  console.log(`  Status: ${path.relative(options.root, written.statusPath).replace(/\\/g, '/')}`);
-  console.log(`  Ledger: ${path.relative(options.root, written.ledgerPath).replace(/\\/g, '/')}`);
-  console.log(`  Next: ${nextMove(state)}`);
-  if (options.verify) console.log('  Verify: passed');
-  console.log('');
+  if (options.json) { console.log(JSON.stringify({ ok: true, state, written }, null, 2)); return 0; }
+  console.log(`start-up notes saved for ${state.name}.`);
+  console.log(`  status: ${path.relative(options.root, written.statusPath)}`);
+  console.log(`  history: ${path.relative(options.root, written.ledgerPath)}`);
+  console.log(`  next: ${nextMove(state)}`);
+  if (options.verify) console.log('  checked: the saved notes are in place.');
   return 0;
 }
 
