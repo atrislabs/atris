@@ -34,6 +34,7 @@ test('notes land in the project overnight section once, and boot reads the newes
   const text = fs.readFileSync(file, 'utf8');
   assert.match(text, /## demo overnight\n- Review sweep: Closed 3 duplicates\.\n- Autoland: Landed 2 finished items\.\n/);
   assert.equal(latestCleanupLine(root, { now }), 'Autoland: Landed 2 finished items.');
+  assert.equal(latestCleanupLine(root, { now, max: 22 }), 'Autoland: Landed 2...');
   // Yesterday's line still shows first thing in the morning.
   assert.equal(latestCleanupLine(root, { now: new Date(2026, 9, 7, 7) }), 'Autoland: Landed 2 finished items.');
   assert.equal(latestCleanupLine(project('empty')), '');

@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { runCli } = require('./helpers/workspace-cli');
 
+const BOOT_NUDGE = 'the project notes have grown; run atris wiki consolidate (review notes to combine)';
 const WIKI_NUDGE = 'the wiki has grown a lot since its last pruning; run: atris wiki consolidate';
 
 function createWorkspace(t, { indexEntries = 0 } = {}) {
@@ -22,9 +23,9 @@ function createWorkspace(t, { indexEntries = 0 } = {}) {
   return { root, wikiDir };
 }
 
-function assertNudgeCount(result, count) {
+function assertNudgeCount(result, count, nudge = WIKI_NUDGE) {
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.split(WIKI_NUDGE).length - 1, count, result.stdout);
+  assert.equal(result.stdout.split(nudge).length - 1, count, result.stdout);
 }
 
 function runBootAndTidy(root) {
@@ -38,7 +39,7 @@ test('boot and tidy output show one wiki pruning nudge when findings exist', (t)
   const { root } = createWorkspace(t, { indexEntries: 41 });
   const results = runBootAndTidy(root);
 
-  assertNudgeCount(results.boot, 1);
+  assertNudgeCount(results.boot, 1, BOOT_NUDGE);
   assertNudgeCount(results.tidy, 1);
 });
 
@@ -46,7 +47,7 @@ test('boot and tidy output omit the wiki pruning nudge when the wiki is clean', 
   const { root } = createWorkspace(t, { indexEntries: 1 });
   const results = runBootAndTidy(root);
 
-  assertNudgeCount(results.boot, 0);
+  assertNudgeCount(results.boot, 0, BOOT_NUDGE);
   assertNudgeCount(results.tidy, 0);
 });
 
@@ -55,7 +56,7 @@ test('a missing wiki does not break boot or tidy output', (t) => {
   fs.rmSync(wikiDir, { recursive: true });
   const results = runBootAndTidy(root);
 
-  assertNudgeCount(results.boot, 0);
+  assertNudgeCount(results.boot, 0, BOOT_NUDGE);
   assertNudgeCount(results.tidy, 0);
 });
 
@@ -64,7 +65,7 @@ test('an unreadable metabolism marker does not break boot or tidy output', (t) =
   fs.mkdirSync(path.join(root, '.atris', 'state', 'wiki.metabolism.json'), { recursive: true });
   const results = runBootAndTidy(root);
 
-  assertNudgeCount(results.boot, 1);
+  assertNudgeCount(results.boot, 1, BOOT_NUDGE);
   assertNudgeCount(results.tidy, 1);
 });
 
@@ -74,6 +75,6 @@ test('an unreadable wiki surface does not break boot or tidy output', (t) => {
   fs.mkdirSync(path.join(wikiDir, 'index.md'));
   const results = runBootAndTidy(root);
 
-  assertNudgeCount(results.boot, 0);
+  assertNudgeCount(results.boot, 0, BOOT_NUDGE);
   assertNudgeCount(results.tidy, 0);
 });
