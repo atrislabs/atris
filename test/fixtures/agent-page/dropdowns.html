@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent page dropdowns</title>
+  <script src="../../../lib/agent-page.js"></script>
+  <style>
+    body { font: 14px system-ui, sans-serif; }
+    .field { margin: 6px 0; }
+    [role="listbox"], [role="menu"] { border: 1px solid #999; padding: 2px; }
+    [role="option"], [role="menuitem"] { display: block; padding: 2px 4px; }
+  </style>
+</head>
+<body>
+  <!--
+    Hand-built dropdowns in the three common shapes, so the browser test can drive each
+    one without a framework:
+      select-only combobox: a button with role="combobox" and a listbox that shows while open
+      editable combobox: a text input with role="combobox" and a listbox that shows while open
+      menu button: a button with aria-haspopup="menu" and a menu that shows while open
+    Each list is placed inline (next to its control), in a separate container at the end
+    of the page (created only while open), or in the browser top layer (a popover).
+  -->
+  <main>
+    <label>Notes <input id="notes" type="text" value="draft"></label>
+    <div id="widgets"></div>
+    <form id="billing-form" data-agent-confirm="Billing changes need approval." onsubmit="event.preventDefault()"></form>
+    <!-- A listbox near Theme that Theme does not point at. It must never be read as Theme's choices. -->
+    <div id="theme-decoy" role="listbox" aria-label="Theme presets">
+      <div role="option" data-value="decoy">Decoy preset</div>
+    </div>
+  </main>
+  <div id="portal"></div>
+  <script>
+    window.__state = { opens: {}, values: {}, actions: [] };
+
+    function el(tag, attrs, text) {
+      const node = document.createElement(tag);
+      Object.entries(attrs || {}).forEach(([key, value]) => node.setAttribute(key, value));
+      if (text) node.textContent = text;
+      return node;
+    }
+
+    // cfg: id, label, type ('select' | 'edit' | 'menu'), options [{ label, value, attrs }],
+    // place ('inline' | 'portal' | 'popover'), lazy (list exists only while open),
+    // owns (point with aria-owns, not aria-controls), controlsWhenOpen (aria-controls only
+    // while open), refuse (the page keeps its old value), value, controlAttrs, labelAttrs,
+    // labelFor (a label element instead of aria-labelledby), parent (where the field goes).
+    function widget(cfg) {
+      const field = el('div', { class: 'field', id: cfg.id + '-field' });
+      const listId = cfg.id + '-list';
+      const control = cfg.type === 'edit' ? el('input', { type: 'text', id: cfg.id, role: 'combobox', 'aria-autocomplete': 'list' })
+        : el('button', { type: 'button', id: cfg.id });
+      if (cfg.type === 'select') control.setAttribute('role', 'combobox');
+      control.setAttribute('aria-haspopup', cfg.type === 'menu' ? 'menu' : 'listbox');
+      control.setAttribute('aria-expanded', 'false');
+      if (!cfg.controlsWhenOpen) control.setAttribute(cfg.owns ? 'aria-owns' : 'aria-controls', listId);
+      Object.entries(cfg.controlAttrs || {}).forEach(([key, value]) => control.setAttribute(key, value));
+      const label = cfg.labelFor ? el('label', Object.assign({ for: cfg.id }, cfg.labelAttrs || {}), cfg.label)
+        : el('span', Object.assign({ id: cfg.id + '-label' }, cfg.labelAttrs || {}), cfg.label);
+      if (!cfg.labelFor) control.setAttribute('aria-labelledby', cfg.id + '-label');
+      if (cfg.type === 'menu') control.textContent = cfg.label;
+      field.append(label, control);
+      (cfg.parent ? document.getElementById(cfg.parent) : document.getElementById('widgets')).append(field);
+
+      let value = cfg.value || '';
+      const show = () => {
+        if (cfg.type === 'select') control.textContent = labelOf(value);
+        if (cfg.type === 'edit') control.value = labelOf(value);
+        window.__state.values[cfg.id] = value;
+      };
+      const labelOf = (v) => (cfg.options.find((option) => option.value === v) || { label: '' }).label;
+
+      function buildList() {
+        const list = el('div', { id: listId, role: cfg.type === 'menu' ? 'menu' : 'listbox', 'aria-labelledby': cfg.labelFor ? cfg.id : cfg.id + '-label' });
+        cfg.options.forEach((option) => {
+          const item = el('div', Object.assign({ role: cfg.type === 'menu' ? 'menuitem' : 'option', 'data-value': option.value, tabindex: '-1' }, option.attrs || {}), option.label);
+          if (cfg.type !== 'menu') item.setAttribute('aria-selected', String(option.value === value));
+          item.addEventListener('mousedown', (event) => event.preventDefault());
+          item.addEventListener('click', () => {
+            if (item.getAttribute('aria-disabled') === 'true') return;
+            if (cfg.type === 'menu') window.__state.actions.push(cfg.id + ':' + option.value);
+            else if (!cfg.refuse) value = option.value;
+            close();
+            show();
+            control.focus();
+          });
+          list.append(item);
+        });
+        list.addEventListener('keydown', onKey);
+        return list;
+      }
+
+      let list = null;
+      const isOpen = () => control.getAttribute('aria-expanded') === 'true';
+      function open() {
+        if (isOpen()) return;
+        window.__state.opens[cfg.id] = (window.__state.opens[cfg.id] || 0) + 1;
+        if (!list) list = buildList();
+        if (cfg.place === 'popover') {
+          list.popover = 'manual';
+          if (!list.isConnected) field.append(list);
+          list.showPopover();
+        } else {
+          list.hidden = false;
+          if (!list.isConnected) (cfg.place === 'portal' ? document.getElementById('portal') : field).append(list);
+        }
+        if (cfg.controlsWhenOpen) control.setAttribute('aria-controls', listId);
+        control.setAttribute('aria-expanded', 'true');
+        if (cfg.type === 'menu') list.querySelector('[role="menuitem"]').focus();
+      }
+      function close() {
+        if (!isOpen()) return;
+        control.setAttribute('aria-expanded', 'false');
+        if (cfg.controlsWhenOpen) control.removeAttribute('aria-controls');
+        if (cfg.place === 'popover') list.hidePopover();
+        else list.hidden = true;
+        if (cfg.lazy) {
+          list.remove();
+          list = null;
+        }
+      }
+      function onKey(event) {
+        if (event.key === 'Escape' && isOpen()) {
+          event.preventDefault();
+          close();
+          control.focus();
+        }
+      }
+
+      // The list exists while closed unless it is lazy, hidden until opened.
+      if (!cfg.lazy) {
+        list = buildList();
+        if (cfg.place === 'popover') {
+          list.popover = 'manual';
+          field.append(list);
+        } else {
+          list.hidden = true;
+          (cfg.place === 'portal' ? document.getElementById('portal') : field).append(list);
+        }
+      }
+      if (cfg.type === 'edit') {
+        // Like the WAI-ARIA editable combobox: arrows open the list, a click does not.
+        control.addEventListener('keydown', (event) => {
+          if (event.key === 'ArrowDown') { event.preventDefault(); open(); }
+          onKey(event);
+        });
+        control.addEventListener('input', open);
+      } else {
+        control.addEventListener('click', () => (isOpen() ? close() : open()));
+        control.addEventListener('keydown', onKey);
+      }
+      show();
+      return { open, close };
+    }
+
+    const hiddenColor = { 'data-agent-hidden': '' };
+    window.__widgets = {
+      fruit: widget({ id: 'fruit', label: 'Fruit', type: 'select', place: 'inline', value: 'apple', options: [
+        { label: 'Apple', value: 'apple' }, { label: 'Banana', value: 'banana' }, { label: 'Cherry', value: 'cherry' },
+        { label: 'Durian', value: 'durian', attrs: { 'data-agent-confirm': 'Durian smells strong.' } },
+        { label: 'Elderberry', value: 'elderberry', attrs: { 'aria-disabled': 'true' } },
+      ] }),
+      color: widget({ id: 'color', label: 'Color', type: 'select', place: 'portal', lazy: true, value: 'color-red', options: [
+        { label: 'Red', value: 'color-red' }, { label: 'Green', value: 'color-green' }, { label: 'Blue', value: 'color-blue' },
+        { label: 'Hidden color', value: 'hidden-color-0401', attrs: hiddenColor },
+        { label: 'PLANTED-CSS-COLOR', value: 'planted-css', attrs: { style: 'display:none' } },
+      ] }),
+      size: widget({ id: 'size', label: 'Size', type: 'select', place: 'popover', value: 'small', options: [
+        { label: 'Small', value: 'small' }, { label: 'Medium', value: 'medium' }, { label: 'Large', value: 'large' },
+      ] }),
+      plan: widget({ id: 'plan', label: 'Plan', type: 'select', place: 'portal', lazy: true, value: 'free', options: [
+        { label: 'Free', value: 'free' }, { label: 'Team', value: 'team' },
+        { label: 'Enterprise', value: 'enterprise', attrs: { 'data-agent-confirm': 'Enterprise is billed yearly.' } },
+      ] }),
+      danger: widget({ id: 'danger', label: 'Danger level', type: 'select', place: 'portal', lazy: true, value: 'low',
+        controlAttrs: { 'data-agent-confirm': 'Changing the danger level alerts the team.' },
+        options: [{ label: 'Low', value: 'low' }, { label: 'High', value: 'high' }] }),
+      shipping: widget({ id: 'shipping', label: 'Shipping', type: 'select', place: 'inline', value: 'ground', labelFor: true,
+        labelAttrs: { 'data-agent-confirm': 'Shipping speed changes the price.' },
+        options: [{ label: 'Ground', value: 'ground' }, { label: 'Air', value: 'air' }] }),
+      billing: widget({ id: 'billing', label: 'Billing cycle', type: 'select', place: 'inline', value: 'monthly', parent: 'billing-form',
+        options: [{ label: 'Monthly', value: 'monthly' }, { label: 'Yearly', value: 'yearly' }] }),
+      vault: widget({ id: 'vault', label: 'Vault', type: 'select', place: 'portal', lazy: true, value: 'vault-alpha-0201',
+        controlAttrs: { 'data-agent-secret': '' },
+        options: [{ label: 'vault-alpha-0201', value: 'vault-alpha-0201' }, { label: 'vault-beta-0202', value: 'vault-beta-0202' },
+          { label: 'PLANTED-VAULT-0203', value: 'planted-vault' }] }),
+      locked: widget({ id: 'locked', label: 'Locked tier', type: 'select', place: 'portal', lazy: true, value: 'basic', refuse: true,
+        options: [{ label: 'Basic', value: 'basic' }, { label: 'Pro', value: 'pro' }] }),
+      city: widget({ id: 'city', label: 'City', type: 'edit', place: 'inline', value: 'lima', options: [
+        { label: 'Lima', value: 'lima' }, { label: 'Oslo', value: 'oslo' }, { label: 'Quito', value: 'quito' },
+        { label: 'PLANTED-HIDDEN-CITY', value: 'planted-city', attrs: { 'data-agent-hidden': '' } },
+      ] }),
+      country: widget({ id: 'country', label: 'Country', type: 'edit', place: 'portal', lazy: true, value: 'peru', options: [
+        { label: 'Peru', value: 'peru' }, { label: 'Chile', value: 'chile' },
+      ] }),
+      theme: widget({ id: 'theme', label: 'Theme', type: 'edit', place: 'portal', lazy: true, owns: true, value: 'light', options: [
+        { label: 'Light', value: 'light' }, { label: 'Dark', value: 'dark' },
+      ] }),
+      actions: widget({ id: 'actions', label: 'Project actions', type: 'menu', place: 'inline', options: [
+        { label: 'Rename', value: 'rename' }, { label: 'Duplicate', value: 'duplicate' },
+        { label: 'Delete', value: 'delete', attrs: { 'data-agent-confirm': 'Deleting removes the project.' } },
+      ] }),
+      more: widget({ id: 'more', label: 'More', type: 'menu', place: 'portal', lazy: true, controlsWhenOpen: true, options: [
+        { label: 'Export', value: 'export' },
+        { label: 'Erase', value: 'erase', attrs: { 'data-agent-confirm': 'Erasing wipes the history.' } },
+        { label: 'PLANTED-HIDDEN-ITEM', value: 'planted-item', attrs: { 'data-agent-hidden': '' } },
+      ] }),
+      keys: widget({ id: 'keys', label: 'Key tools', type: 'menu', place: 'portal', lazy: true, controlAttrs: { 'data-agent-secret': '' },
+        options: [{ label: 'rotate-0301', value: 'rotate' }, { label: 'PLANTED-KEY-ITEM', value: 'planted-key' }] }),
+    };
+    // The decoy sits inside Theme's own field, so finding choices by ancestry would read it.
+    document.getElementById('theme-field').append(document.getElementById('theme-decoy'));
+  </script>
+</body>
+</html>
