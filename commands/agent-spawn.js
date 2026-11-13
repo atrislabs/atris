@@ -198,6 +198,7 @@ function showSpawnHelp(output = console.log, commandName = 'atris agent spawn') 
   output(`Usage: ${commandName} <role> --task "<bounded task>" [options]`);
   output('');
   output('Create a durable worker request that ax, humans, or another runtime can pick up.');
+  output('To make a child agent on the server instead: atris agent spawn <parent> --name <name> --budget <credits>');
   output('');
   output('Options:');
   output('  --task <text>      Bounded task to delegate');
