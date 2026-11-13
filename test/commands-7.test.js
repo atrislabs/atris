@@ -1597,10 +1597,10 @@ test('top-level help shows local and global first-run commands', () => {
     const home = path.join(dir, 'home');
     const res = runCli(['--help'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /already won\. one next step/);
+    assert.match(res.stdout, /get one next step/);
     assert.match(res.stdout, /atris later "/);
     assert.match(res.stdout, /atris do\b/);
-    assert.match(res.stdout, /Keep working/);
+    assert.match(res.stdout, /plan .*work/);
     assert.match(res.stdout, /help --all/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
