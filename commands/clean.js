@@ -181,16 +181,26 @@ function cleanAtris(options = {}) {
   };
 
   // 0. Git working-tree hygiene scan (and atomic vault + reset on --apply)
-  const { scanGitHygiene, vaultAndCleanCheckout } = require('../lib/hygiene-vault');
+  const { scanGitHygiene, vaultAndCleanCheckout, recoverInterruptedVault } = require('../lib/hygiene-vault');
   const graceMs = resolveGraceMinutes(options) * 60 * 1000;
   let gitHygiene = scanGitHygiene(cwd, { graceMs });
   let vaultOutcome = null;
-  if (options.apply && !options.dryRun && gitHygiene.isGitRepo && gitHygiene.actionableCount > 0) {
-    vaultOutcome = vaultAndCleanCheckout(cwd, {
-      graceMs,
-      ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
-    });
-    gitHygiene = vaultOutcome.scan;
+  if (options.apply && !options.dryRun && gitHygiene.isGitRepo) {
+    if (gitHygiene.actionableCount > 0) {
+      vaultOutcome = vaultAndCleanCheckout(cwd, {
+        graceMs,
+        ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
+      });
+      gitHygiene = vaultOutcome.scan;
+    } else {
+      const recovery = recoverInterruptedVault(cwd, {
+        ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
+      });
+      if (recovery.recovered.length > 0) {
+        gitHygiene = scanGitHygiene(cwd, { graceMs });
+        results.recoveredVaults = recovery.recovered;
+      }
+    }
   }
   results.gitHygiene = gitHygiene;
   results.vault = vaultOutcome;

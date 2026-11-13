@@ -217,3 +217,50 @@ test('atris clean --help, atris restore --help, and invalid --grace-minutes beha
   assert.equal(badPayload.ok, false);
   assert.match(badPayload.error, /--grace-minutes/);
 });
+
+test('atris clean --apply recovers crashed VAULTED WAL even when files fall inside the grace window', (t) => {
+  const { dir, home } = makeDirtyRepo(t, { ageHours: 0 });
+  const freshRel = 'backend/services/crashed_fresh.py';
+  const freshAbs = path.join(dir, freshRel);
+  fs.mkdirSync(path.dirname(freshAbs), { recursive: true });
+  fs.writeFileSync(freshAbs, 'crashed = True\n', 'utf8');
+  const st = fs.lstatSync(freshAbs);
+
+  // Remove the aged dirty files so ONLY the fresh crashed file remains (actionableCount === 0 under 30m grace)
+  fs.rmSync(path.join(dir, 'backend/services/trace_capture.py'));
+  fs.rmSync(path.join(dir, 'atris/features/old-feat/spec.md'));
+  fs.rmSync(path.join(dir, 'synth.html'));
+  git(dir, 'checkout', '-q', '--', 'src/app.py');
+
+  const vaultId = '20261112-211500-walrec';
+  const headTree = git(dir, 'rev-parse', 'HEAD^{tree}');
+  const commitOid = git(dir, 'commit-tree', headTree, '-m', 'crashed vault');
+  git(dir, 'update-ref', `refs/atris/vault/${vaultId}/full`, commitOid);
+
+  const walDir = path.join(dir, '.atris', 'vault');
+  fs.mkdirSync(walDir, { recursive: true });
+  const walPath = path.join(walDir, `wal-${vaultId}.json`);
+  fs.writeFileSync(walPath, JSON.stringify({
+    vaultId,
+    status: 'VAULTED',
+    entries: [
+      { relPath: freshRel, xy: '??', stat0: { ino: st.ino, size: st.size, mtimeMs: st.mtimeMs } },
+    ],
+  }));
+
+  // Dry-run stays read-only: WAL and fresh file remain intact
+  const dryRes = runCli(['clean', '--dry-run', '--json'], dir, home);
+  assert.equal(dryRes.status, 0, dryRes.stderr);
+  assert.equal(fs.existsSync(walPath), true);
+  assert.equal(fs.existsSync(freshAbs), true);
+
+  // Apply with default 30m grace (actionableCount === 0) replays VAULTED WAL and cleans up
+  const applyRes = runCli(['clean', '--apply', '--json'], dir, home);
+  assert.equal(applyRes.status, 0, applyRes.stderr);
+  const payload = JSON.parse(applyRes.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.target_state, 0);
+  assert.equal(payload.results.git_hygiene.remaining_dirty, 0);
+  assert.equal(fs.existsSync(walPath), false);
+  assert.equal(fs.existsSync(freshAbs), false);
+});

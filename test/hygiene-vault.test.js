@@ -551,3 +551,76 @@ test('vault-catalog.md stays ring-capped at K=20 epochs and respects clean lock 
     fs.rmSync(quarantineRoot, { recursive: true, force: true });
   }
 });
+
+test('staged secrets are stripped from refs/atris/vault/<id>/staged and quarantine symlinks are preserved on restore', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-staged-secret-q-');
+  try {
+    // 1. Staged .env alongside staged code file -> staged ref keeps code, excludes .env
+    const envAbs = writeRel(root, '.env', 'API_SECRET=hunter2\n', { ageMs: 60 * 60 * 1000 });
+    const codeAbs = writeRel(root, 'src/staged_code.py', 'x = 1\n', { ageMs: 60 * 60 * 1000 });
+    // Also a symlinked secret in quarantine (pointing to a non-existent target to catch dereferencing)
+    const linkAbs = path.join(root, '.env.symlink');
+    fs.symlinkSync('/nonexistent/secret-target', linkAbs);
+    const oldTime = new Date(Date.now() - 60 * 60 * 1000);
+    fs.lutimesSync(linkAbs, oldTime, oldTime);
+
+    run('git', ['add', '.env', 'src/staged_code.py'], root);
+    fs.utimesSync(envAbs, oldTime, oldTime);
+    fs.utimesSync(codeAbs, oldTime, oldTime);
+
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+
+    assert.equal(out.applied, true);
+    assert.ok(out.refs.staged);
+    const stagedFiles = run('git', ['ls-tree', '-r', '--name-only', out.refs.staged], root).split('\n');
+    assert.equal(stagedFiles.includes('.env'), false);
+    assert.equal(stagedFiles.includes('src/staged_code.py'), true);
+    assert.equal(fs.existsSync(envAbs), false);
+    assert.equal(fs.existsSync(codeAbs), false);
+    assert.equal(fs.existsSync(path.join(out.quarantineDir, '.env')), true);
+    assert.equal(fs.lstatSync(path.join(out.quarantineDir, '.env.symlink')).isSymbolicLink(), true);
+
+    // Restoring quarantined symlink preserves symlink rather than dereferencing
+    const restored = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      paths: ['.env', '.env.symlink'],
+      quarantineRoot,
+    });
+    assert.deepEqual(new Set(restored.quarantinedRestored), new Set(['.env', '.env.symlink']));
+    assert.equal(fs.readFileSync(envAbs, 'utf8'), 'API_SECRET=hunter2\n');
+    assert.equal(fs.lstatSync(linkAbs).isSymbolicLink(), true);
+    assert.equal(fs.readlinkSync(linkAbs), '/nonexistent/secret-target');
+
+    // Force-overwriting existing symlink also succeeds cleanly
+    const forced = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      paths: ['.env.symlink'],
+      force: true,
+      quarantineRoot,
+    });
+    assert.deepEqual(forced.quarantinedRestored, ['.env.symlink']);
+    assert.equal(fs.readlinkSync(linkAbs), '/nonexistent/secret-target');
+
+    // 2. When ONLY a secret is staged, no staged ref is created
+    fs.rmSync(linkAbs, { force: true });
+    fs.rmSync(envAbs, { force: true });
+    writeRel(root, '.env', 'ONLY_SECRET=1\n', { ageMs: 60 * 60 * 1000 });
+    run('git', ['add', '.env'], root);
+    const onlySecretOut = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+    assert.equal(onlySecretOut.applied, true);
+    assert.equal(onlySecretOut.refs.staged, undefined);
+    assert.equal(fs.existsSync(envAbs), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+  }
+});
