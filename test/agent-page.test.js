@@ -108,9 +108,11 @@ test('the readme section states the limits in plain words', () => {
   const start = readme.indexOf('## Agent page');
   assert.ok(start !== -1, 'the readme has an agent page section');
   const section = readme.slice(start, readme.indexOf('\n## ', start + 1));
-  for (const limit of [/iframes/, /shadow root/, /contenteditable/, /unread/, /Real React is checked elsewhere/]) {
+  for (const limit of [/iframes/, /shadow root/, /contenteditable/, /unread/, /cannot be detected/,
+    /Frames from other sites/, /trusts the page/, /data-agent-hidden/, /imitates React/, /not done yet/]) {
     assert.match(section, limit);
   }
   assert.doesNotMatch(section, /any page|any framework/i, 'no unbounded claim');
+  assert.doesNotMatch(section, /checked elsewhere/, 'no claim that real React is already checked');
   assert.doesNotMatch(section, /\u2014/, 'no em dashes');
 });
