@@ -366,7 +366,7 @@ test('renderRecapMinute names a claimed file, not factory map.md', () => {
     ],
     next: null,
   }, { person: 'keshav' });
-    assert.match(text, /^hey keshav, "notes.md" is already yours\.$/m);
+    assert.match(text, /^hey keshav, you are working on "notes.md"\.$/m);
     assert.match(text, /^next: atris "add a test for the claimed task"$/m);
   assert.doesNotMatch(text, /generate map|map this folder|ready to claim/i);
   assert.equal(spokenLineCount(text), 2);
@@ -384,7 +384,7 @@ test('renderRecapMinute still names a claimed non-seed task', () => {
     ],
     next: null,
   }, { person: 'keshav' });
-    assert.match(text, /^hey keshav, "ship the landing page" is already yours\.$/m);
+    assert.match(text, /^hey keshav, you are working on "ship the landing page"\.$/m);
     assert.match(text, /^next: atris "add a test for the claimed task"$/m);
   assert.doesNotMatch(text, /generate map|map this folder|ready to claim/i);
   assert.equal(spokenLineCount(text), 2);

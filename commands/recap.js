@@ -321,12 +321,12 @@ function renderRecapMinute(data, { person } = {}) {
     const named = recapSoftTitle(item && item.title);
     if (item && item.owner && named) {
       return [
-        `${greet}${named} is already yours.`,
+        `${greet}you are working on ${named}.`,
         '',
         `next: ${taskCommand({ display_id: item.id, status: 'claimed' })}`,
       ].join('\n');
     }
-    if (named) return `${greet}${named} is ready to claim.`;
+    if (named) return `${greet}${named} is ready to start.`;
   }
 
   return `${greet}quiet window. nothing moved in this period.`;
