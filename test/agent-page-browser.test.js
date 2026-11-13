@@ -1,6 +1,8 @@
 // Agent page: the real-browser proof. Drives the fixture settings page in headless
 // Google Chrome over the DevTools protocol, using only Node built-ins (WebSocket is
-// built in on Node 22 and newer). Skips with a clear message when Chrome is missing.
+// built in on Node 22 and newer). Finds Chrome the way the repo's other browser test does,
+// on a Mac or on the Linux check machines; ATRIS_CHROME_PATH overrides it. Skips with a
+// clear message only when no Chrome exists at all.
 //
 // Every check is its own top-level test, and all of them share one browser session.
 // Nested t.test() subtests dropped the DevTools socket in our runs, so they are not used.
@@ -14,13 +16,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { findChrome } = require('../scripts/gm-phone-trace');
+const { headlessArgs } = require('../lib/headless-chrome');
 
-const CHROME = process.env.ATRIS_CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.ATRIS_CHROME_PATH || findChrome();
 const FIXTURE = path.join(__dirname, 'fixtures', 'agent-page', 'project-settings.html');
 
 function skipReason() {
-  if (!fs.existsSync(CHROME)) {
-    return `Google Chrome not found at ${CHROME}; set ATRIS_CHROME_PATH to run this browser test`;
+  if (!CHROME || !fs.existsSync(CHROME)) {
+    return `no Google Chrome found${CHROME ? ` at ${CHROME}` : ' on this machine'}; set ATRIS_CHROME_PATH to run this browser test`;
   }
   if (typeof WebSocket !== 'function') return 'needs Node 22 or newer (built-in WebSocket)';
   return false;
@@ -185,15 +189,11 @@ const GUARD_SOURCE = `(() => {
 })();`;
 
 async function launchChrome(profileDir) {
-  const child = spawn(CHROME, [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
-    'about:blank',
-  ], { stdio: 'ignore' });
+  const args = headlessArgs(profileDir, ['--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0']);
+  // The Linux check machines run Chrome without its sandbox, as the gm phone test does.
+  if (process.platform === 'linux') args.push('--no-sandbox');
+  args.push('about:blank');
+  const child = spawn(CHROME, args, { stdio: 'ignore' });
   const port = await waitFor(() => {
     const file = path.join(profileDir, 'DevToolsActivePort');
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
