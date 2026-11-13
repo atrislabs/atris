@@ -433,6 +433,12 @@ To read or pick, the file may open a closed list, then it closes it again and pu
 
 The list is found only through the control's `aria-controls` or `aria-owns`, so a list rendered elsewhere (a portal, the top layer, a popover) is read, and a list that merely sits nearby is not. A pick says ok only when the control shows the new choice after the list has closed. If the page keeps its old value, the step fails with "the page did not keep the new choice." A menu press says ok once the item is pressed and the menu is closed.
 
+Opening a list is a press on its trigger. A trigger that would send a form (a button with no type inside a form, or a submit button) brings that form and its fields into the check, like any submit press. Query never opens such a trigger, or one inside a link; it says those choices are unread. Only one list is opened at a time on a page, so a second agent is told to try again.
+
+A choice is matched by its label first. When the agent's words are one choice's label and another choice's value, the label is used and the step's `note` says so. A pick says ok only if the asked choice is now the chosen one, by the option being marked selected or else by its label on the control, never by a value.
+
+When the chosen choice is secret, the control's value reads `[redacted]` everywhere, including changes and later snapshots. When it is hidden, the value is empty. For a list made only while open, the file knows this once it has seen the list open.
+
 A list that holds more than one choice and opens in a popup is not changed yet. An editable combobox that names its list takes only one of its choices; free text cannot be typed into it.
 
 Three marks on the page set the rules, with the `allow` callback.
