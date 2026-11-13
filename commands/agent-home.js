@@ -395,8 +395,6 @@ async function agentHomeCommand(args = [], deps = {}) {
 
 module.exports = {
   agentHomeCommand,
-  homeHelp,
   isHomeCommand,
   movesForward,
-  resolveAgentRef,
 };
