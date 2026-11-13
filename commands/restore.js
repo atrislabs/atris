@@ -264,7 +264,13 @@ function renderVaultList(snapshots, { json = false } = {}) {
 }
 
 function renderRestoreResult(out, parsed) {
-  const restoredFiles = out.restored || out.restoredFiles || out.files || out.paths || [];
+  const isDryRun = Boolean(out.dryRun ?? parsed.dryRun);
+  const restoredFiles = (isDryRun && Array.isArray(out.paths) && out.paths.length ? out.paths : null)
+    || (Array.isArray(out.restored) && out.restored.length ? out.restored : null)
+    || out.restoredFiles
+    || out.files
+    || out.paths
+    || [];
   const quarantinedFiles = out.quarantinedRestored || out.quarantineFiles || out.quarantined || [];
   const skippedFiles = out.skipped || out.skippedFiles || [];
   const worktreePath = out.worktreePath
@@ -274,7 +280,6 @@ function renderRestoreResult(out, parsed) {
   const branch = out.branch || out.worktreeBranch || out.worktree?.branch || null;
   const resolvedSlice = out.slice || parsed.slice;
   const resolvedVaultId = out.vaultId || out.vault_id || out.id || parsed.vaultId;
-  const isDryRun = Boolean(out.dryRun ?? parsed.dryRun);
 
   if (parsed.json) {
     console.log(JSON.stringify({
