@@ -8,6 +8,11 @@ const {
   runGit,
   trackedTreeIsClean,
 } = require('../lib/checkout-sync');
+const {
+  DEFAULT_GRACE_MS,
+  scanGitHygiene,
+  vaultAndCleanCheckout,
+} = require('../lib/hygiene-vault');
 
 function refuse(message) {
   console.log(message);
@@ -71,12 +76,155 @@ function writeBackup(cwd) {
   return { patchPath, untrackedPath };
 }
 
+function parseSyncOptions(args) {
+  const backup = args.includes('--backup');
+  const vault = args.includes('--vault');
+  let graceMinutes = null;
+  let invalidGrace = false;
+  let hasGraceArg = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--grace-minutes') {
+      hasGraceArg = true;
+      const next = args[i + 1];
+      if (next === undefined || next.startsWith('-')) {
+        invalidGrace = true;
+        break;
+      }
+      const parsed = Number(next);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        invalidGrace = true;
+        break;
+      }
+      graceMinutes = parsed;
+      i += 1;
+    } else if (arg.startsWith('--grace-minutes=')) {
+      hasGraceArg = true;
+      const raw = arg.slice('--grace-minutes='.length);
+      const parsed = Number(raw);
+      if (!raw || !Number.isFinite(parsed) || parsed < 0) {
+        invalidGrace = true;
+        break;
+      }
+      graceMinutes = parsed;
+    }
+  }
+
+  return {
+    backup,
+    vault,
+    invalidGrace,
+    hasGraceArg,
+    graceMs: graceMinutes === null ? DEFAULT_GRACE_MS : graceMinutes * 60 * 1000,
+  };
+}
+
+function resolveRepoRoot(cwd) {
+  const topResult = runGit(['rev-parse', '--show-toplevel'], cwd);
+  return topResult.status === 0 && topResult.stdout.trim()
+    ? topResult.stdout.trim()
+    : cwd;
+}
+
+function countBehindUpstream(cwd) {
+  const behindResult = runGit(['rev-list', '--count', 'HEAD..@{upstream}'], cwd);
+  if (behindResult.status !== 0) return null;
+  const count = Number.parseInt(behindResult.stdout.trim(), 10);
+  return Number.isInteger(count) ? count : null;
+}
+
+function runVaultBeforeSync(cwd, upstream, graceMs) {
+  // Check the sync can succeed before vaulting or touching anything.
+  const canFastForward = runGit(['merge-base', '--is-ancestor', 'HEAD', '@{upstream}'], cwd);
+  if (canFastForward.status !== 0) {
+    return { ok: false, code: refuse('this checkout could not fast-forward; sync-checkout refused to change it.') };
+  }
+
+  const behindCount = countBehindUpstream(cwd);
+  const isBehind = behindCount !== null && behindCount > 0;
+  const repoRoot = resolveRepoRoot(cwd);
+
+  const preScan = scanGitHygiene(repoRoot, { graceMs });
+  let vaultResult = null;
+  if (isBehind || preScan.actionableCount > 0) {
+    try {
+      vaultResult = vaultAndCleanCheckout(repoRoot, { graceMs });
+    } catch (error) {
+      return {
+        ok: false,
+        code: refuse(`could not vault checkout changes: ${error.message}`),
+      };
+    }
+  }
+
+  if (vaultResult && vaultResult.vaultId) {
+    const vaultedCount = vaultResult.receipt && Array.isArray(vaultResult.receipt.vaulted_files)
+      ? vaultResult.receipt.vaulted_files.length
+      : 0;
+    const quarantinedCount = vaultResult.receipt && Array.isArray(vaultResult.receipt.quarantine_files)
+      ? vaultResult.receipt.quarantine_files.length
+      : 0;
+    console.log(
+      `vaulted ${vaultedCount} file(s) to ${vaultResult.refs.full} (${vaultResult.vaultId}); catalog at .atris/state/vault-catalog.md`
+    );
+    if (quarantinedCount > 0 && vaultResult.quarantineDir) {
+      console.log(`quarantined ${quarantinedCount} sensitive or large file(s) to ${vaultResult.quarantineDir}`);
+    }
+    console.log(`to restore them: atris restore ${vaultResult.vaultId}`);
+    const skipped = vaultResult.resetStats && vaultResult.resetStats.skippedConcurrentEdit;
+    if (Array.isArray(skipped) && skipped.length > 0) {
+      console.log(`left ${skipped.length} concurrently modified file(s) in place.`);
+    }
+  }
+
+  const scan = (vaultResult && vaultResult.scan) ? vaultResult.scan : preScan;
+  const activeCount = (scan.byClass && scan.byClass.ACTIVE_IN_FLIGHT) || 0;
+  const unprovableCount = (scan.byClass && scan.byClass.UNPROVABLE_KEEP) || 0;
+  const preservedCount = activeCount + unprovableCount;
+
+  if (!isBehind) {
+    if (preservedCount > 0 || !trackedTreeIsClean(repoRoot)) {
+      const shownCount = preservedCount > 0 ? `${preservedCount} ` : '';
+      console.log(`this checkout is up to date with ${upstream}; ${shownCount}active or protected file(s) were left in place.`);
+    } else {
+      console.log(`this checkout is up to date with ${upstream}.`);
+    }
+    return { ok: true, done: true, code: 0, preservedCount, gitCwd: repoRoot };
+  }
+
+  if (!trackedTreeIsClean(repoRoot)) {
+    const reasons = [];
+    if (activeCount > 0) reasons.push(`${activeCount} active in-flight`);
+    if (unprovableCount > 0) reasons.push(`${unprovableCount} unprovable`);
+    const detail = reasons.length ? ` (${reasons.join(', ')})` : '';
+    return {
+      ok: false,
+      code: refuse(
+        `this checkout still has protected tracked changes${detail}; sync-checkout left them in place and did not fast-forward.`
+      ),
+    };
+  }
+
+  return { ok: true, done: false, preservedCount, gitCwd: repoRoot };
+}
+
 function syncCheckoutCommand(args = [], cwd = process.cwd()) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('usage: atris sync-checkout [--backup].');
+    console.log('usage: atris sync-checkout [--backup | --vault [--grace-minutes <N>]].');
     return 0;
   }
-  const backup = args.includes('--backup');
+
+  const opts = parseSyncOptions(args);
+  if (opts.backup && opts.vault) {
+    return refuse('choose either --backup or --vault, not both.');
+  }
+  if (opts.invalidGrace) {
+    return refuse('invalid --grace-minutes value; expected a non-negative number.');
+  }
+  if (opts.hasGraceArg && !opts.vault) {
+    return refuse('--grace-minutes requires --vault.');
+  }
 
   const branchResult = runGit(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd);
   if (branchResult.status !== 0) {
@@ -84,7 +232,7 @@ function syncCheckoutCommand(args = [], cwd = process.cwd()) {
   }
 
   const dirty = !trackedTreeIsClean(cwd);
-  if (dirty && !backup) {
+  if (dirty && !opts.backup && !opts.vault) {
     console.log('this checkout has tracked changes; sync-checkout refused to touch it.');
     console.log('run: atris sync-checkout --backup   (saves your edits as a patch, then syncs)');
     return 1;
@@ -104,7 +252,15 @@ function syncCheckoutCommand(args = [], cwd = process.cwd()) {
     return refuse('this checkout could not sync because git fetch failed.');
   }
 
-  if (dirty) {
+  let preservedCount = 0;
+  let gitCwd = cwd;
+  if (opts.vault) {
+    const vaultOutcome = runVaultBeforeSync(cwd, upstream, opts.graceMs);
+    if (!vaultOutcome.ok) return vaultOutcome.code;
+    if (vaultOutcome.done) return vaultOutcome.code;
+    preservedCount = vaultOutcome.preservedCount || 0;
+    gitCwd = vaultOutcome.gitCwd || cwd;
+  } else if (dirty) {
     // Check the sync can succeed before touching anything, so a sync that
     // was never going to work does not cost anyone their edits.
     const canFastForward = runGit(['merge-base', '--is-ancestor', 'HEAD', '@{upstream}'], cwd);
@@ -137,11 +293,19 @@ function syncCheckoutCommand(args = [], cwd = process.cwd()) {
     console.log(`to restore them: git apply ${saved.patchPath}`);
   }
 
-  const mergeResult = runGit(['merge', '--ff-only', '@{upstream}'], cwd);
+  const mergeResult = runGit(['merge', '--ff-only', '@{upstream}'], gitCwd);
   if (mergeResult.status !== 0) {
+    if (preservedCount > 0) {
+      return refuse(
+        'this checkout could not fast-forward because active or protected files remain in place; sync-checkout refused to delete them.'
+      );
+    }
     return refuse('this checkout could not fast-forward; sync-checkout refused to change it.');
   }
 
+  if (preservedCount > 0) {
+    console.log(`left ${preservedCount} active or protected file(s) in place.`);
+  }
   console.log(`this checkout is up to date with ${upstream}.`);
   return 0;
 }
