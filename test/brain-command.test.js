@@ -39,7 +39,6 @@ function seedWorkspace(dir) {
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({
     slug: 'brain-lab',
-    business_id: 'example',
     name: 'Brain Lab',
   }), 'utf8');
   fs.writeFileSync(path.join(dir, 'atris', 'now.md'), '', 'utf8');
@@ -109,7 +108,7 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     for (const adapter of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
       const text = fs.readFileSync(path.join(dir, adapter), 'utf8');
       assert.match(text, /Atris start-up notes/, `${adapter} should carry the boot block`);
-      assert.match(text, /atris brain activate --root \./, `${adapter} should name the activation command`);
+      assert.match(text, /`atris brain activate --root \.`/, `${adapter} should name the activation command`);
     }
   } finally {
     cleanupTempDir(dir);
@@ -212,7 +211,7 @@ test('brain activate --verify on a missing member exits nonzero with a plain mes
     const res = runCli(['brain', 'activate', '--yes', '--member', 'ghost', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout, /not ready for ghost: there is no team member by that name/);
-    assert.match(res.stderr, /ghost: there is no team member by that name/);
+    assert.equal(res.stderr, '');
     assert.doesNotMatch(res.stderr, /at \w+ \(|Error:|node:internal/,
       'verify failure must read as a plain sentence, not a stack trace');
   } finally {
@@ -240,10 +239,15 @@ test('brain help exits 0 with usage; an unknown subcommand exits 1 with usage on
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /atris brain: the notes every agent reads/);
 
-    fs.mkdirSync(path.join(dir, 'atris'));
     const unknown = runCli(['brain', 'defragment', '--root', dir], { cwd: dir });
     assert.equal(unknown.status, 1);
     assert.match(unknown.stderr, /atris brain: the notes every agent reads/);
+    const json = runCli(['brain', 'defragment', '--json', '--root', dir], { cwd: dir });
+    assert.equal(json.status, 1);
+    const data = JSON.parse(json.stdout);
+    assert.equal(data.ok, false);
+    assert.equal(data.error, 'unknown brain subcommand: defragment');
+    assert.ok(Array.isArray(data.usage));
   } finally {
     cleanupTempDir(dir);
   }

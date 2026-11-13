@@ -530,7 +530,7 @@ function collectState(root) {
   return {
     generatedAt: new Date().toISOString(),
     root,
-    name: (business.business_id && (business.name || business.slug)) || path.basename(root),
+    name: business.name || business.slug || path.basename(root),
     slug: business.slug || path.basename(root),
     business,
     todo: countWorkItems(root, todoText),
@@ -751,7 +751,7 @@ function operatorStatePath(root) {
 
 function readRememberedOperator(root) {
   const state = readJson(operatorStatePath(root));
-  return state?.member || null;
+  return normalizeMemberSlug(state?.member) || null;
 }
 
 function rememberOperator(root, member) {
@@ -765,31 +765,46 @@ function rememberOperator(root, member) {
   }, null, 2) + '\n', 'utf8');
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function rootOption(root) {
+  const canonical = value => {
+    try { return fs.realpathSync(value); } catch { return path.resolve(value); }
+  };
+  return canonical(root) === canonical(process.cwd()) ? '' : ` --root ${shellQuote(root)}`;
+}
+
+function taskCommand(root, command) {
+  return rootOption(root) ? `(cd ${shellQuote(root)} && ${command})` : command;
+}
+
 function memberNextMove(member, state = null) {
   if (!member) return null;
   const identity = `${member.slug}\n${member.name}`;
   const context = `${member.startHere}\n${member.goals}`;
   const review = state?.taskProjection?.agentNeededReviewTasks?.[0];
   const certified = state?.taskProjection?.certifiedReviewTasks?.[0];
-  const reviewMove = review ? `review ${review.ref} using atris task review-chat ${review.ref} --as codex-review. run the check named in the review notes and approve or send it back without approving your own work.` : null;
-  const handoff = certified ? `ask a person to review ${certified.ref}. if approved, they can run atris task accept ${certified.ref}. if changes are needed, they can run atris task revise ${certified.ref} --note "<what must change>". wait until this is settled before starting new work.` : null;
+  const reviewMove = review ? `review ${review.ref} using ${taskCommand(state.root, `atris task review-chat ${review.ref} --as codex-review`)}. run the check named in the review notes, then pass it or send it back. do not accept it yourself; a person does that.` : null;
+  const handoff = certified ? `ask a person to review ${certified.ref}. if approved, they can run ${taskCommand(state.root, `atris task accept ${certified.ref}`)}. if changes are needed, they can run ${taskCommand(state.root, `atris task revise ${certified.ref} --note "<what must change>"`)}. do not accept it yourself; a person does that. wait until this is settled before starting new work.` : null;
   const refs = (state?.taskProjection?.certifiedReviewTasks || []).map(task => task.ref).filter(Boolean);
   const nextGoal = refs.length && member.slug === 'codex-executor'
-    ? `reviews ${refs.slice(0, 3).join(', ')} need a person to approve them. do not approve your own work. create the next task from the long-range goal ${state?.endgame?.slug || 'current goal'}: ${state?.endgame?.horizon || 'the most important gap'}. include the files, a way to check it and when to stop before editing.` : null;
+    ? `reviews ${refs.slice(0, 3).join(', ')} need a person to accept them. do not accept them yourself; a person does that. create the next task from the long-range goal ${state?.endgame?.slug || 'current goal'}: ${state?.endgame?.horizon || 'the most important gap'}. include the files, a way to check it and when to stop before editing.` : null;
   if (member.slug === 'justin' || /justin/i.test(member.name || '')) return 'take one step toward a customer, update the relevant notes within 10 minutes and record what happened.';
   if (ownerIdentity().names.includes(String(member.slug || '').toLowerCase()) || ownerIdentity().names.includes(String(member.name || '').toLowerCase())) return 'choose one important decision or improvement and name who will take the next step.';
   if (/opus|overnight/i.test(identity)) return 'run the next rl-exp2 experiment without spending money. finish one result, describe the improvement and record what happened.';
   if (/mission[- ]lead|mission lead/i.test(identity)) return 'choose or create one step, run its check, record the result and what comes next.';
-  if (/validator|reviewer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0 ? 'wait for work to review or ask the planner for a task with a way to check it, an expected result and a list of remaining risks.' : 'review the riskiest open or recently finished task, run its check, record any remaining risks and approve or block it with the result.');
-  if (/executor|builder/i.test(identity)) return (state?.todo?.open || 0) === 0 ? (reviewMove || nextGoal || handoff || 'ask the planner for a task with exact files, a way to check it and when to stop before editing.') : 'work on the most useful assigned task, run its check and hand the result over for review.';
-  if (/navigator|planner/i.test(identity)) return 'turn one messy request into a plan with exact files, a way to check it and a task ready for review.';
+  if (/validator|reviewer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0 ? 'wait for work to review or ask the planner for a task with a way to check it, an expected result and a list of remaining risks.' : 'review the riskiest open or recently finished task, run its check and record any remaining risks. pass it or send it back. do not accept it yourself; a person does that.');
+  if (/executor|builder/i.test(identity)) return (state?.todo?.open || 0) === 0 ? (reviewMove || nextGoal || handoff || 'ask the planner for a task with exact files, a way to check it and when to stop before editing.') : 'work on the most useful assigned task, run its check and hand the result over for review. do not accept it yourself; a person does that.';
+  if (/navigator|planner/i.test(identity)) return 'turn one messy request into a plan using the map, with a simple diagram, exact files, a way to check it, a way to undo it and a task ready for review.';
   if (/launcher|closer/i.test(identity)) return reviewMove || handoff || ((state?.todo?.done || 0) === 0 ? 'wait for a checked task or ask the reviewer for a decision.' : 'prepare one checked task for release, record what changed and the lesson, update the map or journal if needed and name the next step.');
   if (/brainstormer|idea shaper|reality shaper/i.test(identity)) return 'turn one idea into a clear goal, the current situation, one or two options, limits, success criteria and a next step for the planner.';
   if (/researcher|research/i.test(identity)) return 'answer one research question with original sources, supported findings, what remains uncertain and a short handoff.';
   if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) return 'take one step toward a customer, update the relevant notes within 10 minutes and record what happened.';
   if (/ceo|lab/i.test(identity) || /ceo|lab|synthesis loop|decision queue|building|closing|investor/i.test(context)) return 'make one important decision or product improvement and record the result.';
   if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) return 'run the next rl-exp2 experiment without spending money. finish one result, describe the improvement and record what happened.';
-  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) return 'review the riskiest open or recently finished task, run its check, record any remaining risks and approve or block it with the result.';
+  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) return 'review the riskiest open or recently finished task, run its check and record any remaining risks. pass it or send it back. do not accept it yourself; a person does that.';
   if (/bounded mission|mission step|proof target|verifier/i.test(context)) return 'choose or create one step, run its check, record the result and what comes next.';
   return 'follow your starting notes, finish the first task and record how it went.';
 }
@@ -823,16 +838,20 @@ function notesInfo(root) {
 }
 
 function buildActivationCard(state, options = {}) {
-  const requested = options.member || readRememberedOperator(state.root);
+  const requested = options.member;
+  const remembered = readRememberedOperator(state.root);
+  const rootArg = rootOption(state.root);
   const member = readMemberContext(state.root, requested);
   const readFirst = ['atris/now.md', 'atris/MAP.md', 'atris/PERSONA.md'].filter(file => fs.existsSync(path.join(state.root, file)));
   const notes = notesInfo(state.root);
   const summary = buildActivationSummary(state.root);
+  const contextLine = line => line && line.replace('atris task reviews', taskCommand(state.root, 'atris task reviews'));
   if (!requested) {
-    const lines = [`${state.name} is ready.`, '', ...summary.lines, ...(summary.today ? [summary.today] : [])];
+    const lines = [`${state.name} is ready.`, '', ...summary.lines.map(contextLine), ...(summary.today ? [contextLine(summary.today)] : [])];
     if (readFirst.length) lines.push('', 'read these first:', ...readFirst.map(file => `  ${file}`));
-    if (notes.status === 'missing') lines.push('', 'start-up notes are not saved yet. save them: atris brain compile --root . --yes');
-    if (notes.status === 'stale') lines.push('', `the saved start-up notes are ${notes.age_days} days old. refresh them: atris brain compile --root . --yes`);
+    if (remembered) lines.push('', `last role used here: ${remembered}. for its next step: atris brain activate --member ${remembered}${rootArg}`);
+    if (notes.status === 'missing') lines.push('', `start-up notes are not saved yet. save them: atris brain compile --root ${rootArg ? shellQuote(state.root) : '.'} --yes`);
+    if (notes.status === 'stale') lines.push('', `the saved start-up notes are ${notes.age_days} days old. refresh them: atris brain compile --root ${rootArg ? shellQuote(state.root) : '.'} --yes`);
     return { ready: true, member: null, text: lines.join('\n'), readFirst, notes, summary };
   }
   const slug = normalizeMemberSlug(requested);
@@ -849,8 +868,11 @@ function buildActivationCard(state, options = {}) {
   const lines = [`${state.name} is ready for ${slug}.`, '', `next: ${mode?.move || memberNextMove(member, state) || nextMove(state)}`, 'why: it is the next piece of work for this role, picked from the current notes, the task list and past feedback.', `done when: ${proof}`];
   if (mode?.label) lines.push(`mode: ${mode.label}`);
   if (score?.score) lines.push(`score: ${score.score}`);
-  if (score?.nextRep) lines.push(`next rep: ${score.nextRep}`);
-  lines.push('how did it go: atris brain yes, atris brain edit "what to change", or atris brain no');
+  if (score?.nextRep && score.nextRep !== proof) lines.push(`next rep: ${score.nextRep}`);
+  lines.push(`how did it go: atris brain yes${rootArg}, atris brain edit "what to change"${rootArg}, or atris brain no${rootArg}`);
+  const context = [summary.right_now, summary.waiting].filter(Boolean).map(contextLine);
+  if (context.length) lines.push('', ...context);
+  if (readFirst.length) lines.push('', 'read these first:', ...readFirst.map(file => `  ${file}`));
   return { ready: true, member: slug, text: lines.join('\n'), readFirst, notes, summary };
 }
 
@@ -1473,7 +1495,7 @@ function brainCommand(args = process.argv.slice(3)) {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }
-    console.log('feedback recorded. refresh the notes: atris brain compile --root . --yes');
+    console.log(`feedback recorded: ${result.scorecard.human_rating}. refresh the notes: atris brain compile --root . --yes`);
     if (options.verify) console.log('checked: the feedback was saved.');
     return;
   }
@@ -1490,6 +1512,11 @@ function brainCommand(args = process.argv.slice(3)) {
     return;
   }
 
+  if (!['activate', 'status', 'gallery', 'compile'].includes(subcommand)) {
+    if (options.json) console.log(JSON.stringify({ ok: false, error: `unknown brain subcommand: ${subcommand}`, usage: brainUsageLines() }, null, 2));
+    else printBrainUsage(console.error);
+    return 1;
+  }
   if (!fs.existsSync(path.join(options.root, 'atris'))) {
     throw new Error('this folder is not set up for atris yet. set it up: atris init');
   }
@@ -1499,29 +1526,28 @@ function brainCommand(args = process.argv.slice(3)) {
     if (wrote) writeBrain(state);
     const cards = subcommand === 'gallery'
       ? listMemberSlugs(options.root).map(member => buildActivationCard(state, { member }))
-      : [buildActivationCard(state, { ...options, remember: wrote })];
+      : [buildActivationCard(state, { ...options, remember: subcommand === 'activate' && Boolean(options.member) })];
     const card = cards[0];
     const output = subcommand === 'gallery' ? (cards.map(item => item.text).join('\n\n---\n\n') || 'no team members found. create one in atris/team/<name>/MEMBER.md') : card.text;
     let error = null;
+    let readinessError = false;
     if (options.verify) {
-      try { verifyBrain(options.root); if (subcommand === 'gallery') verifyActivationGallery(cards); else verifyActivationCard(card); }
-      catch (err) { error = err.message; }
+      try { verifyBrain(options.root); } catch (err) { error = err.message; }
+      if (!error) {
+        try { if (subcommand === 'gallery') verifyActivationGallery(cards); else verifyActivationCard(card); }
+        catch (err) { error = err.message; readinessError = true; }
+      }
     }
     if (options.json) {
-      const data = subcommand === 'gallery' ? { members: listMemberSlugs(options.root), gallery: output } : { state, card: output, name: state.name, member: card.member, ready: card.ready, wrote, read_first: card.readFirst, notes: card.notes, summary: card.summary, ...card.summary };
+      const data = subcommand === 'gallery' ? { members: listMemberSlugs(options.root), gallery: output, remembered_member: readRememberedOperator(options.root) } : { state, card: output, name: state.name, member: card.member, remembered_member: readRememberedOperator(options.root), ready: card.ready, wrote, read_first: card.readFirst, notes: card.notes, summary: card.summary, ...card.summary };
       console.log(JSON.stringify({ ok: !error, ...data, ...(error ? { error } : {}) }, null, 2));
     } else {
       console.log(`\n${output}`);
-      if (error) console.error(error);
+      if (error && !readinessError) console.error(error);
       else if (options.verify) console.log('\nchecked: the saved notes are in place.');
       console.log('');
     }
     return error ? 1 : 0;
-  }
-  if (subcommand !== 'compile') {
-    if (options.json) console.log(JSON.stringify({ ok: false, error: `unknown brain subcommand: ${subcommand}`, usage: brainUsageLines() }, null, 2));
-    else printBrainUsage(console.error);
-    return 1;
   }
   const state = options.yes ? prepareBrainState(options.root) : collectState(options.root);
   if (!options.yes) { refuseBrainWriteWithoutYes(state, options); return 0; }
@@ -1530,7 +1556,8 @@ function brainCommand(args = process.argv.slice(3)) {
   if (options.json) { console.log(JSON.stringify({ ok: true, state, written }, null, 2)); return 0; }
   console.log(`start-up notes saved for ${state.name}.`);
   console.log(`  status: ${path.relative(options.root, written.statusPath)}`);
-  console.log(`  history: ${path.relative(options.root, written.ledgerPath)}`);
+  console.log(`  history: ${state.totalRows} records read, ${state.validRows} usable`);
+  console.log(`  history file: ${path.relative(options.root, written.ledgerPath)}`);
   console.log(`  next: ${nextMove(state)}`);
   if (options.verify) console.log('  checked: the saved notes are in place.');
   return 0;
