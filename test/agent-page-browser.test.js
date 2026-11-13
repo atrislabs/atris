@@ -125,6 +125,52 @@ const pageRemoveControls = () => {
   return true;
 };
 
+// The leak guard. Every page this file opens wraps AgentPage before the page loads it, so
+// every snapshot, act and query result (and every error a query throws) is checked against
+// strings planted inside hidden or secret marks. Any test whose agent output carries one
+// fails, so a new return path that skips the gate is caught by whichever test reaches it.
+// No test ever sends these strings itself.
+const PLANTED = [
+  'PLANTED', 'whsec-fixture-0001', 'pw-fixture-0002', '4242 4242 4242 4242', 'ledger-fixture-0003',
+  'sk-fixture-0101', 'KEY-TEXT-0102', 'KEY-TEXT-0104', 'region-secret-0105', 'REGION-SECRET-0106',
+  'region-hidden-0107', 'TOKEN-CHILD-0109', 'SUBMIT-SECRET-0110', 'LABELLEDBY-SECRET-0111',
+  'LABELLEDBY-HIDDEN-0112', 'LABEL-HIDDEN-0113', 'VAULT-SECRET-0114',
+];
+
+const GUARD_SOURCE = `(() => {
+  const planted = ${JSON.stringify(PLANTED)};
+  const check = (value, where) => {
+    const text = JSON.stringify(value) || '';
+    for (const item of planted) {
+      if (text.includes(item)) throw new Error('agent page leaked ' + item + ' through ' + where);
+    }
+    return value;
+  };
+  const guardRejection = (where) => (error) => {
+    check(String(error && error.message), where);
+    throw error;
+  };
+  let api;
+  Object.defineProperty(window, 'AgentPage', {
+    configurable: true,
+    get() { return api; },
+    set(real) {
+      api = Object.assign({}, real, {
+        __guarded: true,
+        createAgent(options) {
+          const agent = real.createAgent(options);
+          return {
+            snapshot: () => check(agent.snapshot(), 'snapshot'),
+            act: (input, more) => agent.act(input, more).then((r) => check(r, 'act'), guardRejection('act')),
+            query: (input) => agent.query(input).then((r) => check(r, 'query'), guardRejection('query')),
+          };
+        },
+      });
+    },
+  });
+  window.__agentGuard = { check };
+})();`;
+
 async function launchChrome(profileDir) {
   const child = spawn(CHROME, [
     '--headless=new',
@@ -170,6 +216,7 @@ async function openSession() {
     }, 20000, 'a Chrome page');
     session.cdp = await connect(pageUrl);
     await session.cdp.send('Page.enable');
+    await session.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: GUARD_SOURCE });
     await session.cdp.send('Page.navigate', { url: pathToFileURL(FIXTURE).href });
     await waitFor(async () => {
       const state = await inPage(session.cdp, pageState);
@@ -652,4 +699,271 @@ test('snapshot and query report frames, shadow parts, and editable regions they 
       assert.match(unread[what].label, /not read|cannot read/);
     }
   }
+});
+
+// Round two. Each test writes a small page into the sandbox fixture and drives it.
+const SANDBOX = path.join(__dirname, 'fixtures', 'agent-page', 'sandbox.html');
+
+async function sandbox(html) {
+  const cdp = await browserPage();
+  const url = `${pathToFileURL(SANDBOX).href}?load=${++edgeLoads}`;
+  await cdp.send('Page.navigate', { url });
+  await waitFor(async () => {
+    const state = await inPage(cdp, () => ({ href: location.href, ready: document.readyState }));
+    return state.href === url && state.ready === 'complete';
+  }, 20000, 'the sandbox page to load');
+  await inPage(cdp, (markup) => {
+    document.getElementById('sandbox').innerHTML = markup;
+    return true;
+  }, html);
+  return cdp;
+}
+
+test('the leak guard is on for every page and catches a planted string', BROWSER, async () => {
+  const cdp = await sandbox('<button type="button">Plain</button>');
+  const seen = await inPage(cdp, () => {
+    let caught = '';
+    try {
+      window.__agentGuard.check({ label: 'PLANTED-SELF-TEST' }, 'self test');
+    } catch (error) {
+      caught = error.message;
+    }
+    return { guarded: window.AgentPage.__guarded === true, caught };
+  });
+  assert.equal(seen.guarded, true, 'AgentPage is wrapped by the guard');
+  assert.match(seen.caught, /agent page leaked PLANTED through self test/);
+});
+
+test('a control hidden by the step itself leaves no trace in the result', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<input aria-label="Field" onchange="this.setAttribute(\'data-agent-hidden\', \'\'); this.value = \'PLANTED-HIDDEN-NEW\'">' +
+    '<input aria-label="Token" value="PLANTED-BEFORE-HIDE">' +
+    '<button type="button" onclick="document.querySelector(\'[aria-label=Token]\').setAttribute(\'data-agent-hidden\', \'\')">Hide token</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    return {
+      set: await agent.act({ steps: [{ label: 'Field', action: 'set', args: { value: 'public' } }] }),
+      hide: await agent.act({ steps: [{ label: 'Hide token', action: 'click' }] }),
+    };
+  });
+  assert.equal('current' in seen.set.steps[0], false, 'no current value for a control that is hidden now');
+  assert.deepEqual(seen.set.steps[0].changes, []);
+  assert.equal(seen.hide.ok, true);
+  assert.deepEqual(seen.hide.steps[0].changes, [], 'a control hidden by the press is absent, not listed as removed');
+});
+
+test('a secret control shows its name only, never its placeholder, title, state, or earlier value', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<input data-agent-secret placeholder="PLANTED-PLACEHOLDER">' +
+    '<input data-agent-secret title="PLANTED-TITLE">' +
+    '<label>Card pin <input data-agent-secret type="text" title="PLANTED-TITLE-TWO"></label>' +
+    '<button type="button" data-agent-secret aria-label="Reveal key">PLANTED-BUTTON-TEXT</button>' +
+    '<label data-agent-secret>Remember device <input type="checkbox" checked></label>' +
+    '<fieldset data-agent-secret><legend>Plan</legend>' +
+    '<label>Basic <input type="radio" name="plan" checked></label><label>Pro <input type="radio" name="plan"></label></fieldset>' +
+    '<details data-agent-secret open><summary aria-label="Recovery codes">PLANTED-SUMMARY</summary><p>x</p></details>' +
+    '<input aria-label="Token" value="PLANTED-BEFORE-LOCK">' +
+    '<button type="button" onclick="document.querySelector(\'[aria-label=Token]\').setAttribute(\'data-agent-secret\', \'\')">Lock</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    // Lock first: until then the token field is public, and showing its value is right.
+    const agent = window.AgentPage.createAgent({});
+    const lock = await agent.act({ steps: [{ label: 'Lock', action: 'click' }] });
+    return { lock, snapshot: agent.snapshot(), query: await agent.query({}) };
+  });
+  const byLabel = (label) => seen.snapshot.find((entry) => entry.label === label);
+  assert.equal(byLabel('Card pin').value, '[redacted]', 'a label element names a secret control');
+  assert.ok(byLabel('Reveal key'), 'aria-label names a secret control');
+  const device = byLabel('Remember device');
+  assert.equal(device.checked, '[redacted]');
+  assert.deepEqual(device.actions, ['check', 'uncheck'], 'actions do not give away the state');
+  for (const label of ['Basic', 'Pro']) {
+    assert.equal(byLabel(label).checked, '[redacted]');
+    assert.deepEqual(byLabel(label).actions, ['check']);
+  }
+  assert.equal(byLabel('Recovery codes').open, '[redacted]');
+  assert.deepEqual(seen.lock.steps[0].changes, [], 'a value that became secret is not shown as from');
+});
+
+test('clearing a confirm-marked choice or radio needs the person, and the sentence is theirs', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<select aria-label="Plan tier"><option value="a" selected data-agent-confirm="Leaving the legacy plan is permanent.">Legacy</option>' +
+    '<option value="b">Modern</option></select>' +
+    '<div role="listbox" aria-label="Region pick">' +
+    '<div role="option" aria-selected="true" data-agent-confirm="Moving regions resets data.">East</div>' +
+    '<div role="option" onclick="this.previousElementSibling.setAttribute(\'aria-selected\', \'false\'); this.setAttribute(\'aria-selected\', \'true\')">West</div></div>' +
+    '<label>Protected <input type="radio" name="tier" checked data-agent-confirm="Dropping protection exposes files."></label>' +
+    '<label>Open <input type="radio" name="tier"></label>'
+  );
+  const seen = await inPage(cdp, async () => {
+    const calls = [];
+    const plain = window.AgentPage.createAgent({});
+    const asking = window.AgentPage.createAgent({ allow: (request) => { calls.push(request.reason); return false; } });
+    const steps = [
+      { label: 'Plan tier', action: 'set', args: { value: 'Modern' } },
+      { label: 'Region pick', action: 'set', args: { value: 'West' } },
+      { label: 'Open', action: 'check' },
+    ];
+    const alone = [];
+    for (const step of steps) alone.push(await plain.act({ steps: [step] }));
+    for (const step of steps) await asking.act({ steps: [step] });
+    return {
+      alone,
+      calls,
+      tier: document.querySelector('select').value,
+      region: document.querySelector('[role=option]').getAttribute('aria-selected'),
+      radio: document.querySelector('input[name=tier]').checked,
+    };
+  });
+  for (const result of seen.alone) {
+    assert.equal(result.ok, false, JSON.stringify(result));
+    assert.match(result.steps[0].error, /needs a person/);
+  }
+  assert.match(seen.calls[0], /Leaving the legacy plan is permanent/);
+  assert.match(seen.calls[1], /Moving regions resets data/);
+  assert.match(seen.calls[2], /Dropping protection exposes files/);
+  assert.equal(seen.tier, 'a');
+  assert.equal(seen.region, 'true');
+  assert.equal(seen.radio, true);
+});
+
+test('a confirm mark on the label of a control counts', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<label for="sub" data-agent-confirm="Subscribing sends weekly mail.">Subscribe</label><input id="sub" type="checkbox">'
+  );
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    return {
+      entry: agent.snapshot().find((item) => item.label === 'Subscribe'),
+      act: await agent.act({ steps: [{ label: 'Subscribe', action: 'check' }] }),
+      checked: document.getElementById('sub').checked,
+    };
+  });
+  assert.equal(seen.entry.confirm, true);
+  assert.equal(seen.act.ok, false);
+  assert.match(seen.act.steps[0].error, /needs a person/);
+  assert.equal(seen.checked, false);
+});
+
+test('an approval is refused when the marks change while the person decides', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<div data-agent-confirm="Approve save" id="save-zone"><button type="button" id="go" onclick="window.__ran = \'moved\'">Continue</button></div>' +
+    '<div data-agent-confirm="Approve delete" id="delete-zone"></div>' +
+    '<button type="button" id="swap" data-agent-confirm="Approve save" onclick="window.__ran = \'replaced\'">Proceed</button>' +
+    '<button type="button" id="drop" data-agent-confirm="Approve save" onclick="window.__ran = \'removed\'">Finish</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    window.__ran = '';
+    const run = (label, change) => window.AgentPage.createAgent({
+      allow: () => { change(); return true; },
+    }).act({ steps: [{ label, action: 'click' }] });
+    return {
+      moved: await run('Continue', () => document.getElementById('delete-zone').append(document.getElementById('go'))),
+      replaced: await run('Proceed', () => document.getElementById('swap').setAttribute('data-agent-confirm', 'Approve delete')),
+      removed: await run('Finish', () => document.getElementById('drop').removeAttribute('data-agent-confirm')),
+      ran: window.__ran,
+    };
+  });
+  for (const name of ['moved', 'replaced', 'removed']) {
+    assert.equal(seen[name].ok, false, `${name}: ${JSON.stringify(seen[name])}`);
+    assert.match(seen[name].steps[0].error, /changed while the person was deciding/);
+  }
+  assert.equal(seen.ran, '', 'nothing ran under a warning the person did not see');
+});
+
+test('a press that should open or close something says not ok when it did not', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<details><summary onclick="event.preventDefault()">More options</summary><p>Inside</p></details>' +
+    '<details><summary>Advanced</summary><p>Inside</p></details>' +
+    '<button type="button" aria-expanded="false">Menu</button>' +
+    '<button type="button" aria-expanded="false" onclick="this.setAttribute(\'aria-expanded\', \'true\')">Filters</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const press = (label) => agent.act({ steps: [{ label, action: 'click' }] });
+    return { stopped: await press('More options'), opens: await press('Advanced'), stuck: await press('Menu'), toggles: await press('Filters') };
+  });
+  assert.equal(seen.stopped.ok, false);
+  assert.match(seen.stopped.steps[0].error, /did not open/);
+  assert.equal(seen.opens.ok, true, JSON.stringify(seen.opens));
+  assert.equal(seen.opens.steps[0].current.open, true);
+  assert.equal(seen.stuck.ok, false);
+  assert.match(seen.stuck.steps[0].error, /did not open/);
+  assert.equal(seen.toggles.ok, true, JSON.stringify(seen.toggles));
+});
+
+test('an error from the allow callback is reported with a fixed sentence', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<input data-agent-secret aria-label="Token" value="PLANTED-ERROR"><button type="button">Run</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    const out = {};
+    for (const mode of ['throw', 'reject', 'null']) {
+      const agent = window.AgentPage.createAgent({
+        allow: () => {
+          if (mode === 'null') throw null;
+          const error = new Error(document.querySelector('input').value);
+          if (mode === 'throw') throw error;
+          return Promise.reject(error);
+        },
+      });
+      try {
+        out[mode] = await agent.act({ steps: [{ label: 'Run', action: 'click' }] });
+      } catch (error) {
+        out[mode] = { rejected: String(error && error.message) };
+      }
+    }
+    return out;
+  });
+  for (const mode of ['throw', 'reject', 'null']) {
+    assert.equal(seen[mode].ok, false, `${mode}: ${JSON.stringify(seen[mode])}`);
+    assert.equal(seen[mode].steps[0].error, 'the confirmation failed, so nothing was changed. Ask the person again.');
+  }
+});
+
+test('while one step waits on the person, other agents on the page cannot act', BROWSER, async () => {
+  const cdp = await sandbox(
+    '<button type="button" data-agent-confirm="Deletes the account." onclick="window.__deleted = (window.__deleted || 0) + 1">Delete account</button>' +
+    '<button type="button" onclick="window.__refreshed = (window.__refreshed || 0) + 1">Refresh</button>'
+  );
+  const seen = await inPage(cdp, async () => {
+    const first = window.AgentPage.createAgent({
+      timeout: 300,
+      allow: () => new Promise((resolve) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Confirm deletion';
+        button.onclick = () => resolve(true);
+        document.getElementById('sandbox').append(button);
+      }),
+    });
+    const pending = first.act({ steps: [{ label: 'Delete account', action: 'click' }] });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const second = window.AgentPage.createAgent({});
+    const sneak = await second.act({ steps: [{ label: 'Confirm deletion', action: 'click' }] });
+    const dangerous = await pending;
+    const after = await second.act({ steps: [{ label: 'Refresh', action: 'click' }] });
+    return { sneak, dangerous, after, deleted: window.__deleted || 0, refreshed: window.__refreshed || 0 };
+  });
+  assert.equal(seen.sneak.ok, false, JSON.stringify(seen.sneak));
+  assert.match(seen.sneak.error, /waiting for the person/);
+  assert.equal(seen.dangerous.ok, false);
+  assert.match(seen.dangerous.steps[0].error, /no answer/);
+  assert.equal(seen.deleted, 0);
+  assert.equal(seen.after.ok, true, 'once the wait ends, other agents can act again');
+  assert.equal(seen.refreshed, 1);
+});
+
+test('query finds a choice past the cap when text is given', BROWSER, async () => {
+  const cdp = await sandbox('<select aria-label="Lots"></select>');
+  const seen = await inPage(cdp, async () => {
+    document.querySelector('select').innerHTML =
+      Array.from({ length: 60 }, (_, i) => `<option>Option ${i}</option>`).join('');
+    const agent = window.AgentPage.createAgent({});
+    return { found: await agent.query({ text: 'Option 59' }), all: await agent.query({ text: 'Lots' }) };
+  });
+  assert.equal(seen.found.length, 1);
+  assert.deepEqual(seen.found[0].options.map((option) => option.label), ['Option 59']);
+  assert.equal(seen.all[0].options.length, 51, 'without matching text the choices stay capped');
 });
