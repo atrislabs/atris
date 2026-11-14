@@ -55,10 +55,7 @@ test('every boot shows the four values, from the package when the workspace pred
     fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# atris.md\n\n## operating rules\n\n- keep it small\n');
     const result = boot(dir);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /\n  values   acceleration +progress compounds\n/);
-    assert.match(result.stdout, /\n {11}accuracy +a win counts when the result is validated\n/);
-    assert.match(result.stdout, /\n {11}ambition +always one more level\n/);
-    assert.match(result.stdout, /\n {11}agency +take action and own the outcome\n/);
+    assert.match(result.stdout.replace(/\s+/g, ' '), /When a call is close, agents decide by 4 values: acceleration \(progress compounds\), accuracy \(a win counts when the result is validated\), ambition \(always one more level\) and agency \(take action and own the outcome\)\./);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -71,7 +68,7 @@ test('the boot uses the workspace wording of its values when it has them', () =>
     fs.writeFileSync(path.join(dir, 'atris', 'atris.md'), '# atris.md\n\n## values\n\n- **Care.** Read it twice. Then ship.\n\n## taste\n');
     const result = boot(dir);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /\n  values   care +read it twice\n/);
+    assert.match(result.stdout.replace(/\s+/g, ' '), /When a call is close, agents decide by one value: care \(read it twice\)\./);
     assert.doesNotMatch(result.stdout, /acceleration/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

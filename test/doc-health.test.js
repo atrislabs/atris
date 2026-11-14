@@ -287,14 +287,20 @@ test('startup shows the direct document score after current work, with a missing
   });
   const missing = boot();
   assert.equal(missing.status, 0, missing.stderr);
-  assert.match(missing.stdout, /docs\s+70\/100 · add sample questions to test the map: atris\/doc-health\/questions\.jsonl/);
+  const flat = (text) => text.replace(/\s+/g, ' ');
+  assert.match(flat(missing.stdout), /The project guide that agents read first needs work: it scores 70 out of 100, and it has no sample questions to test it with yet \(add them to atris\/doc-health\/questions\.jsonl\)\./);
   write(root, 'atris/doc-health/questions.jsonl', JSON.stringify({ q: 'where is the guide', expect: 'atris/atris.md' }));
   const result = boot();
   assert.equal(result.status, 0, result.stderr);
   const health = require('../commands/doc-health').computeDocHealth(root);
-  const expected = `${Math.round(health.overall.total)}/100 · the map answers every sample question · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
-  assert.ok(result.stdout.includes(expected), result.stdout);
-  assert.ok(result.stdout.indexOf('Read the guide') < result.stdout.indexOf('docs '));
+  const score = Math.round(health.overall.total);
+  if (score < 85) {
+    assert.ok(flat(result.stdout).includes(`it scores ${score} out of 100, and agents find the right file from it on the first try for 99 percent of test questions.`), result.stdout);
+    assert.ok(result.stdout.indexOf('Read the guide') < result.stdout.indexOf('The project guide'));
+  } else {
+    // A healthy guide stays quiet; only a guide that needs work speaks up.
+    assert.doesNotMatch(result.stdout, /The project guide/);
+  }
   assert.equal(fs.existsSync(path.join(root, 'missing.db')), false);
 });
 

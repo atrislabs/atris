@@ -289,8 +289,8 @@ test('the real boot shows the marker from the end of the record, and leaves the 
       },
     });
     assert.equal(boot.status, 0, boot.stderr);
-    const [line] = boot.stdout.split('\n').filter((text) => /^ {2}team /.test(text));
-    assert.match(line, / · 1 suggestion \(atris engine roster\)$/);
+    const [line] = boot.stdout.split('\n\n').filter((text) => /^ {2}The agents run on/.test(text)).map((text) => text.replace(/\s+/g, ' ').trim());
+    assert.match(line, /Past runs suggest a better tool for 1 job \(see atris engine roster\)\.$/);
     assert.equal(rosterText(root), before);
   });
 });

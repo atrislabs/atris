@@ -211,11 +211,11 @@ test('the original pile is gone from the screen after one open', () => {
 
     const boot = runCli(['atris.md'], { cwd: root, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /put away 236 items/);
+    assert.match(boot.stdout, /The cleanup took 236 finished or idle jobs off the list\./);
     assert.match(boot.stdout, /live moving task/);
-    assert.match(boot.stdout, /1 waiting to start/);
+    assert.match(boot.stdout, /Not started: 1 more job is written down/);
     assert.doesNotMatch(boot.stdout, /oldpile/);
-    assert.doesNotMatch(boot.stdout, /getting a final look/);
+    assert.doesNotMatch(boot.stdout, /Waiting for a check/);
 
     const day = runCli(['task', 'day'], { cwd: root, env });
     assert.equal(day.status, 0, day.stderr);

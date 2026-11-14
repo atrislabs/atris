@@ -33,7 +33,7 @@ test('boot and doctor speak plainly in isolated folders', (t) => {
   fs.writeFileSync(path.join(empty, 'atris', 'doc-health', 'questions.jsonl'), JSON.stringify({ q: 'where is the guide', expect: 'guide.md' }) + '\n');
   const created = JSON.parse(run(empty, 'task', 'new', 'write a useful guide', '--json')).task;
   run(empty, 'task', 'claim', created.display_id, '--as', 'tester');
-  const busy = run(empty, 'atris.md'); plain(busy); assert.match(busy, /now\s+write a useful guide/); assert.match(busy, /docs\s+\d+\/100 · the map answers .* tokens to read at start/);
+  const busy = run(empty, 'atris.md'); plain(busy); assert.match(busy, /Working now: an agent is on "write a useful guide"/); assert.doesNotMatch(busy, /tokens to read at start|\d+\/100/);
   const notReady = run(empty, 'doctor'); plain(notReady); assert.match(notReady, /needs? fixing/);
   const json = JSON.parse(run(empty, 'doctor', '--json'));
   assert.deepEqual(Object.keys(json).sort(), ['action', 'auth', 'bin', 'cli_runnable', 'home', 'install_git', 'members', 'node', 'ok', 'task_support', 'task_support_requires', 'version', 'version_line', 'warnings', 'workspace_root'].sort());

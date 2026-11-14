@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { runCli } = require('./helpers/workspace-cli');
 
-const BOOT_NUDGE = 'the project notes have grown; run atris wiki consolidate (review notes to combine)';
+// The boot sentence wraps; its opening words always sit on one line.
+const BOOT_NUDGE = 'The project notes have grown a lot since they were last tidied';
 const WIKI_NUDGE = 'the wiki has grown a lot since its last pruning; run: atris wiki consolidate';
 
 function createWorkspace(t, { indexEntries = 0 } = {}) {
