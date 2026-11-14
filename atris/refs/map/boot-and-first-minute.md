@@ -13,6 +13,7 @@ rg "statusAtris|showStatusHelp|speakNothingRunning|speakKeepWorkingMinute|isKeep
 ## Search shortcuts: Modular commands
 
 ```bash
+rg "showWelcomeVisualization|renderStatus|recentChanges|valuesSentence|bootTeamSentence|STUCK_AFTER_MS" bin/atris.js lib/plain-status.js lib/team-lineup.js test/plain-status.test.js test/boot-panel-counts.test.js # Start-up status screen in whole sentences: waiting on you, the last day's changes, stuck vs working jobs, changes waiting for a check, quality, goal, tools and values; one shared git history read feeds the last day and the quality line
 rg "doctorCommand|task_support|public bin shim" commands/doctor.js bin/atris.js package.json test/dogfood-p1.test.js # atris doctor --json: node, task-support 22+, auth, workspace, tiny POSIX bin shim (helpers stay internal)
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands-1.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|speakFirstMinute|speakKeepWorkingMinute|taskNeedsAgentReview|taskIsHumanGatedClaimed|atris.launchpad.v1" commands/launchpad.js lib/first-minute.js bin/atris.js test/commands-1.test.js test/first-minute.test.js test/dogfood-p0-safety.test.js  # Launchpad command-center card: empty and file folders reuse speakFirstMinute (same two spoken lines as bare atris, no mint, no init); post-mint keep-working and post-init claim reuse first-minute like status/now; a live mission still gets the board; ranks own-claimed > mission tick > proof review > human-accept queue > open claim > endgame seed > brain move; skips human-gated claimed work; --json (atris.launchpad.v1) and plain card on a live room
@@ -134,7 +135,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 - **Functions:**
 - `detectWorkspaceState()` (lines 4-80): Detect state (uninit/active/stale)
 - `loadContext()` (lines 82-138): Load relevant context
-- `hasBlockedTasks()` (`lib/state-detection.js:280`): blocked means a failed task in the task DB; when this workspace has no rows there, only the TODO.md Blocked section counts (`test/state-detection-blocked.test.js`)
+- `hasBlockedTasks()` (`lib/state-detection.js:303`): blocked means a failed task in the task DB; when this workspace has no rows there, only the TODO.md Blocked section counts (`test/state-detection-blocked.test.js`)
 - **States:**
 - Uninitialized: No atris/ folder
 - Active: Recent journal entries
