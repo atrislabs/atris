@@ -2055,6 +2055,13 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   const cloudOptions = parsed.options;
   const sub = args[0];
 
+  if ((sub === 'exec' || sub === 'chat') && argv.slice(argv.indexOf(sub) + 1).some(arg => arg === '--help' || arg === '-h')) {
+    console.log(sub === 'exec'
+      ? 'Usage: atris computer exec "<prompt>" [--business <slug>] [--workspace <id>] [--no-wait]'
+      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>]');
+    return;
+  }
+
   if (sub === 'login') {
     const { computerLogin } = require('./computer-login');
     // The shared option reader takes --business wherever it sits, so hand it
