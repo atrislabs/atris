@@ -332,7 +332,7 @@ async function publish({ ref, flags, cwd, env, call, log, err, unpublish = false
   if (flags.json) { log(JSON.stringify(answer, null, 2)); return 0; }
   if (unpublish) { log(`unpublished ${label}.`); return 0; }
   log(`published ${label} as ${data.api_model}.`);
-  log(flags.price !== undefined ? `price: $${Number(flags.price)}.` : 'price: unchanged.');
+  log(flags.price !== undefined ? `price: $${Number(flags.price).toFixed(2)} a call.` : 'price: unchanged.');
   log(data.serving ? 'live: yes.' : 'live: no.');
   if (data.granted === false) log('waiting for Atris to switch the name on.');
   return 0;

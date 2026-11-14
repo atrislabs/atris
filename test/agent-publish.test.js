@@ -33,7 +33,7 @@ test('publish sends the model settings and optional price, and reports waiting',
     { route: '/agent/agent%2F1/publish', method: 'POST', body: { api_model: 'designer-1', api_lane: 'atris:design', api_skills: 'full', api_library: true }, token: 'test-secret' },
     { route: '/agent-wallet/agent%2F1/price', method: 'POST', body: { price_usdc: 0.5 }, token: 'test-secret' },
   ]);
-  assert.deepEqual(result.output, ['published agent/1 as designer-1.', 'price: $0.5.', 'live: no.', 'waiting for Atris to switch the name on.']);
+  assert.deepEqual(result.output, ['published agent/1 as designer-1.', 'price: $0.50 a call.', 'live: no.', 'waiting for Atris to switch the name on.']);
 });
 
 test('price is optional, accepts the boundaries, and rejects invalid values before any request', async () => {
