@@ -248,6 +248,8 @@ test('computerPr prints the link last and exits 0 on success', async () => {
   assert.ok(opts.body.message.startsWith('GitHub task:'));
   assert.match(opts.body.message, /atris\/fix-the-typo-20261114-0905/);
   assert.ok(!('model' in opts.body));
+  assert.equal(opts.body.reset_context, true);
+  assert.equal(opts.body.session_id, 'pr-atris-fix-the-typo-20261114-0905');
   assert.equal(calls.streamId, 'ex-1');
   assert.deepEqual(calls.out.slice(-3), ['Pull request opened: Fix the typo', 'Branch: atris/fix-the-typo-20261114-0905', 'https://github.com/atrislabs/demo/pull/5']);
 });
