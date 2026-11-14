@@ -1737,14 +1737,6 @@ function showWelcomeVisualization() {
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
   const row = (label, value) => `  ${label.padEnd(9)}${value}`;
-  const sub = (text) => `  ${' '.repeat(9)}- ${text}`;
-  const trimTitle = (t) => {
-    const title = require('../lib/first-minute').plainTitle(t);
-    if (title.length <= 64) return title;
-    const cut = title.slice(0, 61);
-    const boundary = cut.lastIndexOf(' ');
-    return `${(boundary > 0 ? cut.slice(0, boundary) : cut).trimEnd()}...`;
-  };
 
   let glance = {
     backlog: 0, active: 0, review: 0, reviewCertified: 0,
@@ -1837,77 +1829,25 @@ function showWelcomeVisualization() {
     return;
   }
 
-  if (latestBriefName) {
-    console.log(`  learned \"${latestBriefTitle}\" overnight -> atris/wiki/briefs/${latestBriefName}`);
-  }
-
   const checkoutWarning = require('../lib/checkout-sync').checkoutBehindMessage(cwd);
   if (checkoutWarning) {
     console.log(`  ${checkoutWarning}`);
+    console.log('');
   }
 
-  // Show the work itself, not counts. A newcomer in any domain (code, docs,
-  // a travel plan) should read actual task names and know what's happening.
-  // Waiting-on-you comes first: the one thing only a human can do.
-  if (keptCount > 0) {
-    const noun = keptCount === 1 ? 'item' : 'items';
-    console.log(row('kept', `put away ${keptCount} ${noun} that were finished or sitting still`));
-  }
-  if (glance.reviewCertified > 0) {
-    console.log(row('you', `${glance.reviewCertified} done, waiting for your ok:`));
-    glance.certifiedTitles.forEach((t) => console.log(sub(trimTitle(t))));
-  }
-
-  if (glance.active > 0) {
-    console.log(row('now', trimTitle(glance.activeTitles[0] || 'work moving')));
-    glance.activeTitles.slice(1).forEach((t) => console.log(sub(trimTitle(t))));
-    const tail = [];
-    const moreActive = glance.active - glance.activeTitles.length;
-    if (moreActive > 0) tail.push(`${moreActive} more moving`);
-    if (glance.backlog > 0) tail.push(`${glance.backlog} waiting to start`);
-    if (glance.review > 0) tail.push(`${glance.review} getting a final look`);
-    if (tail.length) console.log(`  ${' '.repeat(9)}...and ${tail.join(', ')}`);
-  } else if (glance.backlog > 0) {
-    console.log(row('soon', trimTitle(glance.backlogTitles[0] || 'work queued')));
-    glance.backlogTitles.slice(1).forEach((t) => console.log(sub(trimTitle(t))));
-    const moreBacklog = glance.backlog - glance.backlogTitles.length;
-    if (moreBacklog > 0) console.log(`  ${' '.repeat(9)}...and ${moreBacklog} more waiting`);
-  } else {
-    console.log(row('now', 'nothing on the list yet'));
-  }
-
-  try {
-    const health = require('../commands/doc-health').computeDocHealth(cwd);
-    const map = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
-    const starterMap = map.includes('Run your AI agent with atris.md to populate this file.');
-    if (health.ok && map.trim() && !starterMap) {
-      const score = health.lookup_hops.score;
-      const detail = score === null
-        ? 'add sample questions to test the map: atris/doc-health/questions.jsonl'
-        : `the map answers ${score >= 1 ? 'every sample question' : `${Math.min(99, Math.round(score * 100))}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
-      console.log(row('docs', `${Math.round(health.overall.total)}/100 · ${detail}`));
-    }
-  } catch {
-    // Document health is advisory and must never prevent startup.
-  }
-
-  // What the background cleanup did lately, in its own plain words: the
-  // newest line the hourly autoland tick or a project job left in the
-  // journal, plus agent branches parked for a person.
-  try {
-    const lately = require('../lib/cleanup-summary').latestCleanupLine(cwd);
-    if (lately) {
-      const plain = lately.replace(/^[a-z][a-z -]{0,30}:\s*/i, '').replace(/\blanded\b/gi, 'completed').replace(/\bland on their own\b/gi, 'finish on their own').replace(/\b([0-9]+) agent branch(es)? parked for you\b/g, (m, n, many) => `${n} ${many ? 'pieces' : 'piece'} of agent work set aside for you`);
-      console.log(row('lately', plain.charAt(0).toLowerCase() + plain.slice(1)));
-    }
-  } catch {
-    // Advisory only; never blocks boot.
+  // Every paragraph below is a whole sentence a newcomer (or an agent
+  // starting cold) can read once: what happened, why it matters, how we
+  // know. lib/plain-status.js owns the wording.
+  const plainStatus = require('../lib/plain-status');
+  const nowMs = Date.now();
+  if (!Array.isArray(glance.activeItems) || !glance.activeItems.length) {
+    glance.activeItems = (glance.activeTitles || []).map((title) => ({ title }));
   }
 
   // When the hourly autoland tick is alive it lands, salvages, and clears
   // finished branches and old agent copies itself, so boot must not hand the
-  // owner that chore ("39 finished pieces to put away"). Only a dead or
-  // missing heartbeat brings the tidy counts and `land --reap` back.
+  // owner that chore. Only a dead or missing heartbeat brings the counts and
+  // `land --reap` back.
   let autolandAlive = false;
   try { autolandAlive = require('../lib/autoland').heartbeatIsLive(cwd); } catch { autolandAlive = false; }
 
@@ -1916,134 +1856,157 @@ function showWelcomeVisualization() {
   if (!autolandAlive) {
     try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
   }
-  let rotInfo = null;
+  let worktrees = 0;
+  let openProblems = 0;
   try {
     const { parseLessons } = require('../lib/memory-view');
     const resolved = path.resolve(cwd);
     const parent = path.dirname(resolved);
     const grandparent = path.dirname(parent);
-    let worktreeDir;
-    if (path.basename(grandparent) === '.agent-worktrees') {
-      worktreeDir = parent;
-    } else {
-      worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
-    }
-    let worktrees = 0;
+    const worktreeDir = path.basename(grandparent) === '.agent-worktrees'
+      ? parent
+      : path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
     if (!autolandAlive && fs.existsSync(worktreeDir)) {
-      worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory()).length;
+      worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length;
     }
     let lessonsText = '';
-    try {
-      lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
-    } catch (err) {
-      lessonsText = '';
-    }
-    // cleanup = fail lessons nobody has resolved. A `pass` lesson is knowledge
-    // that worked - it has nothing to resolve and counting it guilt-trips
-    // the operator with a number (600+) no one can ever drive to zero.
-    const unresolvedLessons = parseLessons(lessonsText)
+    try { lessonsText = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8'); } catch { lessonsText = ''; }
+    // Only fail lessons nobody has resolved. A `pass` lesson is knowledge
+    // that worked; counting it guilt-trips the owner with a number no one
+    // can drive to zero.
+    openProblems = parseLessons(lessonsText)
       .filter((lesson) => lesson.status === 'fail' && !lesson.resolved && !/\[resolved[\]:]/i.test(lesson.text)).length;
-    if (worktrees > 0 || unresolvedLessons > 0) {
-      rotInfo = { worktrees, lessons: unresolvedLessons };
-    }
-  } catch (err) {
-    rotInfo = null;
+  } catch {
+    openProblems = 0;
   }
-  // One tidy row for all loose ends, in words that work outside engineering:
-  // unlanded finished work = "to put away", stale worktrees = "old copies".
-  const tidyBits = [];
+  const chores = [];
   if (landInfo && landInfo.branches > 0) {
-    let landText = `${landInfo.branches} finished piece${landInfo.branches === 1 ? '' : 's'} to put away`;
-    if (landInfo.due > 0) landText += ` (${landInfo.due} overdue)`;
-    tidyBits.push(landText);
+    chores.push(`${landInfo.branches} finished piece${landInfo.branches === 1 ? ' of work is' : 's of work are'} not yet added to the main copy${landInfo.due > 0 ? ` (${landInfo.due} overdue)` : ''}`);
   }
-  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to clear out`);
-  if (rotInfo && rotInfo.lessons > 0) tidyBits.push(`${rotInfo.lessons} open problem${rotInfo.lessons === 1 ? '' : 's'}`);
-  if (tidyBits.length) {
-    console.log(row('tidy', tidyBits.join(', ')));
+  if (worktrees > 0) chores.push(`${worktrees} old working cop${worktrees === 1 ? 'y is' : 'ies are'} still on disk`);
+
+  // One history read serves both the quality check and "what changed in the
+  // last day". No git history (not a repo, git missing) stays silent.
+  let revisions = null;
+  let recent = null;
+  try {
+    revisions = require('../commands/improve').collectRevisionSignals(cwd, {
+      days: 7,
+      onCommits: (commits) => { recent = plainStatus.recentChanges(commits, nowMs); },
+    });
+    if (revisions && !Number.isFinite(revisions.fixed)) revisions.fixed = revisions.revised;
+  } catch {
+    revisions = null;
   }
 
-  // The guarantee gauge, only when it has bad news: landings a human had to
-  // fix this week. Coaching (role, goal, context edits) is not bad news. Zero is the healthy state and stays silent; no git history
-  // (not a repo, git missing) also stays silent.
+  // The latest lesson brief, only when it is new today and has a real title.
+  let brief = null;
+  if (latestBriefName && latestBriefTitle && latestBriefTitle !== path.basename(latestBriefName, '.md')) {
+    try {
+      const briefPath = path.join(atrisDir, 'wiki', 'briefs', latestBriefName);
+      if (nowMs - fs.statSync(briefPath).mtimeMs < 24 * 60 * 60 * 1000) {
+        brief = { title: latestBriefTitle, path: `atris/wiki/briefs/${latestBriefName}` };
+      }
+    } catch { brief = null; }
+  }
+
+  // The guide only speaks up when it needs work.
+  let docs = '';
   try {
-    const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7 });
-    const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
-    if (fixed > 0) {
-      console.log(`  ${fixed} finished change${fixed === 1 ? '' : 's'} needed a human fix this week; run atris improve revisions (see what needed fixing)`);
+    const health = require('../commands/doc-health').computeDocHealth(cwd);
+    const map = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    const starterMap = map.includes('Run your AI agent with atris.md to populate this file.');
+    if (health.ok && map.trim() && !starterMap && Math.round(health.overall.total) < 85) {
+      const score = health.lookup_hops.score;
+      const found = score === null ? '' : `, and agents find the right file from it on the first try for ${Math.min(99, Math.round(score * 100))} percent of test questions`;
+      docs = `The project guide that agents read first needs work: it scores ${Math.round(health.overall.total)} out of 100${found}.`;
     }
   } catch {
-    // Silent: the gauge never blocks boot.
+    docs = '';
   }
 
-  let wikiNudge = '';
+  let lately = '';
   try {
-    wikiNudge = require('../lib/wiki').wikiMetabolismNudge(cwd);
+    const line = require('../lib/cleanup-summary').latestCleanupLine(cwd);
+    if (line) {
+      lately = line.replace(/^[a-z][a-z -]{0,30}:\s*/i, '')
+        .replace(/\blanded\b/gi, 'completed')
+        .replace(/\bland on their own\b/gi, 'finish on their own')
+        .replace(/\b([0-9]+) agent branch(es)? parked for you\b/g, (m, n, many) => `${n} ${many ? 'pieces' : 'piece'} of agent work set aside for you`)
+        .replace(/\bput away\b/gi, 'cleared')
+        .replace(/\bdone or long-idle items\b/gi, 'finished or long-idle jobs off the list');
+      lately = lately.charAt(0).toLowerCase() + lately.slice(1);
+    }
   } catch {
-    wikiNudge = '';
+    lately = '';
   }
-  if (wikiNudge) {
-    console.log(`  ${wikiNudge.replace('the wiki has grown a lot since its last pruning; run: atris wiki consolidate', 'the project notes have grown; run atris wiki consolidate (review notes to combine)')}`);
-  }
+  // The cleanup that just ran says it better than an older journal line.
+  if (keptCount > 0) lately = '';
 
-  console.log(row('logs', journalEntries > 0
-    ? `${journalEntries} note${journalEntries === 1 ? '' : 's'} today`
-    : 'nothing yet today'));
+  let wikiGrown = false;
+  try { wikiGrown = Boolean(require('../lib/wiki').wikiMetabolismNudge(cwd)); } catch { wikiGrown = false; }
 
-  if (endgameState.slug !== 'unset') {
-    // Repeated impression: the horizon sentence renders verbatim every boot
-    // so agents keep the target in mind (test/boot-impression.test.js).
-    console.log(row('goal', endgameState.horizon || endgameState.slug));
-  }
-
-  // Every new chat sees which tool and model does each job, from the same
-  // resolver as atris engine roster. A roster that cannot be read drops the
-  // line; it never stops the boot.
-  // A roster worker that ends within seven days gets one line, so the job
-  // does not quietly fall to its backup when the date passes.
+  // Every new chat sees which tool and model does each job, and the values
+  // that settle close calls (lib/values.js). Neither read ever stops boot.
+  let team = '';
+  let tools = '';
   try {
     const engineView = require('../commands/engine');
     const jobs = engineView.jobRosterView(cwd);
-    const teamLine = require('../lib/team-lineup').bootTeamLine(cwd, { width: 80 - 11, jobs });
-    if (teamLine) console.log(row('team', teamLine));
+    team = require('../lib/team-lineup').bootTeamSentence(cwd, { jobs });
     const endsLine = engineView.bootExpiringLine(engineView.expiringWorkers(jobs));
-    if (endsLine) console.log(row('tools', endsLine.replace('renew: atris engine roster confirm', 'run atris engine roster confirm (renew the assigned tools)')));
+    if (endsLine) tools = `${endsLine.replace(/;?\s*renew: atris engine roster confirm/, '').replace(/\.?$/, '.')} Renew it with atris engine roster confirm, or the job falls to its backup.`;
   } catch {
-    // Silent: the lineup is a hint, not a gate.
+    team = '';
   }
+  let values = '';
+  try { values = plainStatus.valuesSentence(require('../lib/values').valuesForRoot(cwd)); } catch { values = ''; }
 
-  // The four values settle close calls, so every new chat sees them, not
-  // only an agent that reads atris.md to the end (lib/values.js).
-  try {
-    const values = require('../lib/values').valuesForRoot(cwd);
-    values.forEach((value, index) => console.log(row(index ? '' : 'values', `${value.name.padEnd(14)}${value.gist}`)));
-  } catch {
-    // Advisory only; never blocks boot.
-  }
+  const text = plainStatus.renderStatus({
+    now: nowMs,
+    glance,
+    recent,
+    revisions,
+    openProblems,
+    cleared: keptCount,
+    lately,
+    tidyChores: chores.length ? `Loose ends: ${chores.join(', and ')}.` : '',
+    docs,
+    wikiGrown,
+    brief,
+    diaryEntries: journalEntries,
+    // Repeated impression: the horizon sentence renders verbatim every boot
+    // so agents keep the target in mind (test/boot-impression.test.js).
+    goal: endgameState.slug !== 'unset' ? (endgameState.horizon || endgameState.slug) : '',
+    team,
+    tools,
+    values,
+  });
+  if (text) console.log(text);
 
   const hasNoTasks = glance.active === 0
     && glance.review === 0
     && glance.reviewCertified === 0;
-  if (hasNoTasks) {
+  if (hasNoTasks && glance.backlog === 0) {
     const phrases = INTENTS
       .filter((intent) => intent.offer === 'boot_empty')
       .map((intent) => intent.say[0])
       .slice(0, 2);
-    console.log(row('say', `"${phrases[0]}" or "${phrases[1]}"  (say it to your agent in your own words)`));
+    console.log('');
+    console.log(plainStatus.wrap(`Nothing is on the list yet. Tell your agent what you want in your own words, like "${phrases[0]}" or "${phrases[1]}".`));
   }
 
-  // The next command always carries a plain-english gloss: a newcomer should
-  // know what typing it will do before they type it.
+  // The next command always carries a plain gloss in parentheses: a newcomer
+  // should know what typing it will do before they type it.
   let next;
   if (glance.reviewCertified > 0) {
-    next = `atris task reviews  (approve the finished work)`;
+    next = 'atris task reviews  (look over the finished work and approve it)';
   } else if (landInfo && landInfo.due > 0) {
-    next = `atris land --reap  (put away the overdue work)`;
+    next = 'atris land --reap  (add the overdue finished work to the main copy)';
   } else if (endgameState.slug !== 'unset') {
-    next = 'atris autopilot  (keep working on the goal; it asks before it starts)';
+    next = 'atris autopilot  (agents keep working on the goal; it asks before it starts)';
   } else {
-    next = 'atris plan  (plan the first tasks)';
+    next = 'atris plan  (plan the first jobs)';
   }
   console.log('');
   console.log(row('next', next));
