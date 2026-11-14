@@ -495,6 +495,7 @@ test('normalizeScript matches the script self check rule', () => {
 test('the pull request prompt asks for a proof check, with a way out for changes no test can cover', () => {
   const prompt = require('../lib/computer-pr').buildPullRequestPrompt({ owner: 'acme', name: 'shop', task: 'fix the total', branch: 'atris/fix-the-total-20261114-0905' });
   assert.match(prompt, /see it fail/);
+  assert.match(prompt, /passes when run from any folder/);
   assert.match(prompt, /see it pass/);
   assert.match(prompt, /abort <RUN_DIR>, then stop and reply "STEP_FAILED=5 could not reproduce"/);
   assert.match(prompt, /skip the proof and just make the change/);
@@ -553,11 +554,13 @@ test('a builder that cannot reproduce asks the thinker, then tries once more on 
   assert.match(b.message, /TASK END\n\nPROPOSAL START\nCause: lib\/total\.js line 12[^]*Risks: none known\.\nPROPOSAL END$/);
   assert.ok(h.calls.out.includes('The builder could not prove a fix. Asking the thinker (gpt-6-astra) for a proposal.'));
   assert.ok(h.calls.out.includes('Proposal ready. The builder is trying again with it.'));
-  assert.deepEqual(h.calls.out.slice(-6), [
+  assert.deepEqual(h.calls.out.slice(-8), [
     'Pull request opened: Fix the total',
     `Branch: ${BRANCH}-b`,
     'https://github.com/atrislabs/demo/pull/9',
+    'This was a hard fix. Have a second reader check it before it merges.',
     'ESCALATED=1',
+    'NEEDS_READER=1',
     'THINKER=gpt-6-astra',
     'BUILDER=gpt-6.1-terra',
   ]);
@@ -584,7 +587,7 @@ test('no changes, other steps, dropped runs and --no-think never ask the thinker
     assert.equal(code, 1, JSON.stringify(rounds));
     assert.equal(exitCode, 1);
     assert.equal(h.calls.requests.length, 1, JSON.stringify(rounds));
-    assert.ok(!h.calls.out.some((l) => /thinker|ESCALATED/.test(l)));
+    assert.ok(!h.calls.out.some((l) => /thinker|ESCALATED|NEEDS_READER|second reader/.test(l)));
   }
   const h = harness({ rounds: [{ chunks: ['STEP_FAILED=5 no changes\n'] }] });
   await runPr(h, []);

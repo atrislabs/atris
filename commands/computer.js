@@ -1217,7 +1217,12 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     log(`Branch: ${result.branch || usedBranch}`);
     log(result.url);
     if (thinkerUsed) {
+      // A fix that needed a thinker is a hard fix. Seen live 2026-11-14: one
+      // passed its own check and 143 guard tests, and a second reader still
+      // found it broke nearby paths. So the command says so, every time.
+      log('This was a hard fix. Have a second reader check it before it merges.');
       log('ESCALATED=1');
+      log('NEEDS_READER=1');
       log(`THINKER=${thinker}`);
       log(`BUILDER=${options.model || 'default'}`);
     }
