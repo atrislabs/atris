@@ -60,9 +60,6 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 52 | found: replies were billed to the business; a cloud reply uses the person's own sign-in | talk: a cloud reply runs on the person's own sign-in, never another key | yes |
 | 53 | found: the app could not stream chat; the command says it streams, and ends a failed stream | cli: feed talk --help names --stream, so the app streams replies instead of waiting | yes |
 | 54 | Every ping, talk, approval and result lands in the member's own log | log: pings, talk, approvals and results land in the member's own log | no |
-| 55 | Pings wake several ON members, two at a time, read-only | ping: several ON members at once, two running and the rest queued, read-only | yes |
-| 56 | Pings stop when nobody is on, for agents, on battery saver and at their caps | ping: off when no member is ON; refuses agents, battery saver and past its caps | yes |
-| 57 | A woken member's answer becomes cards and events through the one emit path | ping: the member reads, answers with event lines, and the feed turns them into cards and events | yes |
 | 58 | Progress and results come only from the member doing the work, with proof | emit: ideas go through the propose rules; progress and results only from the member doing the work | yes |
 | 59 | The same events read from atris channel feed without a hosted board | emit: the same stream reads from atris channel feed when there is no hosted board | no |
 | 60 | Scrolling asks up to three ON members, with the person's taste | more: a scroll ping to up to three ON members, with the person's taste in their brief | yes |
@@ -72,3 +69,14 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 64 | A picture file must be a real picture inside the project or ~/.atris | visuals: a picture file inside the project or ~/.atris; escapes, links out, fakes and big files are refused | yes |
 | 65 | Members are told to bring one real visual when proposing, revising and finishing | visuals: members are told to bring one, from real content, when proposing, revising and finishing | no |
 | 66 | Finished code work shows the member's picture, else its real changed lines | visuals: a finished result carries the member's own picture, else its real changed lines | yes |
+
+| 55 | found: chat-speed ideas: cards stream in as they are written and pass the normal checks | stream: cards come in as they are written, then pass the normal checks | yes |
+| 56 | A card cut off mid-way, or failing the checks, is dropped and nothing half-made is created | stream: a card cut off mid-way, or one that fails the checks, is dropped and nothing half-made is created | yes |
+| 57 | Up to three members think at once, outside the work queue | stream: up to three members think at once, outside the work queue | yes |
+| 67 | One thought in flight per member; a plain ping returns at once | stream: one thought in flight per member; without --stream the thinking runs in the background | yes |
+| 68 | Limits by who pays, with a plain reason and when they reset; credits reported | limits: generous on this computer's models, tighter on paid ones, with a plain reason and when it resets | yes |
+| 69 | Members rotate, ideas differ from what is there, a member whose ideas keep missing rests | variety: members rotate, ideas must be unlike what is there, and a member whose ideas keep missing rests | no |
+| 70 | Pings stop when nobody is on, for agents and on battery saver | ping: off when no member is ON; refuses agents and battery saver | yes |
+| 71 | The streamed ping prints one JSON event per line | cli: atris feed ping --stream prints one JSON event per line | yes |
+| 72 | found: the same short idea from two members made two cards; it now merges, even once approved | copies: the same short title from two members, or a copy of an idea already approved, makes no second card | yes |
+| 73 | A card the model forgot to close is whole when its answer ended normally | stream: a card the model forgot to END is still whole when the answer ended normally | no |

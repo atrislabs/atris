@@ -47,7 +47,7 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
   const feed = require('../lib/feed-core');
   const team = require('../lib/feed-team');
   tasks.open(process.env.ATRIS_TASKS_DB);
-  const env = { ...process.env, USER: 'owner', ATRIS_FEED_PINGS_PER_DAY: '100000', ATRIS_FEED_PINGS_PER_MEMBER_PER_DAY: '100000', ATRIS_FEED_EMITS_PER_MEMBER_PER_DAY: '100000' };
+  const env = { ...process.env, USER: 'owner', ATRIS_FEED_PINGS_PER_DAY: '100000', ATRIS_FEED_CLOUD_PINGS_PER_DAY: '100000', ATRIS_FEED_MEMBER_GAP_SECONDS: '0', ATRIS_FEED_EMITS_PER_MEMBER_PER_DAY: '100000' };
   for (const marker of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_DISPATCH_DEPTH', 'ATRIS_AGENT_PROOF_ONLY', 'CURSOR_AGENT', 'DEVIN_SESSION_ID']) delete env[marker];
   for (const name of members) require('../lib/member-switches').setMemberAwake(name, true, root);
   feed.setTheme(root, 'Sell more soap and candles this month', { env });
@@ -57,14 +57,17 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
   const alive = new Set();
   let nextPid = 900000;
   const counts = { ping: 0, propose: 0, pass: 0, talk: 0, approve: 0, result: 0, dismiss: 0, refused: 0, failedTurns: 0, restarts: 0 };
-  const turn = async ({ prompt, onText, kind }) => {
+  const turn = async ({ prompt, onText }) => {
     if (random() < 0.15) await new Promise((r) => setTimeout(r, 5 + Math.floor(random() * 20))); // slow
-    if (random() < 0.15) { counts.failedTurns += 1; return { ok: false, error: 'stand-in model failed' }; }
-    if (kind === 'ping') {
-      const lines = [];
-      for (let i = 0; i < 1 + Math.floor(random() * 2); i += 1) lines.push(`IDEA ${JSON.stringify({ title: pick(TITLES), why: 'More people buy' })}`);
-      return { ok: true, text: lines.join('\n') };
+    if (/thinking up ideas for the owner's feed/.test(prompt)) {
+      let text = '';
+      for (let i = 0; i < 1 + Math.floor(random() * 2); i += 1) text += `IDEA\nTITLE: ${pick(TITLES)}\nWHY: More people buy\nEND\n`;
+      // Sometimes the stream is cut off in the middle of a card.
+      if (random() < 0.15) { counts.failedTurns += 1; text = text.slice(0, Math.floor(text.length * 0.6)); }
+      for (const piece of text.match(/.{1,7}/gs) || []) onText(piece);
+      return text.endsWith('END\n') ? { ok: true, text } : { ok: false, text, error: 'stream cut off' };
     }
+    if (random() < 0.15) { counts.failedTurns += 1; return { ok: false, error: 'stand-in model failed' }; }
     const text = random() < 0.2 ? 'Sure.\nREVISE {"why": "It brings back buyers"}' : 'Yes, I can do that this week.';
     onText(text);
     void prompt;
@@ -75,6 +78,7 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
     lowPower: () => false,
     isAlive: (pid) => alive.has(pid),
     spawnRunner: () => { nextPid += 1; alive.add(nextPid); return nextPid; },
+    spawnThinker: () => null,
     memberStillWorking: () => false,
     accept: () => ({ ok: true }),
   };
@@ -118,7 +122,7 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
     try {
       if (action === 'ping') {
         counts.ping += 1;
-        team.ping(root, { reason: pick(['scroll', 'event']), env, deps });
+        await team.pingStream(root, { reason: pick(['scroll', 'event']), env, deps });
       } else if (action === 'propose') {
         counts.propose += 1;
         try { feed.proposeCard(root, { as: pick(members), title: pick(TITLES), why: 'More people buy', env }); } catch { counts.refused += 1; }

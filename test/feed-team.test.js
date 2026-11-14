@@ -220,7 +220,7 @@ test('log: pings, talk, approvals and results land in the member\'s own log', as
   team.ping(ctx.root, { member: 'writer', reason: 'scroll', env: ctx.env, deps: ctx.deps });
   const text = logText(ctx, 'scout');
   for (const line of ['The owner wrote on a card', 'Answered the owner', 'The owner approved a card']) assert.match(text, new RegExp(line));
-  assert.match(logText(ctx, 'writer'), /Woken by the feed \(scroll\)/);
+  assert.match(logText(ctx, 'writer'), /Asked for ideas \(scroll\)/);
   // The next turn starts from that log.
   const { card: second } = propose(ctx, { title: 'Write the spring price note' });
   await feed.talk(ctx.root, second.id, 'Shorter?', { env: ctx.env, deps: ctx.deps });
@@ -228,62 +228,6 @@ test('log: pings, talk, approvals and results land in the member\'s own log', as
 });
 
 // ----------------------------------------------------------------- pings
-
-test('ping: several ON members at once, two running and the rest queued, read-only', (t) => {
-  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
-  setMemberAwake('extra', false, ctx.root);
-  const out = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
-  assert.equal(out.pinged, 3);
-  assert.deepEqual(out.members.map((m) => m.status).sort(), ['queued', 'started', 'started']);
-  assert.ok(!out.members.some((m) => m.name === 'extra'), 'only ON members');
-  assert.ok(ctx.spawned.every((entry) => entry.kind === 'ping'));
-  const again = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
-  assert.equal(again.pinged, 0, 'no ping while a member is already running or waiting');
-  assert.match(again.members[0].reason, /already running/);
-});
-
-test('ping: off when no member is ON; refuses agents, battery saver and past its caps', (t) => {
-  const ctx = project(t, ['scout', 'writer'], { on: false });
-  assert.match(team.ping(ctx.root, { env: ctx.env, deps: ctx.deps }).reason, /No team member is on/);
-  setMemberAwake('scout', true, ctx.root);
-  assert.throws(() => team.ping(ctx.root, { env: ctx.agentEnv, deps: ctx.deps }), (e) => e.status === 403);
-  assert.match(team.ping(ctx.root, { env: ctx.env, deps: { ...ctx.deps, lowPower: () => true } }).reason, /saving battery/);
-  assert.match(team.ping(ctx.root, { member: 'writer', env: ctx.env, deps: ctx.deps }).reason, /writer is off/);
-  const capped = { ...ctx.env, ATRIS_FEED_PINGS_PER_MEMBER_PER_DAY: '1' };
-  const idle = { ...ctx.deps, isAlive: () => false };
-  assert.equal(team.ping(ctx.root, { env: capped, deps: idle }).pinged, 1);
-  const file = path.join(ctx.root, '.atris', 'state', 'feed', 'runs.json');
-  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  for (const entry of data.entries) entry.status = 'ended';
-  fs.writeFileSync(file, JSON.stringify(data));
-  assert.match(team.ping(ctx.root, { env: capped, deps: idle }).members[0].reason, /as often as allowed today/);
-  assert.match(team.ping(ctx.root, { reason: 'heartbeat', env: ctx.env, deps: idle }).members[0].reason, /less than 30 minutes ago/);
-  assert.match(team.ping(ctx.root, { env: { ...ctx.env, ATRIS_FEED_PINGS_PER_DAY: '1' }, deps: idle }).members[0].reason, /team was woken as often/);
-});
-
-test('ping: the member reads, answers with event lines, and the feed turns them into cards and events', async (t) => {
-  const ctx = project(t);
-  feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
-  ctx.deps.answer = () => [
-    'I read the notes.',
-    'IDEA {"title": "Thank the first ten buyers", "why": "Thanked buyers come back", "body": "One short note each."}',
-    'QUESTION {"title": "Which city should we start in?", "why": "It decides who we call first"}',
-    'IDEA {"title": "Merge the branch into the repo", "why": "x"}',
-  ].join('\n');
-  team.ping(ctx.root, { member: 'scout', reason: 'event', env: ctx.env, deps: ctx.deps });
-  const entry = feed.readRuns(ctx.root).find((e) => e.kind === 'ping');
-  const spawnSync = () => assert.fail('a ping never starts a write-capable run');
-  await feed.runEntry(ctx.root, entry.id, { ...ctx.deps, spawnSync });
-  const cards = feed.listCards(ctx.root, { env: ctx.env }).cards;
-  assert.deepEqual(cards.map((c) => c.kind).sort(), ['proposal', 'question']);
-  assert.ok(cards.every((c) => c.author.id === 'agent:scout'));
-  assert.equal(ctx.turns[0].kind, 'ping');
-  assert.match(ctx.turns[0].prompt, /change nothing/);
-  const events = team.readEvents(ctx.root);
-  assert.deepEqual(events.map((e) => e.type), ['idea', 'question']);
-  assert.match(logText(ctx, 'scout'), /An idea was refused/, 'the jargon idea was refused by the propose rules');
-  assert.equal(feed.readRuns(ctx.root).find((e) => e.id === entry.id).status, 'ended');
-});
 
 // ------------------------------------------------------------------ emit
 
@@ -342,7 +286,8 @@ test('more: a scroll ping to up to three ON members, with the person\'s taste in
   ctx.spawned.length = 0;
   const out = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
   assert.ok(out.requested >= 1 && out.requested <= 3);
-  assert.ok(feed.readRuns(ctx.root).filter((e) => e.kind === 'ping' && e.reason === 'scroll').length <= 3);
+  assert.ok(ctx.thinkers.length === 1 && ctx.thinkers[0].names.length <= 3 && ctx.thinkers[0].reason === 'scroll');
+  assert.equal(feed.readRuns(ctx.root).filter((e) => e.kind === 'ping').length, 0, 'thinking never uses the work queue');
   const brief = team.pingBrief(ctx.root, 'extra', 'scroll');
   assert.match(brief, /said yes to these[\s\S]*Call the warm leads today \(owner said: more like this\)/);
   assert.match(brief, /said no to these[\s\S]*Write a long blog post \(owner said: nobody reads them\)/);
@@ -373,7 +318,8 @@ test('start: a folder of projects gets atris, a starter team turned on, and a fi
   const log = require('node:child_process').spawnSync('git', ['log', '--oneline'], { cwd: folder, encoding: 'utf8' }).stdout.trim().split('\n');
   assert.equal(log.length, 1, 'one starting point');
   assert.ok(out.ping.pinged >= 1, out.ping.reason);
-  assert.ok(ctx.spawned.every((entry) => entry.kind === 'ping'), 'the first wake is read-only');
+  assert.equal(ctx.spawned.length, 0, 'nothing that can write starts before an approval');
+  assert.deepEqual(ctx.thinkers[0].names.sort(), ['builder', 'scout'], 'the first wake is thinking only');
   assert.equal(fs.readFileSync(path.join(folder, 'shop', 'index.js'), 'utf8'), 'console.log("shop")\n', 'nothing changed');
   const again = await team.start(folder, { env, deps: { ...ctx.deps, isAlive: () => false } });
   assert.equal(again.started, false);

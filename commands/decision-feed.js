@@ -74,7 +74,9 @@ const HELP = [
   '       atris feed engines                  the models usable on this computer right now',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing',
   '       atris feed member on|off <name>',
-  '       atris feed ping [<member>] [--reason scroll|heartbeat|event]',
+  '       atris feed ping [<member>] [--reason scroll|heartbeat|event] [--stream]',
+  '                          (members think up ideas in one fast turn each, up to 3 at once; --stream prints cards as they are written)',
+  '       atris feed settings set local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>',
   '       atris feed emit --as <member> idea|question --title "..." --why "..." | progress --card <card> "<line>"',
   '                          | result --card <card> --proof "<what you ran and what it showed>" ["<plain line>"]',
   '       atris feed events [--limit N]        the stream of what members put in the feed',
@@ -278,8 +280,10 @@ async function run(args = [], context = {}) {
       out = feed.requestMoreIdeas(root, { env, deps });
     } else if (sub === 'settings') {
       if (positional[1] === 'set') {
-        if (positional[2] !== 'default-engine' || !positional[3]) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id>');
-        out = team().setDefaultEngine(root, positional[3], { env });
+        if (!positional[2] || positional[3] === undefined) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id> | local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>');
+        out = positional[2] === 'default-engine'
+          ? team().setDefaultEngine(root, positional[3], { env })
+          : team().setLimit(root, positional[2], positional[3], { env });
       } else if (positional[1]) {
         throw new feed.FeedError(400, `unknown settings command: ${positional[1]}`);
       } else {
@@ -293,8 +297,24 @@ async function run(args = [], context = {}) {
       const [, onOff, name] = positional;
       if (!['on', 'off'].includes(onOff) || !name) throw new feed.FeedError(400, 'usage: atris feed member on|off <name>');
       out = team().setOn(root, name, onOff === 'on', { env });
-    } else if (sub === 'ping') {
-      out = team().ping(root, { member: positional[1], reason: flags.reason || 'scroll', env, deps });
+    } else if (sub === 'ping' || sub === 'think') {
+      // ping: wake members to think up ideas. --stream prints each event as it
+      // happens (member_started, card_started, card_text, card_visual,
+      // card_done or card_dropped, member_done, done); without it the thinking
+      // runs in the background and this answers at once. think is the
+      // background half, for members ping already planned.
+      const onEvent = flags.stream ? (event) => write(`${JSON.stringify(event)}\n`) : null;
+      if (sub === 'think') {
+        const results = await team().think(root, positional.slice(1), { reason: flags.reason || 'scroll', env, deps, onEvent });
+        out = { version: feed.FEED_VERSION, members: results };
+      } else if (flags.stream) {
+        await team().pingStream(root, { member: positional[1], reason: flags.reason || 'scroll', env, deps, onEvent });
+        return 0;
+      } else {
+        const result = team().ping(root, { member: positional[1], reason: flags.reason || 'scroll', env, deps });
+        delete result.plan;
+        out = result;
+      }
     } else if (sub === 'emit') {
       out = team().emit(root, {
         as: flags.as, type: positional[1], title: flags.title, why: flags.why, body: flags.body, detail: flags.detail,
@@ -326,7 +346,7 @@ async function run(args = [], context = {}) {
 }
 
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
-  'settings', 'engines', 'members', 'member', 'ping', 'emit', 'events', 'start', 'doctor', 'repair']);
+  'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';

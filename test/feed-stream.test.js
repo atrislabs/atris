@@ -1,0 +1,190 @@
+'use strict';
+
+// Endless scrolling: ON members think up ideas in one fast turn each, up to
+// three at once, outside the work queue, and their cards stream in as they
+// are written. Limits depend on who pays; members rotate; a member whose
+// ideas keep missing rests. Every model here is a stand-in.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const feed = require('../lib/feed-core');
+const team = require('../lib/feed-team');
+const { setMemberAwake } = require('../lib/member-switches');
+const { project } = require('./helpers/feed-project');
+
+const TWO = 'IDEA\nTITLE: Thank the first ten buyers\nWHY: Thanked buyers come back\nBODY: One short note each.\n'
+  + 'VISUAL: {"kind": "steps", "steps": ["Find the ten", "Write one line each"]}\nEND\n'
+  + 'QUESTION\nTITLE: Which city should we start in?\nWHY: It decides who we call first\nEND\n';
+
+function streaming(ctx, text, { delay = 0 } = {}) {
+  return async ({ onText }) => {
+    for (const piece of text.match(/.{1,5}/gs) || []) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      onText(piece);
+    }
+    return { ok: true, text };
+  };
+}
+
+async function streamPing(ctx, options = {}) {
+  const events = [];
+  const out = await team.pingStream(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps, onEvent: (e) => events.push(e), ...options });
+  return { events, out };
+}
+
+test('stream: cards come in as they are written, then pass the normal checks', async (t) => {
+  const ctx = project(t, ['scout']);
+  ctx.deps.turn = streaming(ctx, TWO);
+  const { events } = await streamPing(ctx);
+  const types = events.map((e) => e.type);
+  assert.equal(types[0], 'member_started');
+  assert.deepEqual(types.slice(-2), ['member_done', 'done']);
+  const first = events.find((e) => e.type === 'card_started');
+  const title = events.filter((e) => e.type === 'card_text' && e.temp_id === first.temp_id && e.field === 'title');
+  assert.ok(title.length > 1, 'the title arrives in pieces');
+  assert.equal(title.map((e) => e.chunk).join(''), 'Thank the first ten buyers');
+  assert.ok(events.some((e) => e.type === 'card_text' && e.field === 'why'));
+  assert.equal(events.find((e) => e.type === 'card_visual').visual.kind, 'steps');
+  const done = events.filter((e) => e.type === 'card_done');
+  assert.equal(done.length, 2);
+  assert.equal(done[0].card.title, 'Thank the first ten buyers');
+  assert.equal(done[0].card.visual.kind, 'steps');
+  assert.equal(done[1].card.kind, 'question');
+  assert.equal(events.find((e) => e.type === 'member_done').ideas, 2);
+  assert.ok(types.indexOf('card_text') < types.indexOf('card_done'), 'words before the finished card');
+});
+
+test('stream: a card cut off mid-way, or one that fails the checks, is dropped and nothing half-made is created', async (t) => {
+  const ctx = project(t, ['scout']);
+  ctx.deps.turn = async ({ onText }) => {
+    const text = 'IDEA\nTITLE: Merge the branch into the repo\nWHY: x\nEND\nIDEA\nTITLE: Call the warm leads today\nWHY: They answer';
+    for (const piece of text.match(/.{1,6}/gs)) onText(piece);
+    return { ok: false, text, error: 'the connection dropped' };
+  };
+  const { events } = await streamPing(ctx);
+  const dropped = events.filter((e) => e.type === 'card_dropped');
+  assert.equal(dropped.length, 2);
+  assert.match(dropped[0].reason, /plain words/);
+  assert.match(dropped[1].reason, /stopped before the card was finished/);
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).cards.length, 0, 'nothing was created');
+});
+
+test('stream: up to three members think at once, outside the work queue', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
+  let now = 0;
+  let most = 0;
+  ctx.deps.turn = async ({ onText }) => {
+    now += 1; most = Math.max(most, now);
+    await new Promise((r) => setTimeout(r, 30));
+    const text = `IDEA\nTITLE: Idea number ${now} ${Math.random().toString(36).slice(2, 6)}\nWHY: It helps\nEND\n`;
+    onText(text);
+    now -= 1;
+    return { ok: true, text };
+  };
+  const { out } = await streamPing(ctx);
+  assert.equal(out.pinged, 3);
+  assert.equal(most, 3);
+  assert.equal(feed.readRuns(ctx.root).length, 0, 'the work queue is for approved work only');
+  assert.equal(ctx.spawned.length, 0);
+});
+
+test('stream: one thought in flight per member; without --stream the thinking runs in the background', (t) => {
+  const ctx = project(t, ['scout', 'writer']);
+  fs.mkdirSync(path.join(ctx.root, '.atris', 'state', 'feed'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.root, '.atris', 'state', 'feed', 'thinking-scout.json'), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+  const out = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
+  assert.equal(out.pinged, 1);
+  assert.match(out.members.find((m) => m.name === 'scout').reason, /already thinking/);
+  assert.deepEqual(ctx.thinkers, [{ names: ['writer'], reason: 'scroll' }], 'it answered at once and left the thinking to a background run');
+});
+
+test('limits: generous on this computer\'s models, tighter on paid ones, with a plain reason and when it resets', async (t) => {
+  const ctx = project(t, ['scout', 'writer']);
+  const settings = team.settingsView(ctx.root, { env: ctx.env });
+  assert.deepEqual(settings.limits, { local_pings_per_day: 200, cloud_pings_per_day: 60, member_gap_seconds: 20 });
+  ctx.deps.turn = streaming(ctx, 'IDEA\nTITLE: Call the warm leads today\nWHY: They answer\nEND\n');
+  await streamPing(ctx, { member: 'scout' });
+  const again = await streamPing(ctx, { member: 'scout' });
+  assert.match(again.out.members[0].reason, /can be asked again in \d+ seconds/);
+  const capped = { ...ctx.env, ATRIS_FEED_PINGS_PER_DAY: '1', ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
+  const full = await streamPing(ctx, { member: 'writer', env: capped });
+  assert.match(full.out.members[0].reason, /1 times today on this computer's models, the most allowed\. It resets in/);
+  assert.ok(full.events.find((e) => e.type === 'member_skipped').resets_at);
+  // The paid models count separately, and their credits are reported.
+  fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'atris-fast' } }));
+  ctx.deps.turn = async ({ onText }) => { onText('IDEA\nTITLE: Write the spring price note\nWHY: Buyers ask\nEND\n'); return { ok: true, text: 'x', credits_charged: 3 }; };
+  const cloud = await streamPing(ctx, { member: 'writer', env: { ...capped, ATRIS_TOKEN: 'x' } });
+  assert.equal(cloud.out.pinged, 1);
+  const today = team.settingsView(ctx.root, { env: ctx.env }).today;
+  assert.equal(today.cloud_pings, 1);
+  assert.equal(today.credits_used, 3);
+  const changed = team.setLimit(ctx.root, 'local-pings-per-day', '500', { env: ctx.env });
+  assert.equal(changed.limits.local_pings_per_day, 500);
+  assert.throws(() => team.setLimit(ctx.root, 'nonsense', '1', { env: ctx.env }), (e) => e.status === 400);
+  assert.throws(() => team.setLimit(ctx.root, 'member-gap-seconds', '5', { env: ctx.agentEnv }), (e) => e.status === 403);
+});
+
+test('variety: members rotate, ideas must be unlike what is there, and a member whose ideas keep missing rests', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
+  const env = { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
+  let n = 0;
+  ctx.deps.turn = async ({ onText }) => { n += 1; const text = `IDEA\nTITLE: A fresh idea number ${n} for buyers\nWHY: It helps\nEND\n`; onText(text); return { ok: true, text }; };
+  const first = await streamPing(ctx, { env });
+  const asked = first.out.members.filter((m) => m.status === 'done').map((m) => m.name);
+  const second = await streamPing(ctx, { env });
+  assert.equal(second.out.members.find((m) => m.status === 'done').name, ['scout', 'writer', 'closer', 'extra'].find((m) => !asked.includes(m)), 'whoever waited longest goes first');
+  const prompt = team.ideaPrompt(ctx.root, 'scout', 'scroll');
+  assert.match(prompt, /unlike every idea above/);
+  assert.match(prompt, /A fresh idea number 1 for buyers/, 'recent titles from everyone');
+  for (const label of ['said yes to these', 'said no to these', 'scrolling past these', 'What the owner said on cards']) assert.match(prompt, new RegExp(label));
+  // Four misses in a row: scout rests while the others are asked.
+  const fresh = project(t, ['scout', 'writer']);
+  for (const title of ['Paint the shop door', 'Sing to the buyers', 'Count the clouds', 'Name the candles']) {
+    const card = feed.proposeCard(fresh.root, { as: 'scout', title, why: 'Fun', env: fresh.env }).card;
+    feed.decide(fresh.root, card.id, 'dismiss', { env: fresh.env, deps: fresh.deps });
+  }
+  fresh.deps.turn = async () => ({ ok: true, text: '' }); // nothing new, so the four misses stay the latest
+  const quickEnv = { ...fresh.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
+  await streamPing(fresh, { env: quickEnv });
+  const rested = await streamPing(fresh, { env: quickEnv });
+  assert.match(rested.out.members.find((m) => m.name === 'scout').reason, /rests for up to 30 minutes/);
+  assert.equal(rested.out.members.find((m) => m.name === 'writer').status, 'done');
+});
+
+test('ping: off when no member is ON; refuses agents and battery saver', async (t) => {
+  const ctx = project(t, ['scout', 'writer'], { on: false });
+  assert.match(team.ping(ctx.root, { env: ctx.env, deps: ctx.deps }).reason, /No team member is on/);
+  setMemberAwake('scout', true, ctx.root);
+  assert.throws(() => team.ping(ctx.root, { env: ctx.agentEnv, deps: ctx.deps }), (e) => e.status === 403);
+  assert.match(team.ping(ctx.root, { env: ctx.env, deps: { ...ctx.deps, lowPower: () => true } }).reason, /saving battery/);
+  assert.match(team.ping(ctx.root, { member: 'writer', env: ctx.env, deps: ctx.deps }).reason, /writer is off/);
+  assert.deepEqual(ctx.thinkers, []);
+});
+
+test('cli: atris feed ping --stream prints one JSON event per line', (t) => {
+  const ctx = project(t, ['scout'], { on: false });
+  const run = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'feed', 'ping', '--reason', 'scroll', '--stream', '--json'], { cwd: ctx.root, env: ctx.env, encoding: 'utf8' });
+  const lines = run.stdout.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(lines.pop().type, 'done');
+});
+
+test('copies: the same short title from two members, or a copy of an idea already approved, makes no second card', (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer']);
+  const first = feed.proposeCard(ctx.root, { as: 'scout', title: 'Make the candle sizes clear', why: 'Buyers ask', env: ctx.env });
+  const twin = feed.proposeCard(ctx.root, { as: 'writer', title: 'Make the candle sizes clear', why: 'Buyers ask', env: ctx.env });
+  assert.equal(twin.merged, true);
+  assert.equal(twin.card.id, first.card.id);
+  feed.decide(ctx.root, first.card.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  const late = feed.proposeCard(ctx.root, { as: 'closer', title: 'Make the candle sizes clear', why: 'Buyers ask', env: ctx.env });
+  assert.equal(late.created, false, 'an approved idea still at work has no twin');
+});
+
+test('stream: a card the model forgot to END is still whole when the answer ended normally', async (t) => {
+  const ctx = project(t, ['scout']);
+  ctx.deps.turn = streaming(ctx, 'IDEA\nTITLE: Call the warm leads today\nWHY: They answer\nIDEA\nTITLE: Write the spring price note\nWHY: Buyers ask\n');
+  const { events } = await streamPing(ctx);
+  assert.equal(events.filter((e) => e.type === 'card_done').length, 2);
+  assert.equal(events.filter((e) => e.type === 'card_dropped').length, 0);
+});

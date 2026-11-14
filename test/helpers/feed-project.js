@@ -37,13 +37,17 @@ function project(t, members = ['scout', 'writer', 'closer'], { on = true, engine
   if (on) for (const name of members) require('../../lib/member-switches').setMemberAwake(name, true, root);
   const spawned = [];
   const turns = [];
+  const thinkers = [];
   const deps = {
     spawnRunner: (_root, entry) => { spawned.push(entry); return process.pid; },
+    spawnThinker: (_root, names, reason) => { thinkers.push({ names, reason }); return null; },
     isAlive: () => true,
     lowPower: () => false,
     turn: async ({ engine: used, prompt, onText, kind }) => {
       turns.push({ engine: used.id, prompt, kind });
-      const text = deps.answer ? deps.answer(prompt, kind) : 'Yes, I can start with the five oldest leads.';
+      const ideas = /thinking up ideas for the owner's feed/.test(prompt);
+      const text = deps.answer ? deps.answer(prompt, kind)
+        : ideas ? 'IDEA\nTITLE: Thank the first ten buyers\nWHY: Thanked buyers come back\nEND\n' : 'Yes, I can start with the five oldest leads.';
       for (const piece of String(text).match(/.{1,12}/gs) || []) onText(piece);
       return { ok: true, text };
     },
@@ -55,7 +59,7 @@ function project(t, members = ['scout', 'writer', 'closer'], { on = true, engine
     }
     fs.rmSync(dir, { recursive: true, force: true });
   });
-  return { dir, root, db, env, deps, spawned, turns, agentEnv: { ...env, CLAUDECODE: '1' } };
+  return { dir, root, db, env, deps, spawned, turns, thinkers, agentEnv: { ...env, CLAUDECODE: '1' } };
 }
 
 module.exports = { AGENT_MARKERS, project };
