@@ -327,6 +327,5 @@ async function agentAlwaysOnCommand(args = [], deps = {}) {
 module.exports = {
   agentAlwaysOnCommand,
   parseEvery,
-  checkEvery,
   refusal,
 };
