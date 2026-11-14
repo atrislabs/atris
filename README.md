@@ -139,7 +139,9 @@ atris host room                      # the host's weekly read
 
 ### Design screens with Designer-1
 
-Designer-1 is a team member that builds web screens from a fixed set of 19 parts (button, field, select, dialog, tabs, row list and the rest). It reuses a part before writing one, keeps one spacing scale, writes very few words, and checks its work by keyboard, by control name, and at phone and desktop widths before it reports. A project's own taste files in `atris/taste/` win over its defaults.
+Designer-1 is a team member that builds web screens using the project's own parts first and builds missing parts once. It keeps one spacing scale, writes very few words, and checks its work by keyboard, by control name, and at phone and desktop widths before it reports. A project's own taste files in `atris/taste/` win over its defaults.
+
+Pro is the designer-1 model on the Atris API. It adds a growing library of real component code and full screens, the house taste, and the complete method. The model underneath improves without callers changing anything.
 
 ```bash
 atris member install designer-1
