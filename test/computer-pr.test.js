@@ -608,6 +608,10 @@ test('--think asks the thinker first, then one builder round on the normal branc
   const r = await runPr(ok, ['--think']);
   assert.equal(r.code, 0);
   assert.equal(ok.calls.requests.length, 2);
+  // The builder still gets the real task, not an empty message.
+  assert.equal(typeof bodies(ok.calls)[1].message, 'string');
+  assert.match(bodies(ok.calls)[1].message, /TASK START/);
+  assert.match(bodies(ok.calls)[1].message, /python3, not python/);
   assert.ok(!/PROPOSAL START\nCause/.test(bodies(ok.calls)[1].message));
   assert.ok(ok.calls.out.some((l) => /thinker found no cause \(nothing stands out\)\. The builder is trying once without a proposal/.test(l)));
 });

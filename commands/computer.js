@@ -1144,7 +1144,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     printComputerPrHelp(logError);
     return fail(`--think needs a thinker. ${noThinkerLine}`);
   }
-  const prompt = parsed.think ? null : prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
+  const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
 
   const awake = await wake(token, ctx);
   if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
