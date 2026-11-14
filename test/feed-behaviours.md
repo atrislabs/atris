@@ -67,3 +67,8 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 59 | The same events read from atris channel feed without a hosted board | emit: the same stream reads from atris channel feed when there is no hosted board | no |
 | 60 | Scrolling asks up to three ON members, with the person's taste | more: a scroll ping to up to three ON members, with the person's taste in their brief | yes |
 | 61 | found: member runs failed in a folder outside git; start now gives it one starting point | start: a folder of projects gets atris, a starter team turned on, and a first read-only ping; idempotent | yes |
+| 62 | Code is shown as code, held to size and plain text, its caption to plain words | visuals: code is shown as code, held to size and plain text, its caption to plain words | yes |
+| 63 | A code visual never becomes a card's title, why or story | visuals: a code visual never becomes the card's title, why or story | yes |
+| 64 | A picture file must be a real picture inside the project or ~/.atris | visuals: a picture file inside the project or ~/.atris; escapes, links out, fakes and big files are refused | yes |
+| 65 | Members are told to bring one real visual when proposing, revising and finishing | visuals: members are told to bring one, from real content, when proposing, revising and finishing | no |
+| 66 | Finished code work shows the member's picture, else its real changed lines | visuals: a finished result carries the member's own picture, else its real changed lines | yes |
