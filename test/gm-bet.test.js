@@ -1969,7 +1969,45 @@ test('free text: unclear asks back; a model that answered but misread falls back
   for (const d of [slow, broken, worded, misshapen, another]) assert.deepEqual(gmBet.readFocus(gmBet.focusPath(path.dirname(d.ledgerFile)), 'x'), {});
 });
 
-test('free text: the real reader is one quick subscription call on the roster model, strict json, 15 seconds', async () => {
+test('free text: a read no model answered logs why and how long, keeps his words for the box, and leaves them out of what the next read sees', async () => {
+  const WORDS = 'making sure this app is really really fast';
+  const threads = [];
+  let n = 0;
+  const h = desk(workspace(), { questions: false, sayTimeoutMs: 30, readSaid: (opts) => { threads.push(opts.thread); n += 1; return n === 1 ? new Promise(() => {}) : Promise.resolve({ ok: true, kind: 'question', reply: 'it is the number you watch each week.' }); } });
+  h.d.next();
+  const out = await h.d.say({ text: WORDS });
+  assert.equal(out.kind, 'unheard');
+  // his words come back so the page can put them in the box
+  assert.equal(out.keep, WORDS);
+  // nothing he said was heard, so the conversation on the card is unchanged
+  assert.deepEqual(out.thread, []);
+  // the log says why, and how long it waited, in counts and a short reason, never his words
+  const row = h.logs.find(r => r.kind === 'unheard');
+  assert.ok(row, JSON.stringify(h.logs));
+  assert.equal(row.reason, 'the read took too long');
+  assert.equal(typeof row.ms, 'number');
+  assert.equal(row.chars, WORDS.length);
+  assert.ok(!JSON.stringify(h.logs).includes(WORDS), 'his words are never logged');
+  // trying again: the read sees no owner turn and no orb turn from the unheard one
+  const again = await h.d.say({ text: WORDS });
+  assert.equal(again.kind, 'question');
+  assert.deepEqual(threads[1], []);
+  assert.equal(again.keep, undefined);
+});
+
+test('free text: over the page, a read no model answered serves the reply card and the words to put back in the box', async () => {
+  const WORDS = 'making sure this app is really really fast';
+  const h = desk(workspace(), { questions: false, sayTimeoutMs: 30, readSaid: () => new Promise(() => {}) });
+  h.d.next();
+  const on = h.d.card().card;
+  const out = await h.d.act({ card_id: on.id, text: WORDS });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.deepEqual([out.body.ok, out.body.keep, out.body.card.kind, out.body.card.title], [true, WORDS, 'reply', 'the model did not answer this time, so nothing was saved. try again in a moment.']);
+  // the words were not heard, so they are not on the card as said
+  assert.equal(out.body.card.thread, undefined);
+});
+
+test('free text: the real reader is one quick subscription call on the roster model, strict json, 30 seconds', async () => {
   const root = workspace();
   const calls = [];
   const out = await gmBet.readSaid({
@@ -1979,7 +2017,7 @@ test('free text: the real reader is one quick subscription call on the roster mo
     deps: { readerModel: () => 'claude-haiku-5-5', runModel: async (prompt, opts) => { calls.push({ prompt, opts }); return { ok: true, text: '{"kind": "question", "reply": "it is the number you watch each week."}' }; } },
   });
   assert.deepEqual(out, { ok: true, kind: 'question', reply: 'it is the number you watch each week.' });
-  assert.equal(calls[0].opts.timeoutMs, 15000);
+  assert.equal(calls[0].opts.timeoutMs, 30000);
   assert.deepEqual(calls[0].opts.command.args('P').slice(0, 4), ['-p', 'P', '--model', 'claude-haiku-5-5']);
   assert.match(calls[0].prompt, /\{"kind": "question" \| "answer" \| "instruction" \| "unclear", "reply": "\.\.\."\}/);
   assert.match(calls[0].prompt, /what number tells you this is going well\?/);
