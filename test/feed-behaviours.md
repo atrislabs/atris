@@ -84,3 +84,11 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 75 | found: the day's count read 0 after the members were asked; asks recorded earlier still count | found: asks recorded by the earlier feed still count toward the day, so the ready check never reads zero | yes |
 | 76 | With few ideas on screen, a passed idea comes back after 5 minutes | found: with few ideas on screen, a passed idea comes back after 5 minutes, after the newer ones | yes |
 | 77 | A refused ask says why in plain words, with the reset time, in the answer and the stream | refusals: a day limit says so plainly with the reset time, in the answer and in the stream | yes |
+| 78 | Ideas are grounded in a small digest of the journal, features, wiki, tasks and decisions, never archives | digest: the journal, features, wiki, tasks and decisions, small, from indexes, never archives | yes |
+| 79 | Every idea round and talk turn gets the digest and the member's mission, and asks for connected ideas | digest: every idea round and talk turn gets it, with the member's mission, and asks for connected ideas | yes |
+| 80 | Each idea names what sparked it in plain words; the exact file stays in detail | source: each idea names what sparked it on the card, with the exact file only in detail | yes |
+| 81 | A member that cannot say what sparked its ideas is asked less often | source: a member that cannot say what sparked its ideas is asked less often | no |
+| 82 | A picture that is not about the card, empty or decorative is left off | visuals: a picture not about the card, empty or decorative is left off; the card stays | yes |
+| 83 | Charts and numbers only from real numbers in the named project file | visuals: a chart only from real numbers found in the named project file | yes |
+| 84 | A reply can offer quick choices, and a tap answers with one | choices: a reply can offer up to four quick picks; choosing one answers with it | no |
+| 85 | What the owner teaches in a conversation is kept, shown back, used later and can be forgotten | notes: a lasting preference said in a conversation is kept, shown back, used in later rounds, and can be forgotten | yes |

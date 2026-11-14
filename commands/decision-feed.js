@@ -12,7 +12,7 @@ function team() {
 
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
-  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine',
+  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member',
 ]);
 const BOOL_FLAGS = new Set(['--stream', '--no-call']);
 
@@ -65,7 +65,7 @@ const HELP = [
   '                          [--body "<text>"] [--detail "<technical notes>"] [--visual \'<json>\']',
   '                          [--kind proposal|question] [--lane money|billing|...] [--story "<line>"]',
   '       atris feed decide <card> approve|dismiss [--note "<text>"]',
-  '       atris feed talk <card> "<message>" [--stream] [--as <member>]',
+  '       atris feed talk <card> "<message>" [--stream] [--as <member>]   or   atris feed talk <card> --choose <id>',
   '                          (the card\'s member answers at once, one tool-free turn on its model; --stream prints it as it comes)',
   '       atris feed messages <card>',
   '       atris feed revise <card> --as <member> [--title ...] [--why ...] [--body ...] [--detail ...] [--visual ...]',
@@ -83,6 +83,7 @@ const HELP = [
   '       atris feed start <folder> [--engine <id>]   set up a folder of projects, add a starter team, turn it on, first ping',
   '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
   '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
+  '       atris feed notes [--member <name>]  what the owner taught the team in card conversations; notes forget <id> removes one',
   '',
   'Ideas wait for a person. Approve hands the idea to its team member and starts it',
   `in the background (at most ${feed.FEED_MAX_RUNNING} at once; the rest wait in order).`,
@@ -169,6 +170,12 @@ function printText(command, out) {
       if (check.fix) console.log(`${' '.repeat(24)}do: ${check.fix}`);
     }
     console.log(out.ready ? `\nready (${(out.took_ms / 1000).toFixed(1)}s)` : `\nnot ready (${(out.took_ms / 1000).toFixed(1)}s)`);
+    return;
+  }
+  if (command === 'notes') {
+    if (out.forgot) { console.log(`forgot: ${out.forgot.text}`); return; }
+    for (const note of out.notes) console.log(`${note.id}  ${note.scope === 'team' ? 'team' : note.member}: ${note.text}`);
+    if (!out.notes.length) console.log('nothing learned yet');
     return;
   }
   if (command === 'repair') {
@@ -258,7 +265,7 @@ async function run(args = [], context = {}) {
         ? (event) => write(`${JSON.stringify(event)}\n`)
         : (event) => { if (event.type === 'chunk') write(event.text); else if (event.type === 'done') write('\n'); };
       try {
-        out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, env, deps, onEvent });
+        out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, choose: flags.choose, env, deps, onEvent });
       } catch (error) {
         if (flags.stream && json && error instanceof feed.FeedError) {
           write(`${JSON.stringify({ type: 'error', ok: false, error: error.toJSON() })}\n`);
@@ -323,6 +330,15 @@ async function run(args = [], context = {}) {
       });
     } else if (sub === 'events') {
       out = { version: feed.FEED_VERSION, events: team().readEvents(root, { limit: Number.parseInt(flags.limit, 10) || 50 }) };
+    } else if (sub === 'notes') {
+      const digest = require('../lib/feed-digest');
+      if (positional[1] === 'forget') {
+        if (!positional[2]) throw new feed.FeedError(400, 'usage: atris feed notes forget <id>');
+        if (feed.viewerOf(env).agent) throw new feed.FeedError(403, 'Only a person can remove what the team was taught.');
+        out = { version: feed.FEED_VERSION, forgot: digest.forgetNote(root, positional[2]) };
+      } else {
+        out = { version: feed.FEED_VERSION, notes: digest.listNotes(root, { member: flags.member || null }) };
+      }
     } else if (sub === 'repair') {
       out = team().repair(root, { env, deps });
     } else if (sub === 'run') {
@@ -346,7 +362,7 @@ async function run(args = [], context = {}) {
 }
 
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
-  'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair']);
+  'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
