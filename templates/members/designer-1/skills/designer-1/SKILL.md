@@ -177,4 +177,4 @@ slop: pass
 
 ## 10. pro
 
-designer-1 is also a model on the Atris API. Pro adds a growing library of real component code and full screens, the house taste, and the complete method. The model underneath improves without callers changing anything.
+Pro is the designer-1 model on the Atris API: cloud, real components, and the best design we can make. It keeps getting better.

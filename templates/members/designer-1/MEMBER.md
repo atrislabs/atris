@@ -33,4 +33,4 @@ Web now. iOS next.
 
 Read `skills/designer-1/SKILL.md` before any screen.
 
-Pro is the designer-1 model on the Atris API. It adds a growing library of real component code and full screens, the house taste, and the complete method. The model underneath improves without callers changing anything.
+Pro is the designer-1 model on the Atris API: cloud, real components, and the best design we can make. It keeps getting better.

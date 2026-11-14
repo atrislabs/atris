@@ -213,14 +213,11 @@ test('free ships no parts catalog or required Atris component imports', () => {
   }
 });
 
-test('pro names the API model and explains what it adds', () => {
-  const pro = section('pro');
-  for (const text of [pro, fs.readFileSync(path.join(template, 'MEMBER.md'), 'utf8'), fs.readFileSync(path.join(repo, 'README.md'), 'utf8')]) {
-    assert.match(text, /designer-1 model on the Atris API|designer-1 is also a model on the Atris API/i);
-    assert.match(text, /growing library of real component code and full screens/);
-    assert.match(text, /house taste/);
-    assert.match(text, /complete method/);
-    assert.match(text, /model underneath improves without callers changing anything/);
+test('pro is one short line, the same everywhere, naming the API model', () => {
+  const line = 'Pro is the designer-1 model on the Atris API: cloud, real components, and the best design we can make. It keeps getting better.';
+  for (const text of [section('pro'), fs.readFileSync(path.join(template, 'MEMBER.md'), 'utf8'), fs.readFileSync(path.join(repo, 'README.md'), 'utf8')]) {
+    assert.ok(text.includes(line), 'pro line missing');
+    assert.doesNotMatch(text, /house taste/);
   }
 });
 
