@@ -7,6 +7,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Sentences wrap at the window edge; match them as one line.
+const flat = (text) => String(text).replace(/\s+/g, ' ');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -88,10 +91,13 @@ test('boot panel shows DB lane truth including certified review gate', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /you\s+1 done, waiting for your ok:/);
-    assert.match(boot.stdout, /-\s+Certified review task/);
-    assert.match(boot.stdout, /now\s+Claimed active task/);
-    assert.match(boot.stdout, /\.\.\.and 2 waiting to start, 1 getting a final look/);
+    const text = flat(boot.stdout);
+    assert.match(text, /Waiting on you: 1 finished change passed a second agent's check and needs your ok/);
+    assert.match(text, /- Certified review task\./);
+    assert.match(text, /Working now: an agent is on "Claimed active task"/);
+    // The one review row already passed its check; it is not counted twice.
+    assert.doesNotMatch(text, /Waiting for a check/);
+    assert.match(text, /Not started: 2 more jobs are written down/);
     assert.match(boot.stdout, /next\s+atris task reviews\s+\(approve the finished work\)/);
     assert.doesNotMatch(boot.stdout, /—/);
     assert.doesNotMatch(boot.stdout, /[\u{1F300}-\u{1FAFF}]/u);
@@ -111,8 +117,8 @@ test('boot panel hides review line when nothing is in review', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /soon\s+Lone open task/);
-    assert.doesNotMatch(boot.stdout, /getting a final look/);
+    assert.match(flat(boot.stdout), /Nothing is in progress\. The next job on the list is "Lone open task"\./);
+    assert.doesNotMatch(boot.stdout, /Waiting for a check/);
     assert.match(boot.stdout, /next\s+atris plan\s+\(plan the first tasks\)/);
   } finally {
     cleanupTempDir(dir);
@@ -141,9 +147,9 @@ test('boot panel falls back to TODO.md parse when no task DB exists', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /now\s+Active markdown task/);
-    assert.match(boot.stdout, /\.\.\.and 3 waiting to start/);
-    assert.doesNotMatch(boot.stdout, /getting a final look/);
+    assert.match(flat(boot.stdout), /Working now: an agent is on "Active markdown task"\./);
+    assert.match(flat(boot.stdout), /Not started: 3 more jobs are written down/);
+    assert.doesNotMatch(boot.stdout, /Waiting for a check/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -167,7 +173,8 @@ test('boot panel shows tidy counts for stale worktrees and unresolved lessons', 
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /tidy\s+2 old copies to clear out, 1 open problem/);
+    assert.match(flat(boot.stdout), /Loose ends: 2 old working copies are still on disk\./);
+    assert.match(flat(boot.stdout), /Agents wrote down 1 problem they have not solved yet\./);
   } finally {
     cleanupTempDir(base);
   }
@@ -184,7 +191,7 @@ test('boot panel hides tidy line when worktrees and lessons are clean', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.doesNotMatch(boot.stdout, /^\s*tidy\s/m);
+    assert.doesNotMatch(flat(boot.stdout), /Loose ends|problems? they have not solved/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -223,7 +230,7 @@ test('boot panel flags landings a human had to fix this week', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(boot.stdout, /1 finished change needed a human fix this week; run atris improve revisions/);
+    assert.match(flat(boot.stdout), /Quality: in the last week, 1 of the \d+ changes agents added had their new lines rewritten within three days by a commit with no agent signature/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -238,7 +245,7 @@ test('boot panel stays silent when no landing needed a human fix', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.doesNotMatch(boot.stdout, /needed a human fix/);
+    assert.doesNotMatch(boot.stdout, /Quality:/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -255,8 +262,8 @@ test('boot panel drops the put-away nag while the hourly autoland tick is alive'
     fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-2026-10-06T12-00-00.json'), '{}\n');
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.doesNotMatch(boot.stdout, /old cop(y|ies) to clear out/);
-    assert.doesNotMatch(boot.stdout, /finished pieces? to put away/);
+    assert.doesNotMatch(flat(boot.stdout), /old working cop(y|ies)/);
+    assert.doesNotMatch(flat(boot.stdout), /not yet added to the main copy/);
     assert.doesNotMatch(boot.stdout, /atris land --reap/);
   } finally {
     cleanupTempDir(base);
@@ -289,11 +296,10 @@ test('boot panel shows the latest plain cleanup summary from the journal', () =>
     ].join('\n'));
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    const line = boot.stdout.split('\n').find((l) => /^\s*lately\s/.test(l));
-    assert.ok(line, boot.stdout);
-    assert.match(line, /completed 12 finished items/);
-    assert.match(line, /2 pieces of agent work set aside for you/);
-    assert.ok(line.length <= 170, line);
+    const text = flat(boot.stdout);
+    assert.match(text, /Background cleanup: completed 12 finished items/, boot.stdout);
+    assert.match(text, /2 pieces of agent work set aside for you/);
+    assert.ok(boot.stdout.split('\n').every((l) => l.length <= 100), boot.stdout);
   } finally {
     cleanupTempDir(dir);
   }

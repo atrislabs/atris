@@ -1918,7 +1918,7 @@ function showWelcomeVisualization() {
     const starterMap = map.includes('Run your AI agent with atris.md to populate this file.');
     if (health.ok && map.trim() && !starterMap && Math.round(health.overall.total) < 85) {
       const score = health.lookup_hops.score;
-      const found = score === null ? '' : `, and agents find the right file from it on the first try for ${Math.min(99, Math.round(score * 100))} percent of test questions`;
+      const found = score === null ? ', and it has no sample questions to test it with yet (add them to atris/doc-health/questions.jsonl)' : `, and agents find the right file from it on the first try for ${Math.min(99, Math.round(score * 100))} percent of test questions`;
       docs = `The project guide that agents read first needs work: it scores ${Math.round(health.overall.total)} out of 100${found}.`;
     }
   } catch {
@@ -1987,26 +1987,27 @@ function showWelcomeVisualization() {
   const hasNoTasks = glance.active === 0
     && glance.review === 0
     && glance.reviewCertified === 0;
-  if (hasNoTasks && glance.backlog === 0) {
+  if (hasNoTasks) {
     const phrases = INTENTS
       .filter((intent) => intent.offer === 'boot_empty')
       .map((intent) => intent.say[0])
       .slice(0, 2);
     console.log('');
-    console.log(plainStatus.wrap(`Nothing is on the list yet. Tell your agent what you want in your own words, like "${phrases[0]}" or "${phrases[1]}".`));
+    const lead = glance.backlog > 0 ? 'To get going' : 'Nothing is on the list yet. To start';
+    console.log(plainStatus.wrap(`${lead}, tell your agent what you want in your own words, like "${phrases[0]}" or "${phrases[1]}".`));
   }
 
   // The next command always carries a plain gloss in parentheses: a newcomer
   // should know what typing it will do before they type it.
   let next;
   if (glance.reviewCertified > 0) {
-    next = 'atris task reviews  (look over the finished work and approve it)';
+    next = 'atris task reviews  (approve the finished work)';
   } else if (landInfo && landInfo.due > 0) {
-    next = 'atris land --reap  (add the overdue finished work to the main copy)';
+    next = 'atris land --reap  (put away the overdue work)';
   } else if (endgameState.slug !== 'unset') {
-    next = 'atris autopilot  (agents keep working on the goal; it asks before it starts)';
+    next = 'atris autopilot  (keep working on the goal; it asks before it starts)';
   } else {
-    next = 'atris plan  (plan the first jobs)';
+    next = 'atris plan  (plan the first tasks)';
   }
   console.log('');
   console.log(row('next', next));

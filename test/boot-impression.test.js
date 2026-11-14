@@ -103,7 +103,7 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
 
     const emptyBoot = runCli(['atris.md'], { cwd: dir });
     assert.equal(emptyBoot.status, 0, emptyBoot.stderr);
-    assert.deepEqual(emptyBoot.stdout.split('\n').filter((line) => line.includes('learned ')), []);
+    assert.doesNotMatch(emptyBoot.stdout, /New notes:/);
 
     const briefsDir = path.join(atrisDir, 'wiki', 'briefs');
     fs.mkdirSync(briefsDir, { recursive: true });
@@ -111,15 +111,23 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     const newestBrief = path.join(briefsDir, 'aaa-newest-brief.md');
     fs.writeFileSync(olderBrief, '# Older brief\n', 'utf8');
     fs.writeFileSync(newestBrief, '# YouTube brief: How agents compound\n', 'utf8');
-    fs.utimesSync(olderBrief, new Date('2026-07-20T00:00:00Z'), new Date('2026-07-20T00:00:00Z'));
-    fs.utimesSync(newestBrief, new Date('2026-07-21T00:00:00Z'), new Date('2026-07-21T00:00:00Z'));
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    fs.utimesSync(olderBrief, new Date(hourAgo.getTime() - 60 * 1000), new Date(hourAgo.getTime() - 60 * 1000));
+    fs.utimesSync(newestBrief, hourAgo, hourAgo);
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.deepEqual(
-      boot.stdout.split('\n').filter((line) => line.includes('learned ')),
-      ['  learned "How agents compound" overnight -> atris/wiki/briefs/aaa-newest-brief.md'],
-    );
+    const notes = boot.stdout.split('\n\n').filter((para) => para.includes('New notes:')).map((para) => para.replace(/\s+/g, ' ').trim());
+    assert.deepEqual(notes, ['New notes: an agent studied "How agents compound" and saved what it learned in atris/wiki/briefs/aaa-newest-brief.md.']);
+
+    // Notes from days ago are not news, and a file with no real title
+    // (only its file name) says nothing a reader can use.
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(olderBrief, lastWeek, lastWeek);
+    fs.utimesSync(newestBrief, lastWeek, lastWeek);
+    assert.doesNotMatch(runCli(['atris.md'], { cwd: dir }).stdout, /New notes:/);
+    fs.writeFileSync(newestBrief, 'no heading here\n', 'utf8');
+    assert.doesNotMatch(runCli(['atris.md'], { cwd: dir }).stdout, /New notes:/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -148,8 +156,11 @@ function seedRosterRoom(dir, rosterText) {
   for (const name of ['claude', 'codex', 'grok']) setEngineHealth(name, 'ready', dir);
 }
 
+// The team is one wrapped paragraph; return it as one line.
 function teamLines(stdout) {
-  return stdout.split('\n').filter((line) => /^  team /.test(line));
+  return stdout.split('\n\n')
+    .filter((para) => /^ {2}The agents run on these AI tools and models:/.test(para))
+    .map((para) => para.replace(/\s+/g, ' ').trim());
 }
 
 const BOOT_ROSTER = [
@@ -169,8 +180,7 @@ test('boot shows which tool and model leads each built-in job', () => {
     seedRosterRoom(dir, `${BOOT_ROSTER}## small build\n- grok, model: grok 4.7 fast, max: 20 min\n`);
     const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
     assert.equal(boot.status, 0, boot.stderr);
-    // The custom job does not fit on the line, so it stops at the built-ins.
-    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 (86 ovr) · review codex gpt-6-astra · search haiku 5.5']);
+    assert.deepEqual(teamLines(boot.stdout), ['The agents run on these AI tools and models: opus 5.5 writes the changes, codex gpt-6-astra checks them, haiku 5.5 looks things up and grok 4.7 fast takes the small build jobs.']);
   } finally {
     cleanupTempDir(dir);
   }
@@ -186,8 +196,8 @@ test('boot adds custom jobs when they still fit on one line', () => {
     const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
     assert.equal(boot.status, 0, boot.stderr);
     const [line] = teamLines(boot.stdout);
-    assert.equal(line, '  team     build codex · review opus 5.5 · search haiku 5.5 · quick build grok');
-    assert.ok(line.length <= 80);
+    assert.equal(line, 'The agents run on these AI tools and models: codex writes the changes, opus 5.5 checks them, haiku 5.5 looks things up and grok handles small fixes.');
+    assert.ok(boot.stdout.split('\n').every((text) => text.length <= 80), boot.stdout);
   } finally {
     cleanupTempDir(dir);
   }
@@ -201,7 +211,7 @@ test('boot with no roster shows the router picks in the same shape or nothing, a
     assert.equal(boot.status, 0, boot.stderr);
     const lines = teamLines(boot.stdout);
     assert.ok(lines.length <= 1);
-    if (lines.length) assert.match(lines[0], /^  team     build \S/);
+    if (lines.length) assert.match(lines[0], /^The agents run on these AI tools and models: \S+.* writes the changes/);
   } finally {
     cleanupTempDir(dir);
   }
