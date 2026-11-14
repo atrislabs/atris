@@ -436,4 +436,5 @@ module.exports = {
   agentHomeCommand,
   isHomeCommand,
   movesForward,
+  resolveAgentRef,
 };
