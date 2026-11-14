@@ -8,6 +8,7 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { installKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorUntracked } = require('../lib/conductor-artifacts');
 const space = require('../lib/worktree-space');
+const doctor = require('../lib/worktree-doctor');
 const worktreeCore = require('../lib/worktree-core');
 
 const {
@@ -155,16 +156,20 @@ function startWorktree(args) {
   if (created.cachePrunedBeforeStart.length) {
     console.log(`cleanup: pruned ${created.cachePrunedBeforeStart.length} generated ${created.cachePrunedBeforeStart.length === 1 ? 'cache' : 'caches'}`);
   }
-  if (created.space && created.space.removed.length) {
+  if (created.space && created.space.sweepSkipped) {
+    const minutes = Math.max(1, Math.round(created.space.sweepSkipped.agoMs / 60000));
+    console.log(`space: ${space.formatGb(created.space.free)} free; skipped the workspace sweep, the last one ${minutes} min ago found nothing to remove (atris worktree doctor shows what holds the space)`);
+  } else if (created.space && created.space.removed.length) {
     const count = created.space.removed.length;
     console.log(`space: disk was low, removed ${count} finished build ${count === 1 ? 'copy' : 'copies'} across the workspace; ${space.formatGb(created.space.free)} free now`);
   } else if (created.space && created.space.free !== null && created.space.free < created.space.reapBelow) {
     console.log(`space: ${space.formatGb(created.space.free)} free; no finished build copies were safe to remove`);
   }
   if (created.deps && created.deps.status === 'cloned') {
-    console.log(`deps: cloned node_modules from a matching install in ${(created.deps.ms / 1000).toFixed(1)}s; skip npm ci`);
+    const how = created.deps.method === 'hardlink' ? 'hardlinked' : 'cloned';
+    console.log(`deps: ${how} node_modules from a matching install in ${(created.deps.ms / 1000).toFixed(1)}s; skip npm ci`);
   } else if (created.deps && created.deps.reason !== 'no package-lock.json') {
-    console.log(`deps: ${created.deps.reason}`);
+    console.log(`deps: not cloned (${created.deps.reason})`);
   }
 
   const counts = statusCounts(root);
@@ -481,7 +486,110 @@ function guard(args) {
   return 0;
 }
 
+function readHours(args, flag, fallback) {
+  const raw = readFlag(args, flag);
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const hours = Number(raw);
+  return Number.isFinite(hours) && hours >= 0 ? hours : NaN;
+}
+
+// formatKib says "an unknown amount" for 0; here 0 is a measured nothing.
+function sizeText(kib) {
+  return kib > 0 ? formatKib(kib) : '0 MB';
+}
+
+function copyLine(copy) {
+  const facts = [
+    sizeText(copy.size_kib),
+    `age ${copy.age_hours}h`,
+    `idle ${copy.idle_hours}h`,
+    copy.merged ? 'merged' : 'not merged',
+    copy.dirty ? `${copy.dirty} changes` : 'clean',
+    copy.in_use ? 'in use' : 'unused',
+    `deps ${copy.deps}`,
+  ];
+  if (copy.build_kib) facts.push(`build ${sizeText(copy.build_kib)}`);
+  const verdict = copy.prune ? 'prune' : `keep, ${doctor.KEPT_WHY[copy.reason] || copy.reason}${copy.why ? ` (${copy.why})` : ''}`;
+  return `  ${copy.name}  ${facts.join(', ')}  -> ${verdict}${copy.clears_build ? '; build output can go' : ''}`;
+}
+
+function doctorCommand(args) {
+  const workspace = path.resolve(readFlag(args, '--workspace') || defaultSweepWorkspace());
+  const olderThan = readHours(args, '--older-than', 24);
+  if (!Number.isFinite(olderThan)) {
+    console.error('Usage: atris worktree doctor [--workspace <dir>] [--repo <name>] [--older-than <hours>] [--json]');
+    return 2;
+  }
+  const report = doctor.doctorWorkspace({ workspace, olderThanHours: olderThan, repoFilter: readFlag(args, '--repo') || '' });
+  if (hasFlag(args, '--json')) {
+    console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
+    return report.error ? 1 : 0;
+  }
+  if (report.error) {
+    console.error(`refusing: ${report.error}`);
+    return 1;
+  }
+  const t = report.totals;
+  console.log(`doctor: ${plural(t.copies, 'build copy', 'build copies')} in ${workspace}, ${space.formatGb(report.free)} free`);
+  for (const repo of report.repos) {
+    if (repo.skipped || repo.error) {
+      console.log(`${repo.name}: skipped (${repo.skipped || repo.error})`);
+      continue;
+    }
+    if (!repo.copies.length && !repo.unregistered.length) continue;
+    console.log(`${repo.name} (${repo.copies.length})`);
+    for (const copy of repo.copies) console.log(copyLine(copy));
+    for (const dir of repo.unregistered) console.log(`  ${path.basename(dir.path)}  ${sizeText(dir.size_kib)}  -> keep, git does not list it as a copy; check it by hand`);
+  }
+  console.log('');
+  console.log(`disk: copies hold about ${sizeText(t.size_kib)} of their own; node_modules clones share one install and count as 0`);
+  console.log(`age: ${t.older_than_day} older than a day, ${t.older_than_3_days} older than three days; ${t.merged} merged, ${t.dirty} with changes, ${t.in_use} in use`);
+  if (t.own_installs) console.log(`installs: ${plural(t.own_installs, 'copy has its', 'copies have their')} own full node_modules (npm ci ran there)`);
+  if (t.links) console.log(`warning: ${plural(t.links, 'copy links', 'copies link')} node_modules to another folder; npm ci there empties the folder it points at`);
+  if (t.unregistered) console.log(`unlisted: ${plural(t.unregistered, 'folder', 'folders')} under .agent-worktrees that git does not know as a copy`);
+  console.log(`safe prune now (merged, clean, unused, idle ${olderThan}h): ${plural(t.prune, 'copy', 'copies')}, about ${sizeText(t.prune_kib)}; build output in idle copies it keeps: ${sizeText(t.clear_build_kib)}`);
+  if (t.prune || t.clear_build_kib) console.log(`next: atris worktree prune --merged --older-than ${olderThan} --yes`);
+  return 0;
+}
+
+function pruneMerged(args) {
+  const workspace = path.resolve(readFlag(args, '--workspace') || defaultSweepWorkspace());
+  const olderThan = readHours(args, '--older-than', 24);
+  if (!Number.isFinite(olderThan)) {
+    console.error('Usage: atris worktree prune --merged --older-than <hours> [--yes] [--workspace <dir>] [--repo <name>] [--json]');
+    return 2;
+  }
+  const apply = hasFlag(args, '--yes');
+  const report = doctor.pruneWorkspace({ workspace, olderThanHours: olderThan, apply, repoFilter: readFlag(args, '--repo') || '' });
+  if (hasFlag(args, '--json')) {
+    console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
+    return report.error ? 1 : 0;
+  }
+  if (report.error) {
+    console.error(`refusing: ${report.error}`);
+    return 1;
+  }
+  console.log(`prune: ${apply ? 'removing' : 'dry run, nothing changes'}; merged, clean, unused copies idle ${olderThan}h in ${workspace}`);
+  let copies = 0;
+  let builds = 0;
+  for (const repo of report.repos) {
+    if (repo.skipped || repo.error) continue;
+    const gone = apply ? repo.removed : repo.candidates;
+    copies += gone.length;
+    for (const item of gone) console.log(`  ${apply ? 'removed' : 'remove'}: ${item.path}${item.size_kib ? ` (${formatKib(item.size_kib)} by du)` : ''}`);
+    for (const item of repo.build) {
+      builds += item.kib;
+      console.log(`  ${apply ? 'cleared' : 'clear'} build output: ${item.path} (${sizeText(item.kib)})`);
+    }
+  }
+  console.log(`${apply ? 'removed' : 'would remove'} ${plural(copies, 'copy', 'copies')}, ${apply ? 'cleared' : 'would clear'} ${sizeText(builds)} of build output; branches and commits stay`);
+  if (apply) console.log(`free: ${space.formatGb(report.before)} before, ${space.formatGb(report.after)} after`);
+  else if (copies || builds) console.log(`next: atris worktree prune --merged --older-than ${olderThan} --yes`);
+  return 0;
+}
+
 function prune(args) {
+  if (hasFlag(args, '--merged')) return pruneMerged(args);
   const cmd = ['worktree', 'prune', '--verbose'];
   if (!hasFlag(args, '--apply')) cmd.push('--dry-run');
   const result = runGit(cmd, { cwd: repoRoot(), check: false });
@@ -657,13 +765,16 @@ function guide() {
   console.log('Start clones node_modules from a matching install when package-lock.json matches; skip npm ci when it prints "deps: cloned".');
   console.log('Below 25 GB free, start reaps finished copies in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
   console.log('A shipped copy is removed as soon as its work is merged or on origin and nothing else runs in it; if something does, a merged copy goes once it has been quiet for 10 minutes (--keep-copy or ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
+  console.log('A shipped copy that has to stay loses its build output (.next, test caches, Python bytecode, node_modules/.cache) unless another program runs in it.');
+  console.log('Below 25 GB free, a start skips the workspace sweep for 30 minutes after one that found nothing (ATRIS_WORKTREE_SWEEP_COOLDOWN_MIN=0 always sweeps).');
   console.log('The sweep reports abandoned copies with unsaved work (idle 7 days). With --rescue it saves one to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it; it removes a copy only when it can prove every byte is saved, and anything unusual keeps the copy for a person. The timer never rescues. Rescues are logged in .atris/state/worktree_removals.jsonl.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
+  console.log('Use `atris worktree doctor` to see what every copy really costs and what a prune would free.');
   return 0;
 }
 
 function help() {
-  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup|sweep>');
+  console.log('Usage: atris worktree <guide|start|ship|status|doctor|guard|prune|cleanup|sweep>');
   console.log('');
   console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--former-task "<older name>"] [--claim] [--force] [--no-deps]');
@@ -679,7 +790,9 @@ function help() {
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
-  console.log('  atris worktree prune [--apply]');
+  console.log('  atris worktree doctor [--older-than 24] [--repo <name>] [--json]  every copy: real size, age, merged, in use, what a prune would free');
+  console.log('  atris worktree prune [--apply]  drop registrations of copies whose folder is gone');
+  console.log('  atris worktree prune --merged --older-than <hours> [--yes]  remove merged, clean, unused copies idle that long; dry run unless --yes');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
   console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue] [--rescue-after-days 7]');
   console.log('    removes merged or pushed idle copies in every repo and reports abandoned ones; --rescue saves those to a new branch on origin, then removes them');
@@ -702,6 +815,7 @@ function worktreeCommand(args = []) {
   }
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
+  if (sub === 'doctor') return doctorCommand(rest);
   if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
   if (sub === 'sweep') return sweep(rest);
   if (sub === 'reap-shipped') return reapShipped();
