@@ -1011,6 +1011,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
     const awake = await ensureBusinessAwake(token, ctx);
     if (!awake) {
       console.error('  Computer did not become ready in time.');
+      process.exitCode = 1;
       return;
     }
     const worker = activeWorker(options.worker || ctx.worker);
@@ -1037,6 +1038,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
         if (fallback.error) {
           console.error(`Fallback failed: ${fallback.error}`);
         }
+        process.exitCode = 1;
         return;
       }
       const text = extractRunnerProxyText(fallback.payload);
@@ -1071,6 +1073,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
   });
   if (!result.ok) {
     console.error(`Failed: ${result.errorMessage || result.status}`);
+    process.exitCode = 1;
     return;
   }
   console.log(`  Execution: ${result.data.execution_id}`);
