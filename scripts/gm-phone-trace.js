@@ -68,7 +68,7 @@ function cardDesk(first, on, extra = {}) {
   const apply = (out) => {
     if (!out || out.ok === false) return refuse((out && out.reason) || 'gone', (out && out.message) || 'that did not go through. try again.');
     if ('card' in out) current = out.card;
-    return { status: 200, body: env({ ...(out.ack ? { ack: out.ack } : {}), ...(out.home ? { home: true } : {}) }) };
+    return { status: 200, body: env({ ...(out.ack ? { ack: out.ack } : {}), ...(out.home ? { home: true } : {}), ...(out.keep ? { keep: out.keep } : {}) }) };
   };
   return {
     get current() { return current; },
@@ -663,6 +663,40 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
     const sent = await look(p);
     return { words: WORDS, offline, refused, sent, calls };
   });
+}
+
+// ---- words no model heard come back in their box ------------------------------------------
+
+// The owner types on a card, and no model answers the read in time: the desk
+// answers with the reply card that says so and his words to keep. Once on
+// "something else" on a question (as on 2026-11-14), once in the box of an
+// idea. Is the box open on the reply card with his words in it, and does
+// Enter send the same words again.
+const NOT_HEARD = 'the model did not answer this time, so nothing was saved. try again in a moment.';
+async function unheardKeepTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'making sure this app is really really fast';
+  const runs = [];
+  for (const [base, open] of [[CARDS.q1, '#bet .choice.other'], [CARDS.b1, '#bet .sayline .quiet']]) {
+    const calls = [];
+    const desk = cardDesk(base, async (action, { text }) => {
+      calls.push({ action, text });
+      if (calls.length === 1) return { card: gmCard.reply({ id: `${base.id}~r1`, base, text: NOT_HEARD }), keep: text };
+      return { card: CARDS.b2 };
+    });
+    runs.push(await onPhone(desk, chromePath, async (p) => {
+      await p.tap(open);
+      await wait(250);
+      await p.type(WORDS);
+      await p.enter();
+      await p.until(`${titled(NOT_HEARD)} && Boolean(document.querySelector('#bet .field input')) && document.querySelector('#bet .field input').value.length > 0`, 'the reply with the words back', 8000).catch(() => {});
+      await wait(150);
+      const unheard = await look(p);
+      await p.enter();
+      await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
+      return { card: base.kind, words: WORDS, unheard, sent: await look(p), calls };
+    }));
+  }
+  return runs;
 }
 
 // ---- a word to a teammate that did not send comes back, ready to send again -------------
@@ -1789,7 +1823,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, unheardKeepTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');
