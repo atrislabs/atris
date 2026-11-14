@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # atris computer pr: one shared copy of each repo, one light working folder per run.
-#   prepare <owner> <name> <branch> [base]  makes a run folder on a new branch
+#   prepare <owner> <name> <branch> [base]  makes a run folder on a new branch (safe to call twice)
 #   finish <run_dir> <branch>               pushes the branch, then removes the folder
 #   abort <run_dir>                         removes the folder, keeps any commits
 # Everything lives under ROOT. Nothing outside it is ever deleted.
@@ -126,6 +126,33 @@ prepare_failed() {
   exit "$status"
 }
 
+# The branch is already here, so this is a second prepare for the same run (the
+# first call was slow or cut off and the caller tried again). Hand back the same
+# folder when it holds no work, clear one that was never finished, and refuse
+# to touch a branch or folder that has work in it.
+existing_run() {
+  taken="branch $branch already exists on this computer; use a new branch name"
+  git -C "$mirror" merge-base --is-ancestor "refs/heads/$branch" "refs/remotes/origin/$base" 2>/dev/null || die "$taken"
+  old="$(git -C "$mirror" worktree list --porcelain | awk -v b="refs/heads/$branch" '/^worktree / {w=substr($0, 10)} /^branch / {if (substr($0, 8) == b) {print w; exit}}')"
+  found=""
+  [ -z "$old" ] || found="$RUNS/$(basename "$old")"
+  case "$found" in *..*) found="" ;; esac
+  if [ -n "$found" ] && [ -d "$found" ]; then
+    gd="$(git -C "$found" rev-parse --absolute-git-dir 2>/dev/null || true)"
+    if [ -n "$gd" ] && [ -f "$gd/atris-base" ]; then
+      changes="$(git -C "$found" status --porcelain 2>/dev/null)" || changes="unreadable"
+      [ -z "$changes" ] || die "$taken"
+      reuse="$found"
+      return 0
+    fi
+    run_dir="$found"
+    git -C "$mirror" worktree remove --force "$run_dir" >/dev/null 2>&1 || rm -rf -- "$run_dir"
+    run_dir=""
+  fi
+  git -C "$mirror" worktree prune
+  git -C "$mirror" branch -D "$branch" >/dev/null 2>&1 || die "$taken"
+}
+
 prepare() {
   [ "$#" -ge 3 ] || die "usage: prepare <owner> <name> <branch> [base]"
   owner="$1"; name="$2"; branch="$3"; base="${4:-}"
@@ -147,8 +174,17 @@ prepare() {
   [ -n "$default" ] || die "could not read the default branch of $owner/$name"
   [ -n "$base" ] || base="$default"
   git -C "$mirror" rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}" >/dev/null || die "branch $base is not on the remote"
+  reuse=""
   if git -C "$mirror" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
-    die "branch $branch already exists on this computer; use a new branch name"
+    existing_run
+  fi
+  if [ -n "$reuse" ]; then
+    unlock
+    trap - EXIT INT TERM
+    say "RUN_DIR=$reuse"
+    say "BASE=$base"
+    say "DEFAULT_BRANCH=$default"
+    return 0
   fi
   slug="$(printf '%s' "$name--$branch" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80)"
   run_dir="$(mktemp -d "$RUNS/$slug.XXXXXX")"

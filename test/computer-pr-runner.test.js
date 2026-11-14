@@ -162,12 +162,34 @@ test('failures clean up after themselves and never lose a commit', { skip }, asy
   assert.ok(!fs.existsSync(dir));
   assert.equal(git(mirror, 'for-each-ref', 'refs/heads'), '');
 
-  // The same branch name twice at once: the second is refused, not shared.
+  // A retry: prepare called again for the same branch before any work is in the
+  // folder hands back the same folder with the same lines, and makes no second one.
   p = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-4']);
   dir = value(p.stdout, 'RUN_DIR');
+  const again = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-4']);
+  assert.equal(again.code, 0, again.stderr);
+  assert.equal(again.stdout, p.stdout);
+  assert.equal(fs.readdirSync(path.join(ctx.root, 'runs')).length, 1);
+
+  // A prepare that was cut off before it finished (no base recorded): the next
+  // call clears the half-made folder and starts clean on the same branch.
+  const cut = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-cut']);
+  const cutDir = value(cut.stdout, 'RUN_DIR');
+  fs.rmSync(path.join(git(cutDir, 'rev-parse', '--absolute-git-dir'), 'atris-base'));
+  fs.rmSync(path.join(cutDir, 'README.md'));
+  const redo = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-cut']);
+  assert.equal(redo.code, 0, redo.stderr);
+  const redoDir = value(redo.stdout, 'RUN_DIR');
+  assert.ok(!fs.existsSync(cutDir));
+  assert.equal(fs.readFileSync(path.join(redoDir, 'README.md'), 'utf8'), 'hello\n');
+  assert.equal((await run(ctx, ['abort', redoDir])).code, 0);
+
+  // The same branch name once work is in the folder: the second is refused, not shared.
+  fs.writeFileSync(path.join(dir, 'README.md'), 'started\n');
   const twice = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-4']);
   assert.notEqual(twice.code, 0);
   assert.match(twice.stderr, /already exists on this computer/);
+  assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'started\n');
   assert.equal(fs.readdirSync(path.join(ctx.root, 'runs')).length, 1);
 
   // Push fails (the remote already has a different atris/x-4): folder removed,
@@ -187,6 +209,11 @@ test('failures clean up after themselves and never lose a commit', { skip }, asy
   assert.ok(!fs.existsSync(dir));
   assert.equal(git(mirror, 'rev-parse', 'refs/heads/atris/x-4'), mine);
   assert.equal(git(mirror, 'worktree', 'list').split('\n').length, 1);
+  // A kept branch holds a commit, so a later prepare never reuses or clears it.
+  const kept = await run(ctx, ['prepare', 'acme', 'shop', 'atris/x-4']);
+  assert.notEqual(kept.code, 0);
+  assert.match(kept.stderr, /already exists on this computer/);
+  assert.equal(git(mirror, 'rev-parse', 'refs/heads/atris/x-4'), mine);
 });
 
 test('the sweep removes only stale run folders and only reports old clones', { skip }, async (t) => {
