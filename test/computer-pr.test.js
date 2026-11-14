@@ -468,3 +468,12 @@ test('normalizeScript matches the script self check rule', () => {
   assert.equal(prLib.scriptHash(a), prLib.scriptHash('echo hi\nx'));
   assert.notEqual(prLib.scriptHash(a), prLib.scriptHash('echo hi\ny'));
 });
+
+test('the pull request prompt asks for a proof check, with a way out for changes no test can cover', () => {
+  const prompt = require('../lib/computer-pr').buildPullRequestPrompt({ owner: 'acme', name: 'shop', task: 'fix the total', branch: 'atris/fix-the-total-20261114-0905' });
+  assert.match(prompt, /see it fail/);
+  assert.match(prompt, /see it pass/);
+  assert.match(prompt, /abort <RUN_DIR>, then stop and reply "STEP_FAILED=5 could not reproduce"/);
+  assert.match(prompt, /skip the proof and just make the change/);
+  assert.match(prompt, /the check that failed before the fix and passes after it/);
+});
