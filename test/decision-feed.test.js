@@ -302,9 +302,18 @@ test('theme: reuses the atris goal, one plain sentence, people only', (t) => {
   const ctx = project(t);
   assert.equal(feed.listCards(ctx.root, { env: ctx.env }).theme.text, null);
   const out = feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
-  assert.equal(out.theme.text, readScoreboard(ctx.root).goal, 'the same storage atris goal reads');
+  assert.equal(out.theme.text, 'Get ten paying customers by December', 'shown exactly as typed');
+  const board = readScoreboard(ctx.root);
+  assert.equal(board.goal, 'get ten paying customers by december', 'the same storage atris goal reads, still matched lowercased');
+  assert.equal(board.goal_text, 'Get ten paying customers by December');
   assert.ok(fs.existsSync(path.join(ctx.root, '.atris', 'state', 'scoreboard.json')));
-  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).theme.text, readScoreboard(ctx.root).goal);
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).theme.text, 'Get ten paying customers by December');
+  // A goal set with atris goal shows as typed in the feed too.
+  const { run } = require('../commands/goal');
+  const log = console.log;
+  console.log = () => {};
+  try { run(['set', 'Win Back The Quiet Owners', '--no-wish'], { cwd: ctx.root }); } finally { console.log = log; }
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).theme.text, 'Win Back The Quiet Owners');
   for (const bad of ['', 'x'.repeat(141), 'Win. Then win again.', 'Ship PR-12 to the repo']) {
     assert.throws(() => feed.setTheme(ctx.root, bad, { env: ctx.env }), (e) => e.status === 400, bad);
   }
@@ -399,7 +408,8 @@ test('decide: at most two members run at once; the rest wait in order', (t) => {
   assert.equal(outcomes[2].reason, 'queued');
   assert.equal(outcomes[2].position, 1);
   assert.equal(ctx.spawned.length, 2);
-  const waiting = cards(ctx).find((card) => card.id === ids[2]);
+  assert.ok(!cards(ctx).some((card) => card.id === ids[2]), 'approved work waiting in line sits on the working shelf');
+  const waiting = cards(ctx, 'working').find((card) => card.id === ids[2]);
   assert.equal(waiting.state, 'pending');
   assert.equal(waiting.run.status, 'queued');
   assert.equal(waiting.run.position, 1);
@@ -617,8 +627,178 @@ test('cli: atris feed cards --json answers from the fast path in the cloud shape
   assert.equal(JSON.parse(refused.stdout).error.status, 403);
 });
 
+// ------------------------------------------------------- talk gets an answer
+
+function backdatePass(ctx, cardId, minutes) {
+  tasks.updateTaskMetadata(ctx.db, cardId.split(':')[1], (m) => {
+    for (const entry of Object.values(m.feed_views[cardId])) entry.last_passed_at = new Date(Date.now() - minutes * 60000).toISOString();
+    return m;
+  }, { touch: false });
+}
+
+test('talk: a message queues one short answer run of the card\'s member', (t) => {
+  const ctx = project(t);
+  const { card } = propose(ctx);
+  const sent = feed.talk(ctx.root, card.id, 'Can we start with the five oldest?', { env: ctx.env, deps: ctx.deps });
+  assert.equal(sent.reply_pending, true);
+  assert.equal(sent.reply_run.status, 'running');
+  assert.equal(ctx.spawned.length, 1);
+  assert.equal(ctx.spawned[0].kind, 'reply');
+  assert.equal(ctx.spawned[0].member, 'scout');
+  assert.match(ctx.spawned[0].direction, /Do not start the work/);
+  assert.match(ctx.spawned[0].direction, new RegExp(`atris feed talk <card> --as scout`));
+  assert.match(ctx.spawned[0].direction, new RegExp(card.id));
+  assert.match(ctx.spawned[0].direction, /five oldest/);
+  assert.match(ctx.spawned[0].direction, /atris feed revise <card> --as scout/);
+  // A second message while that run is live adds no second run for this card.
+  feed.talk(ctx.root, card.id, 'Or the ten newest?', { env: ctx.env, deps: ctx.deps });
+  assert.equal(ctx.spawned.length, 1);
+  assert.equal(feed.readRuns(ctx.root).filter((r) => r.kind === 'reply').length, 1);
+  assert.equal(feed.listMessages(ctx.root, card.id, { env: ctx.env }).reply_pending, true);
+  // The reply run does not stand in for the card's approved work on the card.
+  assert.equal(cards(ctx).find((c) => c.id === card.id).run, null);
+  feed.talk(ctx.root, card.id, 'The five oldest answer most, so I will start there.', { as: 'scout', env: ctx.agentEnv, deps: ctx.deps });
+  assert.equal(feed.listMessages(ctx.root, card.id, { env: ctx.env }).reply_pending, false);
+});
+
+test('talk: a reply run waits behind approved work and ahead of idea rounds; answering cancels it', (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
+  const blocked = { ...ctx.deps, maxRunning: 0 };
+  feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
+  const idea = propose(ctx, { as: 'extra', title: 'Thank the first ten buyers' }).card;
+  feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: blocked });
+  feed.talk(ctx.root, idea.id, 'Which ten?', { env: ctx.env, deps: blocked });
+  const approved = propose(ctx, { as: 'writer', title: 'Write the spring price note' }).card;
+  feed.decide(ctx.root, approved.id, 'approve', { env: ctx.env, deps: blocked });
+  assert.equal(ctx.spawned.length, 0, 'nothing ran with no free slot');
+  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 1 });
+  assert.equal(ctx.spawned[0].kind, 'task', 'approved work first');
+  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 2 });
+  assert.equal(ctx.spawned[1].kind, 'reply', 'then the answer');
+  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 3 });
+  assert.equal(ctx.spawned[2].kind, 'ideas', 'then idea rounds');
+
+  const second = propose(ctx, { as: 'closer', title: 'Ask three owners for a quote' }).card;
+  feed.talk(ctx.root, second.id, 'Which owners?', { env: ctx.env, deps: blocked });
+  feed.talk(ctx.root, second.id, 'The three who called last week.', { as: 'closer', env: ctx.agentEnv, deps: blocked });
+  assert.equal(feed.readRuns(ctx.root).find((r) => r.key === `reply:${second.id}`).status, 'cancelled');
+});
+
+test('talk: any run of the member starts with the person\'s waiting messages', (t) => {
+  const ctx = project(t);
+  const { card } = propose(ctx);
+  assert.deepEqual(feed.talkBriefLines(ctx.root, 'scout'), []);
+  feed.talk(ctx.root, card.id, 'Please make it the five oldest instead', { env: ctx.env, deps: { ...ctx.deps, maxRunning: 0 } });
+  const lines = feed.talkBriefLines(ctx.root, 'scout');
+  assert.match(lines[0], /waiting on your answer/);
+  assert.ok(lines.some((line) => line.includes(card.id) && line.includes('five oldest instead')));
+  assert.deepEqual(feed.talkBriefLines(ctx.root, 'writer'), [], 'only the member\'s own cards');
+
+  const { buildTickPrompt } = require('../commands/mission');
+  const tick = buildTickPrompt({ id: 'm1', owner: 'scout', objective: 'Tidy the inbox', status: 'running' }, 1, 1,
+    { lane: 'code', verifier: '' }, [], ctx.root);
+  const firstSection = tick.split('\n').slice(0, 4).join('\n');
+  assert.match(firstSection, /waiting on your answer/, 'the brief begins with it');
+  const { buildMemberSubagentShell } = require('../commands/member');
+  assert.match(buildMemberSubagentShell('scout', 'Scout', 'claude', 'Tidy the inbox', ctx.root).prompt, /^## The owner is waiting on your answer/);
+  assert.doesNotMatch(buildMemberSubagentShell('writer', 'Writer', 'claude', 'Tidy the inbox', ctx.root).prompt, /waiting on your answer/);
+
+  feed.talk(ctx.root, card.id, 'Yes, the five oldest it is.', { as: 'scout', env: ctx.agentEnv, deps: ctx.deps });
+  assert.deepEqual(feed.talkBriefLines(ctx.root, 'scout'), []);
+});
+
+// --------------------------------------------------------- reading queue
+
+test('queue: ideas first (never passed, then fewest passes, then newest), then unread results oldest first', (t) => {
+  const ctx = project(t);
+  const older = add(ctx, { title: 'Send the weekly note', status: 'done' });
+  const newer = add(ctx, { title: 'Send the monthly note', status: 'done' });
+  tasks.updateTaskMetadata(ctx.db, older, (m) => m, { now: Date.now() - 60000 });
+  const a = propose(ctx, { title: 'Call the warm leads today' }).card;
+  const b = propose(ctx, { as: 'writer', title: 'Write the spring price note' }).card;
+  const c = propose(ctx, { as: 'closer', title: 'Ask three owners for a quote' }).card;
+  feed.passCards(ctx.root, [a.id], { env: ctx.env });
+  backdatePass(ctx, a.id, 31); // passed, but long enough ago to come back
+  const order = cards(ctx).map((card) => card.id);
+  const ideas = order.slice(0, 3);
+  assert.deepEqual(ideas, [c.id, b.id, a.id], 'never-passed newest first, the passed one last');
+  const results = order.slice(3);
+  assert.equal(results.length, 2);
+  assert.equal(cards(ctx).find((card) => card.id === a.id).pass_count, 1);
+  const page = feed.listCards(ctx.root, { env: ctx.env });
+  assert.deepEqual(Object.keys(page.counts).sort(), ['done_today', 'needs_decision', 'new_results', 'parked', 'working']);
+  assert.equal(page.counts.new_results, 2);
+  void newer;
+});
+
+test('queue: a pass holds an idea back for 30 minutes; three passes park it; revising brings it back', (t) => {
+  const ctx = project(t);
+  const { card } = propose(ctx);
+  assert.equal(feed.passCards(ctx.root, [card.id], { env: ctx.env }).passed, 1);
+  assert.ok(!cards(ctx).some((c) => c.id === card.id), 'held back right after a pass');
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.needs_decision, 1, 'still counted as waiting');
+  backdatePass(ctx, card.id, 31);
+  assert.ok(cards(ctx).some((c) => c.id === card.id), 'back after 30 minutes');
+  feed.passCards(ctx.root, [card.id], { env: ctx.env });
+  feed.passCards(ctx.root, [card.id], { env: ctx.env });
+  backdatePass(ctx, card.id, 31);
+  assert.ok(!cards(ctx).some((c) => c.id === card.id), 'parked after three passes');
+  assert.deepEqual(cards(ctx, 'parked').map((c) => c.id), [card.id]);
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.parked, 1);
+  assert.equal(tasks.getTask(ctx.db, card.source.id).status, 'open', 'a pass is not a dismissal');
+  feed.revise(ctx.root, card.id, { as: 'scout', title: 'Call the five oldest leads', env: ctx.env });
+  const back = cards(ctx).find((c) => c.id === card.id);
+  assert.ok(back, 'revising brings it back');
+  assert.equal(back.pass_count, 0);
+  assert.throws(() => feed.passCards(ctx.root, [card.id], { env: ctx.agentEnv }), (e) => e.status === 403);
+});
+
+test('queue: a read result leaves the default list and stays under done', (t) => {
+  const ctx = project(t);
+  const done = add(ctx, { title: 'Send the weekly note', status: 'done' });
+  const [result] = cardsOf(ctx, done);
+  assert.equal(result.seen, false);
+  feed.passCards(ctx.root, [result.id], { env: ctx.env });
+  assert.deepEqual(cardsOf(ctx, done), [], 'read results leave the default list');
+  const [kept] = cardsOf(ctx, done, 'done');
+  assert.equal(kept.seen, true);
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.new_results, 0);
+  const working = add(ctx, { title: 'Sort the inbox', status: 'claimed', claimedBy: 'scout' });
+  const out = feed.passCards(ctx.root, [cardsOf(ctx, working, 'working')[0].id, 'task:nope:1:proposal'], { env: ctx.env });
+  assert.equal(out.passed, 0, 'only waiting ideas and results take a pass');
+  assert.equal(out.skipped.length, 2);
+});
+
+test('queue: the cursor names cards already sent, so a pass between pages skips nothing', (t) => {
+  const ctx = project(t);
+  const ids = ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote']
+    .map((title, i) => propose(ctx, { as: ['scout', 'writer', 'closer'][i], title }).card.id);
+  const first = feed.listCards(ctx.root, { limit: 1, env: ctx.env });
+  feed.passCards(ctx.root, [first.cards[0].id], { env: ctx.env });
+  const second = feed.listCards(ctx.root, { limit: 5, cursor: first.next_cursor, env: ctx.env });
+  const seen = [...first.cards, ...second.cards].map((card) => card.id);
+  assert.equal(new Set(seen).size, seen.length, 'no card repeats');
+  assert.equal(seen.length, 3, 'every card arrives once, though the first was passed and moved');
+  assert.deepEqual([...seen].sort(), [...ids].sort());
+  assert.throws(() => feed.listCards(ctx.root, { cursor: 'not a cursor!', env: ctx.env }), (e) => e.status === 400);
+});
+
+test('cli: a bare call whose output is not a terminal keeps the old group feed for one release, and says so', (t) => {
+  const ctx = project(t);
+  const { spawnSync } = require('node:child_process');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const bare = spawnSync(process.execPath, [cli, 'feed'], { cwd: ctx.root, env: ctx.env, encoding: 'utf8' });
+  assert.match(bare.stderr, /^note: bare `atris feed` now opens the decision feed/);
+  assert.match(bare.stderr, /No \.atris\/business\.json found/, 'then the old group feed answered, as before');
+  const json = spawnSync(process.execPath, [cli, 'feed', '--json'], { cwd: ctx.root, env: ctx.env, encoding: 'utf8' });
+  assert.equal(json.stderr, '');
+  assert.equal(JSON.parse(json.stdout).version, 'atris.feed.v1');
+  const help = spawnSync(process.execPath, [cli, 'feed', '--help'], { cwd: ctx.root, env: ctx.env, encoding: 'utf8' });
+  assert.match(help.stdout, /bare `atris feed` now opens this decision feed/);
+});
+
 test('routing: feed list and feed post stay the business group feed', () => {
-  assert.equal(handles([]), true);
+  assert.equal(handles([], { isTTY: true }), true);
   assert.equal(handles(['--json']), true);
   assert.equal(handles(['cards', '--since', '123']), true);
   assert.equal(handles(['decide', 'task:x:1:proposal', 'approve']), true);
@@ -626,4 +806,11 @@ test('routing: feed list and feed post stay the business group feed', () => {
   assert.equal(handles(['post', 'shipped it']), false);
   assert.equal(handles(['--author', 'mira']), false);
   assert.equal(handles(['--since', '7d']), false);
+  const { route } = require('../commands/decision-feed');
+  assert.deepEqual(route([], { isTTY: true }), { decision: true, notice: '' });
+  assert.equal(route([], { isTTY: false }).decision, false);
+  assert.match(route([], { isTTY: false }).notice, /now opens the decision feed/);
+  assert.equal(route(['--json'], { isTTY: false }).decision, true);
+  assert.equal(route(['--limit', '5'], { isTTY: false }).decision, false);
+  assert.equal(route(['cards'], { isTTY: false }).decision, true);
 });

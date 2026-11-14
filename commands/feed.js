@@ -13,6 +13,8 @@ function showHelp() {
   console.log('Usage: atris feed list [n] [--author <name>] [--since <7d|24h>] [--full] [--json]');
   console.log('       atris feed post "<content>"');
   console.log('');
+  console.log('Bare `atris feed` now opens the decision feed (atris feed --help). This group feed is `atris feed list`.');
+  console.log('');
   console.log('Description:');
   console.log('  Read and write the business group feed (the same feed as the web GM dashboard).');
   console.log('  Posts should be receipts and state changes only: what shipped, what blocked, what changed.');

@@ -28,9 +28,14 @@ if (process.argv[2] === 'memory'
 // The desktop app keeps the decision feed open all day and asks often, so
 // atris feed answers before the rest of the CLI loads too. `feed list` and
 // `feed post` (the business group feed) fall through to the normal dispatch.
-if (process.argv[2] === 'feed' && require('../commands/decision-feed').handles(process.argv.slice(3))) {
-  require('../commands/decision-feed').runFromCli(process.argv.slice(3));
-  return;
+if (process.argv[2] === 'feed') {
+  const decisionFeed = require('../commands/decision-feed');
+  const feedRoute = decisionFeed.route(process.argv.slice(3), { isTTY: Boolean(process.stdout.isTTY) });
+  if (feedRoute.notice) console.error(feedRoute.notice);
+  if (feedRoute.decision) {
+    decisionFeed.runFromCli(process.argv.slice(3));
+    return;
+  }
 }
 
 const fs = require('fs');

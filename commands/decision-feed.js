@@ -47,7 +47,12 @@ function visualFlag(raw) {
 }
 
 const HELP = [
-  'usage: atris feed [cards] [--filter all|needs_decision|working|dismissed] [--limit N] [--cursor C] [--since T] [--json]',
+  'The feed changed meaning: bare `atris feed` now opens this decision feed. The business group feed is',
+  '`atris feed list` and `atris feed post`. For one release a bare call whose output is not a terminal (and has',
+  'no --json) still shows the group feed, with a notice on stderr.',
+  '',
+  'usage: atris feed [cards] [--filter all|needs_decision|working|parked|done|dismissed] [--limit N] [--cursor C] [--since T] [--json]',
+  '       atris feed pass <card> [<card> ...]   (scrolled past it; three passes parks an idea, a passed result is read)',
   '       atris feed theme [--json]',
   '       atris feed theme set "<one plain sentence>"',
   '       atris feed propose --as <member> --title "<title>" --why "<how it moves the goal>"',
@@ -77,7 +82,7 @@ function printText(command, out) {
   if (command === 'cards') {
     const theme = out.theme.text ? `goal: ${out.theme.text}` : 'goal: not set. set it: atris feed theme set "<sentence>"';
     console.log(theme);
-    console.log(`${out.counts.needs_decision} waiting for you, ${out.counts.working} being worked on, ${out.counts.done_today} done today`);
+    console.log(`${out.counts.needs_decision} waiting for you, ${out.counts.working} being worked on, ${out.counts.new_results} new results, ${out.counts.parked} parked, ${out.counts.done_today} done today`);
     for (const card of out.cards) console.log(`\n${textCard(card)}`);
     if (out.next_cursor) console.log(`\nmore: atris feed cards --cursor ${out.next_cursor}`);
     return;
@@ -101,6 +106,10 @@ function printText(command, out) {
     else if (outcome.reason === 'queued') console.log(`approved. it starts when a slot frees up (number ${outcome.position} in line).`);
     else if (outcome.reason === 'accepted') console.log('accepted.');
     else console.log(`approved. not started: ${outcome.reason || 'unknown'}`);
+    return;
+  }
+  if (command === 'pass') {
+    console.log(`passed ${out.passed}.${out.skipped.length ? ` not passed: ${out.skipped.join(' ')}` : ''}`);
     return;
   }
   if (command === 'more') {
@@ -153,10 +162,12 @@ function run(args = [], context = {}) {
       const [, card, choice] = positional;
       if (!card || !choice) throw new feed.FeedError(400, 'usage: atris feed decide <card> approve|dismiss [--note "<text>"]');
       out = feed.decide(root, card, choice, { note: flags.note, env, deps });
+    } else if (sub === 'pass') {
+      out = feed.passCards(root, positional.slice(1), { env });
     } else if (sub === 'talk') {
       const card = positional[1];
       if (!card) throw new feed.FeedError(400, 'usage: atris feed talk <card> "<message>"');
-      out = feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, env });
+      out = feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, env, deps });
     } else if (sub === 'messages') {
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed messages <card>');
       out = feed.listMessages(root, positional[1], { env });
@@ -188,19 +199,32 @@ function run(args = [], context = {}) {
   }
 }
 
-const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'talk', 'messages', 'revise', 'more', 'run', 'help']);
+const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help']);
 
-// Which feed a command line means. `atris feed list` and `atris feed post`
-// stay the business group feed (commands/feed.js); bare `atris feed` is this
-// decision feed unless it carries the group feed's own options (--author,
-// --full, or a --since window like 7d).
-function handles(args = []) {
+const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
+  + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
+
+// Which feed a command line means, and the one-line notice to print first.
+// `atris feed list` and `atris feed post` stay the business group feed
+// (commands/feed.js). Bare `atris feed` is this decision feed, except:
+// with the group feed's own options (--author, --full, a --since window like
+// 7d) it stays the group feed; and for one release, when output is not a
+// terminal and neither a subcommand nor --json is given, it behaves as before
+// (the group feed) and says so on stderr, so a script reading the old output
+// does not silently get something else.
+function route(args = [], { isTTY = false } = {}) {
   const first = args.find((arg) => !String(arg).startsWith('-'));
-  if (first) return DECISION_SUBCOMMANDS.has(first);
-  if (args.includes('--author') || args.includes('--full')) return false;
+  if (first) return { decision: DECISION_SUBCOMMANDS.has(first), notice: '' };
+  if (args.includes('--help') || args.includes('-h')) return { decision: true, notice: '' };
+  if (args.includes('--author') || args.includes('--full')) return { decision: false, notice: '' };
   const since = args.indexOf('--since');
-  if (since >= 0 && /^\d+[mhd]$/i.test(String(args[since + 1] || ''))) return false;
-  return true;
+  if (since >= 0 && /^\d+[mhd]$/i.test(String(args[since + 1] || ''))) return { decision: false, notice: '' };
+  if (args.includes('--json') || isTTY) return { decision: true, notice: '' };
+  return { decision: false, notice: LEGACY_BARE_NOTICE };
+}
+
+function handles(args = [], options = {}) {
+  return route(args, options).decision;
 }
 
 // The fast path from bin/atris.js: the desktop app keeps the feed open all
@@ -216,4 +240,4 @@ function runFromCli(args) {
   process.exitCode = code;
 }
 
-module.exports = { handles, run, runFromCli };
+module.exports = { LEGACY_BARE_NOTICE, handles, route, run, runFromCli };
