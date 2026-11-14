@@ -296,5 +296,7 @@ function run(args = [], context = {}) {
 }
 
 module.exports = {
+  readScoreboard,
   run,
+  writeScoreboard,
 };

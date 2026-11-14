@@ -10,7 +10,7 @@ const { apiRequestJson } = require('../utils/api');
 
 function showHelp() {
   console.log('');
-  console.log('Usage: atris feed [list] [n] [--author <name>] [--since <7d|24h>] [--full] [--json]');
+  console.log('Usage: atris feed list [n] [--author <name>] [--since <7d|24h>] [--full] [--json]');
   console.log('       atris feed post "<content>"');
   console.log('');
   console.log('Description:');
