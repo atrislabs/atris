@@ -18,7 +18,7 @@ const home = require('../lib/agent-home');
 // The route for one part of an agent's stored folder.
 const homeRoute = (id, leaf) => ['/agents', encodeURIComponent(id), 'home', leaf].join('/');
 
-const HOME_VERBS = new Set(['pull', 'push', 'snapshot']);
+const HOME_VERBS = new Set(['pull', 'push', 'snapshot', 'publish', 'unpublish']);
 // Twice the 2,000 file limit, even if every answer moves by one file.
 const MAX_BUNDLE_ANSWERS = 4000;
 const PUSH_BATCH_BYTES = 4000000;
@@ -28,6 +28,9 @@ function homeHelp(log = console.log) {
   log(`usage: atris agent pull [<agent>] [--dir <folder>]   copy the agent's home folder here and set it up for any engine
        atris agent push [--dir <folder>]              send what changed here back to the agent's home
        atris agent snapshot [<agent>] [--reason "..."] save a version of the home you can restore later
+       atris agent publish [<agent>] --as <name> [--lane <lane>] [--full-skills] [--library] [--price <usd>]
+                                                      publish the agent as a model
+       atris agent unpublish [<agent>]                remove the model name
        atris agent spawn [<parent>] --name <name> --budget <credits> [--role "..."] [--soul "..."] [--mission "..."]
                                                       make a child agent; its private key is saved to ~/.atris/agents/<name>.json
 
@@ -308,6 +311,33 @@ async function snapshot({ ref, flags, cwd, env, call, log, err }) {
   return 0;
 }
 
+async function publish({ ref, flags, cwd, env, call, log, err, unpublish = false }) {
+  const agent = agentFromArgsOrHome(ref, flags, cwd, env, err, `name the agent, like: atris agent ${unpublish ? 'unpublish' : 'publish'} <agent>, or run it inside a pulled home`);
+  if (!agent) return 1;
+  const label = agent.handle || agent.id;
+  const route = `/agent/${encodeURIComponent(agent.id)}/publish`;
+  const body = { api_model: flags.as };
+  if (flags.lane) body.api_lane = flags.lane;
+  if (flags.full_skills) body.api_skills = 'full';
+  if (flags.library) body.api_library = true;
+  const res = await call(route, unpublish ? { method: 'DELETE' } : { method: 'POST', body });
+  if (!res || !res.ok) { err(`could not ${unpublish ? 'unpublish' : 'publish'} ${label}: ${why(res, label)}`); return 1; }
+  if (!unpublish && flags.price !== undefined) {
+    const price = await call(`/agent-wallet/${encodeURIComponent(agent.id)}/price`, { method: 'POST', body: { price_usdc: Number(flags.price) } });
+    if (!price || !price.ok) { err(`published ${label}, but could not set the price: ${why(price, label)}`); return 1; }
+  }
+  const data = res.data || {};
+  const answer = Object.fromEntries(['agent_id', 'api_model', 'api_lane', 'api_skills', 'api_library', 'granted', 'serving']
+    .filter((key) => Object.prototype.hasOwnProperty.call(data, key)).map((key) => [key, data[key]]));
+  if (flags.json) { log(JSON.stringify(answer, null, 2)); return 0; }
+  if (unpublish) { log(`unpublished ${label}.`); return 0; }
+  log(`published ${label} as ${data.api_model}.`);
+  log(flags.price !== undefined ? `price: $${Number(flags.price).toFixed(2)} a call.` : 'price: unchanged.');
+  log(data.serving ? 'live: yes.' : 'live: no.');
+  if (data.granted === false) log('waiting for Atris to switch the name on.');
+  return 0;
+}
+
 async function spawn({ ref, flags, cwd, env, call, log, err }) {
   const parent = agentFromArgsOrHome(ref, flags, cwd, env, err, 'name the parent agent, like: atris agent spawn <parent> --name scout --budget 20');
   if (!parent) return 1;
@@ -375,12 +405,16 @@ async function agentHomeCommand(args = [], deps = {}) {
 
   const verb = args[0];
   const { flags, pos, error } = parseArgs(args.slice(1), {
-    switches: ['account'],
-    values: ['dir', 'reason', 'name', 'budget', 'role', 'soul', 'mission'],
+    switches: ['account', 'full_skills', 'library'],
+    values: ['dir', 'reason', 'name', 'budget', 'role', 'soul', 'mission', 'as', 'lane', 'price'],
   });
   if (flags.help || pos[0] === 'help') { homeHelp(log); return 0; }
-  if (error) { err(`${error}. see: atris agent pull --help`); return 1; }
+  if (error) { err(`${error}. see: atris agent ${verb} --help`); return 1; }
   if (pos.length > 1) { err(`atris agent ${verb} takes one agent, got: ${pos.join(' ')}`); return 1; }
+  if (verb === 'publish' && !flags.as) { err('usage: atris agent publish [<agent>] --as <name>'); return 1; }
+  if (verb === 'publish' && flags.price !== undefined && (!Number.isFinite(Number(flags.price)) || Number(flags.price) < 0 || Number(flags.price) > 1000)) {
+    err('--price must be a number from 0 to 1000'); return 1;
+  }
 
   const token = await loginToken(deps);
   if (!token) { err(NOT_LOGGED_IN); return 1; }
@@ -391,6 +425,8 @@ async function agentHomeCommand(args = [], deps = {}) {
   if (verb === 'pull') return pull(ctx);
   if (verb === 'push') return push(ctx);
   if (verb === 'snapshot') return snapshot(ctx);
+  if (verb === 'publish') return publish(ctx);
+  if (verb === 'unpublish') return publish({ ...ctx, unpublish: true });
   if (verb === 'spawn') return spawn(ctx);
   homeHelp(log);
   return 1;
