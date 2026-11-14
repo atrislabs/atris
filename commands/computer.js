@@ -1123,7 +1123,8 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   }
 
   const { repo, task, base } = parsed;
-  const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date());
+  const suffix = deps.branchSuffix ? deps.branchSuffix() : prLib.randomBranchSuffix();
+  const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date(), suffix);
   const title = prLib.titleFromTask(task);
   const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
 
@@ -1152,7 +1153,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     retries: 0,
   });
   if (!started.ok || !started.data?.execution_id) {
-    return fail(`The run could not start: ${started.error || started.status || 'no run id came back'}`);
+    return fail(prLib.describeStartError(started));
   }
 
   const out = prLib.createRedactingWriter(write);

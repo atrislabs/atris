@@ -66,22 +66,20 @@ test('buildPullRequestPrompt holds repo, branch, base, task, and the no-merge ru
   });
   assert.ok(prompt.startsWith('GitHub task:'));
   assert.match(prompt, /atrislabs\/demo/);
-  assert.match(prompt, /https:\/\/github\.com\/atrislabs\/demo\.git/);
-  assert.match(prompt, /\/workspace\/repos\/demo/);
-  assert.match(prompt, /Create branch atris\/fix-readme from develop/);
-  assert.match(prompt, /base develop/);
+  assert.match(prompt, /prepare atrislabs demo atris\/fix-readme develop\n/);
+  assert.match(prompt, /finish <RUN_DIR> atris\/fix-readme/);
   assert.match(prompt, /Do NOT merge/);
-  assert.match(prompt, /Never force push/);
-  assert.match(prompt, /STEP_FAILED=6 no changes/);
+  assert.match(prompt, /never forced/);
+  assert.match(prompt, /STEP_FAILED=5 no changes/);
   assert.match(prompt, /title "Fix the README typo"/);
   assert.match(prompt, /TASK START\nFix the README typo\nTASK END$/);
-  assert.ok(!/--force|push -f/.test(prompt));
+  assert.ok(!/push (-f|--force)|\+refs\//.test(prompt));
 });
 
-test('buildPullRequestPrompt without base uses the default branch', () => {
+test('buildPullRequestPrompt without base lets the helper find the default branch', () => {
   const prompt = buildPullRequestPrompt({ owner: 'a', name: 'b', task: 'do it', branch: 'atris/x' });
-  assert.match(prompt, /create branch atris\/x from that default branch/);
-  assert.match(prompt, /base the default branch/);
+  assert.match(prompt, /prepare a b atris\/x\n/);
+  assert.match(prompt, /base the BASE value from step 3/);
 });
 
 test('buildPullRequestPrompt keeps the task inside its fence', () => {
@@ -210,6 +208,7 @@ function harness({ awake = true, start = { ok: true, data: { execution_id: 'ex-1
     logError: (s) => calls.err.push(s),
     write: (s) => calls.written.push(s),
     now: () => new Date(2026, 10, 14, 9, 5),
+    branchSuffix: () => '',
     ensureBusinessAwake: async () => awake,
     apiRequestJson: async (pathname, opts) => { calls.requests.push({ pathname, opts }); return start; },
     streamBusinessChatResult: async (token, ctx, id, rl, opts) => {
@@ -297,7 +296,13 @@ test('computerPr exits 1 when the computer is not ready or the run cannot start'
   h = harness({ start: { ok: false, status: 503, error: 'busy' }, streamed: {} });
   r = await withExitCode(() => computer.computerPr('tok', ['a/b', 'x'], CTX, {}, h.deps));
   assert.equal(r.code, 1);
-  assert.match(h.calls.err.join('\n'), /could not start: busy/);
+  assert.match(h.calls.err.join('\n'), /computer is busy with another run\. Wait a few minutes and try again/);
+  // The real shape that used to print "[object Object]".
+  h = harness({ start: { ok: false, status: 502, error: { user_message: 'AI computer returned an error', upstream_status: 409, upstream: '{"detail":"Runner is busy"}' } }, streamed: {} });
+  r = await withExitCode(() => computer.computerPr('tok', ['a/b', 'x'], CTX, {}, h.deps));
+  assert.equal(r.code, 1);
+  assert.ok(!h.calls.err.join('\n').includes('[object Object]'));
+  assert.match(h.calls.err.join('\n'), /busy with another run/);
   h = harness({ streamed: {} });
   r = await withExitCode(() => computer.computerPr('tok', ['a/b', 'x'], null, {}, h.deps));
   assert.equal(r.code, 1);
@@ -352,16 +357,114 @@ test('streamBusinessChatResult returns the text and keeps default printing', () 
   assert.ok(quiet.stdout.includes('PR_URL='));
 });
 
-test('the instruction clones into a fresh folder and never asks to delete one', () => {
-  const { buildPullRequestPrompt } = require('../lib/computer-pr');
-  const text = buildPullRequestPrompt({ owner: 'acme', name: 'shop', task: 'Fix the typo in the readme.', branch: 'atris/fix-typo-20261114-1200' });
-  assert.match(text, /\/workspace\/repos\/shop--atris-fix-typo-20261114-1200/);
-  assert.match(text, /Never delete or reuse any existing folder/);
-  assert.doesNotMatch(text, /delete that folder first/);
-});
-
 test('titles use the first sentence or complete words within the limit', () => {
   assert.equal(titleFromTask('Delete the file docs/codeops-cloud-test.md. It was a one-time test that is no longer needed.'), 'Delete the file docs/codeops-cloud-test.md');
   assert.equal(titleFromTask('This is a deliberately long first sentence that must end on a complete word without trailing punctuation.'), 'This is a deliberately long first sentence that must end on a complete');
   assert.equal(titleFromTask('Fix it. Then run checks.'), 'Fix it');
+});
+
+// ---- shared repo copy and per-run folders --------------------------------
+
+const prLib = require('../lib/computer-pr');
+
+test('describeStartError reads every error shape in plain words', () => {
+  const { describeStartError, errorText } = prLib;
+  assert.equal(errorText('plain words'), 'plain words');
+  assert.equal(errorText({ message: 'm' }), 'm');
+  assert.equal(errorText({ detail: 'd' }), 'd');
+  assert.equal(errorText({ error: { message: 'deep' } }), 'deep');
+  assert.equal(errorText({ detail: { user_message: 'nested user words' } }), 'nested user words');
+  assert.equal(errorText({ detail: [{ msg: 'field required' }, { msg: 'too long' }] }), 'field required; too long');
+  assert.equal(errorText('{"detail":"from json"}'), 'from json');
+  assert.equal(describeStartError({ status: 400, error: { detail: 'Unsupported source_pack' } }), 'The run could not start: Unsupported source_pack');
+  assert.equal(describeStartError({ status: 500, error: 'boom' }), 'The run could not start: boom');
+  assert.equal(describeStartError({ status: 0 }), 'The run could not start: no run id came back');
+  assert.equal(describeStartError({ status: 418 }), 'The run could not start: status 418');
+  assert.match(describeStartError({ status: 502, error: { user_message: 'AI computer returned an error', upstream_status: 409 } }), /busy with another run/);
+  assert.match(describeStartError({ status: 502, data: { detail: { user_message: 'x', upstream_status: 409 } }, error: { user_message: 'x' } }), /busy/);
+  assert.match(describeStartError({ status: 409, error: 'Runner is busy' }), /busy with another run\. Wait a few minutes and try again\./);
+  assert.match(describeStartError({ status: 503, error: { user_message: 'The computer is waking up. Please retry shortly.' } }), /still waking up\. Wait a minute and try again/);
+  // A 409 that is not "busy" keeps its own words.
+  assert.equal(describeStartError({ status: 409, error: { user_message: 'Your computer only runs validation right now, so it cannot do this.' } }),
+    'The run could not start: Your computer only runs validation right now, so it cannot do this.');
+  for (const r of [{ error: { a: { b: 1 } } }, { error: {} }, { error: { detail: {} } }]) {
+    assert.ok(!describeStartError(r).includes('[object Object]'));
+  }
+});
+
+test('default branch names get a short random suffix so same-minute runs differ', async () => {
+  const now = new Date(2026, 10, 14, 9, 5);
+  assert.equal(prLib.defaultBranchName('Fix it', now, 'a1b2'), 'atris/fix-it-20261114-0905-a1b2');
+  assert.equal(prLib.defaultBranchName('Fix it', now, ''), 'atris/fix-it-20261114-0905');
+  assert.match(prLib.randomBranchSuffix(), /^[0-9a-f]{4}$/);
+  const seen = new Set();
+  for (let i = 0; i < 2; i++) {
+    const h = harness({ streamed: { chunks: ['PR_URL=https://github.com/a/b/pull/1\n'] } });
+    let n = 0;
+    h.deps.branchSuffix = () => ['aaaa', 'bbbb'][n++ + i];
+    await withExitCode(() => computer.computerPr('tok', ['a/b', 'Fix it'], CTX, {}, h.deps));
+    seen.add(h.calls.requests[0].opts.body.session_id);
+    assert.ok(prLib.isSafeBranchName(h.calls.requests[0].opts.body.message.match(/prepare a b (\S+)/)[1]));
+  }
+  assert.equal(seen.size, 2);
+});
+
+test('the instruction uses one shared repo copy and the helper, never a fresh clone', () => {
+  const text = buildPullRequestPrompt({ owner: 'acme', name: 'shop', task: 'Fix the typo in the readme.', branch: 'atris/fix-typo-20261114-1200' });
+  assert.match(prLib.PR_SCRIPT_PATH, /^\/workspace\/repos\/\.atris-pr\/bin\/pr-[0-9a-f]{12}\.sh$/);
+  assert.ok(text.includes(`bash ${prLib.PR_SCRIPT_PATH} prepare acme shop atris/fix-typo-20261114-1200`));
+  assert.ok(text.includes(`bash ${prLib.PR_SCRIPT_PATH} finish <RUN_DIR> atris/fix-typo-20261114-1200`));
+  assert.ok(text.includes(`bash ${prLib.PR_SCRIPT_PATH} abort <RUN_DIR>`));
+  assert.match(text, /Never delete any folder yourself, and never clone the repo another way/);
+  assert.doesNotMatch(text, /git clone|Clone https/);
+  // The script rides along between its fence lines, byte for byte.
+  const lines = text.split('\n');
+  const from = lines.indexOf('SCRIPT START');
+  const to = lines.indexOf('SCRIPT END');
+  assert.ok(from > 0 && to > from);
+  const carried = `${lines.slice(from + 1, to).join('\n')}\n`;
+  assert.equal(carried, prLib.PR_SCRIPT);
+  assert.equal(prLib.scriptHash(carried), prLib.PR_SCRIPT_PATH.match(/pr-([0-9a-f]{12})/)[1]);
+  // The task fence still comes last, after the script.
+  assert.ok(lines.indexOf('TASK START') > to);
+  assert.equal(lines[lines.length - 1], 'TASK END');
+});
+
+test('the helper script holds the mirror, lock, worktree, trap, and cleanup scope', () => {
+  const s = prLib.PR_SCRIPT;
+  assert.match(s, /^set -eu$/m);
+  assert.match(s, /git init --bare --quiet "\$mirror"/, 'one bare shared copy per repo');
+  assert.match(s, /MIRRORS\/\$\{owner\}__\$\{name\}\.git/);
+  assert.match(s, /fetch --prune --quiet origin/, 'updates by fetch, not a new clone');
+  assert.doesNotMatch(s, /git clone/);
+  assert.match(s, /flock -w "\$LOCK_WAIT" 9/, 'fetch is guarded by flock');
+  assert.match(s, /until mkdir "\$1\.d"/, 'a lock still works where flock is missing');
+  assert.match(s, /worktree add --quiet --no-track -b "\$branch" "\$run_dir"/, 'light per-run worktree on its own branch');
+  assert.match(s, /mktemp -d "\$RUNS\/\$slug\.XXXXXX"/, 'unique folder per run');
+  assert.match(s, /already exists on this computer/, 'a reused branch name is refused, not shared');
+  assert.match(s, /trap prepare_failed EXIT/);
+  assert.match(s, /trap finish_exit EXIT/);
+  assert.match(s, /worktree remove --force "\$run_dir"/);
+  assert.match(s, /worktree prune/);
+  assert.match(s, /push --quiet origin "refs\/heads\/\$branch:refs\/heads\/\$branch"/, 'pushes only its branch, never forced');
+  assert.ok(s.indexOf('pushed=1') > s.indexOf('push --quiet origin'), 'the branch is pushed before it is dropped');
+  assert.match(s, /STALE_MINUTES="\$\{ATRIS_PR_STALE_MINUTES:-360\}"/, 'six hour safe age');
+  assert.match(s, /for d in "\$RUNS"\/\*\/; do/, 'sweep only walks the runs folder');
+  assert.match(s, /\[ "\$\(basename "\$ROOT"\)" = "\.atris-pr" \]/, 'refuses any root but its own');
+  assert.match(s, /OLD_CLONES=/, 'old full clones are measured');
+  // Old clones are only measured: the only deletes are of run folders.
+  const rms = s.split('\n').filter((l) => /\brm -r/.test(l));
+  assert.ok(rms.length > 0);
+  for (const l of rms) assert.match(l, /rm -rf -- "\$(d|run_dir)"/, l);
+  // Words the cloud computer's command guard blocks must not appear.
+  assert.ok(!s.includes('rm -rf /'));
+  assert.ok(!/push (-f|--force)|\+refs\//.test(s));
+  assert.ok(!/\$\{?GITHUB_TOKEN\}?[^:]/.test(s.replace(/"\$\{GITHUB_TOKEN:-\}"|"\$GITHUB_TOKEN"/g, '')), 'the token is only read, never echoed');
+});
+
+test('normalizeScript matches the script self check rule', () => {
+  const a = 'echo hi  \r\nx\n\n\n';
+  assert.equal(prLib.normalizeScript(a), 'echo hi\nx\n');
+  assert.equal(prLib.scriptHash(a), prLib.scriptHash('echo hi\nx'));
+  assert.notEqual(prLib.scriptHash(a), prLib.scriptHash('echo hi\ny'));
 });
