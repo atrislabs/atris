@@ -1082,17 +1082,28 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
 }
 
 function printComputerPrHelp(log = console.log) {
-  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>]');
+  const openaiThinker = require('../lib/computer-pr').defaultThinkerModel('openai', {});
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think]');
   log('');
   log('The business computer does the task on a new branch and opens a pull request.');
   log('It prints the pull request link. It never merges.');
+  log('');
+  log('If the builder cannot prove a fix, a stronger thinker model reads the code without');
+  log('changing it and writes a proposal. The builder then tries once more with it.');
+  log('  --model <id>     the builder\'s model');
+  log(`  --thinker <id>   the thinker's model. On the OpenAI lane it is ${openaiThinker} unless`);
+  log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
+  log('  --think          ask the thinker first, for bugs you already know are hard');
+  log('  --no-think       never ask the thinker');
   log('');
   log('Example:');
   log('  atris computer pr atrislabs/demo "Fix the typo in the README" --business my-lab');
 }
 
 // One pull request from a repo and a plain-words task. Exit 0 only when a
-// pull request link for the same repo came back. Never merges.
+// pull request link for the same repo came back. Never merges. When the
+// builder gets stuck proving a fix, a thinker model studies the code read only
+// and the builder tries once more with its proposal.
 async function computerPr(token, args = [], ctx = null, options = {}, deps = {}) {
   const prLib = require('../lib/computer-pr');
   const log = deps.log || ((s) => console.log(s));
@@ -1126,76 +1137,174 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   const suffix = deps.branchSuffix ? deps.branchSuffix() : prLib.randomBranchSuffix();
   const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date(), suffix);
   const title = prLib.titleFromTask(task);
+  const worker = activeWorker(options.worker || ctx.worker);
+  const thinker = parsed.noThink ? null : (parsed.thinker || prLib.defaultThinkerModel(worker));
+  const noThinkerLine = `No thinker is set for the ${formatWorkerName(worker)} lane, so the builder's answer stands. Pass --thinker <id> to ask one.`;
+  if (parsed.think && !thinker) {
+    printComputerPrHelp(logError);
+    return fail(`--think needs a thinker. ${noThinkerLine}`);
+  }
   const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
 
   const awake = await wake(token, ctx);
   if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
 
-  const worker = activeWorker(options.worker || ctx.worker);
   const laneSource = options.worker ? '' : ctx.worker ? ' (saved for this business)' : '';
   log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
   log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
 
-  const startOptions = {
-    method: 'POST',
-    token,
-    body: {
-      message: prompt,
-      workspace_id: ctx.workspaceId,
-      // Each pull request task is independent, so it gets its own fresh conversation.
-      // A shared one grows until the computer has to shorten it, which can fail the run.
-      session_id: `pr-${branch}`.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 120),
-      reset_context: true,
-      worker,
-      ...(options.model ? { model: options.model } : {}),
-    },
-    timeoutMs: 40000,
-    retries: 0,
+  // A fresh conversation per round: each one is independent, and a shared one
+  // grows until the computer has to shorten it, which can fail the run.
+  const sessionFor = (name, tail = '') => `${`pr-${name}`.replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 120 - tail.length)}${tail}`;
+
+  // One round on the computer: start it (waiting out a busy runner), stream
+  // its words through the redacting writer, and hand back what it said.
+  const runRound = async ({ prompt: message, model, sessionId }) => {
+    const startOptions = {
+      method: 'POST',
+      token,
+      body: {
+        message,
+        workspace_id: ctx.workspaceId,
+        session_id: sessionId,
+        reset_context: true,
+        worker,
+        ...(model ? { model } : {}),
+      },
+      timeoutMs: 40000,
+      retries: 0,
+    };
+    let started;
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      started = await request(`/business/${ctx.businessId}/chat`, startOptions);
+      const busy = !started.ok && [409, 502].includes(started.status)
+        && /\bbusy\b/i.test(JSON.stringify([started.error, started.errorMessage, started.data, started.text]));
+      if (!busy || attempt === 15) break;
+      log('  The runner is busy. Waiting 20 seconds before trying again.');
+      await (deps.sleep || sleep)(20000);
+    }
+    if (!started.ok || !started.data?.execution_id) {
+      return { startError: prLib.describeStartError(started) };
+    }
+    const out = prLib.createRedactingWriter(write);
+    const streamed = await stream(token, ctx, started.data.execution_id, null, {
+      write: (s) => out.write(s),
+      writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
+    });
+    out.flush();
+    return { streamed, text: [streamed?.text, streamed?.resultText].filter(Boolean).join('\n') };
   };
-  let started;
-  for (let attempt = 1; attempt <= 15; attempt++) {
-    started = await request(`/business/${ctx.businessId}/chat`, startOptions);
-    const busy = !started.ok && [409, 502].includes(started.status)
-      && /\bbusy\b/i.test(JSON.stringify([started.error, started.errorMessage, started.data, started.text]));
-    if (!busy || attempt === 15) break;
-    log('  The runner is busy. Waiting 20 seconds before trying again.');
-    await (deps.sleep || sleep)(20000);
-  }
-  if (!started.ok || !started.data?.execution_id) {
-    return fail(prLib.describeStartError(started));
-  }
 
-  const out = prLib.createRedactingWriter(write);
-  const streamed = await stream(token, ctx, started.data.execution_id, null, {
-    write: (s) => out.write(s),
-    writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
-  });
-  out.flush();
+  // The thinker reads the code and replies with a proposal, or why it has none.
+  const askThinker = async (notes) => {
+    const thinkBranch = `${branch}-think`;
+    if (!prLib.isSafeBranchName(thinkBranch)) return { ok: false, error: `"${thinkBranch}" is not a safe branch name` };
+    const round = await runRound({
+      prompt: prLib.buildProposalPrompt({ owner: repo.owner, name: repo.name, task, base, branch: thinkBranch, notes }),
+      model: thinker,
+      sessionId: sessionFor(branch, '-think'),
+    });
+    if (round.startError) return { ok: false, error: round.startError };
+    const found = prLib.parseProposal(round.text);
+    if (found.ok || round.streamed?.ok) return found;
+    return { ok: false, error: `the thinker's run stopped before it finished (${round.streamed?.status || 'unknown'})` };
+  };
 
-  const text = [streamed?.text, streamed?.resultText].filter(Boolean).join('\n');
-  const result = prLib.parsePullRequestResult(text, repo);
-
-  if (result.ok) {
+  let thinkerUsed = false;
+  const succeed = (result, usedBranch) => {
     log('');
     log(`Pull request opened: ${title}`);
-    log(`Branch: ${result.branch || branch}`);
+    log(`Branch: ${result.branch || usedBranch}`);
     log(result.url);
+    if (thinkerUsed) {
+      // A fix that needed a thinker is a hard fix. Seen live 2026-11-14: one
+      // passed its own check and 143 guard tests, and a second reader still
+      // found it broke nearby paths. So the command says so, every time.
+      log('This was a hard fix. Have a second reader check it before it merges.');
+      log('ESCALATED=1');
+      log('NEEDS_READER=1');
+      log(`THINKER=${thinker}`);
+      log(`BUILDER=${options.model || 'default'}`);
+    }
     return 0;
+  };
+
+  // A builder round that did not open a pull request. note: what was tried
+  // before it, said first so the person sees both attempts.
+  const builderFailed = (round, result, note = '') => {
+    if (round.startError) return fail(`${note}${round.startError}`);
+    if (result.failedStep) {
+      return fail(`${note}Step ${result.failedStep} failed, so no pull request is ready: ${result.error}`);
+    }
+    const why = round.streamed?.ok
+      ? `${result.error} No pull request is confirmed.`
+      : `The run stopped before it finished (${round.streamed?.status || 'unknown'}), and no pull request link came back.`;
+    logError(prLib.redactSecrets(`${note}${why}`));
+    const tail = prLib.lastLines(round.streamed?.text || round.streamed?.resultText || '', 15);
+    if (tail) {
+      logError('Last lines of the run:');
+      logError(prLib.redactSecrets(tail));
+    }
+    process.exitCode = 1;
+    return 1;
+  };
+
+  const runBuilder = async (usedBranch, sessionId, proposal) => {
+    const round = await runRound({
+      prompt: proposal
+        ? prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal })
+        : prompt,
+      model: options.model,
+      sessionId,
+    });
+    const result = round.startError ? null : prLib.parsePullRequestResult(round.text, repo);
+    return { round, result };
+  };
+
+  if (parsed.think) {
+    // Known hard bug: the thinker goes first, then one builder round.
+    log(`Asking the thinker (${thinker}) for a proposal first.`);
+    thinkerUsed = true;
+    const advice = await askThinker('');
+    if (advice.ok) log('Proposal ready. The builder is working with it.');
+    else log(prLib.redactSecrets(`The thinker found no cause (${advice.error}). The builder is trying once without a proposal.`));
+    const proposal = advice.ok ? advice.proposal : null;
+    const only = await runBuilder(branch, sessionFor(branch), proposal);
+    if (only.result?.ok) return succeed(only.result, branch);
+    return builderFailed(only.round, only.result, proposal ? 'The builder tried the thinker\'s proposal and still could not finish. ' : '');
   }
-  if (result.failedStep) {
-    return fail(`Step ${result.failedStep} failed, so no pull request is ready: ${result.error}`);
+
+  const first = await runBuilder(branch, sessionFor(branch), null);
+  if (first.result?.ok) return succeed(first.result, branch);
+
+  // Only a builder that ran to the end and could not prove a fix asks for
+  // help. Access, prepare, push and open failures, empty changes, and runs
+  // that dropped never do.
+  const stuck = !first.round.startError
+    && first.round.streamed?.ok
+    && first.result.failedStep === 5
+    && !/no changes/i.test(first.result.error || '');
+  if (!stuck || parsed.noThink) return builderFailed(first.round, first.result);
+  if (!thinker) {
+    log(noThinkerLine);
+    return builderFailed(first.round, first.result);
   }
-  const why = streamed?.ok
-    ? `${result.error} No pull request is confirmed.`
-    : `The run stopped before it finished (${streamed?.status || 'unknown'}), and no pull request link came back.`;
-  logError(prLib.redactSecrets(why));
-  const tail = prLib.lastLines(streamed?.text || streamed?.resultText || '', 15);
-  if (tail) {
-    logError('Last lines of the run:');
-    logError(prLib.redactSecrets(tail));
+  const retryBranch = `${branch}-b`;
+  if (!prLib.isSafeBranchName(retryBranch)) return builderFailed(first.round, first.result);
+
+  log('');
+  log(`The builder could not prove a fix. Asking the thinker (${thinker}) for a proposal.`);
+  thinkerUsed = true;
+  const advice = await askThinker(first.result.error || '');
+  if (!advice.ok) {
+    logError(prLib.redactSecrets(`The builder said: ${first.result.error}`));
+    return fail(`The builder could not prove a fix and the thinker found no cause, so no pull request is ready: ${advice.error}`);
   }
-  process.exitCode = 1;
-  return 1;
+  log('Proposal ready. The builder is trying again with it.');
+  log(`  Branch: ${retryBranch}`);
+  const second = await runBuilder(retryBranch, sessionFor(branch, '-b'), advice.proposal);
+  if (second.result?.ok) return succeed(second.result, retryBranch);
+  return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
 }
 
 async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
