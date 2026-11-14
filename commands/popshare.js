@@ -548,12 +548,10 @@ async function popshareCommand(args = [], deps = {}) {
 
 module.exports = {
   popshareCommand,
-  showPopshareHelp,
   localAtToIso,
   parseAddArgs,
   resolvePostId,
   todayText,
   listText,
   scoreText,
-  gapLine,
 };
