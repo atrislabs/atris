@@ -114,16 +114,16 @@ test('visuals: a picture not about the card, empty or decorative is left off; th
   const ctx = project(t);
   seed(ctx);
   const cards = [
-    ['unrelated', '{"kind": "steps", "steps": ["Paint the moon", "Sing loudly"]}'],
-    ['same before and after', '{"kind": "before_after", "before": "Empty baskets break checkout", "after": "Empty baskets break checkout"}'],
-    ['empty drawing', '{"kind": "drawing", "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 10 10\\"><rect width=\\"5\\" height=\\"5\\"/></svg>", "alt": "Checkout baskets"}'],
+    ['Stop empty baskets breaking checkout', '{"kind": "steps", "steps": ["Paint the moon", "Sing loudly"]}'],
+    ['Warn buyers before an empty order', '{"kind": "before_after", "before": "Empty orders break", "after": "Empty orders break"}'],
+    ['Keep the pay page from failing', '{"kind": "drawing", "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 10 10\\"><rect width=\\"5\\" height=\\"5\\"/></svg>", "alt": "The pay page"}'],
   ];
   for (const [name, visual] of cards) {
-    const events = await round(ctx, `IDEA\nTITLE: Stop empty baskets breaking checkout ${name}\nWHY: Buyers leave at checkout\nSOURCE: From the checkout notes\nVISUAL: ${visual}\nEND\n`);
+    const events = await round(ctx, `IDEA\nTITLE: ${name}\nWHY: Buyers leave at checkout\nSOURCE: From the checkout notes\nVISUAL: ${visual}\nEND\n`);
     assert.ok(events.some((e) => e.type === 'card_visual_dropped'), name);
     assert.equal(events.find((e) => e.type === 'card_done').card.visual, null, name);
   }
-  const good = await round(ctx, 'IDEA\nTITLE: Show buyers what happens at an empty basket checkout\nWHY: Buyers leave at checkout\nSOURCE: From the checkout notes\n'
+  const good = await round(ctx, 'IDEA\nTITLE: Draw the path from basket to receipt\nWHY: Buyers leave at checkout\nSOURCE: From the checkout notes\n'
     + 'VISUAL: {"kind": "drawing", "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 120 40\\"><rect x=\\"2\\" y=\\"2\\" width=\\"50\\" height=\\"30\\"/><text x=\\"6\\" y=\\"20\\">Empty basket</text><path d=\\"M52 17 L70 17\\"/><rect x=\\"70\\" y=\\"2\\" width=\\"48\\" height=\\"30\\"/><text x=\\"74\\" y=\\"20\\">Checkout</text></svg>", "alt": "Empty basket to checkout"}\nEND\n');
   assert.equal(good.find((e) => e.type === 'card_done').card.visual.kind, 'drawing');
 });

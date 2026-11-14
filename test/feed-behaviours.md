@@ -100,3 +100,8 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 91 | An ask whose thinker crashed or ran long clears, and the next ask goes ahead | found: an ask whose thinker crashed clears, and the next ask goes ahead | yes |
 | 92 | The end of the feed rests only for the day's limit or nobody awake, with a plain reason | found: the end of the feed rests only for the day's limit or nobody awake, each with its plain reason | yes |
 | 93 | An empty round tries once more for different ideas and says plainly if still empty | stream: a card cut off mid-way, or one that fails the checks, is dropped and nothing half-made is created | yes |
+| 94 | found: a new card appeared at the top while the person read at the bottom; the reading queue now grows at the end | order: the reading queue grows at the end, and paging stays steady while ideas arrive | yes |
+| 95 | found: generated cards seemed to vanish; every card made stays listed, and a copy shows the card it joined | keep: every card made is in the default list until decided or passed; a near copy says which card it joined | yes |
+| 96 | A plain-words slip gets one rewrite before a drop, and every drop is logged in feed events | keep: a plain-words slip gets one rewrite by the member before it is dropped, and drops are logged | yes |
+| 97 | found: a card could be passed before it was ever seen; new or unseen cards are left alone | pass: a card made seconds ago, or one never on screen, is not passed; old calls keep working | yes |
+| 98 | Every finished card is a real task a fresh process reads back | keep: every finished card is a real task that a fresh process reads back | yes |

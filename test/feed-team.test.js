@@ -281,7 +281,7 @@ test('more: a scroll ping to up to three ON members, with the person\'s taste in
   const no = propose(ctx, { as: 'writer', title: 'Write a long blog post' }).card;
   feed.decide(ctx.root, no.id, 'dismiss', { note: 'nobody reads them', env: ctx.env, deps: ctx.deps });
   const skipped = propose(ctx, { as: 'closer', title: 'Ask three owners for a quote' }).card;
-  feed.passCards(ctx.root, [skipped.id], { env: ctx.env });
+  feed.passCards(ctx.root, [skipped.id], { env: ctx.env, now: Date.now() + 11000 });
   await feed.talk(ctx.root, skipped.id, 'Which owners exactly?', { env: ctx.env, deps: ctx.deps });
   ctx.spawned.length = 0;
   const out = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });

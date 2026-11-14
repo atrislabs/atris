@@ -58,7 +58,7 @@ async function runScrollCheck({ asks = 30 } = {}) {
     const made = events.filter((e) => e.type === 'card_done' && !e.merged).length;
     rounds.push({ ask: i, made, reason: out.reason });
     const shown = feed.listCards(root, { env, limit: 100 }).cards.filter((c) => c.needs_decision).map((c) => c.id);
-    if (shown.length) feed.passCards(root, shown, { env });
+    if (shown.length) feed.passCards(root, shown, { env, now: Date.now() + 11000 });
   }
   tasks.close();
   for (const [key, name] of [['db', 'ATRIS_TASKS_DB'], ['token', 'ATRIS_TOKEN'], ['board', 'ATRIS_FEED_BOARD']]) {

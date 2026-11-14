@@ -105,6 +105,7 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
   const cards = (filter = 'all') => feed.listCards(root, { filter, limit: 100, env }).cards;
   const waiting = () => cards('needs_decision').filter((c) => c.kind === 'proposal');
   const failures = [];
+  const made = new Set();
   const check = (round) => {
     const file = path.join(root, '.atris', 'state', 'feed', 'runs.json');
     if (fs.existsSync(file)) {
@@ -122,13 +123,13 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
     try {
       if (action === 'ping') {
         counts.ping += 1;
-        await team.pingStream(root, { reason: pick(['scroll', 'event']), env, deps });
+        await team.pingStream(root, { reason: pick(['scroll', 'event']), env, deps, onEvent: (e) => { if (e.type === 'card_done') made.add(e.card.id); } });
       } else if (action === 'propose') {
         counts.propose += 1;
         try { feed.proposeCard(root, { as: pick(members), title: pick(TITLES), why: 'More people buy', env }); } catch { counts.refused += 1; }
       } else if (action === 'pass') {
         const list = waiting();
-        if (list.length) { counts.pass += 1; feed.passCards(root, [pick(list).id], { env }); }
+        if (list.length) { counts.pass += 1; feed.passCards(root, [pick(list).id], { env, now: Date.now() + 11000 }); }
       } else if (action === 'talk') {
         const list = waiting();
         if (list.length) { counts.talk += 1; await feed.talk(root, pick(list).id, 'Can it be smaller?', { env, deps }); }
@@ -173,6 +174,20 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
     if (!name.endsWith('.json')) continue;
     try { JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'feed', name), 'utf8')); } catch { failures.push(`${name} does not read`); }
   }
+  // Every finished card is a real task a fresh process reads back.
+  const seen = new Set();
+  let cursor = null;
+  for (let page = 0; page < 20; page += 1) {
+    const fresh = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'feed', 'cards', '--since', '0', '--limit', '100', '--json', ...(cursor ? ['--cursor', cursor] : [])],
+      { cwd: root, env: { ...env, NODE_NO_WARNINGS: '1' }, encoding: 'utf8' });
+    let out = null;
+    try { out = JSON.parse(fresh.stdout); } catch { failures.push('a fresh process could not read the feed'); break; }
+    for (const card of out.cards) seen.add(card.id);
+    cursor = out.next_cursor;
+    if (!cursor) break;
+  }
+  const lost = [...made].filter((id) => !seen.has(id));
+  if (lost.length) failures.push(`${lost.length} finished card(s) not read back by a fresh process`);
   const all = feed.listCards(root, { env, since: 0, limit: 100 });
   const summary = {
     rounds,
@@ -182,6 +197,7 @@ async function runSoak({ rounds = 200, seed = 7, log = () => {} } = {}) {
     counts,
     cards: { waiting: all.counts.needs_decision, working: all.counts.working, parked: all.counts.parked, total_changed: all.cards.length },
     ideas_made: team.tasteLines(root).rows.length,
+    cards_read_back: `${made.size - lost.length} of ${made.size}`,
   };
   tasks.close();
   for (const [key, name] of [['db', 'ATRIS_TASKS_DB'], ['board', 'ATRIS_FEED_BOARD'], ['token', 'ATRIS_TOKEN']]) {

@@ -554,7 +554,7 @@ function backdatePass(ctx, cardId, minutes) {
   }, { touch: false });
 }
 
-test('queue: ideas first (never passed, then fewest passes, then newest), then unread results oldest first', (t) => {
+test('queue: ideas first (never passed, then fewest passes, oldest first so new ideas land at the end), then unread results oldest first', (t) => {
   const ctx = project(t);
   const older = add(ctx, { title: 'Send the weekly note', status: 'done' });
   const newer = add(ctx, { title: 'Send the monthly note', status: 'done' });
@@ -562,11 +562,11 @@ test('queue: ideas first (never passed, then fewest passes, then newest), then u
   const a = propose(ctx, { title: 'Call the warm leads today' }).card;
   const b = propose(ctx, { as: 'writer', title: 'Write the spring price note' }).card;
   const c = propose(ctx, { as: 'closer', title: 'Ask three owners for a quote' }).card;
-  feed.passCards(ctx.root, [a.id], { env: ctx.env });
+  feed.passCards(ctx.root, [a.id], { env: ctx.env, now: Date.now() + 11000 });
   backdatePass(ctx, a.id, 31); // passed, but long enough ago to come back
   const order = cards(ctx).map((card) => card.id);
   const ideas = order.slice(0, 3);
-  assert.deepEqual(ideas, [c.id, b.id, a.id], 'never-passed newest first, the passed one last');
+  assert.deepEqual(ideas, [b.id, c.id, a.id], 'never-passed oldest first, the passed one last');
   const results = order.slice(3);
   assert.equal(results.length, 2);
   assert.equal(cards(ctx).find((card) => card.id === a.id).pass_count, 1);
@@ -579,13 +579,13 @@ test('queue: ideas first (never passed, then fewest passes, then newest), then u
 test('queue: a pass holds an idea back for 30 minutes; three passes park it; revising brings it back', (t) => {
   const ctx = project(t);
   const { card } = propose(ctx);
-  assert.equal(feed.passCards(ctx.root, [card.id], { env: ctx.env }).passed, 1);
+  assert.equal(feed.passCards(ctx.root, [card.id], { env: ctx.env, now: Date.now() + 11000 }).passed, 1);
   assert.ok(!cards(ctx).some((c) => c.id === card.id), 'held back right after a pass');
   assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.needs_decision, 1, 'still counted as waiting');
   backdatePass(ctx, card.id, 31);
   assert.ok(cards(ctx).some((c) => c.id === card.id), 'back after 30 minutes');
-  feed.passCards(ctx.root, [card.id], { env: ctx.env });
-  feed.passCards(ctx.root, [card.id], { env: ctx.env });
+  feed.passCards(ctx.root, [card.id], { env: ctx.env, now: Date.now() + 11000 });
+  feed.passCards(ctx.root, [card.id], { env: ctx.env, now: Date.now() + 11000 });
   backdatePass(ctx, card.id, 31);
   assert.ok(!cards(ctx).some((c) => c.id === card.id), 'parked after three passes');
   assert.deepEqual(cards(ctx, 'parked').map((c) => c.id), [card.id]);
@@ -595,7 +595,7 @@ test('queue: a pass holds an idea back for 30 minutes; three passes park it; rev
   const back = cards(ctx).find((c) => c.id === card.id);
   assert.ok(back, 'revising brings it back');
   assert.equal(back.pass_count, 0);
-  assert.throws(() => feed.passCards(ctx.root, [card.id], { env: ctx.agentEnv }), (e) => e.status === 403);
+  assert.throws(() => feed.passCards(ctx.root, [card.id], { env: ctx.agentEnv, now: Date.now() + 11000 }), (e) => e.status === 403);
 });
 
 test('queue: a read result leaves the default list and stays under done', (t) => {
@@ -603,13 +603,13 @@ test('queue: a read result leaves the default list and stays under done', (t) =>
   const done = add(ctx, { title: 'Send the weekly note', status: 'done' });
   const [result] = cardsOf(ctx, done);
   assert.equal(result.seen, false);
-  feed.passCards(ctx.root, [result.id], { env: ctx.env });
+  feed.passCards(ctx.root, [result.id], { env: ctx.env, now: Date.now() + 11000 });
   assert.deepEqual(cardsOf(ctx, done), [], 'read results leave the default list');
   const [kept] = cardsOf(ctx, done, 'done');
   assert.equal(kept.seen, true);
   assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.new_results, 0);
   const working = add(ctx, { title: 'Sort the inbox', status: 'claimed', claimedBy: 'scout' });
-  const out = feed.passCards(ctx.root, [cardsOf(ctx, working, 'working')[0].id, 'task:nope:1:proposal'], { env: ctx.env });
+  const out = feed.passCards(ctx.root, [cardsOf(ctx, working, 'working')[0].id, 'task:nope:1:proposal'], { env: ctx.env, now: Date.now() + 11000 });
   assert.equal(out.passed, 0, 'only waiting ideas and results take a pass');
   assert.equal(out.skipped.length, 2);
 });
@@ -619,7 +619,7 @@ test('queue: the cursor names cards already sent, so a pass between pages skips 
   const ids = ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote']
     .map((title, i) => propose(ctx, { as: ['scout', 'writer', 'closer'][i], title }).card.id);
   const first = feed.listCards(ctx.root, { limit: 1, env: ctx.env });
-  feed.passCards(ctx.root, [first.cards[0].id], { env: ctx.env });
+  feed.passCards(ctx.root, [first.cards[0].id], { env: ctx.env, now: Date.now() + 11000 });
   const second = feed.listCards(ctx.root, { limit: 5, cursor: first.next_cursor, env: ctx.env });
   const seen = [...first.cards, ...second.cards].map((card) => card.id);
   assert.equal(new Set(seen).size, seen.length, 'no card repeats');

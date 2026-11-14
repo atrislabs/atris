@@ -23,7 +23,7 @@ test('found: scrolling past is not a no; dismissals only move a member down the 
   const ctx = project(t, ['scout', 'writer']);
   for (let i = 0; i < 5; i += 1) {
     const card = feed.proposeCard(ctx.root, { as: 'scout', title: `A scrolled idea number ${i} about soap`, why: 'Buyers', env: ctx.env }).card;
-    feed.passCards(ctx.root, [card.id], { env: ctx.env });
+    feed.passCards(ctx.root, [card.id], { env: ctx.env, now: Date.now() + 11000 });
   }
   team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
   assert.deepEqual(ctx.thinkers[0].names, ['scout', 'writer'], 'passed ideas change nothing');
@@ -33,7 +33,7 @@ test('found: a member at its waiting cap retires its oldest scrolled-past ideas 
   const ctx = project(t, ['scout']);
   const env = { ...ctx.env, ATRIS_FEED_MAX_PENDING_PER_AUTHOR: '3' };
   const ids = ['Soap shelf photo', 'Candle gift ribbon', 'Basket window sign'].map((title) => feed.proposeCard(ctx.root, { as: 'scout', title, why: 'Buyers', env }).card);
-  feed.passCards(ctx.root, ids.map((c) => c.id), { env });
+  feed.passCards(ctx.root, ids.map((c) => c.id), { env, now: Date.now() + 11000 });
   await feed.talk(ctx.root, ids[0].id, 'Keep this one', { env, deps: ctx.deps });
   const made = feed.proposeCard(ctx.root, { as: 'scout', title: 'Scent of the month card', why: 'Buyers', env });
   assert.equal(made.created, true);

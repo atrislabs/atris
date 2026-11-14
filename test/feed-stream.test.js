@@ -65,8 +65,9 @@ test('stream: a card cut off mid-way, or one that fails the checks, is dropped a
   };
   const { events } = await streamPing(ctx);
   const dropped = events.filter((e) => e.type === 'card_dropped');
-  assert.match(dropped[0].reason, /plain words/);
-  assert.match(dropped[1].reason, /stopped before the card was finished/);
+  assert.ok(dropped.some((e) => /plain words/.test(e.reason) && /One rewrite did not fix it/.test(e.reason)), 'one rewrite was tried first');
+  assert.ok(dropped.some((e) => /stopped before the card was finished/.test(e.reason)));
+  assert.ok(events.some((e) => e.type === 'card_rewriting'));
   assert.ok(events.some((e) => e.type === 'retry'), 'an empty round tries once more');
   assert.match(events.find((e) => e.type === 'empty').reason, /tried twice/);
   assert.equal(feed.listCards(ctx.root, { env: ctx.env }).cards.length, 0, 'nothing was created');
@@ -207,7 +208,7 @@ test('found: at the end of the feed with many ideas waiting (most held back), as
   const titles = ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote', 'Thank the first ten buyers',
     'Check every price on the shop page', 'Send a short welcome note', 'Fix the opening hours line', 'Add a photo to the soap page', 'Answer the oldest customer email'];
   const ids = titles.map((title, i) => feed.proposeCard(ctx.root, { as: ['scout', 'writer', 'closer', 'extra'][i % 4], title, why: 'More people buy', env: ctx.env }).card.id);
-  feed.passCards(ctx.root, ids.slice(0, 8), { env: ctx.env });
+  feed.passCards(ctx.root, ids.slice(0, 8), { env: ctx.env, now: Date.now() + 11000 });
   const more = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
   assert.equal(more.requested, 3, more.reason);
   const scroll = team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env }, deps: ctx.deps });
@@ -236,7 +237,7 @@ test('found: with few ideas on screen, a passed idea comes back after 5 minutes,
   const ctx = project(t, ['scout', 'writer']);
   const old = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the warm leads today', why: 'They answer', env: ctx.env }).card;
   const fresh = feed.proposeCard(ctx.root, { as: 'writer', title: 'Write the spring price note', why: 'Buyers ask', env: ctx.env }).card;
-  feed.passCards(ctx.root, [old.id], { env: ctx.env });
+  feed.passCards(ctx.root, [old.id], { env: ctx.env, now: Date.now() + 11000 });
   const back = (minutes) => require('../lib/task-db').updateTaskMetadata(ctx.db, old.source.id, (m) => {
     for (const entry of Object.values(m.feed_views[old.id])) entry.last_passed_at = new Date(Date.now() - minutes * 60000).toISOString();
     return m;

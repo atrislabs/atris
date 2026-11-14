@@ -12,7 +12,7 @@ function team() {
 
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
-  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait',
+  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards',
 ]);
 const BOOL_FLAGS = new Set(['--stream', '--no-call']);
 
@@ -58,7 +58,7 @@ const HELP = [
   'no --json) still shows the group feed, with a notice on stderr.',
   '',
   'usage: atris feed [cards] [--filter all|needs_decision|working|parked|done|dismissed] [--limit N] [--cursor C] [--since T] [--json]',
-  '       atris feed pass <card> [<card> ...]   (scrolled past it; three passes parks an idea, a passed result is read)',
+  '       atris feed pass <card> [<card> ...] [--cards \'[{"id":...,"seen":false}]\']   (scrolled past; three passes park an idea, a passed result is read; cards under 10 seconds old or never seen are left alone)',
   '       atris feed theme [--json]',
   '       atris feed theme set "<one plain sentence>"',
   '       atris feed propose --as <member> --title "<title>" --why "<how it moves the goal>"',
@@ -255,7 +255,12 @@ async function run(args = [], context = {}) {
       if (!card || !choice) throw new feed.FeedError(400, 'usage: atris feed decide <card> approve|dismiss [--note "<text>"]');
       out = feed.decide(root, card, choice, { note: flags.note, env, deps });
     } else if (sub === 'pass') {
-      out = feed.passCards(root, positional.slice(1), { env });
+      // --cards '[{"id": "...", "seen": false}]' lets the screen say which cards were never on screen.
+      let items = positional.slice(1);
+      if (flags.cards) {
+        try { items = items.concat(JSON.parse(flags.cards)); } catch { throw new feed.FeedError(400, 'cards must be JSON, like [{"id": "task:...", "seen": false}]'); }
+      }
+      out = feed.passCards(root, items, { env });
     } else if (sub === 'talk') {
       const card = positional[1];
       if (!card) throw new feed.FeedError(400, 'usage: atris feed talk <card> "<message>"');
