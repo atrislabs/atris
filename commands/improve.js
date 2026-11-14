@@ -1342,7 +1342,9 @@ function collectRevisionSignals(root, options = {}) {
     })
     .filter((c) => c.hash && c.ms != null);
   // The start-up screen reuses this one history read for "what changed in
-  // the last day" instead of spawning a second git log.
+  // the last day" instead of spawning a second git log. Accepted limit: a
+  // change written more than `days` before its branch merged is outside this
+  // read, so it does not count toward the last day.
   const arrival = mainlineArrivals(commits);
   if (typeof options.onCommits === 'function') options.onCommits(commits, arrival);
 

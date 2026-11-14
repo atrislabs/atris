@@ -180,3 +180,20 @@ test('setup titles read in plain words', () => {
   const text = flat(renderStatus({ now: NOW, glance: { active: 1, activeItems: [{ title: 'Generate MAP.md, scan codebase, populate index', startedMs: NOW - 60 * 1000 }] } }));
   assert.match(text, /"map this folder so agents can find things"/);
 });
+
+test('jobs on the list held for a decision wait on the owner and leave the agent count', () => {
+  const text = flat(renderStatus({
+    now: NOW,
+    glance: { active: 1, backlog: 3, backlogHeld: 1, backlogHeldItems: [{ title: 'Pick the price' }], activeItems: [{ title: 'Write the page', startedMs: NOW - 60 * 1000 }] },
+  }));
+  assert.match(text, /Waiting on you: 1 job on the list needs a person to decide before an agent can start it\. - Pick the price\./);
+  assert.match(text, /Not started: 2 more jobs are written down and waiting for an agent\./);
+});
+
+test('the oldest wait comes from every waiting change, even past the ones kept for display', () => {
+  const text = flat(renderStatus({
+    now: NOW,
+    glance: { review: 2, reviewCertified: 0, reviewOldestMs: NOW - 7 * DAY, reviewItems: [{ title: 'new one', movedMs: NOW - 60 * 1000 }] },
+  }));
+  assert.match(text, /The oldest has waited 7 days\./);
+});
