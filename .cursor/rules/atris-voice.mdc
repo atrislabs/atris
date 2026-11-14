@@ -5,13 +5,13 @@ alwaysApply: true
 <!-- ATRIS_VOICE_CARD:START -->
 ## Voice card
 
-Start with the answer, then give the reader only what helps them act. Name the exact thing in plain words, like you are talking to a person.
+Start with the answer. Then give the reader only what helps them act. Name the exact thing in plain words, like you are talking to a person.
 
-Keep each paragraph to one or two sentences and leave a blank line between thoughts. Use a comma or period instead of an em dash.
+Keep each paragraph to one or two sentences and leave a blank line between thoughts. Use a period instead of an em dash. Never put a comma in front of and or but.
 
 Status example:
-The reply check is built. I am running the final checks now, so the result is not ready yet.
+The reply check is built. I am running the final checks now and the result is not ready yet.
 
 Landing example:
-Replies now get a plain-language check before they reach you. The checks passed, and the change is ready.
+Replies now get a plain-language check before they reach you. The checks passed and the change is ready.
 <!-- ATRIS_VOICE_CARD:END -->

@@ -1,10 +1,10 @@
 # Publishing
 
-How we make anything the public sees: videos, captions, titles, descriptions, posts, blogs and launch pages. How we do one thing is how we do everything, so these rules hold in every project.
+How we make anything the public sees: videos, captions, titles, descriptions, posts, blogs and launch pages. How we do one thing is how we do everything. These rules hold in every project.
 
 Our work is made by people and agents together. We are proud of that. What gives work away as careless is the leftover machinery: captions that don't match the voice, descriptions that explain how it was made, copy polished until nothing human is left. These rules remove that.
 
-The rules are ours and anyone may change them. A project's own `atris/taste/TASTE.md` wins inside that project, and a person's `~/.atris/taste/TASTE.md` wins for their own voice. Read both before you write.
+The rules are ours and anyone may change them. A project's own `atris/taste/TASTE.md` wins inside that project. A person's `~/.atris/taste/TASTE.md` wins for their own voice. Read both before you write.
 
 ## Captions
 
@@ -35,7 +35,7 @@ The description has one job: get the right person to press play and get found in
 - Then three to five search phrases worked into plain sentences, never a keyword dump.
 - Credit a source in one short line when we used one.
 - Never explain how the video was made. No tool names, no music shelf names, no "the drawings are ours", no part-by-part summary of the script.
-- Disclosure: when a tool's terms require telling viewers something, like an AI voice, say it in one short plain line at the end. Turn on a platform's AI label when the platform requires it for that video, and not by reflex. Animated explainers usually don't need it on YouTube. Check the platform's current rule before posting.
+- Disclosure: when a tool's terms require telling viewers something, like an AI voice, say it in one short plain line at the end. Turn on a platform's AI label when the platform requires it for that video. Never by reflex. Animated explainers usually don't need it on YouTube. Check the platform's current rule before posting.
 - Hashtags: two or three, at the end.
 
 ## Posts and blogs
@@ -44,15 +44,15 @@ The description has one job: get the right person to press play and get found in
 - Normal capitals. All lowercase reads as generated too.
 - Don't polish every sentence to the same length and rhythm. Mix short and long the way people talk.
 - A missed comma or a casual word is fine. Never a mistake in a name, a number, a title or a search phrase.
-- No hype words, no em dashes, no comma in front of and, but or so. The full list is in [ANTISLOP.md](ANTISLOP.md).
+- No hype words and no em dashes. Never put a comma before a joining word like and or but. The full list is in [ANTISLOP.md](ANTISLOP.md).
 
 ## One piece, full feedback
 
-Make one piece, show it, and get full feedback before making the next. When the person corrects something, write the reason into the right taste file the same day so every later piece starts from it.
+Make one piece, show it and get full feedback before making the next. When the person corrects something, write the reason into the right taste file the same day so every later piece starts from it.
 
 ## Learn what works
 
-Every published piece gets a row in its project's results log: the title, the first line of the description, the hook, and the numbers at two days and seven days. When a description or hook pattern keeps winning, it becomes the starting point for the next one. Never invent numbers. Mark missing ones as missing.
+Every published piece gets a row in its project's results log: the title, the first line of the description, the hook and the numbers at two days and seven days. When a description or hook pattern keeps winning, it becomes the starting point for the next one. Never invent numbers. Mark missing ones as missing.
 
 ## Before anything goes out
 

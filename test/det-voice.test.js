@@ -45,3 +45,12 @@ test('duplicate findings collapse to one', () => {
 test('unknown mode errors instead of guessing', () => {
   assert.ok(voice.run('nope', 'text').error);
 });
+
+test('a comma before a joining word fails with comma-join', () => {
+  const bad = voice.run('json', 'We shipped it, and it works.').text;
+  const found = JSON.parse(bad);
+  assert.strictEqual(found.pass, false);
+  assert.ok(found.findings.some((f) => f.rule === 'comma-join'));
+  const good = JSON.parse(voice.run('json', 'We shipped it and it works.').text);
+  assert.strictEqual(good.pass, true);
+});

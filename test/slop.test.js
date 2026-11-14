@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { scanFile, detect, RULES } = require('../commands/slop');
+const { scanFile, detect, applyFixes, RULES } = require('../commands/slop');
 
 const tempDirs = [];
 test.after(() => {
@@ -307,4 +307,18 @@ test('detect scans every path, not just the first', () => {
   assert.equal(result.scanned, 2, 'both files scanned');
   assert.ok(result.slop >= 1, 'at least one slop tell found');
   assert.ok(result.findings.some((f) => f.file.endsWith('bad.tsx')), 'finding is from the second file');
+});
+
+test('comma-join flags prose in md files but not code files or fenced code', () => {
+  assert.ok(scanFile(tmpFile('note.md', 'We shipped it, and it works.')).some((f) => f.rule === 'comma-join'));
+  assert.ok(!scanFile(tmpFile('note.js', 'call(a, and, b); // we shipped it, and it works')).some((f) => f.rule === 'comma-join'));
+  assert.ok(!scanFile(tmpFile('doc.md', 'text\n```\nit, and it works\n```\ntail')).some((f) => f.rule === 'comma-join'));
+  assert.ok(!scanFile(tmpFile('doc2.md', 'run `fix it, and ship` then stop')).some((f) => f.rule === 'comma-join'));
+});
+
+test('comma-join fix drops the comma and leaves inline code alone', () => {
+  const p = tmpFile('fix.md', 'a, and b\n`x, and y` stays\n```\nc, and d\n```\n');
+  const res = applyFixes([p], RULES);
+  assert.ok(res.fixedCount >= 1);
+  assert.equal(fs.readFileSync(p, 'utf8'), 'a and b\n`x, and y` stays\n```\nc, and d\n```\n');
 });
