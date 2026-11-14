@@ -349,3 +349,11 @@ test('streamBusinessChatResult returns the text and keeps default printing', () 
   assert.ok(!quiet.stdout.includes('[Bash]'), 'quiet hides tool lines as before');
   assert.ok(quiet.stdout.includes('PR_URL='));
 });
+
+test('the instruction clones into a fresh folder and never asks to delete one', () => {
+  const { buildPullRequestPrompt } = require('../lib/computer-pr');
+  const text = buildPullRequestPrompt({ owner: 'acme', name: 'shop', task: 'Fix the typo in the readme.', branch: 'atris/fix-typo-20261114-1200' });
+  assert.match(text, /\/workspace\/repos\/shop--atris-fix-typo-20261114-1200/);
+  assert.match(text, /Never delete or reuse any existing folder/);
+  assert.doesNotMatch(text, /delete that folder first/);
+});
