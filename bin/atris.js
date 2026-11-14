@@ -1968,7 +1968,9 @@ function showWelcomeVisualization() {
   // fix this week. Coaching (role, goal, context edits) is not bad news. Zero is the healthy state and stays silent; no git history
   // (not a repo, git missing) also stays silent.
   try {
-    const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7 });
+    // Boot never waits on GitHub: a squash merge it has not asked about yet
+    // reads as a person's until `atris improve revisions` asks and saves it.
+    const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7, pullBranch: () => null });
     const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
     if (fixed > 0) {
       console.log(`  ${fixed} finished change${fixed === 1 ? '' : 's'} needed a human fix this week; run atris improve revisions (see what needed fixing)`);
