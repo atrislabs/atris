@@ -357,3 +357,9 @@ test('the instruction clones into a fresh folder and never asks to delete one', 
   assert.match(text, /Never delete or reuse any existing folder/);
   assert.doesNotMatch(text, /delete that folder first/);
 });
+
+test('titles use the first sentence or complete words within the limit', () => {
+  assert.equal(titleFromTask('Delete the file docs/codeops-cloud-test.md. It was a one-time test that is no longer needed.'), 'Delete the file docs/codeops-cloud-test.md');
+  assert.equal(titleFromTask('This is a deliberately long first sentence that must end on a complete word without trailing punctuation.'), 'This is a deliberately long first sentence that must end on a complete');
+  assert.equal(titleFromTask('Fix it. Then run checks.'), 'Fix it');
+});
