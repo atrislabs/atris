@@ -147,7 +147,8 @@ test('boot panel falls back to TODO.md parse when no task DB exists', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir, env });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(flat(boot.stdout), /Working now: an agent is on "Active markdown task"\./);
+    // A hand-kept list has no times, so the screen does not claim an agent is on it.
+    assert.match(flat(boot.stdout), /In progress on the list: "Active markdown task"\. There is no record of when it started or whether an agent is still on it\./);
     assert.match(flat(boot.stdout), /Not started: 3 more jobs are written down/);
     assert.doesNotMatch(boot.stdout, /Waiting for a check/);
   } finally {
@@ -230,7 +231,7 @@ test('boot panel flags landings a human had to fix this week', () => {
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, boot.stderr);
-    assert.match(flat(boot.stdout), /Quality: in the last week, 1 of the \d+ changes agents added had their new lines rewritten within three days by a commit with no agent signature/);
+    assert.match(flat(boot.stdout), /Quality: in the last week, 1 of the \d+ changes agents added were followed within three days by a commit with no agent signature that edited the same lines or the lines right beside them/);
   } finally {
     cleanupTempDir(dir);
   }

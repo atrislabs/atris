@@ -77,7 +77,7 @@ test('finished work that passed its check asks for the owner first', () => {
 
 test('the quality line says what was measured and what the goal is', () => {
   const text = renderStatus({ now: NOW, revisions: { fixed: 10, landings: 592 } });
-  assert.match(flat(text), /10 of the 592 changes agents added had their new lines rewritten within three days by a commit with no agent signature, which usually means a person fixed them\. That is 2 percent, and the goal is zero\./);
+  assert.match(flat(text), /10 of the 592 changes agents added were followed within three days by a commit with no agent signature that edited the same lines or the lines right beside them, which usually means a person fixed them\. That is 2 percent, and the goal is zero\./);
   assert.equal(renderStatus({ now: NOW, revisions: { fixed: 0, landings: 50 } }), '', 'zero is the healthy state and stays silent');
 });
 
@@ -127,4 +127,56 @@ test('long dashes from titles written elsewhere become commas', () => {
   const text = renderStatus({ now: NOW, brief: { title: 'Swarm discovery \u2014 2026-11-13', path: 'atris/wiki/briefs/x.md' } });
   assert.doesNotMatch(text, /\u2014/);
   assert.match(flat(text), /"Swarm discovery, 2026-11-13"/);
+});
+
+test('a job held for a person decision is waiting on the owner, not stuck', () => {
+  const text = flat(renderStatus({
+    now: NOW,
+    glance: { active: 1, activeItems: [{ title: 'Pin the new model', startedMs: NOW - 21 * DAY, movedMs: NOW - 21 * DAY, heldForPerson: true, result: 'Both assistants run the tested model.' }] },
+  }));
+  assert.match(text, /Waiting on you: an agent started "Pin the new model" 3 weeks ago and stopped because it needs a person to decide\. When it is done: both assistants run the tested model\./);
+  assert.doesNotMatch(text, /Stuck|more job/);
+});
+
+test('jobs past the three shown still count toward stuck, and the oldest wait spans every waiting change', () => {
+  const old = { startedMs: NOW - 5 * DAY, movedMs: NOW - 5 * DAY };
+  const text = flat(renderStatus({
+    now: NOW,
+    glance: {
+      active: 4,
+      activeItems: ['a', 'b', 'c', 'd'].map((t) => ({ title: t, ...old })),
+      review: 4,
+      reviewCertified: 0,
+      reviewItems: [1, 2, 3].map((h) => ({ title: `r${h}`, movedMs: NOW - h * 60 * 60 * 1000 })).concat([{ title: 'r7', movedMs: NOW - 7 * DAY }]),
+    },
+  }));
+  assert.match(text, /1 more job is also in progress, and it is stuck with nothing moved in over three days\./);
+  assert.match(text, /The oldest has waited 7 days\./);
+  assert.match(text, /- And 1 more\./);
+});
+
+test('nothing in progress still says how many jobs wait', () => {
+  const text = flat(renderStatus({ now: NOW, glance: { active: 0, backlog: 10, backlogTitles: ['Write the invoice email'] } }));
+  assert.match(text, /Nothing is in progress\. 10 jobs are written down and waiting, starting with "Write the invoice email"\./);
+});
+
+test('small quality shares keep their real size', () => {
+  assert.match(flat(renderStatus({ now: NOW, revisions: { fixed: 1, landings: 1000 } })), /That is 0\.1 percent/);
+  assert.match(flat(renderStatus({ now: NOW, revisions: { fixed: 1, landings: 5000 } })), /That is under 0\.1 percent/);
+});
+
+test('a branch merged today counts today even when its commits were written earlier', () => {
+  const commits = [
+    { hash: 'm', ms: NOW - 60 * 1000, parents: ['p', 'b'], subject: 'Merge pull request #2', isAgent: true },
+    { hash: 'b', ms: NOW - 2 * DAY, parents: ['p'], subject: 'Owners see the invoice total', isAgent: true },
+    { hash: 'p', ms: NOW - 3 * DAY, parents: [], subject: 'Older change', isAgent: false },
+  ];
+  const arrival = new Map([['m', 'm'], ['p', 'p'], ['b', 'm']]);
+  assert.deepEqual(recentChanges(commits, NOW, { arrival }), { count: 1, agents: 1, examples: ['Owners see the invoice total'] });
+  assert.equal(recentChanges(commits, NOW).count, 0, 'without the merge map the author date decides');
+});
+
+test('setup titles read in plain words', () => {
+  const text = flat(renderStatus({ now: NOW, glance: { active: 1, activeItems: [{ title: 'Generate MAP.md, scan codebase, populate index', startedMs: NOW - 60 * 1000 }] } }));
+  assert.match(text, /"map this folder so agents can find things"/);
 });

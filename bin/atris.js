@@ -1892,19 +1892,27 @@ function showWelcomeVisualization() {
   try {
     revisions = require('../commands/improve').collectRevisionSignals(cwd, {
       days: 7,
-      onCommits: (commits) => { recent = plainStatus.recentChanges(commits, nowMs); },
+      onCommits: (commits, arrival) => { recent = plainStatus.recentChanges(commits, nowMs, { arrival }); },
     });
     if (revisions && !Number.isFinite(revisions.fixed)) revisions.fixed = revisions.revised;
   } catch {
     revisions = null;
   }
 
-  // The latest lesson brief, only when it is new today and has a real title.
+  // The latest lesson brief, only when it has a real title and says it was
+  // written today or yesterday. The file's own date (front matter, name or
+  // title) decides; a fresh checkout stamps every file with today's time,
+  // so the file time alone cannot tell new notes from old ones.
   let brief = null;
   if (latestBriefName && latestBriefTitle && latestBriefTitle !== path.basename(latestBriefName, '.md')) {
     try {
-      const briefPath = path.join(atrisDir, 'wiki', 'briefs', latestBriefName);
-      if (nowMs - fs.statSync(briefPath).mtimeMs < 24 * 60 * 60 * 1000) {
+      const head = fs.readFileSync(path.join(atrisDir, 'wiki', 'briefs', latestBriefName), 'utf8').slice(0, 2000);
+      const stamp = (head.match(/^(?:date|created|written):\s*['"]?(\d{4}-\d{2}-\d{2})/m) || [])[1]
+        || (`${latestBriefName} ${latestBriefTitle}`.match(/(\d{4}-\d{2}-\d{2})/) || [])[1];
+      const local = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const today = new Date(nowMs);
+      const yesterday = new Date(nowMs - 24 * 60 * 60 * 1000);
+      if (stamp && (stamp === local(today) || stamp === local(yesterday))) {
         brief = { title: latestBriefTitle, path: `atris/wiki/briefs/${latestBriefName}` };
       }
     } catch { brief = null; }
@@ -1918,7 +1926,7 @@ function showWelcomeVisualization() {
     const starterMap = map.includes('Run your AI agent with atris.md to populate this file.');
     if (health.ok && map.trim() && !starterMap && Math.round(health.overall.total) < 85) {
       const score = health.lookup_hops.score;
-      const found = score === null ? ', and it has no sample questions to test it with yet (add them to atris/doc-health/questions.jsonl)' : `, and agents find the right file from it on the first try for ${Math.min(99, Math.round(score * 100))} percent of test questions`;
+      const found = score === null ? ', and it has no sample questions to test it with yet (add them to atris/doc-health/questions.jsonl)' : `, and agents find the right file from it on the first try for ${score >= 1 ? 'every one' : `${Math.min(99, Math.round(score * 100))} percent`} of the test questions`;
       docs = `The project guide that agents read first needs work: it scores ${Math.round(health.overall.total)} out of 100${found}.`;
     }
   } catch {
@@ -1940,8 +1948,6 @@ function showWelcomeVisualization() {
   } catch {
     lately = '';
   }
-  // The cleanup that just ran says it better than an older journal line.
-  if (keptCount > 0) lately = '';
 
   let wikiGrown = false;
   try { wikiGrown = Boolean(require('../lib/wiki').wikiMetabolismNudge(cwd)); } catch { wikiGrown = false; }

@@ -1343,7 +1343,8 @@ function collectRevisionSignals(root, options = {}) {
     .filter((c) => c.hash && c.ms != null);
   // The start-up screen reuses this one history read for "what changed in
   // the last day" instead of spawning a second git log.
-  if (typeof options.onCommits === 'function') options.onCommits(commits);
+  const arrival = mainlineArrivals(commits);
+  if (typeof options.onCommits === 'function') options.onCommits(commits, arrival);
 
   const landings = commits.filter((c) => c.isAgent);
   // A merge that carries agent work onto the mainline is a landing action,
@@ -1387,7 +1388,6 @@ function collectRevisionSignals(root, options = {}) {
 
   // A commit that reached the mainline in the same merge as the landing came
   // in with it, before anything had landed for a person to fix.
-  const arrival = mainlineArrivals(commits);
   const revisions = [];
   for (const landing of landings) {
     const landedFiles = new Set(filesOf(landing).filter(isRevisionSignalFile));

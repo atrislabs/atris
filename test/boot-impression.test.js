@@ -110,7 +110,9 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     const olderBrief = path.join(briefsDir, 'zzz-older-brief.md');
     const newestBrief = path.join(briefsDir, 'aaa-newest-brief.md');
     fs.writeFileSync(olderBrief, '# Older brief\n', 'utf8');
-    fs.writeFileSync(newestBrief, '# YouTube brief: How agents compound\n', 'utf8');
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    fs.writeFileSync(newestBrief, `---\ndate: ${today}\n---\n# YouTube brief: How agents compound\n`, 'utf8');
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
     fs.utimesSync(olderBrief, new Date(hourAgo.getTime() - 60 * 1000), new Date(hourAgo.getTime() - 60 * 1000));
     fs.utimesSync(newestBrief, hourAgo, hourAgo);
@@ -120,11 +122,10 @@ test('boot panel shows only the newest wiki brief and stays silent without brief
     const notes = boot.stdout.split('\n\n').filter((para) => para.includes('New notes:')).map((para) => para.replace(/\s+/g, ' ').trim());
     assert.deepEqual(notes, ['New notes: an agent studied "How agents compound" and saved what it learned in atris/wiki/briefs/aaa-newest-brief.md.']);
 
-    // Notes from days ago are not news, and a file with no real title
+    // Notes dated days ago are not news even when the file time says today
+    // (a fresh checkout stamps every file), and a file with no real title
     // (only its file name) says nothing a reader can use.
-    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    fs.utimesSync(olderBrief, lastWeek, lastWeek);
-    fs.utimesSync(newestBrief, lastWeek, lastWeek);
+    fs.writeFileSync(newestBrief, '---\ndate: 2020-01-02\n---\n# How agents compound\n', 'utf8');
     assert.doesNotMatch(runCli(['atris.md'], { cwd: dir }).stdout, /New notes:/);
     fs.writeFileSync(newestBrief, 'no heading here\n', 'utf8');
     assert.doesNotMatch(runCli(['atris.md'], { cwd: dir }).stdout, /New notes:/);
