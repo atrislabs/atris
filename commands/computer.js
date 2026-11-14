@@ -1136,7 +1136,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
   log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
 
-  const started = await request(`/business/${ctx.businessId}/chat`, {
+  const startOptions = {
     method: 'POST',
     token,
     body: {
@@ -1151,7 +1151,16 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     },
     timeoutMs: 40000,
     retries: 0,
-  });
+  };
+  let started;
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    started = await request(`/business/${ctx.businessId}/chat`, startOptions);
+    const busy = !started.ok && [409, 502].includes(started.status)
+      && /\bbusy\b/i.test(JSON.stringify([started.error, started.errorMessage, started.data, started.text]));
+    if (!busy || attempt === 15) break;
+    log('  The runner is busy. Waiting 20 seconds before trying again.');
+    await (deps.sleep || sleep)(20000);
+  }
   if (!started.ok || !started.data?.execution_id) {
     return fail(prLib.describeStartError(started));
   }
