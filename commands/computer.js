@@ -1200,7 +1200,10 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
 
 async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
   let fromIndex = 0;
-  let errors = 0;
+  let failureStarted = null;
+  let pollDelay = 1200;
+  const wait = options.sleep || sleep;
+  const request = options.apiRequestJson || apiRequestJson;
   let cancelling = false;
   let cancelPromise = null;
   let sawVisibleOutput = false;
@@ -1246,21 +1249,30 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
 
   try {
     while (true) {
-      await sleep(1200);
-      const events = await apiRequestJson(
+      await wait(pollDelay);
+      const events = await request(
         `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=${fromIndex}`,
         { method: 'GET', token, timeoutMs: 60000 }
       );
 
       if (!events.ok) {
-        if (++errors >= 5) {
-          console.error('\nLost connection to AI computer.');
+        if (failureStarted === null) {
+          failureStarted = Date.now();
+          errOut('\nConnection to AI computer dropped. Retrying...');
+          pollDelay = 600;
+        }
+        const remaining = 10 * 60 * 1000 - (Date.now() - failureStarted);
+        if (remaining <= 0) {
+          errOut('\nLost connection to AI computer.');
           return { ok: false, status: 'connection_lost', text: collectedText, resultText };
         }
+        pollDelay = Math.min(pollDelay * 2, 15000, remaining);
         continue;
       }
 
-      errors = 0;
+      if (failureStarted !== null) errOut('Connection to AI computer restored.');
+      failureStarted = null;
+      pollDelay = 1200;
       let done = false;
       const emitEvents = (items, { showTools = true } = {}) => {
         let batchDone = false;
@@ -1308,7 +1320,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
 
       if (done || ['completed', 'error', 'failed', 'cancelled'].includes(events.data?.status)) {
         if (!sawVisibleOutput && events.data?.status === 'completed') {
-          const fullEvents = await apiRequestJson(
+          const fullEvents = await request(
             `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=0`,
             { method: 'GET', token, timeoutMs: 60000 }
           );
