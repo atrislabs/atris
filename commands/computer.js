@@ -1078,6 +1078,109 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
   console.log('  Use the stream URL to watch progress.');
 }
 
+function printComputerPrHelp(log = console.log) {
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>]');
+  log('');
+  log('The business computer does the task on a new branch and opens a pull request.');
+  log('It prints the pull request link. It never merges.');
+  log('');
+  log('Example:');
+  log('  atris computer pr atrislabs/demo "Fix the typo in the README" --business my-lab');
+}
+
+// One pull request from a repo and a plain-words task. Exit 0 only when a
+// pull request link for the same repo came back. Never merges.
+async function computerPr(token, args = [], ctx = null, options = {}, deps = {}) {
+  const prLib = require('../lib/computer-pr');
+  const log = deps.log || ((s) => console.log(s));
+  const logError = deps.logError || ((s) => console.error(s));
+  const write = deps.write || ((s) => process.stdout.write(s));
+  const request = deps.apiRequestJson || apiRequestJson;
+  const wake = deps.ensureBusinessAwake || ensureBusinessAwake;
+  const stream = deps.streamBusinessChatResult || streamBusinessChatResult;
+  const fail = (message) => {
+    logError(prLib.redactSecrets(message));
+    process.exitCode = 1;
+    return 1;
+  };
+
+  let parsed;
+  try {
+    parsed = prLib.parsePrArgs(args);
+  } catch (err) {
+    printComputerPrHelp(logError);
+    return fail(err.message);
+  }
+  if (parsed.help) {
+    printComputerPrHelp(log);
+    return 0;
+  }
+  if (!ctx?.businessId || !ctx?.workspaceId) {
+    return fail('No business computer selected. Pass --business <slug>.');
+  }
+
+  const { repo, task, base } = parsed;
+  const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date());
+  const title = prLib.titleFromTask(task);
+  const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
+
+  const awake = await wake(token, ctx);
+  if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
+
+  const worker = activeWorker(options.worker || ctx.worker);
+  const laneSource = options.worker ? '' : ctx.worker ? ' (saved for this business)' : '';
+  log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
+  log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
+
+  const started = await request(`/business/${ctx.businessId}/chat`, {
+    method: 'POST',
+    token,
+    body: {
+      message: prompt,
+      workspace_id: ctx.workspaceId,
+      worker,
+      ...(options.model ? { model: options.model } : {}),
+    },
+    timeoutMs: 40000,
+    retries: 0,
+  });
+  if (!started.ok || !started.data?.execution_id) {
+    return fail(`The run could not start: ${started.error || started.status || 'no run id came back'}`);
+  }
+
+  const out = prLib.createRedactingWriter(write);
+  const streamed = await stream(token, ctx, started.data.execution_id, null, {
+    write: (s) => out.write(s),
+    writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
+  });
+  out.flush();
+
+  const text = [streamed?.text, streamed?.resultText].filter(Boolean).join('\n');
+  const result = prLib.parsePullRequestResult(text, repo);
+
+  if (result.ok) {
+    log('');
+    log(`Pull request opened: ${title}`);
+    log(`Branch: ${result.branch || branch}`);
+    log(result.url);
+    return 0;
+  }
+  if (result.failedStep) {
+    return fail(`Step ${result.failedStep} failed, so no pull request is ready: ${result.error}`);
+  }
+  const why = streamed?.ok
+    ? `${result.error} No pull request is confirmed.`
+    : `The run stopped before it finished (${streamed?.status || 'unknown'}), and no pull request link came back.`;
+  logError(prLib.redactSecrets(why));
+  const tail = prLib.lastLines(streamed?.text || streamed?.resultText || '', 15);
+  if (tail) {
+    logError('Last lines of the run:');
+    logError(prLib.redactSecrets(tail));
+  }
+  process.exitCode = 1;
+  return 1;
+}
+
 async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
   let fromIndex = 0;
   let errors = 0;
@@ -1085,6 +1188,12 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
   let cancelPromise = null;
   let sawVisibleOutput = false;
   let terminalStatus = null;
+  // Callers that need the run's words (atris computer pr) read `text` from the
+  // return value, and may route printing through their own writers.
+  let collectedText = '';
+  let resultText = '';
+  const out = typeof options.write === 'function' ? options.write : (s) => process.stdout.write(s);
+  const errOut = typeof options.writeError === 'function' ? options.writeError : (s) => console.error(s);
 
   const requestCancel = async () => {
     if (cancelling) return;
@@ -1129,7 +1238,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
       if (!events.ok) {
         if (++errors >= 5) {
           console.error('\nLost connection to AI computer.');
-          return { ok: false, status: 'connection_lost' };
+          return { ok: false, status: 'connection_lost', text: collectedText, resultText };
         }
         continue;
       }
@@ -1141,19 +1250,24 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
         for (const event of (items || [])) {
           if ((event.type === 'assistant_text' || event.type === 'text') && event.content) {
             sawVisibleOutput = true;
-            process.stdout.write(event.content);
+            collectedText += event.content;
+            out(event.content);
           } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
             sawVisibleOutput = true;
-            process.stdout.write(String(event.result));
+            resultText = String(event.result);
+            collectedText += resultText;
+            out(resultText);
+          } else if (event.type === 'result' && event.result) {
+            resultText = String(event.result);
           } else if (showTools && !options.quiet && event.type === 'tool_use' && event.tool) {
             const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
             if (arg) {
-              console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
+              out(`\n  [${event.tool}] ${String(arg).slice(0, 120)}\n`);
             } else {
-              console.log(`\n  [${event.tool}]`);
+              out(`\n  [${event.tool}]\n`);
             }
           } else if (event.type === 'error') {
-            if (event.error) console.error(`\n${event.error}`);
+            if (event.error) errOut(`\n${event.error}`);
             terminalStatus = 'error';
             batchDone = true;
             break;
@@ -1186,12 +1300,10 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
           }
         }
 
-        if (!process.stdout.write('\n')) {
-          // no-op: keep line handling stable
-        }
+        out('\n');
         if (!sawVisibleOutput && events.data?.status === 'completed') console.log('(no result)');
         const finalStatus = terminalStatus || events.data?.status || (done ? 'completed' : 'unknown');
-        return { ok: finalStatus === 'completed', status: finalStatus };
+        return { ok: finalStatus === 'completed', status: finalStatus, text: collectedText, resultText };
       }
     }
   } finally {
@@ -2048,6 +2160,24 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     return runRecruitingLocalSyncCommand(args[1], args.slice(2), cloudOptions);
   }
 
+  if (sub === 'pr') {
+    // Read the repo and task before any login or cloud call, so a typo costs
+    // nothing and help works signed out.
+    let prArgs;
+    try {
+      prArgs = require('../lib/computer-pr').parsePrArgs(args.slice(1));
+    } catch (err) {
+      printComputerPrHelp(console.error);
+      console.error(err.message);
+      process.exitCode = 1;
+      return 1;
+    }
+    if (prArgs.help) {
+      printComputerPrHelp();
+      return 0;
+    }
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -2100,6 +2230,8 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  ls [path]       List files');
     console.log('  cat <path>      Read a file');
     console.log('  exec "<prompt>" Run with LLM (Claude Code)');
+    console.log('  pr <owner/repo> "<task>"  Do the task on a new branch and print the pull request link (never merges)');
+    console.log('                  --base <branch> --branch <name> --worker claude|openai --model <id>');
     console.log('  pull [path] [dir] Pull files from EC2 to local');
     console.log('  diff [path]       Show what changed on EC2 since last pull');
     console.log('  learn             Trigger autonomous learning cycle');
@@ -2130,6 +2262,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  atris computer grep "overnight"');
     console.log('  atris computer cat soul/soul.md');
     console.log('  atris computer exec "Read soul/ and suggest what to work on"');
+    console.log('  atris computer pr owner/repo "Fix the typo in the README" --business my-lab');
     return;
   }
 
@@ -2216,6 +2349,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     case 'ls': return computerLs(token, rest || undefined, ctx);
     case 'cat': return computerCat(token, rest, ctx);
     case 'exec': return computerExec(token, rest, ctx, cloudOptions);
+    case 'pr': return computerPr(token, args.slice(1), ctx, cloudOptions);
     case 'lane': return computerLane(rest, ctx);
     case 'pull': {
       const parts = rest.split(' ').filter(Boolean);
@@ -2264,4 +2398,6 @@ module.exports = {
   shellQuote,
   withoutRecruitingWrapperFlags,
   formatCloudSelection,
+  computerPr,
+  streamBusinessChatResult,
 };

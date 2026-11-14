@@ -157,7 +157,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:1940` (`runComputer` dispatch handles `card` before auth)
+- **Entry point:** `commands/computer.js:2052` (`runComputer` dispatch handles `card` before auth)
 - **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
 - **Writer:** `lib/computer-core.js:1536` (`computerCard`)
 - **How it works:**
@@ -168,6 +168,18 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
 **Search:** `rg "buildComputerCard|computerCard" commands/computer.js lib/computer-core.js`
+
+## Feature: Pull Request From A Task (`atris computer pr`)
+
+**Purpose:** A GitHub repo and a plain-words task go in; the business computer does the work on a new branch, opens one pull request, and the command prints the link. It never merges.
+
+- **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
+- **Command:** `commands/computer.js:1093` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
+- **Instruction and parsing:** `lib/computer-pr.js:75` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:154` (`parsePullRequestResult`), `lib/computer-pr.js:198` (`redactSecrets`)
+- **Run text:** `commands/computer.js:1184` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
+- **Tests:** `test/computer-pr.test.js`
+
+**Search:** `rg "computerPr|buildPullRequestPrompt|parsePullRequestResult|redactSecrets" commands/computer.js lib/computer-pr.js test/computer-pr.test.js`
 
 ## Feature: Computer Account Setup (`atris computer setup`)
 
