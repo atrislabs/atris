@@ -12,7 +12,7 @@ function team() {
 
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
-  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member',
+  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait',
 ]);
 const BOOL_FLAGS = new Set(['--stream', '--no-call']);
 
@@ -312,6 +312,8 @@ async function run(args = [], context = {}) {
       // background half, for members ping already planned.
       const onEvent = flags.stream ? (event) => write(`${JSON.stringify(event)}\n`) : null;
       if (sub === 'think') {
+        const wait = Math.min(60000, Math.max(0, Number(flags.wait) || 0));
+        if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
         const results = await team().think(root, positional.slice(1), { reason: flags.reason || 'scroll', env, deps, onEvent });
         out = { version: feed.FEED_VERSION, members: results };
       } else if (flags.stream) {

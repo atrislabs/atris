@@ -43,6 +43,8 @@ function project(t, members = ['scout', 'writer', 'closer'], { on = true, engine
     spawnThinker: (_root, names, reason) => { thinkers.push({ names, reason }); return null; },
     isAlive: () => true,
     lowPower: () => false,
+    sleeps: [],
+    sleep: async (ms) => { deps.sleeps.push(ms); },
     turn: async ({ engine: used, prompt, onText, kind }) => {
       turns.push({ engine: used.id, prompt, kind });
       const ideas = /thinking up ideas for the owner's feed/.test(prompt);

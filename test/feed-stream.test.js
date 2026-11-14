@@ -65,9 +65,10 @@ test('stream: a card cut off mid-way, or one that fails the checks, is dropped a
   };
   const { events } = await streamPing(ctx);
   const dropped = events.filter((e) => e.type === 'card_dropped');
-  assert.equal(dropped.length, 2);
   assert.match(dropped[0].reason, /plain words/);
   assert.match(dropped[1].reason, /stopped before the card was finished/);
+  assert.ok(events.some((e) => e.type === 'retry'), 'an empty round tries once more');
+  assert.match(events.find((e) => e.type === 'empty').reason, /tried twice/);
   assert.equal(feed.listCards(ctx.root, { env: ctx.env }).cards.length, 0, 'nothing was created');
 });
 
@@ -108,11 +109,15 @@ test('stream: one thought in flight per member; without --stream the thinking ru
 test('limits: generous on this computer\'s models, tighter on paid ones, with a plain reason and when it resets', async (t) => {
   const ctx = project(t, ['scout', 'writer']);
   const settings = team.settingsView(ctx.root, { env: ctx.env });
-  assert.deepEqual(settings.limits, { local_pings_per_day: 200, cloud_pings_per_day: 60, member_gap_seconds: 20 });
+  assert.deepEqual(settings.limits, { local_pings_per_day: 200, cloud_pings_per_day: 60, member_gap_seconds: 5 });
   ctx.deps.turn = streaming(ctx, 'IDEA\nTITLE: Call the warm leads today\nWHY: They answer\nEND\n');
   await streamPing(ctx, { member: 'scout' });
+  // Asked a moment ago: the ask waits the seconds left, then asks, instead of refusing.
+  ctx.deps.turn = streaming(ctx, 'IDEA\nTITLE: Ask the quiet buyers what they want\nWHY: They answer\nEND\n');
   const again = await streamPing(ctx, { member: 'scout' });
-  assert.match(again.out.members[0].reason, /can be asked again in \d+ seconds/);
+  assert.equal(again.out.pinged, 1);
+  assert.ok(again.events.find((e) => e.type === 'thinking').wait_ms > 0);
+  assert.ok(ctx.deps.sleeps[0] > 0 && ctx.deps.sleeps[0] <= 5000);
   const capped = { ...ctx.env, ATRIS_FEED_PINGS_PER_DAY: '1', ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
   const full = await streamPing(ctx, { member: 'writer', env: capped });
   assert.match(full.out.members[0].reason, /1 times today on this computer's models, the most allowed\. It resets in/);
@@ -152,10 +157,11 @@ test('variety: members rotate, ideas must be unlike what is there, and a member 
   }
   fresh.deps.turn = async () => ({ ok: true, text: '' }); // nothing new, so the four misses stay the latest
   const quickEnv = { ...fresh.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
-  await streamPing(fresh, { env: quickEnv });
-  const rested = await streamPing(fresh, { env: quickEnv });
-  assert.match(rested.out.members.find((m) => m.name === 'scout').reason, /rests for up to 30 minutes/);
-  assert.equal(rested.out.members.find((m) => m.name === 'writer').status, 'done');
+  void quickEnv;
+  // Four dismissals: scout is asked after the others, never left out.
+  const plan = team.ping(fresh.root, { reason: 'scroll', env: fresh.env, deps: fresh.deps });
+  assert.deepEqual(fresh.thinkers[0].names, ['writer', 'scout']);
+  assert.equal(plan.pinged, 2);
 });
 
 test('ping: off when no member is ON; refuses agents and battery saver', async (t) => {
@@ -163,7 +169,9 @@ test('ping: off when no member is ON; refuses agents and battery saver', async (
   assert.match(team.ping(ctx.root, { env: ctx.env, deps: ctx.deps }).reason, /No team member is on/);
   setMemberAwake('scout', true, ctx.root);
   assert.throws(() => team.ping(ctx.root, { env: ctx.agentEnv, deps: ctx.deps }), (e) => e.status === 403);
-  assert.match(team.ping(ctx.root, { env: ctx.env, deps: { ...ctx.deps, lowPower: () => true } }).reason, /saving battery/);
+  assert.match(team.ping(ctx.root, { reason: 'heartbeat', env: ctx.env, deps: { ...ctx.deps, lowPower: () => true } }).reason, /saving battery/);
+  assert.equal(team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: { ...ctx.deps, lowPower: () => true } }).pinged, 1, 'a person asking is heard even on battery saver');
+  ctx.thinkers.length = 0;
   assert.match(team.ping(ctx.root, { member: 'writer', env: ctx.env, deps: ctx.deps }).reason, /writer is off/);
   assert.deepEqual(ctx.thinkers, []);
 });

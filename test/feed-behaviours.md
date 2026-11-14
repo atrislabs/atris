@@ -92,3 +92,11 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 83 | Charts and numbers only from real numbers in the named project file | visuals: a chart only from real numbers found in the named project file | yes |
 | 84 | A reply can offer quick choices, and a tap answers with one | choices: a reply can offer up to four quick picks; choosing one answers with it | no |
 | 85 | What the owner teaches in a conversation is kept, shown back, used later and can be forgotten | notes: a lasting preference said in a conversation is kept, shown back, used in later rounds, and can be forgotten | yes |
+| 86 | found: after a few rounds the end of the feed said the team was resting; thirty asks in a row each bring new cards | found: thirty asks in a row with two awake members, passing every idea, each bring a new card | yes |
+| 87 | found: scrolling past counted as a rejection and rested every member; now only dismissals lower a member's turn | found: scrolling past is not a no; dismissals only move a member down the line | yes |
+| 88 | found: the per-member gap refused whole asks; the ask now waits a few seconds or asks someone else | limits: generous on this computer's models, tighter on paid ones, with a plain reason and when it resets | yes |
+| 89 | found: the waiting cap silenced members; scrolled-past ideas no longer count and the oldest make room | found: a member at its waiting cap retires its oldest scrolled-past ideas instead of falling silent | yes |
+| 90 | found: a member's own daily emit cap dropped every idea after 30; asked-for ideas follow the day's ask limit | found: ideas from an ask are held to the day's limit, not the member's own daily emit cap | yes |
+| 91 | An ask whose thinker crashed or ran long clears, and the next ask goes ahead | found: an ask whose thinker crashed clears, and the next ask goes ahead | yes |
+| 92 | The end of the feed rests only for the day's limit or nobody awake, with a plain reason | found: the end of the feed rests only for the day's limit or nobody awake, each with its plain reason | yes |
+| 93 | An empty round tries once more for different ideas and says plainly if still empty | stream: a card cut off mid-way, or one that fails the checks, is dropped and nothing half-made is created | yes |

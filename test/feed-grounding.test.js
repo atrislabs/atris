@@ -104,8 +104,8 @@ test('source: a member that cannot say what sparked its ideas is asked less ofte
   }
   const rows = require('../lib/feed-core')._internal.ideaRows(ctx.root);
   assert.ok(rows.every((row) => row.metadata.feed.unsourced === true));
-  const out = await team.pingStream(ctx.root, { reason: 'scroll', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps, onEvent: () => {} });
-  assert.match(out.members.find((m) => m.name === 'scout').reason, /rests for up to 30 minutes/);
+  team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps });
+  assert.deepEqual(ctx.thinkers[0].names, ['writer', 'scout'], 'asked after the others, never left out');
 });
 
 // --------------------------------------------------------------- visuals
