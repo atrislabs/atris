@@ -762,6 +762,7 @@ function showHelpAll() {
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
   console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
+  console.log('  town       - Walk the Atris town from here: look, go, map, who, night, grow (atris town --help)');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -2579,6 +2580,11 @@ if (command === 'guide') {
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'balance') {
   Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'town') {
+  // Play the town from a terminal: look, go, map, who, night, grow, streets.
+  Promise.resolve().then(() => require('../commands/town').townCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'spend') {
