@@ -108,7 +108,9 @@ function localTime(iso, now = new Date()) {
 }
 
 function shortNote(text, max = 80) {
-  const line = oneLine(text || '');
+  // oneLine turns empty text into "request failed", so an empty note stays empty here.
+  if (!String(text == null ? '' : text).replace(/\s+/g, ' ').trim()) return '';
+  const line = oneLine(text);
   return line.length > max ? `${line.slice(0, max - 3).trimEnd()}...` : line;
 }
 
@@ -138,7 +140,7 @@ function refusal(res, label) {
     return `Could not find an agent called ${label}. Check the name, or use its id.`;
   }
   if (res.status >= 500) return `The Atris server had a problem (${res.status}). Try again in a few minutes.`;
-  const detail = oneLine(detailOf(res));
+  const detail = detailOf(res).trim() ? oneLine(detailOf(res)) : '';
   return detail ? `The server said no: ${detail}` : `The server said no (${res.status}).`;
 }
 
@@ -163,9 +165,16 @@ function printOn(data, ref, label, log, now) {
   log(`See the bill: atris agent always-on status ${shellWord(ref)}`);
 }
 
-function windowName(days) {
-  const n = Number(days) || 1;
-  return n === 1 ? 'Last 24 hours' : `Last ${n} days`;
+// The server counts days midnight to midnight UTC, so name the window by
+// when it started in the person's own time, and say when the next day starts.
+function utcDayStart(now, daysBack = 0) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysBack));
+}
+
+function windowName(days, now) {
+  const n = Math.max(1, Math.round(Number(days) || 1));
+  const since = localTime(utcDayStart(now, n - 1).toISOString(), now);
+  return `${n === 1 ? 'Today' : `Last ${n} days`} (since ${since})`;
 }
 
 function printStatus(data, ref, label, log, now) {
@@ -189,15 +198,18 @@ function printStatus(data, ref, label, log, now) {
   } else {
     log(`Today: ${plural(spent, 'credit')} used.`);
   }
-  if (today.paused_by_cap) log('It hit the daily limit, so it stopped for today. It starts again tomorrow.');
+  if (today.paused_by_cap) {
+    const reset = localTime(utcDayStart(now, -1).toISOString(), now);
+    log(`It hit the daily limit, so it stopped for the day. It starts again ${reset} (midnight UTC).`);
+  }
 
   const bill = data.bill || {};
   const checkIns = Number(bill.check_ins || 0);
   log('');
   if (!checkIns) {
-    log(`${windowName(bill.days)}: no check-ins.`);
+    log(`${windowName(bill.days, now)}: no check-ins.`);
   } else {
-    log(`${windowName(bill.days)}: ${plural(checkIns, 'check-in')}.`);
+    log(`${windowName(bill.days, now)}: ${plural(checkIns, 'check-in')}.`);
     const parts = [`${Number(bill.quiet || 0)} quiet`, `${Number(bill.acted || 0)} did work`];
     if (Number(bill.failed || 0)) parts.push(`${Number(bill.failed)} failed`);
     if (Number(bill.paused || 0)) parts.push(`${Number(bill.paused)} paused by the limit`);

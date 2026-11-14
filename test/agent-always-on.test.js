@@ -108,13 +108,19 @@ test('status reads the bill with GET and prints pace, today, totals, and the new
   const out = result.output;
   assert.equal(out[0], 'Scout is on. It checks in every 30 minutes.');
   assert.ok(out.includes('Today: 12 of 40 credits used, 28 left.'));
-  assert.ok(out.includes('Last 24 hours: 14 check-ins.'));
+  assert.ok(out.includes('Today (since yesterday 4:00 PM): 14 check-ins.'), 'the server day runs midnight to midnight UTC, named in local time');
   assert.ok(out.includes('10 quiet, 3 did work, 1 failed.'));
   assert.ok(out.includes('Total: 12 credits ($0.12).'));
   assert.ok(!out.some((line) => /Our cost/.test(line)), 'owners never see our cost');
   const rows = out.slice(out.indexOf('Newest check-ins:') + 1);
   assert.equal(rows.length, 10);
   assert.match(rows[0], /^ {2}today \d+:\d\d [AP]M {2}\| {2}did work {2}\| {2}4 credits {2}\| {2}replied to a new lead$/);
+  for (const row of rows.slice(1)) {
+    assert.equal(row.split('  |  ').length, 3, 'a quiet row with an empty note has no note part');
+    assert.doesNotMatch(row, /request failed/);
+  }
+  const week = await run(['status', 'agent-1', '--days', '7'], { answer: () => ({ ok: true, status: 200, data: { ...statusAnswer, bill: { ...statusAnswer.bill, days: 7 } } }) });
+  assert.ok(week.output.includes('Last 7 days (since Nov 7, 4:00 PM): 14 check-ins.'));
 });
 
 test('status defaults to one day, shows staff cost only when the server sends it, and reads an agent that was never on', async () => {
@@ -133,7 +139,7 @@ test('status defaults to one day, shows staff cost only when the server sends it
     'Scout is off. It does not check in on its own.',
     'Today: 0 credits used.',
     '',
-    'Last 24 hours: no check-ins.',
+    'Today (since yesterday 4:00 PM): no check-ins.',
     'Total: 0 credits ($0.00).',
   ]);
 });
@@ -141,7 +147,7 @@ test('status defaults to one day, shows staff cost only when the server sends it
 test('status says when the daily limit paused it, and rejects a bad --days', async () => {
   const capped = { ...statusAnswer, today: { credits: 40, cap_credits: 40, remaining_credits: 0, paused_by_cap: true } };
   const result = await run(['status', 'agent-1'], { answer: () => ({ ok: true, status: 200, data: capped }) });
-  assert.ok(result.output.includes('It hit the daily limit, so it stopped for today. It starts again tomorrow.'));
+  assert.ok(result.output.includes('It hit the daily limit, so it stopped for the day. It starts again today 4:00 PM (midnight UTC).'));
   for (const days of ['0', '31', 'week']) {
     const bad = await run(['status', 'agent-1', '--days', days]);
     assert.equal(bad.code, 1);
@@ -229,6 +235,33 @@ test('a locked job may read the bill or turn it off for free; turning it on is s
   assert.ok(!cats(['agent', 'always-on', 'status', 'scout', '--days', '7']).includes('spend'));
   assert.ok(!cats(['agent', 'always-on', 'off', 'scout']).includes('spend'));
   assert.ok(!cats(['agent', 'always-on', '--help']).includes('spend'));
+  assert.ok(!cats(['agent', 'always-on', '-h']).includes('spend'));
+  assert.ok(!cats(['agent', 'always-on', 'help']).includes('spend'));
+  // a word taken as a flag's value is never the verb or a help request
+  assert.ok(cats(['agent', 'always-on', 'scout', '--every', '15m', '--cap', '2000', '--watch', 'help']).includes('spend'));
+  assert.ok(cats(['agent', 'always-on', 'scout', '--watch', '-h']).includes('spend'));
+  assert.ok(cats(['agent', 'always-on', '--business', 'status', 'scout']).includes('spend'));
+  assert.ok(cats(['agent', 'always-on', '--business', 'off', 'scout']).includes('spend'));
   assert.ok(cats(['agent', 'spawn', 'researcher']).includes('spend'), 'other agent subs keep their old answer');
   assert.ok(!cats(['agent', 'spawns']).includes('spend'));
+});
+
+test('whenever the command would turn an agent on, the lock calls it spend', async () => {
+  const spends = (args) => yesLock.analyze('atris', ['agent', 'always-on', ...args]).cats.includes('spend');
+  for (const args of [
+    ['scout'], ['scout', '--watch', 'help'], ['scout', '--watch', '-h'], ['scout', '--watch=help'], ['scout', '--watch=status'],
+    ['--business', 'status', 'scout'], ['--business', 'off', 'scout'], ['--business=off', 'scout'], ['--json', 'scout'],
+    ['scout', '--no-followups', 'status'], ['status', 'scout'], ['off', 'scout'], ['help'], ['-h'], ['--help'], ['--watch', '--help', 'scout'],
+    ['--frob', 'status', 'scout'], ['scout', '-x'], ['--', 'scout'],
+  ]) {
+    const result = await run(args);
+    const turnedOn = result.calls.some((call) => call.method === 'POST');
+    if (turnedOn) assert.ok(spends(args), `the lock must hold: ${args.join(' ')}`);
+  }
+});
+
+test('a refusal with no detail says the status, never "request failed"', async () => {
+  const result = await run(['agent-1'], { answer: () => ({ ok: false, status: 400, data: '' }) });
+  assert.equal(result.code, 1);
+  assert.equal(result.errors[0], 'Could not turn on agent-1. The server said no (400).');
 });
