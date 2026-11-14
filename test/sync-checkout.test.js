@@ -81,8 +81,8 @@ test('behind detection reports commits behind origin in boot output', () => {
     const boot = runCli(checkout, 'atris.md');
     assert.equal(boot.status, 0, boot.stderr);
     assert.match(
-      boot.stdout,
-      /this checkout is 1 commit behind origin; run atris sync-checkout/
+      boot.stdout.replace(/\s+/g, ' '),
+      /This copy of the project is 1 change behind the shared copy on origin, so the newest work is not shown here yet\. Run atris sync-checkout to catch up\./
     );
 
     const status = runCli(checkout, 'status', '--quick');

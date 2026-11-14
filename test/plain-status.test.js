@@ -122,3 +122,9 @@ test('the team reads as one sentence naming the tool and model for each job', ()
   assert.match(flat(text), /^The agents run on these AI tools and models: codex \S+ writes the changes, codex \S+ checks them and devin \S+ takes the ui edits jobs\.$/);
   assert.equal(bootTeamSentence(process.cwd(), { jobs: [] }), '');
 });
+
+test('long dashes from titles written elsewhere become commas', () => {
+  const text = renderStatus({ now: NOW, brief: { title: 'Swarm discovery \u2014 2026-11-13', path: 'atris/wiki/briefs/x.md' } });
+  assert.doesNotMatch(text, /\u2014/);
+  assert.match(flat(text), /"Swarm discovery, 2026-11-13"/);
+});

@@ -1829,16 +1829,16 @@ function showWelcomeVisualization() {
     return;
   }
 
-  const checkoutWarning = require('../lib/checkout-sync').checkoutBehindMessage(cwd);
-  if (checkoutWarning) {
-    console.log(`  ${checkoutWarning}`);
-    console.log('');
-  }
-
   // Every paragraph below is a whole sentence a newcomer (or an agent
   // starting cold) can read once: what happened, why it matters, how we
   // know. lib/plain-status.js owns the wording.
   const plainStatus = require('../lib/plain-status');
+  let behind = null;
+  try { behind = require('../lib/checkout-sync').checkoutBehind(cwd); } catch { behind = null; }
+  if (behind && behind.count > 0) {
+    console.log(plainStatus.wrap(`This copy of the project is ${behind.count} change${behind.count === 1 ? '' : 's'} behind the shared copy on ${behind.remote}, so the newest work is not shown here yet. Run atris sync-checkout to catch up.`));
+    console.log('');
+  }
   const nowMs = Date.now();
   if (!Array.isArray(glance.activeItems) || !glance.activeItems.length) {
     glance.activeItems = (glance.activeTitles || []).map((title) => ({ title }));
