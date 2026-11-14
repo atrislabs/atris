@@ -80,3 +80,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 71 | The streamed ping prints one JSON event per line | cli: atris feed ping --stream prints one JSON event per line | yes |
 | 72 | found: the same short idea from two members made two cards; it now merges, even once approved | copies: the same short title from two members, or a copy of an idea already approved, makes no second card | yes |
 | 73 | A card the model forgot to close is whole when its answer ended normally | stream: a card the model forgot to END is still whole when the answer ended normally | no |
+| 74 | found: at the end of the feed with 9 ideas waiting (most held back) no new ideas came; asking for more is now always heard | found: at the end of the feed with many ideas waiting (most held back), asking for more is always heard | yes |
+| 75 | found: the day's count read 0 after the members were asked; asks recorded earlier still count | found: asks recorded by the earlier feed still count toward the day, so the ready check never reads zero | yes |
+| 76 | With few ideas on screen, a passed idea comes back after 5 minutes | found: with few ideas on screen, a passed idea comes back after 5 minutes, after the newer ones | yes |
+| 77 | A refused ask says why in plain words, with the reset time, in the answer and the stream | refusals: a day limit says so plainly with the reset time, in the answer and in the stream | yes |

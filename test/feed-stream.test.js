@@ -94,10 +94,15 @@ test('stream: one thought in flight per member; without --stream the thinking ru
   const ctx = project(t, ['scout', 'writer']);
   fs.mkdirSync(path.join(ctx.root, '.atris', 'state', 'feed'), { recursive: true });
   fs.writeFileSync(path.join(ctx.root, '.atris', 'state', 'feed', 'thinking-scout.json'), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+  // One ask in flight per project: while scout still thinks, a new ask waits for it.
+  const busy = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
+  assert.equal(busy.pinged, 0);
+  assert.match(busy.reason, /scout is still thinking, so new ideas are already on the way/);
+  assert.match(team.ping(ctx.root, { member: 'scout', reason: 'scroll', env: ctx.env, deps: ctx.deps }).members[0].reason, /already thinking/);
+  fs.rmSync(path.join(ctx.root, '.atris', 'state', 'feed', 'thinking-scout.json'));
   const out = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: ctx.deps });
-  assert.equal(out.pinged, 1);
-  assert.match(out.members.find((m) => m.name === 'scout').reason, /already thinking/);
-  assert.deepEqual(ctx.thinkers, [{ names: ['writer'], reason: 'scroll' }], 'it answered at once and left the thinking to a background run');
+  assert.equal(out.pinged, 2);
+  assert.deepEqual(ctx.thinkers, [{ names: ['scout', 'writer'], reason: 'scroll' }], 'it answered at once and left the thinking to a background run');
 });
 
 test('limits: generous on this computer\'s models, tighter on paid ones, with a plain reason and when it resets', async (t) => {
@@ -187,4 +192,64 @@ test('stream: a card the model forgot to END is still whole when the answer ende
   const { events } = await streamPing(ctx);
   assert.equal(events.filter((e) => e.type === 'card_done').length, 2);
   assert.equal(events.filter((e) => e.type === 'card_dropped').length, 0);
+});
+
+test('found: at the end of the feed with many ideas waiting (most held back), asking for more is always heard', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
+  const titles = ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote', 'Thank the first ten buyers',
+    'Check every price on the shop page', 'Send a short welcome note', 'Fix the opening hours line', 'Add a photo to the soap page', 'Answer the oldest customer email'];
+  const ids = titles.map((title, i) => feed.proposeCard(ctx.root, { as: ['scout', 'writer', 'closer', 'extra'][i % 4], title, why: 'More people buy', env: ctx.env }).card.id);
+  feed.passCards(ctx.root, ids.slice(0, 8), { env: ctx.env });
+  const more = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
+  assert.equal(more.requested, 3, more.reason);
+  const scroll = team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env }, deps: ctx.deps });
+  assert.equal(scroll.pinged, 1, 'the members asked a moment ago are passed over, the one left is asked');
+  const askedFirst = more.members.filter((m) => m.status === 'started').map((m) => m.name);
+  assert.equal(scroll.members.find((m) => m.status === 'started').name, ['scout', 'writer', 'closer', 'extra'].find((m) => !askedFirst.includes(m)));
+  // Only the automatic heartbeat rests while plenty wait.
+  const beat = team.ping(ctx.root, { reason: 'heartbeat', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps });
+  assert.equal(beat.pinged, 0);
+  assert.match(beat.reason, /9 ideas are already waiting, so the heartbeat lets the team rest/);
+});
+
+test('found: asks recorded by the earlier feed still count toward the day, so the ready check never reads zero', async (t) => {
+  const ctx = project(t, ['scout']);
+  const file = path.join(ctx.root, '.atris', 'state', 'feed', 'pings.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ day: new Date().toISOString().slice(0, 10), total: 8, members: { scout: { count: 2, last_at: new Date(0).toISOString() } } }));
+  assert.equal(team.settingsView(ctx.root, { env: ctx.env }).today.local_pings, 8);
+  const out = await team.doctor(ctx.root, { env: ctx.env, deps: ctx.deps, call: false });
+  assert.match(out.checks.find((c) => c.name === 'caps').detail, /Asked for ideas today: 8 of 200/);
+  team.ping(ctx.root, { reason: 'event', env: ctx.env, deps: ctx.deps }); // an ask when members wake counts too
+  assert.equal(team.settingsView(ctx.root, { env: ctx.env }).today.local_pings, 9);
+});
+
+test('found: with few ideas on screen, a passed idea comes back after 5 minutes, after the newer ones', (t) => {
+  const ctx = project(t, ['scout', 'writer']);
+  const old = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the warm leads today', why: 'They answer', env: ctx.env }).card;
+  const fresh = feed.proposeCard(ctx.root, { as: 'writer', title: 'Write the spring price note', why: 'Buyers ask', env: ctx.env }).card;
+  feed.passCards(ctx.root, [old.id], { env: ctx.env });
+  const back = (minutes) => require('../lib/task-db').updateTaskMetadata(ctx.db, old.source.id, (m) => {
+    for (const entry of Object.values(m.feed_views[old.id])) entry.last_passed_at = new Date(Date.now() - minutes * 60000).toISOString();
+    return m;
+  }, { touch: false });
+  const shown = () => feed.listCards(ctx.root, { env: ctx.env }).cards.map((card) => card.id);
+  back(2);
+  assert.deepEqual(shown(), [fresh.id], 'two minutes is too soon');
+  back(6);
+  assert.deepEqual(shown(), [fresh.id, old.id], 'back after five minutes, after the newer idea');
+});
+
+test('refusals: a day limit says so plainly with the reset time, in the answer and in the stream', async (t) => {
+  const ctx = project(t, ['scout']);
+  const env = { ...ctx.env, ATRIS_FEED_PINGS_PER_DAY: '0' };
+  const out = team.ping(ctx.root, { reason: 'scroll', env, deps: ctx.deps });
+  assert.equal(out.pinged, 0);
+  assert.match(out.reason, /the most allowed\. It resets in/);
+  assert.ok(Date.parse(out.resets_at) > Date.now());
+  const events = [];
+  await team.pingStream(ctx.root, { reason: 'scroll', env, deps: ctx.deps, onEvent: (e) => events.push(e) });
+  const done = events.find((e) => e.type === 'done');
+  assert.match(done.reason, /It resets in/);
+  assert.ok(done.resets_at);
 });
