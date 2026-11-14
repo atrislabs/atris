@@ -1028,9 +1028,14 @@ function formatImproveReport(result = {}) {
 // atris improve revisions: the gauge for the north-star metric:
 // operator revisions after landing = 0. an agent landing is a commit whose
 // Co-authored-by trailer matches a known agent signature (atris-builder[bot],
-// claude, cursor, codex, chatgpt, openai), case-insensitive, and only on
-// those trailer lines. commits with no trailer still count as human, so the
-// metric overcounts revisions; accepted on purpose.
+// claude, cursor, codex, chatgpt, openai, or any GitHub bot address),
+// case-insensitive, and only on those trailer lines. A commit with no trailer
+// is still an agent's when it reached the mainline through an agent branch
+// (codex/..., claude/..., member/...), or, for a squash-merged pull request
+// that would count as a fix, when GitHub says the pull request came from one.
+// Live 2026-11-13: all 11 "human fixes" in atrisos-backend were agent commits
+// that lost their trailer (a typo, a direct commit, a squash merge). Anything
+// with none of these signs still counts as a person's.
 //
 // if a human commit changes lines the landing wrote within 72 hours, that
 // landing failed the guarantee.
@@ -1101,8 +1106,50 @@ function isAgentCommitBody(body) {
     if (!/^\s*co-authored-by\s*:/i.test(line)) continue;
     const lower = line.toLowerCase();
     if (markers.some((m) => lower.includes(m))) return true;
+    // A GitHub bot address is never a person, however the name is spelled.
+    // Live 2026-11-12: "atis-builder[bot]" read as a person's fix.
+    if (/\[bot\]@users\.noreply\.github\.com/.test(lower)) return true;
   }
   return false;
+}
+
+// Branch name prefixes only agents use. fix/, feat/, release/ and the like
+// are left out on purpose: a person may use them too.
+const AGENT_BRANCH_PREFIXES = new Set([
+  'codex', 'claude', 'cursor', 'devin', 'orb', 'atris', 'member', 'member-lab',
+  'campaign', 'builder', 'night', 'sentinel-exam', 'grok', 'fable', 'opencode',
+  'composer', 'agy', 'antigravity', 'gemini', 'haiku', 'copilot',
+]);
+
+function isAgentBranchName(branch) {
+  const first = String(branch || '').trim().split('/')[0].toLowerCase();
+  return String(branch || '').includes('/') && AGENT_BRANCH_PREFIXES.has(first);
+}
+
+// The branch a merge subject names: "Merge pull request #12 from org/codex/x"
+// or "Merge branch 'codex/x'". null for any other subject.
+function mergedBranchOf(subject) {
+  const s = String(subject || '');
+  const pr = s.match(/^Merge pull request #\d+ from [^/\s]+\/(\S+)/);
+  if (pr) return pr[1];
+  const local = s.match(/^Merge branch '([^']+)'/);
+  return local ? local[1] : null;
+}
+
+// GitHub's squash merge subject ends with the pull request number.
+function squashPullNumber(subject) {
+  const m = String(subject || '').match(/\(#(\d+)\)\s*$/);
+  return m ? Number(m[1]) : null;
+}
+
+// Ask GitHub which branch a pull request came from. null when gh is missing,
+// offline, or the repo has no GitHub remote; the commit then stays a person's.
+function githubPullBranch(root, number) {
+  const r = spawnSync('gh', ['pr', 'view', String(number), '--json', 'headRefName', '-q', '.headRefName'], {
+    cwd: root, encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (r.error || r.status !== 0) return null;
+  return String(r.stdout || '').trim() || null;
 }
 
 function parseRevisionsArgs(argv = []) {
@@ -1342,6 +1389,17 @@ function collectRevisionSignals(root, options = {}) {
     })
     .filter((c) => c.hash && c.ms != null);
 
+  // A plain commit that reached the mainline through an agent branch merge is
+  // an agent's even without a trailer. Merges keep their own rule, so a
+  // branch and its merge never count as two landings.
+  const arrival = mainlineArrivals(commits);
+  const byHash = new Map(commits.map((c) => [c.hash, c]));
+  for (const c of commits) {
+    if (c.isAgent || c.parents.length > 1) continue;
+    const via = byHash.get(arrival.get(c.hash));
+    if (via && via !== c && isAgentBranchName(mergedBranchOf(via.subject))) c.isAgent = true;
+  }
+
   const landings = commits.filter((c) => c.isAgent);
   // A merge that carries agent work onto the mainline is a landing action,
   // not a human correction; counting merges as revisions made the first live
@@ -1382,9 +1440,28 @@ function collectRevisionSignals(root, options = {}) {
     return cache.used[key];
   };
 
+  // A squash-merged pull request keeps no branch name in git, so ask GitHub,
+  // only for a commit that would otherwise count as a fix, and remember it.
+  const pullBranch = typeof options.pullBranch === 'function' ? options.pullBranch : githubPullBranch;
+  const fromAgentPull = (commit) => {
+    const number = squashPullNumber(commit.subject);
+    if (number == null) return false;
+    const key = `pr:${commit.hash}`;
+    if (!(key in cache.used)) {
+      const hit = cache.entries[key];
+      if (Array.isArray(hit)) cache.used[key] = hit;
+      else {
+        const branch = pullBranch(root, number);
+        cache.used[key] = branch ? [branch] : null;
+        if (branch) cache.dirty = true;
+      }
+    }
+    const saved = cache.used[key];
+    return Boolean(saved && isAgentBranchName(saved[0]));
+  };
+
   // A commit that reached the mainline in the same merge as the landing came
   // in with it, before anything had landed for a person to fix.
-  const arrival = mainlineArrivals(commits);
   const revisions = [];
   for (const landing of landings) {
     const landedFiles = new Set(filesOf(landing).filter(isRevisionSignalFile));
@@ -1403,6 +1480,7 @@ function collectRevisionSignals(root, options = {}) {
         return !authors || authors.some((h) => h === landing.hash || (landedWith && arrival.get(h) === landedWith));
       });
       if (!overlap.length) continue;
+      if (fromAgentPull(human)) continue;
       revisedBy.push({ hash: human.hash, subject: human.subject, at: human.at });
       overlap.forEach((f) => touched.add(f));
     }
@@ -1751,6 +1829,8 @@ module.exports = {
   collectRevisionSignals,
   formatRevisionsReport,
   isAgentCommitBody,
+  isAgentBranchName,
+  mergedBranchOf,
   runLocalFallback,
   summarizeLocalMissionRun,
   LOCAL_FALLBACK_ARGS,

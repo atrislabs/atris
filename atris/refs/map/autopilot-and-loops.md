@@ -19,7 +19,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js:317` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
-- **Help:** `bin/atris.js:1136-1147` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
+- **Help:** `bin/atris.js:1151-1162` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
 - **Dispatch:** `bin/atris.js:3095-3093` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
 - **How it works:**
 - `atris loop wiki` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
