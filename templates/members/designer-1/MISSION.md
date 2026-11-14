@@ -1,6 +1,6 @@
 # Mission
 
-Screens that look right, read in a glance, and work by keyboard and by name.
+Screens that look right, read in a glance and work by keyboard and by name.
 
 ## North Star
 

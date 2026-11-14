@@ -725,9 +725,9 @@ ${intentTable}
 
 ## Reply shapes
 
-- **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
-- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
-- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
+- **Status:** "The reply check is built. I am running the final checks now and the result is not ready yet."
+- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed and the change is ready."
+- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through. No work was blocked."
 
 ## Core Files
 

@@ -35,5 +35,6 @@ Open [notes.md](notes.md) when you write a taste file, add a line or start a new
 - [notes.md](notes.md): the shape of a taste list, a taste note and a recorded correction.
 - [../design/SKILL.md](../design/SKILL.md): the full visual rules. Taste says what people like; design says how to build it.
 - [../../policies/ANTISLOP.md](../../policies/ANTISLOP.md): the tells that make work read as generated.
+- [../../policies/publishing.md](../../policies/publishing.md): the rules for anything the public sees, from captions to descriptions.
 
 Keep this page to one screen. Detail goes in the notes.

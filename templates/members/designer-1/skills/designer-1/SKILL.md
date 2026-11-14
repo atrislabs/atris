@@ -1,6 +1,6 @@
 ---
 name: designer-1
-description: Build complete web screens from a fixed set of parts, on one spacing scale, with few words, and check them before reporting. Use when designing or changing an interface.
+description: Build complete web screens from a fixed set of parts, on one spacing scale, with few words and check them before reporting. Use when designing or changing an interface.
 version: 1.2.1
 tags:
   - design
@@ -90,13 +90,13 @@ Color, radius, motion: house tokens only (`--ink`, `--accent`, `--line`, `--radi
 
 Three kinds of text:
 
-- label: names a thing or an action, and must be enough to act on. "anyone with the link", not "anyone".
+- label: names a thing or an action and must be enough to act on. "anyone with the link", not "anyone".
 - consequence: what an action will do, in numbers. Example: "charge $40.00 today, then $120.00 a month from 1 dec".
 - explanation: how to work the screen. Example: "click here to change your plan".
 
 Consequence is required. Explanation is never allowed.
 
-Before any action that spends money, deletes, sends, or cannot be undone, the screen states the amount, when, and what changes. "an adjustment on your next invoice" fails: no amount, no date.
+Before any action that spends money, deletes, sends, or cannot be undone, the screen states the amount, when and what changes. "an adjustment on your next invoice" fails: no amount, no date.
 
 Words follow the truth. Never promise what the screen does not do. Two places never contradict. Text tied to a state changes with the state: "charged today" does not survive a declined payment.
 

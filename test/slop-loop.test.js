@@ -21,7 +21,7 @@ test('--fix repairs em dashes in place and leaves a comma', (t) => {
   assert.deepEqual(fixedFiles, [f]);
   const after = fs.readFileSync(f, 'utf8');
   assert.ok(!after.includes('—'), 'em dash should be gone');
-  assert.match(after, /Fast, reliable, and calm\./);
+  assert.match(after, /Fast, reliable and calm\./); // the comma-join fix then drops the comma before "and"
   // re-scan is clean for em-dash
   assert.equal(scanFile(f).filter((x) => x.rule === 'em-dash').length, 0);
 });

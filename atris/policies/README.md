@@ -5,6 +5,7 @@ How finished work is judged. Each line gives the rule and says when to open the 
 ## Before anything leaves the building
 
 - Never send raw source to a person. HTML, decks and screenshots need render proof and the exact recipient, subject and body shown before send. Open [outbound-artifact-gate.md](outbound-artifact-gate.md) before you email, post or share anything.
+- Anything the public sees follows one set of rules. Captions match the voice word for word. Descriptions get people to watch and get found in search, never production notes. Open [publishing.md](publishing.md) before you make or post a video, caption, title, description, post or blog.
 - Generic, hedging output fails. Cut the kill-list words, match the depth to the task and run the pre-flight checklist. Open [ANTISLOP.md](ANTISLOP.md) when you review any writing, code comments or plans.
 - An essay or post needs a clear thesis, sections that move it forward and a read out loud. Open [writing.md](writing.md) when you review long-form writing before it is published.
 - Messages from the day loop must come from real operator data and never guess mood from silence. Open [day-loop-voice.md](day-loop-voice.md) when you write morning, evening or ping messages to an operator.
