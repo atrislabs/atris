@@ -770,7 +770,8 @@ function showHelpAll() {
   console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
   console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
-  console.log('               agent pull|push|snapshot: carry an agent\'s home folder; agent spawn --budget: make a child agent');
+  console.log('               agent pull|push|snapshot: carry an agent\'s home; publish|unpublish: manage its model name');
+  console.log('               agent spawn --budget: make a child agent');
   console.log('               agent signin <agent> --key-file <path>: sign in with the agent\'s own key, print a token');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
@@ -2317,7 +2318,7 @@ if (command === 'guide') {
     .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agent' && require('../commands/agent-home').isHomeCommand(process.argv.slice(3))) {
-  // pull/push/snapshot/spawn --budget name one agent (by id, saved name, or the
+  // pull/push/snapshot/publish/unpublish/spawn --budget name one agent (by id, saved name, or the
   // pulled folder), and the server checks ownership, so no --account gate.
   Promise.resolve().then(() => require('../commands/agent-home').agentHomeCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(code || 0))
@@ -3827,12 +3828,13 @@ async function agentAtris() {
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
     console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
-    console.log('       atris agent [pull|push|snapshot] and atris agent spawn <parent> --name <name> --budget <credits>');
+    console.log('       atris agent [pull|push|snapshot|publish|unpublish] and atris agent spawn <parent> --name <name> --budget <credits>');
     console.log('       atris agent signin <agent> [--key-file <path>] [--json]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
     console.log('  Run `atris agent pull <agent> --dir <folder>` to copy an agent\'s home here; any engine started there becomes it.');
     console.log('  Run `atris agent push` inside that folder to send changes back, `atris agent snapshot` to save a version.');
+    console.log('  Run `atris agent publish [<agent>] --as <name>` to publish a model, or `atris agent unpublish [<agent>]` to remove it.');
     console.log('  Run `atris agent spawn <parent> --name <name> --budget <credits>` to make a child agent; its key goes to ~/.atris/agents.');
     console.log('  Run `atris agent signin <agent> [--key-file <path>]` to sign in with the agent\'s own key; prints only a token.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
