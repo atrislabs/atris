@@ -175,7 +175,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 - **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
 - **Command:** `commands/computer.js:1093` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
-- **Instruction and parsing:** `lib/computer-pr.js:75` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:154` (`parsePullRequestResult`), `lib/computer-pr.js:198` (`redactSecrets`)
+- **Instruction and parsing:** `lib/computer-pr.js:110` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:241` (`parsePullRequestResult`), `lib/computer-pr.js:285` (`redactSecrets`)
 - **Run text:** `commands/computer.js:1191` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
 - **Tests:** `test/computer-pr.test.js`
 
