@@ -6,10 +6,15 @@
 
 const feed = require('../lib/feed-core');
 
+function team() {
+  return require('../lib/feed-team');
+}
+
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
-  '--visual', '--kind', '--lane', '--note', '--story',
+  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine',
 ]);
+const BOOL_FLAGS = new Set(['--stream', '--no-call']);
 
 function parse(args) {
   const positional = [];
@@ -20,6 +25,7 @@ function parse(args) {
     const token = String(args[i]);
     if (token === '--json') { json = true; continue; }
     if (token === '--help' || token === '-h') { flags.help = true; continue; }
+    if (BOOL_FLAGS.has(token)) { flags[token.slice(2)] = true; continue; }
     if (token === '--') { positional.push(...args.slice(i + 1).map(String)); break; }
     const eq = token.indexOf('=');
     const name = token.startsWith('--') && eq > 0 ? token.slice(0, eq) : token;
@@ -59,10 +65,22 @@ const HELP = [
   '                          [--body "<text>"] [--detail "<technical notes>"] [--visual \'<json>\']',
   '                          [--kind proposal|question] [--lane money|billing|...] [--story "<line>"]',
   '       atris feed decide <card> approve|dismiss [--note "<text>"]',
-  '       atris feed talk <card> "<message>" [--as <member>]',
+  '       atris feed talk <card> "<message>" [--stream] [--as <member>]',
+  '                          (the card\'s member answers at once, one tool-free turn on its model; --stream prints it as it comes)',
   '       atris feed messages <card>',
   '       atris feed revise <card> --as <member> [--title ...] [--why ...] [--body ...] [--detail ...] [--visual ...]',
-  '       atris feed more',
+  '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
+  '       atris feed settings [set default-engine <id>]   the one default model for members with none of their own',
+  '       atris feed engines                  the models usable on this computer right now',
+  '       atris feed members                  the team: on or off, model in effect, last active, what it is doing',
+  '       atris feed member on|off <name>',
+  '       atris feed ping [<member>] [--reason scroll|heartbeat|event]',
+  '       atris feed emit --as <member> idea|question --title "..." --why "..." | progress --card <card> "<line>"',
+  '                          | result --card <card> --proof "<what you ran and what it showed>" ["<plain line>"]',
+  '       atris feed events [--limit N]        the stream of what members put in the feed',
+  '       atris feed start <folder> [--engine <id>]   set up a folder of projects, add a starter team, turn it on, first ping',
+  '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
+  '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
   '',
   'Ideas wait for a person. Approve hands the idea to its team member and starts it',
   `in the background (at most ${feed.FEED_MAX_RUNNING} at once; the rest wait in order).`,
@@ -108,6 +126,58 @@ function printText(command, out) {
     else console.log(`approved. not started: ${outcome.reason || 'unknown'}`);
     return;
   }
+  if (command === 'talk') {
+    if (out.reply) console.log(`${out.reply.from.name}: ${out.reply.text}`);
+    else console.log(out.reply_skipped || 'sent.');
+    return;
+  }
+  if (command === 'members') {
+    for (const m of out.members) console.log(`${m.on ? 'on ' : 'off'}  ${m.name.padEnd(14)} ${m.engine_name}${m.engine_available ? '' : ' (cannot run here)'}${m.doing ? `  · ${m.doing}` : ''}`);
+    return;
+  }
+  if (command === 'member') {
+    printText('members', out);
+    return;
+  }
+  if (command === 'engines') {
+    for (const e of out.engines) console.log(`${e.available ? 'ready' : '-    '}  ${e.id.padEnd(14)} ${e.name} (${e.kind})${e.reason ? `: ${e.reason}` : ''}`);
+    console.log(`default for members with none of their own: ${out.engine_in_effect}`);
+    return;
+  }
+  if (command === 'settings') {
+    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (the workspace default)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
+    return;
+  }
+  if (command === 'ping') {
+    console.log(out.reason);
+    return;
+  }
+  if (command === 'emit') {
+    console.log(`${out.event.type} in the feed${out.card ? `: ${out.card.title}` : ''}`);
+    return;
+  }
+  if (command === 'events') {
+    for (const e of out.events) console.log(`${String(e.at).slice(0, 16).replace('T', ' ')}  ${e.member}  ${e.type}: ${e.text}`);
+    if (!out.events.length) console.log('nothing yet');
+    return;
+  }
+  if (command === 'doctor') {
+    for (const check of out.checks) {
+      console.log(`${check.ok ? 'ready' : check.blocking ? 'NOT  ' : 'note '}  ${check.name.padEnd(16)} ${check.detail}`);
+      if (check.fix) console.log(`${' '.repeat(24)}do: ${check.fix}`);
+    }
+    console.log(out.ready ? `\nready (${(out.took_ms / 1000).toFixed(1)}s)` : `\nnot ready (${(out.took_ms / 1000).toFixed(1)}s)`);
+    return;
+  }
+  if (command === 'repair') {
+    console.log(out.fixed.length ? out.fixed.map((line) => `fixed: ${line}`).join('\n') : 'nothing needed fixing');
+    if (out.started) console.log(`started ${out.started} waiting run${out.started === 1 ? '' : 's'}`);
+    return;
+  }
+  if (command === 'start') {
+    console.log(`${out.folder}: ${out.steps.join('; ')}. ${out.ping.reason}`);
+    return;
+  }
   if (command === 'pass') {
     console.log(`passed ${out.passed}.${out.skipped.length ? ` not passed: ${out.skipped.join(' ')}` : ''}`);
     return;
@@ -123,9 +193,10 @@ function printText(command, out) {
   if (out.message) console.log(`sent. ${out.reply_pending ? 'the team member answers on its next run.' : ''}`.trim());
 }
 
-function run(args = [], context = {}) {
+async function run(args = [], context = {}) {
   const env = context.env || process.env;
   const deps = context.deps || {};
+  const write = context.write || ((text) => process.stdout.write(text));
   let parsed;
   try {
     parsed = parse(args);
@@ -141,6 +212,18 @@ function run(args = [], context = {}) {
   }
   let command = sub;
   try {
+    if (sub === 'doctor') {
+      const out = await team().doctor(context.cwd || process.cwd(), { env, deps, call: !flags['no-call'] });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else printText('doctor', out);
+      return out.ready ? 0 : 1;
+    }
+    if (sub === 'start') {
+      const out = await team().start(positional[1] || context.cwd || process.cwd(), { env, deps, engine: flags.engine });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else printText('start', out);
+      return 0;
+    }
     const root = feed.projectRoot(context.cwd || process.cwd());
     let out;
     if (sub === 'cards') {
@@ -167,7 +250,21 @@ function run(args = [], context = {}) {
     } else if (sub === 'talk') {
       const card = positional[1];
       if (!card) throw new feed.FeedError(400, 'usage: atris feed talk <card> "<message>"');
-      out = feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, env, deps });
+      // --stream --json: one JSON event per line (saved, chunk, reply, revision, done).
+      // --stream alone: the answer's words as they come. --json alone: the final answer.
+      const onEvent = !flags.stream ? null : json
+        ? (event) => write(`${JSON.stringify(event)}\n`)
+        : (event) => { if (event.type === 'chunk') write(event.text); else if (event.type === 'done') write('\n'); };
+      try {
+        out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, env, deps, onEvent });
+      } catch (error) {
+        if (flags.stream && json && error instanceof feed.FeedError) {
+          write(`${JSON.stringify({ type: 'error', ok: false, error: error.toJSON() })}\n`);
+          return 1;
+        }
+        throw error;
+      }
+      if (flags.stream) return 0;
     } else if (sub === 'messages') {
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed messages <card>');
       out = feed.listMessages(root, positional[1], { env });
@@ -179,10 +276,39 @@ function run(args = [], context = {}) {
       });
     } else if (sub === 'more') {
       out = feed.requestMoreIdeas(root, { env, deps });
+    } else if (sub === 'settings') {
+      if (positional[1] === 'set') {
+        if (positional[2] !== 'default-engine' || !positional[3]) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id>');
+        out = team().setDefaultEngine(root, positional[3], { env });
+      } else if (positional[1]) {
+        throw new feed.FeedError(400, `unknown settings command: ${positional[1]}`);
+      } else {
+        out = team().settingsView(root, { env });
+      }
+    } else if (sub === 'engines') {
+      out = { version: feed.FEED_VERSION, engines: team().listEngines({ env }), ...team().settingsView(root, { env }) };
+    } else if (sub === 'members') {
+      out = team().listMembers(root, { env });
+    } else if (sub === 'member') {
+      const [, onOff, name] = positional;
+      if (!['on', 'off'].includes(onOff) || !name) throw new feed.FeedError(400, 'usage: atris feed member on|off <name>');
+      out = team().setOn(root, name, onOff === 'on', { env });
+    } else if (sub === 'ping') {
+      out = team().ping(root, { member: positional[1], reason: flags.reason || 'scroll', env, deps });
+    } else if (sub === 'emit') {
+      out = team().emit(root, {
+        as: flags.as, type: positional[1], title: flags.title, why: flags.why, body: flags.body, detail: flags.detail,
+        visual: visualFlag(flags.visual), lane: flags.lane, card: flags.card, proof: flags.proof,
+        text: flags.text || positional.slice(2).join(' '), env, deps,
+      });
+    } else if (sub === 'events') {
+      out = { version: feed.FEED_VERSION, events: team().readEvents(root, { limit: Number.parseInt(flags.limit, 10) || 50 }) };
+    } else if (sub === 'repair') {
+      out = team().repair(root, { env, deps });
     } else if (sub === 'run') {
-      // Internal: the detached runner that `decide` and `more` start.
+      // Internal: the detached runner that decide, ping and more start.
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed run <run id>');
-      feed.runEntry(root, positional[1], deps);
+      await feed.runEntry(root, positional[1], deps);
       return 0;
     } else {
       command = 'unknown';
@@ -199,7 +325,8 @@ function run(args = [], context = {}) {
   }
 }
 
-const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help']);
+const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
+  'settings', 'engines', 'members', 'member', 'ping', 'emit', 'events', 'start', 'doctor', 'repair']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
@@ -230,14 +357,10 @@ function handles(args = [], options = {}) {
 // The fast path from bin/atris.js: the desktop app keeps the feed open all
 // day, so this answers before the rest of the CLI loads.
 function runFromCli(args) {
-  let code;
-  try {
-    code = run(args);
-  } catch (error) {
+  Promise.resolve().then(() => run(args)).then((code) => { process.exitCode = code; }, (error) => {
     console.error(`error: ${String(error && error.message || error).split('\n')[0]}`);
-    code = 1;
-  }
-  process.exitCode = code;
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { LEGACY_BARE_NOTICE, handles, route, run, runFromCli };

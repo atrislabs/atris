@@ -17,39 +17,7 @@ const { fittingTasks, heldForPerson } = require('../lib/member-task-pick');
 const { handles } = require('../commands/decision-feed');
 const { readScoreboard } = require('../commands/goal');
 
-const AGENT_MARKERS = [
-  'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID',
-  'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_MISSION_DRIVER_DETACHED', 'ATRIS_MISSION_DRIVER_PARENT_PID',
-  'ATRIS_DISPATCH_DEPTH', 'ATRIS_AGENT_PROOF_ONLY',
-];
-
-function project(t, members = ['scout', 'writer', 'closer']) {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'decision-feed-')));
-  const root = path.join(dir, 'proj');
-  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'atris', 'atris.md'), '# atris\n');
-  for (const name of members) {
-    fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
-    fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${name}\n---\n# ${name}\n`);
-  }
-  const dbPath = path.join(dir, 'tasks.db');
-  const saved = process.env.ATRIS_TASKS_DB;
-  process.env.ATRIS_TASKS_DB = dbPath;
-  const db = tasks.open(dbPath);
-  const env = { ...process.env, ATRIS_TASKS_DB: dbPath, USER: 'owner' };
-  for (const marker of AGENT_MARKERS) delete env[marker];
-  const spawned = [];
-  const deps = {
-    spawnRunner: (_root, entry) => { spawned.push(entry); return process.pid; },
-    isAlive: () => true,
-  };
-  t.after(() => {
-    tasks.close();
-    if (saved === undefined) delete process.env.ATRIS_TASKS_DB; else process.env.ATRIS_TASKS_DB = saved;
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-  return { root, db, env, deps, spawned, agentEnv: { ...env, CLAUDECODE: '1' } };
-}
+const { project } = require('./helpers/feed-project');
 
 function add(ctx, fields) {
   return tasks.addTask(ctx.db, { workspaceRoot: ctx.root, ...fields }).id;
@@ -423,20 +391,27 @@ test('decide: at most two members run at once; the rest wait in order', (t) => {
   assert.equal(ctx.spawned[2].card_id, ids[2]);
 });
 
-test('decide: the runner starts the member, marks the run ended and starts the next', (t) => {
+test('decide: the runner starts the member on the model in effect, marks the run ended and starts the next', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer']);
   const ids = ['scout', 'writer', 'closer'].map((as, i) => propose(ctx, { as, title: ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote'][i] }).card.id);
   for (const id of ids) feed.decide(ctx.root, id, 'approve', { env: ctx.env, deps: ctx.deps });
   const queued = feed.readRuns(ctx.root).find((r) => r.status === 'queued');
-  assert.throws(() => feed.runEntry(ctx.root, queued.id, { spawnSync: () => assert.fail('jumped the line') }), (e) => e.status === 409);
+  await assert.rejects(feed.runEntry(ctx.root, queued.id, { spawnSync: () => assert.fail('jumped the line') }), (e) => e.status === 409);
   const first = feed.readRuns(ctx.root)[0];
   const calls = [];
-  feed.runEntry(ctx.root, first.id, {
-    spawnSync: (cmd, args) => { calls.push(args); return { status: 0 }; },
+  await feed.runEntry(ctx.root, first.id, {
+    spawnSync: (cmd, args, opts) => {
+      calls.push(args);
+      assert.equal(opts.env.CLAUDECODE, undefined);
+      // The member finishes and hands back its result.
+      require('../lib/feed-team').emit(ctx.root, { as: 'scout', type: 'result', card: first.card_id, proof: 'Called them all', env: ctx.env });
+      return { status: 0 };
+    },
     isAlive: (pid) => pid === process.pid,
     spawnRunner: (root, entry) => { ctx.spawned.push(entry); return process.pid; },
   });
-  assert.deepEqual(calls[0].slice(1), ['member', 'go', 'scout', '--json']);
+  // The feed's default model (no roster line of its own), passed to the member's run.
+  assert.deepEqual(calls[0].slice(1), ['member', 'go', 'scout', '--json', '--engine', 'codex']);
   const after = feed.readRuns(ctx.root);
   assert.equal(after.find((r) => r.id === first.id).status, 'ended');
   assert.equal(after.filter((r) => r.status === 'running').length, 2);
@@ -508,27 +483,6 @@ test('decide: approving a held question drops the hold and starts its member', (
 
 // -------------------------------------------------------- talk and revise
 
-test('talk: the person writes on the task, the member answers on its next run', (t) => {
-  const ctx = project(t);
-  const { card } = propose(ctx);
-  const sent = feed.talk(ctx.root, card.id, 'Can we start with the five oldest?', { env: ctx.env });
-  assert.equal(sent.reply_pending, true);
-  assert.equal(sent.message.from.type, 'user');
-  let thread = feed.listMessages(ctx.root, card.id, { env: ctx.env });
-  assert.equal(thread.messages.length, 1);
-  assert.equal(thread.reply_pending, true);
-  const events = tasks.listTaskEvents(ctx.db, { taskId: card.source.id }).filter((e) => e.event_type === 'message');
-  assert.equal(events.length, 1, 'stored on the task history');
-  assert.throws(() => feed.talk(ctx.root, card.id, 'I will', { as: 'writer', env: ctx.agentEnv }), (e) => e.status === 403);
-  assert.throws(() => feed.talk(ctx.root, card.id, 'I will merge the branch', { as: 'scout', env: ctx.agentEnv }), (e) => e.remove.includes('branch'));
-  feed.talk(ctx.root, card.id, 'Yes, I will start with the five oldest.', { as: 'scout', env: ctx.agentEnv });
-  thread = feed.listMessages(ctx.root, card.id, { env: ctx.env });
-  assert.equal(thread.messages.length, 2);
-  assert.equal(thread.reply_pending, false);
-  assert.equal(cardsOf(ctx, card.source.id)[0].message_count, 2);
-  assert.throws(() => feed.talk(ctx.root, card.id, 'hello', { env: ctx.agentEnv }), (e) => e.status === 403, 'an agent cannot talk as the person');
-});
-
 test('revise: only the proposing member, only while it waits', (t) => {
   const ctx = project(t);
   const { card } = propose(ctx);
@@ -543,42 +497,6 @@ test('revise: only the proposing member, only while it waits', (t) => {
 });
 
 // -------------------------------------------------------------- more ideas
-
-test('more: asks up to three members, one at a time, under a daily cap, and fails closed', (t) => {
-  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
-  assert.match(feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps }).reason, /goal first/);
-  assert.equal(ctx.spawned.length, 0);
-  feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
-  const liked = propose(ctx, { title: 'Call the warm leads today' }).card;
-  feed.decide(ctx.root, liked.id, 'dismiss', { note: 'phones are slow', env: ctx.env, deps: ctx.deps });
-  const env = { ...ctx.env, ATRIS_FEED_MAX_REFILLS_PER_DAY: '1' };
-  assert.throws(() => feed.requestMoreIdeas(ctx.root, { env: ctx.agentEnv, deps: ctx.deps }), (e) => e.status === 403);
-  const out = feed.requestMoreIdeas(ctx.root, { env, deps: ctx.deps });
-  assert.equal(out.requested, 3);
-  const ideas = feed.readRuns(ctx.root).filter((r) => r.kind === 'ideas');
-  assert.equal(ideas.length, 3);
-  assert.equal(ideas.filter((r) => r.status === 'running').length, 1, 'one idea run at a time');
-  assert.match(ideas[0].direction, /atris feed propose --as/);
-  assert.match(ideas[0].direction, /phones are slow/, 'the person\'s no and note are taste');
-  assert.match(feed.requestMoreIdeas(ctx.root, { env, deps: ctx.deps }).reason, /already working/);
-  // Once those runs end, the daily cap holds.
-  const done = { ...ctx.deps, isAlive: () => false, spawnRunner: () => { throw new Error('should not start'); } };
-  const file = path.join(ctx.root, '.atris', 'state', 'feed', 'runs.json');
-  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  for (const entry of data.entries) entry.status = 'ended';
-  fs.writeFileSync(file, JSON.stringify(data));
-  assert.match(feed.requestMoreIdeas(ctx.root, { env, deps: done }).reason, /as often as allowed today/);
-});
-
-test('more: no new round while six ideas already wait', (t) => {
-  const ctx = project(t);
-  feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
-  const titles = ['Call the warm leads today', 'Raise the starter price', 'Write a short welcome video',
-    'Ask three owners for a quote', 'Send the spring price note', 'Thank the first ten buyers'];
-  titles.forEach((title, i) => propose(ctx, { as: ['scout', 'writer', 'closer'][i % 3], title }));
-  assert.match(feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps }).reason, /6 ideas are already waiting/);
-  assert.equal(ctx.spawned.length, 0);
-});
 
 // ------------------------------------------------------- list mechanics
 
@@ -627,7 +545,7 @@ test('cli: atris feed cards --json answers from the fast path in the cloud shape
   assert.equal(JSON.parse(refused.stdout).error.status, 403);
 });
 
-// ------------------------------------------------------- talk gets an answer
+// --------------------------------------------------------- reading queue
 
 function backdatePass(ctx, cardId, minutes) {
   tasks.updateTaskMetadata(ctx.db, cardId.split(':')[1], (m) => {
@@ -635,79 +553,6 @@ function backdatePass(ctx, cardId, minutes) {
     return m;
   }, { touch: false });
 }
-
-test('talk: a message queues one short answer run of the card\'s member', (t) => {
-  const ctx = project(t);
-  const { card } = propose(ctx);
-  const sent = feed.talk(ctx.root, card.id, 'Can we start with the five oldest?', { env: ctx.env, deps: ctx.deps });
-  assert.equal(sent.reply_pending, true);
-  assert.equal(sent.reply_run.status, 'running');
-  assert.equal(ctx.spawned.length, 1);
-  assert.equal(ctx.spawned[0].kind, 'reply');
-  assert.equal(ctx.spawned[0].member, 'scout');
-  assert.match(ctx.spawned[0].direction, /Do not start the work/);
-  assert.match(ctx.spawned[0].direction, new RegExp(`atris feed talk <card> --as scout`));
-  assert.match(ctx.spawned[0].direction, new RegExp(card.id));
-  assert.match(ctx.spawned[0].direction, /five oldest/);
-  assert.match(ctx.spawned[0].direction, /atris feed revise <card> --as scout/);
-  // A second message while that run is live adds no second run for this card.
-  feed.talk(ctx.root, card.id, 'Or the ten newest?', { env: ctx.env, deps: ctx.deps });
-  assert.equal(ctx.spawned.length, 1);
-  assert.equal(feed.readRuns(ctx.root).filter((r) => r.kind === 'reply').length, 1);
-  assert.equal(feed.listMessages(ctx.root, card.id, { env: ctx.env }).reply_pending, true);
-  // The reply run does not stand in for the card's approved work on the card.
-  assert.equal(cards(ctx).find((c) => c.id === card.id).run, null);
-  feed.talk(ctx.root, card.id, 'The five oldest answer most, so I will start there.', { as: 'scout', env: ctx.agentEnv, deps: ctx.deps });
-  assert.equal(feed.listMessages(ctx.root, card.id, { env: ctx.env }).reply_pending, false);
-});
-
-test('talk: a reply run waits behind approved work and ahead of idea rounds; answering cancels it', (t) => {
-  const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
-  const blocked = { ...ctx.deps, maxRunning: 0 };
-  feed.setTheme(ctx.root, 'Get ten paying customers by December', { env: ctx.env });
-  const idea = propose(ctx, { as: 'extra', title: 'Thank the first ten buyers' }).card;
-  feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: blocked });
-  feed.talk(ctx.root, idea.id, 'Which ten?', { env: ctx.env, deps: blocked });
-  const approved = propose(ctx, { as: 'writer', title: 'Write the spring price note' }).card;
-  feed.decide(ctx.root, approved.id, 'approve', { env: ctx.env, deps: blocked });
-  assert.equal(ctx.spawned.length, 0, 'nothing ran with no free slot');
-  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 1 });
-  assert.equal(ctx.spawned[0].kind, 'task', 'approved work first');
-  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 2 });
-  assert.equal(ctx.spawned[1].kind, 'reply', 'then the answer');
-  feed.pump(ctx.root, { ...ctx.deps, maxRunning: 3 });
-  assert.equal(ctx.spawned[2].kind, 'ideas', 'then idea rounds');
-
-  const second = propose(ctx, { as: 'closer', title: 'Ask three owners for a quote' }).card;
-  feed.talk(ctx.root, second.id, 'Which owners?', { env: ctx.env, deps: blocked });
-  feed.talk(ctx.root, second.id, 'The three who called last week.', { as: 'closer', env: ctx.agentEnv, deps: blocked });
-  assert.equal(feed.readRuns(ctx.root).find((r) => r.key === `reply:${second.id}`).status, 'cancelled');
-});
-
-test('talk: any run of the member starts with the person\'s waiting messages', (t) => {
-  const ctx = project(t);
-  const { card } = propose(ctx);
-  assert.deepEqual(feed.talkBriefLines(ctx.root, 'scout'), []);
-  feed.talk(ctx.root, card.id, 'Please make it the five oldest instead', { env: ctx.env, deps: { ...ctx.deps, maxRunning: 0 } });
-  const lines = feed.talkBriefLines(ctx.root, 'scout');
-  assert.match(lines[0], /waiting on your answer/);
-  assert.ok(lines.some((line) => line.includes(card.id) && line.includes('five oldest instead')));
-  assert.deepEqual(feed.talkBriefLines(ctx.root, 'writer'), [], 'only the member\'s own cards');
-
-  const { buildTickPrompt } = require('../commands/mission');
-  const tick = buildTickPrompt({ id: 'm1', owner: 'scout', objective: 'Tidy the inbox', status: 'running' }, 1, 1,
-    { lane: 'code', verifier: '' }, [], ctx.root);
-  const firstSection = tick.split('\n').slice(0, 4).join('\n');
-  assert.match(firstSection, /waiting on your answer/, 'the brief begins with it');
-  const { buildMemberSubagentShell } = require('../commands/member');
-  assert.match(buildMemberSubagentShell('scout', 'Scout', 'claude', 'Tidy the inbox', ctx.root).prompt, /^## The owner is waiting on your answer/);
-  assert.doesNotMatch(buildMemberSubagentShell('writer', 'Writer', 'claude', 'Tidy the inbox', ctx.root).prompt, /waiting on your answer/);
-
-  feed.talk(ctx.root, card.id, 'Yes, the five oldest it is.', { as: 'scout', env: ctx.agentEnv, deps: ctx.deps });
-  assert.deepEqual(feed.talkBriefLines(ctx.root, 'scout'), []);
-});
-
-// --------------------------------------------------------- reading queue
 
 test('queue: ideas first (never passed, then fewest passes, then newest), then unread results oldest first', (t) => {
   const ctx = project(t);
