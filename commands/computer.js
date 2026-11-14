@@ -1141,6 +1141,10 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     body: {
       message: prompt,
       workspace_id: ctx.workspaceId,
+      // Each pull request task is independent, so it gets its own fresh conversation.
+      // A shared one grows until the computer has to shorten it, which can fail the run.
+      session_id: `pr-${branch}`.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 120),
+      reset_context: true,
       worker,
       ...(options.model ? { model: options.model } : {}),
     },
