@@ -199,7 +199,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 **Purpose:** Register the current directory as a live local AI Computer session so cloud agents can apply bounded file operations.
 
 - **Known command:** `lib/known-commands.js:4` includes `serve`, so the explicit branch is reachable before natural-language fallback
-- **Help:** `bin/atris.js:1131-1136` (`showServeHelp`) prints usage without auth checks or bridge startup
+- **Help:** `bin/atris.js:1140-1145` (`showServeHelp`) prints usage without auth checks or bridge startup
 - **Dispatch:** `bin/atris.js:1129-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
 - **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
@@ -263,3 +263,14 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 - **Regression:** `test/night-morning-join.test.js` covers the cap refusal, the shift line, watch events, morning and no-shift, and join storing the key; `test/morning-bring-home.test.js` covers the card, the saved files, untrusted text, the brain load list, and the folder mission.
 
 **Search:** `rg "night-shift|night-learned|join-as-agent|joined_agent|/morning" commands lib test/night-morning-join.test.js test/morning-bring-home.test.js`
+
+## Feature: Popshare posts calendar (`atris popshare`)
+
+**Purpose:** One terminal view of every scheduled post across x, linkedin, blog, instagram and tiktok, plus the cadence scoreboard. Popshare never writes the words; every post is one a person saved.
+
+- **Entry:** `commands/popshare.js:256` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
+- **Parsing:** `commands/popshare.js:33` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js:48` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js:96` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
+- **Rendering:** `commands/popshare.js:161` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js:198` (`listText`) groups the calendar by local day, and `commands/popshare.js:232` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
+- **Regression:** `test/popshare.test.js` covers arg parsing, local-time conversion, id resolution, the pure renderers, and the API calls with a fake `apiRequestJson`.
+
+**Search:** `rg "popshareCommand|localAtToIso|parseAddArgs|resolvePostId|todayText|scoreText" commands/popshare.js test/popshare.test.js`
