@@ -24,7 +24,7 @@ const RULES = [
   ['task-code', /\b[A-Z]{2,10}-\d{1,6}\b/g],
   ['raw-id', /\b[0-9A-HJKMNP-TV-Z]{26}\b/g],
   ['system-noun', /\b(?:task plane|mission spine|second reviewer|worktrees?|verifiers?|orchestrat\w*|subagents?|ULIDs?|projections?)\b/gi],
-  ['comma-join', /,\s+(?:and|but|or|so|then|because|which|when)\b/gi],
+  ['comma-join', /,\s+(?:and|but|so)\b/gi],
 ];
 
 function isHexHash(word) {

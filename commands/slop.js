@@ -90,10 +90,10 @@ const RULES = [
     notFiles: /\.(md|mdx|txt)$/i, // prose/wireframe docs use ● as radio buttons and transport glyphs
     why: 'dot char + all-caps label: the status-dot eyebrow kicker, the #1 banned hero pattern' },
   { id: 'comma-join', sev: 'warn',
-    re: /,\s+(?:and|but|or|so|then|because|which|when)\b/i,
+    re: /,\s+(?:and|but|so)\b/i,
     onlyFiles: /\.(md|mdx|txt)$/i,
     skipCode: true, // prose only: fenced blocks and inline `code` can keep their commas
-    fix: (s) => s.replace(/,(\s+)(and|but|or|so|then|because|which|when)\b/gi, '$1$2'),
+    fix: (s) => s.replace(/,(\s+)(and|but|so)\b/gi, '$1$2'),
     why: 'comma before a joining word: drop the comma or start a new sentence' },
 ];
 
@@ -190,7 +190,7 @@ function applyFixes(files, rules) {
       for (const r of fixable) {
         if (!ruleApplies(r, file)) continue;
         if (r.skipCode && fenced[i]) continue;
-        const target = r.skipCode ? line.replace(/`[^`]*`/g, ' ') : line;
+        const target = r.skipCode ? line.replace(/`[^`]*`/g, 'code') : line;
         if (r.re.test(target)) {
           const nl = r.skipCode
             ? line.split(/(`[^`]*`)/).map((seg, k) => (k % 2 ? seg : r.fix(seg))).join('')
@@ -249,7 +249,7 @@ function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
     for (const rule of rules) {
       if (!ruleApplies(rule, file)) continue;
       if (rule.skipCode && fenced[i]) continue;
-      const target = rule.skipCode ? line.replace(/`[^`]*`/g, ' ') : line;
+      const target = rule.skipCode ? line.replace(/`[^`]*`/g, 'code') : line;
       const m = rule.re.exec(target);
       if (m) {
         findings.push({
