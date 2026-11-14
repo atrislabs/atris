@@ -209,6 +209,7 @@ function harness({ awake = true, start = { ok: true, data: { execution_id: 'ex-1
     write: (s) => calls.written.push(s),
     now: () => new Date(2026, 10, 14, 9, 5),
     branchSuffix: () => '',
+    sleep: async () => {},
     ensureBusinessAwake: async () => awake,
     apiRequestJson: async (pathname, opts) => { calls.requests.push({ pathname, opts }); return start; },
     streamBusinessChatResult: async (token, ctx, id, rl, opts) => {
@@ -221,6 +222,25 @@ function harness({ awake = true, start = { ok: true, data: { execution_id: 'ex-1
 }
 
 const CTX = { businessId: 'b-1', workspaceId: 'w-1', slug: 'my-lab', worker: null };
+
+test('computerPr waits for a busy runner and stops retrying at the limit', async () => {
+  for (const scenario of [
+    { responses: [{ ok: false, status: 409, error: 'Runner is busy' }, { ok: false, status: 502, error: { upstream: '{"detail":"Runner is busy"}' } }, { ok: true, data: { execution_id: 'ex-1' } }], attempts: 3, code: 0 },
+    { responses: [{ ok: false, status: 409, error: 'Runner is busy' }], attempts: 15, code: 1 },
+    { responses: [{ ok: false, status: 409, error: 'Conflict' }], attempts: 1, code: 1 },
+    { responses: [{ ok: false, status: 503, error: 'Runner is busy' }], attempts: 1, code: 1 },
+  ]) {
+    const h = harness({ streamed: { chunks: ['PR_URL=https://github.com/a/b/pull/1\n'] } });
+    const waits = [];
+    h.deps.sleep = async (ms) => waits.push(ms);
+    h.deps.apiRequestJson = async () => scenario.responses[Math.min(h.calls.requests.push({}) - 1, scenario.responses.length - 1)];
+    const result = await withExitCode(() => computer.computerPr('tok', ['a/b', 'x'], CTX, {}, h.deps));
+    assert.equal(result.code, scenario.code);
+    assert.equal(h.calls.requests.length, scenario.attempts);
+    assert.deepEqual(waits, Array(scenario.attempts - 1).fill(20000));
+    assert.equal(h.calls.out.filter((line) => /busy/i.test(line)).length, waits.length);
+  }
+});
 
 async function withExitCode(fn) {
   const before = process.exitCode;
