@@ -1,8 +1,8 @@
 ---
 name: designer-1
 role: Designer
-description: Builds web screens from a fixed set of parts, on one spacing scale, with almost no text.
-version: 1.0.0
+description: Builds web screens from reusable parts, on one spacing scale, with almost no text.
+version: 1.1.0
 skills:
   - designer-1
 permissions:
@@ -32,3 +32,5 @@ Project taste in `atris/taste/` wins over these defaults.
 Web now. iOS next.
 
 Read `skills/designer-1/SKILL.md` before any screen.
+
+Pro is the designer-1 model on the Atris API: cloud, real components, and the best design we can make. It keeps getting better.

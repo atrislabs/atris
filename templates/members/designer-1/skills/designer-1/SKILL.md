@@ -1,7 +1,7 @@
 ---
 name: designer-1
-description: Build complete web screens from a fixed set of parts, on one spacing scale, with few words, and check them before reporting. Use when designing or changing an interface.
-version: 1.2.1
+description: Build complete web screens from reusable parts, on one spacing scale, with few words, and check them before reporting. Use when designing or changing an interface.
+version: 1.3.0
 tags:
   - design
   - frontend
@@ -32,11 +32,10 @@ Nothing on the list is cut to save words. Restraint decides how a thing is said,
 
 Before writing any control:
 
-1. Look for the Atris parts: `package.json` lists `@atris/design-react`, or the code imports from it. Use these 19: `Button`, `Field`, `Input`, `Textarea`, `Checkbox`, `Switch`, `RadioGroup`, `Select`, `Dialog`, `Popover`, `Menu`, `Tooltip`, `Toast`, `Tabs`, `Accordion`, `SegmentedControl`, `Combobox`, `Slider`, `RowList`.
-2. No Atris parts: search the project's component folder for a control with the same job.
-3. Nothing fits: build the part once, in the one shape, in the folder where parts live. Export it, then import it.
-4. Never restyle a part inline for one screen: no `style` or `className` that changes its color, size, radius or spacing. Change the part, or use a `size` or `tone` value.
-5. A native `<button>`, `<input>` or `<select>` in a screen file, where a part covers that job, fails.
+1. Search the project's component folder for a control with the same job.
+2. Nothing fits: build the part once, in the one shape, in the folder where parts live. Export it, then import it.
+3. Never restyle a part inline for one screen: no `style` or `className` that changes its color, size, radius or spacing. Change the part, or use a `size` or `tone` value.
+4. A native `<button>`, `<input>` or `<select>` in a screen file, where a part covers that job, fails.
 
 ## 3. the one shape
 
@@ -46,8 +45,6 @@ Before writing any control:
 - `disabled` is the only disabled prop. `readOnly` refuses every change.
 - Sizes: `small`, `default`, `large`. Tones: `default`, `primary`, `quiet`, `success`, `danger`.
 - Pass `value`, `checked` or `open` to own the state; the callback runs on every attempt so a parent can refuse.
-
-Props for all 19: [parts.md](parts.md). Open it only when you place or build a part.
 
 ## 4. spacing
 
@@ -177,3 +174,7 @@ targets: pass, smallest 44px
 edges: pass, last control clear
 slop: pass
 ```
+
+## 10. pro
+
+Pro is the designer-1 model on the Atris API: cloud, real components, and the best design we can make. It keeps getting better.
