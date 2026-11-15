@@ -1,6 +1,6 @@
 'use strict';
 
-// Ship refreshes moved map line refs on its own. The step runs the same fix as
+// Ship pins map line refs to their names on its own. The step runs the same fix as
 // `atris doc-health --fix-refs`, commits only the rewritten map files, and never
 // blocks the ship on a human-only remainder or an error. These tests drive the
 // step as a function against a temp git repo; no real ship, no network.
@@ -67,14 +67,19 @@ const MAP_TEXT = `# map
 - tool entry \`lib/tool.js:3\` (\`alphaTool\`) returns one.
 `;
 
-function initRepo(dir) {
+const PINNED_MAP_TEXT = `# map
+
+- tool entry \`lib/tool.js\` (\`alphaTool\`) returns one.
+`;
+
+function initRepo(dir, mapText = MAP_TEXT) {
   runGit(['init'], dir);
   runGit(['config', 'user.email', 'test@example.com'], dir);
   runGit(['config', 'user.name', 'Test'], dir);
   fs.mkdirSync(path.join(dir, 'lib'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'lib', 'tool.js'), TOOL_BEFORE);
-  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), MAP_TEXT);
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), mapText);
   runGit(['add', '-A'], dir);
   runGit(['commit', '-m', 'seed'], dir);
 }
@@ -85,7 +90,7 @@ function moveFunction(dir) {
   runGit(['commit', '-m', 'move alphaTool down'], dir);
 }
 
-test('a moved map ref gets a follow-up commit with the refreshed line', () => {
+test('a moved map ref gets a follow-up commit that pins it to its name', () => {
   const dir = makeTempDir();
   try {
     initRepo(dir);
@@ -99,22 +104,23 @@ test('a moved map ref gets a follow-up commit with the refreshed line', () => {
     assert.equal(runGit(['log', '-1', '--format=%s'], dir), 'Refresh map references that moved');
     assert.match(runGit(['log', '-1', '--format=%B'], dir), /Co-authored-by: Atris/);
     assert.equal(runGit(['show', '--name-only', '--format=', 'HEAD'], dir), 'atris/MAP.md');
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), /`lib\/tool\.js:8`/);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), /`lib\/tool\.js` \(`alphaTool`\)/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('a repo with current refs gets no extra commit', () => {
+test('a repo whose refs are pinned to names gets no extra commit, even after code moves', () => {
   const dir = makeTempDir();
   try {
-    initRepo(dir);
+    initRepo(dir, PINNED_MAP_TEXT);
+    moveFunction(dir);
 
     const { result, stdout } = capture(() => refreshMovedMapRefs(dir));
     assert.equal(result.refreshed, 0);
     assert.match(stdout, /map: references current/);
-    assert.equal(runGit(['rev-list', 'HEAD', '--count'], dir), '1');
-    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), MAP_TEXT);
+    assert.equal(runGit(['rev-list', 'HEAD', '--count'], dir), '2');
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), PINNED_MAP_TEXT);
   } finally {
     cleanupTempDir(dir);
   }

@@ -68,7 +68,7 @@ function cardDesk(first, on, extra = {}) {
   const apply = (out) => {
     if (!out || out.ok === false) return refuse((out && out.reason) || 'gone', (out && out.message) || 'that did not go through. try again.');
     if ('card' in out) current = out.card;
-    return { status: 200, body: env({ ...(out.ack ? { ack: out.ack } : {}), ...(out.home ? { home: true } : {}) }) };
+    return { status: 200, body: env({ ...(out.ack ? { ack: out.ack } : {}), ...(out.home ? { home: true } : {}), ...(out.keep ? { keep: out.keep } : {}) }) };
   };
   return {
     get current() { return current; },
@@ -663,6 +663,40 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
     const sent = await look(p);
     return { words: WORDS, offline, refused, sent, calls };
   });
+}
+
+// ---- words no model heard come back in their box ------------------------------------------
+
+// The owner types on a card, and no model answers the read in time: the desk
+// answers with the reply card that says so and his words to keep. Once on
+// "something else" on a question (as on 2026-11-14), once in the box of an
+// idea. Is the box open on the reply card with his words in it, and does
+// Enter send the same words again.
+const NOT_HEARD = 'the model did not answer this time, so nothing was saved. try again in a moment.';
+async function unheardKeepTrace({ chromePath = findChrome() } = {}) {
+  const WORDS = 'making sure this app is really really fast';
+  const runs = [];
+  for (const [base, open] of [[CARDS.q1, '#bet .choice.other'], [CARDS.b1, '#bet .sayline .quiet']]) {
+    const calls = [];
+    const desk = cardDesk(base, async (action, { text }) => {
+      calls.push({ action, text });
+      if (calls.length === 1) return { card: gmCard.reply({ id: `${base.id}~r1`, base, text: NOT_HEARD }), keep: text };
+      return { card: CARDS.b2 };
+    });
+    runs.push(await onPhone(desk, chromePath, async (p) => {
+      await p.tap(open);
+      await wait(250);
+      await p.type(WORDS);
+      await p.enter();
+      await p.until(`${titled(NOT_HEARD)} && Boolean(document.querySelector('#bet .field input')) && document.querySelector('#bet .field input').value.length > 0`, 'the reply with the words back', 8000).catch(() => {});
+      await wait(150);
+      const unheard = await look(p);
+      await p.enter();
+      await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
+      return { card: base.kind, words: WORDS, unheard, sent: await look(p), calls };
+    }));
+  }
+  return runs;
 }
 
 // ---- a word to a teammate that did not send comes back, ready to send again -------------
@@ -1554,6 +1588,51 @@ function movedBetween(a, b) {
   return { any: dots || lava || card || sphere || line, dots };
 }
 
+// What one 60fps frame of ms is worth, never reading a frame as longer
+// than a quarter second.
+const perFrame = ms => 16.7 / Math.min(250, Math.max(8, ms));
+
+// Steps of one motion ({ d: distance, ms: the time it took on the motion's
+// own clock }, null between motions), read per 60fps frame. A step in a
+// frame of ordinary length is its distance per frame. A frame over the stall
+// line is a frame the machine held: the lava and the sphere move by the
+// clock, so a smooth motion goes several frames' worth in it. That is read
+// as the speed of the steady frames on either side, and any distance past
+// what that speed covers in the held time counts at its full size, as a
+// jump. Before, the whole step counted at full size, so a busy CI runner
+// holding one frame 100ms read a smooth glide as a 120px jump (hosted runs
+// on 2026-11-14 and 2026-11-15). With no steady frame beside it, a held
+// step still counts at its full size.
+function readSteps(samples, stall) {
+  const speed = s => s.d * perFrame(s.ms);
+  const steady = (i, dir) => {
+    for (let j = i + dir, n = 0; j >= 0 && j < samples.length && n < 3; j += dir, n += 1) {
+      if (samples[j] == null) return null;
+      if (samples[j].ms <= stall) return samples[j];
+    }
+    return null;
+  };
+  return samples.map((s, i) => {
+    if (s == null) return null;
+    if (s.ms <= stall) return speed(s);
+    const around = [steady(i, -1), steady(i, 1)].filter(Boolean);
+    const fastest = around.length ? Math.max(...around.map(speed)) : 0;
+    return Math.max(fastest, s.d - fastest * s.ms / 16.7);
+  });
+}
+
+// The biggest step, and the biggest change of speed between two steps in a
+// row per 60fps frame of the time between them, of readSteps' readings.
+function stepsAndChanges(samples, readings) {
+  let step = 0, change = 0;
+  readings.forEach((r, i) => {
+    if (r == null) return;
+    step = Math.max(step, r);
+    if (i > 0 && readings[i - 1] != null) change = Math.max(change, Math.abs(r - readings[i - 1]) * perFrame((samples[i - 1].ms + samples[i].ms) / 2));
+  });
+  return { step, change };
+}
+
 // The stretch from the owner's Enter on their answer to the idea at rest,
 // as numbers: the longest still moment, the biggest one-frame steps and the
 // biggest change of speed (a snap), and what each part showed. Steps and
@@ -1562,7 +1641,7 @@ function movedBetween(a, b) {
 // clocks, everything else on the frame's own time. The machine's pace is its
 // 75th percentile frame: a slow machine slows most frames, while a few stalls
 // cannot move it. A frame over twice that pace (never under 50ms, never over
-// 250ms) is a stall, and what moves in it counts at its full distance.
+// 250ms) is a stall, and a step in it is read as readSteps reads it.
 function summarizeWait(frames, from, idea) {
   const run = frames.filter(f => f.t >= from);
   const end = run.findIndex(f => f.box && f.box.titleText === idea && !f.busy && f.box.o > 0.99);
@@ -1570,14 +1649,14 @@ function summarizeWait(frames, from, idea) {
   const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
   const pace = gaps.length ? gaps[Math.floor(0.75 * (gaps.length - 1))] : 16.7;
   const stall = Math.min(250, Math.max(50, 2 * pace));
-  const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
   let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0, stillWaiting = 0;
-  let lavaStep = 0, lavaGrow = 0, lavaJerk = 0, stageStep = 0, dotsStep = 0, dotsJerk = 0, titleStep = 0, footJump = 0;
-  let prevLava = null, prevDots = null;
+  let dotsStep = 0, dotsJerk = 0, footJump = 0;
+  let prevDots = null;
+  const lavaAt = [], lavaSize = [], stageSteps = [], titleSteps = [];
   let dotFrames = 0, dotsMs = 0;
   for (let i = 1; i < span.length; i++) {
     const a = span[i - 1], b = span[i];
-    const ms = b.ft - a.ft, k = per(ms);
+    const ms = b.ft - a.ft;
     const m = movedBetween(a, b);
     if (m.dots) { dotFrames += 1; dotsMs += Math.min(ms, stall); }
     if (m.any) runStart = b.t;
@@ -1587,15 +1666,11 @@ function summarizeWait(frames, from, idea) {
       // not placed again since the last read: no new sample of its motion
     } else if (a.lava && b.lava) {
       // the lava is read where its last place put it, so its time is that place's
-      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms, kl = per(own);
-      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * kl;
-      lavaStep = Math.max(lavaStep, st);
-      lavaGrow = Math.max(lavaGrow, Math.abs(a.lava.r.w - b.lava.r.w) * kl);
-      // a change of speed between two frames, per 60fps frame of the time between them
-      if (prevLava) lavaJerk = Math.max(lavaJerk, Math.abs(st - prevLava.st) * per((prevLava.own + own) / 2));
-      prevLava = { st, own };
-    } else prevLava = null;
-    if (a.stage && b.stage) stageStep = Math.max(stageStep, stepOf(a.stage, b.stage) * k, Math.abs(a.stage.w - b.stage.w) * k);
+      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms;
+      lavaAt.push({ d: stepOf(mid(a.lava.r), mid(b.lava.r)), ms: own });
+      lavaSize.push({ d: Math.abs(a.lava.r.w - b.lava.r.w), ms: own });
+    } else { lavaAt.push(null); lavaSize.push(null); }
+    stageSteps.push(a.stage && b.stage ? { d: Math.max(stepOf(a.stage, b.stage), Math.abs(a.stage.w - b.stage.w)), ms } : null);
     if (b.orb && a.orb && b.orb.frame > a.orb.frame && a.sphere && b.sphere) {
       // the orb counts its own frames and its own clock: its step is for one
       // frame of that clock, which never runs more than 50ms a frame
@@ -1605,10 +1680,15 @@ function summarizeWait(frames, from, idea) {
       if (prevDots && drawn === 1) dotsJerk = Math.max(dotsJerk, Math.abs(speed - prevDots.speed) * 16.7 / ((prevDots.own + own) / 2));
       prevDots = drawn === 1 ? { speed, own } : null;
     } else prevDots = null;
-    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) titleStep = Math.max(titleStep, stepOf(a.box.title, b.box.title) * k);
+    titleSteps.push(a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title ? { d: stepOf(a.box.title, b.box.title), ms } : null);
     // the footer may change places only while it cannot be seen
     if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) footJump = Math.max(footJump, stepOf(a.foot.r, b.foot.r));
   }
+  const lava = stepsAndChanges(lavaAt, readSteps(lavaAt, stall));
+  const lavaStep = lava.step, lavaJerk = lava.change;
+  const lavaGrow = stepsAndChanges(lavaSize, readSteps(lavaSize, stall)).step;
+  const stageStep = stepsAndChanges(stageSteps, readSteps(stageSteps, stall)).step;
+  const titleStep = stepsAndChanges(titleSteps, readSteps(titleSteps, stall)).step;
   const calm = span.filter(f => f.waiting);
   const bloom = span.findIndex((f, i) => i > 0 && f.lava && !span[i - 1].lava && span[i - 1].waiting);
   const born = bloom > 0 ? span[bloom] : null;
@@ -1789,7 +1869,7 @@ async function calmLayoutTrace({ chromePath = findChrome(), viewports = [PHONE, 
   return out;
 }
 
-module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
+module.exports = { findChrome, launch, trace, waitTrace, summarizeWait, readSteps, stepsAndChanges, perFrame, calmLayoutTrace, BIG_PHONE, CALM_LINES, twoMembersTrace, deckTrace, escapeTrace, staleAnswerTrace, unsentSayTrace, unheardKeepTrace, replyKeepsActionTrace, lostReplyTrace, talkFailTrace, startFailTrace, orbHomeTrace, teamFromHomeTrace, teamOverWaitTrace, swapLostTrace, teamTableTrace, engineCardTrace, walkTrace, onPhone, cardDesk, CARDS, REPLY, PHONE, LAPTOP, SMALL_PHONE };
 
 if (require.main === module) {
   const at = process.argv.indexOf('--shots');

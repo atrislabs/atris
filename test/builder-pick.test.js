@@ -1735,14 +1735,8 @@ function underEnv(vars, fn) {
 
 // What the fleet really launches claude, fable or haiku with: the --model on the command it builds, in this process.
 function launchedModel(engine, env) {
-  const realWrite = process.stderr.write;
-  process.stderr.write = () => true; // the launch warns once about a paid model nobody approved
-  try {
-    const command = underEnv({ ...NO_RUNNER_VARS, ...env }, () => fleet.buildEngineCommand(engine, '/tmp/prompt.md'));
-    return (/--model (\S+)/.exec(command) || [])[1] || '';
-  } finally {
-    process.stderr.write = realWrite;
-  }
+  const command = underEnv({ ...NO_RUNNER_VARS, ...env }, () => fleet.buildEngineCommand(engine, '/tmp/prompt.md'));
+  return (/--model (\S+)/.exec(command) || [])[1] || '';
 }
 
 test('spend guard: an unattended run with no approval never picks a paid Claude model, and one line names the engine and why', (t) => {
@@ -1812,8 +1806,9 @@ test('spend guard: an engine with an approved model, or a Haiku engine, can be p
   assert.deepEqual(free.ready, ['claude', 'codex']);
   assert.equal(free.entries[0].engine, 'claude');
 
-  // A paid model the launch itself drops to Haiku when nobody approved it is not a spend: the launch runs Haiku.
-  assert.deepEqual(steered({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }).ready, ['claude', 'codex'], 'the launch falls back to the cheap model, so there is nothing to stop');
+  // A named Opus launches as Opus, never as Haiku, so the guard's verdict on Opus is what decides the pick.
+  assert.equal(launchedModel('claude', { ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }), 'claude-opus-5-5', 'the launch carries the named model');
+  assert.deepEqual(steered({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }).ready, ['codex'], 'nobody approved opus, so claude sits out rather than run another model');
 });
 
 test('spend guard: a pay-per-use Claude key stops every claude engine, whatever the model, unless the key is approved', (t) => {

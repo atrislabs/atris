@@ -312,8 +312,8 @@ function renderRecapMinute(data, { person } = {}) {
   if (shipped.length) {
     const named = recapSoftTitle(shipped[0].title);
     return named
-      ? `${greet}you already shipped ${named}.`
-      : `${greet}you already shipped the last finished thing.`;
+      ? `${greet}you already finished ${named}.`
+      : `${greet}you already finished the last piece of work.`;
   }
 
   if (inProgress.length) {
@@ -321,12 +321,12 @@ function renderRecapMinute(data, { person } = {}) {
     const named = recapSoftTitle(item && item.title);
     if (item && item.owner && named) {
       return [
-        `${greet}${named} is already yours.`,
+        `${greet}you are working on ${named}.`,
         '',
         `next: ${taskCommand({ display_id: item.id, status: 'claimed' })}`,
       ].join('\n');
     }
-    if (named) return `${greet}${named} is ready to claim.`;
+    if (named) return `${greet}${named} is ready to start.`;
   }
 
   return `${greet}quiet window. nothing moved in this period.`;

@@ -584,7 +584,8 @@ function syncAtris(options = {}) {
     { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
     { source: 'atris/team/brainstormer/MEMBER.md', target: 'team/brainstormer/MEMBER.md' },
     { source: 'atris/team/researcher/MEMBER.md', target: 'team/researcher/MEMBER.md' },
-    { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
+    { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' },
+    { source: 'atris/policies/publishing.md', target: 'policies/publishing.md' }
   ];
 
   let updated = 0;

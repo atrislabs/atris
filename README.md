@@ -137,6 +137,15 @@ atris host import people.jsonl       # bulk add people and who already knows who
 atris host room                      # the host's weekly read
 ```
 
+### Design screens with Designer-1
+
+Designer-1 is a team member that builds web screens from a fixed set of 19 parts (button, field, select, dialog, tabs, row list and the rest). It reuses a part before writing one, keeps one spacing scale, writes very few words, and checks its work by keyboard, by control name, and at phone and desktop widths before it reports. A project's own taste files in `atris/taste/` win over its defaults.
+
+```bash
+atris member install designer-1
+atris member install designer-1 --update   # pick up the latest skill; your edits to its other files stay
+```
+
 ### Put members to work
 
 Members are helpers that work in their own copy of the repo. Three words cover it.
@@ -364,6 +373,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris trust` | See an account's trust and the friends you share; `vouch` or `unvouch` for someone |
 | `atris experiments` | Run small experiments and compare results |
 | `atris computer card` | Show or write the local owner/computer card |
+| `atris computer pr <owner/repo> "<task>"` | A cloud computer does the task on a new branch and opens a pull request. It never merges. |
 | `atris release` | Draft or publish a version bump, tag, GitHub release, and launch post |
 | `atris slop` | Deterministic slop detector: frontend/prose tells, plus `slop dead --exports` for dead code |
 | `atris clean` | Housekeeping: heal MAP refs, archive journals, report stale pages and dead code |

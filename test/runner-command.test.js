@@ -213,8 +213,7 @@ test('compat runner profiles resolve to concrete runner configs', () => {
     },
   ];
   for (const entry of cases) {
-    // fable is a gated model: its profile runs it only with the owner's yes.
-    withRunnerEnv({ ATRIS_RUNNER_PROFILE: entry.profile, ATRIS_CLAUDE_SPEND_OK: DEFAULT_FABLE_RUNNER_MODEL }, () => {
+    withRunnerEnv({ ATRIS_RUNNER_PROFILE: entry.profile }, () => {
       assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS[entry.profile]);
       assert.equal(resolveClaudeRunnerBin(), entry.bin);
       assert.equal(resolveClaudeRunnerModel({}), entry.model);
@@ -495,14 +494,14 @@ test('launchFor follows the launch\'s precedence: explicit, ATRIS_RUNNER_MODEL, 
   assert.equal(launchFor('claude').model, launchFor('claude', { env: process.env }).model, 'the default environment is this process\'s');
 });
 
-test('launchFor applies the spend gate with the approval in the environment it is given', () => {
+test('launchFor names the model as named, whatever ATRIS_CLAUDE_SPEND_OK says', () => {
   const opus = { ATRIS_RUNNER_MODEL: 'claude-opus-5-5' };
-  assert.equal(launchFor('claude', { env: opus }).model, DEFAULT_CLAUDE_RUNNER_MODEL, 'no yes, so the launch drops to the cheap model');
+  assert.equal(launchFor('claude', { env: opus }).model, 'claude-opus-5-5', 'no yes, and the launch still carries opus');
   assert.equal(launchFor('claude', { env: { ...opus, ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' } }).model, 'claude-opus-5-5');
-  assert.equal(launchFor('claude', { env: { ...opus, ATRIS_CLAUDE_SPEND_OK: 'claude-sonnet-5-5' } }).model, DEFAULT_CLAUDE_RUNNER_MODEL, 'a yes for another model is not a yes for this one');
-  assert.equal(launchFor('fable', { env: {} }).model, DEFAULT_CLAUDE_RUNNER_MODEL, 'fable is a paid model');
+  assert.equal(launchFor('claude', { env: { ...opus, ATRIS_CLAUDE_SPEND_OK: 'claude-sonnet-5-5' } }).model, 'claude-opus-5-5', 'a yes for another model changes nothing');
+  assert.equal(launchFor('fable', { env: {} }).model, DEFAULT_FABLE_RUNNER_MODEL, 'the fable engine runs fable');
   assert.equal(launchFor('fable', { env: { ATRIS_CLAUDE_SPEND_OK: DEFAULT_FABLE_RUNNER_MODEL } }).model, DEFAULT_FABLE_RUNNER_MODEL);
-  // A model the gate does not name by family passes it, and the guard\'s hook is what stops it later.
+  // Whether a model may run is the guard\'s question, and it stops a run; it never swaps the model.
   assert.equal(launchFor('claude', { env: { ATRIS_RUNNER_MODEL: 'claude-mystery-9' } }).model, 'claude-mystery-9');
 });
 

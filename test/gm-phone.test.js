@@ -866,7 +866,7 @@ test('page: a card\'s box is its input: a quiet line that turns into the field i
   assert.match(script, /if \(body\.text\) body\.send = sendId\(\[from\.id, option \? option\.id : 'the box', body\.text\]\.join\(' \| '\)\);/);
   // words that did not go through come back in their box, and one line says why
   assert.match(script, /field\.querySelector\('input'\)\.value = typed;/);
-  assert.match(script, /if \(note\) note\.textContent = \(r && r\.http === 409 && r\.message\) \|\| \(r && r\.http === 0 && r\.message\) \|\| 'that did not go through\. try again\.';/);
+  assert.match(script, /if \(note && !\(r && r\.keep\)\) note\.textContent = \(r && r\.http === 409 && r\.message\) \|\| \(r && r\.http === 0 && r\.message\) \|\| 'that did not go through\. try again\.';/);
   // every card that takes words gets its box from the Mac: the one place to type
   const ask = { job: 'm1', key: 'm1:0', hash: null };
   for (const c of [gmCard.idea({ id: 'b1', title: 't', body: 'b' }), gmCard.yes({ id: 'y1', title: 't', body: 'b', request: ask }), gmCard.done({ id: 'd1', title: 't', body: 'b' }), gmCard.wait({ id: 'w1' }), gmCard.choice({ id: 'c1', items: [{ id: 'b1', title: 't', why: 'w.' }] })]) {
@@ -1549,6 +1549,22 @@ test('browser: say something that does not send comes back on its card with the 
   assert.deepEqual(out.calls, [{ action: 'say', text: out.words }, { action: 'say', text: out.words }], show);
 });
 
+test('browser: words no model heard come back in their box on the card that says so, and Enter sends them again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+  const runs = await trace.unheardKeepTrace({ chromePath: CHROME });
+  const show = JSON.stringify(runs, null, 1);
+  for (const r of runs) {
+    // the reply says the model did not answer, and his words are in the box, ready to send
+    assert.equal(r.unheard.title, 'the model did not answer this time, so nothing was saved. try again in a moment.', `${r.card}: ${show}`);
+    assert.equal(r.unheard.field_open, true, `${r.card}: ${show}`);
+    assert.equal(r.unheard.words, r.words, `${r.card}: ${show}`);
+    // the card already says why: no second line under it
+    assert.equal(r.unheard.line, null, `${r.card}: ${show}`);
+    // one Enter sends the same words again, and the next card comes
+    assert.deepEqual(r.calls.map(c => c.text), [r.words, r.words], `${r.card}: ${show}`);
+    assert.equal(r.sent.title, 'Record a two minute demo video', `${r.card}: ${show}`);
+  }
+});
+
 // ---- an explanation keeps the card's own answer ------------------------------------
 
 test('browser: what do you mean on a do it or a yes card: the reply explains, so the card\'s own button is on it once and still works', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
@@ -1867,6 +1883,10 @@ test('trace: a few stalls cannot hide a jump in the wait, and a slow machine rea
   assert.equal(stalled.pace_frame_ms, 17);
   assert.equal(stalled.stall_frame_ms, 50);
   assert.ok(stalled.lava_max_step_px > 45, JSON.stringify(stalled));
+  // the same four stalls with no jump are a glide: a held frame went six or
+  // more frames' worth smoothly (before, each read as a 36px step)
+  const held = lavaRun(16.7, [20, 40, 60, 80]);
+  assert.ok(Math.abs(held.lava_max_step_px - 2) < 0.1 && held.lava_max_speed_change_px < 0.1, JSON.stringify(held));
   // a machine whose every frame takes 120ms reads the same glide as a 60fps one
   const slow = lavaRun(120);
   assert.equal(slow.stall_frame_ms, 240);
