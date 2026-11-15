@@ -1063,15 +1063,19 @@ function landCommand(args = []) {
 
   if (args.includes('--auto')) {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY, localCheckSetting } = require('../lib/land-green');
       const limitRaw = Number(readFollowingFlag(args, '--limit', ''));
+      const verifyFlag = readFollowingFlag(args, '--verify', '');
+      let policy = null;
+      try { policy = require('../lib/autoland').readPolicy(root); } catch { policy = null; }
       const result = landStaleGreenBranches(root, {
         ttlDays,
         base,
         dryRun: args.includes('--dry-run'),
         push: !args.includes('--no-remote'),
-        verifyCommand: readFollowingFlag(args, '--verify', '') || DEFAULT_VERIFY,
+        verifyCommand: verifyFlag || DEFAULT_VERIFY,
         limit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 1,
+        localCheck: localCheckSetting(policy, { explicitVerify: Boolean(verifyFlag) }),
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);

@@ -1336,11 +1336,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // the base's rules.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
-        localCheck: policy.green_landing_local_check === undefined ? 'auto' : policy.green_landing_local_check,
+        localCheck: localCheckSetting(policy),
       });
       receipt.green_landing = {
         candidates: green.candidates.length,

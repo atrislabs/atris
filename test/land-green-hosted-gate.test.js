@@ -338,3 +338,223 @@ test('a guarded run reads the queued pull requests before it lands anything', ()
     cleanup(root, bare);
   }
 });
+
+// Reviewer finding 1. With the local check as the gate, a branch whose suite
+// always runs out of time sat first in line forever: every run spent its one
+// try on it and every branch behind it read "machine busy". The try is now
+// remembered as a count only. Those branches go last next run, and after a
+// few on the same commits a builder gets a job. Still never red, never a flag.
+test('a branch whose local check always runs out of time cannot block the branches behind it', () => {
+  const root = makeRepo();
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    const hangs = branchWith(root, 'feat/hangs', 'hangs.txt', daysAgo(5));
+    branchWith(root, 'feat/healthy', 'healthy.txt', daysAgo(4));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-state-'));
+    const stateFile = path.join(dir, 'state.json');
+    const suites = [];
+    const runVerifyFn = (command, cwd) => {
+      const slow = fs.existsSync(path.join(cwd, 'hangs.txt'));
+      suites.push(slow ? 'feat/hangs' : 'other');
+      return slow
+        ? { status: null, timed_out: true, failing: [], failing_all: [], command: 'npm test', duration_ms: 1200000, tail: '' }
+        : { status: 0, timed_out: false, failing: [], command: 'npm test', duration_ms: 1, tail: '' };
+    };
+    const jobs = [];
+    const opts = {
+      push: false, runVerifyFn, runCli: noFlags, fileConflictTask: noTasks, stateFile,
+      fileSlowCheckTask: (cwd, job) => { jobs.push(job); return { id: 'JOB-7', inserted: true }; },
+    };
+    const runs = [1, 2, 3, 4].map(() => landStaleGreenBranches(root, opts));
+    const landed = runs.flatMap((r) => r.landed);
+    assert.deepEqual(landed, ['feat/healthy'], JSON.stringify(runs.map((r) => r.verdicts)));
+    assert.ok(runs[1].landed.includes('feat/healthy'), 'the healthy branch lands by the second run');
+    for (const r of runs) {
+      assert.deepEqual(r.red, [], 'never red');
+      assert.ok(suites.length <= 8);
+    }
+    // Three timed-out tries on the same commits, then a builder has it.
+    assert.equal(jobs.length, 1, JSON.stringify(runs.map((r) => r.verdicts)));
+    assert.equal(jobs[0].branch, 'feat/hangs');
+    assert.equal(jobs[0].head, hangs);
+    assert.equal(jobs[0].tries, 3);
+    const third = runs[2].verdicts.find((v) => v.branch === 'feat/hangs');
+    assert.equal(third.action, 'unknown');
+    assert.equal(third.hand_back.task_id, 'JOB-7');
+    // The fourth run starts no suite on it: it waits for a new commit.
+    const fourth = runs[3].verdicts.find((v) => v.branch === 'feat/hangs');
+    assert.equal(fourth.action, 'skipped', JSON.stringify(fourth));
+    assert.equal(fourth.reason, 'waiting_for_change');
+    assert.equal(suites.filter((s) => s === 'feat/hangs').length, 3);
+    const memory = JSON.parse(fs.readFileSync(stateFile, 'utf8')).branches;
+    assert.equal(memory['feat/hangs'].action, 'unknown', JSON.stringify(memory));
+    assert.equal(memory['feat/hangs'].untold, 3);
+    fs.rmSync(dir, { recursive: true, force: true });
+  } finally {
+    cleanup(root);
+  }
+});
+
+// Reviewer finding 3. The protected-lane and clash screens read the local
+// branch, but on the pull request path the catch-up starts from origin's
+// copy. Commits only on origin's copy went to the queue unscreened.
+test('commits that sit only on origin\'s copy of a branch are screened for protected lanes before queueing', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.mkdirSync(path.join(other, 'auth'), { recursive: true });
+    fs.writeFileSync(path.join(other, 'auth', 'login.js'), 'module.exports = 1;\n');
+    commitAll(other, 'touch the login lane', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null,
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'skipped', JSON.stringify(v));
+    assert.equal(v.reason, 'protected_surface');
+    assert.equal(gh.calls.filter((c) => c[0] === 'pr' && c[1] === 'merge').length, 0, 'nothing queued');
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+test('a builder\'s push to origin\'s copy after a hand-back is caught up and queued again, not left as in the merge queue', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    const queuedSha = git(root, ['rev-parse', 'feat/one']);
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {},
+      readQueued: () => ({ number: 41, pushed: queuedSha }),
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+test('handing back failed hosted checks switches auto-merge off so a later push waits for the lander', () => {
+  const failing = [{ name: 'test', bucket: 'fail' }];
+  const gh = ghFor({ view: { state: 'OPEN', headRefOid: 'a'.repeat(40) }, checks: failing });
+  const out = followQueuedLandings('/nowhere', {
+    runGh: gh.runGh, readEntries: () => ({ 'feat/one': queueEntry({ reran: 'a'.repeat(40) }) }),
+    markEntry: () => {}, fileChecksTask: () => ({ id: 'JOB-1', inserted: true }), memory: {}, runCli: noFlags,
+  });
+  assert.equal(out.results[0].state, 'handed_back');
+  const disable = gh.calls.find((c) => c[0] === 'pr' && c[1] === 'merge');
+  assert.ok(disable, JSON.stringify(gh.calls));
+  assert.deepEqual(disable.slice(0, 4), ['pr', 'merge', '41', '--disable-auto']);
+  // After the builder pushes, the follow-up says the lander takes it from here.
+  const changed = followQueuedLandings('/nowhere', {
+    runGh: ghFor({ view: { state: 'OPEN', headRefOid: 'b'.repeat(40) }, checks: [] }).runGh,
+    readEntries: () => ({ 'feat/one': queueEntry({ reran: 'a'.repeat(40), checks_handed_back: 'a'.repeat(40), checks_task: 'JOB-1' }) }),
+    markEntry: noTasks, fileChecksTask: noTasks, memory: {}, runCli: noFlags,
+  });
+  assert.equal(changed.results[0].state, 'changed');
+  assert.match(changed.results[0].line, /lander/);
+});
+
+// Reviewer finding 2. "atris land --auto" never read green_landing_local_check
+// and dropped an explicit --verify on a guarded repo.
+function cliFixture(policy) {
+  const root = makeRepo();
+  const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-gh-'));
+  const bare = path.join(holder, 'github.com', 'acme', 'repo.git');
+  fs.mkdirSync(bare, { recursive: true });
+  git(bare, ['init', '-q', '--bare', '-b', 'master']);
+  git(root, ['remote', 'add', 'origin', bare]);
+  git(root, ['push', '-q', 'origin', 'master']);
+  git(root, ['fetch', '-q', 'origin']);
+  branchWith(root, 'feat/one', 'one.txt');
+  if (policy) {
+    fs.mkdirSync(path.join(root, '.atris', 'policy'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify(policy));
+  }
+  const bin = path.join(holder, 'bin');
+  fs.mkdirSync(bin);
+  const log = path.join(holder, 'gh-calls.log');
+  const rules = path.join(holder, 'rules.json');
+  fs.writeFileSync(rules, GUARDED_RULES);
+  fs.writeFileSync(path.join(bin, 'gh'), [
+    '#!/bin/sh',
+    `echo "$*" >> "${log}"`,
+    'case "$1 $2" in',
+    `  "api repos/{owner}/{repo}/rules/branches/"*) cat "${rules}" ;;`,
+    '  "pr list"*) echo "[]" ;;',
+    '  *) echo "unexpected" >&2; exit 1 ;;',
+    'esac',
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+  return { root, holder, bin, log };
+}
+
+function runLandAuto(fx, extra = []) {
+  const home = path.join(fx.holder, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const run = spawnSync(process.execPath, [cli, 'land', '--auto', '--dry-run', '--json', ...extra], {
+    cwd: fx.root, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, HOME: home, PATH: `${fx.bin}${path.delimiter}${process.env.PATH}`, ATRIS_NO_BOOT: '1' },
+  });
+  const text = String(run.stdout || '');
+  const start = text.indexOf('{');
+  assert.ok(start >= 0, `no json: ${text} ${run.stderr}`);
+  return JSON.parse(text.slice(start));
+}
+
+test('atris land --auto honours the owner\'s green_landing_local_check switch on a guarded repo', () => {
+  const fx = cliFixture({ enabled: true, green_landing_local_check: true });
+  try {
+    const result = runLandAuto(fx);
+    assert.equal(result.local_check.local, true, JSON.stringify(result.local_check));
+    assert.equal(result.local_check.mode, 'on');
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'local', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+test('atris land --auto with an explicit --verify runs that check locally even on a guarded repo', () => {
+  const fx = cliFixture(null);
+  try {
+    const result = runLandAuto(fx, ['--verify', 'node -e 0']);
+    assert.equal(result.local_check.local, true, JSON.stringify(result.local_check));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'local', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+test('atris land --auto with no switch still lets the hosted checks decide on a guarded repo', () => {
+  const fx = cliFixture(null);
+  try {
+    const result = runLandAuto(fx);
+    assert.equal(result.local_check.local, false, JSON.stringify(result.local_check));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'hosted', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
