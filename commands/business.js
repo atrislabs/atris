@@ -1081,9 +1081,11 @@ async function beginBusiness(args) {
       const result = await apiRequestJson('/public/business/templates', { method: 'GET' });
       if (result.ok && Array.isArray(result.data?.templates)) templates = result.data.templates;
     } catch { /* The names remain available when the service is offline. */ }
-    for (const [index, name] of kinds.entries()) {
-      const template = templates.find(item => item.name === name);
-      console.log(`${index + 1}. ${name}${template?.summary ? `: ${template.summary}` : ''}`);
+    if (!kind) {
+      for (const [index, name] of kinds.entries()) {
+        const template = templates.find(item => item.name === name);
+        console.log(`${index + 1}. ${name}${template?.summary ? `: ${template.summary}` : ''}`);
+      }
     }
     while (!kind) {
       const answer = (await ask('Which is closest? ')).trim().toLowerCase();
@@ -1102,11 +1104,8 @@ async function beginBusiness(args) {
     if (parsed.name) shipArgs.push('--name', parsed.name);
     if (options.noHire) shipArgs.push('--no-hire');
     if (options.schedule !== undefined) shipArgs.push('--schedule', options.schedule);
-    const payload = await shipBusiness(...shipArgs);
-    const task = shipTaskTitle(payload?.seeded_task);
-    if (task) console.log(`First job: ${task}`);
-    console.log('Invite a person: atris invite');
-    if (payload?.public_page_url) console.log(`Public page: ${payload.public_page_url}`);
+    // shipBusiness already prints the first task and the public page.
+    await shipBusiness(...shipArgs);
   } finally {
     rl?.close();
   }

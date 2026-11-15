@@ -373,9 +373,10 @@ test('business begin creates and hires, falls back on missing templates, and val
     assert.equal(requests[0].authorization, undefined);
     assert.deepEqual(requests[1].body, { description: 'Make coffee', name: 'Coffee', template: 'engineering' });
     assert.deepEqual(requests[2].body, { template: 'engineering', schedule: 'weekly' });
-    assert.match(result.stdout, /1\. business/);
-    assert.match(result.stdout, /First job: Write the opening offer/);
-    assert.match(result.stdout, /atris invite/);
+    assert.doesNotMatch(result.stdout, /1\. business/);
+    assert.equal((result.stdout.match(/First task: Write the opening offer/g) || []).length, 1);
+    assert.equal((result.stdout.match(/Public page:/g) || []).length, 1);
+    assert.doesNotMatch(result.stdout, /atris invite/);
     assert.doesNotMatch(result.stdout + result.stderr, /\b(?:ai|agent|automate)\b/i);
   } finally {
     await new Promise(resolve => server.close(resolve));
