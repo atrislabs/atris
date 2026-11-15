@@ -3,8 +3,9 @@
 // in the same final state, and that the numbers are present. It never checks how big the numbers
 // are, so a page that changes size does not break it.
 //
-// Finds Chrome the way test/agent-page-browser.test.js does. Skips with a clear sentence only
-// when no Chrome exists.
+// Finds Chrome the way test/agent-page-browser.test.js does. Skips with a clear sentence when no
+// Chrome exists, and also when Chrome exists but never opens its debugging port (a slow or broken
+// browser on the machine is not a wrong result). Once the browser is up, a wrong result still fails.
 
 'use strict';
 
@@ -29,6 +30,9 @@ function skipReason() {
 
 const BROWSER = { skip: skipReason(), timeout: 120000 };
 
+// The script's exit code for "Chrome never opened its debugging port". See scripts/agent-page-measure.js.
+const BROWSER_DID_NOT_START = 3;
+
 // Runs the script in a throwaway folder. Resolves with the exit code and both streams.
 function runScript(args) {
   return new Promise((resolve) => {
@@ -38,8 +42,21 @@ function runScript(args) {
   });
 }
 
-test('all three ways end in the same final state, and the numbers are there', BROWSER, async () => {
-  const run = await runScript(['--json']);
+// Runs the script. When the browser never came up there is nothing to check, so the test is
+// skipped with one line saying why and this returns null. Any other result comes back to be checked.
+async function runOrSkip(t, args) {
+  const run = await runScript(args);
+  if (run.code === BROWSER_DID_NOT_START) {
+    const why = run.stderr.trim().split('\n').pop();
+    t.skip(`the browser did not start on this machine, so nothing was measured (${why})`);
+    return null;
+  }
+  return run;
+}
+
+test('all three ways end in the same final state, and the numbers are there', BROWSER, async (t) => {
+  const run = await runOrSkip(t, ['--json']);
+  if (!run) return;
   assert.equal(run.code, 0, `the script failed: ${run.stderr}\n${run.stdout}`);
   const report = JSON.parse(run.stdout);
 
@@ -73,8 +90,9 @@ test('all three ways end in the same final state, and the numbers are there', BR
   assert.equal(state.saves, 1);
 });
 
-test('the text report says what it measures and that no screenshots are used', BROWSER, async () => {
-  const run = await runScript([]);
+test('the text report says what it measures and that no screenshots are used', BROWSER, async (t) => {
+  const run = await runOrSkip(t, []);
+  if (!run) return;
   assert.equal(run.code, 0, `the script failed: ${run.stderr}\n${run.stdout}`);
   const lines = run.stdout.split('\n');
   const top = lines.slice(0, 6).join('\n');

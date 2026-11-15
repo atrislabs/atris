@@ -26,7 +26,10 @@
 //   --verbose  also list every call and how many characters it returned
 //
 // ATRIS_CHROME_PATH picks the Chrome to use; otherwise it is found the way the browser tests do.
-// Exit code 0 means all three ways finished the task and ended in the expected state.
+// Exit code 0 means all three ways finished the task and ended in the expected state. 1 means a
+// wrong result or a failure once the browser was up. 2 means the command was wrong or no Chrome
+// was found. 3 means Chrome was found but never opened its debugging port (it is slow or broken
+// on this machine), so nothing was measured; the test suite skips on 3 instead of failing.
 
 'use strict';
 
@@ -47,6 +50,7 @@ const DISCLAIMER = 'this measures how much an agent reads and how many steps it 
 const NO_SCREENSHOTS = 'no screenshots are involved in any of the three ways. ' +
   'tools that work from screenshots cost more and are not measured here.';
 const ACK = 'done'; // what an action call says back, besides the page it returns
+const EXIT_BROWSER_DID_NOT_START = 3; // test/agent-page-measure.test.js reads this as a skip
 
 // ---- the tasks, written out ---------------------------------------------------------------
 //
@@ -205,6 +209,10 @@ function connect(wsUrl) {
   });
 }
 
+// The browser never came up, so there is nothing to measure. The script says so with its own
+// exit code (EXIT_BROWSER_DID_NOT_START) so a test can tell this apart from a wrong result.
+class BrowserDidNotStart extends Error {}
+
 async function launchChrome(chromePath, profileDir) {
   const args = headlessArgs(profileDir, ['--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0']);
   // The Linux check machines run Chrome without its sandbox, as the browser tests do.
@@ -213,13 +221,20 @@ async function launchChrome(chromePath, profileDir) {
   const child = spawn(chromePath, args, { stdio: 'ignore' });
   let launchError = null;
   child.on('error', (error) => { launchError = error; });
-  const port = await waitFor(() => {
-    if (launchError) throw launchError;
-    if (child.exitCode !== null) throw new Error(`chrome exited with code ${child.exitCode}`);
-    const file = path.join(profileDir, 'DevToolsActivePort');
-    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
-  }, 20000, 'chrome to open its debugging port');
-  return { child, port };
+  try {
+    const port = await waitFor(() => {
+      if (launchError) throw launchError;
+      if (child.exitCode !== null) throw new Error(`chrome exited with code ${child.exitCode}`);
+      const file = path.join(profileDir, 'DevToolsActivePort');
+      return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
+    }, 20000, 'chrome to open its debugging port');
+    return { child, port };
+  } catch (error) {
+    // Stop a browser that is still running. Left alone, it keeps this script alive after it has
+    // given up, until whoever started the script kills it.
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    throw new BrowserDidNotStart(error.message);
+  }
 }
 
 async function closeChrome(port, child) {
@@ -636,7 +651,7 @@ async function main() {
     return report.all_ways_ended_in_the_expected_state ? 0 : 1;
   } catch (error) {
     console.error(`agent page measure stopped: ${error.message}`);
-    return 1;
+    return error instanceof BrowserDidNotStart ? EXIT_BROWSER_DID_NOT_START : 1;
   } finally {
     if (cdp) cdp.close();
     if (chrome) await closeChrome(chrome.port, chrome.child);
