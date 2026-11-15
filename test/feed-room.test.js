@@ -96,7 +96,14 @@ test('say: plain short notes from a member that is on; copies and long or techni
   refused(() => say(ctx, 'writer', '   '), 400, /one or two sentences/);
   refused(() => say(ctx, 'quiet', 'Hello from the quiet one.'), 409, /is off/);
   refused(() => say(ctx, 'nobody', 'Hello there.'), 404, /not on this project/);
-  refused(() => room.say(ctx.root, { text: 'Hello there.', env: ctx.env }), 400, /--as <member>/);
+  // Without --as the note is the person's own, in their own words; inside an agent it is refused.
+  const mine = room.say(ctx.root, { text: 'clove sold out by noon lol, what should the box look like?', ask: true, env: ctx.env });
+  assert.equal(mine.card.kind, 'ask');
+  assert.equal(mine.card.author.type, 'user');
+  refused(() => room.say(ctx.root, { text: 'Hello there.', env: { ...ctx.env, CLAUDECODE: '1' } }), 403, /Only a person/);
+  const brief = team.roomBrief(ctx.root, 'scout', { env: ctx.env });
+  assert.equal(brief.owner_open.length, 1);
+  assert.match(team.ideaPrompt(ctx.root, 'scout', 'scroll', null, false, brief), /The owner wrote \[\d+\] to the team and nobody has answered yet/);
   // The member's own day cap applies, except in an ask round.
   const capped = { ...ctx.env, ATRIS_FEED_EMITS_PER_MEMBER_PER_DAY: '1' };
   refused(() => say(ctx, 'scout', 'The candle labels look much clearer now.', { env: capped }), 429, /already put 1 things/);
