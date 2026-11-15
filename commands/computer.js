@@ -1161,6 +1161,24 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   let warned = false;
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
   const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
+  let finishing = null;
+  const finishFeed = (stopped = false) => {
+    if (finishing) return finishing;
+    finishing = (async () => {
+    const time = elapsed();
+    sendFeed({ type: 'finish', url: stopped ? null : finalUrl, stopped, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+    if (feedExited) {
+      let timer;
+      await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
+      clearTimeout(timer);
+    }
+    })();
+    return finishing;
+  };
+  const onInterrupt = () => { void finishFeed(true).finally(() => process.exit(130)); };
+  const onTerminate = () => { void finishFeed(true).finally(() => process.exit(143)); };
+  process.once('SIGINT', onInterrupt);
+  process.once('SIGTERM', onTerminate);
   try {
   let parsed;
   try {
@@ -1364,13 +1382,10 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   if (second.result?.ok) return succeed(second.result, retryBranch);
   return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
   } finally {
+    process.removeListener('SIGINT', onInterrupt);
+    process.removeListener('SIGTERM', onTerminate);
+    await finishFeed();
     const time = elapsed();
-    sendFeed({ type: 'finish', url: finalUrl, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
-    if (feedExited) {
-      let timer;
-      await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
-      clearTimeout(timer);
-    }
     log(`Done in ${time.minutes}m ${time.seconds}s`);
   }
 }

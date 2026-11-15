@@ -82,3 +82,36 @@ test('computer command saves the feed result before its real exit', () => {
     assert.match(rows[0].metadata.result, /^Fixed: Fix this\./);
   } finally { db.close(); }
 });
+
+test('computer PR saves a stopped feed card on SIGINT', async () => {
+  const { spawn } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-feed-signal-'));
+  fs.mkdirSync(path.join(root, 'atris/team/executor'), { recursive: true });
+  const dbPath = path.join(root, 'tasks.db');
+  const computerPath = path.join(__dirname, '../commands/computer');
+  const script = `
+    const { computerPr } = require(${JSON.stringify(computerPath)});
+    computerPr('token', ['a/b', 'Fix this.', '--no-think'], { businessId: 'b', workspaceId: 'w' }, {}, {
+      ensureBusinessAwake: async () => true,
+      apiRequestJson: async () => ({ ok: true, data: { execution_id: 'x' } }),
+      streamBusinessChatResult: async () => { console.log('READY'); await new Promise(() => {}); },
+    });
+  `;
+  const child = spawn(process.execPath, ['-e', script], { cwd: root, env: { ...process.env, ATRIS_TASKS_DB: dbPath } });
+  let output = '';
+  const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({ code, signal })));
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('child did not become ready')); }, 5000);
+    child.stdout.on('data', chunk => { output += chunk; if (output.includes('READY')) { clearTimeout(timeout); resolve(); } });
+    child.on('error', reject);
+  });
+  child.kill('SIGINT');
+  await exited;
+  const db = store.open(dbPath);
+  try {
+    const rows = store.listTasks(db, { workspaceRoot: store.workspaceRoot(root) });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, 'failed');
+    assert.equal(rows[0].metadata.result, 'Stopped: Fix this. No pull request yet.');
+  } finally { db.close(); }
+});
