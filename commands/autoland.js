@@ -1152,6 +1152,8 @@ function greenVerdictRow(v) {
   if (v.hand_back) row.hand_back = v.hand_back;
   if (v.regenerated) row.regenerated = v.regenerated;
   if (v.known_red) row.known_red = v.known_red;
+  // A green second run keeps the first red in the receipt.
+  if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
   if (v.local_check) row.local_check = v.local_check;
   return row;
 }
