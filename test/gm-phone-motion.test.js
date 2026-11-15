@@ -108,6 +108,70 @@ test('trace: a smooth glide through a frame the machine held is not a jump, and 
   assert.deepEqual(readSteps([{ d: 10, ms: 16.7 }, { d: 60, ms: 100 }, { d: 10, ms: 16.7 }], 50).map(Math.round), [10, 10, 10]);
 });
 
+// The frozen moment is read on the wall clock. The chosen answer holds for
+// a planned 150ms beat, and the limit is 200ms. A frame the machine holds
+// as that beat ends delays the timer that starts the next motion, so the
+// still ran on by the held time: hosted runs on 2026-11-13 read 340ms and
+// 398ms. Only a held frame at the end of a still can stretch it.
+test('trace: a frame the machine holds as a still beat ends does not stretch the beat, and a still too long still reads as too long', () => {
+  const frame = (t, x) => ({ t, ft: t, orb: { frame: 0, mode: 'card', step: 0, mean: 0, ms: 16.7 }, sphere: 0, stage: null, lava: null, box: { o: 1, card: 'c', title: { x, y: 0, w: 10, h: 10 }, text: 'c' }, ghost: 0, line: null, foot: { r: { x: 0, y: 0, w: 10, h: 10 }, o: 1 }, busy: true });
+  // ten moving frames, a still beat of beatMs, ten moving frames. held: a
+  // frame of heldMs at that many 60fps frames into the beat (-1 none), and
+  // late: the beat runs on by that much, as when the hold delays its timer
+  // bunch: after the held frame Chrome reads that many frames 2ms apart
+  const beat = (beatMs, heldAt = -1, heldMs = 0, late = 0, bunch = 0) => {
+    const out = [];
+    let t = 0, x = 0;
+    const push = () => out.push(frame(t, x));
+    push();
+    for (let i = 0; i < 10; i++) { t += 16.7; x += 2; push(); }
+    let left = beatMs + late;
+    for (let i = 0; left >= 16.7 || i <= heldAt; i++) {
+      const ms = i === heldAt ? heldMs : 16.7;
+      t += ms; left -= ms; push();
+      if (i === heldAt) for (let j = 0; j < bunch; j++) { t += 2; left -= 2; push(); }
+    }
+    for (let i = 0; i < 10; i++) { t += 16.7; x += 2; push(); }
+    return paths.summarizePath(out, 0);
+  };
+  const plain = beat(150);
+  assert.ok(plain.longest_still_moving_ms >= 125 && plain.longest_still_moving_ms <= 170, show(plain));
+  // the beat's last frame held 100ms and its timer ran that much late, as on
+  // a busy runner: before, this read about 250ms and failed the 200ms check
+  const held = beat(150, 8, 100, 90);
+  assert.equal(held.max_frame_ms, 100, show(held));
+  assert.ok(held.longest_still_moving_ms <= 200, show(held));
+  // the same with two frames read 2ms apart after the hold, as the 'yes' path
+  // read under a 100ms hold every 400ms: 233ms before
+  const bunched = beat(150, 8, 100, 90, 2);
+  assert.ok(bunched.max_frame_ms === 100 && bunched.longest_still_moving_ms <= 200, show(bunched));
+  // a beat planned too long fails with no held frame, and with one inside it
+  assert.ok(beat(260).longest_still_moving_ms > 200, show(beat(260)));
+  const inside = beat(260, 5, 100);
+  assert.ok(inside.max_frame_ms === 100 && inside.longest_still_moving_ms > 200, show(inside));
+  // and with the held frame at its end
+  const longHeld = beat(260, 14, 100, 90);
+  assert.ok(longHeld.max_frame_ms === 100 && longHeld.longest_still_moving_ms > 200, show(longHeld));
+});
+
+// The quick bloom after an answer grows for 140ms, about eight frames. A
+// frame the machine held 100ms on its first or second frame swallowed the
+// fast middle of the growth: the page placed the lava by the clock, so the
+// next frame drew it about 110px bigger, a jump on screen that the reader
+// rightly saw (lava_size_step 62 to 172 against a limit of 45). The page
+// holds the lava where it was through a held frame instead.
+const HOLD_BLOOM = (ms, nth) => `(function () { var armed = true, n = 0; (function tick() { var lava = document.getElementById('lava'); if (lava) { var growing = lava.classList.contains('alive') && !lava.classList.contains('still') && getComputedStyle(lava).visibility !== 'hidden'; if (growing && armed) { n += 1; if (n === ${nth}) { armed = false; var t = performance.now(); while (performance.now() - t < ${ms}) {} } } else if (!growing) { armed = true; n = 0; } } requestAnimationFrame(tick); })(); })();`;
+test('browser: a frame the machine holds early in the quick bloom draws no jump', { skip, timeout: 240000 }, async () => {
+  for (const [ms, nth] of [[100, 1], [100, 2], [167, 1]]) {
+    const p = byName(await paths.pathsTrace({ chromePath: CHROME, only: ['tapped answer'], before: HOLD_BLOOM(ms, nth) }))['tapped answer'];
+    const said = `held ${ms}ms on bloom frame ${nth}\n${show(p)}`;
+    assert.equal(p.error, undefined, said);
+    assert.ok(p.max_frame_ms >= ms - 5, said);
+    assert.ok(p.lava_step <= 45 && p.lava_size_step <= 45 && p.lava_speed_change <= 15, said);
+    assert.ok(p.longest_still_moving_ms <= 200, said);
+  }
+});
+
 test('browser: on a phone six times slower the sphere re-forms in about the same time as at full speed', { skip, timeout: 120000 }, async () => {
   const only = ['small orb home'];
   const fast = byName(await paths.pathsTrace({ chromePath: CHROME, only }))['small orb home'];

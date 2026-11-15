@@ -151,7 +151,9 @@ function summarizePath(frames, from) {
   const lavaAt = [], lavaSize = [], stageSteps = [], titleSteps = [];
   const out = { lava_step: 0, lava_size_step: 0, lava_speed_change: 0, sphere_step: 0, dots_step: 0, dots_speed_change: 0, title_step: 0, footer_seen_jump: 0, card_fade: 0, sphere_fade: 0, sphere_drop: 0, lava_fade: 0, line_fade: 0 };
   let prevDots = null;
-  let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0;
+  let still = 0, stillAt = null, stillHeld = 0, runStart = span.length ? span[0].t : 0;
+  // the frames the machine held in the still under way: [when read, ms past the pace]
+  let runHeld = [];
   const cuts = [];
   const bigSteps = [];
   const lines = [];
@@ -166,8 +168,23 @@ function summarizePath(frames, from) {
       || Boolean((a.lava || b.lava) && (!a.lava || !b.lava || !near(a.lava.r, b.lava.r) || Math.abs(a.lava.o - b.lava.o) > 0.004))
       || Math.abs(seen(a) - seen(b)) > 0.003 || Boolean(a.box && b.box && !near(a.box.title, b.box.title))
       || Math.abs(a.ghost - b.ghost) > 0.003 || Math.abs(lineO(a) - lineO(b)) > 0.003;
-    if (moved) runStart = b.t;
-    else if (b.busy && b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
+    // A still is read on the wall clock, less the time the machine held a
+    // frame at its end, past one frame of the pace. A still ends when a timer
+    // or the clock starts the next motion, and a held frame there delays
+    // both, so the still ran on by the held time (hosted runs on 2026-11-13:
+    // a 150ms beat read 340ms and 398ms). At its end: the held frame was read
+    // no more than two frames of the pace before the still's last frame (after
+    // a hold Chrome reads a frame or two a few ms apart, and a motion a timer
+    // starts shows on the frame after). A frame held earlier in a still cannot
+    // stretch it, so it counts in full. The still is on the time each frame
+    // was read (t), so a held frame is too: a hold that runs before the
+    // reading in its frame shows in t a frame before it shows in ft.
+    if (moved) { runStart = b.t; runHeld = []; }
+    else {
+      if (b.t - a.t > stall) runHeld.push([b.t, b.t - a.t - pace]);
+      const held = runHeld.reduce((n, [at, past]) => (b.t - at <= 2 * pace ? n + past : n), 0);
+      if (b.busy && b.t - runStart - held > still) { still = b.t - runStart - held; stillAt = Math.round(runStart - from); stillHeld = held; }
+    }
     if (a.lava && b.lava && !(a.lava.at === b.lava.at && near(a.lava.r, b.lava.r))) {
       const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms;
       lavaAt.push({ d: stepOf(mid(a.lava.r), mid(b.lava.r)), ms: own });
@@ -235,6 +252,8 @@ function summarizePath(frames, from) {
     stall_frames: stalls,
     longest_still_moving_ms: Math.round(still),
     longest_still_at_ms: stillAt,
+    // the held time at the end of that still, left out of it
+    longest_still_held_ms: Math.round(stillHeld),
     reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
     reform_clock_ms: formed < 0 ? null : Math.round(clock),
     card_in_ms: cardIn < 0 ? null : Math.round(span[cardIn].t - from),
@@ -313,8 +332,9 @@ async function runPath(send, spec, { cpu = 1, page = phonePage } = {}) {
 }
 
 // Every path (or only the named ones), in one Chrome at phone size.
-// page: another build of the page, for a before and after
-async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1, only = null, viewport = PHONE, page = phonePage } = {}) {
+// page: another build of the page, for a before and after. before: a script
+// run in the page ahead of its own, as a test that holds a frame needs.
+async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1, only = null, viewport = PHONE, page = phonePage, before = null } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const specs = only ? PATHS.filter(s => only.includes(s.name)) : PATHS;
   const chrome = await launch(chromePath);
@@ -323,6 +343,7 @@ async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1,
     await send('Emulation.setDeviceMetricsOverride', viewport);
     if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await send('Page.enable');
+    if (before) await send('Page.addScriptToEvaluateOnNewDocument', { source: before });
     const out = [];
     for (const spec of specs) {
       try { out.push(await runPath(send, spec, { cpu, page })); } catch (err) { out.push({ name: spec.name, error: err.message }); }
