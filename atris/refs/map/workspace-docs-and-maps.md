@@ -107,7 +107,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris wiki log [N]` shows recent `atris/wiki/log.md` activity
 - `atris wiki consolidate` prints a local pruning prompt and records per-surface counts in `.atris/state/wiki.metabolism.json`; lint flags over-budget surfaces and growth of 10 or more entries, while boot and `atris clean` print one defensive pruning nudge when those findings exist
 - `atris wiki loop` routes to the same local upkeep analysis as `atris loop`
-- `atris wiki learn "<topic>" [--into dir]` (`commands/wiki.js:528`, `lib/learning-team.js:568` `runLearn`) gathers recent papers, posts and repos over https, ranks them (`lib/learning-team.js:225`), has one engine distill them on the owner's login with paid keys stripped, checks the answer (`lib/learning-team.js:298` `validateNotes`) and writes notes to `concepts/<topic>/`, a brief to `briefs/<topic>.md` and one `## Learning` index line (`lib/learning-team.js:451`); tests in `test/learning-team.test.js`, product brief in `atris/features/learning-team/idea.md`
+- `atris wiki learn "<topic>" [--into dir]` (`commands/wiki.js:528`, `lib/learning-team.js` `runLearn`) gathers recent papers, posts and repos over https, ranks them (`lib/learning-team.js:225`), has one engine distill them on the owner's login with paid keys stripped, checks the answer (`lib/learning-team.js` `validateNotes`) and writes notes to `concepts/<topic>/`, a brief to `briefs/<topic>.md` and one `## Learning` index line (`lib/learning-team.js:451`); tests in `test/learning-team.test.js`, product brief in `atris/features/learning-team/idea.md`
 - `atris pull --only wiki` / `atris push --only wiki` normalize to `atris/wiki/`
 - **Wiki structure:**
 - `atris/context/`
