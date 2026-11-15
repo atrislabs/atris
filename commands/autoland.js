@@ -1146,6 +1146,7 @@ function greenVerdictRow(v) {
   if (v.hand_back) row.hand_back = v.hand_back;
   if (v.regenerated) row.regenerated = v.regenerated;
   if (v.known_red) row.known_red = v.known_red;
+  if (v.local_check) row.local_check = v.local_check;
   return row;
 }
 
@@ -1343,25 +1344,39 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   });
 
   // 3b2. green landing, every tick: up to five stale branches, one at a
-  // time, are caught up with base in a scratch checkout and pass the full
-  // verify there. On GitHub each goes through a pull request and the merge
-  // queue; base is never pushed. A red branch opens a close flag the same
-  // hour; a clash outside the map goes back to a builder as a job. Off by
-  // policy: green_landing:false.
+  // time, are caught up with base in a scratch checkout. On GitHub each goes
+  // through a pull request and the merge queue; base is never pushed. When
+  // the base requires hosted checks they are the gate and no local suite
+  // runs; otherwise the full verify runs in the scratch checkout and a red
+  // branch opens a close flag. A local check that runs out of time is could
+  // not tell, never red. Pull requests queued earlier are read back first:
+  // merged is done, failed hosted checks go back to a builder as a job. A
+  // clash outside the map goes back to a builder as a job. Off by policy:
+  // green_landing:false. green_landing_local_check: true or false overrides
+  // the base's rules. The local check starts one suite per run
+  // (green_landing_local_suites raises it), one at a time across the machine,
+  // and none when the load is above twice the cores.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
+        localCheck: localCheckSetting(policy),
+        localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
+        machine: true,
       });
       receipt.green_landing = {
         candidates: green.candidates.length,
         merge_path: green.merge_path,
+        local_check: green.local_check,
+        local_suites: green.local_suites,
+        followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
         landed: green.landed,
         queued: green.queued,
         handed_back: green.handed_back,
         red: green.red,
+        could_not_tell: green.could_not_tell,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
       };

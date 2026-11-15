@@ -56,6 +56,9 @@ test('a stale branch that merges clean and passes the verify lands on master; a 
     const result = landStaleGreenBranches(root, {
       push: false,
       limit: 2,
+      // Two local suites in one run: the default is one (see the machine
+      // guard tests in land-green-hosted-gate.test.js).
+      localSuites: 2,
       runCli: (args) => { flags.push(args); return { status: 0, stdout: 'opened CLS-1' }; },
     });
 
