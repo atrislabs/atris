@@ -1141,11 +1141,19 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
+  // A failed check keeps its exit code and the line that says what broke,
+  // so a red or could-not-tell row is never just a word.
+  if (v.verify && v.verify.status !== 0 && v.verify.status !== undefined) {
+    row.exit_code = v.verify.status;
+    if (v.verify.error_line) row.error_line = v.verify.error_line;
+  }
   if (v.pr) row.pr = v.pr;
   if (v.url) row.url = v.url;
   if (v.hand_back) row.hand_back = v.hand_back;
   if (v.regenerated) row.regenerated = v.regenerated;
   if (v.known_red) row.known_red = v.known_red;
+  // A green second run keeps the first red in the receipt.
+  if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
   if (v.local_check) row.local_check = v.local_check;
   return row;
 }
@@ -1652,6 +1660,9 @@ function autolandCommand(args = []) {
   const [sub, ...rest] = args;
   if (wantsHelp(args)) return showHelp();
   if (!sub || sub.startsWith('--')) return showStatus(repoRoot(), args);
+  // The hourly tick starts under cron's PATH, where the first git may not
+  // start at all; move a working one first before any git runs.
+  if (sub === 'tick') require('../lib/git-spawn').ensureWorkingGit();
   const root = repoRoot();
   if (sub === 'on') return turnOn(root, rest);
   if (sub === 'off') return turnOff(root);
