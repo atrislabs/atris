@@ -10,6 +10,10 @@ const {
   todayText,
   listText,
   scoreText,
+  parseInterviewArgs,
+  sessionOpenQuestion,
+  interviewContextText,
+  interviewDoneText,
 } = require('../commands/popshare');
 
 const posts = [
@@ -31,7 +35,7 @@ const todayBoard = {
   ],
 };
 
-async function run(args, { result, token = 'tok', routes } = {}) {
+async function run(args, { result, token = 'tok', routes, ask } = {}) {
   const out = [];
   const err = [];
   const calls = [];
@@ -50,6 +54,7 @@ async function run(args, { result, token = 'tok', routes } = {}) {
       }
       return result || { ok: true, status: 200, data: {} };
     },
+    ...(ask ? { ask } : {}),
     timeZone: 'UTC',
   });
   return { code, out: out.join('\n'), err: err.join('\n'), calls };
@@ -365,4 +370,197 @@ test('install posts the business id', async () => {
   assert.strictEqual(code, 0);
   assert.strictEqual(calls[0].path, '/popshare/install');
   assert.deepStrictEqual(calls[0].options.body, { business_id: 'acme' });
+});
+
+// ---------------------------------------------------------------- interview
+
+const sessionAsking = {
+  post_id: 'aaaa1111bbbb',
+  platform: 'x',
+  topic: 'why I built Popshare',
+  status: 'asking',
+  questions: [{ q: 'What happened, in your own words?', a: null }],
+  facts: [{ text: 'I shipped it in a weekend.', source: 'journal.md:8' }],
+  style: ['Short sentences. No jargon.'],
+  outline: [],
+  research: false,
+};
+
+const sessionDone = {
+  ...sessionAsking,
+  status: 'done',
+  questions: [{ q: 'What happened, in your own words?', a: 'I shipped it in a weekend.' }],
+  outline: [{ beat: 'The moment', quote: 'I shipped it in a weekend.' }],
+};
+
+test('parseInterviewArgs reads --new and resume forms', () => {
+  const fresh = parseInterviewArgs(['--new', 'x', 'why I built it', '--research']);
+  assert.strictEqual(fresh.mode, 'new');
+  assert.strictEqual(fresh.platform, 'x');
+  assert.strictEqual(fresh.topic, 'why I built it');
+  assert.strictEqual(fresh.research, true);
+
+  const resume = parseInterviewArgs(['aaaa1111b']);
+  assert.strictEqual(resume.mode, 'resume');
+  assert.strictEqual(resume.idInput, 'aaaa1111b');
+
+  assert.ok(parseInterviewArgs([]).error);
+  assert.ok(parseInterviewArgs(['--new']).error);
+  assert.ok(parseInterviewArgs(['--new', 'myspace', 'hi']).error);
+  assert.ok(parseInterviewArgs(['--new', 'x']).error);
+  assert.ok(parseInterviewArgs(['aaaa1111b', '--bogus']).error);
+});
+
+test('sessionOpenQuestion finds the unanswered one', () => {
+  assert.deepStrictEqual(sessionOpenQuestion(sessionAsking), { index: 0, text: 'What happened, in your own words?' });
+  const mid = {
+    questions: [
+      { q: 'first?', a: 'done' },
+      { q: 'second?', a: null },
+      { q: 'third?', a: 'also done' },
+    ],
+  };
+  assert.deepStrictEqual(sessionOpenQuestion(mid), { index: 1, text: 'second?' });
+  assert.strictEqual(sessionOpenQuestion(sessionDone), null);
+  assert.strictEqual(sessionOpenQuestion({}), null);
+});
+
+test('interviewContextText prints facts and voice, skips empty sections', () => {
+  const text = interviewContextText(sessionAsking);
+  assert.match(text, /interview for "why I built Popshare"/);
+  assert.match(text, /what I know:\n {2}- I shipped it in a weekend\. \(journal\.md:8\)/);
+  assert.match(text, /how you write:\n {2}- Short sentences\. No jargon\./);
+  const bare = interviewContextText({ topic: 't', facts: [], style: [] });
+  assert.strictEqual(bare, 'interview for "t"');
+});
+
+test('interviewDoneText prints beats and the edit hint', () => {
+  const text = interviewDoneText(sessionDone, 'aaaa1111bbbb');
+  assert.match(text, /outline:/);
+  assert.match(text, /The moment: "I shipped it in a weekend\."/);
+  assert.match(text, /now write it: atris popshare edit aaaa1111 --text "\.\.\."/);
+});
+
+test('interview --new posts platform topic research then walks the questions', async () => {
+  const answers = ['I built it after the third time I lost track.', 'mostly founders'];
+  const ask = async () => (answers.length ? answers.shift() : null);
+  const routes = [
+    ['/popshare/interview', {
+      ok: true, status: 200,
+      data: {
+        post: { id: 'aaaa1111bbbb', platform: 'x', status: 'idea', text: '', theme: 'why I built Popshare' },
+        session: sessionAsking,
+      },
+    }],
+    ['/popshare/posts/aaaa1111bbbb/interview/answer', (path, options) => {
+      const body = options.body;
+      if (body.answer === 'I built it after the third time I lost track.') {
+        return {
+          ok: true, status: 200,
+          data: {
+            ...sessionAsking,
+            questions: [
+              { q: 'What happened, in your own words?', a: body.answer },
+              { q: 'Who is it for?', a: null },
+            ],
+          },
+        };
+      }
+      return { ok: true, status: 200, data: sessionDone };
+    }],
+  ];
+  const { code, out, calls } = await run(['interview', '--new', 'x', 'why I built Popshare'], { routes, ask });
+  assert.strictEqual(code, 0);
+  const create = calls.find((call) => call.path === '/popshare/interview');
+  assert.strictEqual(create.options.method, 'POST');
+  assert.deepStrictEqual(create.options.body, { platform: 'x', topic: 'why I built Popshare', research: false });
+  assert.match(out, /interview for "why I built Popshare"/);
+  assert.match(out, /I shipped it in a weekend\. \(journal\.md:8\)/);
+  assert.match(out, /Q1: What happened, in your own words\?/);
+  assert.match(out, /Q2: Who is it for\?/);
+  assert.match(out, /The moment: "I shipped it in a weekend\."/);
+  assert.match(out, /now write it: atris popshare edit aaaa1111 --text "\.\.\."/);
+  const answerCalls = calls.filter((call) => call.path.endsWith('/interview/answer'));
+  assert.strictEqual(answerCalls.length, 2);
+  assert.strictEqual(answerCalls[0].options.body.answer, 'I built it after the third time I lost track.');
+});
+
+test('interview <id> resumes an existing session and starts one on 404', async () => {
+  const answers = ['my answer'];
+  const ask = async () => (answers.length ? answers.shift() : null);
+  const routes = [
+    ['/popshare/posts?', { ok: true, status: 200, data: { posts } }],
+    // The answer path also starts with the interview prefix, so it comes first.
+    ['/popshare/posts/aaaa1111bbbb/interview/answer', { ok: true, status: 200, data: sessionDone }],
+    ['/popshare/posts/aaaa1111bbbb/interview', (path, options) => {
+      if (options && options.method === 'GET') {
+        return { ok: false, status: 404, error: 'No interview for that post.' };
+      }
+      return { ok: true, status: 200, data: sessionAsking };
+    }],
+  ];
+  const { code, calls } = await run(['interview', 'aaaa1111b'], { routes, ask });
+  assert.strictEqual(code, 0);
+  const get = calls.find((call) => call.path === '/popshare/posts/aaaa1111bbbb/interview' && call.options.method === 'GET');
+  assert.ok(get);
+  const start = calls.find((call) => call.path === '/popshare/posts/aaaa1111bbbb/interview' && call.options.method === 'POST');
+  assert.ok(start);
+  assert.deepStrictEqual(start.options.body, { research: false });
+});
+
+test('interview <id> uses a live session without restarting it', async () => {
+  const ask = async () => 'an answer';
+  const routes = [
+    ['/popshare/posts?', { ok: true, status: 200, data: { posts } }],
+    ['/popshare/posts/aaaa1111bbbb/interview', (path, options) => {
+      if (options && options.method === 'POST' && path.endsWith('/answer')) {
+        return { ok: true, status: 200, data: sessionDone };
+      }
+      return { ok: true, status: 200, data: sessionAsking };
+    }],
+  ];
+  const { code, calls } = await run(['interview', 'aaaa1111b'], { routes, ask });
+  assert.strictEqual(code, 0);
+  const interviewCalls = calls.filter((call) => call.path === '/popshare/posts/aaaa1111bbbb/interview');
+  assert.strictEqual(interviewCalls.length, 1);
+  assert.strictEqual(interviewCalls[0].options.method, 'GET');
+});
+
+test('a null answer pauses the interview and keeps the session', async () => {
+  const ask = async () => null;
+  const routes = [
+    ['/popshare/interview', {
+      ok: true, status: 200,
+      data: { post: { id: 'aaaa1111bbbb' }, session: sessionAsking },
+    }],
+  ];
+  const { code, out, calls } = await run(['interview', '--new', 'x', 'topic'], { routes, ask });
+  assert.strictEqual(code, 0);
+  assert.match(out, /paused\. run the same command again/);
+  assert.strictEqual(calls.filter((call) => call.path.includes('/answer')).length, 0);
+});
+
+test('empty answers re-ask without spending a question', async () => {
+  const answers = ['', 'real answer'];
+  const ask = async () => answers.shift();
+  const routes = [
+    ['/popshare/interview', {
+      ok: true, status: 200,
+      data: { post: { id: 'aaaa1111bbbb' }, session: sessionAsking },
+    }],
+    ['/popshare/posts/aaaa1111bbbb/interview/answer', { ok: true, status: 200, data: sessionDone }],
+  ];
+  const { code, out, calls } = await run(['interview', '--new', 'x', 'topic'], { routes, ask });
+  assert.strictEqual(code, 0);
+  assert.match(out, /empty answer skipped/);
+  assert.strictEqual(calls.filter((call) => call.path.includes('/answer')).length, 1);
+});
+
+test('interview api errors surface plainly', async () => {
+  const { code, err } = await run(['interview', '--new', 'x', 'topic'], {
+    result: { ok: false, status: 409, error: 'That post already went out.' },
+    ask: async () => 'x',
+  });
+  assert.strictEqual(code, 1);
+  assert.match(err, /already went out/);
 });

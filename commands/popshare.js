@@ -6,6 +6,7 @@
  * Popshare never writes the words; every post here is one a person saved.
  */
 
+const readline = require('readline');
 const { apiRequestJson } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { NOT_LOGGED_IN, wantsHelp, wantsJson, tokenFrom, oneLine, printResult } = require('../lib/developer-api');
@@ -25,6 +26,8 @@ function showPopshareHelp(log = console.log) {
   log('       atris popshare posted <id> [--url u]                 mark a by-hand post as posted');
   log('       atris popshare rm <id>');
   log('       atris popshare score [--weeks 4]');
+  log('       atris popshare interview <id>                      answer the questions, get an outline');
+  log('       atris popshare interview --new <platform> "topic" [--research]');
   log('       atris popshare install <business>                    add popshare to a workspace');
   log('platforms: x, linkedin, blog, instagram, tiktok. --at is local time. ids take the first 6+ characters.');
 }
@@ -273,6 +276,125 @@ function scoreText(units = []) {
     lines.push(`${String(unit.label || unit.id).padEnd(width)}  ${value}${target}`);
   }
   return lines.join('\n');
+}
+
+/** Pull `interview <id>` or `interview --new <platform> "topic" [--research]`
+ * apart. --research only matters when a session starts fresh. */
+function parseInterviewArgs(args = []) {
+  const rest = args.filter((arg) => arg !== '--json');
+  let research = false;
+  let isNew = false;
+  const positional = [];
+  for (const arg of rest) {
+    if (arg === '--research') {
+      research = true;
+      continue;
+    }
+    if (arg === '--new') {
+      isNew = true;
+      continue;
+    }
+    if (arg.startsWith('--')) return { error: `unknown flag ${arg}` };
+    positional.push(arg);
+  }
+  if (isNew) {
+    const rawPlatform = String(positional[0] || '').trim().toLowerCase();
+    const platform = rawPlatform === 'twitter' ? 'x' : rawPlatform;
+    const topic = positional.slice(1).join(' ').trim();
+    if (!PLATFORMS.includes(platform)) {
+      return { error: `platform must be one of ${PLATFORMS.join(', ')}` };
+    }
+    if (!topic) {
+      return { error: 'say what the post is about: atris popshare interview --new x "your topic"' };
+    }
+    return { mode: 'new', platform, topic, research };
+  }
+  const idInput = positional[0];
+  if (!idInput) {
+    return { error: 'say which post: atris popshare interview <id>  (or --new <platform> "topic")' };
+  }
+  return { mode: 'resume', idInput, research };
+}
+
+/** The question still waiting on the person, with its 0-based index. */
+function sessionOpenQuestion(session = {}) {
+  const questions = Array.isArray(session.questions) ? session.questions : [];
+  for (let i = questions.length - 1; i >= 0; i -= 1) {
+    const item = questions[i];
+    const answered = item && item.a !== null && item.a !== undefined && String(item.a).trim() !== '';
+    if (!answered) {
+      return { index: i, text: String((item && item.q) || '').trim() };
+    }
+  }
+  return null;
+}
+
+/** Facts and voice notes the interview gathered, as a short block. */
+function interviewContextText(session = {}) {
+  const lines = [];
+  const topic = session.topic ? ` for "${session.topic}"` : '';
+  lines.push(`interview${topic}`);
+  const facts = (Array.isArray(session.facts) ? session.facts : [])
+    .filter((fact) => fact && String(fact.text || '').trim())
+    .map((fact) => `  - ${String(fact.text).trim()}${fact.source ? ` (${fact.source})` : ''}`);
+  const style = (Array.isArray(session.style) ? session.style : [])
+    .map((note) => String(note || '').trim())
+    .filter(Boolean)
+    .map((note) => `  - ${note}`);
+  if (facts.length) lines.push('what I know:', ...facts);
+  if (style.length) lines.push('how you write:', ...style);
+  return lines.join('\n');
+}
+
+/** The finished outline plus the command that turns it into a post. */
+function interviewDoneText(session = {}, postId = '') {
+  const lines = ['outline:'];
+  const outline = Array.isArray(session.outline) ? session.outline : [];
+  for (const beat of outline) {
+    lines.push(`  ${beat && beat.beat || 'point'}: "${beat && beat.quote || ''}"`);
+  }
+  if (!outline.length) lines.push('  (nothing survived; answer again with --new)');
+  if (postId) lines.push(`now write it: atris popshare edit ${shortId(postId)} --text "..."`);
+  return lines.join('\n');
+}
+
+/** One line from stdin per call; null on Ctrl-C or closed input so the
+ * interview pauses instead of dying mid-answer. The session lives server-side,
+ * so rerunning the command picks up right where it stopped. Lines are queued
+ * ourselves because rl.question drops input that lands before it is asked. */
+function createStdinAsker() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: Boolean(process.stdin && process.stdin.isTTY),
+  });
+  const lines = [];
+  const waiters = [];
+  let closed = false;
+  const drain = (value) => {
+    while (waiters.length) waiters.shift()(value);
+  };
+  rl.on('line', (line) => {
+    const waiter = waiters.shift();
+    if (waiter) waiter(line);
+    else lines.push(line);
+  });
+  rl.on('SIGINT', () => {
+    closed = true;
+    rl.close();
+    drain(null);
+  });
+  rl.on('close', () => {
+    closed = true;
+    drain(null);
+  });
+  return () => {
+    if (lines.length) return Promise.resolve(lines.shift());
+    if (closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      waiters.push(resolve);
+    });
+  };
 }
 
 function apiFailure(result) {
@@ -554,6 +676,80 @@ async function popshareCommand(args = [], deps = {}) {
       return 0;
     }
 
+    if (cmd === 'interview') {
+      const parsed = parseInterviewArgs(rest);
+      if (parsed.error) return fail(parsed.error);
+      // Prompts go to stderr under --json so stdout stays one payload.
+      const say = (line) => (json ? io.err(line) : io.log(line));
+      const ask = deps.ask || createStdinAsker();
+
+      let postId;
+      let session;
+      if (parsed.mode === 'new') {
+        const got = await call('/popshare/interview', {
+          method: 'POST',
+          body: { platform: parsed.platform, topic: parsed.topic, research: parsed.research },
+          retries: 0,
+        });
+        if (got.error) return fail(got.error, { status: got.status });
+        postId = got.data && got.data.post && got.data.post.id;
+        session = got.data && got.data.session;
+      } else {
+        const resolved = await resolveId(parsed.idInput);
+        if (resolved.error) return failResolution(resolved);
+        postId = resolved.id;
+        const got = await call(`/popshare/posts/${encodeURIComponent(postId)}/interview`);
+        if (got.error && got.status !== 404) return fail(got.error, { status: got.status });
+        if (got.error) {
+          // No session yet: start one. The server takes the topic from the
+          // post's theme or text when we do not pass one.
+          const started = await call(`/popshare/posts/${encodeURIComponent(postId)}/interview`, {
+            method: 'POST',
+            body: { research: parsed.research },
+            retries: 0,
+          });
+          if (started.error) return fail(started.error, { status: started.status });
+          session = started.data;
+        } else {
+          session = got.data;
+        }
+      }
+      if (!postId || !session) return fail('the interview did not start. try again.');
+
+      say(interviewContextText(session));
+      for (;;) {
+        if (session.status === 'done') {
+          printResult({
+            json,
+            ok: true,
+            text: interviewDoneText(session, postId),
+            payload: { ok: true, post_id: postId, session },
+          }, io);
+          return 0;
+        }
+        const open = sessionOpenQuestion(session);
+        if (!open || !open.text) return fail('the interview has no open question. try again.');
+        say(`Q${open.index + 1}: ${open.text}`);
+        const raw = await ask();
+        if (raw === null || raw === undefined) {
+          say('paused. run the same command again to pick up where you left off.');
+          return 0;
+        }
+        const answer = String(raw).trim();
+        if (!answer) {
+          say('empty answer skipped. same question again.');
+          continue;
+        }
+        const got = await call(`/popshare/posts/${encodeURIComponent(postId)}/interview/answer`, {
+          method: 'POST',
+          body: { answer },
+          retries: 0,
+        });
+        if (got.error) return fail(got.error, { status: got.status });
+        session = got.data || session;
+      }
+    }
+
     if (cmd === 'install') {
       const business = rest[0];
       if (!business) return fail('say the business: atris popshare install <business>');
@@ -582,4 +778,8 @@ module.exports = {
   todayText,
   listText,
   scoreText,
+  parseInterviewArgs,
+  sessionOpenQuestion,
+  interviewContextText,
+  interviewDoneText,
 };
