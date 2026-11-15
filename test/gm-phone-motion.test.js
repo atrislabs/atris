@@ -152,6 +152,18 @@ test('trace: a frame the machine holds as a still beat ends does not stretch the
   // and with the held frame at its end
   const longHeld = beat(260, 14, 100, 90);
   assert.ok(longHeld.max_frame_ms === 100 && longHeld.longest_still_moving_ms > 200, show(longHeld));
+  // the longest hold seen on a hosted runner, 250ms, as the beat ends: excused
+  const slowest = beat(150, 8, 250, 240);
+  assert.ok(slowest.max_frame_ms === 250 && slowest.longest_still_moving_ms <= 200, show(slowest));
+  // a page that hangs 2s or 5s as the beat ends is a hang, not a busy
+  // machine: it counts in full, with or without frames bunched after it
+  for (const [hangMs, bunch] of [[2000, 0], [2000, 2], [5000, 0]]) {
+    const hang = beat(150, 8, hangMs, hangMs - 10, bunch);
+    assert.ok(hang.max_frame_ms === hangMs && hang.longest_still_moving_ms > 200, show(hang));
+  }
+  // just past the longest hosted hold counts in full too
+  const over = beat(150, 8, 300, 290);
+  assert.ok(over.max_frame_ms === 300 && over.longest_still_moving_ms > 200, show(over));
 });
 
 // The quick bloom after an answer grows for 140ms, about eight frames. A

@@ -142,6 +142,11 @@ const lavaO = f => (f.lava ? f.lava.o : 0);
 // a cut moves 1. The machine's pace is its 75th percentile frame and a
 // frame over twice that (50ms to 250ms) is a stall: a fade is not read in
 // it, and a step in it is read as readSteps in gm-phone-trace.js reads it.
+// The longest frame a busy hosted runner held (2026-11-13 to 2026-11-15:
+// holds of about 100ms to 250ms). A longer frame at the end of a still is
+// the page hanging, not the machine, so it is not left out of the still.
+const HOLD_MAX = 250;
+
 function summarizePath(frames, from) {
   const span = frames.filter(f => f.t >= from);
   const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
@@ -178,11 +183,14 @@ function summarizePath(frames, from) {
     // starts shows on the frame after). A frame held earlier in a still cannot
     // stretch it, so it counts in full. The still is on the time each frame
     // was read (t), so a held frame is too: a hold that runs before the
-    // reading in its frame shows in t a frame before it shows in ft.
+    // reading in its frame shows in t a frame before it shows in ft. Only a
+    // hold a busy machine makes is left out: a frame held over HOLD_MAX (the
+    // longest hosted hold) is the page hanging and counts in full, and no
+    // more than HOLD_MAX is left out of one still.
     if (moved) { runStart = b.t; runHeld = []; }
     else {
-      if (b.t - a.t > stall) runHeld.push([b.t, b.t - a.t - pace]);
-      const held = runHeld.reduce((n, [at, past]) => (b.t - at <= 2 * pace ? n + past : n), 0);
+      if (b.t - a.t > stall && b.t - a.t <= HOLD_MAX) runHeld.push([b.t, b.t - a.t - pace]);
+      const held = Math.min(HOLD_MAX, runHeld.reduce((n, [at, past]) => (b.t - at <= 2 * pace ? n + past : n), 0));
       if (b.busy && b.t - runStart - held > still) { still = b.t - runStart - held; stillAt = Math.round(runStart - from); stillHeld = held; }
     }
     if (a.lava && b.lava && !(a.lava.at === b.lava.at && near(a.lava.r, b.lava.r))) {
