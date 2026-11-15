@@ -51,3 +51,34 @@ test('computer PR publishes progress and outcomes only for enabled projects', as
     assert.equal(store.listTasks(store.open(), { workspaceRoot: store.workspaceRoot(root) }).length, 0);
   } finally { process.chdir(oldCwd); process.exitCode = oldExit; if (oldDb === undefined) delete process.env.ATRIS_TASKS_DB; else process.env.ATRIS_TASKS_DB = oldDb; }
 });
+
+test('computer command saves the feed result before its real exit', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-feed-exit-'));
+  fs.mkdirSync(path.join(root, 'atris/team/executor'), { recursive: true });
+  const dbPath = path.join(root, 'tasks.db');
+  const computerPath = path.join(__dirname, '../commands/computer');
+  const binPath = path.join(__dirname, '../bin/atris.js');
+  const script = `
+    const computer = require(${JSON.stringify(computerPath)});
+    computer.runComputer = () => computer.computerPr('token', ['a/b', 'Fix this.', '--no-think'],
+      { businessId: 'b', workspaceId: 'w' }, {}, {
+        ensureBusinessAwake: async () => true,
+        apiRequestJson: async () => ({ ok: true, data: { execution_id: 'x' } }),
+        streamBusinessChatResult: async () => ({ ok: true, text: 'PR_URL=https://github.com/a/b/pull/1' }),
+      });
+    process.argv = [process.execPath, ${JSON.stringify(binPath)}, 'computer'];
+    require(${JSON.stringify(binPath)});
+  `;
+  const child = spawnSync(process.execPath, ['-e', script], {
+    cwd: root, env: { ...process.env, ATRIS_TASKS_DB: dbPath }, encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(child.status, 0, child.stderr);
+  const db = store.open(dbPath);
+  try {
+    const rows = store.listTasks(db, { workspaceRoot: store.workspaceRoot(root) });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, 'review');
+    assert.match(rows[0].metadata.result, /^Fixed: Fix this\./);
+  } finally { db.close(); }
+});
