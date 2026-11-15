@@ -308,8 +308,9 @@ async function run(args = [], context = {}) {
           out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, choose: flags.choose, env, deps, onEvent });
         }
       } catch (error) {
-        if (flags.stream && json && error instanceof feed.FeedError) {
-          write(`${JSON.stringify({ type: 'error', ok: false, error: error.toJSON() })}\n`);
+        const known = feed.asFeedError(error);
+        if (flags.stream && json && known) {
+          write(`${JSON.stringify({ type: 'error', ok: false, error: known.toJSON() })}\n`);
           return 1;
         }
         throw error;
@@ -410,8 +411,11 @@ async function run(args = [], context = {}) {
     if (json) console.log(JSON.stringify(out, null, 2));
     else printText(command, out);
     return 0;
-  } catch (error) {
-    if (!(error instanceof feed.FeedError)) throw error;
+  } catch (caught) {
+    // A busy task store answers with error.busy true, so a caller can retry
+    // instead of reading the silence as a tool too old to have the command.
+    const error = feed.asFeedError(caught);
+    if (!error) throw caught;
     if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: error.toJSON() }, null, 2));
     else console.error(`error: ${error.message}`);
     return error.status === 400 && command === 'unknown' ? 2 : 1;
