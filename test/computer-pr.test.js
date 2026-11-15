@@ -709,6 +709,13 @@ test('a proposal cannot close the task or proposal fence early', () => {
   assert.equal(nl.filter((l) => l === 'TASK END').length, 1);
 });
 
+test('only the builder is told to try the sandbox boot script', () => {
+  const args = { owner: 'atrislabs', name: 'atris', task: 'fix it', branch: 'atris/x' };
+  const step5 = (text) => text.split('\n').find((line) => line.startsWith('5. '));
+  assert.match(step5(buildPullRequestPrompt(args)), /scripts\/sandbox_boot\.sh/);
+  assert.doesNotMatch(step5(prLib.buildProposalPrompt(args)), /scripts\/sandbox_boot\.sh/);
+});
+
 test('every instruction lets the builder ask for help, try the real thing, and use the repo packages', () => {
   const pr = buildPullRequestPrompt({ owner: 'atrislabs', name: 'atrisos-backend', task: 'fix it', branch: 'atris/x' });
   assert.match(pr, /reply "STEP_FAILED=5 needs a proposal" with what you learned/);
