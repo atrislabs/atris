@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 const { stateHome } = require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -821,7 +822,66 @@ async function businessDoctor(...args) {
   if (failures.length > 0) process.exitCode = 1;
 }
 
+function extractBusinessKind(args) {
+  const remaining = [];
+  let kind;
+  let noHire = false;
+  let schedule;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--kind' || arg.startsWith('--kind=')) {
+      kind = arg === '--kind' ? args[++i] : arg.slice('--kind='.length);
+      if (!['business', 'research', 'engineering', 'fund'].includes(kind)) {
+        console.error('Choose a kind: business, research, engineering, or fund.');
+        process.exit(1);
+      }
+    } else if (arg === '--no-hire') {
+      noHire = true;
+    } else if (arg === '--schedule' || arg.startsWith('--schedule=')) {
+      schedule = arg === '--schedule' ? args[++i] : arg.slice('--schedule='.length);
+      if (!schedule || schedule.startsWith('--')) {
+        console.error('Pass a value for --schedule.');
+        process.exit(1);
+      }
+    } else {
+      remaining.push(arg);
+    }
+  }
+  if (!kind && (noHire || schedule !== undefined)) {
+    console.error('--no-hire and --schedule need --kind.');
+    process.exit(1);
+  }
+  return { kind, noHire, schedule, remaining };
+}
+
+async function hireBusinessTeam(id, kind, schedule, token) {
+  let result;
+  try {
+    result = await apiRequestJson(`/business/${encodeURIComponent(id)}/hire/template`, {
+      method: 'POST', token, body: { template: kind, ...(schedule !== undefined ? { schedule } : {}) },
+    });
+  } catch (error) {
+    result = { ok: false, errorMessage: error.message };
+  }
+  if (!result.ok) {
+    console.error(`The business was created, but the team was not set up: ${result.errorMessage || result.error || result.status}`);
+    process.exitCode = 1;
+    return;
+  }
+  const hired = result.data?.hired || [];
+  const failed = result.data?.failed || [];
+  for (const seat of hired) console.log(`  ${seat.name}${seat.next_run_at ? `: next run ${seat.next_run_at}` : ''}`);
+  for (const seat of failed) console.error(`  ${seat.name}: ${seat.detail || seat.status}`);
+  console.log(`  ${hired.length} of ${hired.length + failed.length} seats set up.${hired.length ? ` Each has its own email address${schedule === undefined ? ' and runs nightly' : ''}. Spending is off until you turn it on.` : ''}`);
+  if (failed.length) {
+    console.error('The business exists. Running the same command’s hire step again is safe.');
+    if (!hired.length) process.exitCode = 1;
+  }
+}
+
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
+  const { kind, noHire, schedule, remaining } = extractBusinessKind(flags);
+  flags = remaining;
   const validation = validateBusinessCreateName(name);
   if (!validation.ok) {
     console.error(validation.usage);
@@ -866,7 +926,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   const result = await apiRequestJson('/business/', {
     method: 'POST',
     token: creds.token,
-    body: { name, description: description || undefined },
+    body: { name, description: description || undefined, ...(kind ? { template: kind } : {}) },
   });
 
   if (!result.ok) {
@@ -952,6 +1012,8 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`\n  Business created!`);
   console.log(`  ID:        ${biz.id}`);
   console.log(`  Slug:      ${biz.slug}`);
+  if (kind && noHire) console.log(`  Team: ${kind} (six seats)`);
+  else if (kind) await hireBusinessTeam(biz.id, kind, schedule, creds.token);
   console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
@@ -975,7 +1037,134 @@ function printBusinessShipHelp() {
   console.log('Create a live business from one paragraph.');
   console.log('  --name <name>     Optional business name');
   console.log('  --email <email>   Optional customer email');
+  console.log('  --kind <kind>     Starter team: business, research, engineering, or fund');
+  console.log('  --no-hire         Write seats without setting up the team (needs --kind)');
+  console.log('  --schedule <value>  Set the team schedule (needs --kind)');
   console.log('  --yes             Required to POST /business/ship');
+  console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
+}
+
+function printBusinessBeginHelp() {
+  console.log('Usage: atris business begin "<goal>" --kind <kind> --yes [--name <name>] [--no-hire] [--schedule <value>]');
+  console.log('Choose a team and create a live business.');
+}
+
+// One typed line as an answer to an orb question: a number picks that choice,
+// a label typed out picks it, and anything else is the person's own words.
+// Null means the line cannot answer this question, so it is asked again.
+function readOrbReply(question, typed) {
+  const words = String(typed || '').trim();
+  if (!words) return null;
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  if (choices.length > 0 && /^\d+$/.test(words)) {
+    const choice = choices[Number(words) - 1];
+    return choice ? { picked: [choice.id], text: '' } : null;
+  }
+  const named = choices.find(choice => String(choice.label).toLowerCase() === words.toLowerCase());
+  if (named) return { picked: [named.id], text: '' };
+  return question.custom === false ? null : { picked: [], text: words };
+}
+
+// The questions the website's orb asks, from the same place, so the terminal
+// and the site ask the same thing. Returns { description, template }, or null
+// when the service cannot run the conversation (the plain questions take over).
+async function orbInterview(ask, token, goal = '', { api = apiRequestJson, log = console.log } = {}) {
+  const turns = goal ? [{ id: 'goal', picked: [], text: goal }] : [];
+  for (let asked = 0; asked < 12; asked += 1) {
+    let result;
+    try {
+      result = await api('/orb/interview/next', { method: 'POST', token, body: { interview: 'business', turns } });
+    } catch {
+      return null;
+    }
+    const step = result && result.ok ? result.data || {} : null;
+    if (!step) return null;
+    if (step.done) {
+      const plan = step.result || {};
+      return plan.description && plan.template ? { description: plan.description, template: plan.template } : null;
+    }
+    const question = step.question;
+    if (!question || !question.id || typeof question.line !== 'string') return null;
+    const choices = Array.isArray(question.choices) ? question.choices : [];
+    log('');
+    log(`● ${question.line}`);
+    if (choices.length > 0) log('');
+    choices.forEach((choice, index) => log(`  ${index + 1}  ${choice.label}`));
+    log('');
+    let answer = null;
+    while (!answer) answer = readOrbReply(question, await ask('› '));
+    turns.push({ id: question.id, ...answer });
+  }
+  return null;
+}
+
+async function beginBusiness(args) {
+  if (args.some(isHelpToken)) return printBusinessBeginHelp();
+  const kinds = ['business', 'research', 'engineering', 'fund'];
+  const hasKind = args.some(arg => arg === '--kind' || arg.startsWith('--kind='));
+  const options = extractBusinessKind(hasKind ? args : [...args, '--kind', 'business']);
+  let kind = hasKind ? options.kind : undefined;
+  const parsedInput = parseBusinessShipArgs(options.remaining);
+  const parsed = parsedInput.ok ? parsedInput : parseBusinessShipArgs(['placeholder', ...options.remaining]);
+  const hasGoal = parsedInput.ok && parsedInput.description;
+  if (!parsed.ok) {
+    console.error(parsed.detail || 'Pass a goal as the first argument.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    const missing = !hasGoal ? 'a goal as the first argument' : !kind ? '--kind' : !args.includes('--yes') && !args.includes('-y') ? '--yes' : null;
+    if (missing) {
+      console.error(`Pass ${missing}.`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+  const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
+  const ask = question => new Promise(resolve => rl.question(question, resolve));
+  try {
+    let goal = hasGoal ? parsed.description : '';
+    // In a terminal, with no team chosen yet, the orb asks: the same questions as the site.
+    const token = rl && !kind ? loadCredentials()?.token : null;
+    const plan = token ? await orbInterview(ask, token, goal) : null;
+    if (plan && kinds.includes(plan.template)) {
+      if (!goal) goal = plan.description;
+      kind = plan.template;
+    }
+    while (!goal) goal = (await ask('What do you want to make? ')).trim();
+    let templates = [];
+    try {
+      const result = await apiRequestJson('/public/business/templates', { method: 'GET' });
+      if (result.ok && Array.isArray(result.data?.templates)) templates = result.data.templates;
+    } catch { /* The names remain available when the service is offline. */ }
+    if (!kind) {
+      for (const [index, name] of kinds.entries()) {
+        const template = templates.find(item => item.name === name);
+        console.log(`${index + 1}. ${name}${template?.summary ? `: ${template.summary}` : ''}`);
+      }
+    }
+    while (!kind) {
+      const answer = (await ask('Which is closest? ')).trim().toLowerCase();
+      kind = kinds[Number(answer) - 1] || (kinds.includes(answer) ? answer : undefined);
+    }
+    const selected = templates.find(item => item.name === kind);
+    for (const seat of selected?.seats || []) console.log(`${seat.name}: ${seat.owns}`);
+    if (!args.includes('--yes') && !args.includes('-y')) {
+      console.log(`Goal: ${goal}`);
+      console.log(`Team: ${kind}`);
+      console.log(options.noHire ? 'This creates a live business without setting up the seats.' : `This creates a live business and sets up six seats that run ${options.schedule || 'nightly'}, with spending off.`);
+      const answer = (await ask('Create it? (yes or no) ')).trim().toLowerCase();
+      if (answer !== 'yes' && answer !== 'y') return;
+    }
+    const shipArgs = [goal, '--kind', kind, '--yes'];
+    if (parsed.name) shipArgs.push('--name', parsed.name);
+    if (options.noHire) shipArgs.push('--no-hire');
+    if (options.schedule !== undefined) shipArgs.push('--schedule', options.schedule);
+    // shipBusiness already prints the first task and the public page.
+    await shipBusiness(...shipArgs);
+  } finally {
+    rl?.close();
+  }
 }
 
 async function shipBusiness(...args) {
@@ -990,7 +1179,8 @@ async function shipBusiness(...args) {
     process.exit(2);
   }
 
-  const parsed = parseBusinessShipArgs(args);
+  const { kind, noHire, schedule, remaining } = extractBusinessKind(args);
+  const parsed = parseBusinessShipArgs(remaining);
   if (!parsed.ok) {
     console.error(parsed.usage);
     if (parsed.detail) console.error(`\n  ${parsed.detail}`);
@@ -1006,6 +1196,7 @@ async function shipBusiness(...args) {
   const body = { description: parsed.description };
   if (parsed.name) body.name = parsed.name;
   if (parsed.email) body.customer_email = parsed.email;
+  if (kind) body.template = kind;
 
   console.log(`Shipping business: ${parsed.name || parsed.description}...`);
 
@@ -1030,7 +1221,9 @@ async function shipBusiness(...args) {
   console.log('');
   console.log(`  ${label}${slug ? ` (${slug})` : ''}`);
   if (pageUrl) console.log(`  Public page: ${pageUrl}`);
-  if (names.length > 0) console.log(`  Team: ${names.join(', ')}`);
+  if (kind && noHire) console.log(`  Team: ${kind} (six seats)`);
+  else if (kind) await hireBusinessTeam(payload.business_id, kind, schedule, creds.token);
+  if (names.length > 0 && (!kind || noHire)) console.log(`  Team: ${names.join(', ')}`);
   if (firstTask) console.log(`  First task: ${firstTask}`);
   console.log('');
   return payload;
@@ -1496,7 +1689,12 @@ function printBusinessHelp() {
   console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
-  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email; --yes required)');
+  console.log('                       --kind <business|research|engineering|fund> selects a starter team');
+  console.log('                       --no-hire writes seats without setting up the team (needs --kind)');
+  console.log('                       --schedule <value> sets the team schedule (needs --kind)');
+  console.log('  begin "<goal>"      Choose a team and create a live business');
+  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email, --kind; --yes required)');
+  console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
@@ -1531,6 +1729,10 @@ async function businessCommand(subcommand, ...args) {
     printBusinessHelp();
     return;
   }
+  if (subcommand === 'begin' && args.some(isHelpToken)) {
+    printBusinessBeginHelp();
+    return;
+  }
   if (subcommand === 'simulate' && args.some(isHelpToken)) {
     printBusinessSimulateHelp();
     return;
@@ -1556,6 +1758,9 @@ async function businessCommand(subcommand, ...args) {
     case 'create':
     case 'new':
       await createBusiness(args[0], ...args.slice(1));
+      break;
+    case 'begin':
+      await beginBusiness(args);
       break;
     case 'ship':
       await shipBusiness(...args);
@@ -1674,6 +1879,8 @@ module.exports = {
   isAccidentalHelpBusiness,
   validateBusinessCreateName,
   parseBusinessShipArgs,
+  readOrbReply,
+  orbInterview,
   shipTeamNames,
   shipTaskTitle,
   analyzeBusinessDoctor,

@@ -315,13 +315,15 @@ test('someone else pushed to the branch: left for a person and no longer tracked
   });
 });
 
-test('a real clash with master: nothing is pushed and the branch is left for a person', () => {
+test('a real clash with master and no job to send back: nothing is pushed and a builder gets a job naming the files', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     moveMaster(fx, 'work.txt', 'master wrote this instead\n');
-    const out = requeueDroppedAutolands({ cwd: fx.main });
+    const handed = [];
+    const out = requeueDroppedAutolands({ cwd: fx.main, handBack: (entry, files) => { handed.push({ branch: entry.branch, files }); return { id: 'CLI-9', inserted: true }; } });
     assert.equal(out.results[0].state, 'clash');
-    assert.match(out.results[0].line, /clashes with the main branch in work\.txt/);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; went back to a builder as job CLI-9$/);
+    assert.deepEqual(handed, [{ branch: BRANCH, files: ['work.txt'] }]);
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
   });
@@ -340,13 +342,28 @@ test('merged or closed: dropped from the list and never touched', () => {
   }
 });
 
-test('dropped again after the catch-up limit: left for a person instead of looping', () => {
+test('dropped again after the catch-up limit: waits on the list, and starts over once master moves', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     writeQueue(fx, { [BRANCH]: { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 3 } });
     const out = requeueDroppedAutolands({ cwd: fx.main });
-    assert.equal(out.results[0].state, 'gave-up');
+    assert.equal(out.results[0].state, 'waiting');
+    assert.match(out.results[0].line, /tries again once the main branch moves/);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    const kept = readQueue(fx)[BRANCH];
+    assert.ok(kept, 'never dropped for good');
+    assert.equal(kept.base_sha, git(['rev-parse', 'master'], fx.main));
+    // Same master: still waiting, nothing pushed.
+    assert.equal(requeueDroppedAutolands({ cwd: fx.main }).results[0].state, 'waiting');
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    // Master moves: caught up and queued again, the count starts over.
+    const moved = moveMaster(fx);
+    const again = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(again.results[0].state, 'requeued', again.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 1);
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.requeues, 1);
+    assert.equal(entry.base_sha, moved);
   });
 });
 
@@ -440,7 +457,7 @@ test('a pull request recorded by worktree ship that is still in the merge line i
   });
 });
 
-test('a pull request recorded by worktree ship still stops at the catch-up cap', () => {
+test('a pull request recorded by worktree ship still pauses at the catch-up cap', () => {
   const fx = fixture({ queued: false });
   withFakeGh(fx, () => {
     git(['push', '-q', 'origin', BRANCH], fx.worktree);
@@ -450,8 +467,8 @@ test('a pull request recorded by worktree ship still stops at the catch-up cap',
       setView(fx, { autoMergeRequest: null }, { inQueue: false });
       states.push(requeueDroppedAutolands({ cwd: fx.main }).results[0].state);
     }
-    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'gave-up']);
-    assert.equal(readQueue(fx)[BRANCH], undefined);
+    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'waiting']);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 3, 'kept on the list until master moves');
   });
 });
 
@@ -559,5 +576,106 @@ test('recording refuses details it cannot trust and writes nothing', () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+// The short PATH here is one folder holding git and nothing else, the same on
+// every machine. GitHub's Linux machines keep a real gh in /usr/bin, and the
+// sweep adds its tool folders after the caller's PATH, so that gh answered
+// before the fake and failed on the temporary repo. A folder with no gh and no
+// node in it also makes the fake's own node come from the sweep's tool folders.
+function shortPathWithGitOnly(base) {
+  const dir = path.join(base, 'short-path');
+  fs.mkdirSync(dir);
+  const real = String(process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .map((d) => path.join(d, 'git'))
+    .find((p) => {
+      try {
+        fs.accessSync(p, fs.constants.X_OK);
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
+  assert.ok(real, 'git must be on PATH to run this test');
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec '${real.replace(/'/g, "'\\''")}' "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
+// Review on 2026-11-15: under the schedule's PATH=/usr/bin:/bin the sweep
+// could not start gh (nor the node a gh script runs on), so every queued pull
+// request read as unreadable. The last 40 scheduled runs said "github could
+// not be read; will look again" 179 times and nothing else.
+test('under the schedule PATH the sweep still finds gh and reads a merged pull request', () => {
+  const fx = fixture();
+  try {
+    setView(fx, { state: 'MERGED', mergedAt: new Date().toISOString() });
+    const lib = path.join(__dirname, '..', 'lib', 'member-autoland.js');
+    const script = `const r = require(${JSON.stringify(lib)}).requeueDroppedAutolands({ cwd: ${JSON.stringify(fx.main)}, dryRun: true });
+      console.log(JSON.stringify(r.results.map((x) => x.state)));`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      // ATRIS_TOOL_DIRS names where this machine keeps gh, as a schedule may.
+      env: { PATH: shortPathWithGitOnly(fx.base), HOME: process.env.HOME, TMPDIR: os.tmpdir(), ATRIS_TOOL_DIRS: fx.bin },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), ['merged']);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+// Review on 2026-11-15. When a pull request's hosted checks failed, the green
+// lander handed it back to a builder and switched auto-merge off. The next
+// sweep read "auto-merge off, not in the merge line, head unchanged" as
+// "github dropped it" and switched auto-merge back on, so the builder's fix
+// could merge on green without the lander's protected-lane screen. A handed
+// back entry is marked; only the lander's own re-queue clears the mark.
+function markHandedBack(fx, extra = {}) {
+  writeQueue(fx, { [BRANCH]: {
+    branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0, source: 'land-green',
+    reran: fx.pushed, checks_handed_back: fx.pushed, checks_task: 'JOB-1', ...extra,
+  } });
+}
+
+test('a pull request handed back for failed hosted checks is not switched back on by the sweep', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, {});
+    moveMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(out.requeued, 0);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0, JSON.stringify(ghCalls(fx)));
+    assert.equal(remoteBranch(fx), fx.pushed, 'no catch-up push');
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.checks_handed_back, fx.pushed, 'the mark stays');
+    assert.equal(entry.pushed, fx.pushed);
+  });
+});
+
+test('a builder\'s push after the hand-back is kept on the list and left for the lander', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { headRefOid: 'b'.repeat(40) });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked, so the lander can read it back');
+  });
+});
+
+test('a handed-back pull request whose auto-merge is still on is switched off, not run again', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-11-15T00:00:00Z' } }, { checks: FAILED_CHECKS });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    const merges = ghCalls(fx).filter((c) => c[1] === 'merge');
+    assert.deepEqual(merges, [['pr', 'merge', '7', '--disable-auto']]);
+    assert.equal(ghCalls(fx).filter((c) => c[0] === 'run').length, 0, 'no rerun');
   });
 });

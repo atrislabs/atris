@@ -246,7 +246,7 @@ test('golden path e2e runs init delegate ready autoland status without human inp
     const status = runCli(['status'], { cwd: workspace, env });
     assertOk(status, 'status');
     assert.equal(status.stdout.trim(), minute.stdout.trim());
-    assert.match(status.stdout, /ready to claim/);
+    assert.match(status.stdout, /ready to start/);
     assert.match(status.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(status.stdout, /Where we are|Decision: let it run/);
   } finally {
@@ -343,9 +343,9 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const doit = runInstalled(doArgs);
     assertGoldenPathStep(doit, 'second do after first-talk');
-    assert.match(doit.stdout, /already yours/);
+    assert.match(doit.stdout, /you are working on/);
     assert.match(doit.stdout, /^next: atris task ready \S+ --verify "npm test"$/m);
-    assert.doesNotMatch(doit.stdout, /^next: atris do$/m);
+    assert.doesNotMatch(doit.stdout, /^next: atris do\b/m);
     assert.doesNotMatch(doit.stdout, /atris task show |PROMPT ONLY|You are the Executor|executor\.md/);
 
     const afterDo = runInstalled([]);

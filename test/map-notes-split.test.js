@@ -32,7 +32,7 @@ function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' } }).trim();
 }
 
-test('doc-health checks and fix-refs moves a drifted line ref inside an area note', (t) => {
+test('doc-health checks and fix-refs pins the line refs inside an area note to their names', (t) => {
   const root = tempDir(t, 'atris-map-split-');
   write(root, 'atris/atris.md', '');
   const code = Array.from({ length: 30 }, () => '');
@@ -54,8 +54,8 @@ test('doc-health checks and fix-refs moves a drifted line ref inside an area not
   });
   const fix = run(['--fix-refs']);
   assert.equal(fix.status, 0, fix.stderr);
-  assert.match(fix.stdout, /atris\/refs\/map\/sample\.md line 4: lib\/sample\.js:12 -> lib\/sample\.js:20 \(beta\)/);
-  assert.equal(fs.readFileSync(path.join(root, 'atris/refs/map/sample.md'), 'utf8'), note.replace('sample.js:12', 'sample.js:20'));
+  assert.match(fix.stdout, /atris\/refs\/map\/sample\.md line 4: lib\/sample\.js:12 -> lib\/sample\.js \(beta\)/);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/refs/map/sample.md'), 'utf8'), note.replace('sample.js:3', 'sample.js').replace('sample.js:12', 'sample.js'));
   assert.match(run(['--fix-refs']).stdout, /map refs: nothing to move\./);
 });
 

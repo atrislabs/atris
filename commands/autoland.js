@@ -798,12 +798,12 @@ function runTickPreview(root, { json, receipt, timer }) {
     return 0;
   }
   const close = receipt.merged_close || {};
-  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} clashing job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
+  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
   const prLine = (row) => (row.action === 'merged_earlier'
     ? `merged earlier, closed without counting it as a new landing: its own pull request #${row.number} merged over a day ago`
     : `its own pull request #${row.number} merged`);
   for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || prLine(row)}`);
-  for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
+  for (const row of close.would_send_back || []) console.log(`  send back ${row.ref || row.id}: ${row.reason || `pull request #${row.number} clashes`}`);
   for (const line of close.merge_line || []) console.log(`  ${line}`);
   if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
   const check = receipt.second_check || { would_check: [], skipped: [] };
@@ -871,6 +871,8 @@ function stuckBacklogNote(receipt) {
   if (unrunnable > 0) {
     parts.push(`${unrunnable} blocked by a check this machine could not run`);
   }
+  const deferred = Number(receipt.accept_deferred || 0);
+  if (deferred > 0) parts.push(`${deferred} left for the next hour when time ran out`);
   return parts.length ? `, ${parts.join(', ')}` : '';
 }
 
@@ -986,8 +988,9 @@ function engineAnswerValidationLine(receipt) {
 // 2026-10-22 this ran only inside the team wake loop, which last swept on
 // 2026-10-15, so four merged jobs waited a week. Two sources: the autoland
 // list (pull requests GitHub merged at the member's own commit, through the
-// team loop's shared five-minute pass) and git itself (lib/merged-review-close.js)
-// for jobs that left the list. dryRun reads and reports, and writes nothing.
+// team loop's shared five-minute pass), then git itself and each job's own
+// recorded pull request on GitHub (lib/merged-review-close.js) for jobs that
+// left the list or never were on it. dryRun reads and reports, and writes nothing.
 function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } = {}) {
   const out = dryRun
     ? { would_close: [], would_send_back: [], merge_line: [] }
@@ -1011,7 +1014,10 @@ function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } 
       .filter((t) => !closedList.some((c) => c.id === t.id));
     const scan = require('../lib/merged-review-close').closeMergedReviewJobs({ root, tasks, now, dryRun });
     for (const row of dryRun ? scan.matched : scan.closed) closedList.push(row);
+    for (const row of (dryRun ? scan.would_send_back : scan.sent_back) || []) sentList.push(row);
     out.checked = scan.checked;
+    out.pull_requests_asked = scan.pull_requests_asked || 0;
+    if (scan.github_outage) out.github_outage = scan.github_outage;
   } catch (err) {
     receipt.merged_close_error = String((err && err.message) || err).slice(0, 200);
   }
@@ -1027,10 +1033,14 @@ function mainCheckoutRoot(root) {
 
 function mergedCloseNote(receipt) {
   const closed = (receipt.merged_close?.closed || []).length;
-  const sent = (receipt.merged_close?.sent_back || []).length;
+  const sentRows = receipt.merged_close?.sent_back || [];
+  const dropped = sentRows.filter((r) => r && r.how === 'pull_request').length;
+  const sent = sentRows.length - dropped;
   return (closed ? `, closed ${closed} merged job${closed === 1 ? '' : 's'}` : '')
     + (sent ? `, sent ${sent} clashing job${sent === 1 ? '' : 's'} back on the list` : '')
-    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
+    + (dropped ? `, sent ${dropped} job${dropped === 1 ? '' : 's'} whose pull request closed unmerged back on the list` : '')
+    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '')
+    + (receipt.merged_close?.github_outage ? ', github could not be reached for pull requests' : '');
 }
 
 // The digest goes out once per local day. A stamp written before the switch
@@ -1046,8 +1056,14 @@ function digestSentToday(state, now = new Date()) {
   return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
 }
 
-function acceptCommandArgs(policy) {
+// The accept step is told its own time limit, less room to write the job
+// list and print its answer, so it stops starting checks in time and the
+// rest wait for the next hour instead of the whole run being killed.
+const ACCEPT_REPORT_RESERVE_MS = 60 * 1000;
+
+function acceptCommandArgs(policy, timeoutMs = 0) {
   const args = ['task', 'auto-accept-certified', '--json', '--certify-first'];
+  if (timeoutMs > ACCEPT_REPORT_RESERVE_MS) args.push('--budget-ms', String(timeoutMs - ACCEPT_REPORT_RESERVE_MS));
   if (policy.accept_protected) args.push('--include-protected');
   if (policy.accept_all) args.push('--all');
   else if (policy.strict_verify === false) args.push('--no-strict-verify');
@@ -1125,6 +1141,12 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
+  if (v.pr) row.pr = v.pr;
+  if (v.url) row.url = v.url;
+  if (v.hand_back) row.hand_back = v.hand_back;
+  if (v.regenerated) row.regenerated = v.regenerated;
+  if (v.known_red) row.known_red = v.known_red;
+  if (v.local_check) row.local_check = v.local_check;
   return row;
 }
 
@@ -1165,12 +1187,13 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   timed('origin_refresh', () => refreshLandingRefs(root));
-  const cliArgs = acceptCommandArgs(policy);
   const pendingReviewRows = readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
     .length;
-  const accept = timed('accept_certify', () => runOwnCli(root, cliArgs, acceptSweepTimeoutMs(pendingReviewRows)));
+  const acceptTimeoutMs = acceptSweepTimeoutMs(pendingReviewRows);
+  const cliArgs = acceptCommandArgs(policy, acceptTimeoutMs);
+  const accept = timed('accept_certify', () => runOwnCli(root, cliArgs, acceptTimeoutMs));
   let acceptResults = [];
   try {
     const parsed = JSON.parse(accept.stdout);
@@ -1229,6 +1252,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     const waiting = waitingReasonRows(results);
     if (waiting.length) receipt.waiting_reasons = waiting;
     receipt.undercounted = Boolean(parsed.undercounted);
+    // Left for the next hour because the time ran out, not refused.
+    const deferred = Number(parsed.deferred || 0) + Number(parsed.certification?.deferred || 0);
+    if (deferred) receipt.accept_deferred = deferred;
   } catch (err) {
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
@@ -1317,21 +1343,40 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   });
 
-  // 3b2. green landing, every tick: one stale branch that merges clean and
-  // passes the full verify in a scratch checkout lands on base and is pushed.
-  // A red branch opens a close flag the same hour instead of waiting for the
-  // TTL reap to salvage it. Off by policy: green_landing:false.
+  // 3b2. green landing, every tick: up to five stale branches, one at a
+  // time, are caught up with base in a scratch checkout. On GitHub each goes
+  // through a pull request and the merge queue; base is never pushed. When
+  // the base requires hosted checks they are the gate and no local suite
+  // runs; otherwise the full verify runs in the scratch checkout and a red
+  // branch opens a close flag. A local check that runs out of time is could
+  // not tell, never red. Pull requests queued earlier are read back first:
+  // merged is done, failed hosted checks go back to a builder as a job. A
+  // clash outside the map goes back to a builder as a job. Off by policy:
+  // green_landing:false. green_landing_local_check: true or false overrides
+  // the base's rules. The local check starts one suite per run
+  // (green_landing_local_suites raises it), one at a time across the machine,
+  // and none when the load is above twice the cores.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
-        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : 1,
+        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
+        localCheck: localCheckSetting(policy),
+        localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
+        machine: true,
       });
       receipt.green_landing = {
         candidates: green.candidates.length,
+        merge_path: green.merge_path,
+        local_check: green.local_check,
+        local_suites: green.local_suites,
+        followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
         landed: green.landed,
+        queued: green.queued,
+        handed_back: green.handed_back,
         red: green.red,
+        could_not_tell: green.could_not_tell,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
       };

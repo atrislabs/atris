@@ -122,9 +122,9 @@ test('engines that can run claude models keep a claude pin', () => {
   }
 });
 
-test('a pinned opus on those engines is dropped without the owner yes', () => {
+test('a pinned opus on those engines runs as named without any yes', () => {
   for (const runner of ['agy', 'cursor', 'devin', 'opencode']) {
-    assert.doesNotMatch(tickCommand({ runner, model: 'claude-opus-5-5' }), /opus/, runner);
+    assert.match(tickCommand({ runner, model: 'claude-opus-5-5' }), /--model claude-opus-5-5 /, runner);
   }
 });
 

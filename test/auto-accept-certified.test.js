@@ -992,7 +992,13 @@ test('verifyCommandEnv keeps caller PATH order and only appends missing dirs', (
   const callerParts = ['/tmp/fake-git-bin', '/usr/bin', '/tmp/fake-git-bin', '/bin'];
   const parts = verifyCommandEnv({ PATH: callerParts.join(path.delimiter) }).PATH.split(path.delimiter);
   assert.deepEqual(parts.slice(0, 3), ['/tmp/fake-git-bin', '/usr/bin', '/bin']);
-  assert.ok(parts.indexOf(binDir) >= 3, 'node bin dir is appended after caller entries');
+  const callerIndex = [...new Set(callerParts)].indexOf(binDir);
+  if (callerIndex >= 0) {
+    assert.equal(parts.indexOf(binDir), callerIndex, 'node bin dir keeps its caller position');
+    assert.equal(parts.filter((p) => p === binDir).length, 1, 'node bin dir appears once');
+  } else {
+    assert.ok(parts.indexOf(binDir) >= 3, 'node bin dir is appended after caller entries');
+  }
   assert.ok(parts.indexOf('/opt/homebrew/bin') >= 3, 'homebrew is appended after caller entries');
   assert.equal(new Set(parts).size, parts.length, 'no duplicate PATH entries');
   const withBin = verifyCommandEnv({ PATH: [binDir, '/usr/bin'].join(path.delimiter) }).PATH.split(path.delimiter);

@@ -1,6 +1,6 @@
 # Boot and first minute
 
-What runs when a session starts: activate, brain, setup, the first-minute view and the context gatherer. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+What runs when a session starts: activate, brain, setup, the first-minute view and the context gatherer. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Search shortcuts: Core CLI logic
 
@@ -82,7 +82,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 3. **`atris review`** - Human checkpoint, first-minute voice
 
-- Entry: `commands/workflow.js:1337` `reviewAtris` / `renderReviewMinute` (`commands/workflow.js:115`)
+- Entry: `commands/workflow.js` `reviewAtris` / `renderReviewMinute` (`commands/workflow.js`)
 - Empty folder: `lib/first-minute.js` `isFreshWorkspace` + `speakFirstMinute` (same two spoken lines and `--json` next as bare `atris`), including `--verbose`. No `validator.md` bounce and no lone `nothing is waiting on you.`
 - After init: stay in the room. If first-minute next is `atris task claim|ready|accept`, review prints those same two spoken lines. Certified leads with the win and `atris task accept <id>`. Uncertified stays "still being checked", not needs-you. `nothing is waiting on you.` only when there is no claim/ready/accept next.
 - `--all` / `--limit` / `--group-by`: certified queue via `task reviews`. After init, `--json` also keeps that queue.
@@ -101,8 +101,8 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 **Purpose:** First-time setup checks Node.js, login state, businesses, and optional business pull.
 
-- **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
-- **Help:** `bin/atris.js:1124-1127` (`showSetupHelp`) prints setup usage without entering setup
+- **Entry point:** `commands/setup.js` (`setupAtris`)
+- **Help:** `bin/atris.js` (`showSetupHelp`) prints setup usage without entering setup
 - **Dispatch:** `bin/atris.js:1498-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands-2.test.js:1468-1479` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
@@ -115,7 +115,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
 - **Routing:** `bin/atris.js:1160-1159`
-- **Help:** `bin/atris.js:961-964` (`showActivateHelp`) prints usage before context loading or journal creation
+- **Help:** `bin/atris.js` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands-2.test.js:1499-1513` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
@@ -134,7 +134,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 - **Functions:**
 - `detectWorkspaceState()` (lines 4-80): Detect state (uninit/active/stale)
 - `loadContext()` (lines 82-138): Load relevant context
-- `hasBlockedTasks()` (`lib/state-detection.js:280`): blocked means a failed task in the task DB; when this workspace has no rows there, only the TODO.md Blocked section counts (`test/state-detection-blocked.test.js`)
+- `hasBlockedTasks()` (`lib/state-detection.js`): blocked means a failed task in the task DB; when this workspace has no rows there, only the TODO.md Blocked section counts (`test/state-detection-blocked.test.js`)
 - **States:**
 - Uninitialized: No atris/ folder
 - Active: Recent journal entries
