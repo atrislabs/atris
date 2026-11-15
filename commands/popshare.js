@@ -157,9 +157,37 @@ function calendarRow(post, extra = '') {
   return `  ${when}  ${label} ${postSnippet(post)}${extra}`;
 }
 
+/** Broken X/LinkedIn connections worth a line up top. Only platforms the
+ * person has a goal for or a scheduled post on qualify, same as the web. */
+function connectionLines(data = {}) {
+  const connections = data.connections && typeof data.connections === 'object' ? data.connections : null;
+  if (!connections) return [];
+  const goals = data.goals && typeof data.goals === 'object' ? data.goals : {};
+  const scheduled = [
+    ...(Array.isArray(data.scheduled_today) ? data.scheduled_today : []),
+    ...(Array.isArray(data.due_by_hand) ? data.due_by_hand : []),
+  ];
+  const lines = [];
+  for (const platform of ['x', 'linkedin']) {
+    const state = String(connections[platform] || 'ok');
+    if (!state || state === 'ok') continue;
+    const goal = Number(goals[platform] || 0);
+    const hasScheduled = scheduled.some((post) => post.platform === platform && post.status === 'scheduled');
+    if (!(Number.isFinite(goal) && goal > 0) && !hasScheduled) continue;
+    if (platform === 'x') {
+      lines.push(state === 'reconnect'
+        ? 'X needs a fresh connection. Reconnect it so scheduled posts go out and your tweets count.'
+        : "X isn't connected. Connect it so scheduled posts go out and your tweets count.");
+    } else {
+      lines.push("LinkedIn isn't connected. Connect it so scheduled posts go out.");
+    }
+  }
+  return lines;
+}
+
 /** The today board as a few short sections. */
 function todayText(data = {}) {
-  const lines = [];
+  const lines = [...connectionLines(data)];
   const scheduled = Array.isArray(data.scheduled_today) ? data.scheduled_today : [];
   const posted = Array.isArray(data.posted_today) ? data.posted_today : [];
   const byHand = Array.isArray(data.due_by_hand) ? data.due_by_hand : [];

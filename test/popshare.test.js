@@ -118,6 +118,48 @@ test('todayText says so when the day is empty', () => {
   assert.match(todayText({}), /nothing on the calendar today/);
 });
 
+test('todayText prints connection lines at the top', () => {
+  const text = todayText({
+    ...todayBoard,
+    connections: { x: 'reconnect', linkedin: 'missing' },
+    goals: { x: 14, linkedin: 7, blog: 1, instagram: 0, tiktok: 0 },
+  });
+  assert.match(text, /X needs a fresh connection\. Reconnect it so scheduled posts go out and your tweets count\./);
+  assert.match(text, /LinkedIn isn't connected\. Connect it so scheduled posts go out\./);
+  assert.ok(text.indexOf('X needs a fresh connection') < text.indexOf('going out'));
+  assert.ok(text.indexOf("LinkedIn isn't connected") < text.indexOf('going out'));
+});
+
+test('todayText stays quiet for ok connections or platforms without a goal', () => {
+  const ok = todayText({ ...todayBoard, connections: { x: 'ok', linkedin: 'ok' }, goals: { x: 14, linkedin: 7 } });
+  assert.doesNotMatch(ok, /fresh connection/);
+  assert.doesNotMatch(ok, /isn't connected/);
+
+  const noGoal = todayText({
+    scheduled_today: [],
+    posted_today: [],
+    due_by_hand: [],
+    failed: [],
+    check: [],
+    gaps: [],
+    connections: { linkedin: 'missing' },
+    goals: { linkedin: 0 },
+  });
+  assert.doesNotMatch(noGoal, /LinkedIn isn't connected/);
+
+  const scheduledOnly = todayText({
+    scheduled_today: [{ id: 's1', platform: 'linkedin', status: 'scheduled', text: 'words', scheduled_for: '2026-11-14T10:00:00Z' }],
+    posted_today: [],
+    due_by_hand: [],
+    failed: [],
+    check: [],
+    gaps: [],
+    connections: { linkedin: 'missing' },
+    goals: { linkedin: 0 },
+  });
+  assert.match(scheduledOnly, /LinkedIn isn't connected\. Connect it so scheduled posts go out\./);
+});
+
 test('listText groups posts by day', () => {
   const text = listText(posts);
   assert.match(text, /launch day post/);
