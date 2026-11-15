@@ -6,8 +6,11 @@
  * Popshare never writes the words; every post here is one a person saved.
  */
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
-const { apiRequestJson } = require('../utils/api');
+const { apiRequestJson, httpRequest } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const { NOT_LOGGED_IN, wantsHelp, wantsJson, tokenFrom, oneLine, printResult } = require('../lib/developer-api');
 
@@ -18,10 +21,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function showPopshareHelp(log = console.log) {
   log('usage: atris popshare [--json]                          today: what goes out, due by hand, gaps');
-  log('       atris popshare add <platform> "text" [--at "YYYY-MM-DD HH:MM"] [--idea|--draft|--ready] [--theme t] [--note n]...');
+  log('       atris popshare add <platform> "text" [--at "YYYY-MM-DD HH:MM"] [--idea|--draft|--ready] [--theme t] [--note n]... [--media f]...');
   log('       atris popshare list [--days 7]');
   log('       atris popshare schedule <id> --at "YYYY-MM-DD HH:MM"');
-  log('       atris popshare edit <id> [--text "..."] [--theme t] [--note n]... [--status s] [--platform p]');
+  log('       atris popshare edit <id> [--text "..."] [--theme t] [--note n]... [--status s] [--platform p] [--media f]... [--clear-media]');
   log('       atris popshare post <id>                            send an x or linkedin post now');
   log('       atris popshare posted <id> [--url u]                 mark a by-hand post as posted');
   log('       atris popshare rm <id>');
@@ -47,18 +50,176 @@ function localAtToIso(value) {
   return date.toISOString();
 }
 
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic', 'bmp']);
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm', 'm4v']);
+const MIME_BY_EXT = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', avif: 'image/avif', heic: 'image/heic', bmp: 'image/bmp',
+  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', m4v: 'video/mp4',
+};
+const X_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const X_VIDEO_MAX_BYTES = 512 * 1024 * 1024;
+const MEDIA_ITEM_LIMIT = 4;
+
+function fileExtension(name) {
+  const leaf = String(name || '').split(/[\\/]/).pop() || '';
+  const dot = leaf.lastIndexOf('.');
+  return dot === -1 ? '' : leaf.slice(dot + 1).toLowerCase();
+}
+
+/** image or video from the file name; null for anything else. */
+function kindForFile(name) {
+  const ext = fileExtension(name);
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+  return null;
+}
+
+/** X's rules, same as the backend: up to 4 pictures or 1 video. */
+function mediaProblem(platform, items = []) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length > MEDIA_ITEM_LIMIT) return 'a post takes up to 4 pictures or 1 video.';
+  if (list.some((item) => item && item.kind === 'video') && list.length > 1) {
+    return 'a video goes alone. remove the pictures or the video.';
+  }
+  if (platform === 'x') {
+    for (const item of list) {
+      const size = Number(item && item.size) || 0;
+      if (item && item.kind === 'image' && size > X_IMAGE_MAX_BYTES) {
+        return 'X pictures are 5 MB or smaller.';
+      }
+      if (item && item.kind === 'video' && size > X_VIDEO_MAX_BYTES) {
+        return 'X videos are 512 MB or smaller.';
+      }
+    }
+  }
+  return null;
+}
+
+/** "[1 picture]" / "[video]" next to a row that carries files. */
+function mediaTag(post) {
+  const media = post && Array.isArray(post.media) ? post.media : [];
+  if (!media.length) return '';
+  if (media.some((item) => item && item.kind === 'video')) return ' [video]';
+  return ` [${media.length} picture${media.length === 1 ? '' : 's'}]`;
+}
+
+/** The media array a save sends: path, kind, alt, size only. */
+function mediaItems(list = []) {
+  return (Array.isArray(list) ? list : []).map((item) => {
+    const clean = { path: String(item.path || ''), kind: item.kind, alt: String(item.alt || '') };
+    if (Number.isFinite(Number(item.size)) && Number(item.size) > 0) clean.size = Number(item.size);
+    return clean;
+  }).filter((item) => item.path);
+}
+
+/** A clean leaf name for files/popshare/<folder>/... */
+function mediaFileName(name) {
+  const leaf = String(name || 'file').split(/[\\/]/).pop() || 'file';
+  const cleaned = leaf.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'file';
+  return `${Date.now().toString(36)}-${cleaned}`;
+}
+
+/** multipart/form-data body for the bucket POST: every signed field, file last. */
+function multipartBody(fields, filePath, fileName) {
+  const boundary = `----atris${crypto.randomBytes(8).toString('hex')}`;
+  const chunks = [];
+  for (const [key, value] of Object.entries(fields || {})) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`));
+  }
+  const mime = MIME_BY_EXT[fileExtension(fileName)] || 'application/octet-stream';
+  chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${mime}\r\n\r\n`));
+  chunks.push(fs.readFileSync(filePath));
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { body: Buffer.concat(chunks), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/**
+ * Upload one local file to the person's Atris Memory: ask for a signed
+ * form, POST the bytes straight to the bucket, confirm with the token.
+ * Returns { item } for the post's media list or { error }.
+ */
+async function uploadPostMedia(filePath, folder, deps = {}) {
+  const request = deps.apiRequestJson || apiRequestJson;
+  const rawHttp = deps.httpRequest || httpRequest;
+  const token = deps.token;
+  const fileName = path.basename(String(filePath || ''));
+  const kind = kindForFile(fileName);
+  if (!kind) return { error: `${fileName || 'that file'} is not a picture or a video.` };
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    return { error: `cannot read ${fileName || filePath}` };
+  }
+  if (!stat.isFile()) return { error: `${fileName} is not a file.` };
+  const relPath = `files/popshare/${folder}/${mediaFileName(fileName)}`;
+  const contentType = MIME_BY_EXT[fileExtension(fileName)] || 'application/octet-stream';
+
+  const start = await request('/memory/upload', {
+    method: 'POST',
+    token,
+    body: { path: relPath, size: stat.size, content_type: contentType },
+    retries: 0,
+  });
+  if (!start || !start.ok) {
+    const detail = start && start.data && (start.data.detail || start.data.error);
+    return { error: (typeof detail === 'string' && detail.trim()) || 'could not start the upload.' };
+  }
+  const signed = start.data || {};
+  if (!signed.url || !signed.fields || !signed.token) {
+    return { error: 'storage did not return an upload link.' };
+  }
+
+  const { body, contentType: multipartType } = multipartBody(signed.fields, filePath, fileName);
+  let put;
+  try {
+    put = await rawHttp(signed.url, {
+      method: 'POST',
+      headers: { 'Content-Type': multipartType },
+      body,
+      timeoutMs: 300000,
+    });
+  } catch (error) {
+    return { error: `the file did not reach storage: ${oneLine(error && error.message)}` };
+  }
+  if (!put || put.status < 200 || put.status >= 300) {
+    return { error: 'the file did not reach storage. try again.' };
+  }
+
+  const done = await request('/memory/upload/done', {
+    method: 'POST',
+    token,
+    body: { token: signed.token },
+    retries: 0,
+  });
+  if (!done || !done.ok) {
+    const detail = done && done.data && (done.data.detail || done.data.error);
+    return { error: (typeof detail === 'string' && detail.trim()) || 'the upload did not finish. try again.' };
+  }
+  return { item: { path: relPath, kind, alt: '', size: stat.size } };
+}
+
+/** Today's local date as the files/popshare folder for adds. */
+function todayFolder() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** Pull `add <platform> "text" [flags]` apart into a create body. */
 function parseAddArgs(args = []) {
-  const flags = { at: undefined, theme: undefined, notes: [], status: null };
+  const flags = { at: undefined, theme: undefined, notes: [], status: null, media: [] };
   const positional = [];
   const rest = args.filter((arg) => arg !== '--json');
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (arg === '--at' || arg === '--theme' || arg === '--note') {
+    if (arg === '--at' || arg === '--theme' || arg === '--note' || arg === '--media') {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith('--')) return { error: `${arg} needs a value` };
       if (arg === '--at') flags.at = value;
       else if (arg === '--theme') flags.theme = value;
+      else if (arg === '--media') flags.media.push(value);
       else flags.notes.push(value);
       i += 1;
       continue;
@@ -92,6 +253,7 @@ function parseAddArgs(args = []) {
     scheduledFor,
     theme: flags.theme,
     notes: flags.notes,
+    media: flags.media,
   };
 }
 
@@ -157,7 +319,7 @@ function gapLine(gap = {}) {
 function calendarRow(post, extra = '') {
   const when = localTime(post.scheduled_for || post.posted_at || post.created_at);
   const label = platformName(post.platform).padEnd(9);
-  return `  ${when}  ${label} ${postSnippet(post)}${extra}`;
+  return `  ${when}  ${label} ${postSnippet(post)}${mediaTag(post)}${extra}`;
 }
 
 /** Broken X/LinkedIn connections worth a line up top. Only platforms the
@@ -418,6 +580,7 @@ async function popshareCommand(args = [], deps = {}) {
   const token = tokenFrom((deps.loadCredentials || loadCredentials)());
   if (!token) return fail(NOT_LOGGED_IN);
   const request = deps.apiRequestJson || apiRequestJson;
+  const rawHttp = deps.httpRequest || httpRequest;
 
   // --business scopes every call to one workspace; --json is already read.
   let businessId = null;
@@ -495,6 +658,17 @@ async function popshareCommand(args = [], deps = {}) {
       };
       if (parsed.theme) body.theme = parsed.theme;
       if (parsed.scheduledFor) body.scheduled_for = parsed.scheduledFor;
+      if (parsed.media && parsed.media.length) {
+        const uploads = [];
+        for (const file of parsed.media) {
+          const up = await uploadPostMedia(file, todayFolder(), { apiRequestJson: request, httpRequest: rawHttp, token });
+          if (up.error) return fail(up.error);
+          uploads.push(up.item);
+        }
+        const problem = mediaProblem(parsed.platform, uploads);
+        if (problem) return fail(problem);
+        body.media = uploads;
+      }
       const got = await call('/popshare/posts', { method: 'POST', body, retries: 0 });
       if (got.error) return fail(got.error, { status: got.status });
       const post = got.data || {};
@@ -553,10 +727,12 @@ async function popshareCommand(args = [], deps = {}) {
       if (!idInput) return fail('say which post: atris popshare edit <id> --text "..."');
       const fields = {};
       const addedNotes = [];
+      const mediaFiles = [];
+      let clearMedia = false;
       const editArgs = rest.slice(1).filter((arg) => arg !== '--json');
       for (let i = 0; i < editArgs.length; i += 1) {
         const arg = editArgs[i];
-        if (['--text', '--theme', '--status', '--platform'].includes(arg)) {
+        if (['--text', '--theme', '--status', '--platform', '--media'].includes(arg)) {
           const value = editArgs[i + 1];
           if (value === undefined || value.startsWith('--')) return fail(`${arg} needs a value`);
           const key = arg.slice(2);
@@ -566,8 +742,13 @@ async function popshareCommand(args = [], deps = {}) {
           if (key === 'platform' && !PLATFORMS.includes(value)) {
             return fail(`platform must be one of ${PLATFORMS.join(', ')}`);
           }
-          fields[key] = value;
+          if (key === 'media') mediaFiles.push(value);
+          else fields[key] = value;
           i += 1;
+          continue;
+        }
+        if (arg === '--clear-media') {
+          clearMedia = true;
           continue;
         }
         if (arg === '--note') {
@@ -578,16 +759,28 @@ async function popshareCommand(args = [], deps = {}) {
           continue;
         }
         if (arg.startsWith('--')) return fail(`unknown flag ${arg}`);
-        return fail(`unexpected "${arg}". flags only after the id: --text, --theme, --note, --status, --platform`);
+        return fail(`unexpected "${arg}". flags only after the id: --text, --theme, --note, --status, --platform, --media, --clear-media`);
       }
-      if (!Object.keys(fields).length && !addedNotes.length) {
-        return fail('say what to change: --text, --theme, --note, --status or --platform');
+      if (!Object.keys(fields).length && !addedNotes.length && !mediaFiles.length && !clearMedia) {
+        return fail('say what to change: --text, --theme, --note, --status, --platform, --media or --clear-media');
       }
       const resolved = await resolveId(idInput);
       if (resolved.error) return failResolution(resolved);
       if (addedNotes.length) {
         const existing = resolved.post || {};
         fields.notes = [...(Array.isArray(existing.notes) ? existing.notes : []), ...addedNotes];
+      }
+      if (mediaFiles.length || clearMedia) {
+        const platform = fields.platform || (resolved.post && resolved.post.platform) || '';
+        let items = clearMedia ? [] : mediaItems((resolved.post && resolved.post.media) || []);
+        for (const file of mediaFiles) {
+          const up = await uploadPostMedia(file, resolved.id, { apiRequestJson: request, httpRequest: rawHttp, token });
+          if (up.error) return fail(up.error);
+          items.push(up.item);
+        }
+        const problem = mediaProblem(platform, items);
+        if (problem) return fail(problem);
+        fields.media = items;
       }
       const got = await call(`/popshare/posts/${encodeURIComponent(resolved.id)}`, {
         method: 'PATCH',
@@ -778,6 +971,13 @@ module.exports = {
   todayText,
   listText,
   scoreText,
+  kindForFile,
+  mediaProblem,
+  mediaTag,
+  mediaItems,
+  mediaFileName,
+  multipartBody,
+  uploadPostMedia,
   parseInterviewArgs,
   sessionOpenQuestion,
   interviewContextText,

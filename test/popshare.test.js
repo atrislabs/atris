@@ -2,6 +2,9 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   popshareCommand,
   localAtToIso,
@@ -14,6 +17,13 @@ const {
   sessionOpenQuestion,
   interviewContextText,
   interviewDoneText,
+  kindForFile,
+  mediaProblem,
+  mediaTag,
+  mediaItems,
+  mediaFileName,
+  multipartBody,
+  uploadPostMedia,
 } = require('../commands/popshare');
 
 const posts = [
@@ -35,7 +45,7 @@ const todayBoard = {
   ],
 };
 
-async function run(args, { result, token = 'tok', routes, ask } = {}) {
+async function run(args, { result, token = 'tok', routes, ask, httpRequest } = {}) {
   const out = [];
   const err = [];
   const calls = [];
@@ -54,6 +64,7 @@ async function run(args, { result, token = 'tok', routes, ask } = {}) {
       }
       return result || { ok: true, status: 200, data: {} };
     },
+    ...(httpRequest ? { httpRequest } : {}),
     ...(ask ? { ask } : {}),
     timeZone: 'UTC',
   });
@@ -563,4 +574,126 @@ test('interview api errors surface plainly', async () => {
   });
   assert.strictEqual(code, 1);
   assert.match(err, /already went out/);
+});
+
+test('parseAddArgs collects repeatable --media files', () => {
+  const parsed = parseAddArgs(['x', 'hi', '--media', 'a.png', '--media', 'clip.mp4']);
+  assert.deepStrictEqual(parsed.media, ['a.png', 'clip.mp4']);
+  assert.strictEqual(parseAddArgs(['x', 'hi']).media.length, 0);
+  assert.ok(parseAddArgs(['x', 'hi', '--media']).error);
+});
+
+test('mediaTag renders picture and video markers on rows', () => {
+  assert.strictEqual(mediaTag({ media: [{ kind: 'image' }] }), ' [1 picture]');
+  assert.strictEqual(mediaTag({ media: [{ kind: 'image' }, { kind: 'image' }, { kind: 'image' }] }), ' [3 pictures]');
+  assert.strictEqual(mediaTag({ media: [{ kind: 'video' }] }), ' [video]');
+  assert.strictEqual(mediaTag({ media: [] }), '');
+  assert.strictEqual(mediaTag({}), '');
+  const withMedia = { ...posts[0], media: [{ path: 'files/popshare/x/a.png', kind: 'image', alt: '' }] };
+  assert.match(todayText({ ...todayBoard, scheduled_today: [withMedia] }), /\[1 picture\]/);
+  assert.match(listText([withMedia]), /\[1 picture\]/);
+});
+
+test('mediaProblem mirrors the backend rules', () => {
+  const pics = Array.from({ length: 4 }, () => ({ kind: 'image', size: 10 }));
+  assert.strictEqual(mediaProblem('x', pics), null);
+  assert.ok(mediaProblem('x', [...pics, { kind: 'image', size: 1 }]));
+  assert.ok(mediaProblem('x', [{ kind: 'video', size: 1 }, { kind: 'image', size: 1 }]));
+  assert.ok(mediaProblem('x', [{ kind: 'image', size: 6 * 1024 * 1024 }]));
+  assert.strictEqual(mediaProblem('instagram', [{ kind: 'image', size: 6 * 1024 * 1024 }]), null);
+  assert.strictEqual(mediaProblem('x', [{ kind: 'video', size: 10 }]), null);
+});
+
+test('kindForFile and mediaItems clean up names and payloads', () => {
+  assert.strictEqual(kindForFile('pic.PNG'), 'image');
+  assert.strictEqual(kindForFile('clip.mov'), 'video');
+  assert.strictEqual(kindForFile('notes.txt'), null);
+  assert.strictEqual(mediaFileName('../My Pic (1).png').includes('/'), false);
+  assert.deepStrictEqual(
+    mediaItems([{ path: 'files/popshare/d/a.png', kind: 'image', alt: 'hi', size: 12, link: 'x' }]),
+    [{ path: 'files/popshare/d/a.png', kind: 'image', alt: 'hi', size: 12 }],
+  );
+});
+
+test('multipartBody puts every signed field before the file', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'popshare-media-'));
+  const file = path.join(dir, 'a.png');
+  fs.writeFileSync(file, Buffer.from([1, 2, 3]));
+  const { body, contentType } = multipartBody({ key: 'k', policy: 'p' }, file, 'a.png');
+  const text = body.toString('latin1');
+  assert.ok(contentType.startsWith('multipart/form-data; boundary='));
+  assert.ok(text.indexOf('name="key"') < text.indexOf('name="file"'));
+  assert.ok(text.includes('filename="a.png"'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('uploadPostMedia runs start, bucket POST, then done', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'popshare-media-'));
+  const file = path.join(dir, 'pic.png');
+  fs.writeFileSync(file, Buffer.from([9, 9, 9]));
+  const apiCalls = [];
+  const httpCalls = [];
+  const result = await uploadPostMedia(file, 'post-1', {
+    token: 'tok',
+    apiRequestJson: async (p, options) => {
+      apiCalls.push({ p, options });
+      if (p === '/memory/upload') {
+        return { ok: true, status: 200, data: { url: 'https://bucket.example/up', fields: { key: 'files/popshare/post-1/x.png' }, token: 'up-tok' } };
+      }
+      if (p === '/memory/upload/done') return { ok: true, status: 200, data: {} };
+      return { ok: false, status: 404, data: {} };
+    },
+    httpRequest: async (url, options) => {
+      httpCalls.push({ url, options });
+      return { status: 204, headers: {}, body: Buffer.alloc(0) };
+    },
+  });
+  assert.ok(result.item, JSON.stringify(result));
+  assert.strictEqual(result.item.kind, 'image');
+  assert.strictEqual(result.item.size, 3);
+  assert.match(result.item.path, /^files\/popshare\/post-1\/.+-pic\.png$/);
+  assert.deepStrictEqual(apiCalls.map((c) => c.p), ['/memory/upload', '/memory/upload/done']);
+  assert.strictEqual(apiCalls[0].options.body.path, result.item.path);
+  assert.strictEqual(apiCalls[1].options.body.token, 'up-tok');
+  assert.strictEqual(httpCalls.length, 1);
+  assert.strictEqual(httpCalls[0].url, 'https://bucket.example/up');
+  assert.match(httpCalls[0].options.headers['Content-Type'], /^multipart\/form-data; boundary=/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('add --media uploads the file then saves media on the post', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'popshare-media-'));
+  const file = path.join(dir, 'launch.png');
+  fs.writeFileSync(file, Buffer.from([1, 2, 3, 4]));
+  let created = null;
+  const { code, calls } = await run(['add', 'x', 'launch words', '--media', file], {
+    routes: [
+      ['/memory/upload', (p, options) => options && options.method === 'POST' && !p.endsWith('/done')
+        ? { ok: true, status: 200, data: { url: 'https://bucket.example/up', fields: { key: 'k' }, token: 'up-tok' } }
+        : { ok: true, status: 200, data: {} }],
+      ['/popshare/posts', { ok: true, status: 200, data: { id: 'aaaa1111bbbb', platform: 'x', status: 'draft', text: 'launch words' } }],
+    ],
+    httpRequest: async () => ({ status: 204, headers: {}, body: Buffer.alloc(0) }),
+  });
+  assert.strictEqual(code, 0);
+  const postCall = calls.find((call) => call.path === '/popshare/posts' && call.options.method === 'POST');
+  assert.ok(postCall, 'expected a create call');
+  created = postCall.options.body;
+  assert.strictEqual(created.media.length, 1);
+  assert.strictEqual(created.media[0].kind, 'image');
+  assert.match(created.media[0].path, /^files\/popshare\/.+\/.*-launch\.png$/);
+  assert.strictEqual(created.media[0].size, 4);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('edit --clear-media sends an empty media list', async () => {
+  const withMedia = { ...posts[0], media: [{ path: 'files/popshare/x/a.png', kind: 'image', alt: '' }] };
+  const routes = [
+    ['/popshare/posts?', { ok: true, status: 200, data: { posts: [withMedia] } }],
+    ['/popshare/posts/aaaa1111bbbb', { ok: true, status: 200, data: withMedia }],
+  ];
+  const { code, calls } = await run(['edit', 'aaaa1111bbbb', '--clear-media'], { routes });
+  assert.strictEqual(code, 0);
+  const patch = calls.find((call) => call.path === '/popshare/posts/aaaa1111bbbb' && call.options.method === 'PATCH');
+  assert.deepStrictEqual(patch.options.body.media, []);
 });
