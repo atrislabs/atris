@@ -9752,13 +9752,15 @@ function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
 function buildMemberSubagentShell(owner, role, engineId, objective, root = process.cwd()) {
   const cleanObjective = compactSentence(objective || `Advance ${owner} roadmap`, 160);
   const verify = inferMemberRunVerifier(cleanObjective, [], root);
+  const feedTalk = require('../lib/feed-core').talkBriefLines(root, owner);
   return {
     role: `${owner} (${role || 'Team Member'})`,
     member: owner,
     engine: engineId || 'claude',
     objective: cleanObjective,
     verify,
-    prompt: `You are ${owner} (${role || 'Team Member'}). Read atris/team/${owner}/MEMBER.md, MISSION.md, goals.json, and skills/. Execute one bounded slice for: "${cleanObjective}". Run verify: ${verify}. Report 3 lines: Found, Fixed, Next push.`,
+    // The person waiting on this member's answer in the feed comes first.
+    prompt: `${feedTalk.length ? `${feedTalk.join('\n')}\n\n` : ''}You are ${owner} (${role || 'Team Member'}). Read atris/team/${owner}/MEMBER.md, MISSION.md, goals.json, and skills/. Execute one bounded slice for: "${cleanObjective}". Run verify: ${verify}. Report 3 lines: Found, Fixed, Next push.`,
     shell_command: `atris member run ${owner} ${JSON.stringify(cleanObjective)} --engine ${engineId || 'claude'} --ignite`,
   };
 }

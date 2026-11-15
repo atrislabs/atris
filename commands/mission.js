@@ -8130,8 +8130,11 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ]
     : [];
   const preloadedContextLines = buildPreloadedMemberContextLines(mission, cwd);
+  // The person is waiting on this member's answer in the feed: that comes first.
+  const feedTalkLines = require('../lib/feed-core').talkBriefLines(cwd, mission.owner);
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
+    ...(feedTalkLines.length ? ['', ...feedTalkLines] : []),
     ...pingLines,
     ``,
     missionObjectiveLine(mission.objective),
