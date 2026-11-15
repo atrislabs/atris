@@ -22,7 +22,7 @@ function askedBranches(args) {
 function pullRequestAnswer(args, prsFor = () => []) {
   const repository = {};
   for (const [alias, branch] of Object.entries(askedBranches(args))) {
-    repository[alias] = { nodes: prsFor(branch) || [] };
+    repository[alias] = { pageInfo: { hasNextPage: false }, nodes: prsFor(branch) || [] };
   }
   return { ok: true, stdout: JSON.stringify({ data: { repository } }), stderr: '' };
 }
@@ -34,7 +34,7 @@ function pr(fields = {}) {
 // A shell gh stub answer for runs that ask about at most `n` branches.
 function emptyAnswerJson(n = 20) {
   const repository = {};
-  for (let i = 0; i < n; i += 1) repository[`b${i}`] = { nodes: [] };
+  for (let i = 0; i < n; i += 1) repository[`b${i}`] = { pageInfo: { hasNextPage: false }, nodes: [] };
   return JSON.stringify({ data: { repository } });
 }
 

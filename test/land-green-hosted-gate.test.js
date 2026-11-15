@@ -128,7 +128,9 @@ test('behind a required merge queue the local suite is never started: five branc
     assert.equal(result.local_check.local, false);
     assert.deepEqual(result.local_check.checks, ['test']);
     assert.equal(gh.calls.filter((c) => c[0] === 'api' && !isPullRequestLookup(c)).length, 1, 'the guard is read once per run');
-    assert.equal(gh.calls.filter(isPullRequestLookup).length, 1, 'the pull requests of all five branches are read in one call');
+    // One read for all five, then one more each just before its push.
+    assert.equal(gh.calls.filter(isPullRequestLookup).length, 1 + 5, 'the pull requests of all five branches are read in one call, then once each before the push');
+    assert.equal(gh.calls.filter(isPullRequestLookup)[0].filter((a) => /^h\d+=/.test(a)).length, 5, 'the first read asks for all five');
     const create = gh.calls.find((c) => c[1] === 'create');
     assert.match(create[create.indexOf('--body') + 1], /hosted checks/);
     assert.doesNotMatch(create[create.indexOf('--body') + 1], /checked with/);

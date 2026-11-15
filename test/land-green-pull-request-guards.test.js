@@ -64,14 +64,14 @@ function branchWith(root, name, file, text = `${name}\n`, when = daysAgo(3)) {
 
 // A gh that answers the one pull request lookup from `prs` and otherwise
 // behaves like a repo with no open pull request on the branch.
-function fakeGh(prs = {}, { lookup } = {}) {
+function fakeGh(prs = {}, { lookup, list } = {}) {
   const calls = [];
   let next = 50;
   const runGh = (args) => {
     calls.push(args);
     if (isPullRequestLookup(args)) return lookup ? lookup(args) : pullRequestAnswer(args, (branch) => prs[branch] || []);
     if (args[0] === 'api') return { ok: true, stdout: '[]', stderr: '' };
-    if (args[0] === 'pr' && args[1] === 'list') return { ok: true, stdout: '[]', stderr: '' };
+    if (args[0] === 'pr' && args[1] === 'list') return { ok: true, stdout: JSON.stringify(list ? list(args[args.indexOf('--head') + 1]) : []), stderr: '' };
     if (args[0] === 'pr' && args[1] === 'create') { next += 1; return { ok: true, stdout: `https://github.com/acme/repo/pull/${next}`, stderr: '' }; }
     if (args[0] === 'pr' && args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
     return { ok: false, stdout: '', stderr: 'unexpected gh call' };
@@ -106,7 +106,7 @@ test('closed means no: a branch whose pull request was closed without merging is
     const v = result.verdicts.find((x) => x.branch === 'feat/rejected');
     assert.equal(v.action, 'skipped', JSON.stringify(v));
     assert.equal(v.reason, 'pull_request_closed');
-    assert.match(v.detail, /#12 was closed without merging and the branch has not moved since/);
+    assert.match(v.detail, /#12 was closed without merging and the branch has no new work since/);
     assert.equal(suites, 0, 'no check ran');
     assert.deepEqual(writes(gh), [], 'no new pull request and no merge');
     assert.equal(spawnSync('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/rejected'], { cwd: bare }).status, 1, 'nothing pushed');
@@ -277,6 +277,276 @@ test('cost stays flat: 120 branches are read in two gh calls, not 120', () => {
     assert.ok(result.verdicts.every((v) => v.reason === 'pull_request_closed'), 'every branch was read');
     assert.equal(gh.calls.filter(isPullRequestLookup).length, 2);
     assert.equal(gh.calls.filter((c) => c[0] === 'pr').length, 0, 'no per-branch pull request call');
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+// Review round one. Each test below failed on the first version of these guards.
+
+function moveMaster(root, file = 'master-move.txt', text = 'moved\n') {
+  fs.writeFileSync(path.join(root, file), text);
+  const sha = commitAll(root, `master moves ${file}`, daysAgo(2));
+  git(root, ['push', '-q', 'origin', 'master']);
+  return sha;
+}
+
+// A second clone: a builder on another computer, or GitHub's own buttons.
+function otherClone(bare) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-guards-clone-'));
+  git(dir, ['clone', '-q', bare, '.']);
+  git(dir, ['config', 'user.name', 'Elsewhere']);
+  git(dir, ['config', 'user.email', 'else@example.com']);
+  return dir;
+}
+
+const at = (when) => ({ GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when });
+const originTip = (bare, branch) => {
+  const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: bare, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '';
+};
+
+test('closed stays closed after a catch-up: merging the base in is not new work, and its catch-up job closes', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const tip = branchWith(root, 'feat/shut', 'shut.txt');
+    git(root, ['push', '-q', 'origin', 'feat/shut']);
+    const taskDb = require('../lib/task-db');
+    const { fileConflictTask } = require('../lib/land-green');
+    const job = fileConflictTask(root, { branch: 'feat/shut', base: 'master', head: tip, files: ['shared.txt'] });
+    const prs = { 'feat/shut': [pr({ number: 5118, state: 'CLOSED', headRefName: 'feat/shut', headRefOid: tip })] };
+
+    // The run after the close closes the job nobody wants.
+    const first = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', localCheck: true, runGh: fakeGh(prs).runGh, runVerifyFn: green,
+      recordQueued: () => {}, readQueued: () => null, readEntries: () => ({}), runCli: noFlags, fileConflictTask: noTasks, stateFile: null,
+    }).verdicts[0];
+    assert.equal(first.reason, 'pull_request_closed', JSON.stringify(first));
+    assert.deepEqual(first.closed_jobs, [job.id]);
+    const row = taskDb.open().prepare('SELECT status, metadata FROM tasks WHERE id = ?').get(job.id);
+    assert.equal(row.status, 'archived');
+    assert.match(JSON.parse(row.metadata).archived_reason, /pull request #5118 for feat\/shut was closed without merging/);
+
+    // A builder catches it up anyway: merges master in and pushes.
+    moveMaster(root);
+    git(root, ['checkout', '-q', 'feat/shut']);
+    git(root, ['merge', '-q', '--no-ff', 'master', '-m', 'Merge master into feat/shut'], at(daysAgo(2)));
+    git(root, ['push', '-q', 'origin', 'feat/shut']);
+    git(root, ['checkout', '-q', 'master']);
+    const gh = fakeGh(prs);
+    const v = run(root, gh).verdicts[0];
+    assert.equal(v.reason, 'pull_request_closed', JSON.stringify(v));
+    assert.deepEqual(writes(gh), [], 'no fresh pull request, no auto-merge');
+
+    // A rebase onto master copies the same commit: still no new work.
+    git(root, ['checkout', '-q', '-b', 'feat/shut-rebased', 'master']);
+    git(root, ['cherry-pick', tip], at(daysAgo(2)));
+    git(root, ['branch', '-f', 'feat/shut', 'HEAD']);
+    git(root, ['checkout', '-q', 'master']);
+    git(root, ['branch', '-D', 'feat/shut-rebased']);
+    const rebased = run(root, fakeGh(prs)).verdicts[0];
+    assert.equal(rebased.reason, 'pull_request_closed', JSON.stringify(rebased));
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('closed is read against what github has: heads made on github, pruned heads, and pushes from elsewhere', () => {
+  const { root, bare } = makeRepo();
+  const clones = [];
+  try {
+    // a. GitHub's Update branch made the closed head; this clone never fetched it.
+    branchWith(root, 'feat/webfix', 'w.txt');
+    git(root, ['push', '-q', 'origin', 'feat/webfix']);
+    moveMaster(root);
+    const web = otherClone(bare); clones.push(web);
+    git(web, ['checkout', '-q', 'feat/webfix']);
+    git(web, ['merge', '-q', '--no-ff', 'origin/master', '-m', 'Merge branch master into feat/webfix'], at(daysAgo(2)));
+    const webHead = git(web, ['rev-parse', 'HEAD']);
+    git(web, ['push', '-q', 'origin', 'feat/webfix']);
+    git(bare, ['update-ref', 'refs/pull/21/head', webHead]);
+    assert.notEqual(spawnSync('git', ['cat-file', '-e', `${webHead}^{commit}`], { cwd: root }).status, 0, 'the clone lacks the head');
+
+    // b. Closed at the lander's own catch-up, branch deleted on GitHub, pruned and gc'd here.
+    branchWith(root, 'feat/gone', 'g.txt');
+    moveMaster(root, 'master-move-2.txt');
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-guards-scratch-'));
+    fs.rmdirSync(scratch);
+    git(root, ['worktree', 'add', '-q', '--detach', scratch, 'feat/gone']);
+    git(scratch, ['merge', '-q', '--no-ff', 'master', '-m', 'land: catch up'], at(daysAgo(2)));
+    const goneHead = git(scratch, ['rev-parse', 'HEAD']);
+    git(root, ['push', '-q', 'origin', `${goneHead}:refs/pull/31/head`]);
+    git(root, ['worktree', 'remove', '--force', scratch]);
+    git(root, ['fetch', '-q', '--prune', 'origin']);
+    git(root, ['reflog', 'expire', '--expire=now', '--all']);
+    git(root, ['gc', '-q', '--prune=now']);
+    assert.notEqual(spawnSync('git', ['cat-file', '-e', `${goneHead}^{commit}`], { cwd: root }).status, 0, 'the clone lost the head');
+
+    // c. Closed at the tip, then answered from another computer: that is new work.
+    const laterTip = branchWith(root, 'feat/later', 'l.txt');
+    git(root, ['push', '-q', 'origin', 'feat/later']);
+    const away = otherClone(bare); clones.push(away);
+    git(away, ['checkout', '-q', 'feat/later']);
+    fs.writeFileSync(path.join(away, 'l2.txt'), 'answer\n');
+    commitAll(away, 'answer the review from elsewhere');
+    git(away, ['push', '-q', 'origin', 'feat/later']);
+
+    // d. Squash merged, then more work pushed from another computer: not done.
+    // Two commits, so git cherry cannot match the squash.
+    branchWith(root, 'feat/sq', 'sq.txt');
+    git(root, ['checkout', '-q', 'feat/sq']);
+    fs.writeFileSync(path.join(root, 'sq1.txt'), 'half\n');
+    const sqTip = commitAll(root, 'second half');
+    git(root, ['checkout', '-q', 'master']);
+    git(root, ['push', '-q', 'origin', 'feat/sq']);
+    fs.writeFileSync(path.join(root, 'sq.txt'), 'feat/sq\n');
+    fs.writeFileSync(path.join(root, 'sq1.txt'), 'half\n');
+    commitAll(root, 'feat/sq (#61)', daysAgo(2));
+    git(root, ['push', '-q', 'origin', 'master']);
+    git(away, ['fetch', '-q', 'origin']);
+    git(away, ['checkout', '-q', 'feat/sq']);
+    fs.writeFileSync(path.join(away, 'sq2.txt'), 'more\n');
+    commitAll(away, 'more after the squash');
+    git(away, ['push', '-q', 'origin', 'feat/sq']);
+
+    const prs = {
+      'feat/webfix': [pr({ number: 21, state: 'CLOSED', headRefName: 'feat/webfix', headRefOid: webHead })],
+      'feat/gone': [pr({ number: 31, state: 'CLOSED', headRefName: 'feat/gone', headRefOid: goneHead })],
+      'feat/later': [pr({ number: 41, state: 'CLOSED', headRefName: 'feat/later', headRefOid: laterTip })],
+      'feat/sq': [pr({ number: 61, state: 'MERGED', headRefName: 'feat/sq', headRefOid: sqTip })],
+    };
+    const before = { webfix: originTip(bare, 'feat/webfix'), gone: originTip(bare, 'feat/gone') };
+    const gh = fakeGh(prs);
+    const result = run(root, gh, { limit: 10, localSuites: 10 });
+    const by = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    assert.equal(by['feat/webfix'].reason, 'pull_request_closed', JSON.stringify(by['feat/webfix']));
+    assert.equal(by['feat/gone'].reason, 'pull_request_closed', JSON.stringify(by['feat/gone']));
+    assert.equal(originTip(bare, 'feat/webfix'), before.webfix, 'nothing pushed');
+    assert.equal(originTip(bare, 'feat/gone'), before.gone, 'the deleted branch is not pushed again');
+    assert.equal(by['feat/later'].action, 'queued', JSON.stringify(by['feat/later']));
+    assert.deepEqual(result.merged_by_pull_request, [], 'new work after a squash is not merged');
+    assert.equal(by['feat/sq'].action, 'queued', JSON.stringify(by['feat/sq']));
+
+    // A closed head that cannot be fetched is could-not-tell, not moved.
+    git(bare, ['update-ref', '-d', 'refs/pull/31/head']);
+    fs.rmSync(path.join(root, '.git', 'FETCH_HEAD'), { force: true });
+    git(root, ['reflog', 'expire', '--expire=now', '--all']);
+    git(root, ['gc', '-q', '--prune=now']);
+    const blind = run(root, fakeGh({ 'feat/gone': prs['feat/gone'] }), { limit: 10, localSuites: 10 }).verdicts.find((v) => v.branch === 'feat/gone');
+    assert.equal(blind.action, 'unknown', JSON.stringify(blind));
+    assert.equal(blind.reason, 'pull_request_unreadable');
+  } finally {
+    cleanup(root, bare, ...clones);
+  }
+});
+
+test('a close or a hold during the local check stops the push and the auto-merge', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const tip = branchWith(root, 'feat/race', 'race.txt');
+    const prs = { 'feat/race': [] };
+    let gh = fakeGh(prs);
+    // Opened by the lander earlier, then closed by a person mid-check.
+    const closing = () => { prs['feat/race'] = [pr({ number: 70, state: 'CLOSED', headRefName: 'feat/race', headRefOid: tip })]; return green(); };
+    const closed = run(root, gh, { runVerifyFn: closing }).verdicts[0];
+    assert.equal(closed.reason, 'pull_request_closed', JSON.stringify(closed));
+    assert.match(closed.detail, /read again just before the push/);
+    assert.deepEqual(writes(gh), []);
+    assert.equal(originTip(bare, 'feat/race'), '', 'nothing pushed');
+
+    // An open pull request gets needs-human mid-check.
+    prs['feat/race'] = [pr({ number: 71, headRefName: 'feat/race', headRefOid: tip })];
+    gh = fakeGh(prs);
+    const holding = () => { prs['feat/race'] = [pr({ number: 71, headRefName: 'feat/race', headRefOid: tip, labels: { nodes: [{ name: 'needs-human' }] } })]; return green(); };
+    const held = run(root, gh, { runVerifyFn: holding }).verdicts[0];
+    assert.equal(held.reason, 'pull_request_held', JSON.stringify(held));
+    assert.deepEqual(writes(gh), []);
+
+    // The label lands in the seconds after the second read: the last list still sees it.
+    prs['feat/race'] = [pr({ number: 72, headRefName: 'feat/race', headRefOid: tip })];
+    gh = fakeGh(prs, { list: () => [{ number: 72, headRefName: 'feat/race', baseRefName: 'master', isCrossRepository: false, url: 'u', isDraft: false, labels: [{ name: 'do-not-merge' }] }] });
+    const late = run(root, gh).verdicts[0];
+    assert.equal(late.reason, 'pull_request_held', JSON.stringify(late));
+    assert.equal(gh.calls.filter((c) => c[0] === 'pr' && c[1] === 'merge').length, 0, 'no auto-merge');
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('only pull requests into the base say closed; any open draft or held one holds; a reopened one goes', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const tips = {
+      'feat/other-base': branchWith(root, 'feat/other-base', 'o.txt'),
+      'feat/reopened': branchWith(root, 'feat/reopened', 'r.txt'),
+      'feat/draft-dev': branchWith(root, 'feat/draft-dev', 'd.txt'),
+    };
+    const prs = {
+      'feat/other-base': [
+        pr({ number: 7, headRefName: 'feat/other-base', headRefOid: tips['feat/other-base'], baseRefName: 'develop' }),
+        pr({ number: 6, state: 'CLOSED', headRefName: 'feat/other-base', headRefOid: tips['feat/other-base'] }),
+      ],
+      'feat/reopened': [
+        pr({ number: 12, state: 'CLOSED', headRefName: 'feat/reopened', headRefOid: tips['feat/reopened'] }),
+        pr({ number: 10, headRefName: 'feat/reopened', headRefOid: tips['feat/reopened'] }),
+      ],
+      'feat/draft-dev': [pr({ number: 14, isDraft: true, headRefName: 'feat/draft-dev', headRefOid: tips['feat/draft-dev'], baseRefName: 'develop' })],
+    };
+    const gh = fakeGh(prs, { list: (branch) => (branch === 'feat/reopened' ? [{ number: 10, headRefName: branch, baseRefName: 'master', isCrossRepository: false, url: 'https://github.com/acme/repo/pull/10' }] : []) });
+    const by = Object.fromEntries(run(root, gh, { limit: 10, localSuites: 10 }).verdicts.map((v) => [v.branch, v]));
+    assert.equal(by['feat/other-base'].reason, 'pull_request_closed', JSON.stringify(by['feat/other-base']));
+    assert.equal(by['feat/reopened'].action, 'queued', JSON.stringify(by['feat/reopened']));
+    assert.equal(by['feat/reopened'].pr, 10);
+    assert.equal(by['feat/draft-dev'].reason, 'pull_request_held', JSON.stringify(by['feat/draft-dev']));
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('a branch name with more pull requests or labels than one read holds is could-not-tell', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const tip = branchWith(root, 'feat/crowded', 'c.txt');
+    const tip2 = branchWith(root, 'feat/labelled', 'l.txt');
+    const lookup = (args) => {
+      const answer = JSON.parse(pullRequestAnswer(args, () => []).stdout);
+      for (const [alias, conn] of Object.entries(answer.data.repository)) {
+        const branch = args.find((a) => a === `h${alias.slice(1)}=feat/crowded`) ? 'feat/crowded' : 'feat/labelled';
+        if (branch === 'feat/crowded') {
+          conn.pageInfo.hasNextPage = true;
+          conn.nodes = [pr({ number: 99, headRefName: 'feat/crowded', isCrossRepository: true, headRefOid: tip })];
+        } else {
+          conn.nodes = [pr({ number: 98, headRefName: 'feat/labelled', headRefOid: tip2, labels: { totalCount: 60, nodes: [{ name: 'size-s' }] } })];
+        }
+      }
+      return { ok: true, stdout: JSON.stringify(answer), stderr: '' };
+    };
+    const gh = fakeGh({}, { lookup });
+    const by = Object.fromEntries(run(root, gh, { limit: 10, localSuites: 10 }).verdicts.map((v) => [v.branch, v]));
+    assert.equal(by['feat/crowded'].reason, 'pull_request_unreadable', JSON.stringify(by['feat/crowded']));
+    assert.match(by['feat/crowded'].detail, /more than 30 pull requests use this branch name/);
+    assert.equal(by['feat/labelled'].reason, 'pull_request_unreadable', JSON.stringify(by['feat/labelled']));
+    assert.deepEqual(writes(gh), []);
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('hold words match whole words: apostrophes and spaces are read, threshold and unblocked are not holds', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const names = { 'feat/l1': "don't-merge", 'feat/l2': "Don't Merge", 'feat/l3': 'decision', 'feat/l4': 'threshold', 'feat/l5': 'unblocked', 'feat/l6': 'codex-rejected' };
+    const prs = {};
+    let n = 80;
+    for (const [branch, label] of Object.entries(names)) {
+      const sha = branchWith(root, branch, `${branch.slice(5)}.txt`);
+      n += 1;
+      prs[branch] = [pr({ number: n, headRefName: branch, headRefOid: sha, labels: { nodes: [{ name: label }] } })];
+    }
+    const gh = fakeGh(prs);
+    const by = Object.fromEntries(run(root, gh, { limit: 10, localSuites: 10 }).verdicts.map((v) => [v.branch, v]));
+    for (const b of ['feat/l1', 'feat/l2', 'feat/l3', 'feat/l6']) assert.equal(by[b].reason, 'pull_request_held', `${names[b]}: ${JSON.stringify(by[b])}`);
+    for (const b of ['feat/l4', 'feat/l5']) assert.equal(by[b].action, 'queued', `${names[b]}: ${JSON.stringify(by[b])}`);
   } finally {
     cleanup(root, bare);
   }
