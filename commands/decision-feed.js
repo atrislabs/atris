@@ -19,7 +19,7 @@ const VALUE_FLAGS = new Set([
   '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
   '--reply',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm']);
 
 function parse(args) {
   const positional = [];
@@ -91,6 +91,7 @@ const HELP = [
   '                          | result --card <card> --proof "<what you ran and what it showed>" ["<plain line>"]',
   '       atris feed events [--limit N]        the stream of what members put in the feed',
   '       atris feed say "<one or two plain sentences>" [--as <member>] [--ask]',
+  '       atris feed clear --confirm           delete feed posts and comments; keep project tasks',
   '                          (a short note in the feed, yours unless --as names a team member; with --ask, a question anyone can answer)',
   '       atris feed react <card> 👍|❤️|😂|🔥|👀 [--as <member>]   (taps that reaction on or off, as you unless --as)',
   '       atris feed reply <card> "<text>" [--as <member>]          (a comment on any card, at most 1000 characters)',
@@ -129,6 +130,10 @@ function textCard(card) {
 }
 
 function printText(command, out) {
+  if (command === 'clear') {
+    console.log('Feed cleared. Project tasks and activity records remain.');
+    return;
+  }
   if (command === 'cards') {
     const theme = out.theme.text ? `goal: ${out.theme.text}` : 'goal: not set. set it: atris feed theme set "<sentence>"';
     console.log(theme);
@@ -397,6 +402,8 @@ async function run(args = [], context = {}) {
         visual: visualFlag(flags.visual), lane: flags.lane, card: flags.card, proof: flags.proof,
         text: flags.text || positional.slice(2).join(' '), env, deps,
       });
+    } else if (sub === 'clear') {
+      out = room().clear(root, { env, confirmed: flags.confirm === true });
     } else if (sub === 'say') {
       out = room().say(root, { as: flags.as, text: flags.text || positional.slice(1).join(' '), ask: flags.ask === true, env, deps });
     } else if (sub === 'react') {
@@ -467,7 +474,7 @@ async function run(args = [], context = {}) {
 
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply', 'replies', 'discuss', 'work']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
