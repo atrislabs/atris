@@ -1000,7 +1000,38 @@ function computerLane(rest, ctx) {
   console.log(`  Saved lane for ${key}: ${formatWorkerName(normalized)}. Every run for this business now uses it unless you pass --worker.`);
 }
 
+function computerModel(rest, ctx) {
+  if (!ctx?.slug && !ctx?.businessId) {
+    console.error('No business selected. Pass --business <slug>.');
+    process.exitCode = 1;
+    return;
+  }
+  const businesses = loadBusinesses();
+  const key = Object.keys(businesses).find((slug) => slug === ctx.slug || businesses[slug]?.business_id === ctx.businessId);
+  if (!key) {
+    console.error(`Business ${ctx.slug || ctx.businessId} is not in the local business list yet. Run any computer command against it once, then retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  const requested = (rest || '').trim();
+  if (!requested) {
+    console.log(businesses[key].model ? `  Saved model for ${key}: ${businesses[key].model}` : `  No saved model for ${key}.`);
+    return;
+  }
+  if (requested.toLowerCase() === 'clear') {
+    delete businesses[key].model;
+    saveBusinesses(businesses);
+    console.log(`  Cleared saved model for ${key}.`);
+    return;
+  }
+  businesses[key].model = requested;
+  saveBusinesses(businesses);
+  console.log(`  Saved model for ${key}: ${requested}.`);
+}
+
 async function computerExec(token, prompt, ctx = null, options = {}) {
+  const savedModel = !options.model && ctx?.model;
+  options = { ...options, model: options.model || ctx?.model || null };
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
     process.exit(1);
@@ -1016,7 +1047,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
     }
     const worker = activeWorker(options.worker || ctx.worker);
     const laneSource = options.worker ? '' : ctx.worker ? '  (saved for this business)' : '';
-    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
+    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${savedModel ? ' (saved for this business)' : ''}${laneSource}`);
     const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
       method: 'POST',
       token,
@@ -1105,6 +1136,8 @@ function printComputerPrHelp(log = console.log) {
 // builder gets stuck proving a fix, a thinker model studies the code read only
 // and the builder tries once more with its proposal.
 async function computerPr(token, args = [], ctx = null, options = {}, deps = {}) {
+  const savedModel = !options.model && ctx?.model;
+  options = { ...options, model: options.model || ctx?.model || null };
   const prLib = require('../lib/computer-pr');
   const log = deps.log || ((s) => console.log(s));
   const logError = deps.logError || ((s) => console.error(s));
@@ -1151,7 +1184,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
 
   const laneSource = options.worker ? '' : ctx.worker ? ' (saved for this business)' : '';
   log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
-  log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
+  log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${savedModel ? ' (saved for this business)' : ''}${laneSource}`);
 
   // A fresh conversation per round: each one is independent, and a shared one
   // grows until the computer has to shorten it, which can fail the run.
@@ -1504,6 +1537,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
 }
 
 async function computerChat(token, ctx, initialOptions = {}) {
+  initialOptions = { ...initialOptions, model: initialOptions.model || ctx?.model || null };
   if (!ctx) {
     console.error('Cloud computer mode requires a bound business workspace.');
     console.error('run this inside a bound business workspace, or use `atris computer --local` for local mode.');
@@ -1747,6 +1781,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
 }
 
 async function computerLocalAtris(token, ctx, initialOptions = {}) {
+  initialOptions = { ...initialOptions, model: initialOptions.model || ctx?.model || null };
   if (!ctx) {
     console.error('Atris local mode needs a bound business workspace for the cloud brain.');
     console.error('run inside a bound business workspace, or use `atris computer local-byo`.');
@@ -1990,7 +2025,7 @@ async function computerProof(token, ctx, initialOptions = {}) {
   }
 
   const worker = initialOptions.worker || 'openai';
-  const model = initialOptions.model || null;
+  const model = initialOptions.model || ctx?.model || null;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
   const fileName = `atris-proof-${stamp}.txt`;
   const expected = `ATRIS_PROOF_OK_${stamp}`;
@@ -2366,6 +2401,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('                  /start shows the beginner flow');
     console.log('                  /status shows lane, Claude auth, and billing');
     console.log('                  /audit [n] shows recent cloud runs inside chat');
+    console.log('  model <id|clear>  Save or clear the default model for a business');
     console.log('  status          Show computer status');
     console.log('  up|wake         Start the computer');
     console.log('  sleep           Stop the computer (files persist)');
@@ -2496,6 +2532,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     case 'exec': return computerExec(token, rest, ctx, cloudOptions);
     case 'pr': return computerPr(token, args.slice(1), ctx, cloudOptions);
     case 'lane': return computerLane(rest, ctx);
+    case 'model': return computerModel(rest, ctx);
     case 'pull': {
       const parts = rest.split(' ').filter(Boolean);
       return computerPull(token, parts[0], parts[1], ctx);

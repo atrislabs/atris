@@ -539,7 +539,7 @@ test('a builder that cannot reproduce asks the thinker, then tries once more on 
   const [a, think, b] = bodies(h.calls);
   assert.equal(h.calls.requests.length, 3);
   assert.equal(a.model, 'gpt-6.1-terra');
-  assert.equal(think.model, 'gpt-6-astra');
+  assert.equal(think.model, 'gpt-6.1-sol');
   assert.equal(think.session_id, 'pr-atris-fix-the-total-20261114-0905-think');
   assert.equal(think.reset_context, true);
   assert.match(think.message, new RegExp(`prepare atrislabs demo ${BRANCH}-think\\n`));
@@ -552,7 +552,7 @@ test('a builder that cannot reproduce asks the thinker, then tries once more on 
   assert.match(b.message, new RegExp(`prepare atrislabs demo ${BRANCH}-b\\n`));
   assert.match(b.message, new RegExp(`finish <RUN_DIR> ${BRANCH}-b`));
   assert.match(b.message, /TASK END\n\nPROPOSAL START\nCause: lib\/total\.js line 12[^]*Risks: none known\.\nPROPOSAL END$/);
-  assert.ok(h.calls.out.includes('The builder could not prove a fix. Asking the thinker (gpt-6-astra) for a proposal.'));
+  assert.ok(h.calls.out.includes('The builder could not prove a fix. Asking the thinker (gpt-6.1-sol) for a proposal.'));
   assert.ok(h.calls.out.includes('Proposal ready. The builder is trying again with it.'));
   assert.deepEqual(h.calls.out.slice(-8), [
     'Pull request opened: Fix the total',
@@ -561,7 +561,7 @@ test('a builder that cannot reproduce asks the thinker, then tries once more on 
     'This was a hard fix. Have a second reader check it before it merges.',
     'ESCALATED=1',
     'NEEDS_READER=1',
-    'THINKER=gpt-6-astra',
+    'THINKER=gpt-6.1-sol',
     'BUILDER=gpt-6.1-terra',
   ]);
 });
@@ -600,7 +600,7 @@ test('--think asks the thinker first, then one builder round on the normal branc
   assert.equal(code, 1, 'one builder round only, even when it is stuck');
   assert.equal(h.calls.requests.length, 2);
   const [think, b] = bodies(h.calls);
-  assert.equal(think.model, 'gpt-6-astra');
+  assert.equal(think.model, 'gpt-6.1-sol');
   assert.match(think.message, new RegExp(`prepare atrislabs demo ${BRANCH}-think\\n`));
   assert.ok(!/NOTES START/.test(think.message));
   assert.match(b.message, new RegExp(`prepare atrislabs demo ${BRANCH}\\n`));
@@ -660,7 +660,7 @@ test('ATRIS_PR_THINKER replaces the default thinker', async () => {
   } finally {
     if (before === undefined) delete process.env.ATRIS_PR_THINKER; else process.env.ATRIS_PR_THINKER = before;
   }
-  assert.equal(prLib.defaultThinkerModel('openai'), 'gpt-6-astra');
+  assert.equal(prLib.defaultThinkerModel('openai'), 'gpt-6.1-sol');
   assert.equal(prLib.defaultThinkerModel('claude'), null);
 });
 
@@ -734,4 +734,14 @@ test('every instruction lets the builder ask for help, try the real thing, and u
   assert.match(think, /reply "STEP_FAILED=5 no proposal"/);
   assert.ok(!/\bfinish\b/.test(instructionOnly(think)));
   assert.match(instructionOnly(pr), /\bfinish <RUN_DIR>/);
+});
+
+test('business model reaches the run, explicit model wins, and OpenAI thinker uses the current default', async () => {
+  const ctx = { ...CTX, model: 'saved-model' };
+  for (const [options, expected] of [[{}, 'saved-model'], [{ model: 'flag-model' }, 'flag-model']]) {
+    const h = harness({ streamed: { chunks: ['PR_URL=https://github.com/a/b/pull/1\n'] } });
+    await withExitCode(() => computer.computerPr('tok', ['a/b', 'x'], ctx, options, h.deps));
+    assert.equal(h.calls.requests[0].opts.body.model, expected);
+  }
+  assert.equal(prLib.defaultThinkerModel('openai'), 'gpt-6.1-sol');
 });
