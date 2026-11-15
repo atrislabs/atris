@@ -1156,6 +1156,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   };
 
   let feed = null;
+  let feedExited = null;
   let finalUrl = null;
   let warned = false;
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
@@ -1195,6 +1196,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     try {
       const { Worker } = require('node:worker_threads');
       feed = new Worker(path.join(__dirname, '../lib/computer-pr-feed.js'), { workerData: { root, member, repo: `${repo.owner}/${repo.name}`, title: task.match(/^.*?[.!?](?=\s|$)/)?.[0] || task } });
+      feedExited = new Promise(resolve => feed.once('exit', resolve));
       if (deps.onFeedWorker) deps.onFeedWorker(feed);
       feed.on('error', warning);
       feed.on('message', warning);
@@ -1364,6 +1366,11 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   } finally {
     const time = elapsed();
     sendFeed({ type: 'finish', url: finalUrl, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+    if (feedExited) {
+      let timer;
+      await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
+      clearTimeout(timer);
+    }
     log(`Done in ${time.minutes}m ${time.seconds}s`);
   }
 }
