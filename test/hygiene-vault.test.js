@@ -159,6 +159,10 @@ test('classifyEntry and scanGitHygiene cover all classification buckets and fenc
     // 6. AGENT_EXHAUST
     writeRel(root, 'atris/features/old-feat/spec.md', 'spec', { nowMs });
     writeRel(root, 'atris/campaigns/camp1/plan.md', 'camp', { nowMs });
+    writeRel(root, 'atris/security/audit-report.md', 'sec', { nowMs });
+    writeRel(root, 'atris/qa/test-run.md', 'qa', { nowMs });
+    writeRel(root, 'atris/runs/_archive/run1.json', '{}', { nowMs });
+    writeRel(root, '.codex/agents/helper.toml', 'name = "helper"\n', { nowMs });
     writeRel(root, 'output/pdf/deliverable.pdf', '%PDF', { nowMs });
 
     // 7. UNFINISHED_CODE
@@ -221,6 +225,10 @@ test('classifyEntry and scanGitHygiene cover all classification buckets and fenc
     // Agent exhaust
     assert.equal(classOf.get('atris/features/old-feat/spec.md'), 'AGENT_EXHAUST');
     assert.equal(classOf.get('atris/campaigns/camp1/plan.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/security/audit-report.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/qa/test-run.md'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('atris/runs/_archive/run1.json'), 'AGENT_EXHAUST');
+    assert.equal(classOf.get('.codex/agents/helper.toml'), 'AGENT_EXHAUST');
     assert.equal(classOf.get('output/pdf/deliverable.pdf'), 'AGENT_EXHAUST');
 
     // Unfinished code
@@ -549,5 +557,187 @@ test('vault-catalog.md stays ring-capped at K=20 epochs and respects clean lock 
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(quarantineRoot, { recursive: true, force: true });
+  }
+});
+
+test('staged secrets are stripped from refs/atris/vault/<id>/staged and quarantine symlinks are preserved on restore', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-staged-secret-q-');
+  try {
+    // 1. Staged .env alongside staged code file -> staged ref keeps code, excludes .env
+    const envAbs = writeRel(root, '.env', 'API_SECRET=hunter2\n', { ageMs: 60 * 60 * 1000 });
+    const codeAbs = writeRel(root, 'src/staged_code.py', 'x = 1\n', { ageMs: 60 * 60 * 1000 });
+    // Also a symlinked secret in quarantine (pointing to a non-existent target to catch dereferencing)
+    const linkAbs = path.join(root, '.env.symlink');
+    fs.symlinkSync('/nonexistent/secret-target', linkAbs);
+    const oldTime = new Date(Date.now() - 60 * 60 * 1000);
+    fs.lutimesSync(linkAbs, oldTime, oldTime);
+
+    run('git', ['add', '.env', 'src/staged_code.py'], root);
+    fs.utimesSync(envAbs, oldTime, oldTime);
+    fs.utimesSync(codeAbs, oldTime, oldTime);
+
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+
+    assert.equal(out.applied, true);
+    assert.ok(out.refs.staged);
+    const stagedFiles = run('git', ['ls-tree', '-r', '--name-only', out.refs.staged], root).split('\n');
+    assert.equal(stagedFiles.includes('.env'), false);
+    assert.equal(stagedFiles.includes('src/staged_code.py'), true);
+    assert.equal(fs.existsSync(envAbs), false);
+    assert.equal(fs.existsSync(codeAbs), false);
+    assert.equal(fs.existsSync(path.join(out.quarantineDir, '.env')), true);
+    assert.equal(fs.lstatSync(path.join(out.quarantineDir, '.env.symlink')).isSymbolicLink(), true);
+
+    // Restoring quarantined symlink preserves symlink rather than dereferencing
+    const restored = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      paths: ['.env', '.env.symlink'],
+      quarantineRoot,
+    });
+    assert.deepEqual(new Set(restored.quarantinedRestored), new Set(['.env', '.env.symlink']));
+    assert.equal(fs.readFileSync(envAbs, 'utf8'), 'API_SECRET=hunter2\n');
+    assert.equal(fs.lstatSync(linkAbs).isSymbolicLink(), true);
+    assert.equal(fs.readlinkSync(linkAbs), '/nonexistent/secret-target');
+
+    // Force-overwriting existing symlink also succeeds cleanly
+    const forced = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      paths: ['.env.symlink'],
+      force: true,
+      quarantineRoot,
+    });
+    assert.deepEqual(forced.quarantinedRestored, ['.env.symlink']);
+    assert.equal(fs.readlinkSync(linkAbs), '/nonexistent/secret-target');
+
+    // 2. When ONLY a secret is staged, no staged ref is created
+    fs.rmSync(linkAbs, { force: true });
+    fs.rmSync(envAbs, { force: true });
+    writeRel(root, '.env', 'ONLY_SECRET=1\n', { ageMs: 60 * 60 * 1000 });
+    run('git', ['add', '.env'], root);
+    const onlySecretOut = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+    assert.equal(onlySecretOut.applied, true);
+    assert.equal(onlySecretOut.refs.staged, undefined);
+    assert.equal(fs.existsSync(envAbs), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+  }
+});
+
+test('vaultAndCleanCheckout and recoverInterruptedVault gracefully skip EACCES/EPERM locked files, clean siblings, and remove WAL', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-perm-q-');
+  const lockedDir = path.join(root, 'atris', 'campaigns', 'locked-dir');
+  try {
+    const lockedAbs = writeRel(root, 'atris/campaigns/locked-dir/CONTRACT.md', 'locked\n', { ageMs: 60 * 60 * 1000 });
+    const siblingAbs = writeRel(root, 'atris/campaigns/other/note.md', 'unlocked\n', { ageMs: 60 * 60 * 1000 });
+    const scratchAbs = writeRel(root, 'loose.html', '<html></html>\n', { ageMs: 60 * 60 * 1000 });
+    fs.chmodSync(lockedDir, 0o555);
+
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+
+    assert.equal(out.applied, true);
+    assert.ok(out.vaultId);
+    assert.deepEqual(out.resetStats.skippedPermissionLocked, ['atris/campaigns/locked-dir/CONTRACT.md']);
+    assert.equal(out.resetStats.unlinkedCount, 2);
+    assert.equal(fs.existsSync(siblingAbs), false);
+    assert.equal(fs.existsSync(scratchAbs), false);
+    assert.equal(fs.existsSync(lockedAbs), true);
+    const walDir = path.join(root, '.atris', 'vault');
+    assert.equal(fs.existsSync(walDir) ? fs.readdirSync(walDir).length : 0, 0);
+
+    // Also verify recoverInterruptedVault replays a VAULTED WAL cleanly over a locked file and removes the WAL
+    const sibling2Abs = writeRel(root, 'atris/campaigns/other/note2.md', 'unlocked-2\n', { ageMs: 60 * 60 * 1000 });
+    const lstatLocked = fs.lstatSync(lockedAbs);
+    const lstatSibling2 = fs.lstatSync(sibling2Abs);
+    const replayId = '20261113-052123-2b0344';
+    run('git', ['update-ref', `refs/atris/vault/${replayId}/full`, 'HEAD'], root);
+    fs.mkdirSync(walDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(walDir, `wal-${replayId}.json`),
+      JSON.stringify({
+        vaultId: replayId,
+        status: 'VAULTED',
+        entries: [
+          {
+            xy: '??',
+            relPath: 'atris/campaigns/locked-dir/CONTRACT.md',
+            stat0: { ino: lstatLocked.ino, size: lstatLocked.size, mtimeMs: lstatLocked.mtimeMs },
+          },
+          {
+            xy: '??',
+            relPath: 'atris/campaigns/other/note2.md',
+            stat0: { ino: lstatSibling2.ino, size: lstatSibling2.size, mtimeMs: lstatSibling2.mtimeMs },
+          },
+        ],
+      })
+    );
+
+    const rec = recoverInterruptedVault(root, { quarantineRoot });
+    assert.equal(rec.recovered.length, 1);
+    assert.equal(rec.recovered[0].action, 'replayed_vaulted');
+    assert.deepEqual(rec.recovered[0].resetStats.skippedPermissionLocked, ['atris/campaigns/locked-dir/CONTRACT.md']);
+    assert.equal(rec.recovered[0].resetStats.unlinkedCount, 1);
+    assert.equal(fs.existsSync(sibling2Abs), false);
+    assert.equal(fs.existsSync(lockedAbs), true);
+    assert.equal(fs.readdirSync(walDir).length, 0);
+  } finally {
+    try { fs.chmodSync(lockedDir, 0o755); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+  }
+});
+
+test('restoreFromVault --force unlinks existing live or dangling symlink before writing regular file', () => {
+  const root = makeGitRepo();
+  const quarantineRoot = makeTempDir('atris-hv-symforce-q-');
+  const outsideDir = makeTempDir('atris-hv-symforce-out-');
+  try {
+    writeRel(root, 'src/live_target.py', 'restored_live = 1\n', { ageMs: 60 * 60 * 1000 });
+    writeRel(root, 'src/dangling_target.py', 'restored_dangling = 2\n', { ageMs: 60 * 60 * 1000 });
+    const out = vaultAndCleanCheckout(root, {
+      graceMs: 0,
+      listActivePaths: () => [],
+      quarantineRoot,
+    });
+    assert.equal(out.applied, true);
+
+    const outsideFile = path.join(outsideDir, 'precious.txt');
+    fs.writeFileSync(outsideFile, 'DO_NOT_OVERWRITE\n', 'utf8');
+    const liveDest = path.join(root, 'src/live_target.py');
+    const danglingDest = path.join(root, 'src/dangling_target.py');
+    fs.mkdirSync(path.dirname(liveDest), { recursive: true });
+    fs.symlinkSync(outsideFile, liveDest);
+    fs.symlinkSync(path.join(outsideDir, 'missing.txt'), danglingDest);
+
+    const restored = restoreFromVault(root, {
+      vaultId: out.vaultId,
+      slice: 'code',
+      force: true,
+      quarantineRoot,
+    });
+    assert.equal(restored.ok, true);
+    assert.equal(fs.lstatSync(liveDest).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(danglingDest).isSymbolicLink(), false);
+    assert.equal(fs.readFileSync(liveDest, 'utf8'), 'restored_live = 1\n');
+    assert.equal(fs.readFileSync(danglingDest, 'utf8'), 'restored_dangling = 2\n');
+    assert.equal(fs.readFileSync(outsideFile, 'utf8'), 'DO_NOT_OVERWRITE\n');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(quarantineRoot, { recursive: true, force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
   }
 });
