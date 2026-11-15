@@ -351,3 +351,32 @@ test('restoreCommand handles usage errors (exit 2) and vault errors/conflicts (e
     });
   });
 });
+
+test('restoreCommand dry-run prefers out.paths when out.restored is empty', () => {
+  withTempDir((tmpDir) => {
+    const vaultLib = {
+      listVaultSnapshots: () => [],
+      restoreFromVault: () => ({
+        ok: true,
+        dryRun: true,
+        vaultId: 'v1',
+        slice: 'code',
+        paths: ['a.js'],
+        restored: [],
+        quarantinedRestored: [],
+        conflicts: [],
+      }),
+    };
+    const textRes = captureOutput(() => restoreCommand(['v1', '--slice', 'code', '--dry-run'], { cwd: tmpDir, vaultLib }));
+    assert.strictEqual(textRes.code, 0);
+    assert.match(textRes.out, /Would restore 1 file from v1 \(slice: code\)/);
+    assert.match(textRes.out, /• a\.js/);
+
+    const jsonRes = captureOutput(() => restoreCommand(['v1', '--slice', 'code', '--dry-run', '--json'], { cwd: tmpDir, vaultLib }));
+    assert.strictEqual(jsonRes.code, 0);
+    const payload = JSON.parse(jsonRes.out);
+    assert.strictEqual(payload.dry_run, true);
+    assert.strictEqual(payload.restored_count, 1);
+    assert.deepStrictEqual(payload.restored_files, ['a.js']);
+  });
+});
