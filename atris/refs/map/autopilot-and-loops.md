@@ -17,9 +17,9 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 
 **Purpose:** Keep `atris/wiki/` alive after ingest by refreshing health, finding stale/orphan pages, and proposing the next ingest without touching cloud sync
 
-- **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js:317` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
+- **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
-- **Help:** `bin/atris.js:1167-1178` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
+- **Help:** `bin/atris.js` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
 - **Dispatch:** `bin/atris.js:3095-3093` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
 - **How it works:**
 - `atris loop wiki` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
@@ -54,12 +54,12 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 
 - **Entry point:** `commands/autopilot.js:3246` (autopilotAtris function)
 - **Reward config:** `lib/reward-config.js`: frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
-- **Reward computer:** `commands/autopilot.js:2274` (`computeTickReward`): computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
-- **Tick registry writer:** `commands/autopilot.js:1200` (`recordTickCommit`): persists `{hash, verifyCmd, slug, timestamp}` to `tick-registry.json` in the `atris/` folder after each successful tick (written at run time)
-- **Regression checker:** `commands/autopilot.js:1216` (`regressionCheck`): reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
-- **Judge integrity guard:** `commands/autopilot.js:1410` (`verifyJudgeIntegrity`): SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
+- **Reward computer:** `commands/autopilot.js` (`computeTickReward`): computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
+- **Tick registry writer:** `commands/autopilot.js` (`recordTickCommit`): persists `{hash, verifyCmd, slug, timestamp}` to `tick-registry.json` in the `atris/` folder after each successful tick (written at run time)
+- **Regression checker:** `commands/autopilot.js` (`regressionCheck`): reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
+- **Judge integrity guard:** `commands/autopilot.js` (`verifyJudgeIntegrity`): SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Lesson gate tests:** `test/lesson-gate.test.js` covers unresolved/resolved lesson filtering and detector-backed lesson metadata before horizon selection.
-- **Heartbeat writer:** `commands/autopilot.js:2318` (`appendTickSummary`): appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Heartbeat writer:** `commands/autopilot.js` (`appendTickSummary`): appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:116` (suggestNextTask function, async)
   - Checks 8 signal types in priority order:
   - 0. Endgame tasks (current horizon: highest priority)
@@ -72,21 +72,21 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:691` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts): adapts prompts per task kind, including strategy-specific benchmark runs
-- **Autopilot glass log:** `commands/autopilot.js:715` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`): successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
-- **Single-task runner:** `commands/autopilot.js:2008` (`runTaskOnce`): guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
-- **Verify executor helper:** `commands/autopilot.js:1264-1276` (`getVerifyCommand`): reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }`: no default, tasks without Verify halt
-- **Lesson writer helper:** `commands/autopilot.js:1164-1188` (`writeLesson`): appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug**: pass/fail: explanation`
+- **Autopilot glass log:** `commands/autopilot.js` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`): successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
+- **Single-task runner:** `commands/autopilot.js` (`runTaskOnce`): guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
+- **Verify executor helper:** `commands/autopilot.js` (`getVerifyCommand`): reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }`: no default, tasks without Verify halt
+- **Lesson writer helper:** `commands/autopilot.js` (`writeLesson`): appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug**: pass/fail: explanation`
 - **Phase executor:** `commands/autopilot.js:490` (executePhaseDetailed function): runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
 - **Approval gate:** `commands/autopilot.js:412` (askApproval function): enter/skip/quit
-- **Human freshness check:** `commands/autopilot.js:436` (`askHuman`): interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
-- **Idle-tick helper:** `commands/autopilot.js:2606` (`getIdleTickCount`): counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:2641` (`getRecentSignals`): pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Lesson-resolved checker:** `commands/autopilot.js:3090` (`isLessonResolved`): parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
-- **Candidate-horizons helper:** `commands/autopilot.js:3296` (`proposeCandidateHorizons`): async; combines `getIdleTickCount` + `getRecentSignals`, uses the shared runner command with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
-- **Scoring helper:** `commands/autopilot.js:2691` (`scoreEndgameCandidates`): reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 244) to weight candidates by historical reward
-- **Task age helper:** `commands/autopilot.js:3933` (`getTaskAgeDays`): computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
-- **Staleness gate:** `commands/autopilot.js:3962` (`isStillTrue`): takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only: no model calls.
-- **Model freshness check:** `commands/autopilot.js:4031` (`askModel`): called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
+- **Human freshness check:** `commands/autopilot.js` (`askHuman`): interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
+- **Idle-tick helper:** `commands/autopilot.js` (`getIdleTickCount`): counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js` (`getRecentSignals`): pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Lesson-resolved checker:** `commands/autopilot.js` (`isLessonResolved`): parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
+- **Candidate-horizons helper:** `commands/autopilot.js` (`proposeCandidateHorizons`): async; combines `getIdleTickCount` + `getRecentSignals`, uses the shared runner command with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
+- **Scoring helper:** `commands/autopilot.js` (`scoreEndgameCandidates`): reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 244) to weight candidates by historical reward
+- **Task age helper:** `commands/autopilot.js` (`getTaskAgeDays`): computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
+- **Staleness gate:** `commands/autopilot.js` (`isStillTrue`): takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only: no model calls.
+- **Model freshness check:** `commands/autopilot.js` (`askModel`): called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
 - **Staleness wiring:** `commands/autopilot.js:116` (suggestNextTask staleness gate): after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
@@ -169,8 +169,8 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
-- **Command:** `commands/next.js:195` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js:81`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js:992` (`showNextHelp`) stays for `atris atris --help`
+- **Command:** `commands/next.js` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js`)
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)
