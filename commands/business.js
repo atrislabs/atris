@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 const { stateHome } = require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -1043,6 +1044,73 @@ function printBusinessShipHelp() {
   console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
 }
 
+function printBusinessBeginHelp() {
+  console.log('Usage: atris business begin "<goal>" --kind <kind> --yes [--name <name>] [--no-hire] [--schedule <value>]');
+  console.log('Choose a team and create a live business.');
+}
+
+async function beginBusiness(args) {
+  if (args.some(isHelpToken)) return printBusinessBeginHelp();
+  const kinds = ['business', 'research', 'engineering', 'fund'];
+  const hasKind = args.some(arg => arg === '--kind' || arg.startsWith('--kind='));
+  const options = extractBusinessKind(hasKind ? args : [...args, '--kind', 'business']);
+  let kind = hasKind ? options.kind : undefined;
+  const parsedInput = parseBusinessShipArgs(options.remaining);
+  const parsed = parsedInput.ok ? parsedInput : parseBusinessShipArgs(['placeholder', ...options.remaining]);
+  const hasGoal = parsedInput.ok && parsedInput.description;
+  if (!parsed.ok) {
+    console.error(parsed.detail || 'Pass a goal as the first argument.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    const missing = !hasGoal ? 'a goal as the first argument' : !kind ? '--kind' : !args.includes('--yes') && !args.includes('-y') ? '--yes' : null;
+    if (missing) {
+      console.error(`Pass ${missing}.`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+  const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
+  const ask = question => new Promise(resolve => rl.question(question, resolve));
+  try {
+    let goal = hasGoal ? parsed.description : '';
+    while (!goal) goal = (await ask('What do you want to make? ')).trim();
+    let templates = [];
+    try {
+      const result = await apiRequestJson('/public/business/templates', { method: 'GET' });
+      if (result.ok && Array.isArray(result.data?.templates)) templates = result.data.templates;
+    } catch { /* The names remain available when the service is offline. */ }
+    if (!kind) {
+      for (const [index, name] of kinds.entries()) {
+        const template = templates.find(item => item.name === name);
+        console.log(`${index + 1}. ${name}${template?.summary ? `: ${template.summary}` : ''}`);
+      }
+    }
+    while (!kind) {
+      const answer = (await ask('Which is closest? ')).trim().toLowerCase();
+      kind = kinds[Number(answer) - 1] || (kinds.includes(answer) ? answer : undefined);
+    }
+    const selected = templates.find(item => item.name === kind);
+    for (const seat of selected?.seats || []) console.log(`${seat.name}: ${seat.owns}`);
+    if (!args.includes('--yes') && !args.includes('-y')) {
+      console.log(`Goal: ${goal}`);
+      console.log(`Team: ${kind}`);
+      console.log(options.noHire ? 'This creates a live business without setting up the seats.' : `This creates a live business and sets up six seats that run ${options.schedule || 'nightly'}, with spending off.`);
+      const answer = (await ask('Create it? (yes or no) ')).trim().toLowerCase();
+      if (answer !== 'yes' && answer !== 'y') return;
+    }
+    const shipArgs = [goal, '--kind', kind, '--yes'];
+    if (parsed.name) shipArgs.push('--name', parsed.name);
+    if (options.noHire) shipArgs.push('--no-hire');
+    if (options.schedule !== undefined) shipArgs.push('--schedule', options.schedule);
+    // shipBusiness already prints the first task and the public page.
+    await shipBusiness(...shipArgs);
+  } finally {
+    rl?.close();
+  }
+}
+
 async function shipBusiness(...args) {
   if (args.some(isHelpToken)) {
     printBusinessShipHelp();
@@ -1568,6 +1636,7 @@ function printBusinessHelp() {
   console.log('                       --kind <business|research|engineering|fund> selects a starter team');
   console.log('                       --no-hire writes seats without setting up the team (needs --kind)');
   console.log('                       --schedule <value> sets the team schedule (needs --kind)');
+  console.log('  begin "<goal>"      Choose a team and create a live business');
   console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email, --kind; --yes required)');
   console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
@@ -1604,6 +1673,10 @@ async function businessCommand(subcommand, ...args) {
     printBusinessHelp();
     return;
   }
+  if (subcommand === 'begin' && args.some(isHelpToken)) {
+    printBusinessBeginHelp();
+    return;
+  }
   if (subcommand === 'simulate' && args.some(isHelpToken)) {
     printBusinessSimulateHelp();
     return;
@@ -1629,6 +1702,9 @@ async function businessCommand(subcommand, ...args) {
     case 'create':
     case 'new':
       await createBusiness(args[0], ...args.slice(1));
+      break;
+    case 'begin':
+      await beginBusiness(args);
       break;
     case 'ship':
       await shipBusiness(...args);
