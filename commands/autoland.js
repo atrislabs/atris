@@ -497,12 +497,13 @@ function showStatus(root, args, deps = {}) {
   const blocked = results.filter((r) => r.action !== 'would_accept');
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
-  // Ask the crontab, not the policy file. The cached flag is written once at
-  // `autoland on` time, so it reports "unknown" for a cron that has been
-  // running hourly for weeks, and would keep reporting "running" for one
-  // someone deleted. A loop that cannot confirm its own liveness from
-  // evidence cannot be trusted to say it is healthy.
-  const heartbeatInstalled = autoland.heartbeatLiveness(root, policy);
+  // Ask the scheduler, not the policy file: on a Mac the LaunchAgent and
+  // launchctl, otherwise the crontab. A flag cached at `autoland on` time
+  // reports "unknown" for a job that has run hourly for weeks, and keeps
+  // reporting "running" for one someone deleted. A loop that cannot confirm
+  // its own liveness from evidence cannot be trusted to say it is healthy.
+  const schedule = autoland.schedulerState(root, deps.scheduler);
+  const heartbeatInstalled = schedule.installed;
   const heartbeatLive = autoland.heartbeatIsLive(root);
 
   if (json) {
@@ -530,7 +531,7 @@ function showStatus(root, args, deps = {}) {
   console.log(`  policy: ${policyText}`);
   if (enabled && includeProtected) console.log('  bar: protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
   else if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
-  console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, policy)}`);
+  console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, schedule)}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
@@ -622,14 +623,44 @@ function showStatus(root, args, deps = {}) {
   return 0;
 }
 
-function turnOn(root, args) {
+// The policy file as written, without the inferred default a missing file
+// reads as.
+function savedPolicy(root) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(autoland.policyPath(root), 'utf8'));
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function heartbeatLines(installed) {
+  if (installed.kind === 'cron') {
+    return [`  heartbeat: ${installed.ok ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`];
+  }
+  if (!installed.ok) {
+    return [`  heartbeat: could not set up the hourly job on this Mac (${installed.error || 'no answer'}); run atris autoland tick yourself`];
+  }
+  const lines = [installed.kept_existing
+    ? '  heartbeat: kept the hourly job already set up on this Mac exactly as it is, since its timing and command may be tuned by hand.'
+    : '  heartbeat: installed as an hourly job inside your Mac login, so scheduled runs can use your GitHub sign-in.'];
+  if (installed.removed_cron_lines) lines.push('  removed the old cron line for this project, so the pass runs once an hour, not twice.');
+  if (installed.cron_error) lines.push(`  could not check the crontab for an old line (${installed.cron_error}); look with crontab -l.`);
+  return lines;
+}
+
+function turnOn(root, args, deps = {}) {
   const owner = flag(args, '--as', os.userInfo().username);
   const to = flag(args, '--to', '');
   const digestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
   const alarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
   const acceptAll = args.includes('--all');
-  const previous = autoland.readPolicy(root);
+  // Every key this command does not set stays as the owner left it: the
+  // green landing pause switch, the verify command, the hold labels, the
+  // janitor and the rest.
+  const previous = savedPolicy(root);
   const policy = autoland.writePolicy(root, {
+    ...previous,
     enabled: true,
     enabled_by: owner,
     enabled_at: new Date().toISOString(),
@@ -641,10 +672,10 @@ function turnOn(root, args) {
     accept_protected: args.includes('--include-protected'),
     daily_experiment: previous.daily_experiment !== false,
   });
-  const cronOk = autoland.installCron(root);
+  const installed = autoland.installSchedule(root, deps.scheduler);
   autoland.writePolicy(root, {
     ...policy,
-    heartbeat_installed: cronOk,
+    heartbeat_installed: installed.ok,
     heartbeat_checked_at: new Date().toISOString(),
   });
   console.log('');
@@ -654,7 +685,7 @@ function turnOn(root, args) {
   else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
   if (policy.accept_protected) console.log('  protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
   else console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
-  console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`);
+  for (const line of heartbeatLines(installed)) console.log(line);
   if (policy.imessage_to) {
     console.log(`  daily message to ${policy.imessage_to} at ${policy.digest_hour}:00; anything waiting on you past ${policy.alarm_hours}h pings you.`);
   } else {
@@ -665,22 +696,23 @@ function turnOn(root, args) {
   return 0;
 }
 
-function turnOff(root) {
+function turnOff(root, deps = {}) {
   const policy = autoland.readPolicy(root) || {};
   const disabledPolicy = autoland.writePolicy(root, {
     ...policy,
     enabled: false,
     disabled_at: new Date().toISOString(),
   });
-  const cronOk = autoland.uninstallCron(root);
+  const removed = autoland.uninstallSchedule(root, deps.scheduler);
   autoland.writePolicy(root, {
     ...disabledPolicy,
-    heartbeat_installed: cronOk ? false : null,
+    heartbeat_installed: removed.ok ? false : null,
     heartbeat_checked_at: new Date().toISOString(),
   });
   console.log('');
   console.log('autoland is off. everything waits for your accept again.');
-  console.log(`  heartbeat ${cronOk ? 'removed' : 'removal failed; check crontab -l'}.`);
+  if (removed.kind === 'cron') console.log(`  heartbeat ${removed.ok ? 'removed' : 'removal failed; check crontab -l'}.`);
+  else console.log(`  heartbeat ${removed.ok ? 'removed from this Mac' : `removal failed (${removed.error || 'no answer'}); check crontab -l`}.`);
   console.log('');
   return 0;
 }
@@ -1704,6 +1736,8 @@ module.exports = {
   runSshAgentSweep,
   sshAgentSweepNote,
   showStatus,
+  turnOn,
+  turnOff,
   runLostRunSweep,
   lostRunSweepNote,
   sweepLanding,

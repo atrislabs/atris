@@ -26,23 +26,21 @@ test('heartbeatStatusText reports installed and uninstalled states when no ticks
   const ws = path.join(tmpDir, 'ws-normal');
   fs.mkdirSync(ws, { recursive: true });
 
-  const uninstalled = heartbeatStatusText(ws, { heartbeat_installed: false });
+  const uninstalled = heartbeatStatusText(ws, { installed: false });
   assert.strictEqual(uninstalled, 'not installed - run atris autoland on');
 
-  const installed = heartbeatStatusText(ws, { heartbeat_installed: true });
+  const installed = heartbeatStatusText(ws, { installed: true });
   assert.strictEqual(installed, 'installed, but no tick has ever run - run atris autoland tick');
 });
 
-test('heartbeatStatusText reports unknown status for missing or non-boolean policy shapes', () => {
+test('heartbeatStatusText reports unknown status for missing or non-boolean scheduler answers', () => {
   const ws = path.join(tmpDir, 'ws-edge');
   fs.mkdirSync(ws, { recursive: true });
 
   assert.strictEqual(heartbeatStatusText(ws, {}), 'unknown - run atris autoland on to check and repair');
-  assert.strictEqual(heartbeatStatusText(ws, null), 'unknown - run atris autoland on to check and repair');
-  assert.strictEqual(heartbeatStatusText(ws, undefined), 'unknown - run atris autoland on to check and repair');
-  assert.strictEqual(heartbeatStatusText(ws, { heartbeat_installed: 'true' }), 'unknown - run atris autoland on to check and repair');
-  assert.strictEqual(heartbeatStatusText(ws, { heartbeat_installed: 1 }), 'unknown - run atris autoland on to check and repair');
-  assert.strictEqual(heartbeatStatusText(ws, { heartbeat_installed: null }), 'unknown - run atris autoland on to check and repair');
+  assert.strictEqual(heartbeatStatusText(ws, { installed: 'true' }), 'unknown - run atris autoland on to check and repair');
+  assert.strictEqual(heartbeatStatusText(ws, { installed: 1 }), 'unknown - run atris autoland on to check and repair');
+  assert.strictEqual(heartbeatStatusText(ws, { installed: null }), 'unknown - run atris autoland on to check and repair');
 });
 
 test('heartbeatStatusText ignores unrelated files in runs directory and handles non-existent paths', () => {
@@ -54,12 +52,12 @@ test('heartbeatStatusText ignores unrelated files in runs directory and handles 
   fs.writeFileSync(path.join(runsDir, 'autoland-tick-1.txt'), '{}');
   fs.writeFileSync(path.join(runsDir, 'autoland-tick'), '{}');
 
-  const withIgnoredFiles = heartbeatStatusText(ws, { heartbeat_installed: true });
+  const withIgnoredFiles = heartbeatStatusText(ws, { installed: true });
   assert.strictEqual(withIgnoredFiles, 'installed, but no tick has ever run - run atris autoland tick');
 
   const nonExistent = path.join(tmpDir, 'does-not-exist');
   assert.strictEqual(
-    heartbeatStatusText(nonExistent, { heartbeat_installed: false }),
+    heartbeatStatusText(nonExistent, { installed: false }),
     'not installed - run atris autoland on'
   );
   assert.strictEqual(
