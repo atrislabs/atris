@@ -1049,6 +1049,55 @@ function printBusinessBeginHelp() {
   console.log('Choose a team and create a live business.');
 }
 
+// One typed line as an answer to an orb question: a number picks that choice,
+// a label typed out picks it, and anything else is the person's own words.
+// Null means the line cannot answer this question, so it is asked again.
+function readOrbReply(question, typed) {
+  const words = String(typed || '').trim();
+  if (!words) return null;
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  if (choices.length > 0 && /^\d+$/.test(words)) {
+    const choice = choices[Number(words) - 1];
+    return choice ? { picked: [choice.id], text: '' } : null;
+  }
+  const named = choices.find(choice => String(choice.label).toLowerCase() === words.toLowerCase());
+  if (named) return { picked: [named.id], text: '' };
+  return question.custom === false ? null : { picked: [], text: words };
+}
+
+// The questions the website's orb asks, from the same place, so the terminal
+// and the site ask the same thing. Returns { description, template }, or null
+// when the service cannot run the conversation (the plain questions take over).
+async function orbInterview(ask, token, goal = '', { api = apiRequestJson, log = console.log } = {}) {
+  const turns = goal ? [{ id: 'goal', picked: [], text: goal }] : [];
+  for (let asked = 0; asked < 12; asked += 1) {
+    let result;
+    try {
+      result = await api('/orb/interview/next', { method: 'POST', token, body: { interview: 'business', turns } });
+    } catch {
+      return null;
+    }
+    const step = result && result.ok ? result.data || {} : null;
+    if (!step) return null;
+    if (step.done) {
+      const plan = step.result || {};
+      return plan.description && plan.template ? { description: plan.description, template: plan.template } : null;
+    }
+    const question = step.question;
+    if (!question || !question.id || typeof question.line !== 'string') return null;
+    const choices = Array.isArray(question.choices) ? question.choices : [];
+    log('');
+    log(`● ${question.line}`);
+    if (choices.length > 0) log('');
+    choices.forEach((choice, index) => log(`  ${index + 1}  ${choice.label}`));
+    log('');
+    let answer = null;
+    while (!answer) answer = readOrbReply(question, await ask('› '));
+    turns.push({ id: question.id, ...answer });
+  }
+  return null;
+}
+
 async function beginBusiness(args) {
   if (args.some(isHelpToken)) return printBusinessBeginHelp();
   const kinds = ['business', 'research', 'engineering', 'fund'];
@@ -1075,6 +1124,13 @@ async function beginBusiness(args) {
   const ask = question => new Promise(resolve => rl.question(question, resolve));
   try {
     let goal = hasGoal ? parsed.description : '';
+    // In a terminal, with no team chosen yet, the orb asks: the same questions as the site.
+    const token = rl && !kind ? loadCredentials()?.token : null;
+    const plan = token ? await orbInterview(ask, token, goal) : null;
+    if (plan && kinds.includes(plan.template)) {
+      if (!goal) goal = plan.description;
+      kind = plan.template;
+    }
     while (!goal) goal = (await ask('What do you want to make? ')).trim();
     let templates = [];
     try {
@@ -1823,6 +1879,8 @@ module.exports = {
   isAccidentalHelpBusiness,
   validateBusinessCreateName,
   parseBusinessShipArgs,
+  readOrbReply,
+  orbInterview,
   shipTeamNames,
   shipTaskTitle,
   analyzeBusinessDoctor,
