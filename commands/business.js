@@ -824,6 +824,8 @@ async function businessDoctor(...args) {
 function extractBusinessKind(args) {
   const remaining = [];
   let kind;
+  let noHire = false;
+  let schedule;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--kind' || arg.startsWith('--kind=')) {
@@ -832,15 +834,52 @@ function extractBusinessKind(args) {
         console.error('Choose a kind: business, research, engineering, or fund.');
         process.exit(1);
       }
+    } else if (arg === '--no-hire') {
+      noHire = true;
+    } else if (arg === '--schedule' || arg.startsWith('--schedule=')) {
+      schedule = arg === '--schedule' ? args[++i] : arg.slice('--schedule='.length);
+      if (!schedule || schedule.startsWith('--')) {
+        console.error('Pass a value for --schedule.');
+        process.exit(1);
+      }
     } else {
       remaining.push(arg);
     }
   }
-  return { kind, remaining };
+  if (!kind && (noHire || schedule !== undefined)) {
+    console.error('--no-hire and --schedule need --kind.');
+    process.exit(1);
+  }
+  return { kind, noHire, schedule, remaining };
+}
+
+async function hireBusinessTeam(id, kind, schedule, token) {
+  let result;
+  try {
+    result = await apiRequestJson(`/business/${encodeURIComponent(id)}/hire/template`, {
+      method: 'POST', token, body: { template: kind, ...(schedule !== undefined ? { schedule } : {}) },
+    });
+  } catch (error) {
+    result = { ok: false, errorMessage: error.message };
+  }
+  if (!result.ok) {
+    console.error(`The business was created, but the team was not set up: ${result.errorMessage || result.error || result.status}`);
+    process.exitCode = 1;
+    return;
+  }
+  const hired = result.data?.hired || [];
+  const failed = result.data?.failed || [];
+  for (const seat of hired) console.log(`  ${seat.name}${seat.next_run_at ? `: next run ${seat.next_run_at}` : ''}`);
+  for (const seat of failed) console.error(`  ${seat.name}: ${seat.detail || seat.status}`);
+  console.log(`  ${hired.length} of ${hired.length + failed.length} seats set up.${hired.length ? ` Each has its own email address${schedule === undefined ? ' and runs nightly' : ''}. Spending is off until you turn it on.` : ''}`);
+  if (failed.length) {
+    console.error('The business exists. Running the same command’s hire step again is safe.');
+    if (!hired.length) process.exitCode = 1;
+  }
 }
 
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
-  const { kind, remaining } = extractBusinessKind(flags);
+  const { kind, noHire, schedule, remaining } = extractBusinessKind(flags);
   flags = remaining;
   const validation = validateBusinessCreateName(name);
   if (!validation.ok) {
@@ -972,7 +1011,8 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`\n  Business created!`);
   console.log(`  ID:        ${biz.id}`);
   console.log(`  Slug:      ${biz.slug}`);
-  if (kind) console.log(`  Team: ${kind} (six seats)`);
+  if (kind && noHire) console.log(`  Team: ${kind} (six seats)`);
+  else if (kind) await hireBusinessTeam(biz.id, kind, schedule, creds.token);
   console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
@@ -997,6 +1037,8 @@ function printBusinessShipHelp() {
   console.log('  --name <name>     Optional business name');
   console.log('  --email <email>   Optional customer email');
   console.log('  --kind <kind>     Starter team: business, research, engineering, or fund');
+  console.log('  --no-hire         Write seats without setting up the team (needs --kind)');
+  console.log('  --schedule <value>  Set the team schedule (needs --kind)');
   console.log('  --yes             Required to POST /business/ship');
   console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
 }
@@ -1013,7 +1055,7 @@ async function shipBusiness(...args) {
     process.exit(2);
   }
 
-  const { kind, remaining } = extractBusinessKind(args);
+  const { kind, noHire, schedule, remaining } = extractBusinessKind(args);
   const parsed = parseBusinessShipArgs(remaining);
   if (!parsed.ok) {
     console.error(parsed.usage);
@@ -1055,8 +1097,9 @@ async function shipBusiness(...args) {
   console.log('');
   console.log(`  ${label}${slug ? ` (${slug})` : ''}`);
   if (pageUrl) console.log(`  Public page: ${pageUrl}`);
-  if (kind) console.log(`  Team: ${kind} (six seats)`);
-  if (names.length > 0) console.log(`  Team: ${names.join(', ')}`);
+  if (kind && noHire) console.log(`  Team: ${kind} (six seats)`);
+  else if (kind) await hireBusinessTeam(payload.business_id, kind, schedule, creds.token);
+  if (names.length > 0 && (!kind || noHire)) console.log(`  Team: ${names.join(', ')}`);
   if (firstTask) console.log(`  First task: ${firstTask}`);
   console.log('');
   return payload;
@@ -1523,6 +1566,8 @@ function printBusinessHelp() {
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
   console.log('                       --kind <business|research|engineering|fund> selects a starter team');
+  console.log('                       --no-hire writes seats without setting up the team (needs --kind)');
+  console.log('                       --schedule <value> sets the team schedule (needs --kind)');
   console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email, --kind; --yes required)');
   console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
