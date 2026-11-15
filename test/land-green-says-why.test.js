@@ -12,6 +12,7 @@ const { spawnSync } = require('node:child_process');
 
 const { landStaleGreenBranches, failingLines, flagWhat } = require('../lib/land-green');
 const { greenVerdictRow } = require('../commands/autoland');
+const { isPullRequestLookup, pullRequestAnswer } = require('./helpers/branch-pull-requests');
 
 const THREE_DAYS_AGO = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 
@@ -206,7 +207,8 @@ function scriptRepo(base, branch, { extra = {} } = {}) {
 
 const PR = {
   mergePath: 'pull_request', localCheck: true,
-  runGh: () => ({ ok: false, stdout: '', stderr: 'no gh here' }),
+  // No pull request on any branch; gh answers nothing else.
+  runGh: (args) => (isPullRequestLookup(args) ? pullRequestAnswer(args) : { ok: false, stdout: '', stderr: 'no gh here' }),
   readEntries: () => [], readQueued: () => null, recordQueued: () => {},
 };
 
