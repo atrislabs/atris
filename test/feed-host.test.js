@@ -49,6 +49,33 @@ function memberTurns(ctx) {
   return ctx.turns.filter((turn) => !HOST.test(turn.prompt));
 }
 
+test('an older feed writer cannot erase the host state or start the same discussion twice', async (t) => {
+  const ctx = project(t, ['writer']);
+  ctx.env.ATRIS_FEED_MEMBER_GAP_SECONDS = '0';
+  answers(ctx, { pick: 'PICK writer: the words' });
+  const card = post(ctx);
+  await discuss(ctx, card.id);
+  const socialPath = room.socialFile(ctx.root);
+  const social = JSON.parse(fs.readFileSync(socialPath, 'utf8'));
+  // An old writer reconstructs an entry with only fields it understands.
+  delete social[card.id].discussion;
+  fs.writeFileSync(socialPath, JSON.stringify(social));
+  const fresh = room.replies(ctx.root, card.id, { env: ctx.env });
+  assert.equal(fresh.card.discussion.status, 'done');
+  assert.equal(fresh.card.reply_count, 1);
+  const replay = await discuss(ctx, card.id);
+  assert.equal(replay.out.replayed, true);
+  assert.equal(ctx.turns.length, 2, 'no duplicate model turns');
+});
+
+test('a recent post by the person is on the first feed page after reopening', (t) => {
+  const ctx = project(t, ['writer']);
+  for (let i = 0; i < 35; i += 1) room.say(ctx.root, { text: `Team note number ${i}.`, as: 'writer', env: ctx.env, deps: ctx.deps, fromAsk: true });
+  const card = post(ctx, 'What should we do next?');
+  const listed = feed.listCards(ctx.root, { env: ctx.env, limit: 5 }).cards;
+  assert.equal(listed[0].id, card.id);
+});
+
 test('a post: Atris picks two fitting members by role, each answers once as its own comment, and the card says so', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer']);
   ctx.env.ATRIS_FEED_MEMBER_GAP_SECONDS = '0';
@@ -323,11 +350,10 @@ test('in the background: discuss plans and hands off once; one runner takes the 
   room.reply(ctx.root, card.id, 'What about gift boxes?', { env: ctx.env });
   out = await host.discuss(ctx.root, card.id, { env: ctx.env, deps: ctx.deps });
   const round = spawned[1].roundId;
-  room._updateEntry(ctx.root, card.id, (entry) => {
-    const r = entry.discussion.rounds.find((x) => x.id === round);
-    Object.assign(r, { claimed: true, pid: 999999, status: 'asking' });
-    return true;
-  });
+  const discussionFile = path.join(ctx.root, '.atris', 'state', 'feed', 'discussions.json');
+  const discussions = JSON.parse(fs.readFileSync(discussionFile, 'utf8'));
+  Object.assign(discussions[card.id].rounds.find((x) => x.id === round), { claimed: true, pid: 999999, status: 'asking' });
+  fs.writeFileSync(discussionFile, JSON.stringify(discussions));
   const dead = { ...ctx.deps, isAlive: () => false };
   const d = feed.readCard(ctx.root, card.id, { env: ctx.env }).discussion;
   assert.equal(d.status, 'stopped');
