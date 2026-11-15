@@ -170,10 +170,25 @@ test('--json shape is stable', async () => {
         done_at: new Date().toISOString(),
       },
     ]);
-    const { code, out } = await captureStdout(() => briefCommand(['--json'], dir, {
-      stdin: { isTTY: false },
-      stdout: { isTTY: false },
-    }));
+    // The owner's screen reads the task store. Left alone it reads the one throwaway store every test
+    // process of this machine shares, which another test file may be creating at that moment (the
+    // file exists before its tables do, so the read fails and owner_error shows up). This test has
+    // its own store path that holds nothing, so it never depends on what a neighbour is doing.
+    const saved = { ATRIS_TASKS_DB: process.env.ATRIS_TASKS_DB, ATRIS_TEST_STATE_DIR: process.env.ATRIS_TEST_STATE_DIR };
+    process.env.ATRIS_TASKS_DB = path.join(dir, 'owner-store', 'tasks.db');
+    process.env.ATRIS_TEST_STATE_DIR = path.join(dir, 'owner-state');
+    let code;
+    let out;
+    try {
+      ({ code, out } = await captureStdout(() => briefCommand(['--json'], dir, {
+        stdin: { isTTY: false },
+        stdout: { isTTY: false },
+      })));
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
     assert.equal(code, 0);
     const data = JSON.parse(out);
     // the keys it always had come first and unchanged; the owner's screen adds its own after them
