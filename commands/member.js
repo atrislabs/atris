@@ -745,8 +745,9 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
     console.log('  an unattended Opus run needs a plan that covers it or your yes for that run:');
     console.log('  ATRIS_CLAUDE_SPEND_OK=claude-opus-5-5 atris member run growth "<job>" --engine claude --model "opus 5.5" --ignite');
     console.log('  without that yes, the run falls back to Haiku.');
-    console.log('commit and land: a run whose check passes saves its loose work as a commit on its own branch.');
-    console.log('  it merges only if self-landing is on (.atris/policy/autoland.json with "enabled": true).');
+    console.log('commit: a run in its own checkout whose check passes saves its leftover work as a commit on its branch.');
+    console.log('  a run in this folder (--shared-checkout) or a job that says do not commit is not saved this way.');
+    console.log('land: work merges only if self-landing is on (.atris/policy/autoland.json with "enabled": true).');
     console.log('  otherwise the branch waits for you.');
     console.log('progress: --ignite prints where to watch. atris member board --watch shows every member,');
     console.log('  tail -f ~/.atris/progress/<name>.log follows one, and atris member stop <name> stops it.');

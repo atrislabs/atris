@@ -23,8 +23,9 @@ test('member run --help says where work goes, how to pick Opus, and what lands',
   assert.match(out, /choose Claude Opus: add --engine claude --model "opus 5\.5" --ignite\./);
   assert.match(out, /ATRIS_CLAUDE_SPEND_OK=claude-opus-5-5 atris member run growth/);
   assert.match(out, /without that yes, the run falls back to Haiku\./);
-  assert.match(out, /commit and land: a run whose check passes saves its loose work as a commit on its own branch\./);
-  assert.match(out, /\.atris\/policy\/autoland\.json with "enabled": true/);
+  assert.match(out, /commit: a run in its own checkout whose check passes saves its leftover work as a commit on its branch\./);
+  assert.match(out, /a run in this folder \(--shared-checkout\) or a job that says do not commit is not saved this way\./);
+  assert.match(out, /land: work merges only if self-landing is on \(\.atris\/policy\/autoland\.json with "enabled": true\)\./);
   assert.match(out, /otherwise the branch waits for you\./);
   assert.match(out, /progress: --ignite prints where to watch\. atris member board --watch/);
   assert.match(out, /tail -f ~\/\.atris\/progress\/<name>\.log/);
