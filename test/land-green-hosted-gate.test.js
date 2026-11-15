@@ -15,6 +15,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { landStaleGreenBranches, followQueuedLandings, summaryLine } = require('../lib/land-green');
+const { isPullRequestLookup, pullRequestAnswer, emptyAnswerJson } = require('./helpers/branch-pull-requests');
 
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
 
@@ -79,6 +80,7 @@ function fakeGh({ rules = GUARDED_RULES } = {}) {
   let next = 40;
   const runGh = (args) => {
     calls.push(args);
+    if (isPullRequestLookup(args)) return pullRequestAnswer(args);
     if (args[0] === 'api' && /\/rules\/branches\//.test(args[1])) {
       return rules === null ? { ok: false, stdout: '', stderr: 'HTTP 404' } : { ok: true, stdout: rules, stderr: '' };
     }
@@ -125,7 +127,8 @@ test('behind a required merge queue the local suite is never started: five branc
     }
     assert.equal(result.local_check.local, false);
     assert.deepEqual(result.local_check.checks, ['test']);
-    assert.equal(gh.calls.filter((c) => c[0] === 'api').length, 1, 'the guard is read once per run');
+    assert.equal(gh.calls.filter((c) => c[0] === 'api' && !isPullRequestLookup(c)).length, 1, 'the guard is read once per run');
+    assert.equal(gh.calls.filter(isPullRequestLookup).length, 1, 'the pull requests of all five branches are read in one call');
     const create = gh.calls.find((c) => c[1] === 'create');
     assert.match(create[create.indexOf('--body') + 1], /hosted checks/);
     assert.doesNotMatch(create[create.indexOf('--body') + 1], /checked with/);
@@ -502,6 +505,7 @@ function cliFixture(policy) {
     'case "$1 $2" in',
     `  "api repos/{owner}/{repo}/rules/branches/"*) cat "${rules}" ;;`,
     '  "pr list"*) echo "[]" ;;',
+    `  "api graphql"*) echo '${emptyAnswerJson()}' ;;`,
     '  *) echo "unexpected" >&2; exit 1 ;;',
     'esac',
     '',

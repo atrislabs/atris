@@ -14,6 +14,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { landStaleGreenBranches } = require('../lib/land-green');
+const { isPullRequestLookup, pullRequestAnswer } = require('./helpers/branch-pull-requests');
 
 const LIB = path.join(__dirname, '..', 'lib', 'land-green.js');
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
@@ -87,6 +88,7 @@ function fakeGh() {
   const calls = [];
   const runGh = (args) => {
     calls.push(args);
+    if (isPullRequestLookup(args)) return pullRequestAnswer(args);
     if (args[0] === 'pr' && args[1] === 'list') return { ok: true, stdout: '[]', stderr: '' };
     if (args[0] === 'pr' && args[1] === 'create') return { ok: true, stdout: 'https://github.com/acme/repo/pull/41', stderr: '' };
     if (args[0] === 'pr' && args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
@@ -506,6 +508,7 @@ test('reusing a member\'s queued pull request keeps its jobs and catch-up count'
     const calls = [];
     const runGh = (args) => {
       calls.push(args);
+      if (isPullRequestLookup(args)) return pullRequestAnswer(args);
       if (args[1] === 'list') return { ok: true, stdout: JSON.stringify([{ number: 7, headRefName: 'member/green', baseRefName: 'master', isCrossRepository: false, url: 'https://github.com/acme/repo/pull/7' }]), stderr: '' };
       if (args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
       return { ok: false, stdout: '', stderr: 'unexpected gh call' };
