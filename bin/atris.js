@@ -3348,7 +3348,8 @@ if (command === 'guide') {
       || raw.includes('--help')
       || raw.includes('-h')
       || raw[0] === 'help'
-      || raw[0] === 'quickstart';
+      || raw[0] === 'quickstart'
+      || raw[0] === 'begin';
     const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
     if (!gate.ok) process.exit(refuseAccountGlobal());
     const subcommand = gate.args[0];

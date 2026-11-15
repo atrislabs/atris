@@ -22,7 +22,7 @@ function writeCreds(home) {
   }));
 }
 
-function startShipApi(requests, { fail = false, hireResult, hireStatus = 200 } = {}) {
+function startShipApi(requests, { fail = false, hireResult, hireStatus = 200, pageUrl = 'https://atris.ai/b/harbor-coffee' } = {}) {
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -55,7 +55,7 @@ function startShipApi(requests, { fail = false, hireResult, hireStatus = 200 } =
           slug: 'harbor-coffee',
           name: 'Harbor Coffee',
           agent_id: 'agent-1',
-          public_page_url: 'https://atris.ai/b/harbor-coffee',
+          public_page_url: pageUrl,
           team: [
             { name: 'Maya' },
             { display_name: 'Scout' },
@@ -352,5 +352,62 @@ test('hire failures report the existing business and preserve partial success', 
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(cwd, { recursive: true, force: true });
     }
+  }
+});
+
+test('business begin creates and hires, falls back on missing templates, and validates required flags', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-home-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-cwd-'));
+  const requests = [];
+  const server = await startShipApi(requests, { pageUrl: 'https://example.com/coffee' });
+  writeCreds(home);
+  const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    const missing = await runCli(['business', 'begin', 'Make coffee', '--yes'], { cwd, env });
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /--kind/);
+    assert.equal(requests.length, 0);
+    const result = await runCli(['business', 'begin', 'Make coffee', '--kind', 'engineering', '--yes', '--name', 'Coffee', '--schedule', 'weekly'], { cwd, env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(requests.map(r => r.url), ['/api/public/business/templates', '/api/business/ship', '/api/business/biz-ship-1/hire/template']);
+    assert.equal(requests[0].authorization, undefined);
+    assert.deepEqual(requests[1].body, { description: 'Make coffee', name: 'Coffee', template: 'engineering' });
+    assert.deepEqual(requests[2].body, { template: 'engineering', schedule: 'weekly' });
+    assert.match(result.stdout, /1\. business/);
+    assert.match(result.stdout, /First job: Write the opening offer/);
+    assert.match(result.stdout, /atris invite/);
+    assert.doesNotMatch(result.stdout + result.stderr, /\b(?:ai|agent|automate)\b/i);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('business begin accepts no at confirmation without creating', async () => {
+  const { spawn } = require('node:child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-no-'));
+  const requests = [];
+  const server = await startShipApi(requests);
+  const modulePath = path.resolve(__dirname, '../commands/business.js');
+  const script = `Object.defineProperty(process.stdin, 'isTTY', { value: true });
+    require('readline').createInterface = () => ({ question: (q, cb) => { process.stdout.write(q); cb('no'); }, close() {} });
+    require(${JSON.stringify(modulePath)}).businessCommand('begin', 'Make coffee', '--kind', 'business');`;
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['-e', script], { env: { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api` } });
+      let output = '';
+      child.stdout.on('data', data => { output += data; });
+      child.stderr.on('data', data => { output += data; });
+      child.on('error', reject);
+      child.on('close', status => resolve({ status, output }));
+    });
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Create it\?/);
+    assert.doesNotMatch(result.output, /\b(?:ai|agent|automate)\b/i);
+    assert.deepEqual(requests.map(r => r.url), ['/api/public/business/templates']);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
