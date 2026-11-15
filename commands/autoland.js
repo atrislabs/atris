@@ -1197,6 +1197,11 @@ function greenVerdictRow(v) {
   // A green second run keeps the first red in the receipt.
   if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
   if (v.local_check) row.local_check = v.local_check;
+  // How long the row waited for a busy machine, in words.
+  if (v.waited) {
+    row.waited = v.waited;
+    row.waited_ms = v.waited_ms;
+  }
   return row;
 }
 
@@ -1405,19 +1410,21 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // green_landing:false. green_landing_local_check: true or false overrides
   // the base's rules. The local check starts one suite per run
   // (green_landing_local_suites raises it), one at a time across the machine,
-  // and none when the load is above twice the cores. A branch whose pull
+  // and none when the load is above twice the cores. A busy machine is waited
+  // for, at most 15 minutes a run (green_landing_wait_minutes). A branch whose pull
   // request was closed, is held for a person (green_landing_hold_labels names
   // the label words) or cannot be read is left alone; one merged at its tip
   // counts as landed.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
         localCheck: localCheckSetting(policy),
         localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
         holdLabels: holdLabelSetting(policy),
+        waitMinutes: machineWaitSetting(policy),
         machine: true,
       });
       receipt.green_landing = {
@@ -1425,6 +1432,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         merge_path: green.merge_path,
         local_check: green.local_check,
         local_suites: green.local_suites,
+        machine_wait: green.machine_wait,
         followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
         merged_by_pull_request: green.merged_by_pull_request,
         landed: green.landed,
