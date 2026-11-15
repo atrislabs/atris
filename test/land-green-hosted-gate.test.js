@@ -641,7 +641,14 @@ function machineDir() {
   return { dir, lockFile: path.join(dir, 'locks', 'local-suite.lock') };
 }
 
-const quiet = (lockFile) => ({ lockFile, loadAvg: () => [0.5, 0.5, 0.5], cpuCount: () => 8 });
+// A busy machine is waited for, bounded. These tests run the wait on a fake
+// clock whose sleep only moves the clock, so nothing sleeps for real.
+function fakeClock() {
+  let now = Date.now();
+  return { clock: () => now, sleep: (ms) => { now += ms; } };
+}
+
+const quiet = (lockFile) => ({ lockFile, loadAvg: () => [0.5, 0.5, 0.5], cpuCount: () => 8, ...fakeClock() });
 
 function holdLock(lockFile, ageMs) {
   fs.mkdirSync(path.dirname(lockFile), { recursive: true });
@@ -706,7 +713,7 @@ test('the machine lock lives under the user\'s .atris folder by default', () => 
     const result = landStaleGreenBranches(root, {
       push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
       runVerifyFn: () => { suites += 1; return GREEN; },
-      machine: { loadAvg: () => [0.5], cpuCount: () => 8 },
+      machine: { loadAvg: () => [0.5], cpuCount: () => 8, ...fakeClock() },
     });
     assert.equal(suites, 0);
     assert.equal(result.verdicts[0].reason, 'machine_busy', JSON.stringify(result.verdicts[0]));
@@ -754,14 +761,14 @@ test('no local suite starts when the one-minute load is above twice the cores', 
       push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
       runVerifyFn: () => { suites += 1; return GREEN; },
     };
-    const busy = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [17, 5, 5], cpuCount: () => 8 } });
+    const busy = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [17, 5, 5], cpuCount: () => 8, ...fakeClock() } });
     assert.equal(suites, 0);
     assert.equal(busy.verdicts[0].action, 'unknown', JSON.stringify(busy.verdicts[0]));
     assert.equal(busy.verdicts[0].reason, 'machine_busy');
     assert.match(busy.verdicts[0].detail, /load/);
     assert.deepEqual(busy.red, []);
     assert.equal(fs.existsSync(m.lockFile), false, 'no lock taken');
-    const fine = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [16, 5, 5], cpuCount: () => 8 } });
+    const fine = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [16, 5, 5], cpuCount: () => 8, ...fakeClock() } });
     assert.equal(suites, 1);
     assert.deepEqual(fine.landed, ['feat/one']);
   } finally {
@@ -780,7 +787,7 @@ test('the machine guards leave the hosted path alone: a guarded repo still queue
     const result = landStaleGreenBranches(root, {
       mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null,
       runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
-      machine: { lockFile: m.lockFile, loadAvg: () => [500], cpuCount: () => 8 },
+      machine: { lockFile: m.lockFile, loadAvg: () => [500], cpuCount: () => 8, sleep: () => { throw new Error('the hosted path never waits'); } },
     });
     assert.deepEqual(result.queued, ['feat/one'], JSON.stringify(result.verdicts));
   } finally {
@@ -792,6 +799,9 @@ test('atris land --auto respects the machine lock another project holds: machine
   const root = localRepo(['feat/one']);
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-machine-cli-'));
   try {
+    // The owner turned waiting off, so this run gives up at once.
+    fs.mkdirSync(path.join(root, '.atris', 'policy'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify({ green_landing_wait_minutes: 0 }));
     holdLock(path.join(state, '.atris', 'locks', 'land-green-local-suite.lock'), 60 * 1000);
     const marker = path.join(state, 'suite-ran');
     const cli = path.join(__dirname, '..', 'bin', 'atris.js');
