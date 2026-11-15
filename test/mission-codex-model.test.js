@@ -117,11 +117,10 @@ test('a dropped model takes a literal model flag in the template with it', () =>
 });
 
 test('claude steps keep their model pin', () => {
-  // A pinned opus or fable runs only with the owner's yes for that model.
-  const okOpus = { ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' };
-  assert.match(tickCommand({ runner: 'claude', model: 'claude-opus-5-5' }, okOpus), /^claude -p .* --model claude-opus-5-5$/);
+  // A pinned opus or fable runs as named, with no yes in the env.
+  assert.match(tickCommand({ runner: 'claude', model: 'claude-opus-5-5' }), /^claude -p .* --model claude-opus-5-5$/);
   assert.match(tickCommand({ runner: 'claude' }), /--model claude-haiku-5-5$/);
-  assert.match(tickCommand({ runner: 'fable' }, { ATRIS_CLAUDE_SPEND_OK: 'claude-fable-5-1' }), /--model claude-fable-5-1$/);
+  assert.match(tickCommand({ runner: 'fable' }), /--model claude-fable-5-1$/);
   const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}' };
   assert.match(tickCommand({ runner: 'claude' }, template), /--model claude-haiku-5-5$/);
   assert.match(tickCommand({ runner: 'claude', model: 'default' }, template), /--model default$/);

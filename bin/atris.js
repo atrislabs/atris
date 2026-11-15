@@ -636,6 +636,7 @@ function showHelpAll() {
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
+  console.log('  nexus      - Your people: today\'s moves, one person\'s card, find, note, stage, add (--json for agents)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
@@ -2592,6 +2593,10 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/memory').memoryCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'nexus') {
+  Promise.resolve().then(() => require('../commands/nexus').nexusCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'film') {
   Promise.resolve().then(() => require('../commands/film').filmCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
@@ -2601,7 +2606,7 @@ if (command === 'guide') {
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'spend') {
-  // Spend guard: unattended Claude runs on paid models need a yes (2026-10-28, $900 day).
+  // Spend guard: stops an unattended Claude run that could bill, never swaps its model (2026-10-28, $900 day).
   const code = require('../commands/spend').spendCommand(process.argv.slice(3));
   exitAfterStdoutDrain(typeof code === 'number' ? code : 0);
 } else if (command === 'usage') {
