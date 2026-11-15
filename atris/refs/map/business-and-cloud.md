@@ -157,7 +157,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:1940` (`runComputer` dispatch handles `card` before auth)
+- **Entry point:** `commands/computer.js:2225` (`runComputer` dispatch handles `card` before auth)
 - **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
 - **Writer:** `lib/computer-core.js:1536` (`computerCard`)
 - **How it works:**
@@ -168,6 +168,18 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 - **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
 
 **Search:** `rg "buildComputerCard|computerCard" commands/computer.js lib/computer-core.js`
+
+## Feature: Pull Request From A Task (`atris computer pr`)
+
+**Purpose:** A GitHub repo and a plain-words task go in; the business computer does the work on a new branch, opens one pull request, and the command prints the link. It never merges.
+
+- **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
+- **Command:** `commands/computer.js:1138` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
+- **Instruction and parsing:** `lib/computer-pr.js:168` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:332` (`parsePullRequestResult`), `lib/computer-pr.js:376` (`redactSecrets`)
+- **Run text:** `commands/computer.js:1343` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
+- **Tests:** `test/computer-pr.test.js`
+
+**Search:** `rg "computerPr|buildPullRequestPrompt|parsePullRequestResult|redactSecrets" commands/computer.js lib/computer-pr.js test/computer-pr.test.js`
 
 ## Feature: Computer Account Setup (`atris computer setup`)
 
@@ -187,7 +199,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 **Purpose:** Register the current directory as a live local AI Computer session so cloud agents can apply bounded file operations.
 
 - **Known command:** `lib/known-commands.js:4` includes `serve`, so the explicit branch is reachable before natural-language fallback
-- **Help:** `bin/atris.js:1148-1153` (`showServeHelp`) prints usage without auth checks or bridge startup
+- **Help:** `bin/atris.js:1154-1166` (`showServeHelp`) prints usage without auth checks or bridge startup
 - **Dispatch:** `bin/atris.js:1129-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
 - **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
@@ -251,3 +263,14 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 - **Regression:** `test/night-morning-join.test.js` covers the cap refusal, the shift line, watch events, morning and no-shift, and join storing the key; `test/morning-bring-home.test.js` covers the card, the saved files, untrusted text, the brain load list, and the folder mission.
 
 **Search:** `rg "night-shift|night-learned|join-as-agent|joined_agent|/morning" commands lib test/night-morning-join.test.js test/morning-bring-home.test.js`
+
+## Feature: Popshare posts calendar (`atris popshare`)
+
+**Purpose:** One terminal view of every scheduled post across x, linkedin, blog, instagram and tiktok, plus the cadence scoreboard. Popshare never writes the words; every post is one a person saved.
+
+- **Entry:** `commands/popshare.js:284` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
+- **Parsing:** `commands/popshare.js:33` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js:48` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js:96` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
+- **Rendering:** `commands/popshare.js:189` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js:226` (`listText`) groups the calendar by local day, and `commands/popshare.js:260` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
+- **Regression:** `test/popshare.test.js` covers arg parsing, local-time conversion, id resolution, the pure renderers, and the API calls with a fake `apiRequestJson`.
+
+**Search:** `rg "popshareCommand|localAtToIso|parseAddArgs|resolvePostId|todayText|scoreText" commands/popshare.js test/popshare.test.js`

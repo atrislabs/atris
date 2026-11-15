@@ -821,7 +821,27 @@ async function businessDoctor(...args) {
   if (failures.length > 0) process.exitCode = 1;
 }
 
+function extractBusinessKind(args) {
+  const remaining = [];
+  let kind;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--kind' || arg.startsWith('--kind=')) {
+      kind = arg === '--kind' ? args[++i] : arg.slice('--kind='.length);
+      if (!['business', 'research', 'engineering', 'fund'].includes(kind)) {
+        console.error('Choose a kind: business, research, engineering, or fund.');
+        process.exit(1);
+      }
+    } else {
+      remaining.push(arg);
+    }
+  }
+  return { kind, remaining };
+}
+
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
+  const { kind, remaining } = extractBusinessKind(flags);
+  flags = remaining;
   const validation = validateBusinessCreateName(name);
   if (!validation.ok) {
     console.error(validation.usage);
@@ -866,7 +886,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   const result = await apiRequestJson('/business/', {
     method: 'POST',
     token: creds.token,
-    body: { name, description: description || undefined },
+    body: { name, description: description || undefined, ...(kind ? { template: kind } : {}) },
   });
 
   if (!result.ok) {
@@ -952,6 +972,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`\n  Business created!`);
   console.log(`  ID:        ${biz.id}`);
   console.log(`  Slug:      ${biz.slug}`);
+  if (kind) console.log(`  Team: ${kind} (six seats)`);
   console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
@@ -975,7 +996,9 @@ function printBusinessShipHelp() {
   console.log('Create a live business from one paragraph.');
   console.log('  --name <name>     Optional business name');
   console.log('  --email <email>   Optional customer email');
+  console.log('  --kind <kind>     Starter team: business, research, engineering, or fund');
   console.log('  --yes             Required to POST /business/ship');
+  console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
 }
 
 async function shipBusiness(...args) {
@@ -990,7 +1013,8 @@ async function shipBusiness(...args) {
     process.exit(2);
   }
 
-  const parsed = parseBusinessShipArgs(args);
+  const { kind, remaining } = extractBusinessKind(args);
+  const parsed = parseBusinessShipArgs(remaining);
   if (!parsed.ok) {
     console.error(parsed.usage);
     if (parsed.detail) console.error(`\n  ${parsed.detail}`);
@@ -1006,6 +1030,7 @@ async function shipBusiness(...args) {
   const body = { description: parsed.description };
   if (parsed.name) body.name = parsed.name;
   if (parsed.email) body.customer_email = parsed.email;
+  if (kind) body.template = kind;
 
   console.log(`Shipping business: ${parsed.name || parsed.description}...`);
 
@@ -1030,6 +1055,7 @@ async function shipBusiness(...args) {
   console.log('');
   console.log(`  ${label}${slug ? ` (${slug})` : ''}`);
   if (pageUrl) console.log(`  Public page: ${pageUrl}`);
+  if (kind) console.log(`  Team: ${kind} (six seats)`);
   if (names.length > 0) console.log(`  Team: ${names.join(', ')}`);
   if (firstTask) console.log(`  First task: ${firstTask}`);
   console.log('');
@@ -1496,7 +1522,9 @@ function printBusinessHelp() {
   console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
   console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
-  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email; --yes required)');
+  console.log('                       --kind <business|research|engineering|fund> selects a starter team');
+  console.log('  ship "<paragraph>"   One paragraph, live business (optional --name, --email, --kind; --yes required)');
+  console.log('  Example: atris business ship "A studio that builds small web apps" --kind engineering --yes');
   console.log('  simulate <idea>      Create a business, four-role team, missions, and endgame loop');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
