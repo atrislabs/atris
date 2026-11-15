@@ -1125,6 +1125,11 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
+  if (v.pr) row.pr = v.pr;
+  if (v.url) row.url = v.url;
+  if (v.hand_back) row.hand_back = v.hand_back;
+  if (v.regenerated) row.regenerated = v.regenerated;
+  if (v.known_red) row.known_red = v.known_red;
   return row;
 }
 
@@ -1317,20 +1322,25 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   });
 
-  // 3b2. green landing, every tick: one stale branch that merges clean and
-  // passes the full verify in a scratch checkout lands on base and is pushed.
-  // A red branch opens a close flag the same hour instead of waiting for the
-  // TTL reap to salvage it. Off by policy: green_landing:false.
+  // 3b2. green landing, every tick: up to five stale branches, one at a
+  // time, are caught up with base in a scratch checkout and pass the full
+  // verify there. On GitHub each goes through a pull request and the merge
+  // queue; base is never pushed. A red branch opens a close flag the same
+  // hour; a clash outside the map goes back to a builder as a job. Off by
+  // policy: green_landing:false.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
-        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : 1,
+        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
       });
       receipt.green_landing = {
         candidates: green.candidates.length,
+        merge_path: green.merge_path,
         landed: green.landed,
+        queued: green.queued,
+        handed_back: green.handed_back,
         red: green.red,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
