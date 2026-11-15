@@ -681,7 +681,7 @@ function showHelpAll() {
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  scoreboard - Today\'s github contributions vs your best day, streak, repo commits (--watch, --json)');
   console.log('  growth     - Signups, paying, revenue, cli installs and countries, same as the growth page (--open, --json, note "...")');
-  console.log('  popshare   - Posts calendar for x, linkedin, blog, instagram, tiktok: today, add, schedule, score (--json)');
+  console.log('  popshare   - Posts calendar for x, linkedin, blog, instagram, tiktok: week, today, show, goals, open, add, schedule, score (--json)');
   console.log('  scorecard  - Which AI can do your team\'s work: past changes graded by their own tests, run on your Claude plan (find, run, show)');
   console.log('  rating     - The Atris Rating, 25 to 99: how much real work each engine and member finishes (atris rating opus)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
