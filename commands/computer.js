@@ -1161,6 +1161,24 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   let warned = false;
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
   const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
+  let stopped = false;
+  let finishing = null;
+  const finishFeed = () => {
+    if (!finishing) finishing = (async () => {
+      const time = elapsed();
+      sendFeed({ type: 'finish', url: finalUrl, stopped, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+      if (feedExited) {
+        let timer;
+        await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
+        clearTimeout(timer);
+      }
+    })();
+    return finishing;
+  };
+  const onSigint = () => { stopped = true; };
+  const onSigterm = () => { stopped = true; void finishFeed().then(() => process.exit(143)); };
+  process.on('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
   try {
   let parsed;
   try {
@@ -1364,13 +1382,10 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   if (second.result?.ok) return succeed(second.result, retryBranch);
   return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
   } finally {
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
+    await finishFeed();
     const time = elapsed();
-    sendFeed({ type: 'finish', url: finalUrl, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
-    if (feedExited) {
-      let timer;
-      await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
-      clearTimeout(timer);
-    }
     log(`Done in ${time.minutes}m ${time.seconds}s`);
   }
 }
@@ -1514,6 +1529,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
     }
   } finally {
     sigintTarget.removeListener('SIGINT', onSigint);
+    if (cancelPromise) await cancelPromise;
   }
 }
 
