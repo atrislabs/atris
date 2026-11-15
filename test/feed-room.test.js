@@ -150,7 +150,7 @@ test('reply: the newest three show, oldest first, with the total; members write 
   assert.deepEqual(out.card.replies[0].author, { id: 'user:owner', name: 'You', type: 'user' });
   assert.deepEqual(list(ctx).cards.find((c) => c.id === post.id).replies.map((r) => r.text), texts.slice(1));
   assert.throws(() => room.reply(ctx.root, post.id, 'It is in lib/sales.js somewhere.', { as: 'writer', env: ctx.env }), (e) => e.status === 400 && /plain words/.test(e.message));
-  assert.throws(() => room.reply(ctx.root, post.id, 'y'.repeat(281), { env: ctx.env }), (e) => e.status === 400 && /under 280/.test(e.message));
+  assert.throws(() => room.reply(ctx.root, post.id, 'y'.repeat(1001), { env: ctx.env }), (e) => e.status === 400 && /under 1000/.test(e.message));
   assert.throws(() => room.reply(ctx.root, post.id, texts[3], { as: 'writer', env: ctx.env }), (e) => e.status === 409, 'the same reply twice');
   assert.throws(() => room.reply(ctx.root, post.id, 'Hi there.', { env: ctx.agentEnv }), (e) => e.status === 403);
   // At most 50 replies on a card: the oldest go.
