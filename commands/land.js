@@ -1013,8 +1013,36 @@ function showHelp() {
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
+  console.log('  atris land --prs [--repo <owner/name>]');
+  console.log('                                 sort every open pull request into merge,');
+  console.log('                                 catch-up, close, owner or leave, with a reason');
+  console.log('  atris land --prs --apply       merge, label catch-up, close stale ones with a');
+  console.log('                                 plain comment; branches are always kept');
+  console.log('  atris land --prs --all         list every row, not the ten oldest per bucket');
+  console.log('  atris land --prs --ours a,b    use these accounts as ours instead of the');
+  console.log('                                 authors of the last 200 merged pull requests');
+  console.log('');
   console.log('backups go to .atris/salvage/<date>/; clearing never loses work.');
   console.log('');
+}
+
+function landPullRequests(args, json) {
+  const sweep = require('../lib/pr-sweep');
+  const repo = readFollowingFlag(args, '--repo', '');
+  const oursRaw = readFollowingFlag(args, '--ours', '');
+  const ours = oursRaw ? oursRaw.split(',').map((s) => s.trim()).filter(Boolean) : null;
+  try {
+    let report = sweep.sweepRepo({ repo, oursOverride: ours });
+    if (args.includes('--apply') && !args.includes('--dry-run')) report = sweep.applySweep(report);
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else for (const line of sweep.formatSweep(report, { show: args.includes('--all') ? 0 : 10 })) console.log(line);
+    return report.actions.some((a) => !a.ok) ? 1 : 0;
+  } catch (err) {
+    const msg = String((err && err.message) || err || 'pull request sweep failed').split('\n')[0];
+    if (json) printCliJson({ ok: false, error: msg }, { ok: false, error: msg }, ['--json']);
+    else console.error(`pull request sweep: ${msg.toLowerCase()}`);
+    return 1;
+  }
 }
 
 function landCommand(args = []) {
@@ -1023,6 +1051,8 @@ function landCommand(args = []) {
     return 0;
   }
   const json = args.includes('--json');
+  // Pull requests live on github, so --repo works from any folder.
+  if (args.includes('--prs')) return landPullRequests(args, json);
   const root = repoRoot();
   if (!root) return printEmptyLand('not_a_git_repo', json);
   if (!hasCommits(root)) return printEmptyLand('no_commits', json);
