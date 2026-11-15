@@ -27,7 +27,7 @@ const http = require('node:http');
 const phone = require('../lib/gm-phone');
 const gmCard = require('../lib/gm-card');
 const { phonePage } = require('../lib/gm-phone-page');
-const { findChrome, launch, cardDesk, CARDS, PHONE } = require('./gm-phone-trace');
+const { findChrome, launch, cardDesk, CARDS, PHONE, readSteps, stepsAndChanges } = require('./gm-phone-trace');
 
 const TOKEN = 'p'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -140,15 +140,17 @@ const lavaO = f => (f.lava ? f.lava.o : 0);
 // them, and the biggest change of opacity in one frame for the card, the
 // sphere, the lava, and the line. A fade of 0.2s moves about 0.08 a frame;
 // a cut moves 1. The machine's pace is its 75th percentile frame and a
-// frame over twice that (50ms to 250ms) is a stall, counted at full size.
+// frame over twice that (50ms to 250ms) is a stall: a fade is not read in
+// it, and a step in it is read as readSteps in gm-phone-trace.js reads it.
 function summarizePath(frames, from) {
   const span = frames.filter(f => f.t >= from);
   const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
   const pace = gaps.length ? gaps[Math.floor(0.75 * (gaps.length - 1))] : 16.7;
   const stall = Math.min(250, Math.max(50, 2 * pace));
   const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
+  const lavaAt = [], lavaSize = [], stageSteps = [], titleSteps = [];
   const out = { lava_step: 0, lava_size_step: 0, lava_speed_change: 0, sphere_step: 0, dots_step: 0, dots_speed_change: 0, title_step: 0, footer_seen_jump: 0, card_fade: 0, sphere_fade: 0, sphere_drop: 0, lava_fade: 0, line_fade: 0 };
-  let prevLava = null, prevDots = null;
+  let prevDots = null;
   let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0;
   const cuts = [];
   const bigSteps = [];
@@ -167,14 +169,11 @@ function summarizePath(frames, from) {
     if (moved) runStart = b.t;
     else if (b.busy && b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
     if (a.lava && b.lava && !(a.lava.at === b.lava.at && near(a.lava.r, b.lava.r))) {
-      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms, kl = per(own);
-      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * kl;
-      out.lava_step = Math.max(out.lava_step, st);
-      out.lava_size_step = Math.max(out.lava_size_step, Math.abs(a.lava.r.w - b.lava.r.w) * kl);
-      if (prevLava) out.lava_speed_change = Math.max(out.lava_speed_change, Math.abs(st - prevLava.st) * per((prevLava.own + own) / 2));
-      prevLava = { st, own };
-    } else if (!a.lava || !b.lava) prevLava = null;
-    if (a.stage && b.stage) out.sphere_step = Math.max(out.sphere_step, stepOf(a.stage, b.stage) * k, Math.abs(a.stage.w - b.stage.w) * k);
+      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms;
+      lavaAt.push({ d: stepOf(mid(a.lava.r), mid(b.lava.r)), ms: own });
+      lavaSize.push({ d: Math.abs(a.lava.r.w - b.lava.r.w), ms: own });
+    } else if (!a.lava || !b.lava) { lavaAt.push(null); lavaSize.push(null); }
+    stageSteps.push(a.stage && b.stage ? { d: Math.max(stepOf(a.stage, b.stage), Math.abs(a.stage.w - b.stage.w)), ms } : null);
     if (b.orb.frame > a.orb.frame && a.sphere > 0.05 && b.sphere > 0.05) {
       const drawn = b.orb.frame - a.orb.frame, own = Math.max(8, b.orb.ms || 0);
       out.dots_step = Math.max(out.dots_step, b.orb.step * 16.7 / own);
@@ -182,7 +181,7 @@ function summarizePath(frames, from) {
       if (prevDots && drawn === 1) out.dots_speed_change = Math.max(out.dots_speed_change, Math.abs(speed - prevDots.speed) * 16.7 / ((prevDots.own + own) / 2));
       prevDots = drawn === 1 ? { speed, own } : null;
     } else prevDots = null;
-    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) out.title_step = Math.max(out.title_step, stepOf(a.box.title, b.box.title) * k);
+    titleSteps.push(a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title ? { d: stepOf(a.box.title, b.box.title), ms } : null);
     if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) out.footer_seen_jump = Math.max(out.footer_seen_jump, stepOf(a.foot.r, b.foot.r));
     // a cut: what is seen changes all at once. The card under a still copy of
     // itself (a turn in place) is covered, and so is a sphere under the lava.
@@ -204,6 +203,12 @@ function summarizePath(frames, from) {
     out.line_fade = Math.max(out.line_fade, fade('line', lineO(a), lineO(b), false));
     if (b.busy && b.line && b.line.o > 0.05 && !lines.includes(b.line.text)) lines.push(b.line.text);
   }
+  const lava = stepsAndChanges(lavaAt, readSteps(lavaAt, stall));
+  out.lava_step = lava.step;
+  out.lava_speed_change = lava.change;
+  out.lava_size_step = stepsAndChanges(lavaSize, readSteps(lavaSize, stall)).step;
+  out.sphere_step = stepsAndChanges(stageSteps, readSteps(stageSteps, stall)).step;
+  out.title_step = stepsAndChanges(titleSteps, readSteps(titleSteps, stall)).step;
   for (const k of Object.keys(out)) out[k] = round(out[k]);
   // the sphere re-forming out of the point: from the frame it is seen until
   // its dots slow under half a pixel per 60fps frame for good (the spring

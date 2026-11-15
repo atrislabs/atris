@@ -69,6 +69,45 @@ test('trace: a cut in the frames reads as a cut, and a fade as a fade', () => {
   assert.deepEqual(popped.lines_while_moving, ['tap to think'], show(popped));
 });
 
+// The lava moves by the clock. Hosted runs on 2026-11-14 and 2026-11-15 failed
+// the glide check with one 100ms frame and a lava step near 120px: six frames
+// of a smooth motion, read as one jump. A step is read per frame of the time
+// it took; a real jump still reads as one, in a stall or not.
+test('trace: a smooth glide through a frame the machine held is not a jump, and a real jump still is', () => {
+  const frame = (t, x) => ({ t, ft: t, orb: { frame: 0, mode: 'card', step: 0, mean: 0, ms: 16.7 }, sphere: 0, stage: null, lava: { r: { x, y: 100, w: 80, h: 80 }, o: 1, at: t }, box: null, ghost: 0, line: null, foot: { r: { x: 0, y: 0, w: 10, h: 10 }, o: 0 }, busy: true });
+  // 10px per 60fps frame for 40 frames, at 16.7ms each, except where the machine held a frame
+  const glide = (heldAt, heldMs, jumpAt = -1, jumpPx = 0) => {
+    const out = [];
+    let t = 0, x = 0;
+    for (let i = 0; i < 40; i++) {
+      const ms = i === heldAt ? heldMs : 16.7;
+      t += ms;
+      x += 10 * ms / 16.7 + (i === jumpAt ? jumpPx : 0);
+      out.push(frame(t, x));
+    }
+    return paths.summarizePath(out, 0);
+  };
+  const smooth = glide(-1, 0);
+  assert.ok(smooth.lava_step <= 10.01 && smooth.lava_speed_change <= 0.01, show(smooth));
+  // the page held 100ms, as a busy runner does: before, this read as a 60px step and a 50px change of speed
+  const held = glide(20, 100);
+  assert.equal(held.max_frame_ms, 100, show(held));
+  assert.ok(held.lava_step <= 10.01 && held.lava_speed_change <= 0.01, show(held));
+  // a 200px jump in a frame of normal length
+  const jump = glide(-1, 0, 20, 200);
+  assert.ok(jump.lava_step > 45 && jump.lava_speed_change > 15, show(jump));
+  // a 60px jump inside a 100ms frame reads as the 60px it went past the glide
+  const hidden = glide(20, 100, 20, 60);
+  assert.ok(hidden.lava_step > 45 && hidden.lava_step < 75, show(hidden));
+  // the same for a jump inside a frame held two seconds
+  const frozen = glide(20, 2000, 20, 60);
+  assert.ok(frozen.lava_step > 45, show(frozen));
+  // a held step with no steady frame beside it counts at its full size, as before
+  const { readSteps } = require('../scripts/gm-phone-trace');
+  assert.deepEqual(readSteps([null, { d: 60, ms: 100 }, null], 50), [null, 60, null]);
+  assert.deepEqual(readSteps([{ d: 10, ms: 16.7 }, { d: 60, ms: 100 }, { d: 10, ms: 16.7 }], 50).map(Math.round), [10, 10, 10]);
+});
+
 test('browser: on a phone six times slower the sphere re-forms in about the same time as at full speed', { skip, timeout: 120000 }, async () => {
   const only = ['small orb home'];
   const fast = byName(await paths.pathsTrace({ chromePath: CHROME, only }))['small orb home'];

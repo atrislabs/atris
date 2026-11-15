@@ -17,7 +17,7 @@
 # Usage:
 #   scripts/spaceship.sh --hours 4
 #   scripts/spaceship.sh --hours 4 --repo /path/to/repo --interval 780
-#   scripts/spaceship.sh --hours 0.01 --tick-cmd /tmp/stub.sh --no-email   # test
+#   scripts/spaceship.sh --max-ticks 7 --interval 0 --tick-cmd /tmp/stub.sh --no-email   # test
 #
 # Env:
 #   SPACESHIP_EMAIL_CMD   command that takes "--subject X" and reads body on stdin.
@@ -33,6 +33,7 @@ TICK_CMD="atris autopilot --auto --iterations=1"
 TICK_TIMEOUT=900             # per-tick hard cap (seconds)
 IDLE_ALERT=3                 # email after this many consecutive idle ticks
 HALT_ALERT=2                 # email after this many consecutive halted ticks
+MAX_TICKS=0                  # stop after this many ticks; 0 means only the hours budget stops it
 EMAIL=1
 LABEL="spaceship"
 
@@ -50,7 +51,7 @@ usage() {
 Usage: spaceship.sh [--hours N] [--interval SEC] [--repo PATH]
                     [--tick-cmd CMD] [--tick-timeout SEC]
                     [--idle-alert N] [--halt-alert N] [--label NAME]
-                    [--no-email]
+                    [--max-ticks N] [--no-email]
 
 Bounded overnight runner. Survives bad ticks and emails on state changes.
 EOF
@@ -66,12 +67,17 @@ while [ $# -gt 0 ]; do
     --tick-timeout) TICK_TIMEOUT="$2"; shift 2;;
     --idle-alert) IDLE_ALERT="$2"; shift 2;;
     --halt-alert) HALT_ALERT="$2"; shift 2;;
+    --max-ticks) MAX_TICKS="$2"; shift 2;;
     --label) LABEL="$2"; shift 2;;
     --no-email) EMAIL=0; shift;;
     -h|--help) usage; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
+
+case "$MAX_TICKS" in
+  ''|*[!0-9]*) echo "--max-ticks needs a whole number" >&2; exit 2;;
+esac
 
 REPO="$(cd "$REPO" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -154,6 +160,10 @@ while true; do
     logline "budget exhausted after $(elapsed_min)m"
     break
   fi
+  if [ "$MAX_TICKS" -gt 0 ] && [ "$ticks" -ge "$MAX_TICKS" ]; then
+    logline "tick cap reached after $ticks ticks"
+    break
+  fi
 
   ticks=$((ticks+1))
   head_before="$(git_head)"
@@ -226,6 +236,7 @@ I'll keep checking (in case new signals appear), but this usually means the back
   # sleep, but never past the budget
   remaining=$(( BUDGET_SECONDS - ( $(date +%s) - START_EPOCH ) ))
   if [ "$remaining" -le 0 ]; then break; fi
+  if [ "$MAX_TICKS" -gt 0 ] && [ "$ticks" -ge "$MAX_TICKS" ]; then continue; fi
   sleep_for=$(( INTERVAL < remaining ? INTERVAL : remaining ))
   sleep "$sleep_for"
 done
