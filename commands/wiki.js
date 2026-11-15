@@ -176,6 +176,10 @@ function hasHelpFlag(args) {
 }
 
 function printWikiHelp(scope = null) {
+  if (scope === 'learn') {
+    console.log(require('../lib/learning-team').learnUsage());
+    return;
+  }
   const normalized = scope === 'ingest' || scope === 'query' || scope === 'lint' || scope === 'consolidate' || scope === 'search' || scope === 'log' || scope === 'loop' || scope === 'verify'
     ? scope
     : null;
@@ -202,9 +206,10 @@ function printWikiHelp(scope = null) {
     console.log('');
     console.log('Build a local wiki pruning prompt and reset the growth marker.');
   } else {
-    console.log('Usage: atris wiki <ingest|query|lint|consolidate|search|log|loop|verify|entities|related> [business] [args]');
+    console.log('Usage: atris wiki <ingest|learn|query|lint|consolidate|search|log|loop|verify|entities|related> [business] [args]');
     console.log('');
     console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
+    console.log('  learn  "topic" [--into dir]   Write linked notes from recent public sources on a topic');
     console.log('  query  "question"             Local-first query against atris/wiki/');
     console.log('  lint                          Local-first lint for atris/wiki/');
     console.log('  consolidate                   Build a local pruning prompt and reset wiki growth');
@@ -517,6 +522,13 @@ function wikiVerify(mode, slug) {
 async function wikiCommand(subcommand, ...args) {
   if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h' || hasHelpFlag(args)) {
     printWikiHelp(subcommand);
+    return;
+  }
+
+  if (subcommand === 'learn') {
+    const { runLearn } = require('../lib/learning-team');
+    const result = await runLearn(args);
+    if (!result.ok) process.exit(result.code || 1);
     return;
   }
 
