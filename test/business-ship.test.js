@@ -40,6 +40,10 @@ function startShipApi(requests, { fail = false } = {}) {
         res.end(JSON.stringify({ detail: 'description is required' }));
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/business/') {
+        res.end(JSON.stringify({ id: 'biz-1', slug: 'test-business', name: 'Test Business' }));
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/business/ship') {
         res.end(JSON.stringify({
           business_id: 'biz-ship-1',
@@ -118,6 +122,8 @@ test('business ship --help prints ship usage without calling the api', async () 
     assert.match(res.stdout, /Usage: atris business ship/);
     assert.match(res.stdout, /--name/);
     assert.match(res.stdout, /--email/);
+    assert.match(res.stdout, /--kind/);
+    assert.match(res.stdout, /--kind engineering --yes/);
     assert.doesNotMatch(res.stdout + res.stderr, /Shipping business/);
     assert.doesNotMatch(res.stdout + res.stderr, /Not logged in/);
   } finally {
@@ -136,6 +142,10 @@ test('business help lists the ship subcommand', async () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /ship "<paragraph>"/);
+    assert.match(res.stdout, /--kind/);
+    const createHelp = await runCli(['business', 'create', '--help'], { cwd, env: { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+    assert.match(createHelp.stdout, /--kind/);
+    assert.match(createHelp.stdout, /--kind engineering --yes/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
@@ -249,6 +259,43 @@ test('business ship prints backend errors the same way create does', async () =>
     });
     assert.notEqual(res.status, 0);
     assert.match(res.stderr, /Failed: description is required/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+test('business create and ship send a valid kind and reject invalid kinds before requests', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-kind-home-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-kind-cwd-'));
+  const requests = [];
+  const server = await startShipApi(requests);
+  writeCreds(home);
+  const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    for (const command of ['create', 'ship']) {
+      const base = command === 'create'
+        ? ['business', 'create', 'Test Business', '--force', '--no-local', '--account']
+        : ['business', 'ship', 'Test Business', '--yes', '--account'];
+      const invalid = await runCli([...base, '--kind', 'wrong'], { cwd, env });
+      assert.notEqual(invalid.status, 0);
+      assert.match(invalid.stderr, /business, research, engineering, or fund/);
+      assert.equal(requests.length, 0);
+      const missing = await runCli([...base, '--kind'], { cwd, env });
+      assert.notEqual(missing.status, 0);
+      assert.equal(requests.length, 0);
+      const noKind = await runCli(base, { cwd, env });
+      assert.equal(noKind.status, 0, noKind.stderr || noKind.stdout);
+      assert.equal(Object.hasOwn(requests[0].body, 'template'), false);
+      requests.length = 0;
+      const withKind = await runCli([...base, '--kind=engineering'], { cwd, env });
+      assert.equal(withKind.status, 0, withKind.stderr || withKind.stdout);
+      assert.equal(requests[0].body.template, 'engineering');
+      assert.match(withKind.stdout, /Team: engineering \(six seats\)/);
+      requests.length = 0;
+    }
   } finally {
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(home, { recursive: true, force: true });
