@@ -4,8 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { isAgentCertified, AGENT_CERTIFICATION_REVIEW_PASSES } = require('../lib/auto-accept-certified');
 
-test('certification bar is two review passes', () => {
-  assert.strictEqual(AGENT_CERTIFICATION_REVIEW_PASSES, 2);
+test('certification bar is one review pass from someone who never built the work', () => {
+  assert.strictEqual(AGENT_CERTIFICATION_REVIEW_PASSES, 1);
 });
 
 test('an empty task is not certified', () => {
@@ -54,7 +54,7 @@ test('other handoff statuses and malformed handoffs do not certify', () => {
   assert.strictEqual(isAgentCertified({ review: { handoff: ['agent_certified'] } }), false);
 });
 
-test('two review passes certify, one does not', () => {
+test('a bare count certifies only above the builder hand-in: two passes certify, one does not', () => {
   assert.strictEqual(isAgentCertified({ metadata: { agent_review_pass_count: 1 } }), false);
   assert.strictEqual(isAgentCertified({ metadata: { agent_review_pass_count: 2 } }), true);
   assert.strictEqual(isAgentCertified({ metadata: { agent_review_pass_count: 7 } }), true);

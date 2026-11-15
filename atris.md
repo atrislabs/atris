@@ -175,7 +175,7 @@ atris task review <id> --lesson "<what improved>" --next "<next task>"
 
 Headless agents should add `--json` where available and read `.atris/state/tasks.projection.json`.
 
-Landing policy: when `atris autoland on` is set, certified work (two independent review passes, real proof, safe verify re-run) lands itself with a receipt; agents never run `atris task accept` themselves. Money, deploys, security, customer, and outward-facing lanes always wait for the human (`atris autoland` shows status). Swarlo coordinates live claims and heartbeats; the task DB is durable truth.
+Landing policy: when `atris autoland on` is set, finished work with real proof and a safe verify re-run lands itself with a receipt. How much checking it needs depends on what it touches. Tier 0 (docs, notes and tests only) lands once its check passes and the hosted checks are green, with no review. Tier 1 (ordinary code) needs one review pass from someone who never built it; the builder's own review never counts. Tier 2 (money, billing, deploys and releases, security, customer sends and the approval and landing rules themselves) always waits for the human. A change takes the highest tier of anything it touches. Work whose files cannot be read from git is tier 1 at least. The tiers live in `.atris/policy/autoland.json` under `approval_tiers`, where the owner can tighten them. Agents never run `atris task accept` themselves (`atris autoland` shows status). Swarlo coordinates live claims and heartbeats; the task DB is durable truth.
 
 Every task record carries:
 

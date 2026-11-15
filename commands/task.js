@@ -28,6 +28,7 @@ const {
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
+  mayBeTierZero,
   openPullRequestRefusal,
   parseVerifyChain,
   parseVerifyCommand,
@@ -10019,11 +10020,15 @@ function cmdAutoAcceptCertified(args) {
   const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
   // The review queue only surfaces certified rows. Under --all the bar is
   // the protected lanes, not certification, so scan every pending review.
+  // Docs, notes and tests with a recorded merge (tier 0) need no review pass, so
+  // they are scanned even though the certified queue does not list them.
+  const queued = acceptAll ? [] : queue.items.filter(item => item.queue_role !== 'blocked');
+  const queuedIds = new Set(queued.map(item => item.id));
   const pool = acceptAll
     ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
-    : queue.items.filter(item => item.queue_role !== 'blocked');
+    : [...queued, ...pendingReview.filter(t => !queuedIds.has(t.id) && mayBeTierZero(t)).slice(0, max)];
   const results = [];
 
   for (const item of pool) {

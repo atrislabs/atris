@@ -640,6 +640,10 @@ function turnOn(root, args) {
     accept_all: acceptAll,
     accept_protected: args.includes('--include-protected'),
     daily_experiment: previous.daily_experiment !== false,
+    // The owner's tier choices survive turning it on again; a fresh file gets the defaults.
+    approval_tiers: previous.approval_tiers && typeof previous.approval_tiers === 'object'
+      ? previous.approval_tiers
+      : autoland.defaultApprovalTiers(),
   });
   const cronOk = autoland.installCron(root);
   autoland.writePolicy(root, {
