@@ -728,6 +728,36 @@ function cleanup(args) {
   return 0;
 }
 
+// Member runs in this project and how each ended. Exits 1 while any run is
+// unfinished: stopped without landing or being dropped, and not yet handed to
+// the owner. Reads only local files, so it can gate a merge or a wake.
+function runsCommand(args) {
+  const { listMemberRuns } = require('../lib/member-runs');
+  const { main, runs } = listMemberRuns(process.cwd());
+  const unfinished = runs.filter((run) => run.state === 'unfinished');
+  if (hasFlag(args, '--json')) {
+    console.log(JSON.stringify({ ok: unfinished.length === 0, project: main, unfinished: unfinished.length, runs }, null, 2));
+    return unfinished.length ? 1 : 0;
+  }
+  if (!main) {
+    console.log('not inside a git checkout');
+    return 0;
+  }
+  const label = {
+    unfinished: 'unfinished', owner: 'waiting on you', running: 'running', landed: 'landed, copy kept', dropped: 'dropped, copy kept',
+  };
+  for (const run of runs) {
+    const why = run.state === 'unfinished' ? (run.why || 'it stopped without landing')
+      : ['landed', 'dropped'].includes(run.state) ? (run.copy_kept || run.why) : run.why;
+    console.log(`${label[run.state] || run.state}  ${run.member}  ${run.branch}${why ? `  ${why}` : ''}`);
+  }
+  const waiting = runs.filter((run) => run.state === 'owner').length;
+  console.log(unfinished.length
+    ? `${plural(unfinished.length, 'member run is', 'member runs are')} unfinished; each member finishes its own on its next wake`
+    : `no unfinished member runs${waiting ? `; ${plural(waiting, 'run waits', 'runs wait')} for you to keep or drop` : ''}`);
+  return unfinished.length ? 1 : 0;
+}
+
 function guide() {
   console.log('Atris worktree agent recipe');
   console.log('');
@@ -774,7 +804,7 @@ function guide() {
 }
 
 function help() {
-  console.log('Usage: atris worktree <guide|start|ship|status|doctor|guard|prune|cleanup|sweep>');
+  console.log('Usage: atris worktree <guide|start|ship|status|doctor|runs|guard|prune|cleanup|sweep>');
   console.log('');
   console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--former-task "<older name>"] [--claim] [--force] [--no-deps]');
@@ -791,6 +821,7 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree doctor [--older-than 24] [--repo <name>] [--json]  every copy: real size, age, merged, in use, what a prune would free');
+  console.log('  atris worktree runs [--json]  member runs in this project; exits 1 while any stopped without landing or being dropped');
   console.log('  atris worktree prune [--apply]  drop registrations of copies whose folder is gone');
   console.log('  atris worktree prune --merged --older-than <hours> [--yes]  remove merged, clean, unused copies idle that long; dry run unless --yes');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
@@ -816,6 +847,7 @@ function worktreeCommand(args = []) {
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
   if (sub === 'doctor') return doctorCommand(rest);
+  if (sub === 'runs') return runsCommand(rest);
   if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
   if (sub === 'sweep') return sweep(rest);
   if (sub === 'reap-shipped') return reapShipped();
