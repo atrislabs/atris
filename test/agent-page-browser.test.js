@@ -1,6 +1,8 @@
 // Agent page: the real-browser proof. Drives the fixture settings page in headless
 // Google Chrome over the DevTools protocol, using only Node built-ins (WebSocket is
-// built in on Node 22 and newer). Skips with a clear message when Chrome is missing.
+// built in on Node 22 and newer). Finds Chrome the way the repo's other browser test does,
+// on a Mac or on the Linux check machines; ATRIS_CHROME_PATH overrides it. Skips with a
+// clear message only when no Chrome exists at all.
 //
 // Every check is its own top-level test, and all of them share one browser session.
 // Nested t.test() subtests dropped the DevTools socket in our runs, so they are not used.
@@ -14,13 +16,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { findChrome } = require('../scripts/gm-phone-trace');
+const { headlessArgs } = require('../lib/headless-chrome');
 
-const CHROME = process.env.ATRIS_CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.ATRIS_CHROME_PATH || findChrome();
 const FIXTURE = path.join(__dirname, 'fixtures', 'agent-page', 'project-settings.html');
 
 function skipReason() {
-  if (!fs.existsSync(CHROME)) {
-    return `Google Chrome not found at ${CHROME}; set ATRIS_CHROME_PATH to run this browser test`;
+  if (!CHROME || !fs.existsSync(CHROME)) {
+    return `no Google Chrome found${CHROME ? ` at ${CHROME}` : ' on this machine'}; set ATRIS_CHROME_PATH to run this browser test`;
   }
   if (typeof WebSocket !== 'function') return 'needs Node 22 or newer (built-in WebSocket)';
   return false;
@@ -146,6 +150,8 @@ const PLANTED = [
   'sk-fixture-0101', 'KEY-TEXT-0102', 'KEY-TEXT-0104', 'region-secret-0105', 'REGION-SECRET-0106',
   'region-hidden-0107', 'TOKEN-CHILD-0109', 'SUBMIT-SECRET-0110', 'LABELLEDBY-SECRET-0111',
   'LABELLEDBY-HIDDEN-0112', 'LABEL-HIDDEN-0113', 'VAULT-SECRET-0114',
+  // The dropdown page: choices that exist only while a list is open.
+  'vault-alpha-0201', 'Hidden color',
 ];
 
 const GUARD_SOURCE = `(() => {
@@ -183,15 +189,11 @@ const GUARD_SOURCE = `(() => {
 })();`;
 
 async function launchChrome(profileDir) {
-  const child = spawn(CHROME, [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
-    'about:blank',
-  ], { stdio: 'ignore' });
+  const args = headlessArgs(profileDir, ['--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0']);
+  // The Linux check machines run Chrome without its sandbox, as the gm phone test does.
+  if (process.platform === 'linux') args.push('--no-sandbox');
+  args.push('about:blank');
+  const child = spawn(CHROME, args, { stdio: 'ignore' });
   const port = await waitFor(() => {
     const file = path.join(profileDir, 'DevToolsActivePort');
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
@@ -1136,4 +1138,452 @@ test('a control replaced during the change is checked again in the live page', B
   assert.match(seen.plan.steps[0].error, /did not keep/);
   assert.equal(seen.city.ok, true, JSON.stringify(seen.city));
   assert.equal(seen.city.steps[0].current.value, 'Lima', 'the result reads the replacement');
+});
+
+// Round four: dropdowns. A list that shows only while open: select-only and editable
+// comboboxes and menu buttons, with the list inline, in a separate container, or in the top layer.
+const DROPDOWNS = path.join(__dirname, 'fixtures', 'agent-page', 'dropdowns.html');
+
+async function dropdownPage() {
+  return loadFixture(DROPDOWNS, 'the dropdown page to load');
+}
+
+test('a select-only combobox shows its value, takes set by label or value, lists its choices, and is left closed', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const shut = (id) => {
+      const list = document.getElementById(id + '-list');
+      return { expanded: document.getElementById(id).getAttribute('aria-expanded'), shown: !!list && list.getClientRects().length > 0 };
+    };
+    const ids = ['fruit', 'color', 'size'];
+    const states = () => Object.fromEntries(ids.map((id) => [id, shut(id)]));
+    document.getElementById('notes').focus();
+    const entry = (label) => agent.snapshot().find((item) => item.label === label);
+    const before = { fruit: entry('Fruit'), color: entry('Color'), size: entry('Size') };
+    const query = {};
+    for (const label of ['Fruit', 'Color', 'Size']) query[label] = (await agent.query({ text: label })).find((item) => item.label === label);
+    const afterQuery = { states: states(), focus: document.activeElement.id };
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const results = { fruit: await set('Fruit', 'Cherry'), color: await set('Color', 'color-blue'), size: await set('Size', 'large') };
+    return { before, query, afterQuery, results, after: states(), focus: document.activeElement.id, values: window.__state.values };
+  });
+  assert.deepEqual(
+    { kind: seen.before.fruit.kind, value: seen.before.fruit.value, actions: seen.before.fruit.actions, popup: seen.before.fruit.popup },
+    { kind: 'combobox', value: 'Apple', actions: ['set'], popup: 'listbox' },
+  );
+  assert.equal(seen.before.color.value, 'Red');
+  assert.equal(seen.before.size.value, 'Small');
+  const labels = (entry) => entry.options.map((option) => option.label);
+  assert.deepEqual(labels(seen.query.Fruit), ['Apple', 'Banana', 'Cherry', 'Durian', 'Elderberry'], 'an inline list is read');
+  assert.deepEqual(labels(seen.query.Color), ['Red', 'Green', 'Blue'], 'a list made only while open is read');
+  assert.deepEqual(labels(seen.query.Size), ['Small', 'Medium', 'Large'], 'a top-layer list is read');
+  const fruit = Object.fromEntries(seen.query.Fruit.options.map((option) => [option.label, option]));
+  assert.equal(fruit.Apple.selected, true);
+  assert.equal(fruit.Cherry.value, 'cherry');
+  assert.equal(fruit.Durian.confirm, true);
+  assert.equal(fruit.Elderberry.disabled, true);
+  for (const id of ['fruit', 'color', 'size']) {
+    assert.deepEqual(seen.afterQuery.states[id], { expanded: 'false', shown: false }, `${id} closed again after the read`);
+    assert.deepEqual(seen.after[id], { expanded: 'false', shown: false }, `${id} closed again after the pick`);
+  }
+  assert.equal(seen.afterQuery.focus, 'notes', 'focus went back after the read');
+  assert.equal(seen.focus, 'notes', 'focus went back after the pick');
+  for (const [name, value] of [['fruit', 'Cherry'], ['color', 'Blue'], ['size', 'Large']]) {
+    const result = seen.results[name];
+    assert.equal(result.ok, true, `${name}: ${JSON.stringify(result)}`);
+    assert.equal(result.steps[0].current.value, value);
+    assert.ok(result.steps[0].changes.some((change) => change.field === 'value' && change.to === value), JSON.stringify(result.steps[0].changes));
+  }
+  assert.deepEqual([seen.values.fruit, seen.values.color, seen.values.size], ['cherry', 'color-blue', 'large']);
+});
+
+test('an editable combobox shows its value, takes set by label or value, lists its choices, and is left closed', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    document.getElementById('notes').focus();
+    const entry = agent.snapshot().find((item) => item.label === 'City');
+    const city = (await agent.query({ text: 'City' })).find((item) => item.label === 'City');
+    const country = (await agent.query({ text: 'Country' })).find((item) => item.label === 'Country');
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const picked = { city: await set('City', 'Quito'), country: await set('Country', 'chile') };
+    return {
+      entry, city, country, picked,
+      inputs: { city: document.getElementById('city').value, country: document.getElementById('country').value },
+      expanded: ['city', 'country'].map((id) => document.getElementById(id).getAttribute('aria-expanded')),
+      lists: [!!document.getElementById('city-list').getClientRects().length, !!document.getElementById('country-list')],
+      focus: document.activeElement.id,
+      values: window.__state.values,
+    };
+  });
+  assert.deepEqual(
+    { kind: seen.entry.kind, value: seen.entry.value, actions: seen.entry.actions, popup: seen.entry.popup },
+    { kind: 'combobox', value: 'Lima', actions: ['set'], popup: 'listbox' },
+  );
+  assert.deepEqual(seen.city.options.map((option) => option.label), ['Lima', 'Oslo', 'Quito']);
+  assert.deepEqual(seen.country.options.map((option) => option.label), ['Peru', 'Chile']);
+  assert.equal(seen.picked.city.ok, true, JSON.stringify(seen.picked.city));
+  assert.equal(seen.picked.country.ok, true, JSON.stringify(seen.picked.country));
+  assert.equal(seen.picked.country.steps[0].current.value, 'Chile');
+  assert.deepEqual(seen.inputs, { city: 'Quito', country: 'Chile' });
+  assert.deepEqual([seen.values.city, seen.values.country], ['quito', 'chile']);
+  assert.deepEqual(seen.expanded, ['false', 'false']);
+  assert.deepEqual(seen.lists, [false, false], 'both lists are closed again');
+  assert.equal(seen.focus, 'notes');
+});
+
+test('opening a list goes through the in gate: a mark on the control, its label, its form, or a choice needs the person first', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const calls = [];
+    const plain = window.AgentPage.createAgent({});
+    const asking = (answer) => window.AgentPage.createAgent({
+      allow: (request) => {
+        calls.push({
+          label: request.label, action: request.action, confirm: request.confirm, reasons: request.reasons,
+          opens: Object.assign({}, window.__state.opens),
+          planOpen: document.getElementById('plan').getAttribute('aria-expanded'),
+        });
+        return answer(request);
+      },
+    });
+    const set = (agent, label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const out = {};
+    out.danger = await set(plain, 'Danger level', 'High');
+    out.shipping = await set(plain, 'Shipping', 'Air');
+    out.billing = await set(plain, 'Billing cycle', 'Yearly');
+    out.durian = await set(plain, 'Fruit', 'Durian');
+    out.dangerQuery = (await plain.query({ text: 'Danger level' })).find((item) => item.label === 'Danger level');
+    out.opensAfterMarked = Object.assign({}, window.__state.opens);
+    out.enterprise = await set(plain, 'Plan', 'Enterprise');
+    out.planAfterRefusal = { opens: window.__state.opens.plan, expanded: document.getElementById('plan').getAttribute('aria-expanded'), list: !!document.getElementById('plan-list') };
+    const firstCall = calls.length;
+    out.enterpriseNo = await set(asking((request) => !request.confirm), 'Plan', 'Enterprise');
+    out.noCalls = calls.slice(firstCall);
+    const secondCall = calls.length;
+    out.enterpriseYes = await set(asking(() => true), 'Plan', 'Enterprise');
+    out.yesCalls = calls.slice(secondCall);
+    const thirdCall = calls.length;
+    out.dangerYes = await set(asking(() => true), 'Danger level', 'High');
+    out.dangerCalls = calls.slice(thirdCall);
+    const fourthCall = calls.length;
+    out.sizeRead = (await asking(() => true).query({ text: 'Size' })).find((item) => item.label === 'Size');
+    out.sizeCalls = calls.slice(fourthCall);
+    out.values = window.__state.values;
+    return out;
+  });
+  for (const name of ['danger', 'shipping', 'billing', 'durian']) {
+    assert.equal(seen[name].ok, false, `${name}: ${JSON.stringify(seen[name])}`);
+    assert.match(seen[name].steps[0].error, /needs a person/);
+  }
+  assert.equal(seen.dangerQuery.confirm, true);
+  assert.equal(seen.dangerQuery.options, undefined, 'a marked list is not opened to read without the person');
+  assert.match(seen.dangerQuery.note, /needs a person/);
+  assert.deepEqual(seen.opensAfterMarked, {}, 'nothing opened under a mark the person did not see');
+
+  assert.equal(seen.enterprise.ok, false, JSON.stringify(seen.enterprise));
+  assert.match(seen.enterprise.steps[0].error, /needs a person/);
+  assert.deepEqual(seen.planAfterRefusal, { opens: 1, expanded: 'false', list: false }, 'a mark seen only once open closes the list again');
+
+  assert.equal(seen.enterpriseNo.ok, false);
+  assert.match(seen.enterpriseNo.steps[0].error, /did not confirm/);
+  assert.deepEqual(seen.noCalls.map((call) => call.confirm), [false, true], 'the person is asked again once the marked choice is seen');
+  assert.deepEqual(seen.noCalls[1].reasons, ['Enterprise is billed yearly.']);
+  assert.equal(seen.noCalls[1].planOpen, 'false', 'the list is closed while the person decides');
+
+  assert.equal(seen.enterpriseYes.ok, true, JSON.stringify(seen.enterpriseYes));
+  assert.equal(seen.yesCalls.length, 2);
+  assert.equal(seen.values.plan, 'enterprise');
+
+  assert.equal(seen.dangerYes.ok, true, JSON.stringify(seen.dangerYes));
+  assert.equal(seen.dangerCalls[0].confirm, true);
+  assert.equal(seen.dangerCalls[0].opens.danger, undefined, 'the person was asked before the list opened');
+  assert.equal(seen.values.danger, 'high');
+
+  assert.deepEqual(seen.sizeRead.options.map((option) => option.label), ['Small', 'Medium', 'Large']);
+  assert.equal(seen.sizeCalls.length, 1, 'opening to read is a change, so the person is asked');
+  assert.equal(seen.sizeCalls[0].action, 'open');
+  assert.equal(seen.sizeCalls[0].opens.size, undefined, 'asked before the list opened');
+  assert.equal(seen.values.shipping, 'ground');
+  assert.equal(seen.values.billing, 'monthly');
+  assert.equal(seen.values.fruit, 'apple');
+});
+
+test('a menu button presses an item by name inside a closed menu and leaves it closed', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const plain = window.AgentPage.createAgent({});
+    const yes = window.AgentPage.createAgent({ allow: () => true });
+    const press = (agent, label, item) => agent.act({ steps: [{ label, action: 'click', args: { item } }] });
+    document.getElementById('notes').focus();
+    const out = {};
+    out.entry = plain.snapshot().find((item) => item.label === 'Project actions');
+    out.items = (await plain.query({ text: 'Project actions' })).find((item) => item.label === 'Project actions');
+    out.more = (await plain.query({ text: 'More' })).find((item) => item.label === 'More');
+    out.duplicate = await press(plain, 'Project actions', 'Duplicate');
+    out.exported = await press(plain, 'More', 'export');
+    const opensBeforeDelete = window.__state.opens.actions;
+    out.remove = await press(plain, 'Project actions', 'Delete');
+    out.deleteOpened = window.__state.opens.actions - opensBeforeDelete;
+    out.erase = await press(plain, 'More', 'Erase');
+    out.eraseYes = await press(yes, 'More', 'Erase');
+    out.missing = await press(plain, 'More', 'Nope');
+    out.notMenu = await press(plain, 'Fruit', 'Apple');
+    out.actions = window.__state.actions;
+    out.closed = ['actions', 'more'].map((id) => document.getElementById(id).getAttribute('aria-expanded'));
+    out.moreControls = document.getElementById('more').hasAttribute('aria-controls');
+    out.focus = document.activeElement.id;
+    return out;
+  });
+  assert.deepEqual({ kind: seen.entry.kind, actions: seen.entry.actions, popup: seen.entry.popup }, { kind: 'button', actions: ['click'], popup: 'menu' });
+  assert.deepEqual(seen.items.options.map((option) => option.label), ['Rename', 'Duplicate', 'Delete']);
+  assert.equal(seen.items.options[2].confirm, true);
+  assert.deepEqual(seen.more.options.map((option) => option.label), ['Export', 'Erase']);
+  assert.equal(seen.duplicate.ok, true, JSON.stringify(seen.duplicate));
+  assert.equal(seen.exported.ok, true, JSON.stringify(seen.exported));
+  assert.equal(seen.remove.ok, false);
+  assert.match(seen.remove.steps[0].error, /needs a person/);
+  assert.equal(seen.deleteOpened, 0, 'a marked item seen while closed stops the step before the menu opens');
+  assert.equal(seen.erase.ok, false);
+  assert.match(seen.erase.steps[0].error, /needs a person/);
+  assert.equal(seen.eraseYes.ok, true, JSON.stringify(seen.eraseYes));
+  assert.equal(seen.missing.ok, false);
+  assert.match(seen.missing.steps[0].error, /no item matches "Nope"\. Items: "Export", "Erase"\./);
+  assert.equal(seen.notMenu.ok, false);
+  assert.match(seen.notMenu.steps[0].error, /only a menu button/);
+  assert.deepEqual(seen.actions, ['actions:duplicate', 'more:export', 'more:erase']);
+  assert.deepEqual(seen.closed, ['false', 'false']);
+  assert.equal(seen.moreControls, false, 'the menu that names its list only while open is closed again');
+  assert.equal(seen.focus, 'notes');
+});
+
+test('hidden choices that exist only while open are never listed or picked, and a secret list never shows its choices', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const out = {};
+    out.color = (await agent.query({ text: 'Color' })).find((item) => item.label === 'Color');
+    out.hiddenPick = await set('Color', 'hidden-color-0401');
+    out.city = (await agent.query({ text: 'City' })).find((item) => item.label === 'City');
+    out.more = (await agent.query({ text: 'More' })).find((item) => item.label === 'More');
+    out.vaultEntry = agent.snapshot().find((item) => item.label === 'Vault');
+    out.vaultQuery = (await agent.query({ text: 'Vault' })).find((item) => item.label === 'Vault');
+    out.vaultMiss = await set('Vault', 'nope');
+    out.vaultPick = await set('Vault', 'vault-beta-0202');
+    // A person opens the secret lists themselves: their choices still never reach the agent.
+    window.__widgets.vault.open();
+    window.__widgets.keys.open();
+    out.openSnapshot = agent.snapshot();
+    out.openQuery = await agent.query({});
+    out.openVault = (await agent.query({ text: 'Vault' })).find((item) => item.label === 'Vault');
+    window.__widgets.vault.close();
+    window.__widgets.keys.close();
+    out.rotate = await agent.act({ steps: [{ label: 'Key tools', action: 'click', args: { item: 'rotate-0301' } }] });
+    out.values = window.__state.values;
+    out.actions = window.__state.actions;
+    return out;
+  });
+  assert.deepEqual(seen.color.options.map((option) => option.label), ['Red', 'Green', 'Blue']);
+  assert.equal(seen.hiddenPick.ok, false);
+  assert.match(seen.hiddenPick.steps[0].error, /no choice matches "hidden-color-0401"\. Choices: "Red", "Green", "Blue"\.$/);
+  assert.equal(seen.values.color, 'color-red');
+  assert.deepEqual(seen.city.options.map((option) => option.label), ['Lima', 'Oslo', 'Quito']);
+  assert.deepEqual(seen.more.options.map((option) => option.label), ['Export', 'Erase']);
+
+  assert.equal(seen.vaultEntry.value, '[redacted]');
+  assert.equal(seen.vaultEntry.secret, true);
+  assert.equal(seen.vaultQuery.options, undefined, 'a secret list shows no choices');
+  assert.equal(seen.vaultMiss.ok, false);
+  assert.match(seen.vaultMiss.steps[0].error, /The choices are secret\./);
+  assert.equal(seen.vaultPick.ok, true, JSON.stringify(seen.vaultPick));
+  assert.equal(seen.vaultPick.steps[0].current.value, '[redacted]');
+  assert.equal(seen.values.vault, 'vault-beta-0202');
+  assert.equal(seen.openVault.options, undefined);
+  const leaked = JSON.stringify([seen.vaultEntry, seen.vaultQuery, seen.vaultMiss, seen.vaultPick, seen.openSnapshot, seen.openQuery, seen.openVault, seen.rotate]);
+  for (const text of ['vault-alpha-0201', 'vault-beta-0202', 'rotate-0301', 'PLANTED']) {
+    assert.equal(leaked.includes(text), false, `${text} must not reach the agent`);
+  }
+  assert.equal(seen.rotate.ok, true, JSON.stringify(seen.rotate));
+  assert.deepEqual(seen.actions, ['keys:rotate'], 'a secret menu item the agent already knows can still be pressed');
+});
+
+test('set on a list says ok only when the value changed in the live page after the list closed', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    return {
+      refused: await set('Locked tier', 'Pro'),
+      disabled: await set('Fruit', 'Elderberry'),
+      same: await set('Fruit', 'Apple'),
+      expanded: document.getElementById('locked').getAttribute('aria-expanded'),
+      opens: window.__state.opens,
+      values: window.__state.values,
+    };
+  });
+  assert.equal(seen.refused.ok, false, JSON.stringify(seen.refused));
+  assert.equal(seen.refused.steps[0].error, 'the page did not keep the new choice.');
+  assert.equal(seen.refused.steps[0].current.value, 'Basic');
+  assert.equal(seen.expanded, 'false');
+  assert.equal(seen.values.locked, 'basic');
+  assert.equal(seen.disabled.ok, false);
+  assert.match(seen.disabled.steps[0].error, /"Elderberry" is disabled/);
+  assert.equal(seen.same.ok, true, 'a choice already in place needs no change');
+  assert.deepEqual(seen.same.steps[0].changes, []);
+  assert.equal(seen.values.fruit, 'apple');
+});
+
+test('choices rendered elsewhere are found through aria-controls or aria-owns, not by ancestry', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    return {
+      theme: (await agent.query({ text: 'Theme' })).find((item) => item.label === 'Theme'),
+      decoy: await set('Theme', 'Decoy preset'),
+      dark: await set('Theme', 'Dark'),
+      input: document.getElementById('theme').value,
+      decoySelected: document.querySelector('#theme-decoy [role=option]').getAttribute('aria-selected'),
+      inField: document.getElementById('theme-field').contains(document.getElementById('theme-decoy')),
+    };
+  });
+  assert.equal(seen.inField, true, 'the decoy list sits inside the field');
+  assert.deepEqual(seen.theme.options.map((option) => option.label), ['Light', 'Dark']);
+  assert.equal(seen.decoy.ok, false);
+  assert.match(seen.decoy.steps[0].error, /no choice matches/);
+  assert.equal(seen.dark.ok, true, JSON.stringify(seen.dark));
+  assert.equal(seen.input, 'Dark');
+  assert.equal(seen.decoySelected, null, 'the decoy was not touched');
+});
+
+// Round five: review findings on the dropdown paths.
+test('opening a list never sends a form: a submit-type trigger involves its form, and a read does not open it', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    const sent = { marked: 0, plain: 0 };
+    for (const [id, marked] of [['marked', true], ['plain', false]]) {
+      const form = document.createElement('form');
+      form.id = id + '-form';
+      form.innerHTML = '<input name="field" value="private"' + (marked ? ' data-agent-confirm="Sending this field needs a person."' : '') + '>';
+      form.addEventListener('submit', (event) => { event.preventDefault(); sent[id]++; });
+      document.body.append(form);
+      window.widget({ id: id + '-pick', label: id === 'marked' ? 'Marked send' : 'Plain send', type: 'select', place: 'portal', lazy: true,
+        value: 'old', parent: form.id, options: [{ label: 'Old', value: 'old' }, { label: 'Next', value: 'next' }] });
+      document.getElementById(id + '-pick').removeAttribute('type');
+    }
+    const agent = window.AgentPage.createAgent({});
+    const out = {};
+    out.snapshot = agent.snapshot().filter((item) => /send/.test(item.label));
+    out.queryMarked = (await agent.query({ text: 'Marked send' })).find((item) => item.label === 'Marked send');
+    out.queryPlain = (await agent.query({ text: 'Plain send' })).find((item) => item.label === 'Plain send');
+    out.afterReads = Object.assign({}, sent);
+    out.opensAfterReads = Object.assign({}, window.__state.opens);
+    out.setMarked = await agent.act({ steps: [{ label: 'Marked send', action: 'set', args: { value: 'Next' } }] });
+    out.sent = sent;
+    return out;
+  });
+  assert.deepEqual(seen.afterReads, { marked: 0, plain: 0 }, 'a read never sends a form');
+  assert.deepEqual(seen.opensAfterReads, {}, 'a read does not open a list whose opening could send a form');
+  for (const entry of [seen.queryMarked, seen.queryPlain]) {
+    assert.equal(entry.options, undefined);
+    assert.match(entry.note, /could send a form or leave the page/);
+  }
+  assert.equal(seen.snapshot.find((item) => item.label === 'Marked send').confirm, true, 'the form fields count for the trigger');
+  assert.equal(seen.setMarked.ok, false, JSON.stringify(seen.setMarked));
+  assert.match(seen.setMarked.steps[0].error, /needs a person/);
+  assert.equal(seen.sent.marked, 0, 'the marked form was not sent');
+});
+
+test('a query builds every entry at return, after the last answer from the person', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'audit-first', label: 'Audit first', type: 'select', place: 'inline', value: 'old', options: [
+      { label: 'PLANTED-FIRST-VALUE', value: 'old' }, { label: 'Spare', value: 'spare' }] });
+    window.widget({ id: 'audit-second', label: 'Audit second', type: 'select', place: 'inline', value: 'one', options: [
+      { label: 'One', value: 'one' }, { label: 'PLANTED-LATER-HIDDEN', value: 'two' }] });
+    window.widget({ id: 'audit-third', label: 'Audit third', type: 'select', place: 'portal', lazy: true, value: 'x', options: [
+      { label: 'Ex', value: 'x' }] });
+    const agent = window.AgentPage.createAgent({
+      allow: (request) => {
+        if (request.label === 'Audit third') {
+          document.getElementById('audit-first').setAttribute('data-agent-secret', '');
+          document.querySelector('#audit-second-list [data-value="two"]').setAttribute('data-agent-hidden', '');
+        }
+        return true;
+      },
+    });
+    return agent.query({ text: 'Audit' });
+  });
+  const byLabel = (label) => seen.find((item) => item.label === label);
+  assert.equal(byLabel('Audit first').value, '[redacted]', 'a control made secret during the call reads [redacted] at return');
+  assert.equal(byLabel('Audit first').options, undefined, 'and its choices are not returned');
+  assert.deepEqual(byLabel('Audit second').options.map((option) => option.label), ['One'], 'a choice hidden during the call is dropped at return');
+  assert.deepEqual(byLabel('Audit third').options.map((option) => option.label), ['Ex']);
+});
+
+test('a secret or hidden chosen choice keeps the value secret, however it was named', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'secret-pick', label: 'Secret pick', type: 'select', place: 'portal', lazy: true, value: 'old', options: [
+      { label: 'Old', value: 'old' }, { label: 'PLANTED-SECRET-CHOICE', value: 'next', attrs: { 'data-agent-secret': '' } }] });
+    window.widget({ id: 'secret-edit', label: 'Secret edit', type: 'edit', place: 'portal', lazy: true, value: 'old', options: [
+      { label: 'Old', value: 'old' }, { label: 'PLANTED-SECRET-TYPED', value: 'typed', attrs: { 'data-agent-secret': '' } }] });
+    window.widget({ id: 'hidden-pick', label: 'Hidden pick', type: 'select', place: 'inline', value: 'gone', options: [
+      { label: 'Shown', value: 'shown' }, { label: 'PLANTED-HIDDEN-CHOSEN', value: 'gone', attrs: { 'data-agent-hidden': '' } }] });
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    const pick = await set('Secret pick', 'next');
+    const edit = await set('Secret edit', 'typed');
+    const shot = agent.snapshot();
+    const query = await agent.query({ text: 'Hidden pick' });
+    return { pick, edit, shot, query, values: window.__state.values };
+  });
+  assert.equal(seen.pick.ok, true, JSON.stringify(seen.pick));
+  assert.equal(seen.pick.steps[0].current.value, '[redacted]');
+  assert.deepEqual(seen.pick.steps[0].changes.map((change) => [change.from, change.to]), [['Old', '[redacted]']]);
+  assert.equal(seen.edit.ok, true, JSON.stringify(seen.edit));
+  assert.equal(seen.edit.steps[0].current.value, '[redacted]');
+  const byLabel = (label) => seen.shot.find((item) => item.label === label);
+  assert.equal(byLabel('Secret pick').value, '[redacted]', 'a later snapshot still hides it');
+  assert.equal(byLabel('Secret edit').value, '[redacted]');
+  assert.equal(byLabel('Hidden pick').value, '', 'a hidden chosen choice is not the value');
+  assert.equal(seen.query.find((item) => item.label === 'Hidden pick').value, '');
+  assert.deepEqual([seen.values['secret-pick'], seen.values['secret-edit']], ['next', 'typed']);
+});
+
+test('set is judged by the chosen option, never by a value that equals another label', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    window.widget({ id: 'tricky-refuse', label: 'Tricky refuse', type: 'select', place: 'portal', lazy: true, value: 'old', refuse: true,
+      options: [{ label: 'Basic', value: 'old' }, { label: 'Pro', value: 'Basic' }] });
+    window.widget({ id: 'tricky-pick', label: 'Tricky pick', type: 'select', place: 'portal', lazy: true, value: 'basic-label',
+      options: [{ label: 'Starter', value: 'starter' }, { label: 'Basic', value: 'basic-label' }, { label: 'Plus', value: 'Starter' }] });
+    const agent = window.AgentPage.createAgent({});
+    const set = (label, value) => agent.act({ steps: [{ label, action: 'set', args: { value } }] });
+    return { refused: await set('Tricky refuse', 'Pro'), picked: await set('Tricky pick', 'Starter'), values: window.__state.values };
+  });
+  assert.equal(seen.refused.ok, false, JSON.stringify(seen.refused));
+  assert.equal(seen.refused.steps[0].error, 'the page did not keep the new choice.');
+  assert.equal(seen.values['tricky-refuse'], 'old');
+  assert.equal(seen.picked.ok, true, JSON.stringify(seen.picked));
+  assert.equal(seen.values['tricky-pick'], 'starter', 'the label wins over another choice\'s value');
+  assert.match(seen.picked.steps[0].note, /matches the label of one choice and the value of another\. The label was used\./);
+});
+
+test('two agents on one page cannot open the same list at once', BROWSER, async () => {
+  const cdp = await dropdownPage();
+  const seen = await inPage(cdp, async () => {
+    document.getElementById('notes').focus();
+    const agents = [window.AgentPage.createAgent({}), window.AgentPage.createAgent({})];
+    const results = await Promise.all(agents.map((agent, i) => agent.act({ steps: [{ label: 'Fruit', action: 'set', args: { value: i ? 'Cherry' : 'Banana' } }] })));
+    return { results, focus: document.activeElement.id, open: document.getElementById('fruit').getAttribute('aria-expanded'), value: window.__state.values.fruit };
+  });
+  const oks = seen.results.filter((result) => result.ok);
+  assert.equal(oks.length, 1, JSON.stringify(seen.results));
+  const refused = seen.results.find((result) => !result.ok);
+  assert.match(refused.steps[0].error, /another step on this page is using a list/);
+  assert.equal(seen.open, 'false');
+  assert.equal(seen.focus, 'notes');
 });
