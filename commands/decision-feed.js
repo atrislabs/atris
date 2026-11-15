@@ -78,7 +78,7 @@ const HELP = [
   '       atris feed engines                  the models usable on this computer right now',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing',
   '       atris feed member on|off <name>',
-  '       atris feed ping [<member>] [--reason scroll|heartbeat|event] [--stream]',
+  '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh] [--stream]',
   '                          (members think up ideas in one fast turn each, up to 3 at once; --stream prints cards as they are written)',
   '       atris feed settings set local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>',
   '       atris feed emit --as <member> idea|question --title "..." --why "..." | progress --card <card> "<line>"',

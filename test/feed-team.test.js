@@ -298,6 +298,51 @@ test('more: a scroll ping to up to three ON members, with the person\'s taste in
 
 // --------------------------------------------------------- start a folder
 
+test('refresh asks every awake member while keeping at most three turns running', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer', 'builder', 'editor']);
+  let running = 0;
+  let peak = 0;
+  const names = [];
+  const events = [];
+  const deps = { ...ctx.deps, turn: async ({ prompt, onText }) => {
+    running++;
+    peak = Math.max(peak, running);
+    names.push(prompt.match(/^You are ([^,]+),/)?.[1]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    onText('');
+    running--;
+    return { ok: true, text: '' };
+  } };
+  const result = await team.pingStream(ctx.root, { reason: 'event', env: ctx.env, deps, onEvent: (event) => events.push(event) });
+  assert.equal(result.pinged, 5);
+  assert.equal(new Set(names).size, 5);
+  assert.ok(peak <= 3);
+  assert.equal(events.filter((event) => event.type === 'member_started').length, 5);
+  assert.match(team.ideaPrompt(ctx.root, 'scout', 'refresh'), /generated setup files[\s\S]*ask at most one direct question/);
+});
+
+test('start: an existing atris folder without a team gets a starter team', async (t) => {
+  const ctx = project(t, []);
+  const existing = fs.readFileSync(path.join(ctx.root, 'atris', 'atris.md'), 'utf8');
+  const runCli = (root, args) => {
+    assert.deepEqual(args.slice(0, 2), ['member', 'create']);
+    const name = args[2];
+    fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `---\nname: ${name}\nrole: ${name}\n---\n`);
+    return { stdout: '', stderr: '' };
+  };
+  const out = await team.start(ctx.root, { env: ctx.env, deps: { ...ctx.deps, runCli } });
+  assert.equal(out.started, true);
+  assert.ok(out.created.includes('scout'));
+  assert.ok(out.members.filter((m) => out.created.includes(m.name)).every((m) => m.on));
+  assert.equal(team.readOnlyUntilApproved(ctx.root), true);
+  assert.equal(fs.readFileSync(path.join(ctx.root, 'atris', 'atris.md'), 'utf8'), existing);
+  assert.ok(out.ping.pinged >= 1);
+  const again = await team.start(ctx.root, { env: ctx.env, deps: { ...ctx.deps, runCli } });
+  assert.equal(again.started, false);
+  assert.deepEqual(again.created, []);
+});
+
 test('start: a folder of projects gets atris, a starter team turned on, and a first read-only ping; idempotent', async (t) => {
   const ctx = project(t, []);
   const folder = path.join(ctx.dir, 'strangers');
