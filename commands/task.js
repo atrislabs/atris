@@ -36,7 +36,7 @@ const {
   protectedLaneOf,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
-const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
+const { checkedCodeSha, mainLineSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -9625,8 +9625,13 @@ function certifyVerifyCandidate(task) {
   }
   for (const raw of [...recorded, ...ordered]) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
-    // inspected: ..."); try the full clause, then the first sentence of it.
-    for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
+    // inspected: ..."); try the full clause, then the first sentence of it,
+    // then the part before ", exit 0": six atrisos-web jobs wrote
+    // "Verifier result at that commit: <command>, exit 0" and no second
+    // actor ever found their check. Only a comma followed by "exit" is cut,
+    // so a list of test files is never shortened into a smaller check.
+    const firstSentence = raw.split(/\.(?:\s|$)/)[0];
+    for (const candidate of [raw, firstSentence, firstSentence.split(/,\s*exit(?:ed)?\b/i)[0]].map((c) => String(c || '').trim())) {
       if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
@@ -9666,7 +9671,7 @@ function currentHeadSha(workspaceRoot) {
 // on 2026-07-29), so the two lanes that legitimately execute verifies,
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
-function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
+function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot, mainSha = null }) {
   if (!taskDb.getTask(db, taskId)) return;
   const verifyCache = {
     command: verify,
@@ -9678,6 +9683,9 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     // else the folder the job lives in. Read before the write lock is taken.
     code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
     code_source: (result && result.code_source) || 'checkout',
+    // The main line's tip when the check ran. A failure is only trusted again
+    // while both this and the job's code are unchanged.
+    main_sha: mainSha || null,
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
@@ -9693,11 +9701,20 @@ function lastCheckedMs(task) {
 }
 
 // The check already failed on exactly this code: running it again proves
-// nothing until the code changes.
-function failedOnSameCode(task, verify, codeSha) {
+// nothing until something changes. "This code" is the job's code and the main
+// line's tip together, and a failure older than a day is tried again anyway.
+// The job's code alone never changes once it is handed in, so a check that
+// failed once on a loaded machine (CLI-1473, 2026-11-12) was skipped every
+// hour after, while the same check passed on the same commit.
+const FAILED_CHECK_TRUSTED_MS = 24 * 60 * 60 * 1000;
+
+function failedOnSameCode(task, verify, codeSha, mainSha, now = Date.now()) {
   const cache = task?.metadata?.verify_cache;
-  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
-    && cache.command === verify && codeSha && cache.code_sha === codeSha);
+  if (!cache || typeof cache !== 'object' || cache.ok !== false || cache.reason !== 'verify_failed') return false;
+  if (cache.command !== verify || !codeSha || cache.code_sha !== codeSha) return false;
+  if (!mainSha || cache.main_sha !== mainSha) return false;
+  const ranAt = Date.parse(String(cache.ran_at || ''));
+  return Number.isFinite(ranAt) && now - ranAt < FAILED_CHECK_TRUSTED_MS;
 }
 
 // `atris task ready --verify "<cmd>"` already runs the command live and
@@ -9740,8 +9757,9 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
+  const mainSha = mainLineSha(task, process.cwd());
   const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
+  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root, mainSha });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9849,7 +9867,8 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
-    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+    const mainSha = mainLineSha(task, process.cwd());
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainSha)) {
       results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
       continue;
     }
@@ -9859,7 +9878,7 @@ function cmdCertifyVerified(args, options = {}) {
       continue;
     }
     const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
+    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root, mainSha });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
