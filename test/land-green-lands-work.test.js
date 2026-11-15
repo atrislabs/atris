@@ -350,3 +350,174 @@ test('five green branches land in one run by default, one at a time; a sixth wai
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Review on 2026-11-15: the real check (the full suite) ran in a scratch copy
+// inside the system temp folder, where the login write guard tests always
+// fail, so every branch read red. The only real check in 305 receipts
+// (autoland-tick-2026-11-12T16-01-24-827Z.json) was red that way.
+test('the scratch copy sits outside the temp folder, so a check that refuses temp paths passes', () => {
+  const root = makeRepo();
+  const otherTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-tmpdir-'));
+  try {
+    // Like test/auth-test-write-guard.test.js: fails when the checkout sits
+    // inside the temp folder the tests see.
+    fs.writeFileSync(path.join(root, 'guard.js'), [
+      "const fs = require('fs'); const os = require('os'); const path = require('path');",
+      'const rel = path.relative(fs.realpathSync(os.tmpdir()), fs.realpathSync(process.cwd()));',
+      "if (!rel.startsWith('..')) { console.log('✖ login write outside the temp dir is refused during tests (1ms)'); process.exit(1); }",
+    ].join('\n'));
+    commitAll(root, 'add the guard', daysAgo(9));
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const script = `const r = require(${JSON.stringify(LIB)}).landStaleGreenBranches(${JSON.stringify(root)}, { push: false, openFlags: false, verifyCommand: 'node guard.js' });
+      console.log(JSON.stringify(r.verdicts.map((v) => ({ action: v.action, reason: v.reason || null, failing: (v.verify && v.verify.failing) || [] }))));`;
+    // The schedule's temp folder is not the folder the repo lives in.
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: otherTmp, NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT || '' },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), [{ action: 'landed', reason: null, failing: [] }]);
+    assert.deepEqual(fs.readdirSync(path.join(root, '.git', 'atris-land-green-scratch')), [], 'the scratch copy is gone');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(otherTmp, { recursive: true, force: true });
+  }
+});
+
+// The same receipt failed 20 sandbox tests that fail on master too on this
+// computer; hosted checks skip them. A test master already fails here is not
+// the branch's fault, so on a merge-queue remote only new failures hold it.
+test('on a merge-queue remote a test master already fails here does not hold a branch; a new failure does', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-log-')), 'checks.log');
+  try {
+    fs.writeFileSync(path.join(root, 'check2.js'), [
+      "const fs = require('fs');",
+      "fs.appendFileSync(process.env.CHECK_LOG, require('child_process').execSync('git rev-parse HEAD').toString());",
+      "const names = fs.readFileSync('fails.txt', 'utf8').split('\\n').filter(Boolean);",
+      "for (const n of names) console.log(`✖ ${n} (1ms)`);",
+      'process.exit(names.length ? 1 : 0);',
+    ].join('\n'));
+    fs.writeFileSync(path.join(root, 'fails.txt'), 'one lap sandbox test\n');
+    commitAll(root, 'master fails one machine-only test', daysAgo(9));
+    git(root, ['push', '-q', 'origin', 'master']);
+    branchWith(root, 'member/healthy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'), daysAgo(4));
+    branchWith(root, 'member/broke-it', (dir) => fs.writeFileSync(path.join(dir, 'fails.txt'), 'one lap sandbox test\nits own break\n'), daysAgo(3));
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', verifyCommand: 'node check2.js', env: { ...process.env, CHECK_LOG: log },
+      runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null, runCli: () => ({ status: 0, stdout: '' }), fileConflictTask: noTasks,
+    });
+    const by = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    assert.equal(by['member/healthy'].action, 'queued', JSON.stringify(by['member/healthy']));
+    assert.deepEqual(by['member/healthy'].known_red, ['one lap sandbox test']);
+    assert.equal(by['member/broke-it'].action, 'red', JSON.stringify(by['member/broke-it']));
+    assert.deepEqual(by['member/broke-it'].verify.failing, ['its own break']);
+    assert.match(by['member/broke-it'].flag ? 'flagged' : '', /flagged/);
+    const masterSha = git(root, ['rev-parse', 'origin/master']);
+    const runs = fs.readFileSync(log, 'utf8').trim().split('\n');
+    assert.equal(runs.filter((sha) => sha === masterSha).length, 1, 'master is checked once per run');
+    assert.equal(runs.length, 3);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(path.dirname(log), { recursive: true, force: true });
+  }
+});
+
+test('with no hosted checks behind it, a test master fails still holds the branch', () => {
+  const root = makeRepo();
+  try {
+    fs.writeFileSync(path.join(root, 'check2.js'), "console.log('✖ one lap sandbox test (1ms)'); process.exit(1);\n");
+    commitAll(root, 'master fails one test', daysAgo(9));
+    branchWith(root, 'member/healthy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false, verifyCommand: 'node check2.js', fileConflictTask: noTasks });
+    assert.equal(result.verdicts[0].action, 'red', JSON.stringify(result.verdicts[0]));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Review on 2026-11-15: each run rebuilt the catch-up from the local branch,
+// which never moves, so every push after the first was refused. One unread
+// pull request list right after the push stuck the branch for good.
+test('a caught-up branch builds on its own pushed catch-up, and once queued it waits for the sweep', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    branchWith(root, 'member/behind', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    git(root, ['push', '-q', 'origin', 'member/behind']);
+    masterCommit(root, 'other.txt', 'master moved on\n');
+    git(root, ['push', '-q', 'origin', 'master']);
+    let lists = 0;
+    let verifies = 0;
+    const gh = fakeGh();
+    const runGh = (args, ...rest) => {
+      if (args[1] === 'list' && (lists += 1) === 1) return { ok: false, stdout: '', stderr: 'error connecting to api.github.com' };
+      return gh.runGh(args, ...rest);
+    };
+    const opts = {
+      mergePath: 'pull_request', runGh, openFlags: false, fileConflictTask: noTasks,
+      runVerifyFn: () => { verifies += 1; return green(); },
+    };
+    const one = landStaleGreenBranches(root, opts).verdicts[0];
+    assert.equal(one.reason, 'pull_request_unreadable', JSON.stringify(one));
+    const two = landStaleGreenBranches(root, opts).verdicts[0];
+    assert.equal(two.action, 'queued', JSON.stringify(two));
+    assert.equal(two.sha, one.sha, 'the same catch-up commit, pushed again as a no-op');
+    const queue = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'autoland-queue.json'), 'utf8')).entries;
+    assert.equal(queue['member/behind'].number, 41);
+    assert.equal(queue['member/behind'].pushed, two.sha);
+    masterCommit(root, 'more.txt', 'master moved again\n');
+    git(root, ['push', '-q', 'origin', 'master']);
+    const three = landStaleGreenBranches(root, opts).verdicts[0];
+    assert.equal(three.action, 'skipped');
+    assert.equal(three.reason, 'in_merge_queue', JSON.stringify(three));
+    assert.equal(verifies, 2, 'a queued pull request costs no check while it waits');
+    assert.equal(git(bare, ['rev-parse', 'refs/heads/member/behind']), two.sha);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+// Review on 2026-11-15: reusing a queued pull request replaced its entry with
+// no jobs and a zero catch-up count, so its job was never closed or sent back.
+test('reusing a member\'s queued pull request keeps its jobs and catch-up count', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    const first = branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    git(root, ['push', '-q', 'origin', 'member/green']);
+    // The builder adds a fix after the member queued #7.
+    git(root, ['checkout', '-q', 'member/green']);
+    fs.writeFileSync(path.join(root, 'fix.txt'), 'fixed\n');
+    commitAll(root, 'fix');
+    git(root, ['checkout', '-q', 'master']);
+    const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: {
+      'member/green': { branch: 'member/green', base: 'master', number: 7, pushed: first, source: 'member-autoland', task_ids: ['CLI-1'], requeues: 2 },
+    } }));
+    const calls = [];
+    const runGh = (args) => {
+      calls.push(args);
+      if (args[1] === 'list') return { ok: true, stdout: JSON.stringify([{ number: 7, headRefName: 'member/green', baseRefName: 'master', isCrossRepository: false, url: 'https://github.com/acme/repo/pull/7' }]), stderr: '' };
+      if (args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
+      return { ok: false, stdout: '', stderr: 'unexpected gh call' };
+    };
+    const verdict = landStaleGreenBranches(root, { mergePath: 'pull_request', runGh, runVerifyFn: green, openFlags: false, fileConflictTask: noTasks }).verdicts[0];
+    assert.equal(verdict.action, 'queued', JSON.stringify(verdict));
+    assert.equal(verdict.pr, 7);
+    const entry = JSON.parse(fs.readFileSync(file, 'utf8')).entries['member/green'];
+    assert.deepEqual(entry.task_ids, ['CLI-1']);
+    assert.equal(entry.source, 'member-autoland');
+    assert.equal(entry.requeues, 2);
+    assert.equal(entry.pushed, verdict.sha);
+    assert.equal(entry.number, 7);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});

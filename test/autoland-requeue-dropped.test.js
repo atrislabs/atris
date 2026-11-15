@@ -578,3 +578,26 @@ test('recording refuses details it cannot trust and writes nothing', () => {
     }
   });
 });
+
+// Review on 2026-11-15: under the schedule's PATH=/usr/bin:/bin the sweep
+// could not start gh (nor the node a gh script runs on), so every queued pull
+// request read as unreadable. The last 40 scheduled runs said "github could
+// not be read; will look again" 179 times and nothing else.
+test('under the schedule PATH the sweep still finds gh and reads a merged pull request', () => {
+  const fx = fixture();
+  try {
+    setView(fx, { state: 'MERGED', mergedAt: new Date().toISOString() });
+    const lib = path.join(__dirname, '..', 'lib', 'member-autoland.js');
+    const script = `const r = require(${JSON.stringify(lib)}).requeueDroppedAutolands({ cwd: ${JSON.stringify(fx.main)}, dryRun: true });
+      console.log(JSON.stringify(r.results.map((x) => x.state)));`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      // ATRIS_TOOL_DIRS names where this machine keeps gh, as a schedule may.
+      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: os.tmpdir(), ATRIS_TOOL_DIRS: fx.bin },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), ['merged']);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

@@ -1129,6 +1129,7 @@ function greenVerdictRow(v) {
   if (v.url) row.url = v.url;
   if (v.hand_back) row.hand_back = v.hand_back;
   if (v.regenerated) row.regenerated = v.regenerated;
+  if (v.known_red) row.known_red = v.known_red;
   return row;
 }
 
