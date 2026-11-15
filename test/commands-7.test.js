@@ -1344,7 +1344,11 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     const child = projection.tasks.find(t => t.id === nextId);
     const unrelatedTask = projection.tasks.find(t => t.id === unrelatedId);
     const genericLoopTask = projection.tasks.find(t => t.id === genericLoopId);
-    assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
+    // A goal line that shares words is a board grouping, not this task's
+    // purpose, so the task itself keeps no objective it never recorded.
+    assert.equal(parent.objective, null);
+    assert.equal(parent.explanation.reason_recorded, false);
+    assert.equal(child.objective, parent.title);
     assert.equal(unrelatedTask.objective, null);
     assert.equal(genericLoopTask.objective, null);
     assert.equal(parent.review.summary, 'Completed result for improve task factory lineage view.');
@@ -1354,10 +1358,11 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(parent.lineage.next_task_suggestion, 'Render lineage in Task Factory board');
     assert.equal(child.lineage.parent_task_id, id);
     assert.equal(child.lineage.parent_title, 'Improve task factory lineage view');
-    const stream = projection.streams.find(s => s.objective === parent.objective);
+    const stream = projection.streams.find(s => s.objective === 'Build the task factory into a compounding autonomous development surface');
     assert.equal(stream.done_count, 1);
-    assert.equal(stream.active_count, 1);
-    assert.ok(stream.tasks.some(t => t.id === nextId && t.parent_task_id === id));
+    assert.ok(stream.tasks.some(t => t.id === id));
+    const childStream = projection.streams.find(s => s.objective === parent.title);
+    assert.ok(childStream.tasks.some(t => t.id === nextId && t.parent_task_id === id));
   } finally {
     cleanupTempDir(dir);
   }
