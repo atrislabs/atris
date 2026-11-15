@@ -35,6 +35,8 @@ function pr(over = {}) {
   return {
     author: { id: 'MDQ6VXNlcjE=', is_bot: false, login: 'owner-account', name: 'Owner' },
     body: 'Adds a small thing.\n\nTests: test/thing.test.js',
+    changedFiles: 2,
+    files: [{ path: 'lib/thing.js', additions: 12, deletions: 3 }, { path: 'test/thing.test.js', additions: 30, deletions: 0 }],
     createdAt: daysAgo(12),
     headRefName: 'codex/some-builder-small-thing-20261103-101010',
     headRefOid: '2155ee6ca188dbf7e4618fb8b63836484210f2c9',
@@ -114,6 +116,105 @@ test('owner: protected lanes and outside authors are never touched', () => {
   assert.equal(classify({ title: 'HOLD: agent monitoring and invite copying' }).bucket, 'owner');
   assert.equal(classify({ title: 'Do not merge yet: move stray values' }).bucket, 'owner');
   assert.equal(classify({ labels: [{ name: 'do-not-merge' }] }).bucket, 'owner');
+});
+
+// The hold labels the backend really carries (gh label list, 2026-11-15):
+// jev-hold "Jev held this for the owner", needs-human "a person has to read it",
+// plus codex-reject and needs-review. Backend 5126 and 5133 are open with jev-hold.
+test('owner: the hold labels the repos really use keep a pull request for a person', () => {
+  for (const name of ['jev-hold', 'needs-human', 'codex-reject', 'needs-review', 'Needs_Human', 'decision']) {
+    const label = [{ id: 'LA_1', name, description: '', color: 'FBCA04' }];
+    const green = classify({ labels: label, title: 'night shift 2026-11-10: replayed bounced texts now get the same formatting', headRefName: 'night/20261110-031647-0' });
+    assert.equal(green.bucket, 'owner', `${name} on a green clean row`);
+    assert.match(green.reason, /a person decides/);
+    assert.equal(classify({ labels: label, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', updatedAt: daysAgo(20) }).bucket, 'owner', `${name} once it conflicts`);
+    assert.equal(classify({ labels: label, isDraft: true, updatedAt: daysAgo(8) }).bucket, 'owner', `${name} on an idle draft`);
+  }
+});
+
+// protectedLaneOf only sniffs lane words when the tag is empty, so passing the
+// labels as the tag used to switch the word check off for any labeled row.
+test('owner: adding any label never switches off the protected word check', () => {
+  const titles = [
+    'Rotate the api key for the mail sender',
+    'Add bank transfer export',
+    'Tax form download',
+    'Fix csrf check on login',
+    'Send email to every signed up user',
+    'Add credit card form',
+  ];
+  for (const title of titles) {
+    assert.equal(classify({ title }).bucket, 'owner', `${title} with no label`);
+    for (const name of ['enhancement', 'bug', sweep.CATCH_UP_LABEL, 'low-risk']) {
+      assert.equal(classify({ title, labels: [{ name }] }).bucket, 'owner', `${title} labeled ${name}`);
+    }
+  }
+});
+
+// Titles and branches shaped like real open ones (2026-11-15), money or sign-in work
+// that used to be sorted into merge, catch-up or close.
+test('owner: plain money and sign-in language in the title or branch is a protected lane', () => {
+  const real = [
+    ['Agents can quote a job and get paid, with the owner approving once', 'agent-quote-get-paid'],
+    ['Group chat buys products for people through a shop partner, with a service fee', 'feat/group-shop-20260924'],
+    ['Make paid Apps access atomic and safe to retry', 'codex/apps-paid-access-20260912'],
+    ['Add private Apps viewer state and read-only paid access', 'codex/apps-viewer-state-20260912'],
+    ['Share OAuth sign-in sessions across instances', 'codex/plugin-oauth-session-20261103'],
+    ['Prepare scoped private browser sign-in release', 'codex/rqs-private-login-web-release-20261105'],
+    ['Prepare private sign-in on current live web', 'codex/rqs-private-login-web-live-6427-20261105'],
+    ['Let every Atris iPhone app sign in with Apple', 'codex/claude-accept-a-list-of-iphone-app-ids-for-20261106-055152'],
+  ];
+  for (const [title, headRefName] of real) {
+    assert.equal(classify({ title, headRefName }).bucket, 'owner', `${title} green and clean`);
+    assert.equal(classify({ title, headRefName, isDraft: true, updatedAt: daysAgo(30) }).bucket, 'owner', `${title} as an idle draft`);
+  }
+  // Ordinary work that only brushes a short word is not held.
+  assert.equal(classify({ title: 'Payload trimming for the feed list', headRefName: 'codex/payload-trim' }).bucket, 'merge');
+});
+
+test('owner: changed files in a protected lane hold it, whatever the title says', () => {
+  const files = (paths) => ({ files: paths.map((p) => ({ path: p, additions: 4, deletions: 1 })), changedFiles: paths.length });
+  for (const paths of [
+    ['backend/routers/billing.py'],
+    ['app/api/stripe/webhook/route.ts'],
+    ['backend/services/wallet_service.py'],
+    ['app/auth/callback/route.ts'],
+    ['middleware.ts'],
+    ['backend/migrations/versions/20261110_add_column.py'],
+    ['.github/workflows/deploy.yml'],
+    ['render.yaml'],
+  ]) {
+    const got = classify({ title: 'Tidy the dashboard list', ...files(['lib/thing.js', ...paths]) });
+    assert.equal(got.bucket, 'owner', paths[0]);
+    assert.match(got.reason, /changes .* a person decides/);
+  }
+});
+
+test('merge needs the full list of changed files', () => {
+  // GitHub lists at most 100 files per pull request; backend 4592 changes 103.
+  const many = Array.from({ length: 100 }, (_, i) => ({ path: `lib/part-${i}.js`, additions: 1, deletions: 0 }));
+  const cut = classify({ files: many, changedFiles: 103 });
+  assert.equal(cut.bucket, 'leave');
+  assert.match(cut.reason, /changed files/);
+  assert.equal(classify({ files: undefined, changedFiles: undefined }).bucket, 'leave');
+});
+
+// atrisos-web runs no hosted tests on most pull requests: the only checks are
+// the Vercel status and Vercel Preview Comments (web 1009 and 562, 2026-11-15).
+test('merge needs a real test check: a deploy preview or skipped checks are not green', () => {
+  const vercel = [
+    { __typename: 'StatusContext', context: 'Vercel', state: 'SUCCESS', startedAt: '2026-11-12T06:31:00Z', targetUrl: 'https://example.invalid' },
+    check('Vercel Preview Comments', 'SUCCESS'),
+  ];
+  const preview = classify({ statusCheckRollup: vercel });
+  assert.equal(preview.bucket, 'leave');
+  assert.match(preview.reason, /no hosted tests/);
+  const skipped = [check('fast-tests', 'SKIPPED'), check('focused', 'SKIPPED')];
+  assert.equal(classify({ statusCheckRollup: skipped }).bucket, 'leave');
+  assert.match(classify({ statusCheckRollup: skipped }).reason, /no hosted tests/);
+  // A real test run next to the preview is green.
+  assert.equal(classify({ statusCheckRollup: [...vercel, check('Test · Type-check · Build', 'SUCCESS')] }).bucket, 'merge');
+  assert.equal(classify({ statusCheckRollup: [check('fast-tests', 'SKIPPED'), check('linux-container-boundary', 'SUCCESS')] }).bucket, 'merge');
 });
 
 test('leave: anything touched in the last 48 hours, even when green', () => {
@@ -246,14 +347,19 @@ test('the printed sort names our accounts, the counts and the oldest rows, in lo
   }
 });
 
-test('atris land --prs runs a dry run against gh on the path', () => {
+// The command reads the real clock, so the fixture is dated from the clock the
+// child process will see. It runs once today and once with the child's clock
+// a month ahead, so a fixture pinned to one calendar day fails here at once
+// instead of turning the hosted run red the next morning.
+test('atris land --prs runs a dry run against gh on the path, on any day', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pr-sweep-'));
   try {
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);
     const log = path.join(dir, 'calls.log');
     const data = path.join(dir, 'open.json');
-    fs.writeFileSync(data, JSON.stringify([pr({ number: 30, updatedAt: daysAgo(3) })]));
+    const shift = path.join(dir, 'shift-clock.js');
+    fs.writeFileSync(shift, 'const real = Date.now; const add = Number(process.env.ATRIS_TEST_CLOCK_SHIFT_MS || 0); Date.now = () => real() + add;\n');
     fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env node
 const fs = require('fs');
 const a = process.argv.slice(2);
@@ -264,17 +370,23 @@ if (j.includes('--state merged')) { console.log(JSON.stringify([{ author: { logi
 if (j.includes('--state open')) { process.stdout.write(fs.readFileSync(${JSON.stringify(data)}, 'utf8')); process.exit(0); }
 process.stderr.write('unexpected ' + j); process.exit(1);
 `, { mode: 0o755 });
-    const res = spawnSync(process.execPath, [cliPath, 'land', '--prs', '--repo', 'example/repo'], {
-      cwd: dir,
-      encoding: 'utf8',
-      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
-    });
-    assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /1 open: merge 1/);
-    assert.match(res.stdout, /#30\s+3d/);
-    assert.match(res.stdout, /next: atris land --prs --repo example\/repo --apply/);
-    const calls = fs.readFileSync(log, 'utf8');
-    assert.doesNotMatch(calls, /pr (merge|close|edit)/);
+    for (const aheadMs of [0, 30 * 24 * 3600 * 1000]) {
+      const childNow = Date.now() + aheadMs;
+      // Three and a half days idle, so a run that crosses midnight still says 3d.
+      fs.writeFileSync(data, JSON.stringify([pr({ number: 30, updatedAt: new Date(childNow - 3.5 * 24 * 3600 * 1000).toISOString() })]));
+      fs.writeFileSync(log, '');
+      const res = spawnSync(process.execPath, ['--require', shift, cliPath, 'land', '--prs', '--repo', 'example/repo'], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: { ...process.env, ATRIS_TEST_CLOCK_SHIFT_MS: String(aheadMs), PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+      });
+      assert.equal(res.status, 0, res.stderr);
+      assert.match(res.stdout, /1 open: merge 1/);
+      assert.match(res.stdout, /#30\s+3d/, `clock ${aheadMs}ms ahead`);
+      assert.match(res.stdout, /next: atris land --prs --repo example\/repo --apply/);
+      const calls = fs.readFileSync(log, 'utf8');
+      assert.doesNotMatch(calls, /pr (merge|close|edit)/);
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
