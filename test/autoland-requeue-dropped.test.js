@@ -579,6 +579,29 @@ test('recording refuses details it cannot trust and writes nothing', () => {
   });
 });
 
+// The short PATH here is one folder holding git and nothing else, the same on
+// every machine. GitHub's Linux machines keep a real gh in /usr/bin, and the
+// sweep adds its tool folders after the caller's PATH, so that gh answered
+// before the fake and failed on the temporary repo. A folder with no gh and no
+// node in it also makes the fake's own node come from the sweep's tool folders.
+function shortPathWithGitOnly(base) {
+  const dir = path.join(base, 'short-path');
+  fs.mkdirSync(dir);
+  const real = String(process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .map((d) => path.join(d, 'git'))
+    .find((p) => {
+      try {
+        fs.accessSync(p, fs.constants.X_OK);
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
+  assert.ok(real, 'git must be on PATH to run this test');
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec '${real.replace(/'/g, "'\\''")}' "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
 // Review on 2026-11-15: under the schedule's PATH=/usr/bin:/bin the sweep
 // could not start gh (nor the node a gh script runs on), so every queued pull
 // request read as unreadable. The last 40 scheduled runs said "github could
@@ -593,7 +616,7 @@ test('under the schedule PATH the sweep still finds gh and reads a merged pull r
     const child = spawnSync(process.execPath, ['-e', script], {
       encoding: 'utf8',
       // ATRIS_TOOL_DIRS names where this machine keeps gh, as a schedule may.
-      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: os.tmpdir(), ATRIS_TOOL_DIRS: fx.bin },
+      env: { PATH: shortPathWithGitOnly(fx.base), HOME: process.env.HOME, TMPDIR: os.tmpdir(), ATRIS_TOOL_DIRS: fx.bin },
     });
     assert.equal(child.status, 0, child.stderr);
     assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), ['merged']);
