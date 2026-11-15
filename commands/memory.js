@@ -21,8 +21,8 @@ const USAGE = [
   ...LIVE_HELP,
   'copy to laptop: atris memory <pull|push|status> [folder] [--json]',
   '  pull    copy your Atris memory folder down (default: ~/atris-memory)',
-  '  push    send back changes under wiki/ and files/ (any file under files/: photos, PDFs, recordings)',
-  '          --prune also removes pages under wiki/ and files/ that you deleted here',
+  '  push    send back changes under wiki/, files/ and features/ (any file under files/: photos, PDFs, recordings)',
+  '          --prune also removes pages under wiki/, files/ and features/ that you deleted here',
   '  status  show what changed here since the last pull',
 ].join('\n');
 

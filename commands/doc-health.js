@@ -330,7 +330,7 @@ function renderDocHealth(payload) {
       ['features mentioned', map.features.mentioned, map.features.total], ['members mentioned', map.members.mentioned, map.members.total],
     ]),
     refsLine(map.refs),
-    ...(map.refs.moved ? ['run atris doc-health --fix-refs to update the moved ones.'] : []),
+    ...(map.refs.moved ? ['run atris doc-health --fix-refs to pin the moved ones to their function names.'] : []),
     '', 'lookup hops',
   ];
   if (lookup.missing) {
@@ -403,7 +403,7 @@ function recallCommand(args, options, file) {
 function docHealthCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('usage: atris doc-health [--json] [--questions <path>] [--fix-refs] [--recall <path> [--summary] [--max-opens N]]');
-    console.log('  --fix-refs  rewrite map line refs whose code moved; list the ones a human must fix');
+    console.log('  --fix-refs  pin map refs to the function they name, with no line number to drift; list the ones a human must fix');
     console.log('  --recall    follow links from the boot files to answer each question; report found, files opened, tokens read');
     console.log('  --summary   with --recall, print totals only so a held-out set stays unseen');
     return 0;

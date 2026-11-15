@@ -1,0 +1,22 @@
+> atris@3.82.20 publish:release
+> node scripts/publish-atris-release.js --dry-run
+
+
+> atris@3.82.20 prepare
+> (git hook copy omitted)
+
+npm notice
+npm notice 📦  atris@3.82.20
+npm notice Tarball Contents
+npm notice Tarball Details
+npm notice name: atris
+npm notice version: 3.82.20
+npm notice filename: atris-3.82.20.tgz
+npm notice package size: 3.3 MB
+npm notice unpacked size: 11.9 MB
+npm notice shasum: 3d3f18340c9e78996f994daacc63573c0222eaca
+npm notice integrity: sha512-SG8vyae5kaJ7c[...]EHpz1sqf+Jgqw==
+npm notice total files: 741
+npm notice
+npm notice npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation
+npm error You cannot publish over the previously published versions: 3.82.20.
