@@ -1883,6 +1883,10 @@ test('trace: a few stalls cannot hide a jump in the wait, and a slow machine rea
   assert.equal(stalled.pace_frame_ms, 17);
   assert.equal(stalled.stall_frame_ms, 50);
   assert.ok(stalled.lava_max_step_px > 45, JSON.stringify(stalled));
+  // the same four stalls with no jump are a glide: a held frame went six or
+  // more frames' worth smoothly (before, each read as a 36px step)
+  const held = lavaRun(16.7, [20, 40, 60, 80]);
+  assert.ok(Math.abs(held.lava_max_step_px - 2) < 0.1 && held.lava_max_speed_change_px < 0.1, JSON.stringify(held));
   // a machine whose every frame takes 120ms reads the same glide as a 60fps one
   const slow = lavaRun(120);
   assert.equal(slow.stall_frame_ms, 240);

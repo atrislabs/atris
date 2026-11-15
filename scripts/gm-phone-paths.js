@@ -27,7 +27,7 @@ const http = require('node:http');
 const phone = require('../lib/gm-phone');
 const gmCard = require('../lib/gm-card');
 const { phonePage } = require('../lib/gm-phone-page');
-const { findChrome, launch, cardDesk, CARDS, PHONE } = require('./gm-phone-trace');
+const { findChrome, launch, cardDesk, CARDS, PHONE, readSteps, stepsAndChanges } = require('./gm-phone-trace');
 
 const TOKEN = 'p'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -140,16 +140,25 @@ const lavaO = f => (f.lava ? f.lava.o : 0);
 // them, and the biggest change of opacity in one frame for the card, the
 // sphere, the lava, and the line. A fade of 0.2s moves about 0.08 a frame;
 // a cut moves 1. The machine's pace is its 75th percentile frame and a
-// frame over twice that (50ms to 250ms) is a stall, counted at full size.
+// frame over twice that (50ms to 250ms) is a stall: a fade is not read in
+// it, and a step in it is read as readSteps in gm-phone-trace.js reads it.
+// The longest frame a busy hosted runner held (2026-11-13 to 2026-11-15:
+// holds of about 100ms to 250ms). A longer frame at the end of a still is
+// the page hanging, not the machine, so it is not left out of the still.
+const HOLD_MAX = 250;
+
 function summarizePath(frames, from) {
   const span = frames.filter(f => f.t >= from);
   const gaps = span.slice(1).map((f, i) => f.ft - span[i].ft).sort((x, y) => x - y);
   const pace = gaps.length ? gaps[Math.floor(0.75 * (gaps.length - 1))] : 16.7;
   const stall = Math.min(250, Math.max(50, 2 * pace));
   const per = ms => (ms > stall ? 1 : 16.7 / Math.max(8, ms));
+  const lavaAt = [], lavaSize = [], stageSteps = [], titleSteps = [];
   const out = { lava_step: 0, lava_size_step: 0, lava_speed_change: 0, sphere_step: 0, dots_step: 0, dots_speed_change: 0, title_step: 0, footer_seen_jump: 0, card_fade: 0, sphere_fade: 0, sphere_drop: 0, lava_fade: 0, line_fade: 0 };
-  let prevLava = null, prevDots = null;
-  let still = 0, stillAt = null, runStart = span.length ? span[0].t : 0;
+  let prevDots = null;
+  let still = 0, stillAt = null, stillHeld = 0, runStart = span.length ? span[0].t : 0;
+  // the frames the machine held in the still under way: [when read, ms past the pace]
+  let runHeld = [];
   const cuts = [];
   const bigSteps = [];
   const lines = [];
@@ -164,17 +173,32 @@ function summarizePath(frames, from) {
       || Boolean((a.lava || b.lava) && (!a.lava || !b.lava || !near(a.lava.r, b.lava.r) || Math.abs(a.lava.o - b.lava.o) > 0.004))
       || Math.abs(seen(a) - seen(b)) > 0.003 || Boolean(a.box && b.box && !near(a.box.title, b.box.title))
       || Math.abs(a.ghost - b.ghost) > 0.003 || Math.abs(lineO(a) - lineO(b)) > 0.003;
-    if (moved) runStart = b.t;
-    else if (b.busy && b.t - runStart > still) { still = b.t - runStart; stillAt = Math.round(runStart - from); }
+    // A still is read on the wall clock, less the time the machine held a
+    // frame at its end, past one frame of the pace. A still ends when a timer
+    // or the clock starts the next motion, and a held frame there delays
+    // both, so the still ran on by the held time (hosted runs on 2026-11-13:
+    // a 150ms beat read 340ms and 398ms). At its end: the held frame was read
+    // no more than two frames of the pace before the still's last frame (after
+    // a hold Chrome reads a frame or two a few ms apart, and a motion a timer
+    // starts shows on the frame after). A frame held earlier in a still cannot
+    // stretch it, so it counts in full. The still is on the time each frame
+    // was read (t), so a held frame is too: a hold that runs before the
+    // reading in its frame shows in t a frame before it shows in ft. Only a
+    // hold a busy machine makes is left out: a frame held over HOLD_MAX (the
+    // longest hosted hold) is the page hanging and counts in full, and no
+    // more than HOLD_MAX is left out of one still.
+    if (moved) { runStart = b.t; runHeld = []; }
+    else {
+      if (b.t - a.t > stall && b.t - a.t <= HOLD_MAX) runHeld.push([b.t, b.t - a.t - pace]);
+      const held = Math.min(HOLD_MAX, runHeld.reduce((n, [at, past]) => (b.t - at <= 2 * pace ? n + past : n), 0));
+      if (b.busy && b.t - runStart - held > still) { still = b.t - runStart - held; stillAt = Math.round(runStart - from); stillHeld = held; }
+    }
     if (a.lava && b.lava && !(a.lava.at === b.lava.at && near(a.lava.r, b.lava.r))) {
-      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms, kl = per(own);
-      const st = stepOf(mid(a.lava.r), mid(b.lava.r)) * kl;
-      out.lava_step = Math.max(out.lava_step, st);
-      out.lava_size_step = Math.max(out.lava_size_step, Math.abs(a.lava.r.w - b.lava.r.w) * kl);
-      if (prevLava) out.lava_speed_change = Math.max(out.lava_speed_change, Math.abs(st - prevLava.st) * per((prevLava.own + own) / 2));
-      prevLava = { st, own };
-    } else if (!a.lava || !b.lava) prevLava = null;
-    if (a.stage && b.stage) out.sphere_step = Math.max(out.sphere_step, stepOf(a.stage, b.stage) * k, Math.abs(a.stage.w - b.stage.w) * k);
+      const own = a.lava.at != null && b.lava.at != null ? b.lava.at - a.lava.at : ms;
+      lavaAt.push({ d: stepOf(mid(a.lava.r), mid(b.lava.r)), ms: own });
+      lavaSize.push({ d: Math.abs(a.lava.r.w - b.lava.r.w), ms: own });
+    } else if (!a.lava || !b.lava) { lavaAt.push(null); lavaSize.push(null); }
+    stageSteps.push(a.stage && b.stage ? { d: Math.max(stepOf(a.stage, b.stage), Math.abs(a.stage.w - b.stage.w)), ms } : null);
     if (b.orb.frame > a.orb.frame && a.sphere > 0.05 && b.sphere > 0.05) {
       const drawn = b.orb.frame - a.orb.frame, own = Math.max(8, b.orb.ms || 0);
       out.dots_step = Math.max(out.dots_step, b.orb.step * 16.7 / own);
@@ -182,7 +206,7 @@ function summarizePath(frames, from) {
       if (prevDots && drawn === 1) out.dots_speed_change = Math.max(out.dots_speed_change, Math.abs(speed - prevDots.speed) * 16.7 / ((prevDots.own + own) / 2));
       prevDots = drawn === 1 ? { speed, own } : null;
     } else prevDots = null;
-    if (a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title) out.title_step = Math.max(out.title_step, stepOf(a.box.title, b.box.title) * k);
+    titleSteps.push(a.box && b.box && a.box.card === b.box.card && a.box.title && b.box.title ? { d: stepOf(a.box.title, b.box.title), ms } : null);
     if (stepOf(a.foot.r, b.foot.r) > 2 && Math.min(a.foot.o, b.foot.o) > 0.05) out.footer_seen_jump = Math.max(out.footer_seen_jump, stepOf(a.foot.r, b.foot.r));
     // a cut: what is seen changes all at once. The card under a still copy of
     // itself (a turn in place) is covered, and so is a sphere under the lava.
@@ -204,6 +228,12 @@ function summarizePath(frames, from) {
     out.line_fade = Math.max(out.line_fade, fade('line', lineO(a), lineO(b), false));
     if (b.busy && b.line && b.line.o > 0.05 && !lines.includes(b.line.text)) lines.push(b.line.text);
   }
+  const lava = stepsAndChanges(lavaAt, readSteps(lavaAt, stall));
+  out.lava_step = lava.step;
+  out.lava_speed_change = lava.change;
+  out.lava_size_step = stepsAndChanges(lavaSize, readSteps(lavaSize, stall)).step;
+  out.sphere_step = stepsAndChanges(stageSteps, readSteps(stageSteps, stall)).step;
+  out.title_step = stepsAndChanges(titleSteps, readSteps(titleSteps, stall)).step;
   for (const k of Object.keys(out)) out[k] = round(out[k]);
   // the sphere re-forming out of the point: from the frame it is seen until
   // its dots slow under half a pixel per 60fps frame for good (the spring
@@ -230,6 +260,8 @@ function summarizePath(frames, from) {
     stall_frames: stalls,
     longest_still_moving_ms: Math.round(still),
     longest_still_at_ms: stillAt,
+    // the held time at the end of that still, left out of it
+    longest_still_held_ms: Math.round(stillHeld),
     reform_ms: formed < 0 ? null : Math.round(span[formed].t - span[born].t),
     reform_clock_ms: formed < 0 ? null : Math.round(clock),
     card_in_ms: cardIn < 0 ? null : Math.round(span[cardIn].t - from),
@@ -308,8 +340,9 @@ async function runPath(send, spec, { cpu = 1, page = phonePage } = {}) {
 }
 
 // Every path (or only the named ones), in one Chrome at phone size.
-// page: another build of the page, for a before and after
-async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1, only = null, viewport = PHONE, page = phonePage } = {}) {
+// page: another build of the page, for a before and after. before: a script
+// run in the page ahead of its own, as a test that holds a frame needs.
+async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1, only = null, viewport = PHONE, page = phonePage, before = null } = {}) {
   if (!chromePath) throw new Error('no chrome found; set CHROME_PATH');
   const specs = only ? PATHS.filter(s => only.includes(s.name)) : PATHS;
   const chrome = await launch(chromePath);
@@ -318,6 +351,7 @@ async function pathsTrace({ chromePath = findChrome(), reduced = false, cpu = 1,
     await send('Emulation.setDeviceMetricsOverride', viewport);
     if (reduced) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await send('Page.enable');
+    if (before) await send('Page.addScriptToEvaluateOnNewDocument', { source: before });
     const out = [];
     for (const spec of specs) {
       try { out.push(await runPath(send, spec, { cpu, page })); } catch (err) { out.push({ name: spec.name, error: err.message }); }
