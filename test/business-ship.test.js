@@ -22,7 +22,7 @@ function writeCreds(home) {
   }));
 }
 
-function startShipApi(requests, { fail = false } = {}) {
+function startShipApi(requests, { fail = false, hireResult, hireStatus = 200 } = {}) {
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -38,6 +38,11 @@ function startShipApi(requests, { fail = false } = {}) {
       if (fail) {
         res.statusCode = 400;
         res.end(JSON.stringify({ detail: 'description is required' }));
+        return;
+      }
+      if (req.method === 'POST' && /\/hire\/template$/.test(req.url)) {
+        res.statusCode = hireStatus;
+        res.end(JSON.stringify(hireResult || { hired: Array.from({ length: 6 }, (_, i) => ({ name: `Seat ${i + 1}`, next_run_at: 'tomorrow' })), failed: [] }));
         return;
       }
       if (req.method === 'POST' && req.url === '/api/business/') {
@@ -293,12 +298,59 @@ test('business create and ship send a valid kind and reject invalid kinds before
       const withKind = await runCli([...base, '--kind=engineering'], { cwd, env });
       assert.equal(withKind.status, 0, withKind.stderr || withKind.stdout);
       assert.equal(requests[0].body.template, 'engineering');
-      assert.match(withKind.stdout, /Team: engineering \(six seats\)/);
+      assert.equal(requests.length, 2);
+      assert.equal(requests[1].url, command === 'create' ? '/api/business/biz-1/hire/template' : '/api/business/biz-ship-1/hire/template');
+      assert.deepEqual(requests[1].body, { template: 'engineering' });
+      assert.match(withKind.stdout, /6 of 6 seats set up/);
+      assert.match(withKind.stdout, /Seat 1: next run tomorrow/);
+      requests.length = 0;
+      const skipped = await runCli([...base, '--kind', 'engineering', '--no-hire'], { cwd, env });
+      assert.equal(skipped.status, 0);
+      assert.equal(requests.length, 1);
+      assert.match(skipped.stdout, /Team: engineering \(six seats\)/);
+      requests.length = 0;
+      const scheduled = await runCli([...base, '--kind', 'engineering', '--schedule', 'weekly'], { cwd, env });
+      assert.equal(scheduled.status, 0);
+      assert.deepEqual(requests[1].body, { template: 'engineering', schedule: 'weekly' });
+      assert.doesNotMatch(scheduled.stdout, /runs nightly/);
+      requests.length = 0;
+      for (const option of [['--no-hire'], ['--schedule', 'weekly']]) {
+        const refused = await runCli([...base, ...option], { cwd, env });
+        assert.notEqual(refused.status, 0);
+        assert.match(refused.stderr, /need --kind/);
+        assert.equal(requests.length, 0);
+      }
       requests.length = 0;
     }
   } finally {
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+test('hire failures report the existing business and preserve partial success', async () => {
+  for (const scenario of [
+    { hireResult: { hired: [{ name: 'Maya' }], failed: [{ name: 'Scout', detail: 'email unavailable' }] }, status: 0, pattern: /Scout: email unavailable/ },
+    { hireResult: { hired: [], failed: [{ name: 'Scout', detail: 'email unavailable' }] }, status: 1, pattern: /business exists/i },
+    { hireStatus: 403, hireResult: { detail: 'not allowed' }, status: 1, pattern: /business was created, but the team was not set up: not allowed/i },
+  ]) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hire-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hire-cwd-'));
+    const requests = [];
+    const server = await startShipApi(requests, scenario);
+    writeCreds(home);
+    try {
+      const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+      const result = await runCli(['business', 'ship', 'Test Business', '--yes', '--account', '--kind', 'business'], { cwd, env });
+      assert.equal(result.status, scenario.status, result.stderr);
+      assert.match(result.stderr, scenario.pattern);
+      if (scenario.hireResult.failed) assert.match(result.stderr, /hire step again is safe/);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   }
 });
