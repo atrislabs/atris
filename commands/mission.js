@@ -31,6 +31,8 @@ const {
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
   codexJsonEventsCommand,
+  CLAUDE_SLIM_ARGS,
+  slimLaunchSpendStop,
   RUNNER_PROFILE_DEFS,
   RUNNER_PROFILE_ALIASES,
   RUNNER_PROFILE_NAMES,
@@ -7998,13 +8000,16 @@ function readBoundedContextFile(filePath, maxChars = 1600) {
 
 // Code members never call the account-wide tool servers (mail, calendar,
 // docs), yet loading them cost about 5s per worker start in the member lab.
-// They keep the project's own .mcp.json; ATRIS_MEMBER_KEEP_MCP=1 keeps all.
+// They start slim (CLAUDE_SLIM_ARGS in lib/runner-command.js): no account
+// servers, no user settings, plugins or personal hooks. They keep the
+// project's own .mcp.json, its settings and CLAUDE.md.
+// ATRIS_MEMBER_KEEP_MCP=1 keeps the full launch.
 const CODE_MEMBERS = new Set(['executor', 'builder', 'codex-executor', 'auto-improver', 'navigator', 'validator', 'architect']);
 
 function claudeRunnerMcpArgs(mission, cwd = process.cwd(), env = process.env) {
   if (env.ATRIS_MEMBER_KEEP_MCP === '1') return [];
   if (!CODE_MEMBERS.has(String(mission?.owner || '').trim().toLowerCase())) return [];
-  const args = ['--strict-mcp-config'];
+  const args = [...CLAUDE_SLIM_ARGS];
   const projectConfig = path.join(cwd, '.mcp.json');
   if (fs.existsSync(projectConfig)) args.push('--mcp-config', projectConfig);
   // Servers added for this folder with Claude's local scope live in
@@ -8652,9 +8657,20 @@ function spawnClaudeTick(mission, opts) {
     ];
     if (model) args.push('--model', model);
     if (mission.roster_effort) args.push('--effort', mission.roster_effort);
-    args.push(...claudeRunnerMcpArgs(mission, cwd));
+    const slimArgs = claudeRunnerMcpArgs(mission, cwd);
+    args.push(...slimArgs);
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
+    const childEnv = { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) };
+    // The slim launch skips the user-level spend guard hook, so its decision
+    // runs here first; a stop means the run never starts.
+    const spendStop = slimArgs.length ? slimLaunchSpendStop({ model, env: childEnv }) : '';
+    if (spendStop) {
+      gitGuard.cleanup();
+      resolve({ ok: false, reason: 'claude-spend-blocked', error: spendStop, summary: spendStop, receipt_text: spendStop,
+        sessionIds: [], aborted: false, timedOut: false, authExpired: false });
+      return;
+    }
 
     const startedAt = Date.now();
     // detached: the runner spawns its own children; killing only the direct
@@ -8665,7 +8681,7 @@ function spawnClaudeTick(mission, opts) {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
+      env: childEnv,
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const progressMember = mission.owner || 'mission';
@@ -8682,6 +8698,7 @@ function spawnClaudeTick(mission, opts) {
     let rateLimitInfo = null;
     let stopReason = null;
     let usage = null;
+    let modelUsage = null;
     let parseErrors = 0;
     let stderr = '';
     let timedOut = false;
@@ -8730,6 +8747,7 @@ function spawnClaudeTick(mission, opts) {
             if (typeof ev.num_turns === 'number') numTurns = ev.num_turns;
             if (ev.stop_reason) stopReason = ev.stop_reason;
             if (ev.usage && typeof ev.usage === 'object') usage = ev.usage;
+            if (ev.modelUsage && typeof ev.modelUsage === 'object') modelUsage = ev.modelUsage;
           }
         } catch {
           parseErrors++;
@@ -8749,6 +8767,10 @@ function spawnClaudeTick(mission, opts) {
       appendProgress(progressMember, `finished: ${ok ? 'ok' : 'failed'}`, mission.id);
       const errStr = stderr.slice(-2000);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText, stdoutBuf);
+      const runUsage = parseRunUsage({ usage, cost_usd: costEstimate, model_usage: modelUsage });
+      // Tokens in counts cached reads and cache writes too: all of it is
+      // context the model took in.
+      const tokenCount = (keys) => (usage ? keys.reduce((sum, key) => sum + (Number(usage[key]) || 0), 0) : null);
       resolve({
         ok,
         timedOut,
@@ -8769,7 +8791,10 @@ function spawnClaudeTick(mission, opts) {
         rate_limit_info: rateLimitInfo,
         stderr: errStr,
         parse_errors: parseErrors,
-        run_usage: parseRunUsage({ usage, cost_usd: costEstimate }),
+        tokens_in: tokenCount(['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']),
+        tokens_out: tokenCount(['output_tokens']),
+        model_ran: runUsage.model_ran || null,
+        run_usage: runUsage,
       });
     });
 
@@ -9815,8 +9840,12 @@ async function executeMissionRunTicksPhase(context) {
           report_path: saveFullRunnerReport(mission, claudeResult.result, cwd),
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
+          duration_api_ms: claudeResult.duration_api_ms,
           duration_total_ms: claudeResult.duration_total_ms,
           num_turns: claudeResult.num_turns,
+          tokens_in: claudeResult.tokens_in,
+          tokens_out: claudeResult.tokens_out,
+          model_ran: claudeResult.model_ran,
           observed_session_ids: claudeResult.sessionIds,
           parse_errors: claudeResult.parse_errors,
           stderr: claudeResult.stderr?.slice(-1000),

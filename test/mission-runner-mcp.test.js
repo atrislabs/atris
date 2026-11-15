@@ -5,12 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { claudeRunnerMcpArgs } = require('../commands/mission');
 
+const SLIM = ['--strict-mcp-config', '--setting-sources', 'project,local'];
+
 test('code members start without account-wide tool servers but keep the project ones', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-mcp-'));
   try {
-    assert.deepEqual(claudeRunnerMcpArgs({ owner: 'executor' }, dir, {}), ['--strict-mcp-config']);
+    assert.deepEqual(claudeRunnerMcpArgs({ owner: 'executor' }, dir, {}), SLIM);
     fs.writeFileSync(path.join(dir, '.mcp.json'), '{"mcpServers":{}}');
-    assert.deepEqual(claudeRunnerMcpArgs({ owner: 'navigator' }, dir, {}), ['--strict-mcp-config', '--mcp-config', path.join(dir, '.mcp.json')]);
+    assert.deepEqual(claudeRunnerMcpArgs({ owner: 'navigator' }, dir, {}), [...SLIM, '--mcp-config', path.join(dir, '.mcp.json')]);
     // Members whose work may use mail or calendar keep everything.
     assert.deepEqual(claudeRunnerMcpArgs({ owner: 'inbox-lead' }, dir, {}), []);
     assert.deepEqual(claudeRunnerMcpArgs({ owner: 'customer-lead' }, dir, {}), []);
@@ -27,7 +29,7 @@ test('servers added for this folder in claude local scope still load', () => {
     const servers = { browser: { command: 'npx', args: ['browser-mcp'] } };
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: { [path.resolve(dir)]: { mcpServers: servers } } }));
     assert.deepEqual(claudeRunnerMcpArgs({ owner: 'validator' }, dir, { HOME: home }),
-      ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })]);
+      [...SLIM, '--mcp-config', JSON.stringify({ mcpServers: servers })]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
@@ -104,7 +106,7 @@ test('a side checkout keeps tool servers registered for its main checkout', () =
     const servers = { browser: { command: 'npx', args: ['browser-mcp'] } };
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: { [main]: { mcpServers: servers } } }));
     assert.deepEqual(claudeRunnerMcpArgs({ owner: 'executor' }, side, { HOME: home }),
-      ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })]);
+      [...SLIM, '--mcp-config', JSON.stringify({ mcpServers: servers })]);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });

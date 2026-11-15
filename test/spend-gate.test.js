@@ -33,12 +33,19 @@ const ENV_KEYS = [
   'ATRIS_CLAUDE_BIN',
   'ATRIS_CLAUDE_COMMAND_TEMPLATE',
   'ATRIS_CLAUDE_SPEND_OK',
+  'HOME',
+  'CLAUDE_CONFIG_DIR',
 ];
 
 // Runs fn with a clean runner env plus `values`, and returns what it wrote to stderr.
 function launched(values, fn) {
   const prev = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) delete process.env[key];
+  // A scratch home: whether this machine has the spend guard hook installed
+  // never changes the launch these tests read.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-spend-gate-home-'));
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
   for (const [key, value] of Object.entries(values || {})) process.env[key] = value;
   const realWrite = process.stderr.write;
   let stderr = '';
@@ -47,6 +54,7 @@ function launched(values, fn) {
     fn();
   } finally {
     process.stderr.write = realWrite;
+    fs.rmSync(home, { recursive: true, force: true });
     for (const key of ENV_KEYS) {
       const value = prev.get(key);
       if (value === undefined) delete process.env[key];
@@ -65,7 +73,7 @@ test('the default is haiku when nothing names a model, and prints nothing', () =
   const stderr = launched({}, () => {
     assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-haiku-5-5');
     assert.equal(resolveClaudeRunnerModel({}), 'claude-haiku-5-5');
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-haiku-5-5$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-haiku-5-5 --strict-mcp-config --setting-sources project,local$/);
   });
   assert.equal(stderr, '');
 });
@@ -73,7 +81,7 @@ test('the default is haiku when nothing names a model, and prints nothing', () =
 test('opus named by env runs opus with no yes and says nothing', () => {
   const stderr = launched({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-opus-5-5$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-opus-5-5 --strict-mcp-config --setting-sources project,local$/);
   });
   assert.equal(stderr, '');
   assert.doesNotMatch(stderr, /needs the owner's yes/);
@@ -82,7 +90,7 @@ test('opus named by env runs opus with no yes and says nothing', () => {
 test('opus with ATRIS_CLAUDE_SPEND_OK naming it still runs opus', () => {
   const stderr = launched({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5', ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-opus-5-5$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-opus-5-5 --strict-mcp-config --setting-sources project,local$/);
   });
   assert.equal(stderr, '');
 });
@@ -108,8 +116,8 @@ test('fable and sonnet run as named too, whatever the case', () => {
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-fable-5-1' }), 'claude-fable-5-1');
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-sonnet-5-5' }), 'claude-sonnet-5-5');
     assert.equal(resolveClaudeRunnerModel({ model: 'CLAUDE-OPUS-5-5' }), 'claude-opus-5-5');
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-fable-5-2' }), /--model claude-fable-5-2$/);
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-sonnet-5-5' }), /--model claude-sonnet-5-5$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-fable-5-2' }), /--model claude-fable-5-2 --strict-mcp-config --setting-sources project,local$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-sonnet-5-5' }), /--model claude-sonnet-5-5 --strict-mcp-config --setting-sources project,local$/);
   });
   assert.equal(stderr, '');
 });
@@ -117,13 +125,13 @@ test('fable and sonnet run as named too, whatever the case', () => {
 test('short names run as that model, never as haiku', () => {
   launched({}, () => {
     // A version typed as words becomes its full id.
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus 5.5' }), /--model claude-opus-5-5$/);
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'fable 5.2' }), /--model claude-fable-5-2$/);
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet 5.5' }), /--model claude-sonnet-5-5$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus 5.5' }), /--model claude-opus-5-5 --strict-mcp-config --setting-sources project,local$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'fable 5.2' }), /--model claude-fable-5-2 --strict-mcp-config --setting-sources project,local$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet 5.5' }), /--model claude-sonnet-5-5 --strict-mcp-config --setting-sources project,local$/);
     // A bare family name is the claude cli's own alias for that family, passed as typed.
     for (const alias of ['opus', 'sonnet', 'fable']) {
       const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: alias });
-      assert.match(cmd, new RegExp(`--model ${alias}$`), alias);
+      assert.match(cmd, new RegExp(`--model ${alias} --strict-mcp-config --setting-sources project,local$`), alias);
       assert.doesNotMatch(cmd, /haiku/, alias);
     }
   });
@@ -132,7 +140,7 @@ test('short names run as that model, never as haiku', () => {
 test('the fable profile and the legacy env run their named model', () => {
   launched({ ATRIS_RUNNER_PROFILE: 'fable' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-fable-5-1');
-    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-fable-5-1$/);
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /--model claude-fable-5-1 --strict-mcp-config --setting-sources project,local$/);
   });
   launched({ ATRIS_CLAUDE_MODEL: 'claude-opus-5-5' }, () => {
     assert.equal(resolveClaudeRunnerModel({}), 'claude-opus-5-5');
