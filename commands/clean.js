@@ -46,8 +46,10 @@ function cleanAtris(options = {}) {
   results.staleTasks = staleTasks;
 
   // 2. Find and HEAL broken MAP.md references
-  const { healed, unhealable, replacements } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
+  const { healed, unhealable, replacements, checked = 0, skipped = 0 } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
   results.healedRefs = healed;
+  results.checkedRefs = checked;
+  results.skippedRefs = skipped;
   results.healedRefDetails = replacements;
   results.unhealableRefs = unhealable;
 
@@ -108,9 +110,10 @@ function cleanAtris(options = {}) {
   }
 
   // Healed refs
+  const countText = refCountText(checked, skipped);
   if (healed > 0) {
-    const verb = options.dryRun ? 'Would heal' : 'Healed';
-    console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'}`);
+    const verb = options.dryRun ? 'would heal' : 'healed';
+    console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'} (${countText})`);
     (results.healedRefDetails || []).slice(0, 3).forEach(ref => {
       console.log(`   • ${ref.old} -> ${ref.new}${ref.symbol ? ` (${ref.symbol})` : ''}`);
     });
@@ -121,16 +124,18 @@ function cleanAtris(options = {}) {
 
   // Unhealable refs
   if (unhealable.length > 0) {
-    console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed:`);
+    console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed (${countText}):`);
     unhealable.slice(0, 3).forEach(ref => {
-      console.log(`   • ${ref.file}:${ref.line}: ${ref.reason}`);
+      console.log(`   • ${unhealableLine(ref)}`);
     });
     if (unhealable.length > 3) {
       console.log(`   ... and ${unhealable.length - 3} more`);
     }
     console.log('');
+  } else if (checked === 0) {
+    console.log(`○ ${countText}, nothing to validate`);
   } else if (healed === 0) {
-    console.log('✓ All MAP.md refs valid');
+    console.log(`✓ all MAP.md refs valid (${countText})`);
   }
 
   // Repo-local map scripts
@@ -274,6 +279,8 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
         items: results.staleTasks,
       },
       map_refs: {
+        checked_count: results.checkedRefs || 0,
+        skipped_count: results.skippedRefs || 0,
         healed_count: results.healedRefs,
         verb: options.dryRun ? 'would_heal' : 'healed',
         items: results.healedRefDetails || [],
@@ -375,14 +382,28 @@ function mapNoteFiles(atrisDir) {
   return files.filter((file) => { try { return fs.statSync(file).isFile(); } catch { return false; } });
 }
 
+function refCountText(checked, skipped) {
+  const noun = checked === 1 ? 'ref' : 'refs';
+  const other = skipped > 0 ? `, skipped ${skipped} ${skipped === 1 ? 'path' : 'paths'} (other projects or git-ignored)` : '';
+  return `checked ${checked} ${noun}${other}`;
+}
+
+function unhealableLine(ref) {
+  // A plain path has no line of its own. Say where in the map it was written.
+  if (ref.plain) return `${ref.file}: ${ref.reason} (${ref.map}:${ref.mapLine})`;
+  return `${ref.file}:${ref.line}: ${ref.reason}`;
+}
+
 function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()) {
   const mapFile = path.join(atrisDir, 'MAP.md');
-  if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [] };
+  if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [], checked: 0, skipped: 0 };
   const result = healMapFileRefs(cwd, mapFile, dryRun, homeDir);
   for (const notesFile of mapNoteFiles(atrisDir)) {
     const notes = healMapFileRefs(cwd, notesFile, dryRun, homeDir);
     const map = path.relative(cwd, notesFile).split(path.sep).join('/');
     result.healed += notes.healed;
+    result.checked += notes.checked;
+    result.skipped += notes.skipped;
     result.unhealable = [...result.unhealable, ...notes.unhealable.map((entry) => ({ ...entry, map }))];
     result.replacements = [...(result.replacements || []), ...notes.replacements.map((entry) => ({ ...entry, map }))];
   }
@@ -394,6 +415,7 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
   let mapContent = fs.readFileSync(mapFile, 'utf8');
   const unhealable = [];
   let healed = 0;
+  let checked = 0;
 
   // Match both `file.js:123` and `file.js:123-456` with surrounding context
   // [^\S\n] = horizontal whitespace only (no newlines)
@@ -437,6 +459,7 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     const backtickAfter = match[6] || '';
     const contextPart = match[8] || '';
 
+    checked++;
     const file = readFileCached(filePath);
     if (!file) {
       unhealable.push({ file: filePath, line: startLine, reason: 'File not found' });
@@ -497,6 +520,11 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     }
   }
 
+  // Plain backticked paths with no line number. Report only, never rewrite.
+  const plain = checkPlainMapPaths(cwd, mapFile, mapContent);
+  checked += plain.checked;
+  unhealable.push(...plain.unhealable);
+
   // Apply replacements
   if (!dryRun && replacements.length > 0) {
     for (const r of replacements) {
@@ -505,7 +533,111 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     fs.writeFileSync(mapFile, mapContent);
   }
 
-  return { healed, unhealable, replacements };
+  return { healed, unhealable, replacements, checked, skipped: plain.skipped };
+}
+
+// `folder/file.ext` with a slash and no `:line` suffix. The closing backtick must
+// follow the extension. That keeps `file.js:12` and `file.jsonl` from matching here.
+const PLAIN_PATH_PATTERN = /`((?:\.\.?\/)*[A-Za-z0-9_@.\-]+(?:\/[A-Za-z0-9_@.\-]+)+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml))`/g;
+
+// A plain path can be written from the project root, the map's own folder, or any
+// folder between them. Each of those is a base the path is resolved against.
+function plainPathBases(root, mapFile) {
+  const bases = [root];
+  let dir = path.dirname(path.resolve(mapFile));
+  while (dir.startsWith(root + path.sep)) {
+    bases.push(dir);
+    dir = path.dirname(dir);
+  }
+  return bases;
+}
+
+function insideRoot(root, target) {
+  return target === root || target.startsWith(root + path.sep);
+}
+
+// Fenced code blocks hold examples, not navigation. Blank their lines, keeping
+// every line number. The plain-path pass then never reads them.
+function maskFencedBlocks(content) {
+  let fence = null;
+  return content.split('\n').map((line) => {
+    const opener = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (opener && opener[1][0] === fence.char && opener[1].length >= fence.length && opener[2].trim() === '') fence = null;
+      return '';
+    }
+    if (opener && !(opener[1][0] === '`' && opener[2].includes('`'))) {
+      fence = { char: opener[1][0], length: opener[1].length };
+      return '';
+    }
+    return line;
+  }).join('\n');
+}
+
+function isDirectory(target) {
+  try { return fs.statSync(target).isDirectory(); } catch { return false; }
+}
+
+// Runtime files (state folders, logs) are written by the tools and are not in a
+// fresh checkout. Paths the repo's own ignore rules cover are not dead refs.
+function gitIgnoredPaths(cwd, paths) {
+  if (paths.length === 0) return new Set();
+  const out = spawnSync('git', ['check-ignore', '--no-index', '--stdin'], {
+    cwd, input: paths.join('\n'), encoding: 'utf8',
+  });
+  if (out.status !== 0 && out.status !== 1) return new Set();
+  return new Set(String(out.stdout).split('\n').filter(Boolean));
+}
+
+// The first folder of a path, checked in the place it was resolved against. A path
+// that climbs out of its base is judged by its first folder under the project root.
+function firstFolderExists(root, base, target) {
+  let anchor = base;
+  let from = path.relative(base, target);
+  if (from === '..' || from.startsWith('..' + path.sep)) {
+    anchor = root;
+    from = path.relative(root, target);
+  }
+  const parts = from.split(path.sep);
+  return parts.length > 1 && isDirectory(path.join(anchor, parts[0]));
+}
+
+function checkPlainMapPaths(cwd, mapFile, content) {
+  const root = path.resolve(cwd);
+  const map = path.relative(root, path.resolve(mapFile)).split(path.sep).join('/');
+  const bases = plainPathBases(root, mapFile);
+  const scanned = maskFencedBlocks(content);
+  const seen = new Set();
+  const missing = [];
+  let checked = 0;
+  let skipped = 0;
+  const pattern = new RegExp(PLAIN_PATH_PATTERN.source, 'g');
+  let match;
+  while ((match = pattern.exec(scanned)) !== null) {
+    const rel = match[1];
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    // Anything that resolves outside the project belongs to another project.
+    const candidates = bases
+      .map((base) => ({ base, target: path.resolve(base, rel) }))
+      .filter((candidate) => insideRoot(root, candidate.target));
+    if (candidates.some((candidate) => fs.existsSync(candidate.target))) { checked++; continue; }
+    // A path whose first folder is in none of its bases belongs to another project.
+    const here = candidates
+      .filter((candidate) => firstFolderExists(root, candidate.base, candidate.target))
+      .map((candidate) => path.relative(root, candidate.target).split(path.sep).join('/'));
+    if (here.length === 0) { skipped++; continue; }
+    const mapLine = scanned.slice(0, match.index).split('\n').length;
+    missing.push({ rel, mapLine, here });
+  }
+  const ignored = gitIgnoredPaths(root, missing.flatMap((entry) => entry.here));
+  const unhealable = [];
+  for (const { rel, mapLine, here } of missing) {
+    if (here.every((candidate) => ignored.has(candidate))) { skipped++; continue; }
+    checked++;
+    unhealable.push({ file: rel, line: null, mapLine, map, reason: 'missing file', plain: true });
+  }
+  return { checked, skipped, unhealable };
 }
 
 /**
@@ -851,6 +983,7 @@ module.exports = {
   cleanResultPayload,
   findStaleTasks,
   healBrokenMapRefs,
+  unhealableLine,
   findStalePages,
   checkPageStaleness
 };

@@ -224,3 +224,45 @@ test('unattendedStop: a bare model name is judged through the remap the run\'s e
   // The yes is for the model it maps to.
   assert.equal(guard.unattendedStop({ model: 'haiku', env: env({ ...REMAP, ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5' }) }), null);
 });
+
+// 2026-11-14: three Opus workers on a Max plan with extra usage off were
+// blocked as paid. A run that cannot be billed starts; anything that could
+// bill still needs the yes.
+function planHome(account) {
+  const dir = tempHome();
+  fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: account }));
+  return dir;
+}
+const maxPlan = (extra = {}) => ({ organizationType: 'claude_max', billingType: 'stripe_subscription', hasExtraUsageEnabled: false, profileFetchedAt: Date.now() - 60000, ...extra });
+
+test('a Max or Pro plan with extra usage off starts unattended opus', () => {
+  for (const organizationType of ['claude_max', 'claude_pro']) {
+    const r = guard.checkClaudeSpend({ model: 'opus', job: 'worker', env: { HOME: planHome(maxPlan({ organizationType })) }, checkKey: true });
+    assert.equal(r.ok, true, organizationType);
+    assert.equal(r.reason, 'plan_covered');
+    assert.equal(r.plan, organizationType);
+  }
+  assert.equal(guard.hookDecision({ argv: ['claude', '--model', 'opus', '-p', 'x'], env: { HOME: planHome(maxPlan()) } }).block, false);
+});
+
+test('anything that could bill still needs the yes', () => {
+  const blocked = (account, env = {}) => guard.checkClaudeSpend({ model: 'opus', env: { HOME: planHome(account), ...env }, checkKey: true }).ok === false;
+  assert.ok(blocked(maxPlan({ hasExtraUsageEnabled: true })), 'extra usage on');
+  assert.ok(blocked(maxPlan({ hasExtraUsageEnabled: undefined })), 'extra usage unknown');
+  assert.ok(blocked(maxPlan({ organizationType: 'claude_team' })), 'a team plan can carry org overages');
+  assert.ok(blocked(maxPlan({ organizationType: undefined })), 'no plan');
+  assert.ok(blocked(maxPlan({ profileFetchedAt: Date.now() - 8 * 24 * 60 * 60 * 1000 })), 'a stale account record');
+  assert.ok(blocked(maxPlan({ profileFetchedAt: undefined })), 'an undated account record');
+  assert.ok(blocked(maxPlan(), { ANTHROPIC_API_KEY: 'k' }), 'a pay-per-use key');
+  assert.ok(blocked(maxPlan(), { ANTHROPIC_BASE_URL: 'https://proxy.example' }), 'another endpoint');
+  assert.ok(blocked(maxPlan(), { CLAUDE_CODE_USE_BEDROCK: '1' }), 'Bedrock');
+  assert.ok(blocked(maxPlan(), { CLAUDE_CODE_OAUTH_TOKEN: 't' }), 'a token for an account the record may not describe');
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env: quiet({}) }).ok, false, 'no account record');
+});
+
+test('CLAUDE_CONFIG_DIR points at the account record it uses', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-guard-config-'));
+  fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: maxPlan() }));
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env: { HOME: tempHome(), CLAUDE_CONFIG_DIR: dir } }).reason, 'plan_covered');
+  assert.equal(guard.checkClaudeSpend({ model: 'opus', env: { HOME: planHome(maxPlan()), CLAUDE_CONFIG_DIR: tempHome() } }).ok, false, 'the run reads its own config folder, not the home one');
+});

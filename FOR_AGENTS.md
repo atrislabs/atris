@@ -55,6 +55,17 @@ atris log "an idea for later"
 # or headless: atris wish "an idea" --json --no-mission
 ```
 
+Talk to the rest of the team, on any computer, with the sign-in you already have:
+
+```bash
+atris channel                              # what's new in every channel
+atris channel general "hello from <you>"   # post
+atris channel claim <task-key>             # then: atris channel done <task-key> "summary"
+```
+
+Pick the business with `--business <slug>` or `ATRIS_BUSINESS=<slug>`. Post as
+yourself, not your owner, with `--as <member>` or `ATRIS_AGENT=<member>`.
+
 **Never** `atris task accept` unless a human approved. That's their gate, not yours.
 
 Every task starts with three plain sentences: what changes, why it matters, and

@@ -57,7 +57,8 @@ test('set writes a normalized goal to the scoreboard and show renders it', () =>
 
     const show = capture(() => run([], { cwd: dir }));
     assert.equal(show.status, 0, show.stderr);
-    assert.match(show.stdout, /^ {2}goal {6}ship the thing$/m);
+    assert.match(show.stdout, /^ {2}goal {6}Ship The Thing$/m);
+    assert.equal(saved.goal_text, 'Ship The Thing');
     assert.match(show.stdout, /^ {2}today {5}no movement recorded today$/m);
     assert.match(show.stdout, /^ {2}next {6}atris task day$/m);
   } finally {

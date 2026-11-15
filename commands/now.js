@@ -612,7 +612,7 @@ function nowJsonPayload(root = process.cwd()) {
 function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const help = args.includes('--help') || args.includes('-h') || args[0] === 'help';
   if (help) {
-    console.log('Usage: atris now [--init|--refresh|--all|--path] [--json]');
+    console.log('Usage: atris now [--init|--refresh|--all|--path] [--agent <member>|--human] [--json]');
     console.log('');
     console.log('Show the current operating truth for this workspace.');
     console.log('');
@@ -632,6 +632,11 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
   const asJson = args.includes('--json');
 
   try {
+    if (!init && !refresh && !all && !pathOnly) {
+      const { buildAgentNext, printAgentNext } = require('../lib/agent-next');
+      const agent = buildAgentNext({ root, args });
+      if (agent) return printAgentNext(agent, { asJson, alias: 'next' });
+    }
     if (asJson && !init && !refresh && !all && !pathOnly) {
       const payload = nowJsonPayload(root);
       printNowJson(payload);

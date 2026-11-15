@@ -584,7 +584,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.agent_certified, true);
     assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.verify, 'node --check review-verify.js');
 
-    const nextAfterReviewCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    const nextAfterReviewCertification = runCli(['task', 'next', '--human', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterReviewCertification.status, 0, nextAfterReviewCertification.stderr);
     const firstNextPayload = JSON.parse(nextAfterReviewCertification.stdout);
     assert.equal(firstNextPayload.action, 'accept');
@@ -664,7 +664,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(omittedGuidancePayload.task.review.lesson, 'Double-check proof before awarding XP');
     assert.equal(omittedGuidancePayload.task.review.next_task, 'Queue the next proof loop');
 
-    const nextAfterCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    const nextAfterCertification = runCli(['task', 'next', '--human', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterCertification.status, 0, nextAfterCertification.stderr);
     const nextPayload = JSON.parse(nextAfterCertification.stdout);
     assert.equal(nextPayload.action, 'accept');
@@ -1908,7 +1908,7 @@ test('task next names accept for uncertified review and leaves open work unclaim
     assert.equal(openAdd.status, 0, openAdd.stderr);
     const openPayload = JSON.parse(openAdd.stdout);
 
-    const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    const next = runCli(['task', 'next', '--human', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
@@ -1941,7 +1941,7 @@ test('task next surfaces review debt when no open work exists', () => {
     assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
-    const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    const next = runCli(['task', 'next', '--human', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
@@ -1985,7 +1985,7 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const next = runCli(['task', 'next', '--human', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
@@ -1993,13 +1993,13 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.equal(payload.task.display_id, ref);
     assert.doesNotMatch(JSON.stringify(payload), /create_bounded_endgame_task|task_seed/);
 
-    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
+    const text = runCli(['task', 'next', '--human', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(text.stdout, /Create the next bounded task|Create: atris task new|Claim: atris task claim/);
     assert.doesNotMatch(text.stdout, /atris task step /);
 
-    const createNext = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
+    const createNext = runCli(['task', 'next', '--human', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
     assert.equal(createNext.status, 0, createNext.stderr);
     const createdPayload = JSON.parse(createNext.stdout);
     assert.equal(createdPayload.action, 'created_next');
@@ -2009,7 +2009,7 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.match(createdPayload.task.title, /runner-agnostic heartbeat gap/);
     assert.equal(createdPayload.review_task.display_id, ref);
 
-    const after = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const after = runCli(['task', 'next', '--human', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(after.status, 0, after.stderr);
     const afterPayload = JSON.parse(after.stdout);
     assert.equal(afterPayload.action, 'accept');
@@ -2059,7 +2059,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    const scopedNext = runCli(['task', 'next', '--human', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(scopedNext.status, 0, scopedNext.stderr);
     const payload = JSON.parse(scopedNext.stdout);
     assert.equal(payload.action, 'accept');
@@ -2068,7 +2068,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     assert.equal(payload.task.display_id, ref);
     assert.equal(payload.task.tag, 'golden-path');
 
-    const scopedText = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
+    const scopedText = runCli(['task', 'next', '--human', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(scopedText.status, 0, scopedText.stderr);
     assert.match(scopedText.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(scopedText.stdout, /No open tasks for tag=golden-path/);
@@ -2076,7 +2076,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     assert.doesNotMatch(scopedText.stdout, /runner swaps should be config-only/);
     assert.doesNotMatch(scopedText.stdout, /Create: atris task new/);
 
-    const scopedCreate = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--create-next', '--json'], { cwd: dir, env });
+    const scopedCreate = runCli(['task', 'next', '--human', '--tag', 'golden-path', '--as', 'onboarding', '--create-next', '--json'], { cwd: dir, env });
     assert.notEqual(scopedCreate.status, 0);
     const createPayload = JSON.parse(scopedCreate.stdout);
     assert.equal(createPayload.reason, 'no_create_next_seed');
@@ -2127,20 +2127,20 @@ test('task next does not repeat an Endgame seed that already exists', () => {
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const next = runCli(['task', 'next', '--human', '--as', 'codex-executor', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${ref}`);
     assert.equal(payload.task.display_id, ref);
 
-    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
+    const text = runCli(['task', 'next', '--human', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(text.stdout, /Create the next bounded task/);
     assert.doesNotMatch(text.stdout, /Create: atris task new/);
 
-    const duplicate = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
+    const duplicate = runCli(['task', 'next', '--human', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
     assert.notEqual(duplicate.status, 0);
     const duplicatePayload = JSON.parse(duplicate.stdout);
     assert.equal(duplicatePayload.reason, 'no_create_next_seed');

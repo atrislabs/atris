@@ -300,4 +300,4 @@ function caretakerCommand(args = [], options = {}) {
   }
 }
 
-module.exports = { caretakerCommand };
+module.exports = { caretakerCommand, latestChecks, isFailingCheck, isPassingCheck, isPendingCheck };

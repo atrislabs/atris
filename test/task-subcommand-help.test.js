@@ -34,8 +34,8 @@ const VERBS = [
   },
   {
     verb: 'next',
-    usage: 'Usage: atris task next [--tag <tag>] [--create-next]',
-    listed: /atris task next \[--tag <tag>\] \[--create-next\]/,
+    usage: 'Usage: atris task next [--tag <tag>] [--agent <member>|--human] [--create-next]',
+    listed: /atris task next \[--tag <tag>\] \[--agent <member>\|--human\] \[--create-next\]/,
     noise: /durable local task state|Confidence Gate|TASK DESK|atris task list|say yes:/,
     acted: /claimed|id required|next:|No open tasks/i,
     idTitle: 'task next <id> --help does not claim the task',
@@ -44,7 +44,7 @@ const VERBS = [
   },
   {
     verb: 'ready',
-    usage: 'Usage: atris task ready <id> --proof "..." --result "<sentence>"',
+    usage: 'Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)',
     listed: /atris task ready <id> --proof "\.\.\." --result "<sentence>"/,
     noise: /durable local task state|Confidence Gate|TASK DESK|atris task list|atris task claim|say yes:/,
     acted: /id required|proof required|verifier failed|ready:/i,

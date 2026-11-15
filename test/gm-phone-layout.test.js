@@ -249,12 +249,23 @@ test('layout: a title ending in a long word keeps it beside the word before when
 });
 
 test('layout: the calm line\'s open box shows its whole hint on every phone, centered where there is room and from the left on narrow ones', { skip, timeout: 90000 }, async () => {
-  const probe = `(function () {
-    var i = document.querySelector('#bet .field input');
-    var s = getComputedStyle(i), c = document.createElement('canvas').getContext('2d');
-    c.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
-    return { hint_px: c.measureText(i.placeholder).width, room_px: i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight), align: s.textAlign };
-  })()`;
+  // Read once the box has settled: fonts loaded, every short animation done, two frames drawn.
+  // The room is the input's box less its border and padding. input.clientWidth is not used:
+  // some Chrome versions leave an input's padding out of it, which counts the padding twice.
+  const probe = `document.fonts.ready.then(function () { return new Promise(function (done) {
+    var tries = 0;
+    (function settle() {
+      var running = document.getAnimations().filter(function (a) { var t = a.effect && a.effect.getComputedTiming(); return a.playState === 'running' && t && t.endTime <= 3000; }).length;
+      if (running && tries++ < 100) { setTimeout(settle, 50); return; }
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        var i = document.querySelector('#bet .field input');
+        var s = getComputedStyle(i), c = document.createElement('canvas').getContext('2d');
+        c.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
+        var box = i.getBoundingClientRect().width, pad = parseFloat(s.paddingLeft) + parseFloat(s.paddingRight), edge = parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+        done({ hint_px: c.measureText(i.placeholder).width, room_px: box - edge - pad, align: s.textAlign, box_px: box, client_px: i.clientWidth, padding_px: pad, border_px: edge, still_running: running, fonts: document.fonts.status, chrome: (navigator.userAgent.match(/Chrome\\/[\\d.]+/) || [''])[0] });
+      }); });
+    })();
+  }); })`;
   const mini = { name: 'mini', width: 375, height: 667, deviceScaleFactor: 2, mobile: true, notch: null };
   const rows = await layout({ chromePath: CHROME, cases: only('wait'), viewports: ['small', mini, 'phone', 'big', 'laptop'], probe });
   const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);

@@ -1,0 +1,7 @@
+npm error code E404
+npm error 404 No match found for version 3.83.99
+npm error 404
+npm error 404  'atris@3.83.99' is not in this registry.
+npm error 404
+npm error 404 Note that you can also install from a
+npm error 404 tarball, folder, http url, or git url.

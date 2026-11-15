@@ -10,7 +10,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
-const { healBrokenMapRefs } = require('../commands/clean.js');
+const { healBrokenMapRefs, unhealableLine } = require('../commands/clean.js');
 
 test("atris/MAP.md has no broken file:line references", () => {
   const cwd = path.join(__dirname, '..');
@@ -18,7 +18,7 @@ test("atris/MAP.md has no broken file:line references", () => {
   const { unhealable } = healBrokenMapRefs(cwd, atrisDir, true); // dry-run, never writes
 
   const detail = unhealable
-    .map((r) => `  ${r.file}:${r.line}: ${r.reason}`)
+    .map((r) => `  ${unhealableLine(r)}`)
     .join('\n');
 
   assert.strictEqual(

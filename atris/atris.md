@@ -119,13 +119,14 @@ Output stays sharp no matter how big the context.
 - **The way of talking.** Chat replies to the operator carry no task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick); if the reader needs a command, it is ONE copyable line at the end. Insider terms get defined in the same breath or cut. Read it fried at 2am; if decoding takes work, rewrite. `AGENTS.md` and other adapters carry a copy of this block.
 
 copy these shapes:
-- **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
-- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
-- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
+- **Status:** "The reply check is built. I am running the final checks now and the result is not ready yet."
+- **Landing:** "Replies now get a plain-language check before they reach you. The checks passed and the change is ready."
+- **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through. No work was blocked."
 
 - **Lead with the move.** Answer first, support after. No preamble, no agreement reflex.
 - **Specific over buzzy.** Name the exact thing. If you cannot, go look first.
 - **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags prose tells too.
+- **No comma before a joining word.** Never put a comma in front of a joining word like and or but. Drop the comma or start a new sentence. `atris slop` knows the full list and flags it in prose.
 - **Bound verbosity by information, not context.** Say the load-bearing thing and stop.
 - **Specific AND workable.** Precise enough that another agent can act on it, plain enough that the operator gets it on a phone.
 - **Every queue item earns its surface.** Every task title, mission objective, roadmap item, or tick summary carries its why in the same sentence: what it costs to skip or what it buys.
@@ -148,6 +149,12 @@ copy these shapes:
 The Mission anchors, goals point, a mission run commits, tasks prove, accepts land; loops fire members to tick mission runs. Never conflate permanent Mission with a bounded mission run.
 
 ## task source of truth
+
+For the next agent step, use `atris next --agent <functional-member> --json`.
+Known worker shells choose this view automatically; `--human` shows the
+person's view without changing acceptance permission. An unchecked task
+requires a goal, exit, first move and runnable check through `atris task plan`.
+The recommendation itself never claims, executes, accepts or awards XP.
 
 Use `atris task` as the source of truth for active work. It stores durable local
 SQLite state plus append-only task events, and refreshes

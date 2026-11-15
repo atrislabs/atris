@@ -32,9 +32,14 @@ function fixture(t) {
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
       fs.writeFileSync(logPath, records.map((record) => JSON.stringify(record)).join('\n') + (trailingNewline ? '\n' : ''));
     },
+    // Tests stay offline and never wait on a terminal unless they say so.
+    options: {},
     run(...args) {
       const lines = [];
-      const code = ninetyNineAtris(args, { logPath, now: () => new Date(time), log: (line) => lines.push(line) });
+      const code = ninetyNineAtris(args, {
+        logPath, now: () => new Date(time), log: (line) => lines.push(line),
+        suggestion: () => '', interactive: false, ...this.options,
+      });
       return { code, output: lines.join('\n') };
     },
     env() {
@@ -235,7 +240,7 @@ test('pause reports active time left and resume moves the end time after every p
   assert.equal(status.planned_end_at, new Date(2026, 9, 23, 22, 10, 15).toISOString());
   f.advance(30.6);
   assert.deepEqual(f.run('stop'), { code: 0, output: 'Focus 50 done.\nToday: 1 focus, 0 meditate, 50 min' });
-  assert.deepEqual(f.run('today'), { code: 0, output: 'Today: 1 focus, 0 meditate, 50 min' });
+  assert.deepEqual(f.run('today'), { code: 0, output: 'Today: 1 focus, 0 meditate, 50 min\nDeep work: 1 block, 50 minutes' });
 });
 
 test('resume shows the exact local end minute across midnight without rounding up the countdown', (t) => {
@@ -468,7 +473,7 @@ test('today shows only totals while json lists every session and sums done plann
   assert.deepEqual(result.counts, { focus: 1, meditate: 1 });
   assert.deepEqual(result.sessions.map((session) => session.status), ['done', 'done', 'partial', 'running']);
   assert.equal(result.date, '2026-10-23');
-  assert.equal(f.run('today').output, 'Today: 1 focus, 1 meditate, 35 min');
+  assert.equal(f.run('today').output, 'Today: 1 focus, 1 meditate, 35 min\nDeep work: 1 block, 25 minutes');
   assert.doesNotMatch(f.run('today').output, /xp/i);
 });
 
@@ -990,7 +995,7 @@ test('today prints the exact count line and excludes partial, paused, and other-
   f.run('meditate', '10');
   f.advance(1);
   f.run('pause');
-  assert.equal(f.run('today').output, 'Today: 3 focus, 1 meditate, 145 min');
+  assert.equal(f.run('today').output, 'Today: 3 focus, 1 meditate, 145 min\nDeep work: 3 blocks, 2 hours 5 minutes');
   const today = JSON.parse(f.run('today', '--json').output);
   assert.deepEqual(today.counts, { focus: 3, meditate: 1 });
   assert.equal(today.finished_minutes, 145);
@@ -1174,12 +1179,28 @@ function syncFixture(t, sync = { target: 'personal' }) {
       workspaceFiles.set(file.path, file.content);
       return { data: { results: [{ path: file.path, status: 'written' }] } };
     }
+    if (url.pathname.startsWith('/api/99/day/') && call.method === 'PUT') {
+      const day = url.pathname.slice('/api/99/day/'.length);
+      const deep = call.body.habits.deep_work;
+      assert.ok(deep.blocks.length <= 24);
+      const kept = days.get(day) || new Map();
+      for (const block of deep.blocks) kept.set(block.id, block);
+      days.set(day, kept);
+      const ended = [...kept.values()].filter((block) => block.ended_at);
+      return { data: { day, habits: { deep_work: {
+        done: true, blocks: [...kept.values()], block_count: ended.length,
+        block_minutes: ended.reduce((sum, block) => sum + block.minutes, 0),
+      } } } };
+    }
     throw new Error(`unexpected mock request ${call.method} ${call.path}`);
   };
+  const days = new Map();
   t.mock.method(require('node:https'), 'request', fakeHttps(handler));
   t.mock.method(require('node:http'), 'request', fakeHttps(handler));
   return Object.assign(f, {
-    configPath, statePath, credentials, calls, add, workspaceFiles,
+    configPath, statePath, credentials, calls, add, workspaceFiles, days,
+    // The clock the block upload sees; undefined keeps the real time, as older tests expect.
+    blockNow: undefined,
     get rows() { return rows; },
     setPageSize(value) { pageSize = value; },
     remoteText(file = 'atris/99/sessions.jsonl') { return workspaceFiles.get(file) || ''; },
@@ -1191,7 +1212,7 @@ function syncFixture(t, sync = { target: 'personal' }) {
       const output = [];
       const code = await ninetyNineAtris(['sync', ...args], {
         logPath: f.logPath, configPath, statePath, credentials: () => credentials,
-        log: (line) => output.push(line),
+        log: (line) => output.push(line), now: this.blockNow,
       });
       return { code, output: output.join('\n') };
     },
@@ -1658,4 +1679,412 @@ test('real dispatcher awaits sync and uses the config override, stored login, an
   const missing = spawnSync(process.execPath, [cli, '99', 'sync'], { cwd: f.dir, env, encoding: 'utf8', timeout: 15000 });
   assert.equal(missing.status, 1, missing.stdout + missing.stderr);
   assert.match(missing.stdout, /signed-in user login; run atris login/);
+});
+
+// --- deep work blocks: intention, outcome, upload, the day's line ----------------------------
+
+const { blockDuration, blocksLine, isoWithOffset, blockFromSession } = require('../lib/ninety-nine');
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/;
+
+test('focus takes an intention after its length, quoted or as words, and the timer line shows it', (t) => {
+  const f = fixture(t);
+  let asked = 0;
+  f.options = { suggestion: () => { asked++; return 'never shown'; } };
+  const endsAt = new Date(f.now().getTime() + 50 * minute)
+    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  assert.deepEqual(f.run('focus', '50', 'ship the paywall'), { code: 0, output: `Focus 50 started. Ends at ${endsAt}.` });
+  const record = f.records()[0];
+  assert.deepEqual(record, {
+    v: 1, type: 'start', id: record.id, kind: 'focus', planned_min: 50, at: f.now().toISOString(), source: 'cli',
+    intention: 'ship the paywall',
+  });
+  assert.equal(asked, 0);
+  f.advance(10);
+  assert.equal(f.run('status').output, 'Focus · 40:00 left · ship the paywall');
+  assert.equal(JSON.parse(f.run('status', '--json').output).running.intention, 'ship the paywall');
+  f.run('stop');
+  assert.equal(f.run('50', 'write', ' the\n', 'launch   post').code, 0);
+  assert.equal(f.records().at(-1).intention, 'write the launch post');
+  f.run('stop');
+  assert.equal(f.run('f', '25', 'x'.repeat(300)).code, 0);
+  assert.equal(f.records().at(-1).intention, 'x'.repeat(200));
+  f.run('stop');
+  const before = f.text();
+  assert.equal(f.run('meditate', '10', 'calm').code, 1);
+  assert.equal(f.run('focus', '50', 'ship', '--json').code, 1);
+  assert.equal(f.text(), before);
+});
+
+test('focus without an intention prints the suggestion as a hint and starts anyway; a failure prints nothing', async (t) => {
+  const f = fixture(t);
+  const seen = [];
+  f.options = { suggestion: (time) => { seen.push(time.toISOString()); return Promise.resolve('Draft the paywall copy first'); } };
+  const pending = f.run('50');
+  assert.equal(typeof pending.code.then, 'function');
+  assert.equal(f.records().length, 1, 'the timer starts before the hint arrives');
+  assert.equal(await pending.code, 0);
+  assert.deepEqual(seen, [f.now().toISOString()]);
+  assert.ok(!Object.hasOwn(f.records()[0], 'intention'));
+  f.run('stop');
+  for (const failing of [() => Promise.reject(new Error('down')), () => Promise.resolve(''), () => '', () => null]) {
+    const lines = [];
+    const code = await ninetyNineAtris(['focus', '25'], {
+      logPath: f.logPath, now: () => f.now(), log: (line) => lines.push(line), interactive: false, suggestion: failing,
+    });
+    assert.equal(code, 0);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^Focus 25 started\. Ends at /);
+    f.run('stop');
+  }
+});
+
+test('the suggestion asks the server for the local day with the token and stays quiet without a login', async (t) => {
+  const f = fixture(t);
+  const calls = [];
+  const run = async (request, credentials) => {
+    const lines = [];
+    const code = await ninetyNineAtris(['50'], {
+      logPath: f.logPath, now: () => f.now(), log: (line) => lines.push(line), interactive: false, request, credentials,
+    });
+    f.run('stop');
+    return { code, lines };
+  };
+  const answer = { ok: true, status: 200, data: { suggestion: 'Finish the  pricing\ntable' } };
+  let result = await run(async (pathname, options) => { calls.push({ pathname, options }); return answer; }, () => ({ token: 'tok' }));
+  assert.equal(result.code, 0);
+  assert.equal(result.lines[1], 'Suggestion: Finish the pricing table');
+  const url = new URL(calls[0].pathname, 'https://mock.invalid');
+  assert.equal(url.pathname, '/99/focus/suggestion');
+  assert.equal(url.searchParams.get('day'), '2026-10-23');
+  assert.equal(url.searchParams.get('tz_offset_minutes'), String(-f.now().getTimezoneOffset()));
+  assert.equal(calls[0].options.token, 'tok');
+  assert.equal(calls[0].options.method, 'GET');
+  for (const [request, credentials] of [
+    [async () => { throw new Error('offline'); }, () => ({ token: 'tok' })],
+    [async () => ({ ok: false, status: 500, data: null }), () => ({ token: 'tok' })],
+    [async () => ({ ok: true, status: 200, data: { suggestion: 42 } }), () => ({ token: 'tok' })],
+    [async () => { throw new Error('must not be called'); }, () => null],
+    [async () => answer, () => { throw new Error('bad login file'); }],
+  ]) {
+    result = await run(request, credentials);
+    assert.equal(result.code, 0);
+    assert.equal(result.lines.length, 1);
+  }
+});
+
+test('stop after the full time takes --outcome and --note without asking, in either flag form', (t) => {
+  for (const args of [['--outcome', 'partly', '--note', 'half  the copy'], ['--outcome=partly', '--note=half the copy'], ['half', 'the', 'copy', '--outcome', 'partly']]) {
+    const f = fixture(t);
+    let asked = 0;
+    f.options = { interactive: true, ask: () => { asked++; return 'yes'; } };
+    f.run('focus', '50', 'ship the paywall');
+    f.advance(55);
+    assert.deepEqual(f.run('stop', ...args), { code: 0, output: 'Focus 50 done.\nToday: 1 focus, 0 meditate, 50 min' });
+    assert.equal(asked, 0);
+    const [first, end] = f.records();
+    assert.deepEqual(end, {
+      v: 1, type: 'end', id: first.id, status: 'done', at: new Date(Date.parse(first.at) + 50 * minute).toISOString(),
+      source: 'cli', note: 'half the copy', outcome: 'partly',
+    });
+  }
+});
+
+test('a bad --outcome or a flag with no value is a usage error that writes nothing', (t) => {
+  const f = fixture(t);
+  f.run('focus', '25');
+  f.advance(25);
+  const before = f.text();
+  for (const args of [['--outcome', 'maybe'], ['--outcome'], ['--note'], ['--outcome=YES']]) {
+    assert.deepEqual(f.run('stop', ...args), { code: 2, output: 'usage: atris 99 stop [--outcome yes|partly|no] [--note text] [note words]' });
+  }
+  assert.equal(f.text(), before);
+});
+
+test('stop after the full time asks at a terminal and takes yes, partly, no or a skip', (t) => {
+  for (const [answers, outcome, questions] of [
+    [['y'], 'yes', 1], [['Partly'], 'partly', 1], [['no'], 'no', 1], [[''], null, 1],
+    [['maybe', 'n'], 'no', 2], [['maybe', 'what'], null, 2],
+  ]) {
+    const f = fixture(t);
+    const asked = [];
+    f.options = { interactive: true, ask: (question) => {
+      assert.ok(!fs.existsSync(`${f.logPath}.lock`), 'an open question never holds the session log');
+      asked.push(question);
+      return answers[asked.length - 1];
+    } };
+    f.run('focus', '25');
+    f.advance(25);
+    assert.equal(f.run('stop').code, 0);
+    assert.equal(asked.length, questions);
+    assert.equal(asked[0], 'Did you get it done? (yes/partly/no) ');
+    assert.equal(f.records().at(-1).outcome, outcome);
+    f.run();
+    assert.equal(asked.length, questions, 'a skip counts as asked');
+  }
+});
+
+test('only a focus block that ran its full time is asked, and never without a terminal', (t) => {
+  const f = fixture(t);
+  const asked = [];
+  f.options = { interactive: true, ask: (question) => { asked.push(question); return 'yes'; } };
+  f.run('focus', '50');
+  f.advance(20);
+  f.run('stop', '--outcome', 'yes');
+  assert.ok(!Object.hasOwn(f.records().at(-1), 'outcome'), 'an early stop never reaches the server, so it has no outcome');
+  f.run('meditate', '10');
+  f.advance(10);
+  f.run('stop');
+  assert.deepEqual(asked, []);
+  f.options = { interactive: false, ask: () => { throw new Error('a script was asked'); } };
+  f.run('focus', '25');
+  f.advance(25);
+  assert.equal(f.run('stop').code, 0);
+  assert.ok(!Object.hasOwn(f.records().at(-1), 'outcome'));
+});
+
+test('a block that ended on its own is asked about once by the next command at a terminal, never in json', (t) => {
+  const f = fixture(t);
+  const asked = [];
+  f.options = { interactive: true, ask: (question) => {
+    assert.ok(!fs.existsSync(`${f.logPath}.lock`));
+    asked.push(question);
+    return 'partly';
+  } };
+  f.run('focus', '50', 'ship the paywall');
+  const began = f.records()[0];
+  f.advance(60);
+  assert.equal(f.run('status', '--json').code, 0);
+  assert.deepEqual(asked, [], 'json readers are never asked');
+  assert.equal(f.records().at(-1).inferred, true);
+  assert.equal(f.run().code, 0);
+  assert.deepEqual(asked, ['Focus 50 ended (ship the paywall). Did you get it done? (yes/partly/no) ']);
+  const answer = f.records().at(-1);
+  assert.deepEqual(answer, {
+    v: 1, type: 'end', id: began.id, status: 'done', at: f.now().toISOString(), source: 'cli', inferred: true, outcome: 'partly',
+  });
+  f.run();
+  f.run('today');
+  assert.equal(asked.length, 1);
+  const session = JSON.parse(f.run('today', '--json').output).sessions[0];
+  assert.equal(session.outcome, 'partly');
+  assert.equal(session.ended_at, new Date(Date.parse(began.at) + 50 * minute).toISOString(), 'the end time stays the planned end');
+  assert.equal(f.run('today').output, 'Today: 1 focus, 0 meditate, 50 min\nDeep work: 1 block, 50 minutes');
+});
+
+test('stop --outcome answers the last block that ended while nobody was asked', (t) => {
+  const f = fixture(t);
+  f.run('focus', '25', 'reply to Leah');
+  f.advance(30);
+  f.run('status');
+  assert.deepEqual(f.run('stop', '--outcome', 'no'), { code: 0, output: 'Focus 25: no.' });
+  assert.equal(f.records().at(-1).outcome, 'no');
+  assert.deepEqual(f.run('stop', '--outcome', 'yes'), { code: 1, output: 'Nothing running. Start one: atris 99 50' });
+  f.options = { interactive: true, ask: () => 'yes' };
+  f.run('focus', '25');
+  f.advance(30);
+  f.options = { interactive: false };
+  f.run('today');
+  f.options = { interactive: true, ask: () => '' };
+  assert.deepEqual(f.run('stop'), { code: 0, output: 'Focus 25: skipped.' });
+  assert.equal(f.records().at(-1).outcome, null);
+  assert.equal(f.run('stop').code, 1);
+});
+
+test('the real command never waits for input when stdin is not a terminal', (t) => {
+  const f = fixture(t);
+  const began = new Date(Date.now() - 60 * minute);
+  f.seed([{ ...start(began, { id: '22222222-2222-4222-8222-222222222222', minutes: 50 }), source: 'cli' }]);
+  const result = f.cli('stop');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Focus 50 done\./);
+  assert.doesNotMatch(result.stdout, /Did you get it done/);
+  assert.ok(!Object.hasOwn(f.records().at(-1), 'outcome'));
+});
+
+test('a block on the wire is the contract shape with its offset kept', () => {
+  const began = new Date(2026, 10, 10, 9, 0, 0);
+  const session = {
+    id: '33333333-3333-4333-8333-333333333333', kind: 'focus', planned_min: 90, status: 'done',
+    started_at: began.toISOString(), ended_at: new Date(began.getTime() + 90 * minute).toISOString(),
+    intention: 'ship the paywall', outcome: 'yes', note: 'n'.repeat(600),
+  };
+  const wire = blockFromSession(session);
+  assert.equal(wire.day, '2026-11-10');
+  assert.equal(wire.tz_offset_minutes, -began.getTimezoneOffset());
+  assert.deepEqual(Object.keys(wire.block), ['id', 'minutes', 'intention', 'started_at', 'ended_at', 'outcome', 'note']);
+  assert.match(wire.block.started_at, WITH_OFFSET);
+  assert.match(wire.block.ended_at, WITH_OFFSET);
+  assert.equal(Date.parse(wire.block.started_at), began.getTime());
+  assert.equal(Date.parse(wire.block.ended_at), began.getTime() + 90 * minute);
+  assert.equal(wire.block.note.length, 500);
+  assert.equal(blockFromSession({ ...session, status: 'partial' }), null);
+  assert.equal(blockFromSession({ ...session, kind: 'meditate' }), null);
+  assert.equal(blockFromSession({ ...session, id: 'not-a-uuid' }), null);
+  assert.equal(blockFromSession({ ...session, outcome: undefined, intention: undefined, note: undefined }).block.outcome, null);
+  assert.equal(isoWithOffset(new Date('2026-11-10T17:00:00.250Z')).length >= 20, true);
+});
+
+test('sync sends each finished focus block made here once, in the contract shape, with done', async (t) => {
+  const f = syncFixture(t);
+  f.blockNow = () => f.now();
+  f.run('focus', '50', 'ship the paywall');
+  const focusId = f.records()[0].id;
+  f.advance(50);
+  f.run('stop', '--outcome', 'yes', '--note', 'paywall is live');
+  f.run('meditate', '10');
+  f.advance(10);
+  f.run('stop');
+  f.run('focus', '25');
+  f.advance(5);
+  f.run('stop');
+  const phone = start(new Date(f.now().getTime() - 120 * minute), { id: '44444444-4444-4444-8444-444444444444', minutes: 25, source: 'ios' });
+  const phoneEnd = { v: 1, type: 'end', id: phone.id, status: 'done', at: new Date(Date.parse(phone.at) + 25 * minute).toISOString(), source: 'ios' };
+  fs.appendFileSync(f.logPath, `${JSON.stringify(phone)}\n${JSON.stringify(phoneEnd)}\n`);
+  const result = await f.sync();
+  assert.equal(result.code, 0, result.output);
+  assert.equal(result.output, 'sent 8 lines and pulled 0 lines (personal)\nsent 1 focus block\nDeep work today: 1 block, 50 minutes');
+  const puts = f.calls.filter((call) => call.method === 'PUT');
+  assert.equal(puts.length, 1);
+  const url = new URL(puts[0].path, 'https://mock.invalid');
+  assert.equal(url.pathname, '/api/99/day/2026-10-23');
+  const began = new Date(2026, 9, 23, 12, 0, 0);
+  assert.equal(url.searchParams.get('tz_offset_minutes'), String(-began.getTimezoneOffset()));
+  const block = puts[0].body.habits.deep_work.blocks[0];
+  assert.deepEqual(puts[0].body, { habits: { deep_work: { done: true, blocks: [{
+    id: focusId, minutes: 50, intention: 'ship the paywall',
+    started_at: isoWithOffset(began), ended_at: isoWithOffset(new Date(began.getTime() + 50 * minute)),
+    outcome: 'yes', note: 'paywall is live',
+  }] } } });
+  assert.match(block.id, UUID_V4);
+  assert.match(block.started_at, WITH_OFFSET);
+  assert.ok(f.rows.some((row) => row.line.type === 'start' && row.line.intention === 'ship the paywall'), 'the session lines carry it too');
+  f.calls.length = 0;
+  assert.deepEqual(await f.sync(), { code: 0, output: 'sent 0 lines and pulled 0 lines (personal)' });
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 0);
+  f.run('focus', '25', 'reply to Leah');
+  f.advance(25);
+  f.run('stop', '--outcome', 'no');
+  f.calls.length = 0;
+  const again = await f.sync();
+  assert.equal(again.output, 'sent 2 lines and pulled 0 lines (personal)\nsent 1 focus block\nDeep work today: 2 blocks, 1 hour 15 minutes');
+  const second = f.calls.filter((call) => call.method === 'PUT');
+  assert.deepEqual(second[0].body.habits.deep_work.blocks.map((item) => [item.intention, item.outcome]), [['reply to Leah', 'no']]);
+});
+
+test('sync sends a mac block too, and an answer added later sends the block again', async (t) => {
+  const f = syncFixture(t);
+  f.blockNow = () => f.now();
+  const mac = { ...start(f.now(), { id: '55555555-5555-4555-8555-555555555555', minutes: 25 }) };
+  f.seed([mac, { v: 1, type: 'end', id: mac.id, status: 'done', at: new Date(f.now().getTime() + 25 * minute).toISOString(), source: 'mac', inferred: true }]);
+  f.advance(30);
+  assert.match((await f.sync()).output, /sent 1 focus block/);
+  fs.appendFileSync(f.logPath, `${JSON.stringify({ v: 1, type: 'end', id: mac.id, status: 'done', at: new Date(f.now().getTime() - 5 * minute).toISOString(), source: 'cli', outcome: 'yes' })}\n`);
+  f.calls.length = 0;
+  assert.match((await f.sync()).output, /sent 1 focus block\nDeep work today: 1 block, 25 minutes$/);
+  const put = f.calls.find((call) => call.method === 'PUT');
+  assert.equal(put.body.habits.deep_work.blocks[0].outcome, 'yes');
+  assert.equal(f.days.get('2026-10-23').size, 1);
+});
+
+test('sync only sends blocks the server still takes: today, and yesterday until 3 in the morning', async (t) => {
+  const f = syncFixture(t);
+  f.setTime(new Date(2026, 9, 21, 12));
+  f.run('focus', '25', 'old');
+  f.advance(25);
+  f.run('stop');
+  f.setTime(new Date(2026, 9, 22, 22));
+  f.run('focus', '50', 'late');
+  f.advance(50);
+  f.run('stop');
+  f.blockNow = () => new Date(2026, 9, 23, 4);
+  f.calls.length = 0;
+  assert.equal((await f.sync()).code, 0);
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 0);
+  f.blockNow = () => new Date(2026, 9, 23, 2, 30);
+  const result = await f.sync();
+  assert.match(result.output, /sent 1 focus block/);
+  const puts = f.calls.filter((call) => call.method === 'PUT');
+  assert.equal(puts.length, 1);
+  assert.equal(new URL(puts[0].path, 'https://mock.invalid').pathname, '/api/99/day/2026-10-22');
+  assert.equal(puts[0].body.habits.deep_work.blocks[0].intention, 'late');
+});
+
+test('a refused block is settled, a server error retries next time, and a free plan keeps blocks local', async (t) => {
+  const f = syncFixture(t);
+  f.blockNow = () => f.now();
+  f.run('focus', '25', 'one');
+  f.advance(25);
+  f.run('stop');
+  const day = { status: 503, error: 'down' };
+  // Session lines go through as usual; only the day save answers with the status under test.
+  f.failWith((call) => {
+    if (call.method === 'PUT') return { status: day.status, data: { detail: { error: day.error, message: 'no' } } };
+    if (call.method === 'GET') return { data: { lines: [], next_since: null } };
+    return { data: { stored: call.body.lines.length, skipped: 0 } };
+  });
+  let result = await f.sync();
+  assert.equal(result.code, 1);
+  assert.match(result.output, /\ncould not send focus blocks: the 99 server did not take the focus blocks \(http 503\); try again$/);
+  assert.ok(Object.values(f.state().targets)[0].known.length > 0, 'the session sync still saved its cursor');
+  Object.assign(day, { status: 402, error: 'upgrade_required' });
+  f.calls.length = 0;
+  result = await f.sync();
+  assert.equal(result.code, 0);
+  assert.match(result.output, /\nfocus blocks stay on this computer: deep work needs Project 99 Plus$/);
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 1, 'the error left it unsent');
+  Object.assign(day, { status: 400, error: 'invalid_block' });
+  f.calls.length = 0;
+  result = await f.sync();
+  assert.equal(result.code, 0);
+  assert.match(result.output, /\nthe 99 server refused some focus blocks \(invalid_block\); they will not be sent again$/);
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 1, 'the free plan left it unsent');
+  f.calls.length = 0;
+  result = await f.sync();
+  assert.equal(result.code, 0);
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 0, 'a refused block is settled');
+  for (const status of [401, 403]) {
+    f.run('focus', '25');
+    f.advance(25);
+    f.run('stop');
+    Object.assign(day, { status, error: 'nope' });
+    result = await f.sync();
+    assert.equal(result.code, 1);
+    assert.match(result.output, /could not send focus blocks: sync needs your signed-in user login; run atris login$/);
+    assert.doesNotMatch(result.output, /mock-user-token/);
+  }
+});
+
+test('sync dry-run lists the blocks it would send and sends nothing', async (t) => {
+  const f = syncFixture(t);
+  f.blockNow = () => f.now();
+  f.run('focus', '90', 'deep');
+  f.advance(90);
+  f.run('stop', '--outcome', 'yes');
+  const result = await f.sync('--dry-run');
+  assert.equal(result.code, 0);
+  assert.match(result.output, /\nwould send 1 focus block\nblock: \{"id":"[0-9a-f-]{36}","minutes":90,"intention":"deep",/);
+  assert.equal(f.calls.filter((call) => call.method === 'PUT').length, 0);
+  assert.equal(f.state(), null);
+});
+
+test('the day line counts finished focus blocks on the day they started, like the phone', (t) => {
+  assert.equal(blockDuration(25), '25 minutes');
+  assert.equal(blockDuration(60), '1 hour');
+  assert.equal(blockDuration(61), '1 hour 1 minute');
+  assert.equal(blockDuration(125), '2 hours 5 minutes');
+  assert.equal(blockDuration(180), '3 hours');
+  assert.equal(blocksLine({ count: 0, minutes: 0 }), null);
+  assert.equal(blocksLine({ count: 1, minutes: 25 }), '1 block, 25 minutes');
+  assert.equal(blocksLine({ count: 3, minutes: 125 }), '3 blocks, 2 hours 5 minutes');
+  const f = fixture(t);
+  f.setTime(new Date(2026, 9, 22, 23, 30));
+  f.run('focus', '50');
+  f.advance(50);
+  f.run('stop');
+  assert.equal(f.run('today').output, 'Today: 1 focus, 0 meditate, 50 min');
+  assert.deepEqual(JSON.parse(f.run('today', '--json').output).deep_work, { block_count: 0, block_minutes: 0 });
+  f.setTime(new Date(2026, 9, 22, 23, 59));
+  assert.equal(f.run('today').output, 'Today: 0 focus, 0 meditate, 0 min\nDeep work: 1 block, 50 minutes');
+  assert.deepEqual(JSON.parse(f.run('today', '--json').output).deep_work, { block_count: 1, block_minutes: 50 });
 });

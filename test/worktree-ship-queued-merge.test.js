@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function setup(t, mode, extraEnv = {}) {
+function setup(t, mode, extraEnv = {}, prepare = null) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-queued-merge-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const remote = path.join(root, 'remote.git');
@@ -33,6 +33,7 @@ function setup(t, mode, extraEnv = {}) {
   checked(['push', '-u', 'origin', 'master']);
   checked(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
   checked(['worktree', 'add', '-q', '-b', 'queued-change', work, 'master']);
+  if (prepare) prepare({ primary, work });
   fs.writeFileSync(path.join(work, 'app.js'), 'module.exports = 2;\n');
   // Git and the CLI are real. The foreign service boundary reports a merge
   // request accepted by a queue, independently of whether git deletes its head.
@@ -47,7 +48,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
     execFileSync('git', ['--git-dir', process.env.MERGE_TEST_REMOTE, 'update-ref', 'refs/heads/master', head]);
     console.log(JSON.stringify({state: 'MERGED', mergedAt: '2026-10-16T08:00:00Z', number: 41, url: 'https://github.example/repo/pull/41', mergeCommit: {oid: head}}));
   } else if (process.env.MERGE_TEST_MODE === 'malformed') console.log('{broken');
-  else console.log(JSON.stringify({state: process.env.MERGE_TEST_MODE === 'closed' ? 'CLOSED' : 'OPEN', mergedAt: null, autoMergeRequest: {enabledAt: '2026-10-16T08:00:00Z'}}));
+  else console.log(JSON.stringify({state: process.env.MERGE_TEST_MODE === 'closed' ? 'CLOSED' : 'OPEN', mergedAt: null, number: 41, autoMergeRequest: {enabledAt: '2026-10-16T08:00:00Z'}}));
 } else if (args[0] === 'pr' && args[1] === 'merge') console.log('auto-merge enabled; waiting for required checks');
 else process.exit(1);
 `, { mode: 0o755 });
@@ -55,8 +56,15 @@ else process.exit(1);
     cwd: work, encoding: 'utf8', timeout: 20000,
     env: { ...scrubAgentEnv(), PATH: `${bin}${path.delimiter}${process.env.PATH}`, MERGE_TEST_MODE: mode, MERGE_TEST_REMOTE: remote, ATRIS_SKIP_UPDATE_CHECK: '1', ...extraEnv },
   });
-  return { root, remote, work, git, run };
+  return { root, remote, primary, work, git, run };
 }
+
+const selfLandingOn = ({ primary }) => {
+  fs.mkdirSync(path.join(primary, '.atris', 'policy'), { recursive: true });
+  fs.writeFileSync(path.join(primary, '.atris', 'policy', 'autoland.json'), '{"enabled":true}');
+};
+
+const queueFileOf = (fx) => path.join(fx.primary, '.atris', 'state', 'autoland-queue.json');
 
 test('a queued merge keeps the real remote source branch and reports pending', (t) => {
   const { root, remote, git, run } = setup(t, 'pending');
@@ -68,10 +76,12 @@ test('a queued merge keeps the real remote source branch and reports pending', (
 
 for (const mode of ['closed', 'unreadable', 'malformed']) {
   test(`an ${mode} merge result keeps the source and cannot report a completed merge`, (t) => {
-    const { root, remote, git, run } = setup(t, mode);
+    const fx = setup(t, mode);
+    const { root, remote, git, run } = fx;
     assert.notEqual(run.status, 0, run.stdout);
     assert.equal(git(['--git-dir', remote, 'show-ref', '--verify', '--quiet', 'refs/heads/queued-change'], root).status, 0);
     assert.doesNotMatch(run.stdout, /merge: merged|done: worktree shipped/);
+    assert.equal(fs.existsSync(queueFileOf(fx)), false, 'a failed merge result is not queued');
   });
 }
 
@@ -100,4 +110,52 @@ test('a confirmed merge hands the build copy to removal, and a pending one does 
   assert.match(pending.stdout, /merge: pending[\s\S]*cleanup: kept this build copy \(ATRIS_WORKTREE_KEEP_AFTER_SHIP=1\)/);
   // Temp folders are never handed to removal, so the default prints nothing.
   assert.doesNotMatch(setup(t, 'merged').run.stdout, /cleanup:/);
+});
+
+test('a pending merge is recorded so the tick can queue it again if github drops it', (t) => {
+  const fx = setup(t, 'pending', {}, selfLandingOn);
+  assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
+  assert.match(fx.run.stdout, /merge: pending[\s\S]*queue: recorded pull request 41 for the tick's catch-up/);
+  const head = fx.git(['rev-parse', 'HEAD'], fx.work).stdout.trim();
+  assert.equal(fx.git(['--git-dir', fx.remote, 'rev-parse', 'refs/heads/queued-change'], fx.root).stdout.trim(), head, 'the recorded commit is the one on github');
+  const ledger = JSON.parse(fs.readFileSync(queueFileOf(fx), 'utf8'));
+  assert.equal(ledger.schema, 'atris.autoland_queue.v1');
+  assert.deepEqual(Object.keys(ledger.entries), ['queued-change']);
+  const entry = ledger.entries['queued-change'];
+  assert.equal(entry.branch, 'queued-change');
+  assert.equal(entry.base, 'master');
+  assert.equal(entry.number, 41);
+  assert.equal(entry.pushed, head);
+  assert.equal(entry.requeues, 0);
+  assert.ok(Number.isFinite(Date.parse(entry.queued_at)));
+});
+
+test('a pending merge is still recorded while self-landing is off, with a line saying catch-up waits', (t) => {
+  for (const policy of [null, '{"enabled":false}']) {
+    const fx = setup(t, 'pending', {}, ({ primary }) => {
+      if (policy === null) return;
+      fs.mkdirSync(path.join(primary, '.atris', 'policy'), { recursive: true });
+      fs.writeFileSync(path.join(primary, '.atris', 'policy', 'autoland.json'), policy);
+    });
+    assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
+    assert.match(fx.run.stdout, /^queue: recorded pull request 41, catch-up is off until self-landing is on$/m);
+    assert.doesNotMatch(fx.run.stdout, /for the tick's catch-up/);
+    assert.equal(JSON.parse(fs.readFileSync(queueFileOf(fx), 'utf8')).entries['queued-change'].number, 41);
+  }
+});
+
+test('a merged change writes no queue entry', (t) => {
+  const fx = setup(t, 'merged');
+  assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
+  assert.doesNotMatch(fx.run.stdout, /queue:/);
+  assert.equal(fs.existsSync(queueFileOf(fx)), false);
+});
+
+test('a queue list that cannot be written is reported and the ship still succeeds', (t) => {
+  // A file where the state folder should be makes the list unwritable.
+  const fx = setup(t, 'pending', {}, ({ primary }) => fs.writeFileSync(path.join(primary, '.atris'), 'not a folder\n'));
+  assert.equal(fx.run.status, 0, fx.run.stderr || fx.run.stdout);
+  assert.match(fx.run.stdout, /merge: pending[\s\S]*queue: not recorded \(.+\)/);
+  assert.doesNotMatch(fx.run.stdout, /queue: recorded/);
+  assert.equal(fx.git(['--git-dir', fx.remote, 'show-ref', '--verify', '--quiet', 'refs/heads/queued-change'], fx.root).status, 0);
 });

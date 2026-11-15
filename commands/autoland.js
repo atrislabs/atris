@@ -736,12 +736,17 @@ async function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
   const receipt = { at: new Date().toISOString(), landed: [], alarms: 0, digest_due: false, digest_sent: false, enabled: Boolean(policy && policy.enabled) };
+  // The clock starts before the off and lock checks. Every receipt this
+  // command prints carries step_ms, total_ms and ended_at, including the ones
+  // where nothing ran (step_ms is empty there).
+  const timer = createTickTimer(receipt);
   if (!policy || policy.enabled !== true) {
+    timer.finish();
     if (json) console.log(JSON.stringify(receipt));
     else console.log('autoland is off; tick did nothing.');
     return 0;
   }
-  if (args.includes('--dry-run')) return runTickPreview(root, { json, receipt });
+  if (args.includes('--dry-run')) return runTickPreview(root, { json, receipt, timer });
 
   // One live tick at a time: verify re-runs can take minutes each, and a
   // second hourly cron firing into the same snapshot double-accepts,
@@ -756,12 +761,13 @@ async function runTick(root, args) {
   }
   if (lock && !lock.ok) {
     receipt.skipped_reason = 'tick_already_running';
+    timer.finish();
     if (json) console.log(JSON.stringify(receipt));
     else console.log('autoland tick: another tick is still running; skipped.');
     return 0;
   }
   try {
-    return await runTickBody(root, { json, policy, receipt });
+    return await runTickBody(root, { json, policy, receipt, timer });
   } finally {
     // Only removes the lock while it is still this tick's.
     if (lock) lock.release();
@@ -771,7 +777,7 @@ async function runTick(root, args) {
 // `atris autoland tick --dry-run`: what the hourly pass would close, send
 // back, and check, read only. No lock, no receipt, no GitHub writes, no job
 // changes, no fetch.
-function runTickPreview(root, { json, receipt }) {
+function runTickPreview(root, { json, receipt, timer }) {
   receipt.dry_run = true;
   runMergedWorkClose(root, receipt, { dryRun: true });
   // The second check's next turn, in the order it would take the jobs.
@@ -786,17 +792,18 @@ function runTickPreview(root, { json, receipt }) {
   } catch (err) {
     receipt.second_check_error = String((err && err.message) || err).slice(0, 200);
   }
+  if (timer) timer.finish();
   if (json) {
     console.log(JSON.stringify(receipt));
     return 0;
   }
   const close = receipt.merged_close || {};
-  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} clashing job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
+  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
   const prLine = (row) => (row.action === 'merged_earlier'
     ? `merged earlier, closed without counting it as a new landing: its own pull request #${row.number} merged over a day ago`
     : `its own pull request #${row.number} merged`);
   for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || prLine(row)}`);
-  for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
+  for (const row of close.would_send_back || []) console.log(`  send back ${row.ref || row.id}: ${row.reason || `pull request #${row.number} clashes`}`);
   for (const line of close.merge_line || []) console.log(`  ${line}`);
   if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
   const check = receipt.second_check || { would_check: [], skipped: [] };
@@ -830,6 +837,25 @@ function acceptedNotLandedNote(receipt) {
   return `, ${rows.length} accepted but not proven landed (${rows.map((r) => `${r.ref} ${r.status}`).join(', ')})`;
 }
 
+// Every job a run leaves waiting keeps its reason. Counts alone hid one cause
+// holding every finished job for five days: the record said "8 skipped" and
+// nothing on disk said why.
+function waitingReasonRows(results) {
+  return (Array.isArray(results) ? results : [])
+    .filter((row) => row && row.action === 'skipped' && row.ref)
+    .map((row) => ({ ref: String(row.ref), reason: String(row.reason || 'unknown') }));
+}
+
+function waitingReasonSummary(receipt) {
+  const rows = Array.isArray(receipt.waiting_reasons) ? receipt.waiting_reasons : [];
+  const counts = new Map();
+  for (const row of rows) counts.set(row.reason, (counts.get(row.reason) || 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(', ');
+}
+
 function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);
@@ -838,12 +864,15 @@ function stuckBacklogNote(receipt) {
   // separately (accepted_not_landed), not misread as a wedged queue.
   const accepted = Array.isArray(receipt.accepted) ? receipt.accepted.length : receipt.landed.length;
   if (scanned > 0 && accepted === 0) {
-    parts.push(`${certified}/${scanned} certified in review, none landed`);
+    const why = waitingReasonSummary(receipt);
+    parts.push(`${certified}/${scanned} certified in review, none landed${why ? ` (${why})` : ''}`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
   if (unrunnable > 0) {
     parts.push(`${unrunnable} blocked by a check this machine could not run`);
   }
+  const deferred = Number(receipt.accept_deferred || 0);
+  if (deferred > 0) parts.push(`${deferred} left for the next hour when time ran out`);
   return parts.length ? `, ${parts.join(', ')}` : '';
 }
 
@@ -959,8 +988,9 @@ function engineAnswerValidationLine(receipt) {
 // 2026-10-22 this ran only inside the team wake loop, which last swept on
 // 2026-10-15, so four merged jobs waited a week. Two sources: the autoland
 // list (pull requests GitHub merged at the member's own commit, through the
-// team loop's shared five-minute pass) and git itself (lib/merged-review-close.js)
-// for jobs that left the list. dryRun reads and reports, and writes nothing.
+// team loop's shared five-minute pass), then git itself and each job's own
+// recorded pull request on GitHub (lib/merged-review-close.js) for jobs that
+// left the list or never were on it. dryRun reads and reports, and writes nothing.
 function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } = {}) {
   const out = dryRun
     ? { would_close: [], would_send_back: [], merge_line: [] }
@@ -984,7 +1014,10 @@ function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } 
       .filter((t) => !closedList.some((c) => c.id === t.id));
     const scan = require('../lib/merged-review-close').closeMergedReviewJobs({ root, tasks, now, dryRun });
     for (const row of dryRun ? scan.matched : scan.closed) closedList.push(row);
+    for (const row of (dryRun ? scan.would_send_back : scan.sent_back) || []) sentList.push(row);
     out.checked = scan.checked;
+    out.pull_requests_asked = scan.pull_requests_asked || 0;
+    if (scan.github_outage) out.github_outage = scan.github_outage;
   } catch (err) {
     receipt.merged_close_error = String((err && err.message) || err).slice(0, 200);
   }
@@ -1000,10 +1033,14 @@ function mainCheckoutRoot(root) {
 
 function mergedCloseNote(receipt) {
   const closed = (receipt.merged_close?.closed || []).length;
-  const sent = (receipt.merged_close?.sent_back || []).length;
+  const sentRows = receipt.merged_close?.sent_back || [];
+  const dropped = sentRows.filter((r) => r && r.how === 'pull_request').length;
+  const sent = sentRows.length - dropped;
   return (closed ? `, closed ${closed} merged job${closed === 1 ? '' : 's'}` : '')
     + (sent ? `, sent ${sent} clashing job${sent === 1 ? '' : 's'} back on the list` : '')
-    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
+    + (dropped ? `, sent ${dropped} job${dropped === 1 ? '' : 's'} whose pull request closed unmerged back on the list` : '')
+    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '')
+    + (receipt.merged_close?.github_outage ? ', github could not be reached for pull requests' : '');
 }
 
 // The digest goes out once per local day. A stamp written before the switch
@@ -1019,32 +1056,125 @@ function digestSentToday(state, now = new Date()) {
   return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
 }
 
-function acceptCommandArgs(policy) {
+// The accept step is told its own time limit, less room to write the job
+// list and print its answer, so it stops starting checks in time and the
+// rest wait for the next hour instead of the whole run being killed.
+const ACCEPT_REPORT_RESERVE_MS = 60 * 1000;
+
+function acceptCommandArgs(policy, timeoutMs = 0) {
   const args = ['task', 'auto-accept-certified', '--json', '--certify-first'];
+  if (timeoutMs > ACCEPT_REPORT_RESERVE_MS) args.push('--budget-ms', String(timeoutMs - ACCEPT_REPORT_RESERVE_MS));
   if (policy.accept_protected) args.push('--include-protected');
   if (policy.accept_all) args.push('--all');
   else if (policy.strict_verify === false) args.push('--no-strict-verify');
   return args;
 }
 
-async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {} }) {
+// A tick that ran past five minutes left a receipt with no timing at all, so
+// nobody could say which step ate the time. The timer writes receipt.step_ms
+// (whole milliseconds per step), receipt.total_ms and receipt.ended_at.
+// A step that is switched off by policy is absent from step_ms, not zero: a
+// zero would read as "ran and was instant". A step that returns early or
+// throws still records its time. The clock is monotonic whole milliseconds:
+// the steps can never add up to more than the total.
+const SLOW_STEP_MS = 60 * 1000;
 
-  try {
-    receipt.engine_receipt_sweep = sweepEngineAskReceipts(root);
-  } catch (err) {
-    receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
+function monotonicMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+
+function createTickTimer(receipt, now = monotonicMs) {
+  const started = now();
+  const stepMs = {};
+  receipt.step_ms = stepMs;
+  const since = (from) => Math.max(0, Math.round(now() - from));
+  const timed = (name, fn) => {
+    const from = now();
+    // Added, not assigned: a step name used twice keeps both runs.
+    const record = () => { stepMs[name] = (stepMs[name] || 0) + since(from); };
+    let out;
+    try {
+      out = fn();
+    } catch (err) {
+      record();
+      throw err;
+    }
+    if (out && typeof out.then === 'function') {
+      return out.then((value) => { record(); return value; }, (err) => { record(); throw err; });
+    }
+    record();
+    return out;
+  };
+  const finish = () => {
+    receipt.total_ms = since(started);
+    receipt.ended_at = new Date().toISOString();
+  };
+  return { timed, finish };
+}
+
+function tookSeconds(ms) {
+  const tenths = Math.round(Math.max(0, Number(ms) || 0) / 100) / 10;
+  return `${tenths < 10 ? tenths.toFixed(1) : Math.round(tenths)}s`;
+}
+
+// The longest single step over the line, or null. One step is named so the
+// line stays one line however many ran long.
+function slowestStep(receipt, thresholdMs = SLOW_STEP_MS) {
+  let slow = null;
+  for (const [name, ms] of Object.entries((receipt && receipt.step_ms) || {})) {
+    if (Number.isFinite(ms) && ms > thresholdMs && (!slow || ms > slow.ms)) slow = { name, ms };
   }
-  try {
-    const fleetSweep = sweepFleetReceipts(root);
-    if (fleetSweep.scanned > 0) receipt.fleet_receipt_sweep = fleetSweep;
-  } catch (err) {
-    receipt.fleet_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
-  }
+  return slow;
+}
 
-  runSshAgentSweep(root, receipt);
-  runLostRunSweep(root, receipt);
+function tickTimingNote(receipt) {
+  return Number.isFinite(receipt.total_ms) ? `, took ${tookSeconds(receipt.total_ms)}` : '';
+}
 
-  await runEngineAnswerValidation(root, receipt, engineValidationDeps);
+function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
+  const slow = slowestStep(receipt, thresholdMs);
+  return slow ? `slow step: ${slow.name} took ${tookSeconds(slow.ms)}` : '';
+}
+
+// One row of the receipt's green landing list. duration_ms is how long the
+// full verify took; 0 is a real value, a missing one stays missing.
+function greenVerdictRow(v) {
+  const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
+  if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
+  if (v.pr) row.pr = v.pr;
+  if (v.url) row.url = v.url;
+  if (v.hand_back) row.hand_back = v.hand_back;
+  if (v.regenerated) row.regenerated = v.regenerated;
+  if (v.known_red) row.known_red = v.known_red;
+  if (v.local_check) row.local_check = v.local_check;
+  return row;
+}
+
+async function runTickBody(root, { json, policy, receipt, engineValidationDeps = {}, clock, timer }) {
+  // runTick hands in the timer it started before the lock check. The total
+  // covers the wait for the lock too. Called alone, the body starts its own.
+  const { timed, finish } = timer || createTickTimer(receipt, clock);
+
+  timed('engine_receipt_sweep', () => {
+    try {
+      receipt.engine_receipt_sweep = sweepEngineAskReceipts(root);
+    } catch (err) {
+      receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
+    }
+  });
+  timed('fleet_receipt_sweep', () => {
+    try {
+      const fleetSweep = sweepFleetReceipts(root);
+      if (fleetSweep.scanned > 0) receipt.fleet_receipt_sweep = fleetSweep;
+    } catch (err) {
+      receipt.fleet_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
+    }
+  });
+
+  timed('ssh_agent_sweep', () => runSshAgentSweep(root, receipt));
+  timed('lost_run_sweep', () => runLostRunSweep(root, receipt));
+
+  await timed('engine_answer_validation', () => runEngineAnswerValidation(root, receipt, engineValidationDeps));
 
   // 1. certify and land in one task process. Keeping both phases together lets
   // the landing gate reuse the live certification verifier result without
@@ -1056,13 +1186,14 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // policy with accept_all:true actually drains the full certified set.
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
-  refreshLandingRefs(root);
-  const cliArgs = acceptCommandArgs(policy);
+  timed('origin_refresh', () => refreshLandingRefs(root));
   const pendingReviewRows = readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
     .length;
-  const accept = runOwnCli(root, cliArgs, acceptSweepTimeoutMs(pendingReviewRows));
+  const acceptTimeoutMs = acceptSweepTimeoutMs(pendingReviewRows);
+  const cliArgs = acceptCommandArgs(policy, acceptTimeoutMs);
+  const accept = timed('accept_certify', () => runOwnCli(root, cliArgs, acceptTimeoutMs));
   let acceptResults = [];
   try {
     const parsed = JSON.parse(accept.stdout);
@@ -1118,7 +1249,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.scanned = parsed.scanned ?? null;
     receipt.revised = parsed.revised ?? null;
     receipt.skipped = parsed.skipped ?? null;
+    const waiting = waitingReasonRows(results);
+    if (waiting.length) receipt.waiting_reasons = waiting;
     receipt.undercounted = Boolean(parsed.undercounted);
+    // Left for the next hour because the time ran out, not refused.
+    const deferred = Number(parsed.deferred || 0) + Number(parsed.certification?.deferred || 0);
+    if (deferred) receipt.accept_deferred = deferred;
   } catch (err) {
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
@@ -1126,7 +1262,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // 2a. merged work closes its jobs and clashing work goes back on the list,
   // every hour, whether or not a team loop is running. After the accept step,
   // so work that can be checked and landed the normal way is landed first.
-  const mergedClose = runMergedWorkClose(root, receipt);
+  const mergedClose = timed('merged_close', () => runMergedWorkClose(root, receipt));
   if ((mergedClose.closed || []).length + (mergedClose.sent_back || []).length > 0) {
     try { require('./task').refreshKeptTaskList(root); } catch {}
   }
@@ -1135,7 +1271,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // sentence per piece (the day-one PM sentence written at finish time),
   // capped at three with the rest counted. Off with live_updates: false.
   const tasksForLive = readProjection(root);
-  if (receipt.landed.length > 0 && policy.imessage_to && policy.live_updates !== false) {
+  if (receipt.landed.length > 0 && policy.imessage_to && policy.live_updates !== false) timed('live_update', () => {
     const text = autoland.composeLiveUpdate({
       landedRefs: receipt.landed,
       tasks: tasksForLive,
@@ -1149,7 +1285,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
       receipt.live_update_sent = sent.ok;
     }
-  }
+  });
 
   // 3. alarm on anything waiting on a human past the line
   const state = autoland.readState(root);
@@ -1158,14 +1294,14 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   const protectedWaiting = protectedReviewWaiting(root, policy, waiting);
   const alarmHours = Number(policy.alarm_hours) || autoland.DEFAULT_ALARM_HOURS;
   const due = autoland.dueForAlarm(waiting, state, { alarmHours });
-  if (due.length > 0 && policy.imessage_to) {
+  if (due.length > 0 && policy.imessage_to) timed('alarm', () => {
     const text = autoland.composeAlarm({ waiting: due, project: projectName(root), alarmHours });
     const sent = autoland.sendImessage(root, policy.imessage_to, text);
     if (sent.ok) {
       autoland.markAlerted(state, due);
       receipt.alarms = due.length;
     }
-  }
+  });
 
   // 3b. janitor, every tick: a mission left paused past 48h and a worktree
   // already merged into base are the same rot pattern as an unlanded branch,
@@ -1178,7 +1314,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   receipt.missions_stopped = 0;
   receipt.missions_held = 0;
   receipt.worktrees_reaped = 0;
-  if (policy.janitor !== false) {
+  if (policy.janitor !== false) timed('janitor', () => {
     let stoppedMissions = [];
     let heldMissions = [];
     try {
@@ -1205,52 +1341,73 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       receipt.janitor_worktree_error = String((err && err.message) || err).slice(0, 200);
     }
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
-  }
+  });
 
-  // 3b2. green landing, every tick: one stale branch that merges clean and
-  // passes the full verify in a scratch checkout lands on base and is pushed.
-  // A red branch opens a close flag the same hour instead of waiting for the
-  // TTL reap to salvage it. Off by policy: green_landing:false.
-  if (policy.green_landing !== false) {
+  // 3b2. green landing, every tick: up to five stale branches, one at a
+  // time, are caught up with base in a scratch checkout. On GitHub each goes
+  // through a pull request and the merge queue; base is never pushed. When
+  // the base requires hosted checks they are the gate and no local suite
+  // runs; otherwise the full verify runs in the scratch checkout and a red
+  // branch opens a close flag. A local check that runs out of time is could
+  // not tell, never red. Pull requests queued earlier are read back first:
+  // merged is done, failed hosted checks go back to a builder as a job. A
+  // clash outside the map goes back to a builder as a job. Off by policy:
+  // green_landing:false. green_landing_local_check: true or false overrides
+  // the base's rules. The local check starts one suite per run
+  // (green_landing_local_suites raises it), one at a time across the machine,
+  // and none when the load is above twice the cores.
+  if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
-        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : 1,
+        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
+        localCheck: localCheckSetting(policy),
+        localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
+        machine: true,
       });
       receipt.green_landing = {
         candidates: green.candidates.length,
+        merge_path: green.merge_path,
+        local_check: green.local_check,
+        local_suites: green.local_suites,
+        followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
         landed: green.landed,
+        queued: green.queued,
+        handed_back: green.handed_back,
         red: green.red,
-        verdicts: green.verdicts.map((v) => ({ branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined })),
+        could_not_tell: green.could_not_tell,
+        verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
       };
       state.green_landing = { at: green.at, ...receipt.green_landing };
     } catch (err) {
       receipt.green_landing_error = String((err && err.message) || err).slice(0, 200);
     }
-  }
+  });
 
   // 3c. landing sweep, every tick: merged branch residue is cleared,
   // TTL-expired work is salvaged before deletion, and 48h-stale active work
   // is carried into the digest instead of silently aging forever.
-  try {
-    const landingSweep = sweepLanding(root, { refresh: false });
-    receipt.reaped = landingSweep.reaped;
-    receipt.landing_sweep = {
-      before: landingSweep.before,
-      after: landingSweep.after,
-      stale: landingSweep.stale.length,
-      human: landingSweep.human.length,
-    };
-    if (landingSweep.reaped.bundleError) {
-      receipt.reap_error = `backup failed, unlanded work kept in place: ${landingSweep.reaped.bundleError}`;
+  timed('landing_sweep', () => {
+    try {
+      const landingSweep = sweepLanding(root, { refresh: false });
+      receipt.reaped = landingSweep.reaped;
+      receipt.landing_sweep = {
+        before: landingSweep.before,
+        after: landingSweep.after,
+        stale: landingSweep.stale.length,
+        human: landingSweep.human.length,
+      };
+      if (landingSweep.reaped.bundleError) {
+        receipt.reap_error = `backup failed, unlanded work kept in place: ${landingSweep.reaped.bundleError}`;
+      }
+      recordLandingSweepState(state, landingSweep);
+    } catch (err) {
+      receipt.reap_error = String((err && err.message) || err).slice(0, 200);
+      recordLandingSweepState(state, null, { error: receipt.reap_error });
     }
-    recordLandingSweepState(state, landingSweep);
-  } catch (err) {
-    receipt.reap_error = String((err && err.message) || err).slice(0, 200);
-    recordLandingSweepState(state, null, { error: receipt.reap_error });
-  }
+  });
 
   // 3c2. idle work resolves itself, every tick. Finished work that sat still
   // past the grace period (policy.idle_close_days, default 7) and can never
@@ -1259,7 +1416,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // nights and trips piled up work nobody would ever land. Protected lanes
   // (money, deploys, security, customer, outward) are never closed by idle
   // time. Off switch: policy.idle_sweep === false or policy.janitor === false.
-  if (policy.janitor !== false && policy.idle_sweep !== false) {
+  if (policy.janitor !== false && policy.idle_sweep !== false) timed('idle_sweep', () => {
     try {
       const liveReasons = new Map(acceptResults
         .filter((r) => r && r.ref && r.reason && r.action !== 'accepted')
@@ -1280,7 +1437,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     } catch (err) {
       receipt.idle_sweep_error = String((err && err.message) || err).slice(0, 200);
     }
-  }
+  });
   try {
     const { appendOvernightNote, tickSummaryLine } = require('../lib/cleanup-summary');
     const line = tickSummaryLine({
@@ -1299,17 +1456,19 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
 
   // 3d. wish sweep: queued wishes are allowed to wake a mission without a
   // foreground `atris wish` session, but they must never endanger landing.
-  try {
-    const wishDispatch = require('./wish').sweepWishes(root);
-    receipt.wish_dispatch = wishDispatch;
-  } catch (err) {
-    receipt.wish_dispatch_error = String((err && err.message) || err).slice(0, 200);
-  }
+  timed('wish_dispatch', () => {
+    try {
+      const wishDispatch = require('./wish').sweepWishes(root);
+      receipt.wish_dispatch = wishDispatch;
+    } catch (err) {
+      receipt.wish_dispatch_error = String((err && err.message) || err).slice(0, 200);
+    }
+  });
 
   // 3e. map fold, once an hour: map notes member changes saved as their own
   // files under atris/refs/map-notes.d/ are folded into the shared map notes
   // on main and removed, in one pushed commit. Off by policy: map_fold:false.
-  if (policy.map_fold !== false) {
+  if (policy.map_fold !== false) timed('map_fold', () => {
     try {
       const { foldDue, foldMapNotesOnMain } = require('../lib/member-map-fold');
       if (foldDue(state.last_map_fold_at)) {
@@ -1320,12 +1479,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     } catch (err) {
       receipt.map_fold_error = String((err && err.message) || err).slice(0, 200);
     }
-  }
+  });
 
   // 4. daily digest at the configured hour
   const today = localDay();
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
-  if (new Date().getHours() === digestHour && !digestSentToday(state)) {
+  if (new Date().getHours() === digestHour && !digestSentToday(state)) timed('daily_digest', () => {
     receipt.digest_due = true;
     let waitingWishes = [];
     try {
@@ -1363,29 +1522,31 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     } catch {
       receipt.receipts_pruned = null;
     }
-  }
+  });
 
   // 5b. daily keep/revert experiment, self-gated inside experiments daily;
   // hourly ticks are harmless no-ops after the first run each day.
   if (policy.daily_experiment !== false) {
-    const daily = runOwnCli(root, ['experiments', 'daily', '--json']);
-    receipt.daily_experiment = {
-      status: daily.status,
-      stdout: daily.stdout.trim(),
-      stderr: daily.stderr.slice(0, 200) || null,
-    };
-    try {
-      receipt.daily_experiment.result = JSON.parse(daily.stdout.trim());
-    } catch {
-      receipt.daily_experiment.result = null;
-    }
+    timed('daily_experiment', () => {
+      const daily = runOwnCli(root, ['experiments', 'daily', '--json']);
+      receipt.daily_experiment = {
+        status: daily.status,
+        stdout: daily.stdout.trim(),
+        stderr: daily.stderr.slice(0, 200) || null,
+      };
+      try {
+        receipt.daily_experiment.result = JSON.parse(daily.stdout.trim());
+      } catch {
+        receipt.daily_experiment.result = null;
+      }
+    });
   } else {
     receipt.daily_experiment_skipped = true;
   }
 
   // 6. once a day, do slower mission cleanup. Landing cleanup runs hourly
   // above, outside this date gate, so limbo cannot silently accumulate.
-  if (state.last_mission_cleanup_date !== today) {
+  if (state.last_mission_cleanup_date !== today) timed('mission_cleanup', () => {
     // Missions rot the same way branches do: paused/planning/ready and
     // untouched for a week means abandoned. Age them out under the same
     // daily gate so `mission list` shows work, not archaeology.
@@ -1413,9 +1574,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       receipt.mission_verify_errors = [{ error: String((err && err.message) || err).slice(0, 200) }];
     }
     state.last_mission_cleanup_date = today;
-  }
+  });
   autoland.writeState(root, state);
 
+  // Stamped last. The total covers every step and the state write.
+  finish();
   try {
     persistTickReceipt(root, receipt);
   } catch (err) {
@@ -1436,10 +1599,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${tickTimingNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
+    const slowLine = slowStepLine(receipt);
+    if (slowLine) console.log(slowLine);
     for (const fulfilled of receipt.wish_dispatch?.fulfilled_results || []) {
       if (fulfilled.review_ask) console.log(fulfilled.review_ask);
     }
@@ -1513,6 +1678,12 @@ module.exports = {
   hasAgentJargon,
   runEngineAnswerValidation,
   runTickBody,
+  createTickTimer,
+  greenVerdictRow,
+  slowStepLine,
+  tickTimingNote,
+  stuckBacklogNote,
+  waitingReasonRows,
   acceptCommandArgs,
   runSshAgentSweep,
   sshAgentSweepNote,

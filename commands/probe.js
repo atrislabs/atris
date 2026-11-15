@@ -59,14 +59,58 @@ function normalizeBash(cmd, label) {
   return cmd.split(l + '/').join('').split(l).join('.');
 }
 
-// No write/edit file ops, and the `..` guard only covers args.path. The
-// `bash` op still executes whatever command the model sends, verbatim, on
-// the remote ai-computer, that is the production relay contract and the
-// table must stay in lockstep with it, so this probe is NOT read-only.
+// Every file op the server's local_file_op offers: the enum of LOCAL_FILE_TOOL
+// in the backend (backend/rl/tool_policy_bench.py). The backend test
+// test_local_file_op_probe_lockstep.py pins that enum to this list, so the
+// server cannot add an op without that test failing until this table and
+// SERVER_FILE_OPS are updated together. test/probe-file-ops.test.js fails if
+// any op listed here has no command below.
+const SERVER_FILE_OPS = ['list', 'search', 'glob', 'inspect', 'read', 'write', 'append', 'edit', 'bash'];
+
+// Directory names the server hides from glob unless include_generated is set
+// (IGNORED_WORKSPACE_PARTS in the same backend file).
+const IGNORED_PARTS = ['.git', '.next', '.pytest_cache', '.venv', '__pycache__', 'build', 'dist', 'node_modules', 'release', 'venv'];
+
+// The `..` guard. It covers args.path and, for the ops that take more than one
+// path, every `paths` entry and the glob pattern. The `bash` op still executes
+// whatever command the model sends, verbatim, on the remote ai-computer, that
+// is the production relay contract and the table must stay in lockstep with
+// it, so this probe is NOT read-only.
+function hasParentRef(value) {
+  return String(value).split('/').includes('..');
+}
+
+function boundedInt(value, fallback, low, high) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, low), high);
+}
+
+function b64(value) {
+  return Buffer.from(String(value), 'utf8').toString('base64');
+}
+
+// Same edit the server runs (_python_edit_command): replace the first match.
+const PY_EDIT = 'import base64,pathlib,sys;'
+  + 'p=pathlib.Path(sys.argv[1]);text=p.read_text(encoding=\'utf-8\');'
+  + 'old=base64.b64decode(sys.argv[2]).decode(\'utf-8\');'
+  + 'new=base64.b64decode(sys.argv[3]).decode(\'utf-8\');'
+  + 'old in text or sys.exit(\'find text not found\');'
+  + 'p.write_text(text.replace(old,new,1),encoding=\'utf-8\')';
+
+// glob like the server's pathlib glob: `**` recurses, hidden files match,
+// directories end in `/`, generated directories are hidden unless asked for.
+const PY_GLOB = 'import glob,os,pathlib,sys\n'
+  + 'pat,limit,gen,ign=sys.argv[1],int(sys.argv[2]),sys.argv[3]==\'1\',sys.argv[4].split(\',\')\n'
+  + 'raw=map(str,pathlib.Path(\'.\').glob(pat)) if not os.path.isabs(pat) else glob.glob(pat,recursive=True)\n'
+  + 'hits=sorted({h+(\'/\' if os.path.isdir(h) else \'\') for h in raw if gen or not any(x in ign for x in h.split(\'/\'))})\n'
+  + 'print(\'\\n\'.join(hits[:limit]))\n'
+  + 'len(hits)>limit and print(\'[%d more match(es) not shown]\'%(len(hits)-limit))';
+
 function fileOpCommand(args, label) {
   const op = String(args.type || '').toLowerCase();
   const raw = normalizePath(String(args.path || '') || '.', label);
-  if (raw.split('/').includes('..')) return null;
+  if (hasParentRef(raw)) return null;
   const p = shq(raw);
   if (op === 'bash') return `( ${normalizeBash(String(args.command || '') || 'true', label)} )`;
   if (op === 'list') return `find ${p} -maxdepth 3 -not -path '*/node_modules/*' -not -path '*/.git/*' | head -200`;
@@ -74,7 +118,42 @@ function fileOpCommand(args, label) {
     const q = shq(String(args.query || args.pattern || ''));
     return `grep -rn -m 50 ${q} ${p} 2>/dev/null | head -50`;
   }
+  // The server's read with a wildcard (*, ?, [) is a glob.
+  if (op === 'read' && /[*?[]/.test(raw)) return fileOpCommand({ ...args, type: 'glob', pattern: raw }, label);
   if (op === 'read') return `{ [ -d ${p} ] && ls -p ${p} | head -200 || head -c 12000 ${p}; }`;
+  if (op === 'glob') {
+    const pattern = normalizePath(String(args.pattern || args.query || args.path || '').trim(), label);
+    if (!pattern || hasParentRef(pattern)) return null;
+    const limit = boundedInt(args.max_results, 200, 1, 1000);
+    return `python3 -c ${shq(PY_GLOB)} ${shq(pattern)} ${limit} ${args.include_generated ? 1 : 0} ${shq(IGNORED_PARTS.join(','))}`;
+  }
+  if (op === 'inspect') {
+    const depth = boundedInt(args.max_depth, 2, 1, 4);
+    const limit = boundedInt(args.max_results, 80, 1, 300);
+    const rawPaths = args.paths;
+    const listed = Array.isArray(rawPaths)
+      ? rawPaths.map((item) => String(item).trim()).filter(Boolean)
+      : String(rawPaths || '').split(',').map((item) => item.trim()).filter(Boolean);
+    const reads = listed.slice(0, 8).map((item) => normalizePath(item, label));
+    if (reads.some(hasParentRef)) return null;
+    const pieces = [`find ${p} -mindepth 1 -maxdepth ${depth} -print | head -${limit}`];
+    for (const rel of reads) pieces.push(`printf '\\n== %s ==\\n' ${shq(rel)}; head -c 12000 ${shq(rel)}`);
+    const verify = String(args.command || '').trim();
+    if (verify) pieces.push(`( ${normalizeBash(verify, label)} )`);
+    return pieces.join('; ');
+  }
+  if (op === 'write' || op === 'append') {
+    // A write needs a real file path and its content. The server writes an
+    // empty file when content is missing; a probe call like that is malformed.
+    if (!String(args.path || '').trim() || raw === '.' || typeof args.content !== 'string') return null;
+    const parent = shq(path.posix.dirname(raw));
+    return `mkdir -p -- ${parent} && printf %s ${shq(b64(args.content))} | base64 -d ${op === 'append' ? '>>' : '>'} ${p}`;
+  }
+  if (op === 'edit') {
+    const find = String(args.find || '');
+    if (!String(args.path || '').trim() || raw === '.' || !find) return null;
+    return `python3 -c ${shq(PY_EDIT)} ${p} ${b64(find)} ${b64(args.replace || '')}`;
+  }
   return null;
 }
 
@@ -94,6 +173,16 @@ const SIMPLE_CLI_OPS = {
   member_list: ['member', 'list'],
   mission_status: ['mission', 'status', '--json'],
 };
+
+// Things the server relays or offers that this harness does not run. A model
+// that uses one gets an error back and the probe reports "probe limit", which
+// says the harness could not vouch for that call, not that the product broke.
+// Anything the server never offers (an invented op or tool) stays a failure.
+const NOT_RUN_CLI_OPS = new Set([
+  'apps_list', 'atris_search', 'imessage_doctor', 'imessage_latest',
+  'task_create', 'task_update', 'skill_audit', 'codex_goal_status',
+]);
+const NOT_RUN_TOOLS = new Set(['dispatch_scout']);
 
 function atrisCliCommand(args) {
   const op = String(args.type || '').toLowerCase();
@@ -269,6 +358,7 @@ async function runAtris2Turn(opts = {}) {
   let engine = null;
   const cliOps = [];
   const unsupported = [];
+  const limits = [];
 
   try {
     await new Promise((resolve, reject) => {
@@ -324,8 +414,8 @@ async function runAtris2Turn(opts = {}) {
               if (name === 'local_file_op') {
                 const cmd = fileOpCommand(args, label);
                 if (cmd === null) {
-                  out = { status: 'error', error: 'unsupported op or unsafe path' };
-                  unsupported.push(`file_op:${op}`);
+                  out = { status: 'error', error: SERVER_FILE_OPS.includes(op) ? 'refused: unsafe path or missing argument' : 'unsupported op' };
+                  unsupported.push(SERVER_FILE_OPS.includes(op) ? `file_op_refused:${op}` : `file_op:${op}`);
                 } else {
                   const term = localCwd
                     ? await runLocalTerminal(cmd, localCwd, localEnv || process.env, localPathPrefix)
@@ -344,7 +434,7 @@ async function runAtris2Turn(opts = {}) {
                 const cmd = atrisCliCommand(args);
                 if (cmd === null) {
                   out = { status: 'error', error: `unsupported atris cli op: ${op || '?'}` };
-                  unsupported.push(`cli_op:${op || '?'}`);
+                  (NOT_RUN_CLI_OPS.has(op) ? limits : unsupported).push(`cli_op:${op || '?'}`);
                 } else {
                   const term = localCwd
                     ? await runLocalTerminal(cmd, localCwd, localEnv || process.env, localPathPrefix)
@@ -354,7 +444,7 @@ async function runAtris2Turn(opts = {}) {
                 }
               } else {
                 out = { status: 'error', error: `unsupported relayed tool: ${name || '?'}` };
-                unsupported.push(`tool:${name || '?'}`);
+                (NOT_RUN_TOOLS.has(name) ? limits : unsupported).push(`tool:${name || '?'}`);
               }
               await postJson(`${base}/atris2/turn/tool-result`, token,
                 buildToolResultBody(ev.call_id || ev.id, out), 30000);
@@ -399,6 +489,8 @@ async function runAtris2Turn(opts = {}) {
   out.tools_run = toolsRun;
   out.cli_ops = cliOps;
   out.unsupported = unsupported;
+  // Only present when the harness skipped something, so the result keeps its old shape otherwise.
+  if (limits.length) out.limits = limits;
   out.error = err;
   out.ok = err === null;
   out.duration_ms = Date.now() - t0;
@@ -429,6 +521,7 @@ async function probeCommand(argv) {
   const err = turn.error;
   const engine = turn.engine;
   const unsupported = turn.unsupported;
+  const limits = turn.limits || [];
 
   // Name the dead-end (first match wins); null = converged.
   let deadEnd = null;
@@ -451,9 +544,12 @@ async function probeCommand(argv) {
   const secs = Math.round((Date.now() - t0) / 100) / 10;
   const ok = deadEnd === null;
   const stamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const detail = ok
+  const limitNote = limits.length
+    ? ` · probe limit (this harness did not run it, not a product failure): ${limits.slice(0, 3).join(',')}`
+    : '';
+  const detail = (ok
     ? `answer: ${resultText.slice(0, 80).replace(/\n/g, ' ')}`
-    : `dead-end: ${deadEnd}`;
+    : `dead-end: ${deadEnd}`) + limitNote;
   const line = buildProbeLine({ stamp, where, model: a.model, member, engine, ok, secs, toolsRun, calendar: a.calendar, cliCalendarOps, detail });
   console.log(line);
   return ok ? 0 : 1;
@@ -477,6 +573,7 @@ module.exports = {
   normalizePath,
   normalizeBash,
   fileOpCommand,
+  SERVER_FILE_OPS,
   atrisCliCommand,
   atrisCliResult,
   runLocalTerminal,

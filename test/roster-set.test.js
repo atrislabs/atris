@@ -156,6 +156,22 @@ test('roster set --member writes that member its own team line, leaving the job 
   assert.equal(cli('--member', 'nobody', 'codex', 'gpt-6-astra').exit, 2);
 }));
 
+test('a new member goes in the project\'s own team file when the project has one, never this computer\'s', () => withRoom(({ root, cli, text }) => {
+  const projectFile = path.join(root, 'atris', 'ROSTER.md');
+  fs.writeFileSync(projectFile, '# roster\n\n## team\n- researcher: claude code, model: haiku 5.5\n');
+  const machineBefore = text();
+  const res = cli('--member', 'builder', 'codex', 'gpt-6-astra');
+  assert.equal(res.exit, 0, res.err);
+  assert.deepEqual(section(fs.readFileSync(projectFile, 'utf8'), 'team'), ['- researcher: claude code, model: haiku 5.5', '- builder: codex, model: gpt-6-astra']);
+  assert.equal(text(), machineBefore, 'this computer\'s roster is untouched');
+  // a place alone, for a member with no line yet, lands in the project file too
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'trader'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'trader', 'MEMBER.md'), '---\nname: trader\nrole: trader\n---\n');
+  assert.equal(cli('--member', 'trader', 'codex', 'gpt-6-astra', '--on', 'grok bot').exit, 0);
+  assert.ok(section(fs.readFileSync(projectFile, 'utf8'), 'team').some((line) => line.startsWith('- trader: codex') && line.includes('on: grok bot')));
+  assert.equal(text(), machineBefore, 'this computer\'s roster is still untouched');
+}));
+
 test('a member swap changes only the lead: backups, limits, until, and notes stay, and the old lead backs up first', () => withRoom(({ root, rosterFile, cli, text }) => {
   fs.writeFileSync(rosterFile, ROSTER.replace('## team\n', '## team\n- builder: claude code, model: opus 5.5, backup codex gpt-6-astra, max 20 min, until 2027-01-31 <!-- keep -->\n'));
   const res = cli('--member', 'builder', 'codex', 'gpt-6.1-sol');

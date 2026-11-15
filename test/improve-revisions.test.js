@@ -19,6 +19,8 @@ const {
   collectImproveVitals,
   formatImproveVitals,
   isAgentCommitBody,
+  isAgentBranchName,
+  mergedBranchOf,
 } = require('../commands/improve');
 
 const BOT_TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
@@ -621,6 +623,91 @@ test('editing a member role or goals after a landing is coaching, not a fix', ()
     assert.match(text, /a human then coached the team in atris\/team\/builder\/goals\.json/);
     const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
     assert.strictEqual(vitals.guarantee.sentence, 'two landings this fortnight, one needed a human fix, one got your coaching.');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+// Live 2026-11-13: all 11 "human fixes" in atrisos-backend were agent commits
+// that had lost their trailer. These tests hold each way that happened.
+
+test('any GitHub bot co-author is an agent, even with a misspelled name', () => {
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Atris <299057014+atis-builder[bot]@users.noreply.github.com>\n'), true);
+  assert.strictEqual(isAgentCommitBody('fix\n\nCo-authored-by: Jane <jane@users.noreply.github.com>\n'), false);
+});
+
+test('agent branch names are told apart from branches a person might use', () => {
+  assert.strictEqual(mergedBranchOf('Merge pull request #5187 from atrislabs/codex/upgrade-rate-20261111'), 'codex/upgrade-rate-20261111');
+  assert.strictEqual(mergedBranchOf("Merge branch 'claude/x' into codex/y"), 'claude/x');
+  assert.strictEqual(mergedBranchOf('Merge master'), null);
+  assert.strictEqual(isAgentBranchName('codex/upgrade-rate'), true);
+  assert.strictEqual(isAgentBranchName('member/designer-1-20261113'), true);
+  assert.strictEqual(isAgentBranchName('fix/login'), false);
+  assert.strictEqual(isAgentBranchName('codex'), false);
+  assert.strictEqual(isAgentBranchName(null), false);
+});
+
+function mergeBranch(cwd, branch, subject, atMs) {
+  const date = new Date(atMs).toISOString();
+  execFileSync('git', ['merge', '-q', '--no-ff', branch, '-m', subject], {
+    cwd,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  });
+}
+
+function landThenFollowUpOnBranch(cwd, branch, base) {
+  commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: base - HOUR });
+  commitFile(cwd, 'm.js', 'v1\n', 'bot lands m', { bot: true, atMs: base });
+  execFileSync('git', ['checkout', '-q', '-b', branch], { cwd, stdio: 'pipe' });
+  commitFile(cwd, 'm.js', 'v2\n', 'unsigned change to m', { atMs: base + HOUR });
+  execFileSync('git', ['checkout', '-q', '-'], { cwd, stdio: 'pipe' });
+  mergeBranch(cwd, branch, `Merge pull request #7 from org/${branch}`, base + 2 * HOUR);
+}
+
+test('an unsigned commit that came in through an agent branch is not a person fix', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  try {
+    landThenFollowUpOnBranch(cwd, 'codex/follow-up', now - 3 * 24 * HOUR);
+    const summary = collectRevisionSignals(cwd, { days: 14, now, pullBranch: () => null });
+    assert.strictEqual(summary.revised, 0, JSON.stringify(summary.revisions));
+    // the branch commit is a landing; its merge is not a second one.
+    assert.strictEqual(summary.landings, 2);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('an unsigned commit through a branch a person might use still counts', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  try {
+    landThenFollowUpOnBranch(cwd, 'fix/m', now - 3 * 24 * HOUR);
+    const summary = collectRevisionSignals(cwd, { days: 14, now, pullBranch: () => null });
+    assert.strictEqual(summary.revised, 1);
+    assert.deepStrictEqual(summary.revisions[0].revised_by.map((r) => r.subject), ['unsigned change to m']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a squash-merged pull request counts as a fix only when GitHub cannot name an agent branch', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'm.js', 'v1\n', 'bot lands m', { bot: true, atMs: base });
+    commitFile(cwd, 'm.js', 'v2\n', 'design notes for m (#5213)', { atMs: base + HOUR });
+    const asked = [];
+    let summary = collectRevisionSignals(cwd, { days: 14, now, pullBranch: (root, n) => { asked.push(n); return 'codex/design-notes'; } });
+    assert.deepStrictEqual(asked, [5213]);
+    assert.strictEqual(summary.revised, 0);
+
+    summary = collectRevisionSignals(cwd, { days: 14, now, pullBranch: () => 'keshav/notes' });
+    assert.strictEqual(summary.revised, 1);
+    summary = collectRevisionSignals(cwd, { days: 14, now, pullBranch: () => null });
+    assert.strictEqual(summary.revised, 1);
   } finally {
     cleanup(cwd);
   }
