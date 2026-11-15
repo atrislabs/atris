@@ -115,6 +115,31 @@ test('under cron PATH a green branch in a zero-dependency repo lands: npm is fou
   }
 });
 
+test('under cron PATH a map clash still commits through a repo hook that calls node', () => {
+  const root = makeRepo();
+  try {
+    // Rehearsal on 2026-11-15: the map-only clash failed at the commit, since
+    // the repo's pre-commit hook runs node and cron's PATH has none.
+    fs.writeFileSync(path.join(root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nnode -e "process.exit(0)" || exit 1\n', { mode: 0o755 });
+    branchWith(root, 'member/map', (dir) => {
+      fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# map\n\nbranch line\n');
+      fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n');
+    });
+    masterCommit(root, 'atris/MAP.md', '# map\n\nmaster line\n');
+    const script = `const r = require(${JSON.stringify(LIB)}).landStaleGreenBranches(${JSON.stringify(root)}, { push: false, openFlags: false });
+      console.log(JSON.stringify(r.verdicts.map((v) => ({ action: v.action, reason: v.reason || null, detail: v.detail || null }))));`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: os.tmpdir(), NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT || '' },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), [{ action: 'landed', reason: null, detail: null }]);
+    assert.equal(git(root, ['show', 'master:atris/MAP.md']), '# map\n\nmaster line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('on a merge-queue remote a green branch goes through a pull request; master on origin is never pushed', () => {
   const root = makeRepo();
   const bare = withOrigin(root);
