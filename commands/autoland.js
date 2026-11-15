@@ -1414,10 +1414,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // for, at most 15 minutes a run (green_landing_wait_minutes). A branch whose pull
   // request was closed, is held for a person (green_landing_hold_labels names
   // the label words) or cannot be read is left alone; one merged at its tip
-  // counts as landed.
+  // counts as landed. Scratch copies live under ~/.atris/land-green-scratch
+  // (green_landing_scratch_dir names another parent), and copies a killed run
+  // left are swept at the start of each run.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
@@ -1425,6 +1427,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
         holdLabels: holdLabelSetting(policy),
         waitMinutes: machineWaitSetting(policy),
+        scratchDir: scratchDirSetting(policy),
         machine: true,
       });
       receipt.green_landing = {
@@ -1433,6 +1436,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         local_check: green.local_check,
         local_suites: green.local_suites,
         machine_wait: green.machine_wait,
+        scratch_sweep: green.scratch_sweep,
         followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
         merged_by_pull_request: green.merged_by_pull_request,
         landed: green.landed,
