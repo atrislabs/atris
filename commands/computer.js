@@ -1114,7 +1114,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
 
 function printComputerPrHelp(log = console.log) {
   const openaiThinker = require('../lib/computer-pr').defaultThinkerModel('openai', {});
-  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think]');
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed]');
   log('');
   log('The business computer does the task on a new branch and opens a pull request.');
   log('It prints the pull request link. It never merges.');
@@ -1126,6 +1126,8 @@ function printComputerPrHelp(log = console.log) {
   log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
   log('  --think          ask the thinker first, for bugs you already know are hard');
   log('  --no-think       never ask the thinker');
+  log('  --as <member>    assign the desktop feed card to a team member');
+  log('  --no-feed        do not create a desktop feed card');
   log('');
   log('Example:');
   log('  atris computer pr atrislabs/demo "Fix the typo in the README" --business my-lab');
@@ -1136,6 +1138,8 @@ function printComputerPrHelp(log = console.log) {
 // builder gets stuck proving a fix, a thinker model studies the code read only
 // and the builder tries once more with its proposal.
 async function computerPr(token, args = [], ctx = null, options = {}, deps = {}) {
+  const startedAt = Date.now();
+  const elapsed = () => { const seconds = Math.floor((Date.now() - startedAt) / 1000); return { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }; };
   const savedModel = !options.model && ctx?.model;
   options = { ...options, model: options.model || ctx?.model || null };
   const prLib = require('../lib/computer-pr');
@@ -1151,6 +1155,13 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     return 1;
   };
 
+  let feed = null;
+  let lastBuilderLine = '';
+  let finalUrl = null;
+  let warned = false;
+  const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
+  const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
+  try {
   let parsed;
   try {
     parsed = prLib.parsePrArgs(args);
@@ -1179,6 +1190,17 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   }
   const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
 
+  const member = parsed.member || 'executor';
+  const root = process.cwd();
+  if (!parsed.noFeed && fs.existsSync(path.join(root, 'atris', 'team', member))) {
+    try {
+      const { Worker } = require('node:worker_threads');
+      feed = new Worker(path.join(__dirname, '../lib/computer-pr-feed.js'), { workerData: { root, member, repo: `${repo.owner}/${repo.name}`, title: task.match(/^.*?[.!?](?=\s|$)/)?.[0] || task } });
+      if (deps.onFeedWorker) deps.onFeedWorker(feed);
+      feed.on('error', warning);
+      feed.on('message', warning);
+    } catch (_) { warning(); }
+  }
   const awake = await wake(token, ctx);
   if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
 
@@ -1192,7 +1214,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
 
   // One round on the computer: start it (waiting out a busy runner), stream
   // its words through the redacting writer, and hand back what it said.
-  const runRound = async ({ prompt: message, model, sessionId }) => {
+  const runRound = async ({ prompt: message, model, sessionId, builder = false }) => {
     const startOptions = {
       method: 'POST',
       token,
@@ -1219,12 +1241,27 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     if (!started.ok || !started.data?.execution_id) {
       return { startError: prLib.describeStartError(started) };
     }
-    const out = prLib.createRedactingWriter(write);
+    let pending = '';
+    const progress = (chunk) => {
+      pending += chunk;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop();
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        lastBuilderLine = line;
+        if (/^[A-Z][A-Z_0-9]*=/.test(line)) continue;
+        const time = elapsed();
+        sendFeed({ type: 'progress', at: new Date().toISOString(), text: `${time.minutes}:${String(time.seconds).padStart(2, '0')} ${line.slice(0, 150)}` });
+      }
+    };
+    const out = prLib.createRedactingWriter((chunk) => { write(chunk); if (builder) progress(chunk); });
     const streamed = await stream(token, ctx, started.data.execution_id, null, {
       write: (s) => out.write(s),
       writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
     });
     out.flush();
+    if (builder && pending.trim()) progress('\n');
     return { streamed, text: [streamed?.text, streamed?.resultText].filter(Boolean).join('\n') };
   };
 
@@ -1245,6 +1282,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
 
   let thinkerUsed = false;
   const succeed = (result, usedBranch) => {
+    finalUrl = result.url;
     log('');
     log(`Pull request opened: ${title}`);
     log(`Branch: ${result.branch || usedBranch}`);
@@ -1289,7 +1327,9 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
         : prompt,
       model: options.model,
       sessionId,
+      builder: true,
     });
+    if (!lastBuilderLine && round.text) lastBuilderLine = prLib.redactSecrets(prLib.lastLines(round.text, 1));
     const result = round.startError ? null : prLib.parsePullRequestResult(round.text, repo);
     return { round, result };
   };
@@ -1338,6 +1378,11 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   const second = await runBuilder(retryBranch, sessionFor(branch, '-b'), advice.proposal);
   if (second.result?.ok) return succeed(second.result, retryBranch);
   return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
+  } finally {
+    const time = elapsed();
+    sendFeed({ type: 'finish', url: finalUrl, reason: lastBuilderLine || 'The builder did not return a pull request.', duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+    log(`Done in ${time.minutes}m ${time.seconds}s`);
+  }
 }
 
 async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {

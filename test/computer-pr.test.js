@@ -255,7 +255,7 @@ async function withExitCode(fn) {
   }
 }
 
-test('computerPr prints the link last and exits 0 on success', async () => {
+test('computerPr prints the link and duration and exits 0 on success', async () => {
   const { calls, deps } = harness({
     streamed: { chunks: ['token present\n', 'PR_URL=https://github.com/atrislabs/demo/pull/5\nBRANCH=atris/fix-the-typo-20261114-0905\nCOMMIT=abc\nDEFAULT_BRANCH=main\n'] },
   });
@@ -273,7 +273,7 @@ test('computerPr prints the link last and exits 0 on success', async () => {
   assert.equal(opts.body.reset_context, true);
   assert.equal(opts.body.session_id, 'pr-atris-fix-the-typo-20261114-0905');
   assert.equal(calls.streamId, 'ex-1');
-  assert.deepEqual(calls.out.slice(-3), ['Pull request opened: Fix the typo', 'Branch: atris/fix-the-typo-20261114-0905', 'https://github.com/atrislabs/demo/pull/5']);
+  assert.deepEqual(calls.out.slice(-4, -1), ['Pull request opened: Fix the typo', 'Branch: atris/fix-the-typo-20261114-0905', 'https://github.com/atrislabs/demo/pull/5']);
 });
 
 test('computerPr uses --worker first, then the saved lane', async () => {
@@ -521,7 +521,7 @@ test('a builder that succeeds first time asks no thinker and prints what it alwa
   const { code } = await runPr(h, [], OPENAI, { worker: 'openai' });
   assert.equal(code, 0);
   assert.equal(h.calls.requests.length, 1);
-  assert.deepEqual(h.calls.out, [
+  assert.deepEqual(h.calls.out.slice(0, -1), [
     `Opening a pull request on atrislabs/demo from branch ${BRANCH}.`,
     '  Lane: OpenAI  worker=openai model=default',
     '',
@@ -554,7 +554,7 @@ test('a builder that cannot reproduce asks the thinker, then tries once more on 
   assert.match(b.message, /TASK END\n\nPROPOSAL START\nCause: lib\/total\.js line 12[^]*Risks: none known\.\nPROPOSAL END$/);
   assert.ok(h.calls.out.includes('The builder could not prove a fix. Asking the thinker (gpt-6.1-sol) for a proposal.'));
   assert.ok(h.calls.out.includes('Proposal ready. The builder is trying again with it.'));
-  assert.deepEqual(h.calls.out.slice(-8), [
+  assert.deepEqual(h.calls.out.slice(-9, -1), [
     'Pull request opened: Fix the total',
     `Branch: ${BRANCH}-b`,
     'https://github.com/atrislabs/demo/pull/9',
@@ -572,7 +572,7 @@ test('a builder that asks for a proposal escalates too, with BUILDER=default whe
   assert.equal(code, 0);
   assert.equal(h.calls.requests.length, 3);
   assert.ok(!('model' in bodies(h.calls)[2]));
-  assert.equal(h.calls.out[h.calls.out.length - 1], 'BUILDER=default');
+  assert.equal(h.calls.out[h.calls.out.length - 2], 'BUILDER=default');
 });
 
 test('no changes, other steps, dropped runs and --no-think never ask the thinker', async () => {
