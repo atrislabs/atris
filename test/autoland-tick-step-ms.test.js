@@ -328,7 +328,7 @@ test('a green landing verdict keeps how long the verify took, zero included', ()
   const row = commandsAutoland.greenVerdictRow;
   assert.deepEqual(
     row({ branch: 'member/a', action: 'red', reason: 'verify_failed', verify: { status: 1, duration_ms: 4321, failing: ['x one'] } }),
-    { branch: 'member/a', action: 'red', reason: 'verify_failed', detail: null, failing: ['x one'], duration_ms: 4321 },
+    { branch: 'member/a', action: 'red', reason: 'verify_failed', detail: null, failing: ['x one'], duration_ms: 4321, exit_code: 1 },
   );
   assert.equal(row({ branch: 'b', action: 'landed', verify: { duration_ms: 0 } }).duration_ms, 0);
   // Missing stays missing: not 0, not null.
