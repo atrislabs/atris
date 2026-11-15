@@ -40,8 +40,12 @@ test('owner policy persists the option and resets it on the next ordinary activa
   const root = fixture(t);
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'crontab'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  // On a Mac `on` loads a LaunchAgent: a fake launchctl and a temp HOME keep
+  // the real login session and LaunchAgents folder out of it.
+  fs.writeFileSync(path.join(bin, 'launchctl'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const home = path.join(root, 'home'); fs.mkdirSync(home);
   const cli = path.resolve(__dirname, '../bin/atris.js');
-  const run = (...args) => spawnSync(process.execPath, [cli, 'autoland', ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+  const run = (...args) => spawnSync(process.execPath, [cli, 'autoland', ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1' } });
   let result = run('on', '--all', '--include-protected');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(autoland.readPolicy(root).accept_protected, true);
