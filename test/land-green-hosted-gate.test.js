@@ -805,3 +805,128 @@ test('atris land --auto respects the machine lock another project holds: machine
     cleanup(root, state);
   }
 });
+
+// Reviewer finding, second pass. A marked (handed-back) entry read as "in the
+// merge queue" to the lander and as "handed back" to the queue sweep: each
+// side waited for the other and nothing merged. The lander now screens every
+// marked entry whose checks do not fail right now, and queues it again.
+function handedBackRepo() {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  branchWith(root, 'feat/one', 'one.txt');
+  git(root, ['push', '-q', 'origin', 'feat/one']);
+  const s1 = git(root, ['rev-parse', 'feat/one']);
+  const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: {
+    'feat/one': queueEntry({ pushed: s1, reran: s1, checks_handed_back: s1, checks_task: 'JOB-1' }),
+  } }));
+  return { root, bare, s1, file };
+}
+
+function ghWithPr({ head, checks }) {
+  const gh = fakeGh();
+  const base = gh.runGh;
+  gh.runGh = (args) => {
+    if (args[0] === 'pr' && args[1] === 'view') { gh.calls.push(args); return { ok: true, stdout: JSON.stringify({ state: 'OPEN', headRefOid: head(), mergedAt: null }), stderr: '' }; }
+    if (args[0] === 'pr' && args[1] === 'checks') { gh.calls.push(args); return { ok: !checks.some((c) => c.bucket === 'fail'), stdout: JSON.stringify(checks), stderr: '' }; }
+    return base(args);
+  };
+  return gh;
+}
+
+const queueCalls = (gh) => gh.calls.filter((c) => c[0] === 'pr' && c[1] === 'merge' && c.includes('--auto'));
+
+test('a handed-back pull request whose failed check passed on a rerun, with no push, is screened and queued again', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'pass' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    assert.equal(queueCalls(gh).length, 1, JSON.stringify(gh.calls));
+    const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    const follow = result.followed.find((r) => r.branch === 'feat/one');
+    assert.doesNotMatch(follow.line, /waiting in the merge queue/);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a handed-back pull request whose fix was recorded by worktree ship is screened and queued again, not left in limbo', () => {
+  const fx = handedBackRepo();
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    git(other, ['clone', '-q', fx.bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    const s2 = commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    // worktree ship --merge records the pull request with no options.
+    require('../lib/member-autoland').recordQueuedPullRequest(fx.root, { branch: 'feat/one', base: 'master', number: 41, pushed: s2 });
+    assert.equal(JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'].checks_handed_back, fx.s1, 'ship keeps the mark');
+    const gh = ghWithPr({ head: () => s2, checks: [{ name: 'test', bucket: 'pass' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    assert.ok(git(fx.root, ['merge-base', '--is-ancestor', s2, entry.pushed]) === '', 'the screened commit holds the fix');
+  } finally {
+    cleanup(fx.root, fx.bare, other);
+  }
+});
+
+test('a handed-back pull request that still fails on the same commit waits for its builder: not queued again, mark kept', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'fail' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'skipped', JSON.stringify(v));
+    assert.equal(v.reason, 'handed_back');
+    assert.equal(queueCalls(gh).length, 0, JSON.stringify(gh.calls));
+    assert.equal(JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'].checks_handed_back, fx.s1);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+// Reviewer finding, second pass. With one local suite per run, an old failing
+// branch went first every time master moved and took the only suite, so the
+// healthy branch behind it was never checked.
+test('an old failing branch cannot take the only local suite from a healthy branch run after run', () => {
+  const root = makeRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-order-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    branchWith(root, 'feat/old-red', 'bad.txt', daysAgo(6));
+    branchWith(root, 'feat/healthy', 'good.txt', daysAgo(4));
+    const verify = (command, cwd) => (fs.existsSync(path.join(cwd, 'bad.txt'))
+      ? { status: 1, timed_out: false, failing: ['bad test'], failing_all: ['bad test'], command: 'npm test', duration_ms: 1, tail: '' }
+      : GREEN);
+    const opts = {
+      push: false, stateFile: path.join(state, 'land-green.json'), runCli: () => ({ status: 0, stdout: '' }),
+      fileConflictTask: noTasks, fileSlowCheckTask: noTasks, runVerifyFn: verify,
+    };
+    const landed = [];
+    for (let run = 0; run < 3 && !landed.length; run += 1) {
+      const result = landStaleGreenBranches(root, opts);
+      landed.push(...result.landed);
+      fs.writeFileSync(path.join(root, `master-${run}.txt`), `${run}\n`);
+      commitAll(root, `master moves ${run}`, daysAgo(2));
+    }
+    assert.deepEqual(landed, ['feat/healthy']);
+  } finally {
+    cleanup(root, state);
+  }
+});
