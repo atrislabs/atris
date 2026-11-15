@@ -1374,12 +1374,22 @@ function teamActivityTag(activity) {
 function renderTeamRoster(rows, { width } = {}) {
   if (!rows.length) return '';
   const showActivity = rows.some((row) => row.activity !== undefined);
-  const columns = [{ header: 'MEMBER' }, { header: 'JOB' }, { header: 'ENGINE · MODEL' }, { header: 'SOURCE' }];
+  // RUNS ON shows once any member works on another machine; an all-local
+  // team reads exactly as before.
+  const showPlace = rows.some((row) => row.runs_here === false);
+  const columns = [{ header: 'MEMBER' }, { header: 'JOB' }, { header: 'ENGINE · MODEL' }];
+  if (showPlace) columns.push({ header: 'RUNS ON' });
+  columns.push({ header: 'SOURCE' });
   if (showActivity) columns.push({ header: 'LAST 7 DAYS', clip: true, min: 11 });
   const cells = rows.map((row) => {
-    const engine = row.engine ? workerCellText(engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' })) : 'no ready engine';
+    const elsewhere = row.runs_here === false;
+    const engine = row.engine
+      ? workerCellText(engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }))
+      : elsewhere ? 'its own model' : 'no ready engine';
     const stale = row.stale_model && row.newer_model ? ` (newer ${modelLabel(row.newer_model)} out)` : '';
-    const cell = [row.member, row.job || '-', `${engine}${stale}`, row.source === 'file' ? (row.file || 'roster file') : 'automatic'];
+    const cell = [row.member, row.job || '-', `${engine}${stale}`];
+    if (showPlace) cell.push(row.runs_on_label || row.runs_on || '-');
+    cell.push(row.source === 'file' ? (row.file || 'roster file') : 'automatic');
     if (showActivity) cell.push(teamActivityTag(row.activity));
     return cell;
   });
@@ -1520,7 +1530,7 @@ function runRosterRunsCommand(job, json, root, now) {
   return 0;
 }
 
-const ROSTER_SET_USAGE = 'usage: atris engine roster set <job> <tool> <model>, or atris engine roster set --member <name> <tool> <model>. the tools and models come from atris engine roster --available';
+const ROSTER_SET_USAGE = 'usage: atris engine roster set <job> <tool> <model>, or atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]. --on is where the member works: "atris computer", "local", or a bot on another machine like "grok bot". the tools and models come from atris engine roster --available';
 
 // The words after set: the job (one quoted argument, or every word before
 // the first one that names a tool), the tool (one word, or two like "claude
@@ -1569,19 +1579,51 @@ function runRosterSetCommand(args, root) {
       return 2;
     }
   }
+  let place = null;
+  const onAt = words.indexOf('--on');
+  if (onAt !== -1) {
+    place = words[onAt + 1] || '';
+    words.splice(onAt, 2);
+    if (!member || !place || place.startsWith('--')) {
+      console.error(ROSTER_SET_USAGE);
+      return 2;
+    }
+  }
   if (words.some((word) => String(word).startsWith('--'))) {
     console.error(ROSTER_SET_USAGE);
     return 2;
   }
-  const parts = splitSetWords(words, !member);
+  const parts = place !== null && !words.length ? {} : splitSetWords(words, !member);
   if (!parts || (!member && !parts.job)) {
     console.error(ROSTER_SET_USAGE);
     return 2;
   }
   try {
-    const out = member
+    let lineScope = 'project';
+    if (place !== null) {
+      // a bad place or an unknown member is refused before anything is written
+      const { readMemberCard, teamLineFor } = require('../lib/member-engine');
+      const reg = require('../lib/engine-registry');
+      reg.setTeamPlaceCheck(place);
+      // member names are lowercase on disk, the same way swapMember reads them
+      member = member.trim().toLowerCase();
+      const line = teamLineFor(reg.readRosterState(root), member);
+      if (!line && !readMemberCard(root, member).found) throw new Error(`there is no team member named ${member}`);
+      if (line && line.scope) lineScope = line.scope;
+    }
+    let out = member && parts.tool
       ? swapMember(root, member, parts.tool, parts.model)
-      : swapJob(root, parts.job, parts.tool, parts.model);
+      : member ? null : swapJob(root, parts.job, parts.tool, parts.model);
+    if (place !== null) {
+      const { setTeamPlace } = require('../lib/engine-registry');
+      // the place goes on the line that decides for this member
+      const scope = out && out.scope ? out.scope : lineScope;
+      const placed = setTeamPlace(member, place, scope === 'session' ? { session: true } : scope === 'machine' ? { everywhere: true } : {}, root);
+      const { runsOnText } = require('../lib/runs-on');
+      const where = runsOnText(placed.place, placed.place.engine || '');
+      out = { ...(out || { member }), runs_on: placed.place.id, runs_on_label: placed.place.label, runs_here: placed.place.here, value: placed.value,
+        line: `${out && out.changed ? `${out.line} ` : ''}${member} now works on ${where}.` };
+    }
     console.log(json ? JSON.stringify(out, null, 2) : out.line);
     return 0;
   } catch (err) {
@@ -2284,9 +2326,8 @@ function runEngineTest(targets, { json, root } = {}) {
 // One-command dispatch: claim -> worktree start -> bounded prompt -> engine
 // -> re-run Check: -> ship -> task ready, in one call instead of the 6
 // hand-rolled Bash calls per task the manual version took. Task ids are
-// positional; --engine/--prompt-file are the only flags, so parse by hand
-// instead of the generic "anything starting with --" split used above (that
-// split would swallow an --engine value like "cursor" as a task id).
+// positional; parse options explicitly so a typo cannot become a task id or
+// silently discard the operator's prompt.
 function parseDispatchArgs(args) {
   const taskIds = [];
   let engine = '';
@@ -2295,26 +2336,39 @@ function parseDispatchArgs(args) {
   let json = false;
   let yolo = false;
   let pick = '';
+  const seenOptions = new Set();
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a === '--engine') { engine = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--engine=')) { engine = a.slice('--engine='.length); continue; }
-    if (a === '--pick') { pick = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--pick=')) { pick = a.slice('--pick='.length); continue; }
-    if (a === '--prompt-file') { promptFile = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--prompt-file=')) { promptFile = a.slice('--prompt-file='.length); continue; }
-    if (a === '--base') { base = args[i + 1] || ''; i += 1; continue; }
-    if (a.startsWith('--base=')) { base = a.slice('--base='.length); continue; }
+    const option = ['--engine', '--pick', '--prompt-file', '--base']
+      .find((name) => a === name || a.startsWith(`${name}=`));
+    if (option) {
+      const value = a === option ? args[++i] : a.slice(option.length + 1);
+      if (typeof value !== 'string' || !value.trim() || value.startsWith('-')) {
+        return { error: `engine dispatch: ${option} requires a non-empty value` };
+      }
+      if (seenOptions.has(option)) return { error: `engine dispatch: ${option} may only be specified once` };
+      seenOptions.add(option);
+      if (option === '--engine') engine = value;
+      if (option === '--pick') pick = value;
+      if (option === '--prompt-file') promptFile = value;
+      if (option === '--base') base = value;
+      continue;
+    }
     if (a === '--json') { json = true; continue; }
     if (a === '--yolo') { yolo = true; continue; }
-    if (a.startsWith('--')) continue;
+    if (a.startsWith('-')) return { error: `engine dispatch: unknown option ${a}` };
     taskIds.push(a);
   }
   return { taskIds, engine, promptFile, base, json, yolo, pick };
 }
 
 function runDispatchCommand(args, root) {
-  const { taskIds, engine, promptFile, base, json, yolo, pick } = parseDispatchArgs(args);
+  const parsed = parseDispatchArgs(args);
+  if (parsed.error) {
+    console.error(parsed.error);
+    return 2;
+  }
+  const { taskIds, engine, promptFile, base, json, yolo, pick } = parsed;
   if (!taskIds.length || !engine) {
     console.error('usage: atris engine dispatch <task-id> [<task-id> ...] --engine <engine> [--prompt-file <f>] [--yolo] [--pick rating|turns]');
     return 2;
@@ -2342,6 +2396,10 @@ function runDispatchCommand(args, root) {
       promptOverride = fs.readFileSync(promptFile, 'utf8');
     } catch (err) {
       console.error(`engine dispatch: could not read --prompt-file ${promptFile}: ${err.message}`);
+      return 2;
+    }
+    if (!promptOverride.trim()) {
+      console.error('engine dispatch: --prompt-file must contain a non-empty prompt');
       return 2;
     }
   }

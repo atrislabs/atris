@@ -3134,8 +3134,12 @@ function buildPayload(message, options = {}) {
     // /terminal endpoint. The workspace_path is a label, not a local path.
     payload.workspace_path = `/workspace/${options.business.slug}`;
     payload.local_executor = true;
-  } else if (local) {
-    payload.workspace_path = options.cwd || process.cwd();
+  } else {
+    // Say this is the person's own terminal chat, so the backend gives it their
+    // Atris memory (what they told Atris, and remember/save). Business turns
+    // keep the shape they have today and name no surface.
+    payload.surface = 'cli';
+    if (local) payload.workspace_path = options.cwd || process.cwd();
   }
   if (options.connectionContext) {
     payload.connection_context = options.connectionContext;

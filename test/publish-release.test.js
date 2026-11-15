@@ -3,7 +3,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const packageVersion = require('../package.json').version;
 
 const {
   buildPublishArgs,
@@ -13,12 +12,8 @@ const {
   isTrustedPublishAuthFailure,
   publishAtrisRelease,
   renderOtpHelp,
-  renderPublishVerification,
-  renderPublishLatestLag,
   renderTrustedPublishHelp,
   renderVersionAvailabilityFailure,
-  verifyPublishedVersion,
-  verifyPublishedVersionWithRetry,
 } = require('../scripts/publish-atris-release');
 
 const publishWorkflowPath = path.resolve(__dirname, '../.github/workflows/publish.yml');
@@ -108,39 +103,6 @@ test('publish helper refuses to publish when version preflight is inconclusive',
   } finally {
     process.stderr.write = originalStderrWrite;
   }
-});
-
-test('publish helper verifies npm latest after successful publish', () => {
-  const verification = verifyPublishedVersion('3.15.30', () => ({
-    status: 0,
-    stdout: JSON.stringify({ version: '3.15.30', gitHead: 'abc123' }),
-  }));
-  assert.equal(verification.ok, true);
-  assert.match(renderPublishVerification(verification), /Verified npm latest: atris@3\.15\.30 gitHead abc123/);
-});
-
-test('publish helper fails verification when npm latest is stale', () => {
-  const verification = verifyPublishedVersion('3.15.30', () => ({
-    status: 0,
-    stdout: JSON.stringify({ version: '3.15.23', gitHead: 'old' }),
-  }));
-  assert.equal(verification.ok, false);
-  assert.match(renderPublishVerification(verification), /expected 3\.15\.30, got 3\.15\.23/);
-});
-
-test('publish helper retries stale npm latest verification', () => {
-  const versions = ['3.15.23', '3.15.30'];
-  const verification = verifyPublishedVersionWithRetry('3.15.30', (cmd, args) => {
-    if (String(args[1] || '').startsWith('atris@')) {
-      return { status: 1, stderr: 'npm error code E404\n' };
-    }
-    return {
-      status: 0,
-      stdout: JSON.stringify({ version: versions.shift(), gitHead: 'abc123' }),
-    };
-  }, { attempts: 3, delayMs: 0 });
-  assert.equal(verification.ok, true);
-  assert.equal(verification.attempt, 2);
 });
 
 test('publish helper replays captured npm output and prints OTP help', () => {
@@ -239,247 +201,6 @@ test('publish helper prints trusted publisher setup help for GitHub ENEEDAUTH', 
   }
 });
 
-test('publish helper verifies registry latest after a successful publish run', () => {
-  const stdout = [];
-  const originalStdoutWrite = process.stdout.write;
-  process.stdout.write = chunk => {
-    stdout.push(String(chunk));
-    return true;
-  };
-  try {
-    const calls = [];
-    const status = publishAtrisRelease([], (cmd, args) => {
-      calls.push([cmd, args]);
-      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      if (args[0] === 'view') {
-        return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    });
-    assert.equal(status, 0);
-    assert.equal(calls.length, 3);
-    assert.match(stdout.join(''), /published/);
-    assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
-  } finally {
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('publish helper retries registry lag after a successful publish run', () => {
-  const stdout = [];
-  const originalStdoutWrite = process.stdout.write;
-  process.stdout.write = chunk => {
-    stdout.push(String(chunk));
-    return true;
-  };
-  try {
-    let views = 0;
-    const status = publishAtrisRelease([], (cmd, args) => {
-      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      if (args[0] === 'view') {
-        views += 1;
-        const version = views === 1 ? '3.15.23' : packageVersion;
-        return { status: 0, stdout: JSON.stringify({ version, gitHead: 'abc123' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    }, { verificationAttempts: 3, verificationDelayMs: 0 });
-    assert.equal(status, 0);
-    assert.equal(views, 2);
-    assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
-  } finally {
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('publish helper treats a lagging npm latest as success once the version is confirmed live', () => {
-  const stdout = [];
-  const originalStdoutWrite = process.stdout.write;
-  process.stdout.write = chunk => { stdout.push(String(chunk)); return true; };
-  try {
-    let atrisAtCalls = 0;
-    const status = publishAtrisRelease([], (cmd, args) => {
-      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        atrisAtCalls += 1;
-        // 1st call is the preflight (must be unpublished to proceed);
-        // 2nd is the post-publish confirmation (now live on the registry).
-        if (atrisAtCalls === 1) return { status: 1, stderr: 'npm error code E404\n' };
-        return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
-      }
-      if (args[0] === 'view') {
-        // The latest dist-tag never catches up during this run.
-        return { status: 0, stdout: JSON.stringify({ version: '3.0.0', gitHead: 'old' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    }, { verificationAttempts: 2, verificationDelayMs: 0 });
-    assert.equal(status, 0);
-    assert.match(stdout.join(''), /confirmed on the registry/);
-    assert.match(stdout.join(''), /propagating/);
-  } finally {
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('publish helper stops polling once the exact version exists while latest still lags', () => {
-  const stdout = [];
-  const originalStdoutWrite = process.stdout.write;
-  process.stdout.write = chunk => { stdout.push(String(chunk)); return true; };
-  try {
-    let published = false;
-    let latestCalls = 0;
-    let exactCalls = 0;
-    const status = publishAtrisRelease([], (cmd, args) => {
-      if (args[0] === 'publish') {
-        published = true;
-        return { status: 0, stdout: 'published\n', stderr: '' };
-      }
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        if (!published) return { status: 1, stderr: 'npm error code E404\n' };
-        exactCalls += 1;
-        if (exactCalls < 3) return { status: 1, stderr: 'npm error code E404\n' };
-        if (exactCalls === 3) {
-          return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
-        }
-        throw new Error('polled the exact version after it already existed');
-      }
-      if (args[0] === 'view') {
-        latestCalls += 1;
-        return { status: 0, stdout: JSON.stringify({ version: '3.58.6', gitHead: 'old' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    }, { verificationAttempts: 8, verificationDelayMs: 0 });
-    assert.equal(status, 0);
-    assert.equal(latestCalls, 3);
-    assert.equal(exactCalls, 3);
-    assert.match(stdout.join(''), /confirmed on the registry/);
-    assert.match(stdout.join(''), /propagating/);
-  } finally {
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('publish helper fails only after the full window when latest and the exact version both stay missing', () => {
-  const stderr = [];
-  const originalStderrWrite = process.stderr.write;
-  const originalStdoutWrite = process.stdout.write;
-  process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
-  process.stdout.write = () => true;
-  try {
-    let published = false;
-    let latestCalls = 0;
-    let exactCalls = 0;
-    const status = publishAtrisRelease([], (cmd, args) => {
-      if (args[0] === 'publish') {
-        published = true;
-        return { status: 0, stdout: 'published\n', stderr: '' };
-      }
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        if (!published) return { status: 1, stderr: 'npm error code E404\n' };
-        exactCalls += 1;
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      if (args[0] === 'view') {
-        latestCalls += 1;
-        return { status: 0, stdout: JSON.stringify({ version: '3.58.6', gitHead: 'old' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    }, { verificationAttempts: 4, verificationDelayMs: 0 });
-    assert.equal(status, 1);
-    assert.equal(latestCalls, 4);
-    assert.equal(exactCalls, 4);
-    assert.match(stderr.join(''), /npm latest verification failed/);
-    assert.doesNotMatch(stderr.join(''), /waiting for npm/);
-  } finally {
-    process.stderr.write = originalStderrWrite;
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('publish helper polls for about ten minutes by default', () => {
-  const stderr = [];
-  const originalStderrWrite = process.stderr.write;
-  process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
-  const sleeps = [];
-  let latestCalls = 0;
-  try {
-    const verification = verifyPublishedVersionWithRetry('9.9.9', (cmd, args) => {
-      if (String(args[1] || '').startsWith('atris@')) {
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      latestCalls += 1;
-      return { status: 0, stdout: JSON.stringify({ version: '1.0.0', gitHead: 'old' }) };
-    }, { sleep: (ms) => { sleeps.push(ms); } });
-    assert.equal(verification.ok, false);
-    assert.equal(latestCalls, 40);
-    assert.equal(sleeps.length, 39);
-    assert.ok(sleeps.every((ms) => ms === 15000));
-    const lines = stderr.join('').trim().split('\n').filter(Boolean);
-    assert.equal(lines[0], 'waiting for npm to show atris@9.9.9, 1 of 10 minutes');
-    assert.equal(lines[lines.length - 1], 'waiting for npm to show atris@9.9.9, 9 of 10 minutes');
-    assert.equal(lines.length, 9);
-  } finally {
-    process.stderr.write = originalStderrWrite;
-  }
-});
-
-test('publish helper prints one wait line per minute while npm latest lags', () => {
-  const stderr = [];
-  const originalStderrWrite = process.stderr.write;
-  process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
-  try {
-    verifyPublishedVersionWithRetry('3.58.7', (cmd, args) => {
-      if (String(args[1] || '').startsWith('atris@')) {
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      return { status: 0, stdout: JSON.stringify({ version: '3.58.6', gitHead: 'old' }) };
-    }, { attempts: 9, delayMs: 15000, sleep: () => {} });
-    const lines = stderr.join('').trim().split('\n').filter(Boolean);
-    assert.deepEqual(lines, [
-      'waiting for npm to show atris@3.58.7, 1 of 2 minutes',
-      'waiting for npm to show atris@3.58.7, 2 of 2 minutes',
-    ]);
-  } finally {
-    process.stderr.write = originalStderrWrite;
-  }
-});
-
-test('publish helper still fails when latest lags and the version is not on the registry', () => {
-  const stderr = [];
-  const originalStderrWrite = process.stderr.write;
-  const originalStdoutWrite = process.stdout.write;
-  process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
-  process.stdout.write = () => true;
-  try {
-    const status = publishAtrisRelease([], (cmd, args) => {
-      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
-      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
-        return { status: 1, stderr: 'npm error code E404\n' };
-      }
-      if (args[0] === 'view') {
-        return { status: 0, stdout: JSON.stringify({ version: '3.0.0', gitHead: 'old' }) };
-      }
-      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
-    }, { verificationAttempts: 2, verificationDelayMs: 0 });
-    assert.equal(status, 1);
-    assert.match(stderr.join(''), /npm latest verification failed/);
-  } finally {
-    process.stderr.write = originalStderrWrite;
-    process.stdout.write = originalStdoutWrite;
-  }
-});
-
-test('renderPublishLatestLag explains the release succeeded despite the lag', () => {
-  const text = renderPublishLatestLag('9.9.9', { actual: '3.0.0' });
-  assert.match(text, /Published atris@9\.9\.9 to npm/);
-  assert.match(text, /successful/);
-});
-
 test('trusted publish workflow uses OIDC without npm token secrets', () => {
   const workflow = fs.readFileSync(publishWorkflowPath, 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
@@ -496,7 +217,8 @@ test('trusted publish workflow uses OIDC without npm token secrets', () => {
   assert.match(workflow, /node scripts\/check-command-regression\.js/);
   assert.match(workflow, /npm run publish:release -- --dry-run/);
   assert.match(workflow, /npm run publish:release/);
-  assert.match(workflow, /timeout-minutes:\s*30/);
+  assert.match(workflow, /timeout-minutes:\s*15/);
   assert.match(workflow, /Block duplicate npm versions/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|NPM_CONFIG_TOKEN/);
 });
+

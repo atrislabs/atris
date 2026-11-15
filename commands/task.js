@@ -10,7 +10,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
-const { buildNextWorkContext, reconcileTaskRows } = require('../lib/next-work-context');
+const { buildNextWorkContext, reconcileTaskRows, projectGoalAge } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
@@ -36,7 +36,7 @@ const {
   protectedLaneOf,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
-const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
+const { checkedCodeSha, mainLineSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -458,9 +458,9 @@ function readGoalSources(root = process.cwd()) {
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const goals = extractGoalLines(fs.readFileSync(file, 'utf8'));
-    if (goals.length) return { path: file, goals };
+    if (goals.length) return { path: file, goals, updated_at: fs.statSync(file).mtime.toISOString() };
   }
-  return { path: null, goals: [] };
+  return { path: null, goals: [], updated_at: null };
 }
 
 function reviewSummary(task, payload = {}) {
@@ -976,16 +976,19 @@ function pickTaskGoal(task, goals) {
   return bestScore > 0 ? best : null;
 }
 
-function taskBaseObjective(task, goals) {
+// A task's objective is only what the task or its parent recorded. A project
+// goal line that shares a few words is a board grouping, never this task's
+// purpose, so it is not offered here.
+function taskBaseObjective(task) {
   const metadata = task && task.metadata || {};
   return task.objective
     || metadata.task_goal
     || metadata.goal_objective
     || metadata.objective
-    || pickTaskGoal(task, goals);
+    || null;
 }
 
-function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+function taskObjective(task, parent, { parentLinkType = null, baseObjectives = new Map() } = {}) {
   const metadata = task && task.metadata || {};
   const explicit = task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective;
   if (explicit) return explicit;
@@ -994,13 +997,13 @@ function taskObjective(task, parent, goals, { parentLinkType = null, baseObjecti
     if (parentLinkType === 'goal_id') return parent.title;
     return baseObjectives.get(parent.id) || parent.title;
   }
-  return pickTaskGoal(task, goals);
+  return null;
 }
 
 function buildTaskStreams(tasks, goals) {
   const buckets = new Map();
   for (const task of tasks) {
-    const objective = task.objective || 'Unmapped work';
+    const objective = task.objective || pickTaskGoal(task, goals) || 'Unmapped work';
     if (!buckets.has(objective)) {
       buckets.set(objective, {
         objective,
@@ -1146,7 +1149,7 @@ function enrichTaskProjection(projection) {
   }
   const baseObjectives = new Map();
   for (const task of projection.tasks || []) {
-    const objective = taskBaseObjective(task, goalSource.goals);
+    const objective = taskBaseObjective(task);
     if (objective) baseObjectives.set(task.id, objective);
   }
   const children = new Map();
@@ -1168,7 +1171,7 @@ function enrichTaskProjection(projection) {
       const review = withReviewReceiptPath(taskReviewSummary(task), root);
       const enriched = {
         ...task,
-        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
+        objective: taskObjective(task, parent, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
@@ -1192,6 +1195,8 @@ function enrichTaskProjection(projection) {
     goals: {
       source_path: goalSource.path,
       items: goalSource.goals,
+      updated_at: goalSource.updated_at,
+      ...(goalSource.path ? projectGoalAge(goalSource.updated_at) : { old: null, about: null }),
     },
     streams: buildTaskStreams(enrichedTasks, goalSource.goals),
     tasks: enrichedTasks,
@@ -6340,13 +6345,42 @@ function cmdTag(args) {
   if (!id) failTask('atris task tag', 'missing_id', 'task id required');
   const add = collectFlagValues(args, '--add');
   const remove = collectFlagValues(args, '--remove');
-  if (!add.length && !remove.length) {
-    failTask('atris task tag', 'missing_tags', 'at least one --add <tag> or --remove <tag> required');
+  const setTag = pos.slice(1).join(' ').trim();
+  if (!add.length && !remove.length && !setTag) {
+    failTask('atris task tag', 'missing_tags', 'a tag, or at least one --add <tag> or --remove <tag>, required');
+  }
+  if (setTag && (add.length || remove.length)) {
+    failTask('atris task tag', 'tag_conflict', 'use either `task tag <id> <tag>` or --add/--remove, not both');
   }
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task tag');
+  if (setTag) {
+    // Sets the primary tag, the same field `task add --tag` writes at creation.
+    const set = taskDb.setTaskTag(db, { id: taskId, actor: String(actor), tag: setTag });
+    if (!set.tagged && set.reason !== 'no_changes') {
+      failTask('atris task tag', set.reason || 'tag_failed', `tag failed: ${set.reason || 'unknown'}`, 1);
+    }
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const task = compactTaskFromProjection(projection, taskId);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: set.tagged ? 'tag_set' : 'unchanged',
+        task_id: taskId,
+        tag: set.tag,
+        previous_tag: set.tagged ? set.previous_tag : set.tag,
+        projection_path: outPath,
+        task,
+      });
+      return;
+    }
+    console.log(set.tagged
+      ? `tagged ${taskRef(task)} tag ${set.previous_tag || 'none'} -> ${set.tag}`
+      : `no change ${taskRef(task)} tag ${set.tag}`);
+    return;
+  }
   const result = taskDb.tagTask(db, { id: taskId, actor: String(actor), add, remove });
   if (!result.tagged) {
     if (result.reason === 'no_changes') {
@@ -9000,6 +9034,38 @@ function appendRelabelArchivedJournalReceipt(workspaceRoot, { actor, count, ids 
   return logPath;
 }
 
+// --work-root <path>, or ATRIS_WORK_ROOT only when the flag is absent. Nothing named gives
+// undefined. The job then records the main folder's commit as before. A flag that is present
+// but empty is an error, never a quiet fall back to the env var. A relative path resolves
+// from the current folder. The folder must be a real checkout with a commit, because that
+// commit is what the job records.
+function readyWorkRoot(args) {
+  const at = args.indexOf('--work-root');
+  let named;
+  if (at !== -1) {
+    named = String(args[at + 1] === undefined ? '' : args[at + 1]).trim();
+    if (!named) {
+      console.error('work root is empty');
+      process.exit(1);
+    }
+  } else {
+    named = String(process.env.ATRIS_WORK_ROOT || '').trim();
+  }
+  if (!named) return undefined;
+  const resolved = path.resolve(named);
+  let isDir = false;
+  try { isDir = fs.statSync(resolved).isDirectory(); } catch (_) { isDir = false; }
+  if (!isDir) {
+    console.error(`work root not found: ${resolved}`);
+    process.exit(1);
+  }
+  if (!getTaskDb().workspaceHead(resolved)) {
+    console.error(`work root has no git commit: ${resolved}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
 function cmdReady(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -9007,9 +9073,12 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   const resultFlag = textFlag(args, ['--result']);
   if (!id || (!proofFlag && !verifyFlag && !resultFlag)) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)');
     process.exit(2);
   }
+  // The copy the builder actually built in. Its commit is the one the job records.
+  // Without it the job records the main folder's commit, as before.
+  const workRoot = readyWorkRoot(args);
   // Two ways to prove: --proof "<note>" (claimed, pattern-checked) or
   // --verify "<command>" which actually RUNS the command and gates ready on exit 0.
   // If --proof names npm test, node --test, or git diff --check, this process
@@ -9041,12 +9110,54 @@ function cmdReady(args) {
     proof = proof.trim() ? `${proof.trim()} ${attested}` : attested;
   }
   const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
+  const landing = landingFlags(args);
+  // What this process can refuse from the flags and the task alone is refused before the verifier
+  // runs. Wording or a name the gate would turn away never costs a test run. The verifier's own
+  // wording, the actor, the task lookup and the landing sentence only need the flags and the task
+  // row. Without --verify nothing slow comes first. The actor, task and landing checks then keep
+  // their place after the proof checks below.
+  let readyTarget = null;
+  const resolveReadyTarget = () => {
+    if (readyTarget) return readyTarget;
+    guardExplicitActor('atris task ready', flag(args, '--as'));
+    const taskDb = getTaskDb();
+    const db = taskDb.open();
+    const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+    const beforeTask = taskDetail(taskDb, db, taskId);
+    requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+    readyTarget = { taskDb, db, taskId, beforeTask };
+    return readyTarget;
+  };
+  // The start of the proof written once the verifier passes. It is built from the flags alone. A
+  // proof that names a command the verifier did not run is refused before the verifier runs. The
+  // command's output and the receipt path follow it. Then the same check runs again on the whole
+  // proof.
+  const verifiedLead = usedVerify
+    ? `[verified] \`${verifyFlag}\` passed (exit 0)${proof.trim() ? `, ${proof.trim()}` : ''}`
+    : '';
+  if (usedVerify) {
+    if (!hasFlag(args, '--no-falsify-check')) {
+      const { classifyVerifier } = require('../lib/verifier-quality');
+      const quality = classifyVerifier(verifyFlag);
+      if (!quality.ok) {
+        console.error(`atris task ready: weak verifier, ${quality.reason}`);
+        console.error(`  command: ${verifyFlag}`);
+        console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
+        console.error('  or pass --no-falsify-check to accept anyway.');
+        process.exit(1);
+      }
+    }
+    requireRanNamedProofCommand('atris task ready', verifiedLead, usedVerify);
+    resolveReadyTarget();
+  }
   if (usedVerify) {
     // Run the verifier once and write a receipt (pass or fail) so the review
     // gate in lib/receipt-evidence.js can validate the exact path named in
     // the proof, not just trust the prose.
     const { writeTaskReceipt } = require('../lib/task-receipt');
-    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: process.cwd() });
+    // The check runs in the copy the work was built in. Its receipt still lands under the
+    // folder ready ran from, because that is where a reviewer looks for the path in the proof.
+    const receipt = writeTaskReceipt({ taskId: id, command: verifyFlag, root: workRoot || process.cwd(), receiptRoot: process.cwd() });
     if (!receipt.passed) {
       const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
       console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
@@ -9060,15 +9171,6 @@ function cmdReady(args) {
     // this codebase fails there, and one that passes anywhere passes there too.
     if (!hasFlag(args, '--no-falsify-check')) {
       const { probeVerifierCanFail } = require('../lib/falsifier-probe');
-      const { classifyVerifier } = require('../lib/verifier-quality');
-      const quality = classifyVerifier(verifyFlag);
-      if (!quality.ok) {
-        console.error(`atris task ready: weak verifier, ${quality.reason}`);
-        console.error(`  command: ${verifyFlag}`);
-        console.error('  allowlisted examples: node --test, npm test, git diff --check, node --check, rg <symbol>');
-        console.error('  or pass --no-falsify-check to accept anyway.');
-        process.exit(1);
-      }
       const probe = probeVerifierCanFail({ command: verifyFlag });
       if (probe.probed && probe.canFail === false) {
         console.error(`atris task ready: this check cannot fail, ${probe.reason}`);
@@ -9078,8 +9180,7 @@ function cmdReady(args) {
       }
       if (!probe.probed && !wantsJson(args)) console.log(`  ${probe.reason}`);
     }
-    const base = proof.trim();
-    proof = `[verified] \`${verifyFlag}\` passed (exit 0)${base ? `, ${base}` : ''}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
+    proof = `${verifiedLead}${receipt.output ? `\n${receipt.output}` : ''}\nReceipt: ${receipt.receiptPath}`;
     if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
@@ -9090,9 +9191,7 @@ function cmdReady(args) {
   requireRanNamedProofCommand('atris task ready', proof, usedVerify);
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
-  const landing = landingFlags(args);
   const merge = readyMergeFlags(args);
-  guardExplicitActor('atris task ready', flag(args, '--as'));
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   // The others who built the work with --as, by name, comma apart: a flight that ran for a member
   // hands in under the member's name and names the engines that ran here. Only a hand-in uses it.
@@ -9109,18 +9208,19 @@ function cmdReady(args) {
     files: textFlag(args, ['--files']),
     commands: textFlag(args, ['--commands', '--command']),
   };
-  const taskDb = getTaskDb();
-  const db = taskDb.open();
-  const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
-  const beforeTask = taskDetail(taskDb, db, taskId);
-  requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+  const { taskDb, db, taskId } = resolveReadyTarget();
+  // The verifier may have run for a while. The task is read again after it. Without one, nothing
+  // elapsed and the read from the checks above stands. The landing sentence is checked against the
+  // refreshed title too, since a verifier can rename the task.
+  const beforeTask = usedVerify ? taskDetail(taskDb, db, taskId) : readyTarget.beforeTask;
+  if (usedVerify) requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
   }
   const readyPolicyTask = {
     ...beforeTask,
-    workspace_root: process.cwd(),
+    workspace_root: workRoot || process.cwd(),
     metadata: {
       ...(beforeTask && beforeTask.metadata || {}),
       ...(resultFields.files ? { changed_files: resultFields.files } : {}),
@@ -9145,6 +9245,7 @@ function cmdReady(args) {
     merge,
     result: resultSentence,
     builtWith,
+    workRoot,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -9529,8 +9630,15 @@ function certifyVerifyCandidate(task) {
   }
   for (const raw of [...recorded, ...ordered]) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
-    // inspected: ..."); try the full clause, then the first sentence of it.
-    for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
+    // inspected: ..."); try the full clause, then the first sentence of it,
+    // then the part before ", exit 0": six atrisos-web jobs wrote
+    // "Verifier result at that commit: <command>, exit 0" and no second
+    // actor ever found their check. Only a comma, "exit" and then a number
+    // is cut (", exit 0", ", exit code 0"), so a list of test files is never
+    // shortened into a smaller check, even when a file name starts with exit.
+    const firstSentence = raw.split(/\.(?:\s|$)/)[0];
+    const exitLine = /,\s*exit(?:ed)?(?:\s+(?:code|status))?(?:\s+|\s*[:=]\s*)\d+(?![\w-]|\.\w)/i;
+    for (const candidate of [raw, firstSentence, firstSentence.split(exitLine)[0]].map((c) => String(c || '').trim())) {
       if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
@@ -9570,7 +9678,7 @@ function currentHeadSha(workspaceRoot) {
 // on 2026-07-29), so the two lanes that legitimately execute verifies,
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
-function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
+function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot, mainSha = null }) {
   if (!taskDb.getTask(db, taskId)) return;
   const verifyCache = {
     command: verify,
@@ -9582,6 +9690,9 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     // else the folder the job lives in. Read before the write lock is taken.
     code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
     code_source: (result && result.code_source) || 'checkout',
+    // The main line's tip when the check ran. A failure is only trusted again
+    // while both this and the job's code are unchanged.
+    main_sha: mainSha || null,
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
@@ -9597,11 +9708,20 @@ function lastCheckedMs(task) {
 }
 
 // The check already failed on exactly this code: running it again proves
-// nothing until the code changes.
-function failedOnSameCode(task, verify, codeSha) {
+// nothing until something changes. "This code" is the job's code and the main
+// line's tip together, and a failure older than a day is tried again anyway.
+// The job's code alone never changes once it is handed in, so a check that
+// failed once on a loaded machine (CLI-1473, 2026-11-12) was skipped every
+// hour after, while the same check passed on the same commit.
+const FAILED_CHECK_TRUSTED_MS = 24 * 60 * 60 * 1000;
+
+function failedOnSameCode(task, verify, codeSha, mainSha, now = Date.now()) {
   const cache = task?.metadata?.verify_cache;
-  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
-    && cache.command === verify && codeSha && cache.code_sha === codeSha);
+  if (!cache || typeof cache !== 'object' || cache.ok !== false || cache.reason !== 'verify_failed') return false;
+  if (cache.command !== verify || !codeSha || cache.code_sha !== codeSha) return false;
+  if (!mainSha || cache.main_sha !== mainSha) return false;
+  const ranAt = Date.parse(String(cache.ran_at || ''));
+  return Number.isFinite(ranAt) && now - ranAt < FAILED_CHECK_TRUSTED_MS;
 }
 
 // `atris task ready --verify "<cmd>"` already runs the command live and
@@ -9644,8 +9764,9 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
+  const mainSha = mainLineSha(task, process.cwd());
   const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
+  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root, mainSha });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9663,6 +9784,64 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
   };
 }
 
+// A run with a time limit starts a slow step only while the slowest step it
+// has run so far would still finish in time. The first step runs as long as
+// there is time left at all: nothing is known about the cost yet. A step left
+// out is named as deferred and comes first again on the next run, so a long
+// queue is worked through across hours instead of killed in the middle.
+// 2026-11-15: in the web project each check is a vitest run of one to two
+// and a half minutes on a busy machine. The second check ran up to six of
+// them before any accept, the hourly pass killed the whole run at 300s every
+// hour, and four jobs that were ready to land never reached the accept step.
+function createRunBudget(now = Date.now) {
+  let longest = 0;
+  return {
+    allows(deadlineMs) {
+      return !deadlineMs || now() + longest < deadlineMs;
+    },
+    time(fn) {
+      const started = now();
+      try {
+        return fn();
+      } finally {
+        longest = Math.max(longest, now() - started);
+      }
+    },
+  };
+}
+
+// The accept step's order: jobs already certified first, since accepting one
+// is the whole point of the step; among them, and among the rest, a job left
+// out for time on an earlier run comes before newer arrivals, oldest
+// deferral first. Otherwise the order given is kept. Without this a ready
+// job behind three failing checks was left out the same way every hour.
+function acceptOrder(items, rows = []) {
+  const byId = new Map((rows || []).map((row) => [row.id, row]));
+  const deferredAt = (item) => {
+    const at = Date.parse(String((byId.get(item.id) || item)?.metadata?.accept_deferred_at || ''));
+    return Number.isFinite(at) ? at : Infinity;
+  };
+  const certified = (item) => (isAgentCertified(byId.get(item.id) || item) ? 0 : 1);
+  return items
+    .map((item, index) => ({ item, index, certified: certified(item), deferred: deferredAt(item) }))
+    .sort((a, b) => (a.certified - b.certified) || (a.deferred - b.deferred) || (a.index - b.index))
+    .map((entry) => entry.item);
+}
+
+// Remember that a job was left out for time, so the next run reaches it
+// first, and forget it once the job is reached. Not a touch: updated_at is
+// the job's own news, and a deferral is not.
+function markAcceptDeferred(taskDb, db, taskId, deferred) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const has = Boolean(row.metadata && row.metadata.accept_deferred_at);
+  if (deferred === has) return;
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    if (deferred) metadata.accept_deferred_at = new Date().toISOString();
+    else delete metadata.accept_deferred_at;
+  }, { touch: false });
+}
+
 function cmdCertifyVerified(args, options = {}) {
   // preview: the hourly pass's dry run. Reads the named workspace's jobs and
   // writes nothing, not even the task list file.
@@ -9672,6 +9851,7 @@ function cmdCertifyVerified(args, options = {}) {
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
   const includeProtected = options.includeProtected === true;
+  const budget = options.budget || null;
   const actor = String(flag(args, '--as') || 'autoland-verifier');
   const limitRaw = flag(args, '--limit');
   const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 6) : 6;
@@ -9753,8 +9933,13 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
-    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+    const mainSha = mainLineSha(task, process.cwd());
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainSha)) {
       results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
+      continue;
+    }
+    if (!dryRun && budget && !budget.allows(options.deadlineMs)) {
+      results.push({ ref, action: 'deferred', reason: 'time_budget', verify });
       continue;
     }
     checks += 1;
@@ -9762,8 +9947,9 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
+    const runCheck = () => runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
+    const run = budget ? budget.time(runCheck) : runCheck();
+    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root, mainSha });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
@@ -9799,6 +9985,7 @@ function cmdCertifyVerified(args, options = {}) {
     would_certify: results.filter((r) => r.action === 'would_certify').length,
     skipped: results.filter((r) => r.action === 'skipped').length,
     failed: results.filter((r) => r.action === 'verify_failed' || r.action === 'certify_failed').length,
+    deferred: results.filter((r) => r.action === 'deferred').length,
     results,
     projection_path: outPath,
   };
@@ -9906,8 +10093,17 @@ function cmdAutoAcceptCertified(args) {
   // remains available to the landing gate. The cache is process-local and is
   // never persisted: a later heartbeat must prove the checkout again.
   const verifyCache = new Map();
+  // --budget-ms: the whole run, both phases, stays inside this many
+  // milliseconds. The second check gets the first half. Each phase keeps its
+  // own slowest step: one slow failing check in the second check once left
+  // the accept step unable to start anything, every hour (2026-11-15).
+  const startedMs = Date.now();
+  const budgetRaw = Number(flag(args, '--budget-ms'));
+  const budgetMs = Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : 0;
+  const budget = budgetMs ? createRunBudget() : null;
+  const acceptDeadlineMs = budgetMs ? startedMs + budgetMs : 0;
   const certification = certifyFirst && !dryRun
-    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected })
+    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected, budget: budgetMs ? createRunBudget() : null, deadlineMs: budgetMs ? startedMs + budgetMs / 2 : 0 })
     : null;
 
   const taskDb = getTaskDb();
@@ -9923,33 +10119,54 @@ function cmdAutoAcceptCertified(args) {
   const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
   // The review queue only surfaces certified rows. Under --all the bar is
   // the protected lanes, not certification, so scan every pending review.
-  const pool = acceptAll
+  const pool = acceptOrder(acceptAll
     ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
-    : queue.items.filter(item => item.queue_role !== 'blocked');
+    : queue.items.filter(item => item.queue_role !== 'blocked'), pendingReview);
   const results = [];
 
   for (const item of pool) {
+    if (budget && !budget.allows(acceptDeadlineMs)) {
+      results.push({ ref: item.display_id || item.id, eligible: false, reason: 'time_budget', action: 'deferred' });
+      if (!dryRun) markAcceptDeferred(taskDb, db, item.id, true);
+      continue;
+    }
+    if (!dryRun) markAcceptDeferred(taskDb, db, item.id, false);
+    if (budget) budget.time(() => acceptOne(item));
+    else acceptOne(item);
+  }
+
+  function acceptOne(item) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
-      continue;
+      return;
     }
     const proofBoundary = proofBoundaryBlockedEvaluation(task);
     if (proofBoundary) {
       results.push({ ...proofBoundary, action: 'skipped' });
-      continue;
+      return;
+    }
+    // A job not yet certified would have its check run here. When that check
+    // already failed on this exact code, running it again proves nothing and
+    // only takes the time a ready job behind it needs.
+    if (!isAgentCertified(task)) {
+      const verify = certifyVerifyCandidate(task);
+      if (verify && failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainLineSha(task, process.cwd()))) {
+        results.push({ ref: task.display_id || task.id, eligible: false, reason: 'failed_on_this_code', action: 'skipped', verify });
+        return;
+      }
     }
     const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, includeProtected, verifyCache });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
-      continue;
+      return;
     }
     if (dryRun) {
       results.push({ ...evaluation, action: 'would_accept', reward: parsedReward.value });
-      continue;
+      return;
     }
     const landingVerify = reverifyBeforeLanding(taskDb, db, task, { verifyCache });
     if (!landingVerify.ok) {
@@ -9971,7 +10188,7 @@ function cmdAutoAcceptCertified(args) {
         revision_note: landingVerify.note,
         task_id: task.id,
       });
-      continue;
+      return;
     }
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor,
@@ -9985,7 +10202,7 @@ function cmdAutoAcceptCertified(args) {
     });
     if (!accepted.ok) {
       results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
-      continue;
+      return;
     }
     const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
@@ -10007,6 +10224,7 @@ function cmdAutoAcceptCertified(args) {
     revised: results.filter(row => row.action === 'revised').length,
     skipped: results.filter(row => row.action === 'skipped').length,
     failed: results.filter(row => row.action === 'accept_failed' || row.action === 'revise_failed').length,
+    deferred: results.filter(row => row.action === 'deferred').length,
     // Visible undercount flag: true only if the pool was cut short by `max`
     // while certified rows still existed beyond it. --all uses a high safety
     // cap (AUTO_ACCEPT_ALL_SWEEP_CAP), so this should stay false in practice;
@@ -12235,7 +12453,7 @@ async function run(args) {
   // `task ready --help` is a help request, not a run. Ready mutates
   // review state, so never list or ready just to show usage.
   if (sub === 'ready' && argsWantHelp(raw.slice(1))) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>"');
+    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)');
     return;
   }
   // `task step --help` is a help request, not a run. Step mutates

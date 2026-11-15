@@ -22,7 +22,7 @@ function writeCreds(home) {
   }));
 }
 
-function startShipApi(requests, { fail = false } = {}) {
+function startShipApi(requests, { fail = false, hireResult, hireStatus = 200, pageUrl = 'https://atris.ai/b/harbor-coffee' } = {}) {
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -40,13 +40,22 @@ function startShipApi(requests, { fail = false } = {}) {
         res.end(JSON.stringify({ detail: 'description is required' }));
         return;
       }
+      if (req.method === 'POST' && /\/hire\/template$/.test(req.url)) {
+        res.statusCode = hireStatus;
+        res.end(JSON.stringify(hireResult || { hired: Array.from({ length: 6 }, (_, i) => ({ name: `Seat ${i + 1}`, next_run_at: 'tomorrow' })), failed: [] }));
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/api/business/') {
+        res.end(JSON.stringify({ id: 'biz-1', slug: 'test-business', name: 'Test Business' }));
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/business/ship') {
         res.end(JSON.stringify({
           business_id: 'biz-ship-1',
           slug: 'harbor-coffee',
           name: 'Harbor Coffee',
           agent_id: 'agent-1',
-          public_page_url: 'https://atris.ai/b/harbor-coffee',
+          public_page_url: pageUrl,
           team: [
             { name: 'Maya' },
             { display_name: 'Scout' },
@@ -118,6 +127,8 @@ test('business ship --help prints ship usage without calling the api', async () 
     assert.match(res.stdout, /Usage: atris business ship/);
     assert.match(res.stdout, /--name/);
     assert.match(res.stdout, /--email/);
+    assert.match(res.stdout, /--kind/);
+    assert.match(res.stdout, /--kind engineering --yes/);
     assert.doesNotMatch(res.stdout + res.stderr, /Shipping business/);
     assert.doesNotMatch(res.stdout + res.stderr, /Not logged in/);
   } finally {
@@ -136,6 +147,10 @@ test('business help lists the ship subcommand', async () => {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /ship "<paragraph>"/);
+    assert.match(res.stdout, /--kind/);
+    const createHelp = await runCli(['business', 'create', '--help'], { cwd, env: { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+    assert.match(createHelp.stdout, /--kind/);
+    assert.match(createHelp.stdout, /--kind engineering --yes/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
@@ -253,5 +268,147 @@ test('business ship prints backend errors the same way create does', async () =>
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+test('business create and ship send a valid kind and reject invalid kinds before requests', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-kind-home-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-business-kind-cwd-'));
+  const requests = [];
+  const server = await startShipApi(requests);
+  writeCreds(home);
+  const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    for (const command of ['create', 'ship']) {
+      const base = command === 'create'
+        ? ['business', 'create', 'Test Business', '--force', '--no-local', '--account']
+        : ['business', 'ship', 'Test Business', '--yes', '--account'];
+      const invalid = await runCli([...base, '--kind', 'wrong'], { cwd, env });
+      assert.notEqual(invalid.status, 0);
+      assert.match(invalid.stderr, /business, research, engineering, or fund/);
+      assert.equal(requests.length, 0);
+      const missing = await runCli([...base, '--kind'], { cwd, env });
+      assert.notEqual(missing.status, 0);
+      assert.equal(requests.length, 0);
+      const noKind = await runCli(base, { cwd, env });
+      assert.equal(noKind.status, 0, noKind.stderr || noKind.stdout);
+      assert.equal(Object.hasOwn(requests[0].body, 'template'), false);
+      requests.length = 0;
+      const withKind = await runCli([...base, '--kind=engineering'], { cwd, env });
+      assert.equal(withKind.status, 0, withKind.stderr || withKind.stdout);
+      assert.equal(requests[0].body.template, 'engineering');
+      assert.equal(requests.length, 2);
+      assert.equal(requests[1].url, command === 'create' ? '/api/business/biz-1/hire/template' : '/api/business/biz-ship-1/hire/template');
+      assert.deepEqual(requests[1].body, { template: 'engineering' });
+      assert.match(withKind.stdout, /6 of 6 seats set up/);
+      assert.match(withKind.stdout, /Seat 1: next run tomorrow/);
+      requests.length = 0;
+      const skipped = await runCli([...base, '--kind', 'engineering', '--no-hire'], { cwd, env });
+      assert.equal(skipped.status, 0);
+      assert.equal(requests.length, 1);
+      assert.match(skipped.stdout, /Team: engineering \(six seats\)/);
+      requests.length = 0;
+      const scheduled = await runCli([...base, '--kind', 'engineering', '--schedule', 'weekly'], { cwd, env });
+      assert.equal(scheduled.status, 0);
+      assert.deepEqual(requests[1].body, { template: 'engineering', schedule: 'weekly' });
+      assert.doesNotMatch(scheduled.stdout, /runs nightly/);
+      requests.length = 0;
+      for (const option of [['--no-hire'], ['--schedule', 'weekly']]) {
+        const refused = await runCli([...base, ...option], { cwd, env });
+        assert.notEqual(refused.status, 0);
+        assert.match(refused.stderr, /need --kind/);
+        assert.equal(requests.length, 0);
+      }
+      requests.length = 0;
+    }
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+test('hire failures report the existing business and preserve partial success', async () => {
+  for (const scenario of [
+    { hireResult: { hired: [{ name: 'Maya' }], failed: [{ name: 'Scout', detail: 'email unavailable' }] }, status: 0, pattern: /Scout: email unavailable/ },
+    { hireResult: { hired: [], failed: [{ name: 'Scout', detail: 'email unavailable' }] }, status: 1, pattern: /business exists/i },
+    { hireStatus: 403, hireResult: { detail: 'not allowed' }, status: 1, pattern: /business was created, but the team was not set up: not allowed/i },
+  ]) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hire-home-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-hire-cwd-'));
+    const requests = [];
+    const server = await startShipApi(requests, scenario);
+    writeCreds(home);
+    try {
+      const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+      const result = await runCli(['business', 'ship', 'Test Business', '--yes', '--account', '--kind', 'business'], { cwd, env });
+      assert.equal(result.status, scenario.status, result.stderr);
+      assert.match(result.stderr, scenario.pattern);
+      if (scenario.hireResult.failed) assert.match(result.stderr, /hire step again is safe/);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
+test('business begin creates and hires, falls back on missing templates, and validates required flags', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-home-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-cwd-'));
+  const requests = [];
+  const server = await startShipApi(requests, { pageUrl: 'https://example.com/coffee' });
+  writeCreds(home);
+  const env = { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api`, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    const missing = await runCli(['business', 'begin', 'Make coffee', '--yes'], { cwd, env });
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /--kind/);
+    assert.equal(requests.length, 0);
+    const result = await runCli(['business', 'begin', 'Make coffee', '--kind', 'engineering', '--yes', '--name', 'Coffee', '--schedule', 'weekly'], { cwd, env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(requests.map(r => r.url), ['/api/public/business/templates', '/api/business/ship', '/api/business/biz-ship-1/hire/template']);
+    assert.equal(requests[0].authorization, undefined);
+    assert.deepEqual(requests[1].body, { description: 'Make coffee', name: 'Coffee', template: 'engineering' });
+    assert.deepEqual(requests[2].body, { template: 'engineering', schedule: 'weekly' });
+    assert.doesNotMatch(result.stdout, /1\. business/);
+    assert.equal((result.stdout.match(/First task: Write the opening offer/g) || []).length, 1);
+    assert.equal((result.stdout.match(/Public page:/g) || []).length, 1);
+    assert.doesNotMatch(result.stdout, /atris invite/);
+    assert.doesNotMatch(result.stdout + result.stderr, /\b(?:ai|agent|automate)\b/i);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('business begin accepts no at confirmation without creating', async () => {
+  const { spawn } = require('node:child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-begin-no-'));
+  const requests = [];
+  const server = await startShipApi(requests);
+  const modulePath = path.resolve(__dirname, '../commands/business.js');
+  const script = `Object.defineProperty(process.stdin, 'isTTY', { value: true });
+    require('readline').createInterface = () => ({ question: (q, cb) => { process.stdout.write(q); cb('no'); }, close() {} });
+    require(${JSON.stringify(modulePath)}).businessCommand('begin', 'Make coffee', '--kind', 'business');`;
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['-e', script], { env: { ...process.env, HOME: home, ATRIS_API_URL: `http://127.0.0.1:${server.address().port}/api` } });
+      let output = '';
+      child.stdout.on('data', data => { output += data; });
+      child.stderr.on('data', data => { output += data; });
+      child.on('error', reject);
+      child.on('close', status => resolve({ status, output }));
+    });
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Create it\?/);
+    assert.doesNotMatch(result.output, /\b(?:ai|agent|automate)\b/i);
+    assert.deepEqual(requests.map(r => r.url), ['/api/public/business/templates']);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });

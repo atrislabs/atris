@@ -154,11 +154,34 @@ test('ax headless turn sends the verbatim prompt over the real HTTP transport', 
     assert.equal(payload.ok, true);
     assert.equal(payload.output, 'stub final answer');
     assert.deepEqual(JSON.parse(requestBody).message, prompt);
+    // On the wire, the turn says it is the person's own terminal chat.
+    assert.equal(JSON.parse(requestBody).surface, 'cli');
   } finally {
     if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
     else process.env.AX_BACKEND_URL = previousBackendUrl;
     await closeServer(server);
   }
+});
+
+test('ax tells the backend this is the person\'s own terminal chat, except on a business computer', () => {
+  // The backend gives a surface "cli" turn the person's Atris memory tools. Same name on
+  // every route the person's own chat takes: inside a project folder and in the cloud.
+  for (const mode of ['fast', 'pro', 'rapid']) {
+    assert.equal(ax.buildPayload('what do you know about me?', { mode, route: 'local', cwd: '/tmp/project' }).surface, 'cli');
+    assert.equal(ax.buildPayload('what do you know about me?', { mode, route: 'cloud', cwd: NON_WORKSPACE_CWD }).surface, 'cli');
+  }
+  const local = ax.buildPayload('what do you know about me?', { mode: 'fast', route: 'local', cwd: '/tmp/project' });
+  assert.equal(local.workspace_path, '/tmp/project');
+  assert.equal(local.local_executor, undefined);
+  assert.equal(local.memory_enabled, undefined);  // never switches memory off, never forces the old journal on
+  const cloud = ax.buildPayload('what do you know about me?', { mode: 'fast', route: 'cloud', cwd: '/tmp/project' });
+  assert.equal(cloud.workspace_path, undefined);
+
+  // A business computer turn keeps the shape it has today: no surface named.
+  const business = ax.buildPayload('what do you know about me?', { mode: 'pro', business: { slug: 'acme' } });
+  assert.equal(business.surface, undefined);
+  assert.equal(business.workspace_path, '/workspace/acme');
+  assert.equal(business.local_executor, true);
 });
 
 test('ax headless turn surfaces the backend result event as output, not leftover tool-loop narration', async () => {

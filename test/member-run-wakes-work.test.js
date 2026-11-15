@@ -72,7 +72,7 @@ function runCli(ctx, args, env = {}) {
       ...clean,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ATRIS_NO_INTERACTIVE: '1',
-      // The fixture roster pins opus 5.5; it runs only with the owner's yes.
+      // The fixture roster pins opus 5.5, which runs as named; the yes keeps the spend guard quiet.
       ATRIS_CLAUDE_SPEND_OK: 'claude-opus-5-5',
       HOME: ctx.home,
       ATRIS_TASKS_DB: path.join(ctx.base, 'tasks.db'),

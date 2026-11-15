@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent page edge cases</title>
+  <script src="../../../lib/agent-page.js"></script>
+</head>
+<body>
+  <main>
+    <h1>Edge cases</h1>
+
+    <section aria-label="Secrets">
+      <select aria-label="Signing key" data-agent-secret>
+        <option value="sk-fixture-0101">KEY-TEXT-0102</option>
+        <option value="sk-fixture-0103">KEY-TEXT-0104</option>
+      </select>
+      <label>Region
+        <select>
+          <option value="west">West</option>
+          <option value="region-secret-0105" data-agent-secret>REGION-SECRET-0106</option>
+          <option value="region-hidden-0107" data-agent-hidden>REGION-HIDDEN-0108</option>
+        </select>
+      </label>
+      <button type="button">Run <span data-agent-secret>TOKEN-CHILD-0109</span></button>
+      <input type="button" data-agent-secret value="SUBMIT-SECRET-0110">
+      <span id="secret-name" data-agent-secret>LABELLEDBY-SECRET-0111</span>
+      <button type="button" aria-labelledby="secret-name">Open vault</button>
+      <div data-agent-hidden><span id="hidden-name">LABELLEDBY-HIDDEN-0112</span></div>
+      <button type="button" aria-labelledby="hidden-name">Fallback name</button>
+      <label for="plain" data-agent-hidden>LABEL-HIDDEN-0113</label>
+      <input id="plain" type="text" aria-label="Plain field">
+      <div role="listbox" aria-label="Vaults" data-pick-list>
+        <div role="option" data-agent-secret>VAULT-SECRET-0114</div>
+        <div role="option">Public vault</div>
+      </div>
+    </section>
+
+    <section aria-label="Protected choices">
+      <div role="listbox" aria-label="Cleanup mode" data-pick-list>
+        <div role="option" aria-selected="true">Keep</div>
+        <div role="option" data-agent-confirm="Purging deletes every file.">Purge</div>
+        <div role="option" data-agent-hidden>Shred</div>
+        <div role="option" aria-disabled="true">Compress</div>
+      </div>
+      <select aria-label="Retention">
+        <option value="30">30 days</option>
+        <option value="1" data-agent-confirm="Deletes old data right away.">1 day</option>
+      </select>
+    </section>
+
+    <section aria-label="Account">
+      <form id="close-form" data-agent-confirm="Closing the account cannot be undone.">
+        <input type="text" aria-label="Reason">
+      </form>
+      <button type="submit" form="close-form">Close account</button>
+      <button type="button" id="publish">Publish draft</button>
+    </section>
+
+    <section aria-label="Choices">
+      <select aria-label="Plan" id="plan">
+        <option value="free" selected>Free</option>
+        <option value="team">Team</option>
+      </select>
+      <select aria-label="Seat count" id="seats">
+        <option value="one" selected>One</option>
+        <option value="fifty" disabled>Fifty</option>
+        <optgroup label="Large" disabled><option value="hundred">Hundred</option></optgroup>
+      </select>
+      <input type="text" aria-label="Workspace id" readonly value="ws-1">
+      <input type="text" aria-label="Legacy field" disabled>
+      <select multiple aria-label="Channels" id="channels">
+        <option value="email" selected>Email</option>
+        <option value="chat" selected>Chat</option>
+        <option value="phone">Phone</option>
+        <option value="fax" disabled>Fax</option>
+      </select>
+    </section>
+
+    <section aria-label="Unreadable">
+      <iframe title="Embedded" srcdoc="<button>Framed button</button>"></iframe>
+      <div id="open-host"></div>
+      <closed-widget></closed-widget>
+      <div contenteditable="true">Editable notes</div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      window.__counts = { submitted: 0, published: 0, picked: {} };
+
+      document.querySelectorAll('[data-pick-list]').forEach(function (list) {
+        list.querySelectorAll('[role="option"]').forEach(function (item) {
+          item.addEventListener('click', function () {
+            var name = item.textContent.trim();
+            window.__counts.picked[name] = (window.__counts.picked[name] || 0) + 1;
+            list.querySelectorAll('[role="option"]').forEach(function (other) {
+              other.setAttribute('aria-selected', other === item ? 'true' : 'false');
+            });
+          });
+        });
+      });
+
+      document.getElementById('close-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        window.__counts.submitted += 1;
+      });
+
+      document.getElementById('publish').addEventListener('click', function () {
+        window.__counts.published += 1;
+      });
+
+      // A page that refuses a choice: the plan always goes back to free.
+      var plan = document.getElementById('plan');
+      plan.addEventListener('change', function () { plan.value = 'free'; });
+
+      document.getElementById('open-host').attachShadow({ mode: 'open' }).innerHTML =
+        '<button type="button">Shadow button</button>';
+
+      customElements.define('closed-widget', class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: 'closed' }).innerHTML = '<button type="button">Closed button</button>';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

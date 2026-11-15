@@ -821,7 +821,9 @@ async function driveLoop(args, ctx, verb, view) {
   if (verb === 'propose') {
     const proposals = await loop.propose(view.id);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after) });
+    const stall = proposals.length ? null : loop.lastStall();
+    const empty = stall ? `nothing usable was proposed: ${stall.line}` : 'nothing usable was proposed';
+    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : empty, { ok: proposals.length > 0, proposals, campaign: after, next: decide(after), ...(stall ? { engine: stall.engine, cause: stall.kind, next_step: stall.next } : {}) });
     return proposals.length ? 0 : 1;
   }
   if (verb === 'step') {

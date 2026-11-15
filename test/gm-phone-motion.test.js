@@ -22,7 +22,7 @@ const IN_PLACE = new Set(['deck flip']);
 
 test('browser: every orb path glides, with no jump, no cut, and no frozen moment, and nothing runs once a card lands', { skip, timeout: 240000 }, async () => {
   const out = await paths.pathsTrace({ chromePath: CHROME });
-  assert.equal(out.paths.length, paths.PATHS.length);
+  assert.equal(out.paths.length, paths.PATHS.length, show(out.paths.map(p => p.name)));
   for (const p of out.paths) {
     assert.equal(p.error, undefined, show(p));
     // only the beat the chosen answer holds is still
@@ -66,7 +66,122 @@ test('trace: a cut in the frames reads as a cut, and a fade as a fade', () => {
   // a line that pops in reads as a cut, and its words are kept
   const popped = paths.summarizePath([frame(0, 0, null), frame(16.7, 0, { text: 'tap to think', o: 1 })], 0);
   assert.equal(popped.line_fade, 1, show(popped));
-  assert.deepEqual(popped.lines_while_moving, ['tap to think']);
+  assert.deepEqual(popped.lines_while_moving, ['tap to think'], show(popped));
+});
+
+// The lava moves by the clock. Hosted runs on 2026-11-14 and 2026-11-15 failed
+// the glide check with one 100ms frame and a lava step near 120px: six frames
+// of a smooth motion, read as one jump. A step is read per frame of the time
+// it took; a real jump still reads as one, in a stall or not.
+test('trace: a smooth glide through a frame the machine held is not a jump, and a real jump still is', () => {
+  const frame = (t, x) => ({ t, ft: t, orb: { frame: 0, mode: 'card', step: 0, mean: 0, ms: 16.7 }, sphere: 0, stage: null, lava: { r: { x, y: 100, w: 80, h: 80 }, o: 1, at: t }, box: null, ghost: 0, line: null, foot: { r: { x: 0, y: 0, w: 10, h: 10 }, o: 0 }, busy: true });
+  // 10px per 60fps frame for 40 frames, at 16.7ms each, except where the machine held a frame
+  const glide = (heldAt, heldMs, jumpAt = -1, jumpPx = 0) => {
+    const out = [];
+    let t = 0, x = 0;
+    for (let i = 0; i < 40; i++) {
+      const ms = i === heldAt ? heldMs : 16.7;
+      t += ms;
+      x += 10 * ms / 16.7 + (i === jumpAt ? jumpPx : 0);
+      out.push(frame(t, x));
+    }
+    return paths.summarizePath(out, 0);
+  };
+  const smooth = glide(-1, 0);
+  assert.ok(smooth.lava_step <= 10.01 && smooth.lava_speed_change <= 0.01, show(smooth));
+  // the page held 100ms, as a busy runner does: before, this read as a 60px step and a 50px change of speed
+  const held = glide(20, 100);
+  assert.equal(held.max_frame_ms, 100, show(held));
+  assert.ok(held.lava_step <= 10.01 && held.lava_speed_change <= 0.01, show(held));
+  // a 200px jump in a frame of normal length
+  const jump = glide(-1, 0, 20, 200);
+  assert.ok(jump.lava_step > 45 && jump.lava_speed_change > 15, show(jump));
+  // a 60px jump inside a 100ms frame reads as the 60px it went past the glide
+  const hidden = glide(20, 100, 20, 60);
+  assert.ok(hidden.lava_step > 45 && hidden.lava_step < 75, show(hidden));
+  // the same for a jump inside a frame held two seconds
+  const frozen = glide(20, 2000, 20, 60);
+  assert.ok(frozen.lava_step > 45, show(frozen));
+  // a held step with no steady frame beside it counts at its full size, as before
+  const { readSteps } = require('../scripts/gm-phone-trace');
+  assert.deepEqual(readSteps([null, { d: 60, ms: 100 }, null], 50), [null, 60, null]);
+  assert.deepEqual(readSteps([{ d: 10, ms: 16.7 }, { d: 60, ms: 100 }, { d: 10, ms: 16.7 }], 50).map(Math.round), [10, 10, 10]);
+});
+
+// The frozen moment is read on the wall clock. The chosen answer holds for
+// a planned 150ms beat, and the limit is 200ms. A frame the machine holds
+// as that beat ends delays the timer that starts the next motion, so the
+// still ran on by the held time: hosted runs on 2026-11-13 read 340ms and
+// 398ms. Only a held frame at the end of a still can stretch it.
+test('trace: a frame the machine holds as a still beat ends does not stretch the beat, and a still too long still reads as too long', () => {
+  const frame = (t, x) => ({ t, ft: t, orb: { frame: 0, mode: 'card', step: 0, mean: 0, ms: 16.7 }, sphere: 0, stage: null, lava: null, box: { o: 1, card: 'c', title: { x, y: 0, w: 10, h: 10 }, text: 'c' }, ghost: 0, line: null, foot: { r: { x: 0, y: 0, w: 10, h: 10 }, o: 1 }, busy: true });
+  // ten moving frames, a still beat of beatMs, ten moving frames. held: a
+  // frame of heldMs at that many 60fps frames into the beat (-1 none), and
+  // late: the beat runs on by that much, as when the hold delays its timer
+  // bunch: after the held frame Chrome reads that many frames 2ms apart
+  const beat = (beatMs, heldAt = -1, heldMs = 0, late = 0, bunch = 0) => {
+    const out = [];
+    let t = 0, x = 0;
+    const push = () => out.push(frame(t, x));
+    push();
+    for (let i = 0; i < 10; i++) { t += 16.7; x += 2; push(); }
+    let left = beatMs + late;
+    for (let i = 0; left >= 16.7 || i <= heldAt; i++) {
+      const ms = i === heldAt ? heldMs : 16.7;
+      t += ms; left -= ms; push();
+      if (i === heldAt) for (let j = 0; j < bunch; j++) { t += 2; left -= 2; push(); }
+    }
+    for (let i = 0; i < 10; i++) { t += 16.7; x += 2; push(); }
+    return paths.summarizePath(out, 0);
+  };
+  const plain = beat(150);
+  assert.ok(plain.longest_still_moving_ms >= 125 && plain.longest_still_moving_ms <= 170, show(plain));
+  // the beat's last frame held 100ms and its timer ran that much late, as on
+  // a busy runner: before, this read about 250ms and failed the 200ms check
+  const held = beat(150, 8, 100, 90);
+  assert.equal(held.max_frame_ms, 100, show(held));
+  assert.ok(held.longest_still_moving_ms <= 200, show(held));
+  // the same with two frames read 2ms apart after the hold, as the 'yes' path
+  // read under a 100ms hold every 400ms: 233ms before
+  const bunched = beat(150, 8, 100, 90, 2);
+  assert.ok(bunched.max_frame_ms === 100 && bunched.longest_still_moving_ms <= 200, show(bunched));
+  // a beat planned too long fails with no held frame, and with one inside it
+  assert.ok(beat(260).longest_still_moving_ms > 200, show(beat(260)));
+  const inside = beat(260, 5, 100);
+  assert.ok(inside.max_frame_ms === 100 && inside.longest_still_moving_ms > 200, show(inside));
+  // and with the held frame at its end
+  const longHeld = beat(260, 14, 100, 90);
+  assert.ok(longHeld.max_frame_ms === 100 && longHeld.longest_still_moving_ms > 200, show(longHeld));
+  // the longest hold seen on a hosted runner, 250ms, as the beat ends: excused
+  const slowest = beat(150, 8, 250, 240);
+  assert.ok(slowest.max_frame_ms === 250 && slowest.longest_still_moving_ms <= 200, show(slowest));
+  // a page that hangs 2s or 5s as the beat ends is a hang, not a busy
+  // machine: it counts in full, with or without frames bunched after it
+  for (const [hangMs, bunch] of [[2000, 0], [2000, 2], [5000, 0]]) {
+    const hang = beat(150, 8, hangMs, hangMs - 10, bunch);
+    assert.ok(hang.max_frame_ms === hangMs && hang.longest_still_moving_ms > 200, show(hang));
+  }
+  // just past the longest hosted hold counts in full too
+  const over = beat(150, 8, 300, 290);
+  assert.ok(over.max_frame_ms === 300 && over.longest_still_moving_ms > 200, show(over));
+});
+
+// The quick bloom after an answer grows for 140ms, about eight frames. A
+// frame the machine held 100ms on its first or second frame swallowed the
+// fast middle of the growth: the page placed the lava by the clock, so the
+// next frame drew it about 110px bigger, a jump on screen that the reader
+// rightly saw (lava_size_step 62 to 172 against a limit of 45). The page
+// holds the lava where it was through a held frame instead.
+const HOLD_BLOOM = (ms, nth) => `(function () { var armed = true, n = 0; (function tick() { var lava = document.getElementById('lava'); if (lava) { var growing = lava.classList.contains('alive') && !lava.classList.contains('still') && getComputedStyle(lava).visibility !== 'hidden'; if (growing && armed) { n += 1; if (n === ${nth}) { armed = false; var t = performance.now(); while (performance.now() - t < ${ms}) {} } } else if (!growing) { armed = true; n = 0; } } requestAnimationFrame(tick); })(); })();`;
+test('browser: a frame the machine holds early in the quick bloom draws no jump', { skip, timeout: 240000 }, async () => {
+  for (const [ms, nth] of [[100, 1], [100, 2], [167, 1]]) {
+    const p = byName(await paths.pathsTrace({ chromePath: CHROME, only: ['tapped answer'], before: HOLD_BLOOM(ms, nth) }))['tapped answer'];
+    const said = `held ${ms}ms on bloom frame ${nth}\n${show(p)}`;
+    assert.equal(p.error, undefined, said);
+    assert.ok(p.max_frame_ms >= ms - 5, said);
+    assert.ok(p.lava_step <= 45 && p.lava_size_step <= 45 && p.lava_speed_change <= 15, said);
+    assert.ok(p.longest_still_moving_ms <= 200, said);
+  }
 });
 
 test('browser: on a phone six times slower the sphere re-forms in about the same time as at full speed', { skip, timeout: 120000 }, async () => {
@@ -90,7 +205,7 @@ test('browser: the big orb sets its fill color once a brightness level, not once
     await send('Page.reload');
     await p.until("document.readyState === 'complete' && document.getElementById('line').textContent === 'tap to think'", 'the big orb');
     await new Promise(r => setTimeout(r, 600));
-    return p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, s0 = window.__draw.styles, a0 = window.__draw.arcs; setTimeout(function () { var n = o.frame - f0; done({ frames: n, styles: (window.__draw.styles - s0) / n, arcs: (window.__draw.arcs - a0) / n }); }, 1000); })");
+    return p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, s0 = window.__draw.styles, a0 = window.__draw.arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)), styles: (window.__draw.styles - s0) / n, arcs: (window.__draw.arcs - a0) / n }); }, 1000); })");
   }, undefined, { firstCard: false });
   const said = show(out);
   assert.ok(out.frames > 20, said);
@@ -108,6 +223,8 @@ test('browser: a page that opens on a card shows the card fading in, never the b
   assert.equal(card.sphere_frames_before_card, 0, said);
   assert.equal(card.line_frames_before_card, 0, said);
   assert.equal(card.footer_seen_jump, 0, said);
+  // a capture made mostly of stalls shows too little of the fade to judge, so it cannot pass
+  assert.equal(card.unreliable, null, `${card.unreliable}\n${said}`);
   assert.ok(card.card_frames_fading >= 6 && card.card_fade <= 0.15, said);
   assert.equal(card.dots_drawn, 0, said);
   // with no card the big orb starts and its line fades in
@@ -130,7 +247,7 @@ test('browser: turning the phone keeps the small orb centred over the card, and 
 test('browser: turning a phone with the big orb up gives the sphere the dots its new size holds, every frame on the way draws it, and turning back brings the upright 5500 back', { skip, timeout: 90000 }, async () => {
   const { onPhone, cardDesk, PHONE } = require('../scripts/gm-phone-trace');
   const COUNT = "(function () { var P = CanvasRenderingContext2D.prototype, arc = P.arc; window.__arcs = 0; window.__frames = []; P.arc = function () { window.__arcs += 1; return arc.apply(this, arguments); }; (function tick() { window.__frames.push(window.__arcs); requestAnimationFrame(tick); })(); })();";
-  const DRAWN = "new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ size: Math.round(document.getElementById('orb').getBoundingClientRect().width), per_frame: Math.round((window.__arcs - a0) / (o.frame - f0)) }); }, 500); })";
+  const DRAWN = "new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ size: Math.round(document.getElementById('orb').getBoundingClientRect().width), per_frame: Math.round((window.__arcs - a0) / n), frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)) }); }, 500); })";
   const out = await onPhone(cardDesk(null, async () => ({ card: null })), CHROME, async (p, send) => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: COUNT });
     await send('Page.reload');
@@ -173,7 +290,9 @@ test('browser: under reduced motion every path is plain fades: nothing travels, 
     // before, a card that came while the sphere showed took it away in one frame, and the footer jumped 370px in sight
     assert.ok(p.card_fade <= 0.15 && p.sphere_drop <= 0.15, show(p));
     assert.equal(p.footer_seen_jump, 0, show(p));
-    // the line's words fade out and in too, never change in a frame
+    // the line's words fade out and in too, never change in a frame. A 0.2s
+    // fade moves 0.083 a 60fps frame: 0.15 passes one step and fails two, as
+    // when a timer emptied the words two steps before their fade had ended
     assert.ok(p.line_fade <= 0.15, show(p));
     if (p.lands) assert.deepEqual([p.after.orb_frames, p.after.running], [0, []], show(p));
   }
@@ -214,7 +333,7 @@ test('browser: with the pointer at any corner, the brightest dots are still draw
       await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
       // the light eases toward the pointer; once there, count what each frame draws
       await new Promise(r => setTimeout(r, 1500));
-      seen.push(await p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; setTimeout(function () { done({ frames: o.frame - f0, per_frame: (window.__arcs - a0) / (o.frame - f0) }); }, 500); })"));
+      seen.push(await p.run("new Promise(function (done) { var o = document.getElementById('orb').__orb, f0 = o.frame, a0 = window.__arcs; var t0 = performance.now(); setTimeout(function () { var n = o.frame - f0, ms = performance.now() - t0; done({ frames: n, window_ms: Math.round(ms), frame_ms: Math.round(ms / Math.max(1, n)), per_frame: (window.__arcs - a0) / n }); }, 500); })"));
     }
     return seen;
   }, undefined, { firstCard: false });

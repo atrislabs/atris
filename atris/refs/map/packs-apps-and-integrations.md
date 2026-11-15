@@ -1,6 +1,6 @@
 # Packs, apps and integrations
 
-Packs, apps, buying, Google and Slack integrations and outside CLI wrappers. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+Packs, apps, buying, Google and Slack integrations and outside CLI wrappers. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Quick Reference Index
 
@@ -29,7 +29,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **atris pack:** `commands/pack-craft.js:1` scaffolds a research pack with `atris pack craft "<topic>" [--dir <target>] [--force]`; `commands/pack.js` publishes, installs, updates, lists, and runs packs, preserves browser-authored visibility, price, and a declared in-pack verifier path while rebuilding manifests, generates complete canonical SHA-256 `content-hashes` maps on publish, verifies every declared digest before install/update state or writes, rejects signed byte changes hidden behind an unchanged version, reports verified/partial/failed/absent hash truth in inspect, validates a single root manifest plus normalized paths and symlink-safe destinations before archive writes, records successful remote observations in `.atris/state/pack.json`, routes registry and URL updates through one semantic-version gate, rejects downgrades unless `--allow-downgrade` is explicit, stages every accepted update in `.upstream/` without overwriting installed files, reports installed, origin, remote-check, and staged-review truth, resolves `atris pack show <slug|dir>` into an eight-line student card with purpose, readiness, local location, download/update truth, plain access, verifier availability, and one next command, keeps `atris pack inspect <slug|dir> [--json]` as the expert read-only location, declared description, origin, provenance, entry-contract, non-executed verifier availability, capability, update-state, file-summary, and hash-truth report, names every uncovered installed content path even when hashes are wholly absent, and emits one versioned automation object for success, help, and failures, classifies local contracts as ready/revise/reject through the offline, read-only `atris pack doctor <slug|dir> [--json]` integrity, capability, entrypoint, payload, provenance, and obvious lexical-alignment checks, prints source-aware install destination/source/git preflight before writing, hands successful installs to the student card before a bounded `pack run`, never recommends raw Claude execution that bypasses the pack boundary, resolves manifest entrypoints and `RUN.md`, accepts one capped local regular UTF-8 `--input` file for an enforced run while injecting only its bytes and receipting only size plus digest, forces that evidence path headless, and pipes the separated opening/evidence envelope to Claude stdin with `--print` so it never enters runner argv, exposes declared shipped skills through a transient skills-only Claude plugin whose frontmatter is projected through a safe metadata allowlist, runs packets with honest zero-context orientation, refuses unbounded `--trust` for legacy packs while pointing users to explicit grants, and provides read-only `atris pack runs` history whose derived `launcher-lost` state says Atris lost lifecycle control without claiming the runner stopped or rewriting receipt evidence; `commands/console.js` preserves interactive no-input runs while providing the stdin opening-prompt transport; `lib/pack-capabilities.js` defines the canonical `pack.read`, `pack.write`, `web.read`, and high-risk `host.shell` vocabulary, maps declarations plus explicit per-run `--grant` escalations to an exact local Claude tool ceiling, rejects symlinked declared execution trees before Atris gathers pre-launch context, disables Claude memory files, auto-memory, Chrome integration, and headless session persistence while disclosing interactive transcript and workspace-trust behavior, records opening-prompt stdin/argv truth, disables user/project extension discovery, skill approval/hook controls, and invisible skill shell preprocessing while importing only user deny rules and requesting subprocess credential scrubbing, confines built-in file tools to the pack root, preflights WebFetch destinations against literal and DNS-resolved local/private addresses while disclosing DNS-rebinding limits, blocks project settings and MCP discovery, makes `--trust` the only pack-run pre-approval switch inside that ceiling, writes requested/granted/used receipts with direct slash-skill coverage limits and launcher identity, records sanitized Claude session-end reasons, distinguishes exit-unconfirmed ended sessions from live runs, and fails declared-capability cloud runs closed until cloud can enforce the same contract; `lib/zip.js` provides zero-dependency zip reads and writes with pre-inflation archive, entry-count, per-entry, and aggregate unpacked limits plus post-inflation size and checksum verification; `bin/atris.js` routes the command; `test/pack*.test.js` and `test/zip.test.js` cover publishing, install/update/pull/status, craft/run/share, show/doctor/inspect, install preflight, run orientation, operator-input stdin/argv privacy, capability enforcement and receipts, sanitized skill loading, packet safety, and adversarial ZIP resources.
   Doctor readiness counts non-empty binary files and text with usable content; empty or whitespace-only text cannot qualify through a title-matching filename alone. Promise alignment uses declared description rather than title identity and emits reproducible bounded lexical evidence: promise source/tokens, payload paths, per-file text bytes scanned, generated/empty exclusions, limits, and overlap; missing description revises instead of inventing a promise. JSON mode returns one versioned object for verdicts, help, usage failures, pack-resolution failures, and invalid local artifacts.
   Sealing: `atris pack seal <dir> [--type <t>] [--entrypoint <file>]` fills only missing contract fields, always rebuilds canonical content hashes without hashing `pack.json`, and prints the existing doctor verdict; `test/pack.test.js` covers ready sealing, explicit-field preservation, resealing, and self-hash exclusion.
-  Sharing and discovery: `buildManifest` is visibility-aware (`--visibility public|unlisted|private`; new packs default unlisted while legacy omissions stay unchanged), `atris pack share <slug> --for "<Name>" [--days N]` lists, mints, and revokes authenticated signed share links individually or in bulk with a public-only `?for=` fallback, `atris pack browse [--mine]` lists up to 50 registry packs with owner visibility, optional prices, and optional stars, `atris pack sales` shows authenticated seller earnings, and `atris pack purchases` lists a buyer's authenticated purchases; unpaid `atris pack install <slug>` (and registry pull/update) treats a paid pack without entitlement, or an empty/402/403 download, as a buy barrier: `lib/pack-core.js:719` `paidPackBarrierFromResponse` and `lib/pack-core.js:780` `printPaidPackBarrier` print the pack name, price when the API sends `price_cents`/`priceCents`, the pack page to buy, and `atris login` to link an existing purchase, then exit nonzero without writing an empty install; `test/pack-share.test.js` covers signed sharing, link listing, individual and bulk revocation, fallback safety, browse auth/table/caps, and seller sales output/auth, and `test/pack.test.js` covers unpaid paid-pack install copy plus no-write, refunded sales, and buyer purchase output/auth in addition to browse pricing.
+  Sharing and discovery: `buildManifest` is visibility-aware (`--visibility public|unlisted|private`; new packs default unlisted while legacy omissions stay unchanged), `atris pack share <slug> --for "<Name>" [--days N]` lists, mints, and revokes authenticated signed share links individually or in bulk with a public-only `?for=` fallback, `atris pack browse [--mine]` lists up to 50 registry packs with owner visibility, optional prices, and optional stars, `atris pack sales` shows authenticated seller earnings, and `atris pack purchases` lists a buyer's authenticated purchases; unpaid `atris pack install <slug>` (and registry pull/update) treats a paid pack without entitlement, or an empty/402/403 download, as a buy barrier: `lib/pack-core.js` `paidPackBarrierFromResponse` and `lib/pack-core.js` `printPaidPackBarrier` print the pack name, price when the API sends `price_cents`/`priceCents`, the pack page to buy, and `atris login` to link an existing purchase, then exit nonzero without writing an empty install; `test/pack-share.test.js` covers signed sharing, link listing, individual and bulk revocation, fallback safety, browse auth/table/caps, and seller sales output/auth, and `test/pack.test.js` covers unpaid paid-pack install copy plus no-write, refunded sales, and buyer purchase output/auth in addition to browse pricing.
 
 ## Feature: App Pack Wrapper (`atris apps`)
 
@@ -54,10 +54,10 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Agent-friendly wrapper for the official `gh` cli with binary detection, auth status, and pull request operations.
 
-- **Command:** `commands/github.js:3` (`githubCommand`)
-- **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
+- **Command:** `commands/github.js` (`githubCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:616` (`github cli wrapper`)
-- **Known command:** `lib/known-commands.js:7` (`github`)
+- **Known command:** `lib/known-commands.js` (`github`)
 - **Routing:** `bin/atris.js:2141` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
 - **Regression:** `test/official-cli-integrations.test.js:38` (workspace-free help), `test/official-cli-integrations.test.js:53` (missing `gh` install hint), `test/official-cli-integrations.test.js:67` (auth status), `test/official-cli-integrations.test.js:84` (passthrough args)
@@ -68,12 +68,12 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Agent-friendly wrapper for the official `vercel` cli with binary detection, auth status, and deployment operations.
 
-- **Command:** `commands/vercel.js:3` (`vercelCommand`)
-- **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
+- **Command:** `commands/vercel.js` (`vercelCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:617` (`vercel cli wrapper`)
-- **Known command:** `lib/known-commands.js:7` (`vercel`)
+- **Known command:** `lib/known-commands.js` (`vercel`)
 - **Routing:** `bin/atris.js:2144` (`command === 'vercel'`)
-- **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
+- **Subcommands:** `commands/vercel.js` (`deploy`), `commands/vercel.js` (`ls`), `commands/vercel.js` (`logs`), `commands/vercel.js` (`inspect`)
 - **Regression:** `test/official-cli-integrations.test.js:100` (workspace-free help), `test/official-cli-integrations.test.js:115` (missing `vercel` install hint), `test/official-cli-integrations.test.js:129` (auth status), `test/official-cli-integrations.test.js:146` (passthrough args)
 
 **Search:** `rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js`
@@ -82,12 +82,12 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Agent-friendly wrapper for the official `supabase` cli with binary detection, auth status, and project/database/function operations.
 
-- **Command:** `commands/supabase.js:3` (`supabaseCommand`)
-- **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
+- **Command:** `commands/supabase.js` (`supabaseCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:618` (`supabase cli wrapper`)
-- **Known command:** `lib/known-commands.js:7` (`supabase`)
+- **Known command:** `lib/known-commands.js` (`supabase`)
 - **Routing:** `bin/atris.js:2147` (`command === 'supabase'`)
-- **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
+- **Subcommands:** `commands/supabase.js` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
 - **Regression:** `test/official-cli-integrations.test.js:226` (workspace-free help), `test/official-cli-integrations.test.js:241` (missing `supabase` install hint), `test/official-cli-integrations.test.js:255` (auth status), `test/official-cli-integrations.test.js:272` (status passthrough), `test/official-cli-integrations.test.js:288` (db passthrough)
 
 **Search:** `rg "supabaseCommand|supabase cli wrapper|supabase help is workspace-free" bin/atris.js commands/supabase.js test/official-cli-integrations.test.js`
@@ -96,10 +96,10 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Agent-friendly wrapper for the official `linear` cli with binary detection, auth status, and issue operations.
 
-- **Command:** `commands/linear.js:3` (`linearCommand`)
-- **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
+- **Command:** `commands/linear.js` (`linearCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:619` (`linear cli wrapper`)
-- **Known command:** `lib/known-commands.js:7` (`linear`)
+- **Known command:** `lib/known-commands.js` (`linear`)
 - **Routing:** `bin/atris.js:2150` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
 - **Regression:** `test/official-cli-integrations.test.js:304` (workspace-free help), `test/official-cli-integrations.test.js:319` (missing `linear` install hint), `test/official-cli-integrations.test.js:333` (auth status), `test/official-cli-integrations.test.js:350` (passthrough args)
@@ -110,12 +110,12 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Agent-friendly wrapper for the official `stripe` cli with binary detection, auth status, and webhook/product operations.
 
-- **Command:** `commands/stripe.js:3` (`stripeCommand`)
-- **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
+- **Command:** `commands/stripe.js` (`stripeCommand`)
+- **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:620` (`stripe cli wrapper`)
-- **Known command:** `lib/known-commands.js:7` (`stripe`)
+- **Known command:** `lib/known-commands.js` (`stripe`)
 - **Routing:** `bin/atris.js:2153` (`command === 'stripe'`)
-- **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
+- **Subcommands:** `commands/stripe.js` (`listen`), `commands/stripe.js` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
 - **Regression:** `test/official-cli-integrations.test.js:366` (workspace-free help), `test/official-cli-integrations.test.js:381` (missing `stripe` install hint), `test/official-cli-integrations.test.js:395` (auth status), `test/official-cli-integrations.test.js:412` (listen passthrough), `test/official-cli-integrations.test.js:428` (products passthrough)
 
 **Search:** `rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js`
@@ -134,14 +134,14 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris gmail connect [name]` (`commands/integrations.js:535`, `gmailConnectUnified`): starts browser auth and polls its sign-in status; unbound scratch folders refuse `atris gmail connect` via the same `requireAccountBound` lock (exit 2, no Gmail network, no OAuth)
 - `atris gmail accounts` (`commands/integrations.js:385`, `gmailAccounts`): prints the default-first, aligned account roster and marks the active account
 - `atris gmail use [<account_id|name>]` (`commands/integrations.js:398`, `gmailUse`): picks an account interactively or resolves an id/display name and saves the choice on the server and keeps a local copy
-- Gmail dispatch and help live in `commands/integrations.js:633` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
+- Gmail dispatch and help live in `commands/integrations.js` (`gmailCommand`); unbound scratch folders refuse bare `atris gmail` via `requireAccountBound` before this runs
 - `atris calendar [today|week]` (`commands/integrations.js:888`): Calendar events
 - `atris twitter [post <text>]` (`commands/integrations.js:1010`): Twitter posting
 - `atris slack [channels]` (`commands/integrations.js:1205`): Slack channel listing; unbound scratch folders refuse every slack verb via `requireAccountBound` before this runs
 - `atris integrations` (`commands/integrations.js:1279`): Show status of all integrations
-- **Auth:** Uses `getAuthToken()` (`lib/integrations-core.js:415`) from `~/.atris/credentials.json`
+- **Auth:** Uses `getAuthToken()` (`lib/integrations-core.js`) from `~/.atris/credentials.json`
 - **Routing:** `bin/atris.js:3047` (`command === 'gmail'`) and `bin/atris.js:3102` (`command === 'slack'`): use `requireAccountBound`, or a named business for gmail; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
-- **Help:** `bin/atris.js:1082` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:660`
+- **Help:** `bin/atris.js` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:660`
 - **Gmail regressions:** `test/gmail-triage.test.js` (rule reasons, verdict log rows, read-only Gmail calls), `test/gmail-verdicts.test.js` (legacy rows, reason passthrough, daily account summaries), `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect`, `gmail send --account foo`, and `slack send --account foo` exit 2 with no network, lookup, or send)
 - **Regression:** `test/commands-2.test.js:1468-1483` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI

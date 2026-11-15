@@ -2105,3 +2105,32 @@ test('status path refuses a disallowed check instead of promising a landing', ()
   assert.equal(evaluation.eligible, false);
   assert.equal(evaluation.reason, 'verify_command_not_allowed');
 });
+
+test('every job a run leaves waiting keeps its reason, and the status line names the causes', () => {
+  const { stuckBacklogNote, waitingReasonRows } = require('../commands/autoland');
+  const rows = waitingReasonRows([
+    { ref: 'CLI-1', action: 'skipped', reason: 'skill_eval_receipt_required', message: 'long text' },
+    { ref: 'CLI-2', action: 'skipped', reason: 'skill_eval_receipt_required' },
+    { ref: 'CLI-3', action: 'skipped', reason: 'verify_command_not_allowed' },
+    { ref: 'CLI-4', action: 'skipped' },
+    { ref: 'CLI-5', action: 'accepted', reason: 'certified_strict_verify' },
+    null,
+  ]);
+  assert.deepEqual(rows, [
+    { ref: 'CLI-1', reason: 'skill_eval_receipt_required' },
+    { ref: 'CLI-2', reason: 'skill_eval_receipt_required' },
+    { ref: 'CLI-3', reason: 'verify_command_not_allowed' },
+    { ref: 'CLI-4', reason: 'unknown' },
+  ]);
+  assert.deepEqual(waitingReasonRows(undefined), []);
+
+  const note = stuckBacklogNote({ certified: 4, scanned: 4, accepted: [], landed: [], waiting_reasons: rows });
+  assert.equal(
+    note,
+    ', 4/4 certified in review, none landed (2 skill_eval_receipt_required, 1 unknown, 1 verify_command_not_allowed)',
+  );
+  assert.equal(
+    stuckBacklogNote({ certified: 2, scanned: 2, accepted: [], landed: [] }),
+    ', 2/2 certified in review, none landed',
+  );
+});

@@ -63,11 +63,17 @@ atris/features/*
 # Campaign: shared struct spec a builder will pick up.
 !atris/features/campaign/
 !atris/features/campaign/**
+# Learning team: product brief for the wiki learn proof.
+!atris/features/learning-team/
+!atris/features/learning-team/**
 # Contract features: their validate.md rubrics are load-bearing; must travel with the code.
 !atris/features/verify-falsifiability/
 !atris/features/verify-falsifiability/**
 !atris/features/plan-review-by-validator/
 !atris/features/plan-review-by-validator/**
+# Phone approval for atris login: shared plan across three repos.
+!atris/features/phone-approval-login/
+!atris/features/phone-approval-login/**
 !atris/features/company-brain-sync/
 !atris/features/company-brain-sync/**
 !atris/features/forge-loop/
@@ -78,6 +84,8 @@ atris/features/*
 !atris/features/spaceship/**
 !atris/features/cloud-sync-simplicity/
 !atris/features/cloud-sync-simplicity/**
+!atris/features/motion-test-flake/
+!atris/features/motion-test-flake/**
 # Legacy location (deprecated)
 docs/features/
 

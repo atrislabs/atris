@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { apiRequestJson } = require('../utils/api');
-const { ensureValidCredentials, readActiveCredentials } = require('../utils/auth');
+const { ensureValidCredentials, readActiveCredentials, listProfiles, loadProfile, getSessionProfile } = require('../utils/auth');
 const agentClient = require('../utils/agent-client');
 const { readFlag } = require('../lib/arg-parser');
 const { wantsJson, wantsHelp, oneLine } = require('../lib/developer-api');
@@ -19,7 +19,52 @@ const BASE_PATH = '/auth/agent-clients';
 const ACTIONS = new Set(['create', 'list', 'revoke', 'rotate']);
 const VALUE_FLAGS = ['--name', '--scopes', '--daily-credit-cap', '--ttl', '--secret-file'];
 const SHOWN_ONCE = 'store this secret now, it will not be shown again:';
-const AGENT_CLIENT_CANNOT_MANAGE = 'agent clients are managed with your own login, not an agent client. run: atris switch <you> or atris login --force';
+// Scopes an agent client can carry today. The server holds the real list and
+// rejects anything else; this is what help and the unknown-scope hint show.
+const COMMON_SCOPES = [
+  'x-search', 'youtube', 'gmail-read', 'calendar-read',
+  'files:read', 'files:write', 'scoreboard:read', 'ai:complete',
+  'mcp:workspace:read', 'mcp:publish',
+];
+
+// The person's own saved logins, so the error can name a real switch command.
+function humanProfileNames(deps = {}) {
+  const list = deps.listProfiles || listProfiles;
+  const load = deps.loadProfile || loadProfile;
+  try {
+    return list().filter((name) => {
+      const profile = load(name);
+      return profile && profile.token && !agentClient.isAgentClientCredential(profile);
+    });
+  } catch {
+    return [];
+  }
+}
+
+// The switch command that actually reaches the login in use. ATRIS_PROFILE
+// beats everything, then this terminal's own pick, then the global login, so
+// a --global switch would not help a terminal that picked its own account.
+function switchCommandFor(name, deps = {}) {
+  const env = deps.env || process.env;
+  if (String(env.ATRIS_PROFILE || '').trim()) return `export ATRIS_PROFILE=${name}`;
+  let session = null;
+  try { session = (deps.getSessionProfile || getSessionProfile)(); } catch { session = null; }
+  return session ? `atris switch ${name}` : `atris switch ${name} --global`;
+}
+
+function cannotManageMessage(deps = {}) {
+  const names = humanProfileNames(deps);
+  const lead = 'agent clients are managed with your own login, not an agent client.';
+  if (names.length === 1) return `${lead} switch back: ${switchCommandFor(names[0], deps)}`;
+  if (names.length > 1) return `${lead} switch back with one of: ${names.map((n) => switchCommandFor(n, deps)).join(' | ')}`;
+  return `${lead} sign in as yourself: atris login --force`;
+}
+
+function withScopeHint(message) {
+  const text = String(message || '');
+  if (!/unknown scope/i.test(text)) return text;
+  return `${text}. scopes you can use: ${COMMON_SCOPES.join(', ')}`;
+}
 
 function showAgentClientHelp(log = console.log) {
   log('usage: atris agent-client create --name <name> --scopes <a,b> [--daily-credit-cap N] [--ttl SECONDS] [--secret-file <path>]');
@@ -30,6 +75,7 @@ function showAgentClientHelp(log = console.log) {
   log('an agent client lets an agent sign itself in, with no person in the loop.');
   log('create and rotate show the secret once. --secret-file writes it to a private file instead.');
   log('the agent then runs: atris login --client-id <atc_...> --client-secret-file <path>');
+  log(`scopes you can use: ${COMMON_SCOPES.join(', ')}`);
   log('needs your own login. add --json for machine output.');
 }
 
@@ -170,7 +216,7 @@ async function agentClientCommand(args = [], deps = {}) {
 
   const readActive = deps.readActiveCredentials || readActiveCredentials;
   if (agentClient.isAgentClientCredential(readActive())) {
-    return fail(AGENT_CLIENT_CANNOT_MANAGE);
+    return fail(cannotManageMessage(deps));
   }
 
   const request = deps.apiRequestJson || apiRequestJson;
@@ -180,7 +226,7 @@ async function agentClientCommand(args = [], deps = {}) {
     return fail('not logged in. run: atris login');
   }
   if (ensured.source === agentClient.AUTH_TYPE || agentClient.isAgentClientCredential(ensured.credentials)) {
-    return fail(AGENT_CLIENT_CANNOT_MANAGE);
+    return fail(cannotManageMessage(deps));
   }
   const token = ensured.credentials.token;
 
@@ -211,7 +257,7 @@ async function agentClientCommand(args = [], deps = {}) {
     const secret = result && result.data && result.data.client_secret;
     const message = status === 404 && parsed.action !== 'revoke' && parsed.action !== 'rotate'
       ? 'agent clients are not live on the server yet. try again after the backend update.'
-      : agentClient.scrub(oneLine(result && (result.data || result.error)), [token, secret]);
+      : withScopeHint(agentClient.scrub(oneLine(result && (result.data || result.error)), [token, secret]));
     return fail(message, { status: status || 0 });
   }
 

@@ -6,6 +6,171 @@ const escapeRegExp = require('../lib/escape-regexp');
 const { localDay } = require('../lib/local-day');
 const { wikiMetabolismNudge } = require('../lib/wiki');
 
+const PRESERVED_HYGIENE_CLASSES = new Set(['ACTIVE_IN_FLIGHT', 'UNPROVABLE_KEEP']);
+
+/**
+ * Parse CLI arguments for `atris clean`.
+ */
+function parseCleanArgs(args = []) {
+  const list = Array.isArray(args) ? args : [];
+  let dryRun = false;
+  let json = false;
+  let apply = false;
+  let vaultOnly = false;
+  let graceMinutes = 30;
+  let error = null;
+
+  const setError = (msg) => {
+    if (!error) error = msg;
+  };
+
+  for (let i = 0; i < list.length; i += 1) {
+    const arg = String(list[i]);
+    if (arg === '--dry-run' || arg === '-n') {
+      dryRun = true;
+      continue;
+    }
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--apply' || arg === '--vault') {
+      apply = true;
+      continue;
+    }
+    if (arg === '--vault-only') {
+      vaultOnly = true;
+      continue;
+    }
+    if (arg === '--grace-minutes' || arg.startsWith('--grace-minutes=')) {
+      let raw = '';
+      if (arg.startsWith('--grace-minutes=')) {
+        raw = arg.slice('--grace-minutes='.length);
+      } else if (i + 1 < list.length && !String(list[i + 1]).startsWith('--')) {
+        raw = String(list[i + 1]);
+        i += 1;
+      }
+      const parsed = raw === '' ? NaN : Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setError('--grace-minutes requires a non-negative number.');
+      } else {
+        graceMinutes = parsed;
+      }
+      continue;
+    }
+  }
+
+  return { dryRun, json, apply, vaultOnly, graceMinutes, error };
+}
+
+function resolveGraceMinutes(options = {}) {
+  if (options.graceMinutes === undefined || options.graceMinutes === null) return 30;
+  const n = Number(options.graceMinutes);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+function preservedHygieneEntries(gitHygiene) {
+  return (gitHygiene?.entries || []).filter((e) => PRESERVED_HYGIENE_CLASSES.has(e.cls));
+}
+
+function gitClassSuffix(cls) {
+  if (PRESERVED_HYGIENE_CLASSES.has(cls)) return ' (preserved)';
+  if (cls === 'SECRET_OR_FAT_QUARANTINE') return ' (quarantine)';
+  return '';
+}
+
+function collectPermissionLocked(vaultOutcome, recoveredVaults = []) {
+  const fromVault = vaultOutcome?.resetStats?.skippedPermissionLocked || [];
+  const fromRecovered = (recoveredVaults || []).flatMap((r) => r.resetStats?.skippedPermissionLocked || []);
+  return [...new Set([...fromVault, ...fromRecovered])];
+}
+
+function renderGitHygieneText(gitHygiene, vaultOutcome, options = {}, recoveredVaults = []) {
+  if (!gitHygiene || !gitHygiene.isGitRepo) return;
+
+  const preserved = preservedHygieneEntries(gitHygiene);
+  const replayLocked = (recoveredVaults || []).flatMap((r) => r.resetStats?.skippedPermissionLocked || []);
+  if (vaultOutcome && vaultOutcome.applied && vaultOutcome.vaultId) {
+    const vaultedFiles = vaultOutcome.receipt?.vaulted_files || [];
+    const quarantinedFiles = vaultOutcome.receipt?.quarantine_files || [];
+    const slices = Object.keys(vaultOutcome.refs || {});
+    const sliceText = slices.length ? ` (slices: ${slices.join(', ')})` : '';
+    console.log(`✓ Vaulted ${vaultedFiles.length} dirty git ${vaultedFiles.length === 1 ? 'file' : 'files'} to ${vaultOutcome.vaultId}${sliceText}`);
+    if (quarantinedFiles.length > 0 && vaultOutcome.quarantineDir) {
+      console.log(`✓ Quarantined ${quarantinedFiles.length} secret/fat ${quarantinedFiles.length === 1 ? 'file' : 'files'} to ${vaultOutcome.quarantineDir}`);
+    }
+    const stats = vaultOutcome.resetStats;
+    if (stats) {
+      console.log(`  reset ${stats.resetCount || 0} tracked, removed ${stats.unlinkedCount || 0} untracked`);
+      if ((stats.skippedConcurrentEdit || []).length > 0) {
+        console.log(`⚠ Skipped ${stats.skippedConcurrentEdit.length} concurrently modified ${stats.skippedConcurrentEdit.length === 1 ? 'file' : 'files'}:`);
+        stats.skippedConcurrentEdit.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+        if (stats.skippedConcurrentEdit.length > 5) {
+          console.log(`   ... and ${stats.skippedConcurrentEdit.length - 5} more`);
+        }
+      }
+      if ((stats.skippedPermissionLocked || []).length > 0) {
+        console.log(`⚠ Skipped ${stats.skippedPermissionLocked.length} permission-locked ${stats.skippedPermissionLocked.length === 1 ? 'file' : 'files'} (EPERM/EACCES):`);
+        stats.skippedPermissionLocked.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+        if (stats.skippedPermissionLocked.length > 5) {
+          console.log(`   ... and ${stats.skippedPermissionLocked.length - 5} more`);
+        }
+      }
+    }
+    if (preserved.length > 0) {
+      console.log(`⚠ Preserved ${preserved.length} in-flight/unprovable ${preserved.length === 1 ? 'file' : 'files'} on disk:`);
+      preserved.slice(0, 5).forEach((e) => console.log(`   • ${e.relPath} (${e.cls})`));
+      if (preserved.length > 5) {
+        console.log(`   ... and ${preserved.length - 5} more`);
+      }
+    }
+    if (gitHygiene.remainingDirty === 0) {
+      console.log('✓ Working tree is clean (0 dirty git files)');
+    }
+    console.log('');
+    return;
+  }
+
+  if (gitHygiene.dirtyCount === 0) {
+    console.log('✓ Working tree is clean (0 dirty git files)');
+    return;
+  }
+
+  const preservedCount = preserved.length;
+  const modeHint = options.apply && options.dryRun && gitHygiene.actionableCount > 0
+    ? '; dry-run would vault actionable files'
+    : '';
+  console.log(`⚠ ${gitHygiene.dirtyCount} dirty git ${gitHygiene.dirtyCount === 1 ? 'file' : 'files'} (${gitHygiene.actionableCount} actionable, ${preservedCount} preserved${modeHint}):`);
+  const entriesByClass = Object.entries(gitHygiene.byClass || {})
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const [cls, count] of entriesByClass) {
+    console.log(`   • ${cls}: ${count}${gitClassSuffix(cls)}`);
+  }
+  if ((gitHygiene.topBundles || []).length > 0) {
+    const bundleSummary = gitHygiene.topBundles
+      .slice(0, 3)
+      .map((b) => `${b.bundle} (${b.count})`)
+      .join(', ');
+    console.log(`   top bundles: ${bundleSummary}`);
+  }
+  if (preserved.length > 0) {
+    console.log('   preserved on disk:');
+    preserved.slice(0, 5).forEach((e) => console.log(`     • ${e.relPath} (${e.cls})`));
+    if (preserved.length > 5) {
+      console.log(`     ... and ${preserved.length - 5} more`);
+    }
+  }
+  if (replayLocked.length > 0) {
+    console.log(`⚠ Skipped ${replayLocked.length} permission-locked ${replayLocked.length === 1 ? 'file' : 'files'} during WAL replay (EPERM/EACCES):`);
+    replayLocked.slice(0, 5).forEach((p) => console.log(`   • ${p}`));
+    if (replayLocked.length > 5) {
+      console.log(`   ... and ${replayLocked.length - 5} more`);
+    }
+  }
+  console.log('');
+}
+
 /**
  * atris clean - Workspace housekeeping with auto-heal
  *
@@ -41,26 +206,63 @@ function cleanAtris(options = {}) {
     cleanedSections: 0
   };
 
+  // 0. Git working-tree hygiene scan (and atomic vault + reset on --apply)
+  const { scanGitHygiene, vaultAndCleanCheckout, recoverInterruptedVault } = require('../lib/hygiene-vault');
+  const graceMs = resolveGraceMinutes(options) * 60 * 1000;
+  let gitHygiene = scanGitHygiene(cwd, { graceMs });
+  let vaultOutcome = null;
+  if (options.apply && !options.dryRun && gitHygiene.isGitRepo) {
+    if (gitHygiene.actionableCount > 0) {
+      vaultOutcome = vaultAndCleanCheckout(cwd, {
+        graceMs,
+        ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
+      });
+      gitHygiene = vaultOutcome.scan;
+    } else {
+      const recovery = recoverInterruptedVault(cwd, {
+        ...(options.quarantineRoot ? { quarantineRoot: options.quarantineRoot } : {}),
+      });
+      if (recovery.recovered.length > 0) {
+        gitHygiene = scanGitHygiene(cwd, { graceMs });
+        results.recoveredVaults = recovery.recovered;
+      }
+    }
+  }
+  results.gitHygiene = gitHygiene;
+  results.vault = vaultOutcome;
+
   // 1. Check for stale tasks in TODO.md
   const staleTasks = findStaleTasks(atrisDir);
   results.staleTasks = staleTasks;
 
   // 2. Find and HEAL broken MAP.md references
-  const { healed, unhealable, replacements } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
+  // Legacy mutators re-dirty HEAD after git vault/reset; --vault-only skips them.
+  const runLegacyMutators = !options.vaultOnly;
+  const {
+    healed,
+    unhealable,
+    replacements,
+    checked = 0,
+    skipped = 0,
+  } = runLegacyMutators
+    ? healBrokenMapRefs(cwd, atrisDir, options.dryRun)
+    : { healed: 0, unhealable: [], replacements: [], checked: 0, skipped: 0 };
   results.healedRefs = healed;
+  results.checkedRefs = checked;
+  results.skippedRefs = skipped;
   results.healedRefDetails = replacements;
   results.unhealableRefs = unhealable;
 
   // 2b. Let the repo refresh and validate its own MAP.md, if it ships scripts for it
-  const mapScripts = runMapScripts(cwd, options.dryRun);
+  const mapScripts = runLegacyMutators ? runMapScripts(cwd, options.dryRun) : [];
   results.mapScripts = mapScripts;
 
   // 3. Archive old journals (>30 days)
-  const archived = archiveOldJournals(atrisDir, options.dryRun);
+  const archived = runLegacyMutators ? archiveOldJournals(atrisDir, options.dryRun) : 0;
   results.archivedJournals = archived;
 
   // 4. Clean empty sections in TODO.md
-  const cleaned = cleanEmptySections(atrisDir, options.dryRun);
+  const cleaned = runLegacyMutators ? cleanEmptySections(atrisDir, options.dryRun) : 0;
   results.cleanedSections = cleaned;
 
   // 5. Find stale wiki pages (source newer than last_compiled)
@@ -108,9 +310,10 @@ function cleanAtris(options = {}) {
   }
 
   // Healed refs
+  const countText = refCountText(checked, skipped);
   if (healed > 0) {
-    const verb = options.dryRun ? 'Would heal' : 'Healed';
-    console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'}`);
+    const verb = options.dryRun ? 'would heal' : 'healed';
+    console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'} (${countText})`);
     (results.healedRefDetails || []).slice(0, 3).forEach(ref => {
       console.log(`   • ${ref.old} -> ${ref.new}${ref.symbol ? ` (${ref.symbol})` : ''}`);
     });
@@ -121,16 +324,18 @@ function cleanAtris(options = {}) {
 
   // Unhealable refs
   if (unhealable.length > 0) {
-    console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed:`);
+    console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed (${countText}):`);
     unhealable.slice(0, 3).forEach(ref => {
-      console.log(`   • ${ref.file}:${ref.line}: ${ref.reason}`);
+      console.log(`   • ${unhealableLine(ref)}`);
     });
     if (unhealable.length > 3) {
       console.log(`   ... and ${unhealable.length - 3} more`);
     }
     console.log('');
+  } else if (checked === 0) {
+    console.log(`○ ${countText}, nothing to validate`);
   } else if (healed === 0) {
-    console.log('✓ All MAP.md refs valid');
+    console.log(`✓ all MAP.md refs valid (${countText})`);
   }
 
   // Repo-local map scripts
@@ -174,7 +379,16 @@ function cleanAtris(options = {}) {
     console.log('✓ No dead code');
   }
 
-  const hasIssues = staleTasks.length > 0 || unhealable.length > 0 || stalePages.length > 0;
+  // Git working-tree hygiene
+  renderGitHygieneText(gitHygiene, vaultOutcome, options, results.recoveredVaults);
+
+  const hasGitDirt = Boolean(gitHygiene && gitHygiene.isGitRepo && gitHygiene.remainingDirty > 0);
+  const lockedFiles = collectPermissionLocked(vaultOutcome, results.recoveredVaults);
+  const hasIssues = staleTasks.length > 0
+    || unhealable.length > 0
+    || stalePages.length > 0
+    || (results.deadFiles || []).length > 0
+    || hasGitDirt;
   if (hasIssues) {
     console.log('Manual action needed:');
     if (staleTasks.length > 0) {
@@ -185,6 +399,18 @@ function cleanAtris(options = {}) {
     }
     if (stalePages.length > 0) {
       console.log('  • Re-compile stale pages (re-read sources, update content + last_compiled)');
+    }
+    if ((results.deadFiles || []).length > 0) {
+      console.log('  • Delete dead files (atris slop dead)');
+    }
+    if (hasGitDirt) {
+      if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
+        console.log(`  • Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git ${gitHygiene.actionableCount === 1 ? 'file' : 'files'}`);
+      } else if (lockedFiles.length > 0) {
+        console.log(`  • ${gitHygiene.remainingDirty} dirty git ${gitHygiene.remainingDirty === 1 ? 'file' : 'files'} preserved on disk (including ${lockedFiles.length} permission-locked/immutable)`);
+      } else {
+        console.log(`  • ${gitHygiene.remainingDirty} dirty git ${gitHygiene.remainingDirty === 1 ? 'file' : 'files'} preserved on disk (active in-flight, unprovable, or concurrently modified)`);
+      }
     }
   } else {
     console.log('Workspace is clean. Target state: 0 ✓');
@@ -259,21 +485,56 @@ function mapScriptLine(step) {
 }
 
 function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
+  const gitHygiene = results.gitHygiene || {
+    isGitRepo: false,
+    dirtyCount: 0,
+    actionableCount: 0,
+    remainingDirty: 0,
+    byClass: {},
+    entries: [],
+    topBundles: [],
+  };
+  const vaultOutcome = results.vault || null;
+  const preserved = preservedHygieneEntries(gitHygiene);
+  const hasGitDirt = Boolean(gitHygiene.isGitRepo && gitHygiene.remainingDirty > 0);
+
   const manualAction = [];
   if (results.staleTasks.length > 0) manualAction.push('Delete stale tasks or finish them');
   if (results.unhealableRefs.length > 0) manualAction.push('Manually fix unhealable MAP.md refs');
   if (results.stalePages.length > 0) manualAction.push('Re-compile stale pages');
   if ((results.deadFiles || []).length > 0) manualAction.push('Delete dead files (atris slop dead)');
+  const lockedFiles = collectPermissionLocked(vaultOutcome, results.recoveredVaults);
+  if (hasGitDirt) {
+    if (gitHygiene.actionableCount > 0 && (!options.apply || options.dryRun)) {
+      manualAction.push(`Run "atris clean --apply" to vault and clean ${gitHygiene.actionableCount} dirty git file(s)`);
+    } else if (lockedFiles.length > 0) {
+      manualAction.push(`${gitHygiene.remainingDirty} dirty git file(s) preserved on disk (including ${lockedFiles.length} permission-locked/immutable)`);
+    } else {
+      manualAction.push(`${gitHygiene.remainingDirty} dirty git file(s) preserved on disk (active in-flight, unprovable, or concurrently modified)`);
+    }
+  }
+
+  const targetState = results.staleTasks.length
+    + results.unhealableRefs.length
+    + results.stalePages.length
+    + (results.deadFiles || []).length
+    + (hasGitDirt ? gitHygiene.remainingDirty : 0);
+
   return {
     ok: manualAction.length === 0,
     action: 'clean',
     dry_run: !!options.dryRun,
+    apply: !!options.apply,
+    vault_only: !!options.vaultOnly,
+    target_state: targetState,
     results: {
       stale_tasks: {
         count: results.staleTasks.length,
         items: results.staleTasks,
       },
       map_refs: {
+        checked_count: results.checkedRefs || 0,
+        skipped_count: results.skippedRefs || 0,
         healed_count: results.healedRefs,
         verb: options.dryRun ? 'would_heal' : 'healed',
         items: results.healedRefDetails || [],
@@ -303,6 +564,26 @@ function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
       map_scripts: {
         count: (results.mapScripts || []).length,
         items: results.mapScripts || [],
+      },
+      git_hygiene: {
+        is_git_repo: Boolean(gitHygiene.isGitRepo),
+        dirty_count: gitHygiene.dirtyCount || 0,
+        actionable_count: gitHygiene.actionableCount || 0,
+        remaining_dirty: gitHygiene.remainingDirty || 0,
+        by_class: gitHygiene.byClass || {},
+        top_bundles: gitHygiene.topBundles || [],
+        preserved: preserved.map((e) => ({ path: e.relPath, cls: e.cls })),
+        vault: vaultOutcome ? {
+          applied: Boolean(vaultOutcome.applied),
+          vault_id: vaultOutcome.vaultId || null,
+          refs: vaultOutcome.refs || null,
+          quarantine_dir: vaultOutcome.quarantineDir || null,
+          vaulted_count: vaultOutcome.receipt ? (vaultOutcome.receipt.vaulted_files || []).length : 0,
+          quarantined_count: vaultOutcome.receipt ? (vaultOutcome.receipt.quarantine_files || []).length : 0,
+          reset_stats: vaultOutcome.resetStats || null,
+        } : null,
+        ...((results.recoveredVaults || []).length > 0 ? { recovered_vaults: results.recoveredVaults } : {}),
+        ...(lockedFiles.length > 0 ? { skipped_permission_locked: lockedFiles } : {}),
       },
     },
     manual_action: manualAction,
@@ -375,14 +656,28 @@ function mapNoteFiles(atrisDir) {
   return files.filter((file) => { try { return fs.statSync(file).isFile(); } catch { return false; } });
 }
 
+function refCountText(checked, skipped) {
+  const noun = checked === 1 ? 'ref' : 'refs';
+  const other = skipped > 0 ? `, skipped ${skipped} ${skipped === 1 ? 'path' : 'paths'} (other projects or git-ignored)` : '';
+  return `checked ${checked} ${noun}${other}`;
+}
+
+function unhealableLine(ref) {
+  // A plain path has no line of its own. Say where in the map it was written.
+  if (ref.plain) return `${ref.file}: ${ref.reason} (${ref.map}:${ref.mapLine})`;
+  return `${ref.file}:${ref.line}: ${ref.reason}`;
+}
+
 function healBrokenMapRefs(cwd, atrisDir, dryRun = false, homeDir = os.homedir()) {
   const mapFile = path.join(atrisDir, 'MAP.md');
-  if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [] };
+  if (!fs.existsSync(mapFile)) return { healed: 0, unhealable: [], checked: 0, skipped: 0 };
   const result = healMapFileRefs(cwd, mapFile, dryRun, homeDir);
   for (const notesFile of mapNoteFiles(atrisDir)) {
     const notes = healMapFileRefs(cwd, notesFile, dryRun, homeDir);
     const map = path.relative(cwd, notesFile).split(path.sep).join('/');
     result.healed += notes.healed;
+    result.checked += notes.checked;
+    result.skipped += notes.skipped;
     result.unhealable = [...result.unhealable, ...notes.unhealable.map((entry) => ({ ...entry, map }))];
     result.replacements = [...(result.replacements || []), ...notes.replacements.map((entry) => ({ ...entry, map }))];
   }
@@ -394,6 +689,7 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
   let mapContent = fs.readFileSync(mapFile, 'utf8');
   const unhealable = [];
   let healed = 0;
+  let checked = 0;
 
   // Match both `file.js:123` and `file.js:123-456` with surrounding context
   // [^\S\n] = horizontal whitespace only (no newlines)
@@ -437,6 +733,7 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     const backtickAfter = match[6] || '';
     const contextPart = match[8] || '';
 
+    checked++;
     const file = readFileCached(filePath);
     if (!file) {
       unhealable.push({ file: filePath, line: startLine, reason: 'File not found' });
@@ -497,6 +794,11 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     }
   }
 
+  // Plain backticked paths with no line number. Report only, never rewrite.
+  const plain = checkPlainMapPaths(cwd, mapFile, mapContent);
+  checked += plain.checked;
+  unhealable.push(...plain.unhealable);
+
   // Apply replacements
   if (!dryRun && replacements.length > 0) {
     for (const r of replacements) {
@@ -505,7 +807,111 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
     fs.writeFileSync(mapFile, mapContent);
   }
 
-  return { healed, unhealable, replacements };
+  return { healed, unhealable, replacements, checked, skipped: plain.skipped };
+}
+
+// `folder/file.ext` with a slash and no `:line` suffix. The closing backtick must
+// follow the extension. That keeps `file.js:12` and `file.jsonl` from matching here.
+const PLAIN_PATH_PATTERN = /`((?:\.\.?\/)*[A-Za-z0-9_@.\-]+(?:\/[A-Za-z0-9_@.\-]+)+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml))`/g;
+
+// A plain path can be written from the project root, the map's own folder, or any
+// folder between them. Each of those is a base the path is resolved against.
+function plainPathBases(root, mapFile) {
+  const bases = [root];
+  let dir = path.dirname(path.resolve(mapFile));
+  while (dir.startsWith(root + path.sep)) {
+    bases.push(dir);
+    dir = path.dirname(dir);
+  }
+  return bases;
+}
+
+function insideRoot(root, target) {
+  return target === root || target.startsWith(root + path.sep);
+}
+
+// Fenced code blocks hold examples, not navigation. Blank their lines, keeping
+// every line number. The plain-path pass then never reads them.
+function maskFencedBlocks(content) {
+  let fence = null;
+  return content.split('\n').map((line) => {
+    const opener = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (opener && opener[1][0] === fence.char && opener[1].length >= fence.length && opener[2].trim() === '') fence = null;
+      return '';
+    }
+    if (opener && !(opener[1][0] === '`' && opener[2].includes('`'))) {
+      fence = { char: opener[1][0], length: opener[1].length };
+      return '';
+    }
+    return line;
+  }).join('\n');
+}
+
+function isDirectory(target) {
+  try { return fs.statSync(target).isDirectory(); } catch { return false; }
+}
+
+// Runtime files (state folders, logs) are written by the tools and are not in a
+// fresh checkout. Paths the repo's own ignore rules cover are not dead refs.
+function gitIgnoredPaths(cwd, paths) {
+  if (paths.length === 0) return new Set();
+  const out = spawnSync('git', ['check-ignore', '--no-index', '--stdin'], {
+    cwd, input: paths.join('\n'), encoding: 'utf8',
+  });
+  if (out.status !== 0 && out.status !== 1) return new Set();
+  return new Set(String(out.stdout).split('\n').filter(Boolean));
+}
+
+// The first folder of a path, checked in the place it was resolved against. A path
+// that climbs out of its base is judged by its first folder under the project root.
+function firstFolderExists(root, base, target) {
+  let anchor = base;
+  let from = path.relative(base, target);
+  if (from === '..' || from.startsWith('..' + path.sep)) {
+    anchor = root;
+    from = path.relative(root, target);
+  }
+  const parts = from.split(path.sep);
+  return parts.length > 1 && isDirectory(path.join(anchor, parts[0]));
+}
+
+function checkPlainMapPaths(cwd, mapFile, content) {
+  const root = path.resolve(cwd);
+  const map = path.relative(root, path.resolve(mapFile)).split(path.sep).join('/');
+  const bases = plainPathBases(root, mapFile);
+  const scanned = maskFencedBlocks(content);
+  const seen = new Set();
+  const missing = [];
+  let checked = 0;
+  let skipped = 0;
+  const pattern = new RegExp(PLAIN_PATH_PATTERN.source, 'g');
+  let match;
+  while ((match = pattern.exec(scanned)) !== null) {
+    const rel = match[1];
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    // Anything that resolves outside the project belongs to another project.
+    const candidates = bases
+      .map((base) => ({ base, target: path.resolve(base, rel) }))
+      .filter((candidate) => insideRoot(root, candidate.target));
+    if (candidates.some((candidate) => fs.existsSync(candidate.target))) { checked++; continue; }
+    // A path whose first folder is in none of its bases belongs to another project.
+    const here = candidates
+      .filter((candidate) => firstFolderExists(root, candidate.base, candidate.target))
+      .map((candidate) => path.relative(root, candidate.target).split(path.sep).join('/'));
+    if (here.length === 0) { skipped++; continue; }
+    const mapLine = scanned.slice(0, match.index).split('\n').length;
+    missing.push({ rel, mapLine, here });
+  }
+  const ignored = gitIgnoredPaths(root, missing.flatMap((entry) => entry.here));
+  const unhealable = [];
+  for (const { rel, mapLine, here } of missing) {
+    if (here.every((candidate) => ignored.has(candidate))) { skipped++; continue; }
+    checked++;
+    unhealable.push({ file: rel, line: null, mapLine, map, reason: 'missing file', plain: true });
+  }
+  return { checked, skipped, unhealable };
 }
 
 /**
@@ -849,8 +1255,10 @@ function cleanEmptySections(atrisDir, dryRun = false) {
 module.exports = {
   cleanAtris,
   cleanResultPayload,
+  parseCleanArgs,
   findStaleTasks,
   healBrokenMapRefs,
+  unhealableLine,
   findStalePages,
   checkPageStaleness
 };

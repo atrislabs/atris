@@ -1092,6 +1092,7 @@ test('every launch of an engine program by name records its run or is named as e
   // Interactive sessions hand the terminal to the person, so no reading is kept.
   const EXEMPT = new Map([
     ['commands/console.js', 'interactive codex session'],
+    ['commands/computer-login.js', 'browser sign-in handed to the person, not a work run'],
     ['commands/interview.js', 'interactive claude session'],
     ['lib/engine-login.js', 'one-word login check, not a work run'],
   ]);

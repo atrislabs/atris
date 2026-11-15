@@ -55,6 +55,7 @@ Each line says what the skill does and when to open it. A skill with a review po
 - Backend rules that keep code simple. Open [backend](backend/SKILL.md) when you build an API or service. Policy: `policies/atris-backend.md`.
 - Essay process with gates. Open [writing](writing/SKILL.md) when you draft an essay or long post. Policy: `policies/writing.md`.
 - Find and fix generated-sounding writing. Open [copy-editor](copy-editor/SKILL.md) when you edit a draft before it ships.
+- Cut interface text that should not be on the screen. Open [clean-copy](clean-copy/SKILL.md) when you write or review labels, hints, empty states or button text.
 - Content written to get cited by AI answer engines. Open [aeo](aeo/SKILL.md) when a page should show up in AI answers.
 - Write a release post. Open [launch](launch/SKILL.md) after a release ships.
 - Author Atris block documents: docs, decks and reports. Open [blocks](blocks/SKILL.md) when you write a doc for the Atris editor.

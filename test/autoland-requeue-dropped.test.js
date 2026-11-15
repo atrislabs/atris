@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { autolandMemberRun, requeueDroppedAutolands } = require('../lib/member-autoland');
+const { autolandMemberRun, recordQueuedPullRequest, requeueDroppedAutolands } = require('../lib/member-autoland');
 
 function git(args, cwd) {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -315,13 +315,15 @@ test('someone else pushed to the branch: left for a person and no longer tracked
   });
 });
 
-test('a real clash with master: nothing is pushed and the branch is left for a person', () => {
+test('a real clash with master and no job to send back: nothing is pushed and a builder gets a job naming the files', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     moveMaster(fx, 'work.txt', 'master wrote this instead\n');
-    const out = requeueDroppedAutolands({ cwd: fx.main });
+    const handed = [];
+    const out = requeueDroppedAutolands({ cwd: fx.main, handBack: (entry, files) => { handed.push({ branch: entry.branch, files }); return { id: 'CLI-9', inserted: true }; } });
     assert.equal(out.results[0].state, 'clash');
-    assert.match(out.results[0].line, /clashes with the main branch in work\.txt/);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; went back to a builder as job CLI-9$/);
+    assert.deepEqual(handed, [{ branch: BRANCH, files: ['work.txt'] }]);
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
   });
@@ -340,13 +342,28 @@ test('merged or closed: dropped from the list and never touched', () => {
   }
 });
 
-test('dropped again after the catch-up limit: left for a person instead of looping', () => {
+test('dropped again after the catch-up limit: waits on the list, and starts over once master moves', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     writeQueue(fx, { [BRANCH]: { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 3 } });
     const out = requeueDroppedAutolands({ cwd: fx.main });
-    assert.equal(out.results[0].state, 'gave-up');
+    assert.equal(out.results[0].state, 'waiting');
+    assert.match(out.results[0].line, /tries again once the main branch moves/);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    const kept = readQueue(fx)[BRANCH];
+    assert.ok(kept, 'never dropped for good');
+    assert.equal(kept.base_sha, git(['rev-parse', 'master'], fx.main));
+    // Same master: still waiting, nothing pushed.
+    assert.equal(requeueDroppedAutolands({ cwd: fx.main }).results[0].state, 'waiting');
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    // Master moves: caught up and queued again, the count starts over.
+    const moved = moveMaster(fx);
+    const again = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(again.results[0].state, 'requeued', again.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 1);
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.requeues, 1);
+    assert.equal(entry.base_sha, moved);
   });
 });
 
@@ -400,5 +417,265 @@ test('a first landing writes the queued commit down so a later sweep can find it
     assert.equal(entry.pushed, fx.pushed);
     assert.equal(entry.base, 'master');
     assert.equal(entry.requeues, 0);
+  });
+});
+
+// `atris worktree ship --merge` records a pull request GitHub left open for its
+// checks. The entry has no mission or job ids. The sweep must still treat it
+// like any other dropped change.
+test('a pull request recorded by worktree ship is queued again once github drops it', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    // Recorded from the build copy, the way ship does it.
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const recorded = readQueue(fx)[BRANCH];
+    assert.deepEqual(Object.keys(recorded).sort(), ['base', 'branch', 'number', 'pushed', 'queued_at', 'requeues', 'reran']);
+
+    // The merge-line run failed: open, no auto-merge, not in the line.
+    setView(fx, { state: 'OPEN', autoMergeRequest: null, headRefOid: recorded.pushed }, { inQueue: false });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.requeued, 1, out.line);
+    assert.equal(out.results[0].state, 'requeued', out.results[0].line);
+    assert.deepEqual(ghCalls(fx).filter((c) => c[1] === 'merge'),
+      [['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', fx.pushed]]);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 1);
+    assert.equal(readQueue(fx)[BRANCH].pushed, fx.pushed);
+  });
+});
+
+test('a pull request recorded by worktree ship that is still in the merge line is left alone', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    setView(fx, { autoMergeRequest: null }, { inQueue: true });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued', out.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 0);
+  });
+});
+
+test('a pull request recorded by worktree ship still pauses at the catch-up cap', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const states = [];
+    for (let i = 0; i < 4; i += 1) {
+      setView(fx, { autoMergeRequest: null }, { inQueue: false });
+      states.push(requeueDroppedAutolands({ cwd: fx.main }).results[0].state);
+    }
+    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'waiting']);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 3, 'kept on the list until master moves');
+  });
+});
+
+test('recording a pull request creates the entry in the main checkout from any copy', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    const ledger = JSON.parse(fs.readFileSync(queuePath(fx), 'utf8'));
+    assert.equal(ledger.schema, 'atris.autoland_queue.v1');
+    assert.deepEqual(ledger.entries[BRANCH], entry);
+    assert.deepEqual({ ...entry, queued_at: null }, {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0, reran: false, queued_at: null,
+    });
+    assert.ok(Number.isFinite(Date.parse(entry.queued_at)));
+  });
+});
+
+test('recording the same commit again keeps its catch-up count, its retry mark and its job ids', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    writeQueue(fx, { [BRANCH]: {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed,
+      mission_id: 'mission-1', task_ids: ['task-1'], queued_at: '2026-11-01T00:00:00.000Z',
+    } });
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed });
+    assert.equal(entry.requeues, 2);
+    assert.equal(entry.reran, fx.pushed);
+    assert.equal(entry.mission_id, 'mission-1');
+    assert.deepEqual(entry.task_ids, ['task-1']);
+    assert.notEqual(entry.queued_at, '2026-11-01T00:00:00.000Z');
+  });
+});
+
+test('recording a new commit or pull request starts the catch-up count and retry mark over', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const seeded = { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed, task_ids: ['task-1'] };
+    writeQueue(fx, { [BRANCH]: seeded });
+    const next = 'b'.repeat(40);
+    const moved = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 7, pushed: next });
+    assert.equal(moved.pushed, next);
+    assert.equal(moved.requeues, 0);
+    assert.equal(moved.reran, false);
+    assert.deepEqual(moved.task_ids, ['task-1'], 'job ids stay with the branch');
+
+    writeQueue(fx, { [BRANCH]: seeded });
+    const reopened = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 9, pushed: fx.pushed });
+    assert.equal(reopened.number, 9);
+    assert.equal(reopened.requeues, 0);
+    assert.equal(reopened.reran, false);
+    assert.equal(Object.keys(readQueue(fx)).length, 1);
+  });
+});
+
+test('a branch reused for a new pull request drops the jobs and mission of the old one', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    writeQueue(fx, { [BRANCH]: {
+      branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 2, reran: fx.pushed,
+      mission_id: 'mission-1', task_ids: ['task-1'], requeued_at: '2026-11-01T00:00:00.000Z',
+    } });
+    const entry = recordQueuedPullRequest(fx.worktree, { branch: BRANCH, base: 'master', number: 9, pushed: fx.pushed });
+    assert.equal(entry.number, 9);
+    assert.equal(entry.task_ids, undefined);
+    assert.equal(entry.mission_id, undefined);
+    assert.equal(entry.requeued_at, undefined);
+    assert.equal(entry.requeues, 0);
+    assert.equal(entry.reran, false);
+    assert.deepEqual(readQueue(fx)[BRANCH], entry);
+
+    // The new pull request merging must not close the old pull request's job.
+    setView(fx, { number: 9, state: 'MERGED', mergedAt: new Date().toISOString() });
+    const closed = [];
+    const out = requeueDroppedAutolands({ cwd: fx.main, closeTask: (id) => { closed.push(id); return { updated: true }; } });
+    assert.equal(out.results[0].state, 'merged', out.results[0].line);
+    assert.deepEqual(closed, []);
+    assert.equal(readQueue(fx)[BRANCH], undefined);
+  });
+});
+
+test('recording leaves other branches in the list alone', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    const other = { branch: 'codex/other', base: 'master', number: 8, pushed: 'c'.repeat(40), requeues: 1 };
+    writeQueue(fx, { ...readQueue(fx), 'codex/other': other });
+    recordQueuedPullRequest(fx.worktree, { branch: 'codex/third', base: 'master', number: 9, pushed: 'd'.repeat(40) });
+    const entries = readQueue(fx);
+    assert.deepEqual(Object.keys(entries).sort(), [BRANCH, 'codex/other', 'codex/third'].sort());
+    assert.deepEqual(entries['codex/other'], other);
+  });
+});
+
+test('recording refuses details it cannot trust and writes nothing', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const good = { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed };
+    for (const bad of [{ number: 0 }, { number: undefined }, { number: '7' }, { pushed: 'abc123' }, { base: '' }, { branch: '' }]) {
+      assert.throws(() => recordQueuedPullRequest(fx.worktree, { ...good, ...bad }), /could not be read/);
+    }
+    assert.equal(fs.existsSync(queuePath(fx)), false);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-not-git-'));
+    try {
+      assert.throws(() => recordQueuedPullRequest(outside, good), /not inside a git checkout/);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+// The short PATH here is one folder holding git and nothing else, the same on
+// every machine. GitHub's Linux machines keep a real gh in /usr/bin, and the
+// sweep adds its tool folders after the caller's PATH, so that gh answered
+// before the fake and failed on the temporary repo. A folder with no gh and no
+// node in it also makes the fake's own node come from the sweep's tool folders.
+function shortPathWithGitOnly(base) {
+  const dir = path.join(base, 'short-path');
+  fs.mkdirSync(dir);
+  const real = String(process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .map((d) => path.join(d, 'git'))
+    .find((p) => {
+      try {
+        fs.accessSync(p, fs.constants.X_OK);
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
+  assert.ok(real, 'git must be on PATH to run this test');
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nexec '${real.replace(/'/g, "'\\''")}' "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
+// Review on 2026-11-15: under the schedule's PATH=/usr/bin:/bin the sweep
+// could not start gh (nor the node a gh script runs on), so every queued pull
+// request read as unreadable. The last 40 scheduled runs said "github could
+// not be read; will look again" 179 times and nothing else.
+test('under the schedule PATH the sweep still finds gh and reads a merged pull request', () => {
+  const fx = fixture();
+  try {
+    setView(fx, { state: 'MERGED', mergedAt: new Date().toISOString() });
+    const lib = path.join(__dirname, '..', 'lib', 'member-autoland.js');
+    const script = `const r = require(${JSON.stringify(lib)}).requeueDroppedAutolands({ cwd: ${JSON.stringify(fx.main)}, dryRun: true });
+      console.log(JSON.stringify(r.results.map((x) => x.state)));`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      // ATRIS_TOOL_DIRS names where this machine keeps gh, as a schedule may.
+      env: { PATH: shortPathWithGitOnly(fx.base), HOME: process.env.HOME, TMPDIR: os.tmpdir(), ATRIS_TOOL_DIRS: fx.bin },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), ['merged']);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+// Review on 2026-11-15. When a pull request's hosted checks failed, the green
+// lander handed it back to a builder and switched auto-merge off. The next
+// sweep read "auto-merge off, not in the merge line, head unchanged" as
+// "github dropped it" and switched auto-merge back on, so the builder's fix
+// could merge on green without the lander's protected-lane screen. A handed
+// back entry is marked; only the lander's own re-queue clears the mark.
+function markHandedBack(fx, extra = {}) {
+  writeQueue(fx, { [BRANCH]: {
+    branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0, source: 'land-green',
+    reran: fx.pushed, checks_handed_back: fx.pushed, checks_task: 'JOB-1', ...extra,
+  } });
+}
+
+test('a pull request handed back for failed hosted checks is not switched back on by the sweep', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, {});
+    moveMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(out.requeued, 0);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0, JSON.stringify(ghCalls(fx)));
+    assert.equal(remoteBranch(fx), fx.pushed, 'no catch-up push');
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.checks_handed_back, fx.pushed, 'the mark stays');
+    assert.equal(entry.pushed, fx.pushed);
+  });
+});
+
+test('a builder\'s push after the hand-back is kept on the list and left for the lander', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { headRefOid: 'b'.repeat(40) });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked, so the lander can read it back');
+  });
+});
+
+test('a handed-back pull request whose auto-merge is still on is switched off, not run again', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-11-15T00:00:00Z' } }, { checks: FAILED_CHECKS });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    const merges = ghCalls(fx).filter((c) => c[1] === 'merge');
+    assert.deepEqual(merges, [['pr', 'merge', '7', '--disable-auto']]);
+    assert.equal(ghCalls(fx).filter((c) => c[0] === 'run').length, 0, 'no rerun');
   });
 });

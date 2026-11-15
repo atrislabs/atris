@@ -23,6 +23,9 @@ const ENV_KEYS = [
   'ATRIS_ROSTER_SESSIONS_DIR', 'ATRIS_CODEX_MODELS_CACHE_PATH', 'ATRIS_CODEX_CONFIG_PATH',
   'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
   'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_ENGINE_COOLDOWN_MINUTES',
+  // The claude spend guard reads the home's hook and account file and these
+  // keys. Every room gets a scratch home and none of the machine's own.
+  'HOME', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ATRIS_CLAUDE_SPEND_OK',
   'PATH',
 ];
 
@@ -44,6 +47,8 @@ async function withRoom(fn, { roster = '' } = {}) {
   if (roster) fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster);
   const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) if (key !== 'PATH') delete process.env[key];
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
   process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
@@ -160,6 +165,23 @@ test('--model still wins over the ask job pin', async () => {
     assert.match(args, /\n--model\nopus\n/);
     assert.doesNotMatch(args, /haiku/);
   }, { roster });
+});
+
+test('a light claude ask with the guard hook installed stops a pay-per-use key before claude starts', async () => {
+  const { installGuard } = require('../lib/claude-spend-guard');
+  await withRoom(async ({ root, bin }) => {
+    fakeEngine(bin, 'claude', { stdout: 'should never run\n' });
+    assert.equal(installGuard().installed, true, 'installed into the scratch home');
+    process.env.ANTHROPIC_API_KEY = 'sk-test';
+    const stopped = await askEngine(['what is the answer', '--engine', 'claude', '--model', 'haiku'], root);
+    assert.equal(stopped.code, 1);
+    assert.deepEqual(calls(bin), []);
+    assert.match(stopped.logs.join('\n'), /failed: claude spend guard: this unattended Claude run carries a pay-per-use key/);
+
+    const full = await askEngine(['what is the answer', '--engine', 'claude', '--model', 'haiku', '--full-context'], root);
+    assert.equal(full.code, 0, 'a full start runs the real hook and needs no check here');
+    assert.deepEqual(calls(bin), ['claude']);
+  });
 });
 
 // --- 2. a claude error result keeps its text --------------------------------

@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const readback = require('./npm-publish-readback');
 
 const repoRoot = path.resolve(__dirname, '..');
 const packagePath = path.join(repoRoot, 'package.json');
@@ -129,88 +130,8 @@ function renderVersionAvailabilityFailure(check) {
   ].filter(Boolean).join('\n');
 }
 
-function verifyPublishedVersion(version, runner = spawnSync) {
-  const result = runner('npm', ['view', 'atris', 'version', 'gitHead', '--json'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) {
-    return { ok: false, error: result.stderr || result.stdout || 'npm view failed' };
-  }
-  let payload = {};
-  try {
-    payload = JSON.parse(result.stdout || '{}');
-  } catch (error) {
-    return { ok: false, error: `could not parse npm view output: ${error.message}` };
-  }
-  const actual = String(payload.version || '');
-  return {
-    ok: actual === version,
-    actual,
-    expected: version,
-    gitHead: payload.gitHead || null,
-  };
-}
-
-function sleepMs(ms) {
-  if (!ms) return;
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = {}) {
-  // npm latest can lag the registry for several minutes after a publish that
-  // already succeeded. Poll for about 10 minutes. On each try, a matching
-  // latest tag wins. If latest is still old but the exact version is already
-  // on the registry, stop and let the caller treat the release as successful.
-  const attempts = Math.max(1, Number(options.attempts || 40));
-  const delayMs = Math.max(0, Number(options.delayMs ?? 15000));
-  const sleep = typeof options.sleep === 'function' ? options.sleep : sleepMs;
-  const totalMinutes = Math.max(1, Math.round((attempts * delayMs) / 60000));
-  let elapsedMs = 0;
-  let reportedMinute = 0;
-  let verification = null;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    verification = {
-      ...verifyPublishedVersion(version, runner),
-      attempt,
-      attempts,
-    };
-    if (verification.ok) return verification;
-    const availability = checkVersionAvailability(version, runner);
-    if (availability.reason === 'version_exists') {
-      return { ...verification, landed: true };
-    }
-    if (attempt < attempts) {
-      elapsedMs += delayMs;
-      const minute = Math.floor(elapsedMs / 60000);
-      while (reportedMinute < minute) {
-        reportedMinute += 1;
-        process.stderr.write(`waiting for npm to show atris@${version}, ${reportedMinute} of ${totalMinutes} minutes\n`);
-      }
-      sleep(delayMs);
-    }
-  }
-  return verification;
-}
-
-function renderPublishVerification(verification) {
-  if (verification.ok) {
-    return `Verified npm latest: atris@${verification.actual} gitHead ${verification.gitHead || 'unknown'}\n`;
-  }
-  return `npm latest verification failed: expected ${verification.expected || 'unknown'}, got ${verification.actual || verification.error || 'unknown'}\n`;
-}
-
-function renderPublishLatestLag(version, verification) {
-  return [
-    `Published atris@${version} to npm (confirmed on the registry).`,
-    `The "latest" dist-tag still reads ${verification.actual || 'an older version'}; it is propagating and will catch up.`,
-    'Treating the release as successful: npm publish already succeeded and the version is live.',
-    '',
-  ].join('\n');
-}
-
 function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, options = {}) {
-  const version = readPackageVersion();
+  const version = options.version || readPackageVersion();
   if (args.includes('--help') || args.includes('-h')) {
     console.log('Usage: npm run publish:release -- [--otp <code>] [--dry-run]');
     console.log('');
@@ -237,24 +158,22 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, o
   } else if (isTrustedPublishAuthFailure(result)) {
     process.stderr.write(renderTrustedPublishHelp());
   }
-  if (result.status === 0 && !args.includes('--dry-run')) {
-    const verification = verifyPublishedVersionWithRetry(version, runner, {
-      attempts: options.verificationAttempts,
-      delayMs: options.verificationDelayMs,
-      sleep: options.verificationSleep,
-    });
-    if (verification.ok) {
-      process.stdout.write(renderPublishVerification(verification));
-      return 0;
-    }
-    if (verification.landed) {
-      process.stdout.write(renderPublishLatestLag(version, verification));
-      return 0;
-    }
-    process.stderr.write(renderPublishVerification(verification));
-    return 1;
+  if (args.includes('--dry-run')) {
+    return typeof result.status === 'number' ? result.status : 1;
   }
-  return typeof result.status === 'number' ? result.status : 1;
+  // Read back the exact version for a couple of minutes at most. npm can take
+  // an hour to show a version it already accepted, so accepted is shipped.
+  const shown = result.status === 0
+    ? readback.waitForVersion(version, runner, {
+      minutes: options.verificationMinutes ?? 2,
+      everySeconds: options.verificationEverySeconds ?? 15,
+      sleep: options.verificationSleep,
+      log: () => {},
+    }).state
+    : 'missing';
+  const outcome = readback.decide(version, result, shown);
+  (outcome.exitCode === 0 ? process.stdout : process.stderr).write(`${outcome.line}\n`);
+  return outcome.exitCode;
 }
 
 if (require.main === module) {
@@ -269,10 +188,6 @@ module.exports = {
   isTrustedPublishAuthFailure,
   publishAtrisRelease,
   renderOtpHelp,
-  renderPublishVerification,
-  renderPublishLatestLag,
   renderTrustedPublishHelp,
   renderVersionAvailabilityFailure,
-  verifyPublishedVersion,
-  verifyPublishedVersionWithRetry,
 };

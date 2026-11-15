@@ -1000,7 +1000,38 @@ function computerLane(rest, ctx) {
   console.log(`  Saved lane for ${key}: ${formatWorkerName(normalized)}. Every run for this business now uses it unless you pass --worker.`);
 }
 
+function computerModel(rest, ctx) {
+  if (!ctx?.slug && !ctx?.businessId) {
+    console.error('No business selected. Pass --business <slug>.');
+    process.exitCode = 1;
+    return;
+  }
+  const businesses = loadBusinesses();
+  const key = Object.keys(businesses).find((slug) => slug === ctx.slug || businesses[slug]?.business_id === ctx.businessId);
+  if (!key) {
+    console.error(`Business ${ctx.slug || ctx.businessId} is not in the local business list yet. Run any computer command against it once, then retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  const requested = (rest || '').trim();
+  if (!requested) {
+    console.log(businesses[key].model ? `  Saved model for ${key}: ${businesses[key].model}` : `  No saved model for ${key}.`);
+    return;
+  }
+  if (requested.toLowerCase() === 'clear') {
+    delete businesses[key].model;
+    saveBusinesses(businesses);
+    console.log(`  Cleared saved model for ${key}.`);
+    return;
+  }
+  businesses[key].model = requested;
+  saveBusinesses(businesses);
+  console.log(`  Saved model for ${key}: ${requested}.`);
+}
+
 async function computerExec(token, prompt, ctx = null, options = {}) {
+  const savedModel = !options.model && ctx?.model;
+  options = { ...options, model: options.model || ctx?.model || null };
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
     process.exit(1);
@@ -1011,11 +1042,12 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
     const awake = await ensureBusinessAwake(token, ctx);
     if (!awake) {
       console.error('  Computer did not become ready in time.');
+      process.exitCode = 1;
       return;
     }
     const worker = activeWorker(options.worker || ctx.worker);
     const laneSource = options.worker ? '' : ctx.worker ? '  (saved for this business)' : '';
-    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${laneSource}`);
+    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${savedModel ? ' (saved for this business)' : ''}${laneSource}`);
     const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
       method: 'POST',
       token,
@@ -1037,6 +1069,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
         if (fallback.error) {
           console.error(`Fallback failed: ${fallback.error}`);
         }
+        process.exitCode = 1;
         return;
       }
       const text = extractRunnerProxyText(fallback.payload);
@@ -1071,6 +1104,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
   });
   if (!result.ok) {
     console.error(`Failed: ${result.errorMessage || result.status}`);
+    process.exitCode = 1;
     return;
   }
   console.log(`  Execution: ${result.data.execution_id}`);
@@ -1078,13 +1112,300 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
   console.log('  Use the stream URL to watch progress.');
 }
 
+function printComputerPrHelp(log = console.log) {
+  const openaiThinker = require('../lib/computer-pr').defaultThinkerModel('openai', {});
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed]');
+  log('');
+  log('The business computer does the task on a new branch and opens a pull request.');
+  log('It prints the pull request link. It never merges.');
+  log('');
+  log('If the builder cannot prove a fix, a stronger thinker model reads the code without');
+  log('changing it and writes a proposal. The builder then tries once more with it.');
+  log('  --model <id>     the builder\'s model');
+  log(`  --thinker <id>   the thinker's model. On the OpenAI lane it is ${openaiThinker} unless`);
+  log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
+  log('  --think          ask the thinker first, for bugs you already know are hard');
+  log('  --no-think       never ask the thinker');
+  log('  --as <member>    assign the desktop feed card to a team member');
+  log('  --no-feed        do not create a desktop feed card');
+  log('');
+  log('Example:');
+  log('  atris computer pr atrislabs/demo "Fix the typo in the README" --business my-lab');
+}
+
+// One pull request from a repo and a plain-words task. Exit 0 only when a
+// pull request link for the same repo came back. Never merges. When the
+// builder gets stuck proving a fix, a thinker model studies the code read only
+// and the builder tries once more with its proposal.
+async function computerPr(token, args = [], ctx = null, options = {}, deps = {}) {
+  const startedAt = Date.now();
+  const elapsed = () => { const seconds = Math.floor((Date.now() - startedAt) / 1000); return { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }; };
+  const savedModel = !options.model && ctx?.model;
+  options = { ...options, model: options.model || ctx?.model || null };
+  const prLib = require('../lib/computer-pr');
+  const log = deps.log || ((s) => console.log(s));
+  const logError = deps.logError || ((s) => console.error(s));
+  const write = deps.write || ((s) => process.stdout.write(s));
+  const request = deps.apiRequestJson || apiRequestJson;
+  const wake = deps.ensureBusinessAwake || ensureBusinessAwake;
+  const stream = deps.streamBusinessChatResult || streamBusinessChatResult;
+  const fail = (message) => {
+    logError(prLib.redactSecrets(message));
+    process.exitCode = 1;
+    return 1;
+  };
+
+  let feed = null;
+  let feedExited = null;
+  let finalUrl = null;
+  let warned = false;
+  const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
+  const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
+  let stopped = false;
+  let finishing = null;
+  const finishFeed = () => {
+    if (!finishing) finishing = (async () => {
+      const time = elapsed();
+      sendFeed({ type: 'finish', url: finalUrl, stopped, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+      if (feedExited) {
+        let timer;
+        await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
+        clearTimeout(timer);
+      }
+    })();
+    return finishing;
+  };
+  const onSigint = () => { stopped = true; };
+  const onSigterm = () => { stopped = true; void finishFeed().then(() => process.exit(143)); };
+  process.on('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+  try {
+  let parsed;
+  try {
+    parsed = prLib.parsePrArgs(args);
+  } catch (err) {
+    printComputerPrHelp(logError);
+    return fail(err.message);
+  }
+  if (parsed.help) {
+    printComputerPrHelp(log);
+    return 0;
+  }
+  if (!ctx?.businessId || !ctx?.workspaceId) {
+    return fail('No business computer selected. Pass --business <slug>.');
+  }
+
+  const { repo, task, base } = parsed;
+  const suffix = deps.branchSuffix ? deps.branchSuffix() : prLib.randomBranchSuffix();
+  const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date(), suffix);
+  const title = prLib.titleFromTask(task);
+  const worker = activeWorker(options.worker || ctx.worker);
+  const thinker = parsed.noThink ? null : (parsed.thinker || prLib.defaultThinkerModel(worker));
+  const noThinkerLine = `No thinker is set for the ${formatWorkerName(worker)} lane, so the builder's answer stands. Pass --thinker <id> to ask one.`;
+  if (parsed.think && !thinker) {
+    printComputerPrHelp(logError);
+    return fail(`--think needs a thinker. ${noThinkerLine}`);
+  }
+  const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
+
+  const member = parsed.member || 'executor';
+  const root = process.cwd();
+  if (!parsed.noFeed && fs.existsSync(path.join(root, 'atris', 'team', member))) {
+    try {
+      const { Worker } = require('node:worker_threads');
+      feed = new Worker(path.join(__dirname, '../lib/computer-pr-feed.js'), { workerData: { root, member, repo: `${repo.owner}/${repo.name}`, title: task.match(/^.*?[.!?](?=\s|$)/)?.[0] || task } });
+      feedExited = new Promise(resolve => feed.once('exit', resolve));
+      if (deps.onFeedWorker) deps.onFeedWorker(feed);
+      feed.on('error', warning);
+      feed.on('message', warning);
+    } catch (_) { warning(); }
+  }
+  const awake = await wake(token, ctx);
+  if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
+
+  const laneSource = options.worker ? '' : ctx.worker ? ' (saved for this business)' : '';
+  log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
+  log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}${savedModel ? ' (saved for this business)' : ''}${laneSource}`);
+
+  // A fresh conversation per round: each one is independent, and a shared one
+  // grows until the computer has to shorten it, which can fail the run.
+  const sessionFor = (name, tail = '') => `${`pr-${name}`.replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 120 - tail.length)}${tail}`;
+
+  // One round on the computer: start it (waiting out a busy runner), stream
+  // its words through the redacting writer, and hand back what it said.
+  const runRound = async ({ prompt: message, model, sessionId, builder = false }) => {
+    const startOptions = {
+      method: 'POST',
+      token,
+      body: {
+        message,
+        workspace_id: ctx.workspaceId,
+        session_id: sessionId,
+        reset_context: true,
+        worker,
+        ...(model ? { model } : {}),
+      },
+      timeoutMs: 40000,
+      retries: 0,
+    };
+    let started;
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      started = await request(`/business/${ctx.businessId}/chat`, startOptions);
+      const busy = !started.ok && [409, 502].includes(started.status)
+        && /\bbusy\b/i.test(JSON.stringify([started.error, started.errorMessage, started.data, started.text]));
+      if (!busy || attempt === 15) break;
+      log('  The runner is busy. Waiting 20 seconds before trying again.');
+      await (deps.sleep || sleep)(20000);
+    }
+    if (!started.ok || !started.data?.execution_id) {
+      return { startError: prLib.describeStartError(started) };
+    }
+    const out = prLib.createRedactingWriter((chunk) => write(chunk));
+    const streamed = await stream(token, ctx, started.data.execution_id, null, {
+      write: (s) => out.write(s),
+      writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
+    });
+    out.flush();
+    return { streamed, text: [streamed?.text, streamed?.resultText].filter(Boolean).join('\n') };
+  };
+
+  // The thinker reads the code and replies with a proposal, or why it has none.
+  const askThinker = async (notes) => {
+    const thinkBranch = `${branch}-think`;
+    if (!prLib.isSafeBranchName(thinkBranch)) return { ok: false, error: `"${thinkBranch}" is not a safe branch name` };
+    const round = await runRound({
+      prompt: prLib.buildProposalPrompt({ owner: repo.owner, name: repo.name, task, base, branch: thinkBranch, notes }),
+      model: thinker,
+      sessionId: sessionFor(branch, '-think'),
+    });
+    if (round.startError) return { ok: false, error: round.startError };
+    const found = prLib.parseProposal(round.text);
+    if (found.ok || round.streamed?.ok) return found;
+    return { ok: false, error: `the thinker's run stopped before it finished (${round.streamed?.status || 'unknown'})` };
+  };
+
+  let thinkerUsed = false;
+  const succeed = (result, usedBranch) => {
+    finalUrl = result.url;
+    log('');
+    log(`Pull request opened: ${title}`);
+    log(`Branch: ${result.branch || usedBranch}`);
+    log(result.url);
+    if (thinkerUsed) {
+      // A fix that needed a thinker is a hard fix. Seen live 2026-11-14: one
+      // passed its own check and 143 guard tests, and a second reader still
+      // found it broke nearby paths. So the command says so, every time.
+      log('This was a hard fix. Have a second reader check it before it merges.');
+      log('ESCALATED=1');
+      log('NEEDS_READER=1');
+      log(`THINKER=${thinker}`);
+      log(`BUILDER=${options.model || 'default'}`);
+    }
+    return 0;
+  };
+
+  // A builder round that did not open a pull request. note: what was tried
+  // before it, said first so the person sees both attempts.
+  const builderFailed = (round, result, note = '') => {
+    if (round.startError) return fail(`${note}${round.startError}`);
+    if (result.failedStep) {
+      return fail(`${note}Step ${result.failedStep} failed, so no pull request is ready: ${result.error}`);
+    }
+    const why = round.streamed?.ok
+      ? `${result.error} No pull request is confirmed.`
+      : `The run stopped before it finished (${round.streamed?.status || 'unknown'}), and no pull request link came back.`;
+    logError(prLib.redactSecrets(`${note}${why}`));
+    const tail = prLib.lastLines(round.streamed?.text || round.streamed?.resultText || '', 15);
+    if (tail) {
+      logError('Last lines of the run:');
+      logError(prLib.redactSecrets(tail));
+    }
+    process.exitCode = 1;
+    return 1;
+  };
+
+  const runBuilder = async (usedBranch, sessionId, proposal) => {
+    const round = await runRound({
+      prompt: proposal
+        ? prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal })
+        : prompt,
+      model: options.model,
+      sessionId,
+      builder: true,
+    });
+    const result = round.startError ? null : prLib.parsePullRequestResult(round.text, repo);
+    return { round, result };
+  };
+
+  if (parsed.think) {
+    // Known hard bug: the thinker goes first, then one builder round.
+    log(`Asking the thinker (${thinker}) for a proposal first.`);
+    thinkerUsed = true;
+    const advice = await askThinker('');
+    if (advice.ok) log('Proposal ready. The builder is working with it.');
+    else log(prLib.redactSecrets(`The thinker found no cause (${advice.error}). The builder is trying once without a proposal.`));
+    const proposal = advice.ok ? advice.proposal : null;
+    const only = await runBuilder(branch, sessionFor(branch), proposal);
+    if (only.result?.ok) return succeed(only.result, branch);
+    return builderFailed(only.round, only.result, proposal ? 'The builder tried the thinker\'s proposal and still could not finish. ' : '');
+  }
+
+  const first = await runBuilder(branch, sessionFor(branch), null);
+  if (first.result?.ok) return succeed(first.result, branch);
+
+  // Only a builder that ran to the end and could not prove a fix asks for
+  // help. Access, prepare, push and open failures, empty changes, and runs
+  // that dropped never do.
+  const stuck = !first.round.startError
+    && first.round.streamed?.ok
+    && first.result.failedStep === 5
+    && !/no changes/i.test(first.result.error || '');
+  if (!stuck || parsed.noThink) return builderFailed(first.round, first.result);
+  if (!thinker) {
+    log(noThinkerLine);
+    return builderFailed(first.round, first.result);
+  }
+  const retryBranch = `${branch}-b`;
+  if (!prLib.isSafeBranchName(retryBranch)) return builderFailed(first.round, first.result);
+
+  log('');
+  log(`The builder could not prove a fix. Asking the thinker (${thinker}) for a proposal.`);
+  thinkerUsed = true;
+  const advice = await askThinker(first.result.error || '');
+  if (!advice.ok) {
+    logError(prLib.redactSecrets(`The builder said: ${first.result.error}`));
+    return fail(`The builder could not prove a fix and the thinker found no cause, so no pull request is ready: ${advice.error}`);
+  }
+  log('Proposal ready. The builder is trying again with it.');
+  log(`  Branch: ${retryBranch}`);
+  const second = await runBuilder(retryBranch, sessionFor(branch, '-b'), advice.proposal);
+  if (second.result?.ok) return succeed(second.result, retryBranch);
+  return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
+  } finally {
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
+    await finishFeed();
+    const time = elapsed();
+    log(`Done in ${time.minutes}m ${time.seconds}s`);
+  }
+}
+
 async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
   let fromIndex = 0;
-  let errors = 0;
+  let failureStarted = null;
+  let pollDelay = 1200;
+  const wait = options.sleep || sleep;
+  const request = options.apiRequestJson || apiRequestJson;
   let cancelling = false;
   let cancelPromise = null;
   let sawVisibleOutput = false;
   let terminalStatus = null;
+  // Callers that need the run's words (atris computer pr) read `text` from the
+  // return value, and may route printing through their own writers.
+  let collectedText = '';
+  let resultText = '';
+  const out = typeof options.write === 'function' ? options.write : (s) => process.stdout.write(s);
+  const errOut = typeof options.writeError === 'function' ? options.writeError : (s) => console.error(s);
 
   const requestCancel = async () => {
     if (cancelling) return;
@@ -1120,40 +1441,54 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
 
   try {
     while (true) {
-      await sleep(1200);
-      const events = await apiRequestJson(
+      await wait(pollDelay);
+      const events = await request(
         `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=${fromIndex}`,
         { method: 'GET', token, timeoutMs: 60000 }
       );
 
       if (!events.ok) {
-        if (++errors >= 5) {
-          console.error('\nLost connection to AI computer.');
-          return { ok: false, status: 'connection_lost' };
+        if (failureStarted === null) {
+          failureStarted = Date.now();
+          errOut('\nConnection to AI computer dropped. Retrying...');
+          pollDelay = 600;
         }
+        const remaining = 10 * 60 * 1000 - (Date.now() - failureStarted);
+        if (remaining <= 0) {
+          errOut('\nLost connection to AI computer.');
+          return { ok: false, status: 'connection_lost', text: collectedText, resultText };
+        }
+        pollDelay = Math.min(pollDelay * 2, 15000, remaining);
         continue;
       }
 
-      errors = 0;
+      if (failureStarted !== null) errOut('Connection to AI computer restored.');
+      failureStarted = null;
+      pollDelay = 1200;
       let done = false;
       const emitEvents = (items, { showTools = true } = {}) => {
         let batchDone = false;
         for (const event of (items || [])) {
           if ((event.type === 'assistant_text' || event.type === 'text') && event.content) {
             sawVisibleOutput = true;
-            process.stdout.write(event.content);
+            collectedText += event.content;
+            out(event.content);
           } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
             sawVisibleOutput = true;
-            process.stdout.write(String(event.result));
+            resultText = String(event.result);
+            collectedText += resultText;
+            out(resultText);
+          } else if (event.type === 'result' && event.result) {
+            resultText = String(event.result);
           } else if (showTools && !options.quiet && event.type === 'tool_use' && event.tool) {
             const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
             if (arg) {
-              console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
+              out(`\n  [${event.tool}] ${String(arg).slice(0, 120)}\n`);
             } else {
-              console.log(`\n  [${event.tool}]`);
+              out(`\n  [${event.tool}]\n`);
             }
           } else if (event.type === 'error') {
-            if (event.error) console.error(`\n${event.error}`);
+            if (event.error) errOut(`\n${event.error}`);
             terminalStatus = 'error';
             batchDone = true;
             break;
@@ -1177,7 +1512,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
 
       if (done || ['completed', 'error', 'failed', 'cancelled'].includes(events.data?.status)) {
         if (!sawVisibleOutput && events.data?.status === 'completed') {
-          const fullEvents = await apiRequestJson(
+          const fullEvents = await request(
             `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=0`,
             { method: 'GET', token, timeoutMs: 60000 }
           );
@@ -1186,16 +1521,15 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
           }
         }
 
-        if (!process.stdout.write('\n')) {
-          // no-op: keep line handling stable
-        }
+        out('\n');
         if (!sawVisibleOutput && events.data?.status === 'completed') console.log('(no result)');
         const finalStatus = terminalStatus || events.data?.status || (done ? 'completed' : 'unknown');
-        return { ok: finalStatus === 'completed', status: finalStatus };
+        return { ok: finalStatus === 'completed', status: finalStatus, text: collectedText, resultText };
       }
     }
   } finally {
     sigintTarget.removeListener('SIGINT', onSigint);
+    if (cancelPromise) await cancelPromise;
   }
 }
 
@@ -1254,6 +1588,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
 }
 
 async function computerChat(token, ctx, initialOptions = {}) {
+  initialOptions = { ...initialOptions, model: initialOptions.model || ctx?.model || null };
   if (!ctx) {
     console.error('Cloud computer mode requires a bound business workspace.');
     console.error('run this inside a bound business workspace, or use `atris computer --local` for local mode.');
@@ -1497,6 +1832,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
 }
 
 async function computerLocalAtris(token, ctx, initialOptions = {}) {
+  initialOptions = { ...initialOptions, model: initialOptions.model || ctx?.model || null };
   if (!ctx) {
     console.error('Atris local mode needs a bound business workspace for the cloud brain.');
     console.error('run inside a bound business workspace, or use `atris computer local-byo`.');
@@ -1740,7 +2076,7 @@ async function computerProof(token, ctx, initialOptions = {}) {
   }
 
   const worker = initialOptions.worker || 'openai';
-  const model = initialOptions.model || null;
+  const model = initialOptions.model || ctx?.model || null;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
   const fileName = `atris-proof-${stamp}.txt`;
   const expected = `ATRIS_PROOF_OK_${stamp}`;
@@ -1943,6 +2279,26 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   const cloudOptions = parsed.options;
   const sub = args[0];
 
+  if ((sub === 'exec' || sub === 'chat') && argv.slice(argv.indexOf(sub) + 1).some(arg => arg === '--help' || arg === '-h')) {
+    console.log(sub === 'exec'
+      ? 'Usage: atris computer exec "<prompt>" [--business <slug>] [--workspace <id>] [--no-wait]'
+      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>]');
+    return;
+  }
+
+  if (sub === 'login') {
+    const { computerLogin } = require('./computer-login');
+    // The shared option reader takes --business wherever it sits, so hand it
+    // on; otherwise a flag typed before `login` would be dropped silently.
+    const code = await computerLogin(argv.slice(argv.indexOf('login') + 1), {
+      readBusinessBinding,
+      business: cloudOptions.businessSlug || '',
+      ...deps,
+    });
+    if (code !== 0) process.exitCode = code;
+    return code;
+  }
+
   if (sub === 'setup') {
     const code = await computerSetup(deps);
     if (code !== 0) process.exitCode = code;
@@ -2035,6 +2391,24 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     return runRecruitingLocalSyncCommand(args[1], args.slice(2), cloudOptions);
   }
 
+  if (sub === 'pr') {
+    // Read the repo and task before any login or cloud call, so a typo costs
+    // nothing and help works signed out.
+    let prArgs;
+    try {
+      prArgs = require('../lib/computer-pr').parsePrArgs(args.slice(1));
+    } catch (err) {
+      printComputerPrHelp(console.error);
+      console.error(err.message);
+      process.exitCode = 1;
+      return 1;
+    }
+    if (prArgs.help) {
+      printComputerPrHelp();
+      return 0;
+    }
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -2078,6 +2452,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('                  /start shows the beginner flow');
     console.log('                  /status shows lane, Claude auth, and billing');
     console.log('                  /audit [n] shows recent cloud runs inside chat');
+    console.log('  model <id|clear>  Save or clear the default model for a business');
     console.log('  status          Show computer status');
     console.log('  up|wake         Start the computer');
     console.log('  sleep           Stop the computer (files persist)');
@@ -2087,6 +2462,8 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  ls [path]       List files');
     console.log('  cat <path>      Read a file');
     console.log('  exec "<prompt>" Run with LLM (Claude Code)');
+    console.log('  pr <owner/repo> "<task>"  Do the task on a new branch and print the pull request link (never merges)');
+    console.log('                  --base <branch> --branch <name> --worker claude|openai --model <id>');
     console.log('  pull [path] [dir] Pull files from EC2 to local');
     console.log('  diff [path]       Show what changed on EC2 since last pull');
     console.log('  learn             Trigger autonomous learning cycle');
@@ -2117,6 +2494,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     console.log('  atris computer grep "overnight"');
     console.log('  atris computer cat soul/soul.md');
     console.log('  atris computer exec "Read soul/ and suggest what to work on"');
+    console.log('  atris computer pr owner/repo "Fix the typo in the README" --business my-lab');
     return;
   }
 
@@ -2203,7 +2581,9 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     case 'ls': return computerLs(token, rest || undefined, ctx);
     case 'cat': return computerCat(token, rest, ctx);
     case 'exec': return computerExec(token, rest, ctx, cloudOptions);
+    case 'pr': return computerPr(token, args.slice(1), ctx, cloudOptions);
     case 'lane': return computerLane(rest, ctx);
+    case 'model': return computerModel(rest, ctx);
     case 'pull': {
       const parts = rest.split(' ').filter(Boolean);
       return computerPull(token, parts[0], parts[1], ctx);
@@ -2251,4 +2631,6 @@ module.exports = {
   shellQuote,
   withoutRecruitingWrapperFlags,
   formatCloudSelection,
+  computerPr,
+  streamBusinessChatResult,
 };
