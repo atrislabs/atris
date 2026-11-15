@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "E404",
+    "summary": "No match found for version 3.83.99",
+    "detail": "'atris@3.83.99' is not in this registry.\n\nNote that you can also install from a\ntarball, folder, http url, or git url."
+  }
+}
