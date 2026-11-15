@@ -139,13 +139,13 @@ test('doctorCommand renders human output with member next step', (t) => {
   assert.equal(code, 0);
   const out = lines.join('\n');
   assert.match(out, /atris doctor/);
-  assert.match(out, /version: atris v9\.9\.9/);
-  assert.match(out, /task support \(22\+\): yes/);
-  assert.match(out, /auth: signed out/);
-  assert.match(out, /members: not ready yet/);
-  assert.match(out, /team: 1 member\b/);
-  assert.match(out, /git: installed, but this folder is not a git repo/);
-  assert.match(out, /next: run git init here so members can work on their own copy\./);
+  assert.match(out, /atris\s+v9\.9\.9/);
+  assert.match(out, /node\s+v22\.0\.0 \(new enough/);
+  assert.match(out, /signed in\s+no/);
+  assert.match(out, /things need fixing/);
+  assert.match(out, /team\s+1 member\b/);
+  assert.match(out, /git\s+installed; this folder has no git history/);
+  assert.match(out, /fix: atris login/);
 });
 
 test('doctorCommand exits 1 when node is below task-support floor', (t) => {
@@ -162,9 +162,9 @@ test('doctorCommand exits 1 when node is below task-support floor', (t) => {
 
   assert.equal(code, 1);
   const out = lines.join('\n');
-  assert.match(out, /node: v18\.19\.0/);
-  assert.match(out, /task support \(22\+\): no/);
-  assert.match(out, /install Node 22\+ before running atris task\./);
+  assert.match(out, /node\s+v18\.19\.0/);
+  assert.match(out, /too old/);
+  assert.match(out, /fix: install node 22 or newer/);
 });
 
 test('doctorCommand reports empty workspace with no team as not ready', (t) => {

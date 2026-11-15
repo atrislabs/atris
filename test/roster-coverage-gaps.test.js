@@ -21,6 +21,9 @@ const ENV_KEYS = [
   'ATRIS_ROSTER_SESSIONS_DIR', 'ATRIS_CODEX_MODELS_CACHE_PATH', 'ATRIS_CODEX_CONFIG_PATH',
   'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
   'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_ENGINE_COOLDOWN_MINUTES',
+  // The claude spend guard reads the home's hook and account file and these
+  // keys. Every room gets a scratch home and none of the machine's own.
+  'HOME', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ATRIS_CLAUDE_SPEND_OK',
   'PATH',
 ];
 
@@ -44,6 +47,8 @@ async function withRoom(fn, { roster = '' } = {}) {
   if (roster) fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster);
   const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) if (key !== 'PATH') delete process.env[key];
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
   process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;

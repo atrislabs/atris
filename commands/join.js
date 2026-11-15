@@ -5,11 +5,14 @@
 // (POST /join-as-agent). The agent key goes in the same slot `atris login
 // --agent` uses, and the joined agent is remembered next to it so
 // `atris night` and `atris morning` act for it by default.
+// Without --mission, the agent's purpose line from this project's own
+// atris/team/<name>/MISSION.md (its North Star) is shown and used as the mission.
 //
 // `atris join <invite-code>` (accepting an invite) still lives in
 // commands/social.js; bin/atris.js routes here only when --name is given.
 
-const { parseFlags, wantsHelp, resolveBusinessId, errorText } = require('../lib/night-shift');
+const path = require('path');
+const { parseFlags, wantsHelp, resolveBusinessId, errorText, cleanText } = require('../lib/night-shift');
 
 const NOT_LOGGED_IN = 'not logged in. run: atris login';
 
@@ -22,7 +25,9 @@ function showJoinAgentHelp(log = console.log) {
   log('');
   log('  --name <name>       The agent\'s name');
   log('  --business <id>     The business it belongs to (id or connected slug)');
-  log('  --mission "<text>"  What the agent is for, in one line');
+  log('  --mission "<text>"  What the agent is for, in one line. Without it, the');
+  log('                      North Star in atris/team/<name>/MISSION.md is used if there');
+  log('                      is one. --mission "" sends no mission at all.');
   log('');
   log('To accept an invite instead: atris join <invite-code>');
 }
@@ -71,6 +76,21 @@ function storeJoinedAgent(creds, token, joined, deps = {}) {
   }
 }
 
+const MAX_MISSION = 300;
+
+// The one purpose line this project already keeps for an agent of this name:
+// the North Star in atris/team/<name>/MISSION.md. Null unless it is a real
+// line, not the placeholder a new member file starts with.
+function purposeFromFolder(name, cwd) {
+  const slug = String(name).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) return null;
+  const memberDir = path.join(cwd, 'atris', 'team', slug);
+  const { missionPurpose } = require('../lib/member-core');
+  const purpose = missionPurpose({ memberDir, missionFile: path.join(memberDir, 'MISSION.md') });
+  const line = purpose.meaningful ? cleanText(purpose.northStar, MAX_MISSION) : '';
+  return line.length >= 8 ? { file: `atris/team/${slug}/MISSION.md`, line } : null;
+}
+
 async function joinAgentCommand(args = [], deps = {}) {
   const log = deps.log || console.log;
   const err = deps.err || console.error;
@@ -97,7 +117,17 @@ async function joinAgentCommand(args = [], deps = {}) {
 
   const businessId = flags.business ? resolveBusinessId(flags.business, deps) : null;
   const body = { business_id: businessId, name };
-  const mission = String(flags.mission || '').trim();
+  let mission = String(flags.mission || '').trim();
+  if (flags.mission === undefined) {
+    const purpose = purposeFromFolder(name, deps.cwd || process.cwd());
+    if (purpose) {
+      mission = purpose.line;
+      log(`Using the purpose line in ${purpose.file} as the mission:`);
+      log(`  "${purpose.line}"`);
+      log('Sending Atris only the name, the business and that one line, nothing else from your folder.');
+      log('To send your own instead: --mission "<text>". To send none: --mission "".');
+    }
+  }
   if (mission) body.mission = mission;
 
   const result = await request('/join-as-agent', { method: 'POST', token, body, retries: 0 });
@@ -126,4 +156,4 @@ async function joinAgentCommand(args = [], deps = {}) {
   return 0;
 }
 
-module.exports = { joinAgentCommand, isAgentJoin, showJoinAgentHelp, storeJoinedAgent };
+module.exports = { joinAgentCommand, isAgentJoin, showJoinAgentHelp, storeJoinedAgent, purposeFromFolder };

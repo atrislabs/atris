@@ -89,6 +89,12 @@ const RULES = [
     re: /[●◉]\s*[A-Z][A-Z0-9]+(?:\s+[A-Z0-9]+)*\b/,
     notFiles: /\.(md|mdx|txt)$/i, // prose/wireframe docs use ● as radio buttons and transport glyphs
     why: 'dot char + all-caps label: the status-dot eyebrow kicker, the #1 banned hero pattern' },
+  { id: 'comma-join', sev: 'warn',
+    re: /,\s+(?:and|but|so)\b/i,
+    onlyFiles: /\.(md|mdx|txt)$/i,
+    skipCode: true, // prose only: fenced blocks and inline `code` can keep their commas
+    fix: (s) => s.replace(/,(\s+)(and|but|so)\b/gi, '$1$2'),
+    why: 'comma before a joining word: drop the comma or start a new sentence' },
 ];
 
 // Pair rules: two regexes that must BOTH hit within a small line window. Catches
@@ -178,9 +184,20 @@ function applyFixes(files, rules) {
     let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
     const lines = text.split('\n');
     let touched = false;
+    const fenced = fixable.some((r) => r.skipCode) ? fencedLines(lines) : null;
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      for (const r of fixable) { if (r.re.test(line)) { const nl = r.fix(line); if (nl !== line) { line = nl; fixedCount++; } } }
+      for (const r of fixable) {
+        if (!ruleApplies(r, file)) continue;
+        if (r.skipCode && fenced[i]) continue;
+        const target = r.skipCode ? line.replace(/`[^`]*`/g, 'code') : line;
+        if (r.re.test(target)) {
+          const nl = r.skipCode
+            ? line.split(/(`[^`]*`)/).map((seg, k) => (k % 2 ? seg : r.fix(seg))).join('')
+            : r.fix(line);
+          if (nl !== line) { line = nl; fixedCount++; }
+        }
+      }
       if (line !== lines[i]) { lines[i] = line; touched = true; }
     }
     if (touched) { fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
@@ -205,16 +222,35 @@ function walk(target, out) {
   return out;
 }
 
+function fencedLines(lines) {
+  let inside = false;
+  return lines.map((line) => {
+    if (line.trimStart().startsWith('```')) { inside = !inside; return true; }
+    return inside;
+  });
+}
+
+// Rule gate shared by scanFile and applyFixes: file-type scoping (notFiles,
+// onlyFiles) and, for rules marked skipCode, fenced blocks and inline code.
+function ruleApplies(rule, file) {
+  if (rule.notFiles && rule.notFiles.test(file)) return false;
+  if (rule.onlyFiles && !rule.onlyFiles.test(file)) return false;
+  return true;
+}
+
 function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   const findings = [];
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { return findings; }
   const lines = text.split('\n');
+  const fenced = rules.some((r) => r.skipCode) ? fencedLines(lines) : null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const rule of rules) {
-      if (rule.notFiles && rule.notFiles.test(file)) continue;
-      const m = rule.re.exec(line);
+      if (!ruleApplies(rule, file)) continue;
+      if (rule.skipCode && fenced[i]) continue;
+      const target = rule.skipCode ? line.replace(/`[^`]*`/g, 'code') : line;
+      const m = rule.re.exec(target);
       if (m) {
         findings.push({
           file, line: i + 1, rule: rule.id, sev: rule.sev, why: rule.why,

@@ -52,12 +52,17 @@ test('set then show round-trips the goal', () => {
     const show = runCli('goal', [], dir);
     assert.equal(show.status, 0, show.stderr);
     assert.equal(show.stdout.trimEnd(), [
-      '  goal      first outside customer pays for atris',
+      '  goal      First Outside Customer Pays For Atris',
       '  today     no movement recorded today',
       '  next      atris task day',
     ].join('\n'));
 
     const stateDir = path.join(dir, '.atris', 'state');
+    // Matching keeps the lowercased goal; the typed text is kept beside it for showing.
+    const saved = JSON.parse(fs.readFileSync(path.join(stateDir, 'scoreboard.json'), 'utf8'));
+    assert.equal(saved.goal, 'first outside customer pays for atris');
+    assert.equal(saved.goal_text, 'First Outside Customer Pays For Atris');
+    assert.equal(JSON.parse(runCli('goal', ['--json'], dir).stdout).goal, 'first outside customer pays for atris');
     assert.deepEqual(fs.readdirSync(stateDir).filter((name) => name.includes('scoreboard.json.')), []);
   } finally {
     cleanup(dir);
@@ -130,6 +135,7 @@ test('--json emits goal, metrics, today, and next', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
       goal: 'first customer pays',
+      goal_text: 'first customer pays',
       metrics: [{ name: 'paying customers', value: '0' }],
       today: '1 task landed, 1 waiting for your ok, 1 mission completed',
       next: 'atris task reviews',

@@ -14,12 +14,24 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+// The goal as the person typed it, for showing. The lowercased goal stays the
+// value everything matches on; the typed text is kept beside it only while it
+// still normalizes to that same goal, so an old or hand-edited file falls back.
+function displayText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function goalTextFor(goal, typed) {
+  const text = displayText(typed);
+  return goal && text && normalizeText(text) === goal ? text : (goal || null);
+}
+
 function scoreboardPath(root = process.cwd()) {
   return path.join(root, SCOREBOARD_FILE);
 }
 
 function emptyScoreboard() {
-  return { goal: null, metrics: [], updated_at: null };
+  return { goal: null, goal_text: null, metrics: [], updated_at: null };
 }
 
 function readScoreboard(root = process.cwd()) {
@@ -27,8 +39,10 @@ function readScoreboard(root = process.cwd()) {
   if (!fs.existsSync(file)) return emptyScoreboard();
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const goal = normalizeText(parsed?.goal) || null;
     return {
-      goal: normalizeText(parsed?.goal) || null,
+      goal,
+      goal_text: goalTextFor(goal, parsed?.goal_text),
       metrics: Array.isArray(parsed?.metrics)
         ? parsed.metrics
           .map((metric) => ({
@@ -47,8 +61,10 @@ function readScoreboard(root = process.cwd()) {
 function writeScoreboard(scoreboard, root = process.cwd()) {
   const file = scoreboardPath(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const goal = normalizeText(scoreboard.goal);
   const next = {
-    goal: normalizeText(scoreboard.goal),
+    goal,
+    ...(goal ? { goal_text: goalTextFor(goal, scoreboard.goal_text || scoreboard.goal) } : {}),
     metrics: Array.isArray(scoreboard.metrics) ? scoreboard.metrics : [],
     updated_at: new Date().toISOString(),
   };
@@ -147,6 +163,7 @@ function buildGoalView(root = process.cwd(), now = new Date()) {
       : 'atris goal set "<sentence>"';
   return {
     goal: scoreboard.goal,
+    goal_text: scoreboard.goal_text,
     metrics: scoreboard.metrics,
     today,
     next,
@@ -158,7 +175,7 @@ function row(label, value) {
 }
 
 function renderGoalView(view) {
-  const goal = view.goal || 'goal not set. set it: atris goal set "<sentence>"';
+  const goal = view.goal_text || view.goal || 'goal not set. set it: atris goal set "<sentence>"';
   const lines = [row('goal', goal)];
   if (view.metrics.length > 0) {
     lines.push(row('distance', view.metrics.map((metric) => `${metric.name}: ${metric.value}`).join(' | ')));
@@ -251,7 +268,7 @@ function run(args = [], context = {}) {
         return 2;
       }
       const scoreboard = readScoreboard(root);
-      writeScoreboard({ ...scoreboard, goal }, root);
+      writeScoreboard({ ...scoreboard, goal, goal_text: sentence }, root);
       console.log('goal set.');
       if (!noWish) captureGoalWish(sentence, root);
       return 0;
@@ -296,5 +313,7 @@ function run(args = [], context = {}) {
 }
 
 module.exports = {
+  readScoreboard,
   run,
+  writeScoreboard,
 };

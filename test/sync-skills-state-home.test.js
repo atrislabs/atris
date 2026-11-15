@@ -105,7 +105,7 @@ test('init keeps protected global skills inside the test-state home', (t) => {
   const f = fixture(t, { project: false });
   const before = snapshot(f.home);
   const result = run(f, [path.join(repo, 'bin', 'atris.js'), 'init', '--minimal', '--yes', '--no-commit']);
-  assert.match(result.stdout, /atris initialized\./);
+  assert.match(result.stdout, /atris is set up in this folder\./);
   assert.ok(fs.existsSync(path.join(f.cwd, 'atris', 'atris.md')));
   assert.deepEqual(snapshot(f.home), before, 'protected home bytes, modes and times changed');
   assertGlobalSkills(f.fence);

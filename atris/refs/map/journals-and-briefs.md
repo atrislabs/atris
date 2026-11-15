@@ -1,6 +1,6 @@
 # Journals and briefs
 
-Daily logs, status, launchpad, analytics, briefs, recaps and visualize. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+Daily logs, status, launchpad, analytics, briefs, recaps and visualize. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Search shortcuts: Modular commands
 
@@ -66,12 +66,12 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 
 **Purpose:** One compact command-center card: the single next action plus 3 suggested moves, synthesized from local task, mission, brain, and proof state. Empty and file folders reuse first-minute talk.
 
-- **Entry point:** `commands/launchpad.js:618` (`launchpadCommand`) routes `--help`/`--json`/plain card; empty and file folders reuse `speakFirstMinute` (same two spoken lines as bare `atris`, no mint, no init); post-mint keep-working reuses `speakKeepWorkingMinute`; post-init claim reuses `speakFirstMinute` like `status`/`now`; a live mission still gets the board
-- **Collector:** `commands/launchpad.js:424` (`collectLaunchpad`) reads the task projection, active missions, brain STATUS next move, and TODO endgame; emits `schema: atris.launchpad.v1`
-- **Ranking:** `commands/launchpad.js:205` (`chooseNextAction`) own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept; no `atris init` bootstrap
-- **Suggestions:** `commands/launchpad.js:371` (`suggestedNextMoves`) returns up to 3 plain-language moves
-- **Render:** `commands/launchpad.js:573` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:607` (`showLaunchpadHelp`)
-- **Help:** `bin/atris.js:580` help line; **Routing:** `bin/atris.js:2479` dispatch, `lib/known-commands.js:3` `knownCommands`
+- **Entry point:** `commands/launchpad.js` (`launchpadCommand`) routes `--help`/`--json`/plain card; empty and file folders reuse `speakFirstMinute` (same two spoken lines as bare `atris`, no mint, no init); post-mint keep-working reuses `speakKeepWorkingMinute`; post-init claim reuses `speakFirstMinute` like `status`/`now`; a live mission still gets the board
+- **Collector:** `commands/launchpad.js` (`collectLaunchpad`) reads the task projection, active missions, brain STATUS next move, and TODO endgame; emits `schema: atris.launchpad.v1`
+- **Ranking:** `commands/launchpad.js` (`chooseNextAction`) own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept; no `atris init` bootstrap
+- **Suggestions:** `commands/launchpad.js` (`suggestedNextMoves`) returns up to 3 plain-language moves
+- **Render:** `commands/launchpad.js` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js` (`showLaunchpadHelp`)
+- **Help:** `bin/atris.js:580` help line; **Routing:** `bin/atris.js:2479` dispatch, `lib/known-commands.js` `knownCommands`
 - **Regression:** `test/first-minute.test.js` (empty first-talk, file names the file, post-mint already yours, post-init claim); `test/dogfood-p0-safety.test.js` `26d`/`26e`/`26h`/`26i`; `test/commands-7.test.js:1255` (actor-claimed first), `test/commands-7.test.js:1329` (clean queue to endgame seed), `test/commands-7.test.js:1365` (verifier mission when no claimed task); `--help` smoke at `test/commands-7.test.js:1199`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
@@ -82,7 +82,7 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js:926-929` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands-2.test.js:1476-1491` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**

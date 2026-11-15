@@ -141,7 +141,7 @@ test('atris activate keeps the existing clarity nudge when no profile exists', (
     runCli(['init'], root);
     const res = runCli(['activate'], root);
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Tip: run atris clarity once so agents learn how you work\./);
+    assert.match(res.stdout, /tip: run atris clarity once so agents learn how you work\./);
     assert.doesNotMatch(res.stdout, /clarity:/);
     assert.doesNotMatch(res.stdout, /atris\/CLARITY\.md/);
   } finally {
@@ -158,7 +158,7 @@ test('atris activate skips corrupt clarity json without crashing', () => {
     fs.writeFileSync(path.join(root, 'atris', 'CLARITY.md'), clarity.renderClarityMd({ voice: 'plain' }), 'utf8');
     const res = runCli(['activate'], root);
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Tip: run atris clarity once so agents learn how you work\./);
+    assert.match(res.stdout, /tip: run atris clarity once so agents learn how you work\./);
     assert.doesNotMatch(res.stdout, /clarity:/);
     assert.doesNotMatch(res.stdout, /voice plain/);
   } finally {

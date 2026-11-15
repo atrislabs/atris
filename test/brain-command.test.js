@@ -85,8 +85,8 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     seedWorkspace(dir);
     const res = runCli(['brain', 'compile', '--yes', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris brain compiled/);
-    assert.match(res.stdout, /Verify: passed/);
+    assert.match(res.stdout, /start-up notes saved for \S+ \(Brain Lab\)\./);
+    assert.match(res.stdout, /checked: the saved notes are in place/);
 
     const brainDir = path.join(dir, 'atris', 'brain');
     const status = fs.readFileSync(path.join(brainDir, 'STATUS.md'), 'utf8');
@@ -107,8 +107,8 @@ test('brain compile writes STATUS.md, ledger, and state.json from a seeded works
     // The boot block lands in every root agent adapter.
     for (const adapter of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
       const text = fs.readFileSync(path.join(dir, adapter), 'utf8');
-      assert.match(text, /Atris Brain Compile/, `${adapter} should carry the boot block`);
-      assert.match(text, /atris brain activate --root \. --yes --verify/, `${adapter} should name the activation command`);
+      assert.match(text, /Atris start-up notes/, `${adapter} should carry the boot block`);
+      assert.match(text, /`atris brain activate --root \.`/, `${adapter} should name the activation command`);
     }
   } finally {
     cleanupTempDir(dir);
@@ -184,7 +184,7 @@ test('recompile preserves operator prose around the generated block', () => {
     assert.match(agents, /Hand-written onboarding the compile must not eat\./);
     assert.match(agents, /Hand-written footer that also survives\./);
     assert.doesNotMatch(agents, /stale generated content/);
-    assert.match(agents, /Atris Brain Compile/);
+    assert.match(agents, /Atris start-up notes/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -196,9 +196,9 @@ test('brain activate --verify on a ready member exits 0 with an executable card'
     seedWorkspace(dir);
     const res = runCli(['brain', 'activate', '--yes', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /CONTEXT: Brain Lab Brain/);
-    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
-    assert.match(res.stdout, /VERIFY: brain artifacts and member activation executable/);
+    assert.match(res.stdout, /\(Brain Lab\) is ready for justin/);
+    assert.match(res.stdout, /next: take one step toward a customer/);
+    assert.match(res.stdout, /checked: the saved notes are in place/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -210,8 +210,8 @@ test('brain activate --verify on a missing member exits nonzero with a plain mes
     seedWorkspace(dir);
     const res = runCli(['brain', 'activate', '--yes', '--member', 'ghost', '--root', dir, '--verify'], { cwd: dir });
     assert.notEqual(res.status, 0);
-    assert.match(res.stdout, /OPERATOR: ghost \(missing\)/);
-    assert.match(res.stderr, /brain activate non-executable member activation card: ghost \(missing\)/);
+    assert.match(res.stdout, /not ready for ghost: there is no team member by that name/);
+    assert.equal(res.stderr, '');
     assert.doesNotMatch(res.stderr, /at \w+ \(|Error:|node:internal/,
       'verify failure must read as a plain sentence, not a stack trace');
   } finally {
@@ -219,21 +219,17 @@ test('brain activate --verify on a missing member exits nonzero with a plain mes
   }
 });
 
-test('flag handling: --root= equals form and the status alias both compile from a foreign cwd', () => {
+test('status reads from --root without writing in either folder', () => {
   const dir = makeTempDir();
   const elsewhere = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['brain', 'status', '--yes', `--root=${dir}`, '--verify'], { cwd: elsewhere });
+    const res = runCli(['brain', 'status', '--yes', `--root=${dir}`], { cwd: elsewhere });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris brain compiled/);
-    assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);
-    // The compile must land in --root, never the spawn cwd.
+    assert.match(res.stdout, /\(Brain Lab\) is ready/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain')), false);
     assert.equal(fs.existsSync(path.join(elsewhere, 'atris', 'brain')), false);
-  } finally {
-    cleanupTempDir(dir);
-    cleanupTempDir(elsewhere);
-  }
+  } finally { cleanupTempDir(dir); cleanupTempDir(elsewhere); }
 });
 
 test('brain help exits 0 with usage; an unknown subcommand exits 1 with usage on stderr', () => {
@@ -241,39 +237,34 @@ test('brain help exits 0 with usage; an unknown subcommand exits 1 with usage on
   try {
     const help = runCli(['brain', 'help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr);
-    assert.match(help.stdout, /Usage: atris brain compile/);
+    assert.match(help.stdout, /atris brain: the notes every agent reads/);
 
     const unknown = runCli(['brain', 'defragment', '--root', dir], { cwd: dir });
     assert.equal(unknown.status, 1);
-    assert.match(unknown.stderr, /Usage: atris brain compile/);
+    assert.match(unknown.stderr, /atris brain: the notes every agent reads/);
+    const json = runCli(['brain', 'defragment', '--json', '--root', dir], { cwd: dir });
+    assert.equal(json.status, 1);
+    const data = JSON.parse(json.stdout);
+    assert.equal(data.ok, false);
+    assert.equal(data.error, 'unknown brain subcommand: defragment');
+    assert.ok(Array.isArray(data.usage));
   } finally {
     cleanupTempDir(dir);
   }
 });
 
-test('verifyActivationCard passes ready cards and rejects missing or not-ready operators with plain messages', () => {
-  assert.doesNotThrow(() => verifyActivationCard('CONTEXT: Lab Brain\nOPERATOR: Justin McDonald\nNEXT MOVE: ship'));
-  assert.throws(
-    () => verifyActivationCard('CONTEXT: Lab Brain\nOPERATOR: ghost (missing)\nNEXT MOVE: create the member'),
-    /non-executable member activation card: ghost \(missing\)/,
-  );
-  assert.throws(
-    () => verifyActivationCard('CONTEXT: Lab Brain\nOPERATOR: Justin (not ready)\nNEXT MOVE: fill the profile'),
-    /non-executable member activation card: Justin \(not ready\)/,
-  );
+test('verifyActivationCard passes ready cards and rejects missing or not-ready members', () => {
+  assert.doesNotThrow(() => verifyActivationCard({ ready: true, member: 'justin' }));
+  assert.throws(() => verifyActivationCard({ ready: false, member: 'ghost', reason: 'missing' }), /ghost: missing/);
+  assert.throws(() => verifyActivationCard({ ready: false, member: 'justin', reason: 'not ready' }), /justin: not ready/);
 });
 
 test('verifyActivationGallery names every not-ready member across cards', () => {
-  const gallery = [
-    'CONTEXT: Lab Brain\nOPERATOR: Justin McDonald\nNEXT MOVE: ship',
-    'CONTEXT: Lab Brain\nOPERATOR: ghost (missing)\nNEXT MOVE: create',
-    'CONTEXT: Lab Brain\nOPERATOR: intern (not ready)\nNEXT MOVE: finish profile',
-  ].join('\n\n---\n\n');
-  assert.throws(
-    () => verifyActivationGallery(gallery),
-    /ghost \(missing\), intern \(not ready\)/,
-  );
-  assert.doesNotThrow(() => verifyActivationGallery('CONTEXT: Lab Brain\nOPERATOR: Justin McDonald\nNEXT MOVE: ship'));
+  const ready = { ready: true, member: 'justin' };
+  const missing = { ready: false, member: 'ghost', reason: 'missing' };
+  const incomplete = { ready: false, member: 'intern', reason: 'not ready' };
+  assert.throws(() => verifyActivationGallery([ready, missing, incomplete]), /ghost: missing, intern: not ready/);
+  assert.doesNotThrow(() => verifyActivationGallery([ready]));
 });
 
 test('collectState reads the seeded workspace shape: name, todo counts, endgame, load flags', () => {

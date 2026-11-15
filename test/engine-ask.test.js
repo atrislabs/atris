@@ -170,29 +170,23 @@ test('claude and fable ask spawn env pins USER to the OS username when a parent 
 });
 
 test('Fable defaults to the real model and gets a deep-reasoning timeout', () => {
-  // Fable is a spend-gated model: it runs only with the owner's yes for that id.
-  const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
-  process.env.ATRIS_CLAUDE_SPEND_OK = 'claude-fable-5-1';
-  try {
-    fableDefaultsCheck();
-  } finally {
-    if (previousSpendOk === undefined) delete process.env.ATRIS_CLAUDE_SPEND_OK;
-    else process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
-  }
+  fableDefaultsCheck();
 });
 
-test('Fable without the owner yes asks on the cheap model', () => {
+test('Fable without ATRIS_CLAUDE_SPEND_OK still asks on Fable, never on another model', () => {
   const previousSpendOk = process.env.ATRIS_CLAUDE_SPEND_OK;
   delete process.env.ATRIS_CLAUDE_SPEND_OK;
   const realWrite = process.stderr.write;
-  process.stderr.write = () => true;
+  let stderr = '';
+  process.stderr.write = (chunk) => { stderr += String(chunk); return true; };
   try {
     const invocation = buildReadOnlyEngineInvocation('fable', 'find the real cause');
-    assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-haiku-5-5']);
+    assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5-1']);
   } finally {
     process.stderr.write = realWrite;
     if (previousSpendOk !== undefined) process.env.ATRIS_CLAUDE_SPEND_OK = previousSpendOk;
   }
+  assert.doesNotMatch(stderr, /needs the owner's yes/);
 });
 
 function fableDefaultsCheck() {
@@ -810,4 +804,202 @@ test('mercury engine ask launches the test model through ax', () => {
   assert.equal(invocation.bin, 'ax');
   assert.deepEqual(invocation.args.slice(0, 3), ['--mercury', '--cloud', '--print']);
   assert.match(invocation.args[3], /hello/);
+});
+
+test('an effort the job or --effort names is honored, checked and wins over the roster', () => {
+  const { normalizeAskJob } = require('../lib/engine-ask');
+  const root = tempRoot();
+  try {
+    fs.writeFileSync(path.join(root, 'jobs.json'), JSON.stringify([
+      { engine: 'claude', model: 'haiku', effort: 'LOW', prompt: 'one' },
+      { engine: 'codex', prompt: 'two' },
+      { engine: 'claude', prompt: 'three', effort: 'max' },
+    ]));
+    const filed = parseEngineAskArgs(['--jobs', 'jobs.json', '--effort', 'high'], { root });
+    assert.deepEqual(filed.jobs.map((job) => job.effort), ['low', 'high', 'max']);
+    const [haiku] = filed.jobs;
+    const args = buildReadOnlyEngineInvocation(haiku.engine, haiku.prompt, haiku.model, { effort: haiku.effort }).args;
+    assert.equal(args[args.indexOf('--effort') + 1], 'low', 'a named model keeps the explicit effort');
+
+    const flagged = parseEngineAskArgs(['q', '--engine', 'claude', '--model', 'claude-haiku-5-5', '--effort=low'], { root });
+    assert.equal(flagged.jobs[0].effort, 'low');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  const roster = () => ({ roster_model: 'claude-sonnet-4-6', roster_effort: 'high' });
+  assert.equal(normalizeAskJob({ engine: 'claude', prompt: 'q' }, 0, roster).effort, 'high', 'no explicit effort: the roster decides as before');
+  assert.equal(normalizeAskJob({ engine: 'claude', prompt: 'q', effort: 'low' }, 0, roster).effort, 'low');
+  assert.equal(normalizeAskJob({ engine: 'claude', prompt: 'q' }, 0, roster, { effort: 'medium' }).effort, 'medium');
+  assert.equal(normalizeAskJob({ engine: 'claude', model: 'opus', prompt: 'q' }, 0, roster).effort, undefined, 'a named model alone still drops the roster effort');
+
+  assert.throws(() => parseEngineAskArgs(['q', '--engine', 'claude', '--effort', 'huge']),
+    /^Error: --effort "huge" is not one claude takes: low, medium, high, xhigh, max$/);
+  assert.throws(() => normalizeAskJob({ engine: 'codex', prompt: 'q', effort: 'max' }, 1),
+    /job 2 effort "max" is not one codex takes: low, medium, high, xhigh/);
+  assert.throws(() => parseEngineAskArgs(['q', '--engine', 'claude', '--engine', 'cursor', '--effort', 'low']),
+    /--effort "low" cannot be used: cursor takes no effort setting/);
+  assert.throws(() => parseEngineAskArgs(['q', '--engine', 'claude', '--effort']), /--effort needs a level/);
+});
+
+test('claude asks start light with json out unless full context is asked for; other engines are untouched', () => {
+  const light = parseEngineAskArgs(['q', '--engine', 'claude', '--engine', 'codex']).jobs;
+  assert.equal(light[0].context, 'light');
+  assert.equal(light[1].context, undefined);
+  const claude = buildReadOnlyEngineInvocation('claude', 'q', '', { context: 'light' });
+  assert.ok(claude.args.includes('--safe-mode'));
+  assert.deepEqual(claude.args.slice(-2), ['--output-format', 'json']);
+  assert.equal(claude.jsonResult, true);
+  assert.deepEqual(claude.spendCheck, { model: claude.args[claude.args.indexOf('--model') + 1] });
+  assert.ok(!claude.args.includes('--bare'));
+
+  const full = buildReadOnlyEngineInvocation('claude', 'q', '', { context: 'full' });
+  assert.ok(!full.args.includes('--safe-mode'));
+  assert.deepEqual(full.args.slice(-2), ['--output-format', 'json']);
+  assert.equal(full.spendCheck, undefined, 'a full start runs the hook itself');
+
+  assert.equal(parseEngineAskArgs(['q', '--engine', 'fable', '--full-context']).jobs[0].context, 'full');
+  const root = tempRoot();
+  try {
+    fs.writeFileSync(path.join(root, 'jobs.json'), JSON.stringify([
+      { engine: 'haiku', prompt: 'a', full_context: true },
+      { engine: 'haiku', prompt: 'b' },
+      { engine: 'haiku', prompt: 'c', full_context: false },
+    ]));
+    assert.deepEqual(parseEngineAskArgs(['--jobs', 'jobs.json'], { root }).jobs.map((job) => job.context), ['full', 'light', 'light']);
+    assert.deepEqual(parseEngineAskArgs(['--jobs', 'jobs.json', '--full-context'], { root }).jobs.map((job) => job.context), ['full', 'full', 'light']);
+    fs.writeFileSync(path.join(root, 'bad.json'), JSON.stringify([{ engine: 'claude', prompt: 'a', full_context: 'yes' }]));
+    assert.throws(() => parseEngineAskArgs(['--jobs', 'bad.json'], { root }), /job 1 full_context must be true or false/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  const codex = buildReadOnlyEngineInvocation('codex', 'q', '', { context: 'light' });
+  assert.deepEqual(codex.args, buildReadOnlyEngineInvocation('codex', 'q').args);
+  assert.equal(codex.jsonResult, undefined);
+  assert.equal(codex.spendCheck, undefined);
+});
+
+test('a light claude start asks the spend guard first only where its hook is installed', async () => {
+  const { installGuard } = require('../lib/claude-spend-guard');
+  // Scratch homes only: the hook, the account file and the keys all come
+  // from here, never from this machine.
+  const bare = tempRoot();
+  const guarded = tempRoot();
+  const envFor = (home, extra = {}) => ({ PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude'), ...extra });
+  const ask = async (home, model, extra) => {
+    let spawned = false;
+    const result = await runAskProcess({
+      ...fakeReplyInvocation({ stdout: `${model} answer` }),
+      spendCheck: { model },
+    }, {
+      timeoutMs: ASK_REPLY_TIMEOUT_MS,
+      env: envFor(home, extra),
+      spawnProcess: (...args) => { spawned = true; return spawn(...args); },
+    });
+    return { result, spawned };
+  };
+  try {
+    assert.equal(installGuard({ env: envFor(guarded) }).installed, true);
+
+    const stopped = await ask(guarded, 'claude-haiku-5-5', { ANTHROPIC_API_KEY: 'sk-test' });
+    assert.equal(stopped.spawned, false, 'hook installed plus a pay-per-use key: no launch');
+    assert.equal(stopped.result.ok, false);
+    assert.equal(stopped.result.reason, 'spend_stopped');
+    assert.match(stopped.result.stderr, /claude spend guard: this unattended Claude run carries a pay-per-use key/);
+
+    const paid = await ask(guarded, 'claude-opus-5-5');
+    assert.equal(paid.spawned, false, 'hook installed: a paid model with no yes stops the same way the hook would');
+    assert.match(paid.result.stderr, /claude-opus-5-5 is a paid Claude model/);
+
+    const free = await ask(guarded, 'claude-haiku-5-5');
+    assert.equal(free.spawned, true);
+    assert.equal(free.result.ok, true);
+    assert.equal(free.result.stdout.trim(), 'claude-haiku-5-5 answer');
+
+    for (const extra of [{}, { ANTHROPIC_API_KEY: 'sk-test' }]) {
+      const plain = await ask(bare, 'claude-opus-5-5', extra);
+      assert.equal(plain.spawned, true, 'no hook installed: the ask launches as it always did');
+      assert.equal(plain.result.ok, true);
+    }
+  } finally {
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(guarded, { recursive: true, force: true });
+  }
+});
+
+const CLAUDE_JSON = JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  duration_ms: 3900,
+  duration_api_ms: 3123,
+  num_turns: 2,
+  result: 'atris',
+  total_cost_usd: 0.0123,
+  usage: { input_tokens: 57, cache_creation_input_tokens: 1000, cache_read_input_tokens: 38000, output_tokens: 12 },
+  modelUsage: {
+    'claude-haiku-5-5': { inputTokens: 57, outputTokens: 12, costUSD: 0.01 },
+    'claude-tiny': { inputTokens: 5, outputTokens: 1, costUSD: 0.001 },
+  },
+});
+
+test('a json claude answer shows only its text and carries tokens, api time and the model that ran', async () => {
+  const answer = await runAskProcess({ ...fakeReplyInvocation({ stdout: CLAUDE_JSON }), jsonResult: true }, { timeoutMs: ASK_REPLY_TIMEOUT_MS });
+  assert.equal(answer.ok, true);
+  assert.equal(answer.stdout, 'atris');
+  assert.equal(answer.tokens_in, 39057);
+  assert.equal(answer.tokens_out, 12);
+  assert.equal(answer.api_ms, 3123);
+  assert.equal(answer.model_ran, 'claude-haiku-5-5');
+
+  const plain = await runAskProcess({ ...fakeReplyInvocation({ stdout: 'just text' }), jsonResult: true }, { timeoutMs: ASK_REPLY_TIMEOUT_MS });
+  assert.equal(plain.ok, true);
+  assert.equal(plain.stdout.trim(), 'just text');
+  assert.equal(plain.tokens_in, undefined);
+
+  const errored = await runAskProcess({
+    ...fakeReplyInvocation({ stdout: JSON.stringify({ type: 'result', is_error: true, result: 'Not logged in' }) }),
+    jsonResult: true,
+  }, { timeoutMs: ASK_REPLY_TIMEOUT_MS });
+  assert.equal(errored.ok, false);
+  assert.equal(errored.reason, 'engine_error');
+  assert.equal(errored.stderr, 'Not logged in');
+});
+
+test('the ask receipt and run line keep usage while a swapped model is named in one line', async () => {
+  const { readRosterRuns } = require('../lib/roster-runs');
+  const root = tempRoot();
+  const output = [];
+  const originalLog = console.log;
+  console.log = (line = '') => output.push(String(line));
+  try {
+    const code = await runEngineAskCommand(['q', '--engine', 'claude', '--model', 'claude-opus-5-5', '--effort', 'low'], root, {
+      executeAskJob: () => runAskProcess({ ...fakeReplyInvocation({ stdout: CLAUDE_JSON }), jsonResult: true }, { cwd: root, timeoutMs: ASK_REPLY_TIMEOUT_MS }),
+    });
+    assert.equal(code, 0);
+    const printed = output.join('\n');
+    assert.match(printed, /claude \(claude\)\natris\nused: 39,057 tokens in, 12 out, 3\.1s api time, effort low, ran claude-haiku-5-5\nnote: asked for claude-opus-5-5 but claude-haiku-5-5 ran/);
+    const runsDir = path.join(root, 'atris', 'runs');
+    const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
+    const [answer] = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFile), 'utf8')).answers;
+    assert.equal(answer.stdout, 'atris');
+    assert.equal(answer.model, 'claude-opus-5-5');
+    assert.equal(answer.model_ran, 'claude-haiku-5-5');
+    assert.equal(answer.effort, 'low');
+    assert.equal(answer.context, 'light');
+    assert.deepEqual([answer.tokens_in, answer.tokens_out, answer.api_ms], [39057, 12, 3123]);
+    const [run] = readRosterRuns(root).filter((row) => row.job === 'ask');
+    assert.equal(run.tokens, 39069);
+    assert.equal(run.effort, 'low');
+
+    output.length = 0;
+    await runEngineAskCommand(['q', '--engine', 'haiku', '--model', 'haiku'], root, {
+      executeAskJob: () => runAskProcess({ ...fakeReplyInvocation({ stdout: CLAUDE_JSON }), jsonResult: true }, { cwd: root, timeoutMs: ASK_REPLY_TIMEOUT_MS }),
+    });
+    assert.doesNotMatch(output.join('\n'), /note: asked for/, 'an alias matches the id it names');
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
