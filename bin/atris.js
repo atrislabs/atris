@@ -2601,7 +2601,7 @@ if (command === 'guide') {
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'spend') {
-  // Spend guard: unattended Claude runs on paid models need a yes (2026-10-28, $900 day).
+  // Spend guard: stops an unattended Claude run that could bill, never swaps its model (2026-10-28, $900 day).
   const code = require('../commands/spend').spendCommand(process.argv.slice(3));
   exitAfterStdoutDrain(typeof code === 'number' ? code : 0);
 } else if (command === 'usage') {

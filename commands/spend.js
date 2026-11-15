@@ -10,6 +10,7 @@ function showSpendHelp() {
   console.log('The guard stops unattended Claude runs on paid models (anything but Haiku)');
   console.log(`unless ${guard.APPROVAL_ENV}=<model> names the model for that run.`);
   console.log('It also stops unattended runs that carry a pay-per-use Anthropic key.');
+  console.log('A run it stops does not start. It is never moved to another model.');
   console.log('Interactive Claude sessions are never blocked.');
 }
 
