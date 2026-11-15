@@ -157,7 +157,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:2225` (`runComputer` dispatch handles `card` before auth)
+- **Entry point:** `commands/computer.js:2270` (`runComputer` dispatch handles `card` before auth)
 - **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
 - **Writer:** `lib/computer-core.js:1536` (`computerCard`)
 - **How it works:**
@@ -176,7 +176,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 - **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
 - **Command:** `commands/computer.js:1138` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
 - **Instruction and parsing:** `lib/computer-pr.js:168` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:332` (`parsePullRequestResult`), `lib/computer-pr.js:376` (`redactSecrets`)
-- **Run text:** `commands/computer.js:1343` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
+- **Run text:** `commands/computer.js:1388` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
 - **Tests:** `test/computer-pr.test.js`
 
 **Search:** `rg "computerPr|buildPullRequestPrompt|parsePullRequestResult|redactSecrets" commands/computer.js lib/computer-pr.js test/computer-pr.test.js`
@@ -268,9 +268,9 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 
 **Purpose:** One terminal view of every scheduled post across x, linkedin, blog, instagram and tiktok, plus the cadence scoreboard. Popshare never writes the words; every post is one a person saved.
 
-- **Entry:** `commands/popshare.js:406` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
-- **Parsing:** `commands/popshare.js:33` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js:48` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js:96` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
-- **Rendering:** `commands/popshare.js:189` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js:226` (`listText`) groups the calendar by local day, and `commands/popshare.js:260` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
+- **Entry:** `commands/popshare.js:568` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
+- **Parsing:** `commands/popshare.js:39` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js:211` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js:261` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
+- **Rendering:** `commands/popshare.js:354` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js:391` (`listText`) groups the calendar by local day, and `commands/popshare.js:425` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
 - **Regression:** `test/popshare.test.js` covers arg parsing, local-time conversion, id resolution, the pure renderers, and the API calls with a fake `apiRequestJson`.
 
 **Search:** `rg "popshareCommand|localAtToIso|parseAddArgs|resolvePostId|todayText|scoreText" commands/popshare.js test/popshare.test.js`
