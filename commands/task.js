@@ -9628,10 +9628,12 @@ function certifyVerifyCandidate(task) {
     // inspected: ..."); try the full clause, then the first sentence of it,
     // then the part before ", exit 0": six atrisos-web jobs wrote
     // "Verifier result at that commit: <command>, exit 0" and no second
-    // actor ever found their check. Only a comma followed by "exit" is cut,
-    // so a list of test files is never shortened into a smaller check.
+    // actor ever found their check. Only a comma, "exit" and then a number
+    // is cut (", exit 0", ", exit code 0"), so a list of test files is never
+    // shortened into a smaller check, even when a file name starts with exit.
     const firstSentence = raw.split(/\.(?:\s|$)/)[0];
-    for (const candidate of [raw, firstSentence, firstSentence.split(/,\s*exit(?:ed)?\b/i)[0]].map((c) => String(c || '').trim())) {
+    const exitLine = /,\s*exit(?:ed)?(?:\s+(?:code|status))?(?:\s+|\s*[:=]\s*)\d+(?![\w-]|\.\w)/i;
+    for (const candidate of [raw, firstSentence, firstSentence.split(exitLine)[0]].map((c) => String(c || '').trim())) {
       if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }

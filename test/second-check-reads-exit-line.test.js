@@ -28,3 +28,23 @@ test('a comma inside a list of tests is never cut into a smaller check', () => {
   const found = certifyVerifyCandidate(job(proof));
   assert.notEqual(found, 'node --test test/a.test.js');
 });
+
+// A fresh reviewer found the cut also fired when the next test file name
+// starts with "exit", so the second check re-ran fewer tests than the
+// builder named. The cut now needs a number after "exit".
+test('a test file whose name starts with "exit" is never cut off the check', () => {
+  for (const proof of [
+    'Checks: node --test test/a.test.js, exit-codes.test.js passed.',
+    'Checks: node --test test/a.test.js, exit.test.js test/b.test.js passed.',
+    'Checks: node --test test/a.test.js, exit0.test.js passed.',
+  ]) {
+    assert.notEqual(certifyVerifyCandidate(job(proof)), 'node --test test/a.test.js', proof);
+  }
+});
+
+test('the exit line is cut when a number follows, in each way builders write it', () => {
+  for (const tail of [', exit 0', ', exit code 0', ', exited 0', ', exit status 0', ', exit: 0', ', exit=0']) {
+    const proof = `Verifier result at that commit: node --test test/a.test.js${tail}, 3 tests pass.`;
+    assert.equal(certifyVerifyCandidate(job(proof)), 'node --test test/a.test.js', tail);
+  }
+});
