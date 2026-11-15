@@ -10,7 +10,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
-const { buildNextWorkContext, reconcileTaskRows } = require('../lib/next-work-context');
+const { buildNextWorkContext, reconcileTaskRows, projectGoalAge } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
@@ -458,9 +458,9 @@ function readGoalSources(root = process.cwd()) {
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const goals = extractGoalLines(fs.readFileSync(file, 'utf8'));
-    if (goals.length) return { path: file, goals };
+    if (goals.length) return { path: file, goals, updated_at: fs.statSync(file).mtime.toISOString() };
   }
-  return { path: null, goals: [] };
+  return { path: null, goals: [], updated_at: null };
 }
 
 function reviewSummary(task, payload = {}) {
@@ -976,16 +976,19 @@ function pickTaskGoal(task, goals) {
   return bestScore > 0 ? best : null;
 }
 
-function taskBaseObjective(task, goals) {
+// A task's objective is only what the task or its parent recorded. A project
+// goal line that shares a few words is a board grouping, never this task's
+// purpose, so it is not offered here.
+function taskBaseObjective(task) {
   const metadata = task && task.metadata || {};
   return task.objective
     || metadata.task_goal
     || metadata.goal_objective
     || metadata.objective
-    || pickTaskGoal(task, goals);
+    || null;
 }
 
-function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+function taskObjective(task, parent, { parentLinkType = null, baseObjectives = new Map() } = {}) {
   const metadata = task && task.metadata || {};
   const explicit = task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective;
   if (explicit) return explicit;
@@ -994,13 +997,13 @@ function taskObjective(task, parent, goals, { parentLinkType = null, baseObjecti
     if (parentLinkType === 'goal_id') return parent.title;
     return baseObjectives.get(parent.id) || parent.title;
   }
-  return pickTaskGoal(task, goals);
+  return null;
 }
 
 function buildTaskStreams(tasks, goals) {
   const buckets = new Map();
   for (const task of tasks) {
-    const objective = task.objective || 'Unmapped work';
+    const objective = task.objective || pickTaskGoal(task, goals) || 'Unmapped work';
     if (!buckets.has(objective)) {
       buckets.set(objective, {
         objective,
@@ -1146,7 +1149,7 @@ function enrichTaskProjection(projection) {
   }
   const baseObjectives = new Map();
   for (const task of projection.tasks || []) {
-    const objective = taskBaseObjective(task, goalSource.goals);
+    const objective = taskBaseObjective(task);
     if (objective) baseObjectives.set(task.id, objective);
   }
   const children = new Map();
@@ -1168,7 +1171,7 @@ function enrichTaskProjection(projection) {
       const review = withReviewReceiptPath(taskReviewSummary(task), root);
       const enriched = {
         ...task,
-        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
+        objective: taskObjective(task, parent, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
@@ -1192,6 +1195,8 @@ function enrichTaskProjection(projection) {
     goals: {
       source_path: goalSource.path,
       items: goalSource.goals,
+      updated_at: goalSource.updated_at,
+      ...(goalSource.path ? projectGoalAge(goalSource.updated_at) : { old: null, about: null }),
     },
     streams: buildTaskStreams(enrichedTasks, goalSource.goals),
     tasks: enrichedTasks,
