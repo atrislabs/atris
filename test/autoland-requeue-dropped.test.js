@@ -624,3 +624,58 @@ test('under the schedule PATH the sweep still finds gh and reads a merged pull r
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+// Review on 2026-11-15. When a pull request's hosted checks failed, the green
+// lander handed it back to a builder and switched auto-merge off. The next
+// sweep read "auto-merge off, not in the merge line, head unchanged" as
+// "github dropped it" and switched auto-merge back on, so the builder's fix
+// could merge on green without the lander's protected-lane screen. A handed
+// back entry is marked; only the lander's own re-queue clears the mark.
+function markHandedBack(fx, extra = {}) {
+  writeQueue(fx, { [BRANCH]: {
+    branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0, source: 'land-green',
+    reran: fx.pushed, checks_handed_back: fx.pushed, checks_task: 'JOB-1', ...extra,
+  } });
+}
+
+test('a pull request handed back for failed hosted checks is not switched back on by the sweep', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, {});
+    moveMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(out.requeued, 0);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0, JSON.stringify(ghCalls(fx)));
+    assert.equal(remoteBranch(fx), fx.pushed, 'no catch-up push');
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.checks_handed_back, fx.pushed, 'the mark stays');
+    assert.equal(entry.pushed, fx.pushed);
+  });
+});
+
+test('a builder\'s push after the hand-back is kept on the list and left for the lander', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { headRefOid: 'b'.repeat(40) });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked, so the lander can read it back');
+  });
+});
+
+test('a handed-back pull request whose auto-merge is still on is switched off, not run again', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    markHandedBack(fx);
+    setView(fx, { autoMergeRequest: { enabledAt: '2026-11-15T00:00:00Z' } }, { checks: FAILED_CHECKS });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'handed_back', out.results[0].line);
+    const merges = ghCalls(fx).filter((c) => c[1] === 'merge');
+    assert.deepEqual(merges, [['pr', 'merge', '7', '--disable-auto']]);
+    assert.equal(ghCalls(fx).filter((c) => c[0] === 'run').length, 0, 'no rerun');
+  });
+});

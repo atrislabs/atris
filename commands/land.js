@@ -1066,8 +1066,13 @@ function landCommand(args = []) {
       const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY, localCheckSetting } = require('../lib/land-green');
       const limitRaw = Number(readFollowingFlag(args, '--limit', ''));
       const verifyFlag = readFollowingFlag(args, '--verify', '');
+      // The owner's switch lives in the main checkout. Run from a work copy,
+      // the copy's own folder has no policy, so read the one that owns it.
+      const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+      const owner = common.status === 0 && String(common.stdout || '').trim() ? path.dirname(String(common.stdout).trim()) : root;
       let policy = null;
-      try { policy = require('../lib/autoland').readPolicy(root); } catch { policy = null; }
+      try { policy = require('../lib/autoland').readPolicy(owner); } catch { policy = null; }
+      const suitesRaw = Number(policy && policy.green_landing_local_suites);
       const result = landStaleGreenBranches(root, {
         ttlDays,
         base,
@@ -1076,6 +1081,8 @@ function landCommand(args = []) {
         verifyCommand: verifyFlag || DEFAULT_VERIFY,
         limit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 1,
         localCheck: localCheckSetting(policy, { explicitVerify: Boolean(verifyFlag) }),
+        localSuites: suitesRaw > 0 ? suitesRaw : undefined,
+        machine: true,
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);

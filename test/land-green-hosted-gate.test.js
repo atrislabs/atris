@@ -362,8 +362,10 @@ test('a branch whose local check always runs out of time cannot block the branch
         : { status: 0, timed_out: false, failing: [], command: 'npm test', duration_ms: 1, tail: '' };
     };
     const jobs = [];
+    // This test is about the order, so the per-run suite cap (its own test
+    // below) is raised out of the way.
     const opts = {
-      push: false, runVerifyFn, runCli: noFlags, fileConflictTask: noTasks, stateFile,
+      push: false, runVerifyFn, runCli: noFlags, fileConflictTask: noTasks, stateFile, localSuites: 5,
       fileSlowCheckTask: (cwd, job) => { jobs.push(job); return { id: 'JOB-7', inserted: true }; },
     };
     const runs = [1, 2, 3, 4].map(() => landStaleGreenBranches(root, opts));
@@ -508,12 +510,12 @@ function cliFixture(policy) {
   return { root, holder, bin, log };
 }
 
-function runLandAuto(fx, extra = []) {
+function runLandAuto(fx, extra = [], cwd = fx.root) {
   const home = path.join(fx.holder, 'home');
   fs.mkdirSync(home, { recursive: true });
   const cli = path.join(__dirname, '..', 'bin', 'atris.js');
   const run = spawnSync(process.execPath, [cli, 'land', '--auto', '--dry-run', '--json', ...extra], {
-    cwd: fx.root, encoding: 'utf8', timeout: 60000,
+    cwd, encoding: 'utf8', timeout: 60000,
     env: { ...process.env, HOME: home, PATH: `${fx.bin}${path.delimiter}${process.env.PATH}`, ATRIS_NO_BOOT: '1' },
   });
   const text = String(run.stdout || '');
@@ -556,5 +558,250 @@ test('atris land --auto with no switch still lets the hosted checks decide on a 
     assert.equal(v.local_check, 'hosted', JSON.stringify(v));
   } finally {
     cleanup(fx.root, fx.holder);
+  }
+});
+
+// Review on 2026-11-15, open defect 2. "atris land --auto" read the owner's
+// switch from the folder it ran in. Run from a work copy, that folder has no
+// policy, so the switch was never seen.
+test('atris land --auto run from a work copy reads the owner\'s switch from the main checkout', () => {
+  const fx = cliFixture({ enabled: true, green_landing_local_check: true });
+  const copy = path.join(fx.holder, 'copy');
+  try {
+    git(fx.root, ['worktree', 'add', '-q', '-b', 'feat/copy', copy, 'master']);
+    assert.equal(fs.existsSync(path.join(copy, '.atris', 'policy', 'autoland.json')), false, 'the copy has no policy of its own');
+    const result = runLandAuto(fx, [], copy);
+    assert.equal(result.local_check.mode, 'on', JSON.stringify(result.local_check));
+    assert.equal(result.local_check.local, true);
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+// Review on 2026-11-15, open defect 1, the lander's side. The mark a hand-back
+// leaves on the queue entry is cleared only when the lander itself screened
+// the builder's new commit and queued it again.
+test('the lander clears the hand-back mark only when it screens the new commit and queues it again', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    const handedBack = git(root, ['rev-parse', 'feat/one']);
+    const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: {
+      'feat/one': queueEntry({ pushed: handedBack, reran: handedBack, checks_handed_back: handedBack, checks_task: 'JOB-1' }),
+    } }));
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    const entry = JSON.parse(fs.readFileSync(file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.pushed, v.sha);
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    assert.equal(entry.checks_task, undefined);
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+// The incident on 2026-11-15: once the fixed lander went live, the hourly runs
+// of five projects on one machine each started whole local suites at the same
+// time. The load went from about 150 to 573 and every suite ran out of time.
+// The local check path now starts at most one suite per run, one at a time
+// across the machine, and none when the machine is already busy. None of
+// these marks anything red or opens a flag.
+const GREEN = { status: 0, timed_out: false, failing: [], failing_all: [], command: 'npm test', duration_ms: 1, tail: '' };
+
+function localRepo(names) {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+  commitAll(root, 'empty lock', daysAgo(9));
+  names.forEach((name, i) => branchWith(root, name, `f${i}.txt`, daysAgo(3 + i)));
+  return root;
+}
+
+function machineDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-machine-'));
+  return { dir, lockFile: path.join(dir, 'locks', 'local-suite.lock') };
+}
+
+const quiet = (lockFile) => ({ lockFile, loadAvg: () => [0.5, 0.5, 0.5], cpuCount: () => 8 });
+
+function holdLock(lockFile, ageMs) {
+  fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: 999999, host: os.hostname(), token: 'other', repo: 'another-project', at: new Date(Date.now() - ageMs).toISOString() }));
+}
+
+test('another project\'s local suite holds the machine: this run reports machine_busy and starts nothing', () => {
+  const root = localRepo(['feat/one', 'feat/two']);
+  const m = machineDir();
+  try {
+    holdLock(m.lockFile, 60 * 1000);
+    let suites = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks, fileSlowCheckTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+      machine: quiet(m.lockFile), localSuites: 5,
+    });
+    assert.equal(suites, 0, JSON.stringify(result.verdicts));
+    for (const v of result.verdicts) {
+      assert.equal(v.action, 'unknown', JSON.stringify(v));
+      assert.equal(v.reason, 'machine_busy');
+    }
+    assert.deepEqual(result.red, []);
+    assert.equal(JSON.parse(fs.readFileSync(m.lockFile, 'utf8')).token, 'other', 'the other project\'s lock is left alone');
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('a machine lock older than the suite time limit is abandoned: it is taken over and released after the suite', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  try {
+    holdLock(m.lockFile, 25 * 60 * 1000);
+    let heldDuringSuite = null;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { heldDuringSuite = JSON.parse(fs.readFileSync(m.lockFile, 'utf8')); return GREEN; },
+      verifyTimeoutMs: 20 * 60 * 1000, machine: quiet(m.lockFile),
+    });
+    assert.deepEqual(result.landed, ['feat/one'], JSON.stringify(result.verdicts));
+    assert.ok(heldDuringSuite && heldDuringSuite.token !== 'other', 'this run held the lock while its suite ran');
+    assert.equal(heldDuringSuite.pid, process.pid);
+    assert.equal(fs.existsSync(m.lockFile), false, 'released after the suite');
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('the machine lock lives under the user\'s .atris folder by default', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  // HOME and the test state folder both point at a throwaway folder, so the
+  // lock lands there whether or not this run is fenced as a test.
+  const saved = { ATRIS_TEST_STATE_DIR: process.env.ATRIS_TEST_STATE_DIR, HOME: process.env.HOME };
+  process.env.ATRIS_TEST_STATE_DIR = m.dir;
+  process.env.HOME = m.dir;
+  try {
+    const lockFile = path.join(m.dir, '.atris', 'locks', 'land-green-local-suite.lock');
+    holdLock(lockFile, 60 * 1000);
+    let suites = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+      machine: { loadAvg: () => [0.5], cpuCount: () => 8 },
+    });
+    assert.equal(suites, 0);
+    assert.equal(result.verdicts[0].reason, 'machine_busy', JSON.stringify(result.verdicts[0]));
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    cleanup(root, m.dir);
+  }
+});
+
+test('at most one local suite per run by default; the owner\'s green_landing_local_suites raises it', () => {
+  const names = ['feat/one', 'feat/two', 'feat/three'];
+  const root = localRepo(names);
+  const m = machineDir();
+  try {
+    let suites = 0;
+    const opts = {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; }, machine: quiet(m.lockFile),
+    };
+    const first = landStaleGreenBranches(root, opts);
+    assert.equal(suites, 1, JSON.stringify(first.verdicts));
+    assert.equal(first.landed.length, 1);
+    assert.deepEqual(first.red, []);
+    const waiting = first.verdicts.filter((v) => v.reason === 'local_check_limit');
+    assert.equal(waiting.length, 2, JSON.stringify(first.verdicts));
+    for (const v of waiting) assert.equal(v.action, 'skipped');
+    assert.match(summaryLine(first), /2 more waiting for the next tick/);
+    suites = 0;
+    const raised = landStaleGreenBranches(root, { ...opts, localSuites: 3 });
+    assert.equal(suites, 2, JSON.stringify(raised.verdicts));
+    assert.equal(raised.landed.length, 2);
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('no local suite starts when the one-minute load is above twice the cores', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  try {
+    let suites = 0;
+    const base = {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+    };
+    const busy = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [17, 5, 5], cpuCount: () => 8 } });
+    assert.equal(suites, 0);
+    assert.equal(busy.verdicts[0].action, 'unknown', JSON.stringify(busy.verdicts[0]));
+    assert.equal(busy.verdicts[0].reason, 'machine_busy');
+    assert.match(busy.verdicts[0].detail, /load/);
+    assert.deepEqual(busy.red, []);
+    assert.equal(fs.existsSync(m.lockFile), false, 'no lock taken');
+    const fine = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [16, 5, 5], cpuCount: () => 8 } });
+    assert.equal(suites, 1);
+    assert.deepEqual(fine.landed, ['feat/one']);
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('the machine guards leave the hosted path alone: a guarded repo still queues with a busy machine', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const m = machineDir();
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    holdLock(m.lockFile, 60 * 1000);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null,
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      machine: { lockFile: m.lockFile, loadAvg: () => [500], cpuCount: () => 8 },
+    });
+    assert.deepEqual(result.queued, ['feat/one'], JSON.stringify(result.verdicts));
+  } finally {
+    cleanup(root, bare, m.dir);
+  }
+});
+
+test('atris land --auto respects the machine lock another project holds: machine_busy, nothing started, nothing red', () => {
+  const root = localRepo(['feat/one']);
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-machine-cli-'));
+  try {
+    holdLock(path.join(state, '.atris', 'locks', 'land-green-local-suite.lock'), 60 * 1000);
+    const marker = path.join(state, 'suite-ran');
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const run = spawnSync(process.execPath, [cli, 'land', '--auto', '--json', '--no-remote', '--verify', `node -e "require('fs').writeFileSync(${JSON.stringify(marker)}, '1')"`], {
+      cwd: root, encoding: 'utf8', timeout: 60000,
+      env: { ...process.env, HOME: state, ATRIS_TEST_STATE_DIR: state, ATRIS_NO_BOOT: '1' },
+    });
+    const text = String(run.stdout || '');
+    const result = JSON.parse(text.slice(text.indexOf('{')));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'unknown', JSON.stringify(v));
+    assert.equal(v.reason, 'machine_busy');
+    assert.match(v.detail, /another local check holds the machine \(another-project\)/);
+    assert.equal(fs.existsSync(marker), false, 'no suite started');
+    assert.deepEqual(result.red, []);
+  } finally {
+    cleanup(root, state);
   }
 });

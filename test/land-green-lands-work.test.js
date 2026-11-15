@@ -275,7 +275,7 @@ test('four clashing branches at the head of the queue no longer hold the green o
     branchWith(root, 'feat/hygiene-sync-checkout', (dir) => fs.writeFileSync(path.join(dir, 'sync.txt'), 'x\n'), daysAgo(2.5));
     const tasks = [];
     const result = landStaleGreenBranches(root, {
-      push: false, openFlags: false, handBack: true,
+      push: false, openFlags: false, handBack: true, localSuites: 2,
       runVerifyFn: green,
       fileConflictTask: (cwd, job) => { tasks.push(job); return { id: `T${tasks.length}`, inserted: true }; },
     });
@@ -331,7 +331,10 @@ test('an install error gets a few tries on the same commits, then waits; a new b
   }
 });
 
-test('five green branches land in one run by default, one at a time; a sixth waits', () => {
+// Since 2026-11-15 one local suite per run is the default; the owner's
+// green_landing_local_suites raises it. Raised to five, five land one at a
+// time and a sixth waits.
+test('five green branches land in one run when five local suites are allowed, one at a time; a sixth waits', () => {
   const root = makeRepo();
   try {
     for (let i = 0; i < 6; i += 1) {
@@ -340,7 +343,7 @@ test('five green branches land in one run by default, one at a time; a sixth wai
     let running = 0;
     let most = 0;
     const result = landStaleGreenBranches(root, {
-      push: false, openFlags: false, fileConflictTask: noTasks,
+      push: false, openFlags: false, fileConflictTask: noTasks, localSuites: 5,
       runVerifyFn: () => { running += 1; most = Math.max(most, running); running -= 1; return green(); },
     });
     assert.equal(result.landed.length, 5, JSON.stringify(result.verdicts.map((v) => [v.branch, v.action, v.reason])));
@@ -406,7 +409,7 @@ test('on a merge-queue remote a test master already fails here does not hold a b
     branchWith(root, 'member/broke-it', (dir) => fs.writeFileSync(path.join(dir, 'fails.txt'), 'one lap sandbox test\nits own break\n'), daysAgo(3));
     const gh = fakeGh();
     const result = landStaleGreenBranches(root, {
-      mergePath: 'pull_request', verifyCommand: 'node check2.js', env: { ...process.env, CHECK_LOG: log },
+      mergePath: 'pull_request', verifyCommand: 'node check2.js', env: { ...process.env, CHECK_LOG: log }, localSuites: 2,
       runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null, runCli: () => ({ status: 0, stdout: '' }), fileConflictTask: noTasks,
     });
     const by = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
