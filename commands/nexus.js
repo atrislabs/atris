@@ -1,15 +1,19 @@
 'use strict';
 
 // atris nexus: the same people cards as atris.ai/dashboard/nexus, for the owner
-// and for any command-line agent. The list is one file in the signed-in
-// person's Atris folder (files/people.json). Reads and writes follow the web
-// page exactly: a missing file is a fresh list, any other read failure stops
-// with nothing written, and every save reads the file again first.
+// and for any command-line agent. Every command tries the shared people store
+// first (commands/nexus-store.js). When the store does not answer, it falls back
+// to the saved list: one file in the signed-in person's Atris folder
+// (files/people.json). The file is read and written as the web page did before the
+// store: a missing file is a fresh list, any other read failure stops with nothing
+// written, and every save reads the file again first.
 
 const { apiRequestJson } = require('../utils/api');
 const { ensureFreshCredentials } = require('../utils/auth');
 const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
+const S = require('../lib/nexus-store');
+const store = require('./nexus-store');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -19,10 +23,23 @@ const USAGE = [
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
   '  atris nexus add "<name>" [--title --company --city --email --note]',
-  '  --json on any of these prints one JSON object for agents',
+  '  atris nexus due "<name>" <date> ["next move"]   set the follow-up (YYYY-MM-DD, today, tomorrow, clear)',
+  '  atris nexus paid "<name>" <amount> [--checked]  record a payment. Only checked money counts.',
+  '  atris nexus wall                    the war room numbers: sent, replied, follow-ups, paid money, groups, cities',
+  '  atris nexus goal [amount] [date]    show or set the money goal',
+  '  atris nexus city "<city>"           the people in a city, yours marked',
+  '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
+  'The store is tried first. If it does not answer, the saved list is used (wall, goal, due, paid, city and bring-over need the store).',
 ].join('\n');
 
-const SUBS = new Set(['find', 'note', 'stage', 'add']);
+// Commands the saved list cannot answer: the store or nothing.
+const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
+// Commands that need a word after them.
+const TAKES_WORD = new Set(['find', 'note', 'stage', 'add', 'due', 'paid', 'city']);
+const SUBS = new Set(['find', 'note', 'stage', 'add', ...STORE_ONLY]);
+const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
+const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
 const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note']);
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
 const FIND_LIMIT = 25;
@@ -185,14 +202,21 @@ async function nexusCommand(args = [], deps = {}) {
   };
 
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
-  if (sub && !String(words[1] || '').trim()) return usage(`atris nexus ${sub} needs a name${sub === 'find' ? ' or words to look for' : ''}`);
+  if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
+    return usage(`atris nexus ${sub} needs ${sub === 'city' ? 'a city' : `a name${sub === 'find' ? ' or words to look for' : ''}`}`);
+  }
   if (sub === 'note' && !words.slice(2).join(' ').trim()) return usage('atris nexus note needs a name and the note text');
   if (sub === 'stage' && !words[2]) return usage('atris nexus stage needs a name and a stage');
+  if (sub === 'stage' && !S.stageFromWord(words[2])) return usage(`"${words[2]}" is not a stage. Use found, reached, replied, met, paying or partner.`);
+  const prep = store.prepare(sub, words, flags, now);
+  if (prep.error) return usage(prep.error);
 
   let client;
+  let tokenValue;
   try {
     const { token } = await (deps.getToken || defaultToken)();
     if (!token) return fail(NOT_LOGGED_IN);
+    tokenValue = token;
     client = (deps.client || peopleClient)(deps.apiRequestJson || apiRequestJson, token);
   } catch (error) {
     return fail(error && error.message);
@@ -228,6 +252,39 @@ async function nexusCommand(args = [], deps = {}) {
     return { ...made, next, waits: next.mine === 'mac' };
   };
   const waitLine = 'Your computer picks this up on its next sync.';
+
+  // The store first. It falls back to the saved list only when it did not answer and
+  // nothing was written to it; a 402 or any other answer stops here.
+  if (deps.useStore !== false) {
+    const tz = deps.tz !== undefined ? deps.tz : (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
+    const ctx = {
+      sub, words, flags, json, log, err, fail, usage, now, tz, prep,
+      request: deps.apiRequestJson || apiRequestJson,
+      token: tokenValue,
+      pick,
+      fileClient: client,
+      fileHasPeople: async () => {
+        try {
+          const read = await client.read();
+          return !read.missing && S.filePeople(read.list) > 0;
+        } catch {
+          return false;
+        }
+      },
+      view: { card, cardLines, tableLines },
+    };
+    try {
+      return await store.runStore(ctx);
+    } catch (error) {
+      if (error instanceof store.StoreLocked) return fail(error.message, { status: 402 });
+      if (error instanceof store.StoreError) return fail(error.message);
+      if (!(error instanceof store.StoreDown)) return fail(error && error.message);
+    }
+    if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
+    err(FALLBACK_LINE);
+  } else if (STORE_ONLY.has(sub)) {
+    return fail(STORE_NEEDED);
+  }
 
   try {
     if (sub === 'note') {

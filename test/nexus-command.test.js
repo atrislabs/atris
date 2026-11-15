@@ -58,6 +58,7 @@ async function run(args, server = fakeServer()) {
     getToken: async () => ({ token: 'tok' }),
     apiRequestJson: server.request,
     now: () => NOW,
+    useStore: false, // these tests are about the saved list; test/nexus-store-command.test.js covers the store
   });
   return { code, out: out.join('\n'), err: errs.join('\n'), server };
 }
