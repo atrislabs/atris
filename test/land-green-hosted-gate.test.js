@@ -597,9 +597,9 @@ test('the lander clears the hand-back mark only when it screens the new commit a
     git(other, ['clone', '-q', bare, '.']);
     git(other, ['checkout', '-q', 'feat/one']);
     fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
-    commitAll(other, 'make the checks pass', daysAgo(3));
+    const fixed = commitAll(other, 'make the checks pass', daysAgo(3));
     git(other, ['push', '-q', 'origin', 'feat/one']);
-    const gh = fakeGh();
+    const gh = ghWithPr({ head: () => fixed, checks: [{ name: 'test', bucket: 'pass' }] });
     const result = landStaleGreenBranches(root, {
       mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
     });
@@ -926,6 +926,110 @@ test('an old failing branch cannot take the only local suite from a healthy bran
       commitAll(root, `master moves ${run}`, daysAgo(2));
     }
     assert.deepEqual(landed, ['feat/healthy']);
+  } finally {
+    cleanup(root, state);
+  }
+});
+
+// Reviewer finding, third pass. The hold was the exception: a handed-back
+// entry was queued again unless this run read failing checks. When GitHub
+// could not be read, or the failed check was running again, the lander queued
+// the same failing commit, switched auto-merge back on and cleared the mark.
+// A builder's later push could then merge on green with no protected-lane
+// screen. Now a handed-back entry is queued again only on checks read passing
+// on the exact commit it would queue.
+function assertHeld(fx, gh, result) {
+  const v = result.verdicts.find((x) => x.branch === 'feat/one');
+  assert.equal(v.action, 'skipped', JSON.stringify(v));
+  assert.equal(v.reason, 'handed_back');
+  assert.equal(queueCalls(gh).length, 0, JSON.stringify(gh.calls));
+  const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+  assert.equal(entry.checks_handed_back, fx.s1, JSON.stringify(entry));
+  assert.equal(entry.checks_task, 'JOB-1');
+}
+
+test('a handed-back pull request GitHub cannot be read for is held: not queued again, mark kept, auto-merge left off', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a handed-back pull request whose failed check is running again is held until it is read passing', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'pending' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a builder\'s push after a hand-back is held while its hosted checks are still running', () => {
+  const fx = handedBackRepo();
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    git(other, ['clone', '-q', fx.bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    const s2 = commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = ghWithPr({ head: () => s2, checks: [{ name: 'test', bucket: 'pending' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare, other);
+  }
+});
+
+// Reviewer finding, third pass. "Tried before" came from the remembered
+// verdict alone. A branch that failed once and was then fixed sorted with the
+// failed ones, so an older red branch took the only local suite every run.
+test('a branch fixed after a failure goes ahead of an older red branch for the only local suite', () => {
+  const root = makeRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-order-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    branchWith(root, 'feat/old-red', 'bad.txt', daysAgo(6));
+    branchWith(root, 'feat/fixed', 'bad-fixed.txt', daysAgo(5));
+    const verify = (command, cwd) => (fs.readdirSync(cwd).some((f) => /^bad/.test(f))
+      ? { status: 1, timed_out: false, failing: ['bad test'], failing_all: ['bad test'], command: 'npm test', duration_ms: 1, tail: '' }
+      : GREEN);
+    const opts = {
+      push: false, stateFile: path.join(state, 'land-green.json'), runCli: () => ({ status: 0, stdout: '' }),
+      fileConflictTask: noTasks, fileSlowCheckTask: noTasks, runVerifyFn: verify,
+    };
+    const moveMaster = (n) => {
+      fs.writeFileSync(path.join(root, `master-${n}.txt`), `${n}\n`);
+      commitAll(root, `master moves ${n}`, daysAgo(2));
+    };
+    // Both fail once: the older one on the first run, the other on the second.
+    for (let run = 0; run < 2; run += 1) {
+      assert.deepEqual(landStaleGreenBranches(root, opts).landed, []);
+      moveMaster(run);
+    }
+    git(root, ['checkout', '-q', 'feat/fixed']);
+    git(root, ['rm', '-q', 'bad-fixed.txt']);
+    fs.writeFileSync(path.join(root, 'fixed.txt'), 'fixed\n');
+    commitAll(root, 'fix the failing test', daysAgo(3));
+    git(root, ['checkout', '-q', 'master']);
+    const result = landStaleGreenBranches(root, opts);
+    assert.deepEqual(result.landed, ['feat/fixed'], JSON.stringify(result.verdicts));
   } finally {
     cleanup(root, state);
   }
