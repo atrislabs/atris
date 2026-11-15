@@ -437,3 +437,70 @@ test('approve and change actions reuse existing plan and review gates', () => {
     cleanup(root);
   }
 });
+
+test('a task with no stored reason never borrows a project goal line as its purpose', () => {
+  const root = tempWorkspace();
+  const dbPath = path.join(root, '.atris', 'state', 'tasks.db');
+  const db = taskDb.open(dbPath);
+  const goalsPath = path.join(root, 'atris', 'goals.md');
+  const borrowed = 'Owner: none since the chief-of-staff member was archived, the overview leaderboards disagree';
+  fs.writeFileSync(goalsPath, `# Goals\n\n- ${borrowed}\n`, 'utf8');
+  const monthAgo = new Date(Date.now() - 30 * 86400000);
+  fs.utimesSync(goalsPath, monthAgo, monthAgo);
+  const ownReason = 'Readers think one board is the whole truth.';
+
+  try {
+    const bare = taskDb.addTask(db, {
+      title: 'The Overview hides that leaderboards disagree',
+      workspaceRoot: root,
+    });
+    const reasoned = taskDb.addTask(db, {
+      title: 'The Overview hides that leaderboards disagree again',
+      workspaceRoot: root,
+      metadata: { why_it_matters: ownReason },
+    });
+
+    const projection = enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: root }));
+    const bareTask = projection.tasks.find(task => task.id === bare.id);
+    const reasonedTask = projection.tasks.find(task => task.id === reasoned.id);
+    assert.equal(bareTask.objective, null);
+    assert.equal(bareTask.explanation.why_it_matters, 'The task does not say why this matters yet.');
+    assert.equal(bareTask.explanation.reason_recorded, false);
+    assert.equal(reasonedTask.explanation.why_it_matters, ownReason);
+    assert.equal(reasonedTask.explanation.reason_recorded, true);
+
+    // The project goal still rides along as background with its date. It is marked old.
+    assert.equal(projection.goals.items[0], borrowed);
+    assert.equal(projection.goals.updated_at, monthAgo.toISOString());
+    assert.equal(projection.goals.old, true);
+    assert.match(projection.goals.about, /project goal, not a task's reason/);
+    assert.match(projection.goals.about, /old/);
+    assert.ok(projection.streams.some(stream => stream.objective === borrowed));
+
+    const showRun = runTaskCli(root, dbPath, ['show', bare.id, '--json']);
+    assert.equal(showRun.status, 0, showRun.stderr);
+    assert.doesNotMatch(showRun.stdout, /chief-of-staff/);
+    const pageRun = runTaskCli(root, dbPath, ['page', bare.id]);
+    assert.equal(pageRun.status, 0, pageRun.stderr);
+    assert.doesNotMatch(pageRun.stdout, /chief-of-staff/);
+    assert.match(pageRun.stdout, /Why it matters: The task does not say why this matters yet\./);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('a fresh project goal is dated and not marked old', () => {
+  const root = tempWorkspace();
+  const db = taskDb.open(path.join(root, '.atris', 'state', 'tasks.db'));
+  fs.writeFileSync(path.join(root, 'atris', 'goals.md'), '# Goals\n\n- Keep the overview honest\n', 'utf8');
+  try {
+    taskDb.addTask(db, { title: 'Make the overview honest', workspaceRoot: root });
+    const projection = enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: root }));
+    assert.equal(projection.goals.old, false);
+    assert.ok(Date.parse(projection.goals.updated_at) > Date.now() - 86400000);
+    assert.doesNotMatch(projection.goals.about, /old/);
+    assert.equal(projection.tasks[0].objective, null);
+  } finally {
+    cleanup(root);
+  }
+});
