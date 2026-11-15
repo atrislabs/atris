@@ -173,6 +173,7 @@ function repoWithMerge(files) {
   fs.writeFileSync(path.join(root, 'base.txt'), 'base\n');
   git(root, 'add', '-A');
   git(root, 'commit', '-q', '-m', 'base');
+  const base = git(root, 'rev-parse', 'HEAD');
   git(root, 'checkout', '-q', '-b', 'work');
   for (const [file, body] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -180,25 +181,27 @@ function repoWithMerge(files) {
   }
   git(root, 'add', '-A');
   git(root, 'commit', '-q', '-m', 'work');
+  const work = git(root, 'rev-parse', 'HEAD');
   git(root, 'checkout', '-q', 'master');
   git(root, 'merge', '-q', '--no-ff', 'work', '-m', 'merge work');
   const merge = git(root, 'rev-parse', 'HEAD');
-  return { root, merge };
+  return { root, merge, base, work };
 }
 
-test('a recorded merge gives the files it brought in, and green means it sits on the target', () => {
-  const { root, merge } = repoWithMerge({ 'docs/a.md': 'a\n', 'test/a.test.js': '\n' });
+test('a recorded merge gives the files it brought in; tier 0 needs the job own start and work, and green needs the host', () => {
+  const { root, merge, base, work } = repoWithMerge({ 'docs/a.md': 'a\n', 'test/a.test.js': '\n' });
   try {
     const task = { metadata: { merge_commit: merge } };
     assert.deepEqual(mergeCommitScope(task, root).paths.sort(), ['docs/a.md', 'test/a.test.js']);
-    assert.equal(classifyChange({ task, scope: null, root, tiers }).tier, 0);
-    assert.equal(hostedChecksGreen(task, root, tiers).green, false, 'not on origin yet');
+    assert.equal(classifyChange({ task, scope: null, root, tiers }).tier, 1, 'a named merge alone is not the job own change');
+    const own = { metadata: { merge_commit: merge, start_commit: base, work_commit: work } };
+    const change = classifyChange({ task: own, scope: null, root, tiers });
+    assert.equal(change.tier, 0);
+    assert.equal(change.landed, true);
+    assert.equal(hostedChecksGreen(own, root).green, false, 'not on origin yet');
     git(root, 'update-ref', 'refs/remotes/origin/master', merge);
-    assert.equal(hostedChecksGreen(task, root, tiers).green, true);
-    const strict = resolveApprovalTiers({ approval_tiers: { merge_means_hosted_green: false } });
-    assert.equal(hostedChecksGreen(task, root, strict).green, false, 'owner can require a recorded hosted result');
-    assert.equal(hostedChecksGreen({ metadata: { hosted_checks: 'green' } }, root, strict).green, true);
-    assert.equal(hostedChecksGreen({ metadata: { hosted_checks: 'failure', merge_commit: merge } }, root, tiers).green, false);
+    assert.equal(hostedChecksGreen(own, root).green, false, 'on the target is not green: no host to ask here');
+    assert.equal(hostedChecksGreen({ metadata: { ...own.metadata, hosted_checks: 'failure' } }, root).green, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

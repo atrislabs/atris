@@ -14,15 +14,38 @@ const { spawnSync } = require('node:child_process');
 const { approvalTierOf, evaluateAutoAccept, mayBeTierZero } = require('../lib/auto-accept-certified');
 
 const roots = [];
+const originalPath = process.env.PATH;
 test.after(() => {
+  process.env.PATH = originalPath;
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 });
+
+// A fake GitHub on PATH that reports one passing check on every commit, so tier 0
+// sees a real host answer through the real parsing, with no network.
+(function fakeGreenGitHub() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-tier-gate-gh-'));
+  roots.push(dir);
+  fs.writeFileSync(path.join(dir, 'gh'), [
+    '#!/bin/sh',
+    'case "$2" in',
+    `  *check-runs*) echo '${JSON.stringify({ total_count: 1, check_runs: [{ name: 'test', status: 'completed', conclusion: 'success' }] })}' ;;`,
+    `  *status*) echo '${JSON.stringify({ state: 'pending', total_count: 0, statuses: [] })}' ;;`,
+    '  *) exit 1 ;;',
+    'esac',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  process.env.PATH = `${dir}${path.delimiter}${originalPath}`;
+})();
 
 function git(cwd, ...args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
   return String(result.stdout || '').trim();
 }
+
+// Where each repo's job started and what it handed in, as the task store stamps them.
+const starts = new Map();
+const works = new Map();
 
 // A repo whose master holds a merge of `files`, pushed to origin/master.
 function landedRepo(files) {
@@ -31,10 +54,12 @@ function landedRepo(files) {
   git(root, 'init', '-q', '-b', 'master');
   git(root, 'config', 'user.email', 'tiers@example.com');
   git(root, 'config', 'user.name', 'tiers');
+  git(root, 'remote', 'add', 'origin', 'git@github.com:example/tiers.git');
   fs.mkdirSync(path.join(root, 'test'), { recursive: true });
   fs.writeFileSync(path.join(root, 'test', 'ok.test.js'), "require('node:test')('ok', () => {});\n");
   git(root, 'add', '-A');
   git(root, 'commit', '-q', '-m', 'base');
+  starts.set(root, git(root, 'rev-parse', 'HEAD'));
   git(root, 'checkout', '-q', '-b', 'work');
   for (const [file, body] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -42,6 +67,7 @@ function landedRepo(files) {
   }
   git(root, 'add', '-A');
   git(root, 'commit', '-q', '-m', 'work');
+  works.set(root, git(root, 'rev-parse', 'HEAD'));
   git(root, 'checkout', '-q', 'master');
   git(root, 'merge', '-q', '--no-ff', 'work', '-m', 'merge work');
   const merge = git(root, 'rev-parse', 'HEAD');
@@ -65,7 +91,7 @@ function job(root, { merge = null, events = null, passCount = 1, extra = {} } = 
       agent_review_pass_count: passCount,
       latest_agent_proof: PROOF,
       verify: 'node --test test/ok.test.js',
-      ...(merge ? { merge_commit: merge } : {}),
+      ...(merge ? { merge_commit: merge, start_commit: starts.get(root), work_commit: works.get(root) } : {}),
       ...extra,
     },
     review: { approval_status: 'pending', agent_review_pass_count: passCount, proof: PROOF },
