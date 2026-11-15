@@ -289,3 +289,19 @@ test('cli: say, react and reply print the card as JSON', (t) => {
   const cards = run('cards');
   assert.equal(cards.json.cards[0].id, said.json.card.id);
 });
+
+test('ideas written together: teammates who land on the same thing in different words join one card', () => {
+  const { nearCopy } = require('../lib/feed-core');
+  const a = 'Write the cat safety answer once, reuse it forever';
+  const b = 'Answer the cat safety question once, for everyone';
+  const c = 'Answer the cat safety question once, for good';
+  // Apart in time these stay three ideas, as before.
+  assert.equal(nearCopy(a, b), false);
+  assert.equal(nearCopy(b, c), false);
+  // Written in the same round they are one idea.
+  assert.equal(nearCopy(a, b, { sameRound: true }), true);
+  assert.equal(nearCopy(b, c, { sameRound: true }), true);
+  // A different subject is still its own idea in the same round.
+  assert.equal(nearCopy(a, 'Fix the shipping step before the winter rush', { sameRound: true }), false);
+  assert.equal(nearCopy('Call back Acme today', 'Call back Bravo today', { sameRound: true }), false);
+});
