@@ -129,12 +129,12 @@ test('fresh branches, conflicts, and dirty checkouts are held with a named reaso
   }
 });
 
-test('one branch per tick by default; the rest wait with a named reason', () => {
+test('past the per-tick limit the rest wait with a named reason', () => {
   const root = makeRepo();
   try {
     branchWith(root, 'member/one', (dir) => fs.writeFileSync(path.join(dir, 'one.txt'), '1\n'));
     branchWith(root, 'member/two', (dir) => fs.writeFileSync(path.join(dir, 'two.txt'), '2\n'));
-    const result = landStaleGreenBranches(root, { push: false, runCli: () => ({ status: 0, stdout: '' }) });
+    const result = landStaleGreenBranches(root, { push: false, limit: 1, runCli: () => ({ status: 0, stdout: '' }) });
     assert.equal(result.landed.length, 1);
     assert.equal(result.verdicts.filter((v) => v.reason === 'per_tick_limit').length, 1);
   } finally {
@@ -273,7 +273,7 @@ test('a merge that reaches no branch is not called landed, and still spends the 
     // no remote nothing else carries the merge onto master.
     fs.writeFileSync(path.join(root, 'ok.txt'), 'ok\nlocal edit\n');
     const before = git(root, ['rev-parse', 'master']);
-    const result = landStaleGreenBranches(root, { push: false, openFlags: false });
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false, limit: 1 });
 
     assert.deepEqual(result.landed, []);
     const verdict = result.verdicts.find((v) => v.branch === 'member/green');

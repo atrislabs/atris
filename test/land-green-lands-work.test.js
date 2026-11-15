@@ -1,0 +1,327 @@
+'use strict';
+
+// The green lander ran 304 hourly times between 2026-10-31 and 2026-11-15
+// and landed nothing. The receipts (atris/runs/autoland-tick-*.json) gave
+// the reasons: attempt_cap 1897, merge_conflict 699, install_failed 496 (every
+// one with an empty detail), protected_surface 16. Each test below rebuilds
+// one of those shapes and holds the lander to the outcome it should reach.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const { landStaleGreenBranches } = require('../lib/land-green');
+
+const LIB = path.join(__dirname, '..', 'lib', 'land-green.js');
+const daysAgo = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
+
+function git(cwd, args, env = {}) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr || result.stdout}`);
+  return result.stdout.trim();
+}
+
+function commitAll(cwd, message, when = daysAgo(3)) {
+  git(cwd, ['add', '-A']);
+  git(cwd, ['-c', 'user.name=Bench Author', '-c', 'user.email=bench@example.com', 'commit', '-q', '-m', message], {
+    GIT_AUTHOR_DATE: when,
+    GIT_COMMITTER_DATE: when,
+  });
+  return git(cwd, ['rev-parse', 'HEAD']);
+}
+
+// Like this repo: a package-lock.json that names no dependency, a verify that
+// passes while ok.txt says ok, a map, and a builder on the team.
+function makeRepo() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-'));
+  git(root, ['init', '-q', '-b', 'master']);
+  git(root, ['config', 'user.name', 'Bench Author']);
+  git(root, ['config', 'user.email', 'bench@example.com']);
+  fs.writeFileSync(path.join(root, 'ok.txt'), 'ok\n');
+  fs.writeFileSync(path.join(root, 'check.js'), "process.exit(require('fs').readFileSync('ok.txt','utf8').trim() === 'ok' ? 0 : 1);\n");
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.0', scripts: { test: 'node check.js' } }));
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({
+    name: 'fixture', version: '0.0.0', lockfileVersion: 3, requires: true,
+    packages: { '': { name: 'fixture', version: '0.0.0' } },
+  }, null, 2));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '# builder\n');
+  fs.writeFileSync(path.join(root, 'atris', 'MAP.md'), '# map\n\nfirst line\n');
+  fs.mkdirSync(path.join(root, 'lib'));
+  fs.writeFileSync(path.join(root, 'lib', 'known-commands.js'), "module.exports = ['a'];\n");
+  commitAll(root, 'base', daysAgo(10));
+  return root;
+}
+
+function branchWith(root, name, edit, when = daysAgo(3)) {
+  git(root, ['checkout', '-q', '-b', name]);
+  edit(root);
+  const sha = commitAll(root, `${name} work`, when);
+  git(root, ['checkout', '-q', 'master']);
+  return sha;
+}
+
+function masterCommit(root, file, text) {
+  fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+  fs.writeFileSync(path.join(root, file), text);
+  return commitAll(root, `master edits ${file}`, new Date().toISOString());
+}
+
+const green = () => ({ status: 0, failing: [], command: 'node check.js', duration_ms: 1, timed_out: false, tail: '' });
+const noTasks = () => { throw new Error('no job expected'); };
+
+// A bare origin the branch and the pull request flow push to, with a fake gh.
+function withOrigin(root) {
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-origin-'));
+  git(bare, ['init', '-q', '--bare', '-b', 'master']);
+  git(root, ['remote', 'add', 'origin', bare]);
+  git(root, ['push', '-q', 'origin', 'master']);
+  git(root, ['fetch', '-q', 'origin']);
+  return bare;
+}
+
+function fakeGh() {
+  const calls = [];
+  const runGh = (args) => {
+    calls.push(args);
+    if (args[0] === 'pr' && args[1] === 'list') return { ok: true, stdout: '[]', stderr: '' };
+    if (args[0] === 'pr' && args[1] === 'create') return { ok: true, stdout: 'https://github.com/acme/repo/pull/41', stderr: '' };
+    if (args[0] === 'pr' && args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
+    return { ok: false, stdout: '', stderr: 'unexpected gh call' };
+  };
+  return { calls, runGh };
+}
+
+test('under cron PATH a green branch in a zero-dependency repo lands: npm is found and nothing needs installing', () => {
+  const root = makeRepo();
+  try {
+    const sha = branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    // The crontab line runs node by full path with PATH=/usr/bin:/bin.
+    const script = `const r = require(${JSON.stringify(LIB)}).landStaleGreenBranches(${JSON.stringify(root)}, { push: false, openFlags: false });
+      console.log(JSON.stringify(r.verdicts.map((v) => ({ branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null }))));`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: os.tmpdir(), NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT || '' },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    const verdicts = JSON.parse(child.stdout.trim().split('\n').pop());
+    assert.deepEqual(verdicts, [{ branch: 'member/green', action: 'landed', reason: null, detail: null }]);
+    assert.equal(git(root, ['merge-base', '--is-ancestor', sha, 'master']), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('on a merge-queue remote a green branch goes through a pull request; master on origin is never pushed', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const originBefore = git(bare, ['rev-parse', 'master']);
+    const gh = fakeGh();
+    const recorded = [];
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request',
+      runVerifyFn: green,
+      runGh: gh.runGh,
+      recordQueued: (cwd, fields) => recorded.push(fields),
+      fileConflictTask: noTasks,
+      openFlags: false,
+    });
+    const verdict = result.verdicts[0];
+    assert.equal(verdict.action, 'queued', JSON.stringify(verdict));
+    assert.equal(verdict.pr, 41);
+    assert.deepEqual(result.queued, ['member/green']);
+    assert.equal(git(bare, ['rev-parse', 'master']), originBefore, 'master on origin did not move');
+    assert.equal(git(bare, ['rev-parse', 'refs/heads/member/green']), verdict.sha, 'the checked commit is on the branch');
+    const merge = gh.calls.find((c) => c[1] === 'merge');
+    assert.deepEqual(merge, ['pr', 'merge', '41', '--auto', '--merge', '--match-head-commit', verdict.sha]);
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].number, 41);
+    assert.equal(recorded[0].pushed, verdict.sha);
+    assert.equal(recorded[0].branch, 'member/green');
+    assert.equal(recorded[0].base, 'master');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test('a branch that is only behind master is caught up in a scratch copy, checked, and queued with master in it', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    const tip = branchWith(root, 'member/behind', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    masterCommit(root, 'other.txt', 'master moved on\n');
+    git(root, ['push', '-q', 'origin', 'master']);
+    const masterTip = git(bare, ['rev-parse', 'master']);
+    let checkedTree = null;
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request',
+      runVerifyFn: (cmd, dir) => { checkedTree = fs.existsSync(path.join(dir, 'other.txt')); return green(); },
+      runGh: gh.runGh,
+      recordQueued: () => {},
+      fileConflictTask: noTasks,
+      openFlags: false,
+    });
+    const verdict = result.verdicts[0];
+    assert.equal(verdict.action, 'queued', JSON.stringify(verdict));
+    assert.equal(checkedTree, true, 'the check ran on the caught-up tree');
+    const pushed = git(bare, ['rev-parse', 'refs/heads/member/behind']);
+    assert.equal(git(bare, ['merge-base', '--is-ancestor', masterTip, pushed]), '');
+    assert.equal(git(bare, ['merge-base', '--is-ancestor', tip, pushed]), '');
+    assert.equal(git(bare, ['rev-parse', 'master']), masterTip);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test('a clash only in the map takes master\'s copy, refreshes, re-checks, and lands', () => {
+  const root = makeRepo();
+  try {
+    // Receipt shape: merge_conflict, detail "atris/MAP.md".
+    branchWith(root, 'codex/opus-learn-learning-team-product', (dir) => {
+      fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# map\n\nbranch line\n');
+      fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n');
+    });
+    masterCommit(root, 'atris/MAP.md', '# map\n\nmaster line\n');
+    let verifies = 0;
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false, runVerifyFn: () => { verifies += 1; return green(); }, fileConflictTask: noTasks });
+    const verdict = result.verdicts[0];
+    assert.equal(verdict.action, 'landed', JSON.stringify(verdict));
+    assert.deepEqual(verdict.regenerated, ['atris/MAP.md']);
+    assert.equal(verifies, 1);
+    assert.equal(git(root, ['show', 'master:atris/MAP.md']), '# map\n\nmaster line');
+    assert.equal(git(root, ['show', 'master:feature.txt']), 'shipped');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a real clash goes back to a builder as a job naming the files, once per branch head', () => {
+  const root = makeRepo();
+  const db = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-db-')), 'tasks.db');
+  const saved = process.env.ATRIS_TASKS_DB;
+  process.env.ATRIS_TASKS_DB = db;
+  try {
+    // Receipt shape: merge_conflict, detail "lib/known-commands.js".
+    branchWith(root, 'codex/claude-heavy-job-gate', (dir) => fs.writeFileSync(path.join(dir, 'lib', 'known-commands.js'), "module.exports = ['a', 'heavy'];\n"));
+    masterCommit(root, 'lib/known-commands.js', "module.exports = ['a', 'town'];\n");
+    const first = landStaleGreenBranches(root, { push: false, runCli: () => ({ status: 0, stdout: '' }) });
+    const second = landStaleGreenBranches(root, { push: false, runCli: () => ({ status: 0, stdout: '' }) });
+    const a = first.verdicts[0];
+    const b = second.verdicts[0];
+    assert.equal(a.reason, 'merge_conflict');
+    assert.ok(a.hand_back && a.hand_back.task_id, JSON.stringify(a));
+    assert.equal(a.hand_back.new, true);
+    assert.equal(a.hand_back.member, 'builder');
+    assert.equal(b.hand_back.task_id, a.hand_back.task_id, 'the second tick finds the same job');
+    assert.equal(b.hand_back.new, false);
+    assert.deepEqual(first.handed_back, ['codex/claude-heavy-job-gate']);
+
+    const taskDb = require('../lib/task-db');
+    const row = taskDb.getTask(taskDb.open(db), a.hand_back.task_id);
+    assert.equal(row.status, 'open');
+    assert.match(row.title, /catch up codex\/claude-heavy-job-gate with master: it clashes in lib\/known-commands\.js/);
+    assert.equal(row.metadata.assigned_to, 'builder');
+    assert.deepEqual(row.metadata.conflict_files, ['lib/known-commands.js']);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('four clashing branches at the head of the queue no longer hold the green ones behind them as attempt_cap', () => {
+  const root = makeRepo();
+  try {
+    // Receipt shape on 2026-11-15: four merge_conflict verdicts, then
+    // attempt_cap for every branch behind them, every hour.
+    for (let i = 0; i < 4; i += 1) {
+      branchWith(root, `sentinel-improve/clash-${i}`, (dir) => fs.writeFileSync(path.join(dir, 'lib', 'known-commands.js'), `module.exports = ['clash ${i}'];\n`), daysAgo(6 - i * 0.2));
+    }
+    masterCommit(root, 'lib/known-commands.js', "module.exports = ['master'];\n");
+    branchWith(root, 'feat/hygiene-restore-cli', (dir) => fs.writeFileSync(path.join(dir, 'restore.txt'), 'x\n'), daysAgo(3));
+    branchWith(root, 'feat/hygiene-sync-checkout', (dir) => fs.writeFileSync(path.join(dir, 'sync.txt'), 'x\n'), daysAgo(2.5));
+    const tasks = [];
+    const result = landStaleGreenBranches(root, {
+      push: false, openFlags: false, handBack: true,
+      runVerifyFn: green,
+      fileConflictTask: (cwd, job) => { tasks.push(job); return { id: `T${tasks.length}`, inserted: true }; },
+    });
+    const reasons = Object.fromEntries(result.verdicts.map((v) => [v.branch, v.action === 'landed' ? 'landed' : v.reason]));
+    assert.equal(Object.values(reasons).filter((r) => r === 'attempt_cap').length, 0, JSON.stringify(reasons));
+    assert.equal(reasons['feat/hygiene-restore-cli'], 'landed');
+    assert.equal(reasons['feat/hygiene-sync-checkout'], 'landed');
+    assert.equal(tasks.length, 4);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a red branch waits while nothing moved, and is tried again once master moves', () => {
+  const root = makeRepo();
+  try {
+    branchWith(root, 'member/red', (dir) => fs.writeFileSync(path.join(dir, 'ok.txt'), 'broken\n'));
+    let verifies = 0;
+    const red = () => { verifies += 1; return { status: 1, failing: ['ok check'], command: 'node check.js', duration_ms: 1, timed_out: false, tail: '' }; };
+    const opts = { push: false, runVerifyFn: red, runCli: () => ({ status: 0, stdout: '' }), fileConflictTask: noTasks };
+    const one = landStaleGreenBranches(root, opts);
+    const two = landStaleGreenBranches(root, opts);
+    assert.equal(one.verdicts[0].action, 'red');
+    assert.equal(two.verdicts[0].reason, 'waiting_for_change', JSON.stringify(two.verdicts[0]));
+    assert.equal(verifies, 1, 'the same two commits are not checked again');
+    masterCommit(root, 'other.txt', 'moved\n');
+    const three = landStaleGreenBranches(root, opts);
+    assert.equal(three.verdicts[0].action, 'red');
+    assert.equal(verifies, 2, 'master moved, so the count started over');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an install error gets a few tries on the same commits, then waits; a new branch commit starts over', () => {
+  const root = makeRepo();
+  try {
+    branchWith(root, 'member/broken', (dir) => fs.writeFileSync(path.join(dir, 'package-lock.json'), 'not json\n'));
+    const opts = { push: false, openFlags: false, fileConflictTask: noTasks };
+    const reasons = [];
+    for (let i = 0; i < 4; i += 1) reasons.push(landStaleGreenBranches(root, opts).verdicts[0].reason);
+    assert.deepEqual(reasons, ['install_failed', 'install_failed', 'install_failed', 'waiting_for_change']);
+    const detail = landStaleGreenBranches(root, opts).verdicts[0].detail;
+    assert.match(detail, /tries again once the branch or master moves/);
+    git(root, ['checkout', '-q', 'member/broken']);
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'fix the lockfile');
+    git(root, ['checkout', '-q', 'master']);
+    const fixed = landStaleGreenBranches(root, { ...opts, runVerifyFn: green });
+    assert.equal(fixed.verdicts[0].action, 'landed', JSON.stringify(fixed.verdicts[0]));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('five green branches land in one run by default, one at a time; a sixth waits', () => {
+  const root = makeRepo();
+  try {
+    for (let i = 0; i < 6; i += 1) {
+      branchWith(root, `member/green-${i}`, (dir) => fs.writeFileSync(path.join(dir, `f${i}.txt`), `${i}\n`), daysAgo(6 - i * 0.3));
+    }
+    let running = 0;
+    let most = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, openFlags: false, fileConflictTask: noTasks,
+      runVerifyFn: () => { running += 1; most = Math.max(most, running); running -= 1; return green(); },
+    });
+    assert.equal(result.landed.length, 5, JSON.stringify(result.verdicts.map((v) => [v.branch, v.action, v.reason])));
+    assert.equal(result.verdicts.filter((v) => v.reason === 'per_tick_limit').length, 1);
+    assert.equal(most, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

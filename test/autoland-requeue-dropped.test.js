@@ -315,13 +315,15 @@ test('someone else pushed to the branch: left for a person and no longer tracked
   });
 });
 
-test('a real clash with master: nothing is pushed and the branch is left for a person', () => {
+test('a real clash with master and no job to send back: nothing is pushed and a builder gets a job naming the files', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     moveMaster(fx, 'work.txt', 'master wrote this instead\n');
-    const out = requeueDroppedAutolands({ cwd: fx.main });
+    const handed = [];
+    const out = requeueDroppedAutolands({ cwd: fx.main, handBack: (entry, files) => { handed.push({ branch: entry.branch, files }); return { id: 'CLI-9', inserted: true }; } });
     assert.equal(out.results[0].state, 'clash');
-    assert.match(out.results[0].line, /clashes with the main branch in work\.txt/);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; went back to a builder as job CLI-9$/);
+    assert.deepEqual(handed, [{ branch: BRANCH, files: ['work.txt'] }]);
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
   });
@@ -340,13 +342,28 @@ test('merged or closed: dropped from the list and never touched', () => {
   }
 });
 
-test('dropped again after the catch-up limit: left for a person instead of looping', () => {
+test('dropped again after the catch-up limit: waits on the list, and starts over once master moves', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     writeQueue(fx, { [BRANCH]: { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 3 } });
     const out = requeueDroppedAutolands({ cwd: fx.main });
-    assert.equal(out.results[0].state, 'gave-up');
+    assert.equal(out.results[0].state, 'waiting');
+    assert.match(out.results[0].line, /tries again once the main branch moves/);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    const kept = readQueue(fx)[BRANCH];
+    assert.ok(kept, 'never dropped for good');
+    assert.equal(kept.base_sha, git(['rev-parse', 'master'], fx.main));
+    // Same master: still waiting, nothing pushed.
+    assert.equal(requeueDroppedAutolands({ cwd: fx.main }).results[0].state, 'waiting');
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    // Master moves: caught up and queued again, the count starts over.
+    const moved = moveMaster(fx);
+    const again = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(again.results[0].state, 'requeued', again.results[0].line);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 1);
+    const entry = readQueue(fx)[BRANCH];
+    assert.equal(entry.requeues, 1);
+    assert.equal(entry.base_sha, moved);
   });
 });
 
@@ -440,7 +457,7 @@ test('a pull request recorded by worktree ship that is still in the merge line i
   });
 });
 
-test('a pull request recorded by worktree ship still stops at the catch-up cap', () => {
+test('a pull request recorded by worktree ship still pauses at the catch-up cap', () => {
   const fx = fixture({ queued: false });
   withFakeGh(fx, () => {
     git(['push', '-q', 'origin', BRANCH], fx.worktree);
@@ -450,8 +467,8 @@ test('a pull request recorded by worktree ship still stops at the catch-up cap',
       setView(fx, { autoMergeRequest: null }, { inQueue: false });
       states.push(requeueDroppedAutolands({ cwd: fx.main }).results[0].state);
     }
-    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'gave-up']);
-    assert.equal(readQueue(fx)[BRANCH], undefined);
+    assert.deepEqual(states, ['requeued', 'requeued', 'requeued', 'waiting']);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 3, 'kept on the list until master moves');
   });
 });
 
