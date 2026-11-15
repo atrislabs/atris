@@ -9810,6 +9810,38 @@ function createRunBudget(now = Date.now) {
   };
 }
 
+// The accept step's order: jobs already certified first, since accepting one
+// is the whole point of the step; among them, and among the rest, a job left
+// out for time on an earlier run comes before newer arrivals, oldest
+// deferral first. Otherwise the order given is kept. Without this a ready
+// job behind three failing checks was left out the same way every hour.
+function acceptOrder(items, rows = []) {
+  const byId = new Map((rows || []).map((row) => [row.id, row]));
+  const deferredAt = (item) => {
+    const at = Date.parse(String((byId.get(item.id) || item)?.metadata?.accept_deferred_at || ''));
+    return Number.isFinite(at) ? at : Infinity;
+  };
+  const certified = (item) => (isAgentCertified(byId.get(item.id) || item) ? 0 : 1);
+  return items
+    .map((item, index) => ({ item, index, certified: certified(item), deferred: deferredAt(item) }))
+    .sort((a, b) => (a.certified - b.certified) || (a.deferred - b.deferred) || (a.index - b.index))
+    .map((entry) => entry.item);
+}
+
+// Remember that a job was left out for time, so the next run reaches it
+// first, and forget it once the job is reached. Not a touch: updated_at is
+// the job's own news, and a deferral is not.
+function markAcceptDeferred(taskDb, db, taskId, deferred) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const has = Boolean(row.metadata && row.metadata.accept_deferred_at);
+  if (deferred === has) return;
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    if (deferred) metadata.accept_deferred_at = new Date().toISOString();
+    else delete metadata.accept_deferred_at;
+  }, { touch: false });
+}
+
 function cmdCertifyVerified(args, options = {}) {
   // preview: the hourly pass's dry run. Reads the named workspace's jobs and
   // writes nothing, not even the task list file.
@@ -10062,15 +10094,16 @@ function cmdAutoAcceptCertified(args) {
   // never persisted: a later heartbeat must prove the checkout again.
   const verifyCache = new Map();
   // --budget-ms: the whole run, both phases, stays inside this many
-  // milliseconds. The second check gets the first half, so jobs already
-  // certified always reach the accept step.
+  // milliseconds. The second check gets the first half. Each phase keeps its
+  // own slowest step: one slow failing check in the second check once left
+  // the accept step unable to start anything, every hour (2026-11-15).
   const startedMs = Date.now();
   const budgetRaw = Number(flag(args, '--budget-ms'));
   const budgetMs = Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : 0;
   const budget = budgetMs ? createRunBudget() : null;
   const acceptDeadlineMs = budgetMs ? startedMs + budgetMs : 0;
   const certification = certifyFirst && !dryRun
-    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected, budget, deadlineMs: budgetMs ? startedMs + budgetMs / 2 : 0 })
+    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected, budget: budgetMs ? createRunBudget() : null, deadlineMs: budgetMs ? startedMs + budgetMs / 2 : 0 })
     : null;
 
   const taskDb = getTaskDb();
@@ -10086,18 +10119,20 @@ function cmdAutoAcceptCertified(args) {
   const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
   // The review queue only surfaces certified rows. Under --all the bar is
   // the protected lanes, not certification, so scan every pending review.
-  const pool = acceptAll
+  const pool = acceptOrder(acceptAll
     ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
-    : queue.items.filter(item => item.queue_role !== 'blocked');
+    : queue.items.filter(item => item.queue_role !== 'blocked'), pendingReview);
   const results = [];
 
   for (const item of pool) {
     if (budget && !budget.allows(acceptDeadlineMs)) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'time_budget', action: 'deferred' });
+      if (!dryRun) markAcceptDeferred(taskDb, db, item.id, true);
       continue;
     }
+    if (!dryRun) markAcceptDeferred(taskDb, db, item.id, false);
     if (budget) budget.time(() => acceptOne(item));
     else acceptOne(item);
   }
@@ -10113,6 +10148,16 @@ function cmdAutoAcceptCertified(args) {
     if (proofBoundary) {
       results.push({ ...proofBoundary, action: 'skipped' });
       return;
+    }
+    // A job not yet certified would have its check run here. When that check
+    // already failed on this exact code, running it again proves nothing and
+    // only takes the time a ready job behind it needs.
+    if (!isAgentCertified(task)) {
+      const verify = certifyVerifyCandidate(task);
+      if (verify && failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainLineSha(task, process.cwd()))) {
+        results.push({ ref: task.display_id || task.id, eligible: false, reason: 'failed_on_this_code', action: 'skipped', verify });
+        return;
+      }
     }
     const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, includeProtected, verifyCache });
     if (!evaluation.eligible) {

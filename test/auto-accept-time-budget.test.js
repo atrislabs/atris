@@ -97,3 +97,92 @@ test('the hourly pass hands the accept step its time limit, less room to answer'
   assert.equal(Number(args[at + 1]), 240000);
   assert.ok(!acceptCommandArgs({}, 0).includes('--budget-ms'));
 });
+
+// A fixture with one job whose check is quick and passes, and `failing` jobs
+// whose checks are slow and fail. The ready job is handed in first.
+function mixed(failing, slowMs) {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-accept-starve-')));
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+  git(['init', '-q', '-b', 'master'], repo);
+  git(['config', 'user.email', 'test@example.com'], repo);
+  git(['config', 'user.name', 'Test'], repo);
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.atris/\natris/runs/\natris/logs/\n');
+  fs.writeFileSync(path.join(repo, 'test', 'fast.test.js'), "require('node:test')('fast', () => {});\n");
+  for (let i = 0; i < failing; i += 1) {
+    fs.writeFileSync(path.join(repo, 'test', `slow-fail-${i}.test.js`),
+      `require('node:test')('slow and failing ${i}', () => new Promise((resolve, reject) => setTimeout(() => reject(new Error('still broken')), ${slowMs})));\n`);
+  }
+  git(['add', '.'], repo);
+  git(['commit', '-qm', 'init'], repo);
+  fs.mkdirSync(path.join(repo, '.atris', 'policy'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.atris', 'policy', 'autoland.json'), JSON.stringify({ enabled: true, enabled_by: 'keshav', accept_all: true }));
+  const dbPath = path.join(base, 'tasks.db');
+  const tmp = path.join(base, 'tmp');
+  fs.mkdirSync(tmp);
+  taskDb.close();
+  const db = taskDb.open(dbPath);
+  const add = (title, verify) => {
+    const id = taskDb.addTask(db, { title, workspaceRoot: repo, tag: 'test', metadata: { verify } }).id;
+    assert.equal(taskDb.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+    assert.equal(taskDb.readyTask(db, { id, actor: 'codex', proof: `${'context '.repeat(35)}Checks: ${verify} passed.` }).ready, true);
+    return id;
+  };
+  const fx = { base, repo, db, dbPath, tmp, add };
+  fx.ready = add('ready job with a quick passing check', 'node --test test/fast.test.js');
+  return fx;
+}
+
+const brief = (out) => JSON.stringify({
+  second_check: (out.certification?.results || []).map((r) => `${r.ref}:${r.action}${r.reason ? `(${r.reason})` : ''}`),
+  accept: (out.results || []).map((r) => `${r.ref}:${r.action}(${r.reason})`),
+});
+
+// Reviewer repro, 2026-11-15: one second check that took over half the budget
+// left the accept step with nothing it could start, every hour the main line
+// moved, so a job already certified never landed.
+test('a slow failing second check does not stop a ready job from landing in the same hour', () => {
+  const slowMs = 2500;
+  const fx = mixed(1, slowMs);
+  try {
+    fx.add('job whose slow check fails', 'node --test test/slow-fail-0.test.js');
+    const hours = [];
+    for (let hour = 1; hour <= 2; hour += 1) {
+      const { out } = accept(fx, ['--budget-ms', String(slowMs * 2)]);
+      hours.push(brief(out));
+      git(['commit', '-q', '--allow-empty', '-m', `hour ${hour}`], fx.repo);
+      if (taskDb.getTask(fx.db, fx.ready).status === 'done') break;
+    }
+    assert.equal(taskDb.getTask(fx.db, fx.ready).status, 'done', hours.join('\n'));
+    assert.equal(hours.length, 1, `it lands in the first hour: ${hours.join('\n')}`);
+  } finally {
+    taskDb.close();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+// Reviewer repro, 2026-11-15: three newer jobs whose checks fail took the
+// whole budget at the head of the list every hour, and the job left out for
+// time was left out again the next hour, and the next.
+test('a job certified and left out for time is not left behind failing checks hour after hour', () => {
+  const slowMs = 1500;
+  const fx = mixed(3, slowMs);
+  try {
+    const first = spawnSync(process.execPath, [CLI, 'task', 'certify-verified', '--json'], {
+      cwd: fx.repo, encoding: 'utf8',
+      env: { ...process.env, TMPDIR: fx.tmp, ATRIS_TASKS_DB: fx.dbPath, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ATRIS_AGENT_PROOF_ONLY: '0', NODE_TEST_CONTEXT: '' },
+      timeout: 120000,
+    });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    for (let i = 0; i < 3; i += 1) fx.add(`newer job ${i} whose slow check fails`, `node --test test/slow-fail-${i}.test.js`);
+    const hours = [];
+    for (let hour = 1; hour <= 2 && taskDb.getTask(fx.db, fx.ready).status !== 'done'; hour += 1) {
+      const { out } = accept(fx, ['--budget-ms', String(slowMs * 3)]);
+      hours.push(brief(out));
+    }
+    assert.equal(taskDb.getTask(fx.db, fx.ready).status, 'done', hours.join('\n'));
+  } finally {
+    taskDb.close();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
