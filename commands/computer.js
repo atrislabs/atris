@@ -1156,7 +1156,6 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   };
 
   let feed = null;
-  let lastBuilderLine = '';
   let finalUrl = null;
   let warned = false;
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
@@ -1241,27 +1240,12 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     if (!started.ok || !started.data?.execution_id) {
       return { startError: prLib.describeStartError(started) };
     }
-    let pending = '';
-    const progress = (chunk) => {
-      pending += chunk;
-      const lines = pending.split(/\r?\n/);
-      pending = lines.pop();
-      for (const raw of lines) {
-        const line = raw.trim();
-        if (!line) continue;
-        lastBuilderLine = line;
-        if (/^[A-Z][A-Z_0-9]*=/.test(line)) continue;
-        const time = elapsed();
-        sendFeed({ type: 'progress', at: new Date().toISOString(), text: `${time.minutes}:${String(time.seconds).padStart(2, '0')} ${line.slice(0, 150)}` });
-      }
-    };
-    const out = prLib.createRedactingWriter((chunk) => { write(chunk); if (builder) progress(chunk); });
+    const out = prLib.createRedactingWriter((chunk) => write(chunk));
     const streamed = await stream(token, ctx, started.data.execution_id, null, {
       write: (s) => out.write(s),
       writeError: (s) => { out.flush(); logError(prLib.redactSecrets(s)); },
     });
     out.flush();
-    if (builder && pending.trim()) progress('\n');
     return { streamed, text: [streamed?.text, streamed?.resultText].filter(Boolean).join('\n') };
   };
 
@@ -1329,7 +1313,6 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
       sessionId,
       builder: true,
     });
-    if (!lastBuilderLine && round.text) lastBuilderLine = prLib.redactSecrets(prLib.lastLines(round.text, 1));
     const result = round.startError ? null : prLib.parsePullRequestResult(round.text, repo);
     return { round, result };
   };
@@ -1380,7 +1363,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
   } finally {
     const time = elapsed();
-    sendFeed({ type: 'finish', url: finalUrl, reason: lastBuilderLine || 'The builder did not return a pull request.', duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+    sendFeed({ type: 'finish', url: finalUrl, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
     log(`Done in ${time.minutes}m ${time.seconds}s`);
   }
 }

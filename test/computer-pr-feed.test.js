@@ -16,7 +16,7 @@ test('computer PR publishes progress and outcomes only for enabled projects', as
     process.chdir(cwd);
     const logs = [];
     let workerDone;
-    await computerPr('token', ['a/b', 'Fix this. More detail', ...args], { businessId: 'b', workspaceId: 'w' }, { model: 'model-x' }, {
+    await computerPr('token', ['a/b', 'Fix this. More detail', ...args], { businessId: 'b', workspaceId: 'w', model: 'saved-model' }, {}, {
       onFeedWorker: worker => { workerDone = new Promise(resolve => worker.on('exit', resolve)); },
       log: s => logs.push(s), logError: s => logs.push(s), write: () => {},
       ensureBusinessAwake: async () => true,
@@ -36,14 +36,15 @@ test('computer PR publishes progress and outcomes only for enabled projects', as
     assert.equal(rows[0].metadata.assigned_to, 'executor');
     assert.equal(rows[0].metadata.feed.source, 'codeops');
     assert.equal(rows[0].metadata.feed.repo, 'a/b');
-    assert.deepEqual(rows[0].metadata.feed.progress.map(p => p.text.replace(/^\d+:\d\d /, '')), ['First progress.', 'Second progress.']);
-    assert.ok(rows[0].metadata.feed.progress.every(p => /^\d+:\d\d /.test(p.text) && p.by === 'executor' && !Number.isNaN(Date.parse(p.at))));
-    assert.match(rows[0].metadata.result, /^Pull request https:\/\/github.com\/a\/b\/pull\/1 · \d+m \d+s · model-x$/);
+    assert.deepEqual(rows[0].metadata.feed.progress, []);
+    assert.match(rows[0].metadata.result, /^Fixed: Fix this\. Pull request ready in \d+m \d+s\. · saved-model$/);
+    assert.equal(rows[0].metadata.feed.model, 'saved-model');
+    assert.equal(rows[0].metadata.feed.url, 'https://github.com/a/b/pull/1');
     await run(project, ['--no-think'], ['Could not finish.\n']);
     rows = store.listTasks(store.open(), { workspaceRoot: store.workspaceRoot(project) });
     assert.equal(rows.length, 2);
     const failed = rows.find(row => row.status === 'failed');
-    assert.equal(failed.metadata.result, 'Could not finish.');
+    assert.match(failed.metadata.result, /^Could not finish: Fix this\. No pull request is ready\.$/);
     await run(project, ['--no-feed'], ['PR_URL=https://github.com/a/b/pull/2\n']);
     await run(root, [], ['PR_URL=https://github.com/a/b/pull/3\n']);
     assert.equal(store.listTasks(store.open(), { workspaceRoot: store.workspaceRoot(project) }).length, 2);
