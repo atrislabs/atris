@@ -1,6 +1,6 @@
 # Campaigns
 
-Campaign judges, traces, loops, cadence and learning reports. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+Campaign judges, traces, loops, cadence and learning reports. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Search shortcuts: Modular commands
 

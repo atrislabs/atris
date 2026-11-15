@@ -10,7 +10,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
-const { buildNextWorkContext, reconcileTaskRows } = require('../lib/next-work-context');
+const { buildNextWorkContext, reconcileTaskRows, projectGoalAge } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
@@ -36,7 +36,7 @@ const {
   protectedLaneOf,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
-const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
+const { checkedCodeSha, mainLineSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -458,9 +458,9 @@ function readGoalSources(root = process.cwd()) {
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const goals = extractGoalLines(fs.readFileSync(file, 'utf8'));
-    if (goals.length) return { path: file, goals };
+    if (goals.length) return { path: file, goals, updated_at: fs.statSync(file).mtime.toISOString() };
   }
-  return { path: null, goals: [] };
+  return { path: null, goals: [], updated_at: null };
 }
 
 function reviewSummary(task, payload = {}) {
@@ -976,16 +976,19 @@ function pickTaskGoal(task, goals) {
   return bestScore > 0 ? best : null;
 }
 
-function taskBaseObjective(task, goals) {
+// A task's objective is only what the task or its parent recorded. A project
+// goal line that shares a few words is a board grouping, never this task's
+// purpose, so it is not offered here.
+function taskBaseObjective(task) {
   const metadata = task && task.metadata || {};
   return task.objective
     || metadata.task_goal
     || metadata.goal_objective
     || metadata.objective
-    || pickTaskGoal(task, goals);
+    || null;
 }
 
-function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+function taskObjective(task, parent, { parentLinkType = null, baseObjectives = new Map() } = {}) {
   const metadata = task && task.metadata || {};
   const explicit = task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective;
   if (explicit) return explicit;
@@ -994,13 +997,13 @@ function taskObjective(task, parent, goals, { parentLinkType = null, baseObjecti
     if (parentLinkType === 'goal_id') return parent.title;
     return baseObjectives.get(parent.id) || parent.title;
   }
-  return pickTaskGoal(task, goals);
+  return null;
 }
 
 function buildTaskStreams(tasks, goals) {
   const buckets = new Map();
   for (const task of tasks) {
-    const objective = task.objective || 'Unmapped work';
+    const objective = task.objective || pickTaskGoal(task, goals) || 'Unmapped work';
     if (!buckets.has(objective)) {
       buckets.set(objective, {
         objective,
@@ -1146,7 +1149,7 @@ function enrichTaskProjection(projection) {
   }
   const baseObjectives = new Map();
   for (const task of projection.tasks || []) {
-    const objective = taskBaseObjective(task, goalSource.goals);
+    const objective = taskBaseObjective(task);
     if (objective) baseObjectives.set(task.id, objective);
   }
   const children = new Map();
@@ -1168,7 +1171,7 @@ function enrichTaskProjection(projection) {
       const review = withReviewReceiptPath(taskReviewSummary(task), root);
       const enriched = {
         ...task,
-        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
+        objective: taskObjective(task, parent, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
@@ -1192,6 +1195,8 @@ function enrichTaskProjection(projection) {
     goals: {
       source_path: goalSource.path,
       items: goalSource.goals,
+      updated_at: goalSource.updated_at,
+      ...(goalSource.path ? projectGoalAge(goalSource.updated_at) : { old: null, about: null }),
     },
     streams: buildTaskStreams(enrichedTasks, goalSource.goals),
     tasks: enrichedTasks,
@@ -9625,8 +9630,15 @@ function certifyVerifyCandidate(task) {
   }
   for (const raw of [...recorded, ...ordered]) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
-    // inspected: ..."); try the full clause, then the first sentence of it.
-    for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
+    // inspected: ..."); try the full clause, then the first sentence of it,
+    // then the part before ", exit 0": six atrisos-web jobs wrote
+    // "Verifier result at that commit: <command>, exit 0" and no second
+    // actor ever found their check. Only a comma, "exit" and then a number
+    // is cut (", exit 0", ", exit code 0"), so a list of test files is never
+    // shortened into a smaller check, even when a file name starts with exit.
+    const firstSentence = raw.split(/\.(?:\s|$)/)[0];
+    const exitLine = /,\s*exit(?:ed)?(?:\s+(?:code|status))?(?:\s+|\s*[:=]\s*)\d+(?![\w-]|\.\w)/i;
+    for (const candidate of [raw, firstSentence, firstSentence.split(exitLine)[0]].map((c) => String(c || '').trim())) {
       if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
@@ -9666,7 +9678,7 @@ function currentHeadSha(workspaceRoot) {
 // on 2026-07-29), so the two lanes that legitimately execute verifies,
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
-function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
+function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot, mainSha = null }) {
   if (!taskDb.getTask(db, taskId)) return;
   const verifyCache = {
     command: verify,
@@ -9678,6 +9690,9 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     // else the folder the job lives in. Read before the write lock is taken.
     code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
     code_source: (result && result.code_source) || 'checkout',
+    // The main line's tip when the check ran. A failure is only trusted again
+    // while both this and the job's code are unchanged.
+    main_sha: mainSha || null,
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
@@ -9693,11 +9708,20 @@ function lastCheckedMs(task) {
 }
 
 // The check already failed on exactly this code: running it again proves
-// nothing until the code changes.
-function failedOnSameCode(task, verify, codeSha) {
+// nothing until something changes. "This code" is the job's code and the main
+// line's tip together, and a failure older than a day is tried again anyway.
+// The job's code alone never changes once it is handed in, so a check that
+// failed once on a loaded machine (CLI-1473, 2026-11-12) was skipped every
+// hour after, while the same check passed on the same commit.
+const FAILED_CHECK_TRUSTED_MS = 24 * 60 * 60 * 1000;
+
+function failedOnSameCode(task, verify, codeSha, mainSha, now = Date.now()) {
   const cache = task?.metadata?.verify_cache;
-  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
-    && cache.command === verify && codeSha && cache.code_sha === codeSha);
+  if (!cache || typeof cache !== 'object' || cache.ok !== false || cache.reason !== 'verify_failed') return false;
+  if (cache.command !== verify || !codeSha || cache.code_sha !== codeSha) return false;
+  if (!mainSha || cache.main_sha !== mainSha) return false;
+  const ranAt = Date.parse(String(cache.ran_at || ''));
+  return Number.isFinite(ranAt) && now - ranAt < FAILED_CHECK_TRUSTED_MS;
 }
 
 // `atris task ready --verify "<cmd>"` already runs the command live and
@@ -9740,8 +9764,9 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
+  const mainSha = mainLineSha(task, process.cwd());
   const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
+  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root, mainSha });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9759,6 +9784,64 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
   };
 }
 
+// A run with a time limit starts a slow step only while the slowest step it
+// has run so far would still finish in time. The first step runs as long as
+// there is time left at all: nothing is known about the cost yet. A step left
+// out is named as deferred and comes first again on the next run, so a long
+// queue is worked through across hours instead of killed in the middle.
+// 2026-11-15: in the web project each check is a vitest run of one to two
+// and a half minutes on a busy machine. The second check ran up to six of
+// them before any accept, the hourly pass killed the whole run at 300s every
+// hour, and four jobs that were ready to land never reached the accept step.
+function createRunBudget(now = Date.now) {
+  let longest = 0;
+  return {
+    allows(deadlineMs) {
+      return !deadlineMs || now() + longest < deadlineMs;
+    },
+    time(fn) {
+      const started = now();
+      try {
+        return fn();
+      } finally {
+        longest = Math.max(longest, now() - started);
+      }
+    },
+  };
+}
+
+// The accept step's order: jobs already certified first, since accepting one
+// is the whole point of the step; among them, and among the rest, a job left
+// out for time on an earlier run comes before newer arrivals, oldest
+// deferral first. Otherwise the order given is kept. Without this a ready
+// job behind three failing checks was left out the same way every hour.
+function acceptOrder(items, rows = []) {
+  const byId = new Map((rows || []).map((row) => [row.id, row]));
+  const deferredAt = (item) => {
+    const at = Date.parse(String((byId.get(item.id) || item)?.metadata?.accept_deferred_at || ''));
+    return Number.isFinite(at) ? at : Infinity;
+  };
+  const certified = (item) => (isAgentCertified(byId.get(item.id) || item) ? 0 : 1);
+  return items
+    .map((item, index) => ({ item, index, certified: certified(item), deferred: deferredAt(item) }))
+    .sort((a, b) => (a.certified - b.certified) || (a.deferred - b.deferred) || (a.index - b.index))
+    .map((entry) => entry.item);
+}
+
+// Remember that a job was left out for time, so the next run reaches it
+// first, and forget it once the job is reached. Not a touch: updated_at is
+// the job's own news, and a deferral is not.
+function markAcceptDeferred(taskDb, db, taskId, deferred) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const has = Boolean(row.metadata && row.metadata.accept_deferred_at);
+  if (deferred === has) return;
+  taskDb.updateTaskMetadata(db, taskId, (metadata) => {
+    if (deferred) metadata.accept_deferred_at = new Date().toISOString();
+    else delete metadata.accept_deferred_at;
+  }, { touch: false });
+}
+
 function cmdCertifyVerified(args, options = {}) {
   // preview: the hourly pass's dry run. Reads the named workspace's jobs and
   // writes nothing, not even the task list file.
@@ -9768,6 +9851,7 @@ function cmdCertifyVerified(args, options = {}) {
   const silent = options.silent === true;
   const verifyCache = options.verifyCache || null;
   const includeProtected = options.includeProtected === true;
+  const budget = options.budget || null;
   const actor = String(flag(args, '--as') || 'autoland-verifier');
   const limitRaw = flag(args, '--limit');
   const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 6) : 6;
@@ -9849,8 +9933,13 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
-    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+    const mainSha = mainLineSha(task, process.cwd());
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainSha)) {
       results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
+      continue;
+    }
+    if (!dryRun && budget && !budget.allows(options.deadlineMs)) {
+      results.push({ ref, action: 'deferred', reason: 'time_budget', verify });
       continue;
     }
     checks += 1;
@@ -9858,8 +9947,9 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'would_certify', verify });
       continue;
     }
-    const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
+    const runCheck = () => runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
+    const run = budget ? budget.time(runCheck) : runCheck();
+    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root, mainSha });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
@@ -9895,6 +9985,7 @@ function cmdCertifyVerified(args, options = {}) {
     would_certify: results.filter((r) => r.action === 'would_certify').length,
     skipped: results.filter((r) => r.action === 'skipped').length,
     failed: results.filter((r) => r.action === 'verify_failed' || r.action === 'certify_failed').length,
+    deferred: results.filter((r) => r.action === 'deferred').length,
     results,
     projection_path: outPath,
   };
@@ -10002,8 +10093,17 @@ function cmdAutoAcceptCertified(args) {
   // remains available to the landing gate. The cache is process-local and is
   // never persisted: a later heartbeat must prove the checkout again.
   const verifyCache = new Map();
+  // --budget-ms: the whole run, both phases, stays inside this many
+  // milliseconds. The second check gets the first half. Each phase keeps its
+  // own slowest step: one slow failing check in the second check once left
+  // the accept step unable to start anything, every hour (2026-11-15).
+  const startedMs = Date.now();
+  const budgetRaw = Number(flag(args, '--budget-ms'));
+  const budgetMs = Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : 0;
+  const budget = budgetMs ? createRunBudget() : null;
+  const acceptDeadlineMs = budgetMs ? startedMs + budgetMs : 0;
   const certification = certifyFirst && !dryRun
-    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected })
+    ? cmdCertifyVerified([], { verifyCache, silent: true, includeProtected, budget: budgetMs ? createRunBudget() : null, deadlineMs: budgetMs ? startedMs + budgetMs / 2 : 0 })
     : null;
 
   const taskDb = getTaskDb();
@@ -10019,33 +10119,54 @@ function cmdAutoAcceptCertified(args) {
   const certifiedTotal = pendingReview.filter((t) => isAgentCertified(t)).length;
   // The review queue only surfaces certified rows. Under --all the bar is
   // the protected lanes, not certification, so scan every pending review.
-  const pool = acceptAll
+  const pool = acceptOrder(acceptAll
     ? pendingReview
       .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
       .slice(0, max)
-    : queue.items.filter(item => item.queue_role !== 'blocked');
+    : queue.items.filter(item => item.queue_role !== 'blocked'), pendingReview);
   const results = [];
 
   for (const item of pool) {
+    if (budget && !budget.allows(acceptDeadlineMs)) {
+      results.push({ ref: item.display_id || item.id, eligible: false, reason: 'time_budget', action: 'deferred' });
+      if (!dryRun) markAcceptDeferred(taskDb, db, item.id, true);
+      continue;
+    }
+    if (!dryRun) markAcceptDeferred(taskDb, db, item.id, false);
+    if (budget) budget.time(() => acceptOne(item));
+    else acceptOne(item);
+  }
+
+  function acceptOne(item) {
     const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
     const task = fullProjection.tasks[0] || null;
     if (!task) {
       results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
-      continue;
+      return;
     }
     const proofBoundary = proofBoundaryBlockedEvaluation(task);
     if (proofBoundary) {
       results.push({ ...proofBoundary, action: 'skipped' });
-      continue;
+      return;
+    }
+    // A job not yet certified would have its check run here. When that check
+    // already failed on this exact code, running it again proves nothing and
+    // only takes the time a ready job behind it needs.
+    if (!isAgentCertified(task)) {
+      const verify = certifyVerifyCandidate(task);
+      if (verify && failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainLineSha(task, process.cwd()))) {
+        results.push({ ref: task.display_id || task.id, eligible: false, reason: 'failed_on_this_code', action: 'skipped', verify });
+        return;
+      }
     }
     const evaluation = evaluateAutoAccept(task, { strictVerify, acceptAll, includeProtected, verifyCache });
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
-      continue;
+      return;
     }
     if (dryRun) {
       results.push({ ...evaluation, action: 'would_accept', reward: parsedReward.value });
-      continue;
+      return;
     }
     const landingVerify = reverifyBeforeLanding(taskDb, db, task, { verifyCache });
     if (!landingVerify.ok) {
@@ -10067,7 +10188,7 @@ function cmdAutoAcceptCertified(args) {
         revision_note: landingVerify.note,
         task_id: task.id,
       });
-      continue;
+      return;
     }
     const accepted = acceptReviewTask(taskDb, db, task.id, {
       actor,
@@ -10081,7 +10202,7 @@ function cmdAutoAcceptCertified(args) {
     });
     if (!accepted.ok) {
       results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
-      continue;
+      return;
     }
     const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
@@ -10103,6 +10224,7 @@ function cmdAutoAcceptCertified(args) {
     revised: results.filter(row => row.action === 'revised').length,
     skipped: results.filter(row => row.action === 'skipped').length,
     failed: results.filter(row => row.action === 'accept_failed' || row.action === 'revise_failed').length,
+    deferred: results.filter(row => row.action === 'deferred').length,
     // Visible undercount flag: true only if the pool was cut short by `max`
     // while certified rows still existed beyond it. --all uses a high safety
     // cap (AUTO_ACCEPT_ALL_SWEEP_CAP), so this should stay false in practice;

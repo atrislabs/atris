@@ -25,6 +25,19 @@ if (process.argv[2] === 'memory'
   return;
 }
 
+// The desktop app keeps the decision feed open all day and asks often, so
+// atris feed answers before the rest of the CLI loads too. `feed list` and
+// `feed post` (the business group feed) fall through to the normal dispatch.
+if (process.argv[2] === 'feed') {
+  const decisionFeed = require('../commands/decision-feed');
+  const feedRoute = decisionFeed.route(process.argv.slice(3), { isTTY: Boolean(process.stdout.isTTY) });
+  if (feedRoute.notice) console.error(feedRoute.notice);
+  if (feedRoute.decision) {
+    decisionFeed.runFromCli(process.argv.slice(3));
+    return;
+  }
+}
+
 const fs = require('fs');
 const path = require('path');
 const { exec, spawnSync } = require('child_process');
@@ -529,25 +542,25 @@ function showStartHelp() {
 }
 
 function showHelpShort() {
-  console.log('atris: you say what you want. already won. one next step.');
+  console.log('atris: say what you want. see what is already done. get one next step.');
   console.log('');
   console.log('Start here:');
   console.log('  1. atris init                    set up this folder');
   console.log('  2. atris doctor                  check this computer is ready');
-  console.log('  3. atris "what you want"         say it, the work starts');
+  console.log('  3. atris "what you want"         save what you want in plain words');
   console.log('');
-  console.log('  atris "what do you want here?"   empty folder');
-  console.log('  atris later "..."                remember without a room');
-  console.log('  atris idea "..."                 drop an idea; atris builds it later');
-  console.log('  atris guide "..."                translate your words');
-  console.log('  atris do                         work already here');
-  console.log('  atris done                       land what your agent built');
-  console.log('  atris spaceship                  Keep working for a few hours');
-  console.log('  atris autopilot                  Keep working until you stop');
-  console.log('  atris mission                    the one goal');
-  console.log('  atris gm                         play your team as a front office');
+  console.log('  atris                            see where things stand and the next step');
+  console.log('  atris later "..."                save a thought for later');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
+  console.log('  atris do                         see the next step for work here');
+  console.log('  atris done                       finish and keep what your agent built');
+  console.log('  atris spaceship                  plan a few hours of work');
+  console.log('  atris autopilot                  plan work that runs until you stop it');
+  console.log('  atris mission                    see the current goal');
+  console.log('  atris gm                         run your team like a sports front office');
   console.log('');
-  console.log('More: atris help --all   ·   machine list: atris help --json');
+  console.log('More: atris help --all   ·   command list for scripts: atris help --json');
 }
 
 function helpCatalog() {
@@ -571,24 +584,24 @@ function helpCatalog() {
 }
 
 function showHelpAll() {
-  console.log('you say what you want. already won. one next step.');
+  console.log('atris: say what you want. see what is already done. get one next step.');
   console.log('');
-  console.log('  atris later "..."                remember without a room');
-  console.log('  atris idea "..."                 drop an idea; atris builds it later');
-  console.log('  atris guide "..."                translate your words');
-  console.log('  atris do                         work already here');
-  console.log('  atris done                       land what your agent built');
-  console.log('  atris spaceship                  Keep working for a few hours');
-  console.log('  atris autopilot                  Keep working until you stop');
-  console.log('  atris mission                    the one goal');
+  console.log('  atris later "..."                save a thought for later');
+  console.log('  atris idea "..."                 save an idea for later work');
+  console.log('  atris guide "..."                suggest a command from your words');
+  console.log('  atris do                         see the next step for work here');
+  console.log('  atris done                       finish and keep what your agent built');
+  console.log('  atris spaceship                  plan a few hours of work');
+  console.log('  atris autopilot                  plan work that runs until you stop it');
+  console.log('  atris mission                    see the current goal');
   console.log('  atris recap                      what your ai agent did today');
   console.log('  atris review                     check the work');
   console.log('  atris stop                       stop the live goal');
   console.log('');
-  console.log('Atris Computers:');
-  console.log('  Owner = User | Business');
-  console.log('  Owners have Computers: workspace + files + tools + secrets + memory + agents + validation');
-  console.log('  Types: code, research, CRM, reporting, events, support, business ops');
+  console.log('How it fits together:');
+  console.log('  you or your business can own computers.');
+  console.log('  a computer brings a workspace, files, tools, saved logins, memory, agents and checks together.');
+  console.log('  computers can be for code, research, sales, reporting, events, support or operations.');
   console.log('');
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');
@@ -623,6 +636,7 @@ function showHelpAll() {
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
+  console.log('  nexus      - Your people from the shared store: today, card, find, note, stage, add, due, paid, wall, goal, city, bring-over (--json for agents)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
@@ -668,6 +682,7 @@ function showHelpAll() {
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
   console.log('  scoreboard - Today\'s github contributions vs your best day, streak, repo commits (--watch, --json)');
   console.log('  growth     - Signups, paying, revenue, cli installs and countries, same as the growth page (--open, --json, note "...")');
+  console.log('  popshare   - Posts calendar for x, linkedin, blog, instagram, tiktok: week, today, show, goals, open, add, schedule, score (--json)');
   console.log('  scorecard  - Which AI can do your team\'s work: past changes graded by their own tests, run on your Claude plan (find, run, show)');
   console.log('  rating     - The Atris Rating, 25 to 99: how much real work each engine and member finishes (atris rating opus)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
@@ -761,7 +776,7 @@ function showHelpAll() {
   console.log('Cloud & agents:');
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
-  console.log('  morning    - What your agent did last night: read, made, met, spent');
+  console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -770,6 +785,10 @@ function showHelpAll() {
   console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
   console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
+  console.log('               agent pull|push|snapshot: carry an agent\'s home; publish|unpublish: manage its model name');
+  console.log('               agent spawn --budget: make a child agent');
+  console.log('               agent always-on <agent>: it checks in on a timer; always-on status shows the bill, always-on off stops it');
+  console.log('               agent signin <agent> --key-file <path>: sign in with the agent\'s own key, print a token');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
   console.log('  login      - Sign in, add an account, or mint a scoped agent token (--agent)');
@@ -822,6 +841,7 @@ function showHelpAll() {
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
   console.log('  member list          - Show all team members');
+  console.log('  member install <n>   - Add a ready-made member: host, designer-1');
   console.log('  member activate <n>  - Activate a member (link skills, show context)');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
   console.log('  member result <n>    - Newest run of a member: run record, receipt, artifacts, result number');
@@ -832,6 +852,7 @@ function showHelpAll() {
   console.log('  plugin info         - Preview what will be included');
   console.log('');
   console.log('Feedback:');
+  console.log('  feed                       - Ideas from your team to approve or dismiss, and checked results (feed --help)');
   console.log('  feedback "msg"             - Submit feedback');
   console.log('  feedback                   - List feedback queue');
   console.log('  feedback triage <id>       - Print a reproduction brief (--dispatch to run)');
@@ -843,7 +864,7 @@ function showHelpAll() {
   console.log('  version    - Show Atris version');
   console.log('  help       - you say what you want (help --all for every command)');
   console.log('');
-  console.log('Tip: Just run "atris" to get started');
+  console.log('tip: run "atris" to get started');
   console.log('');
 }
 
@@ -1735,7 +1756,13 @@ function showWelcomeVisualization() {
   const projectName = path.basename(cwd);
   const row = (label, value) => `  ${label.padEnd(9)}${value}`;
   const sub = (text) => `  ${' '.repeat(9)}- ${text}`;
-  const trimTitle = (t) => (String(t).length > 64 ? `${String(t).slice(0, 61)}...` : String(t));
+  const trimTitle = (t) => {
+    const title = require('../lib/first-minute').plainTitle(t);
+    if (title.length <= 64) return title;
+    const cut = title.slice(0, 61);
+    const boundary = cut.lastIndexOf(' ');
+    return `${(boundary > 0 ? cut.slice(0, boundary) : cut).trimEnd()}...`;
+  };
 
   let glance = {
     backlog: 0, active: 0, review: 0, reviewCertified: 0,
@@ -1821,7 +1848,7 @@ function showWelcomeVisualization() {
   console.log('');
 
   if (!isInitialized) {
-    console.log('  no atris workspace here yet.');
+    console.log('  atris is not set up in this folder yet.');
     console.log('');
     console.log(row('next', 'atris init  (set up this folder)'));
     console.log('');
@@ -1869,11 +1896,14 @@ function showWelcomeVisualization() {
 
   try {
     const health = require('../commands/doc-health').computeDocHealth(cwd);
-    if (health.ok) {
-      const detail = health.lookup_hops.missing
-        ? 'add atris/doc-health/questions.jsonl'
-        : `${Math.round((health.lookup_hops.score || 0) * 100)}% one hop · boot ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens`;
-      console.log(row('docs', `${health.overall.total}/100 · ${detail}`));
+    const map = fs.readFileSync(path.join(atrisDir, 'MAP.md'), 'utf8');
+    const starterMap = map.includes('Run your AI agent with atris.md to populate this file.');
+    if (health.ok && map.trim() && !starterMap) {
+      const score = health.lookup_hops.score;
+      const detail = score === null
+        ? 'add sample questions to test the map: atris/doc-health/questions.jsonl'
+        : `the map answers ${score >= 1 ? 'every sample question' : `${Math.min(99, Math.round(score * 100))}% of sample questions`} · ${(health.boot_load.approximate_tokens / 1000).toFixed(1)}k tokens to read at start`;
+      console.log(row('docs', `${Math.round(health.overall.total)}/100 · ${detail}`));
     }
   } catch {
     // Document health is advisory and must never prevent startup.
@@ -1884,7 +1914,10 @@ function showWelcomeVisualization() {
   // journal, plus agent branches parked for a person.
   try {
     const lately = require('../lib/cleanup-summary').latestCleanupLine(cwd);
-    if (lately) console.log(row('lately', lately));
+    if (lately) {
+      const plain = lately.replace(/^[a-z][a-z -]{0,30}:\s*/i, '').replace(/\blanded\b/gi, 'completed').replace(/\bland on their own\b/gi, 'finish on their own').replace(/\b([0-9]+) agent branch(es)? parked for you\b/g, (m, n, many) => `${n} ${many ? 'pieces' : 'piece'} of agent work set aside for you`);
+      console.log(row('lately', plain.charAt(0).toLowerCase() + plain.slice(1)));
+    }
   } catch {
     // Advisory only; never blocks boot.
   }
@@ -1943,7 +1976,7 @@ function showWelcomeVisualization() {
     if (landInfo.due > 0) landText += ` (${landInfo.due} overdue)`;
     tidyBits.push(landText);
   }
-  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to toss`);
+  if (rotInfo && rotInfo.worktrees > 0) tidyBits.push(`${rotInfo.worktrees} old cop${rotInfo.worktrees === 1 ? 'y' : 'ies'} to clear out`);
   if (rotInfo && rotInfo.lessons > 0) tidyBits.push(`${rotInfo.lessons} open problem${rotInfo.lessons === 1 ? '' : 's'}`);
   if (tidyBits.length) {
     console.log(row('tidy', tidyBits.join(', ')));
@@ -1953,10 +1986,12 @@ function showWelcomeVisualization() {
   // fix this week. Coaching (role, goal, context edits) is not bad news. Zero is the healthy state and stays silent; no git history
   // (not a repo, git missing) also stays silent.
   try {
-    const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7 });
+    // Boot never waits on GitHub: a squash merge it has not asked about yet
+    // reads as a person's until `atris improve revisions` asks and saves it.
+    const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7, pullBranch: () => null });
     const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
     if (fixed > 0) {
-      console.log(`  ${fixed} landing${fixed === 1 ? '' : 's'} this week needed a human fix; run atris improve revisions`);
+      console.log(`  ${fixed} finished change${fixed === 1 ? '' : 's'} needed a human fix this week; run atris improve revisions (see what needed fixing)`);
     }
   } catch {
     // Silent: the gauge never blocks boot.
@@ -1969,7 +2004,7 @@ function showWelcomeVisualization() {
     wikiNudge = '';
   }
   if (wikiNudge) {
-    console.log(`  ${wikiNudge}`);
+    console.log(`  ${wikiNudge.replace('the wiki has grown a lot since its last pruning; run: atris wiki consolidate', 'the project notes have grown; run atris wiki consolidate (review notes to combine)')}`);
   }
 
   console.log(row('logs', journalEntries > 0
@@ -1993,7 +2028,7 @@ function showWelcomeVisualization() {
     const teamLine = require('../lib/team-lineup').bootTeamLine(cwd, { width: 80 - 11, jobs });
     if (teamLine) console.log(row('team', teamLine));
     const endsLine = engineView.bootExpiringLine(engineView.expiringWorkers(jobs));
-    if (endsLine) console.log(row('roster', endsLine));
+    if (endsLine) console.log(row('tools', endsLine.replace('renew: atris engine roster confirm', 'run atris engine roster confirm (renew the assigned tools)')));
   } catch {
     // Silent: the lineup is a hint, not a gate.
   }
@@ -2015,7 +2050,7 @@ function showWelcomeVisualization() {
       .filter((intent) => intent.offer === 'boot_empty')
       .map((intent) => intent.say[0])
       .slice(0, 2);
-    console.log(row('say', `"${phrases[0]}" or "${phrases[1]}"  (your agent translates)`));
+    console.log(row('say', `"${phrases[0]}" or "${phrases[1]}"  (say it to your agent in your own words)`));
   }
 
   // The next command always carries a plain-english gloss: a newcomer should
@@ -2026,7 +2061,7 @@ function showWelcomeVisualization() {
   } else if (landInfo && landInfo.due > 0) {
     next = `atris land --reap  (put away the overdue work)`;
   } else if (endgameState.slug !== 'unset') {
-    next = 'atris autopilot  (do the next piece of work)';
+    next = 'atris autopilot  (keep working on the goal; it asks before it starts)';
   } else {
     next = 'atris plan  (plan the first tasks)';
   }
@@ -2269,6 +2304,10 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/growth').growthCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'popshare') {
+  Promise.resolve().then(() => require('../commands/popshare').popshareCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'scorecard') {
   Promise.resolve().then(() => require('../commands/scorecard').scorecardCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
@@ -2290,10 +2329,26 @@ if (command === 'guide') {
       if (process.argv.slice(3).includes('--json')) {
         console.log(JSON.stringify({ ok: false, error: message }, null, 2));
       } else {
-        console.error(`\n✗ Error: ${message}`);
+        console.error(message);
       }
       process.exit(1);
     });
+} else if (command === 'agent' && process.argv[3] === 'signin') {
+  // An agent signs in with its own private key; no owner login, no --account gate.
+  Promise.resolve().then(() => require('../commands/agent-signin').agentSigninCommand(process.argv.slice(4)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'agent' && process.argv[3] === 'always-on') {
+  // Timed check-ins name one agent and the server checks ownership, so no --account gate.
+  Promise.resolve().then(() => require('../commands/agent-always-on').agentAlwaysOnCommand(process.argv.slice(4)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'agent' && require('../commands/agent-home').isHomeCommand(process.argv.slice(3))) {
+  // pull/push/snapshot/publish/unpublish/spawn --budget name one agent (by id, saved name, or the
+  // pulled folder), and the server checks ownership, so no --account gate.
+  Promise.resolve().then(() => require('../commands/agent-home').agentHomeCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agent') {
   {
     const gate = requireAccountBound(process.argv.slice(3));
@@ -2538,6 +2593,10 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/memory').memoryCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'nexus') {
+  Promise.resolve().then(() => require('../commands/nexus').nexusCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'film') {
   Promise.resolve().then(() => require('../commands/film').filmCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
@@ -2547,7 +2606,7 @@ if (command === 'guide') {
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'spend') {
-  // Spend guard: unattended Claude runs on paid models need a yes (2026-10-28, $900 day).
+  // Spend guard: stops an unattended Claude run that could bill, never swaps its model (2026-10-28, $900 day).
   const code = require('../commands/spend').spendCommand(process.argv.slice(3));
   exitAfterStdoutDrain(typeof code === 'number' ? code : 0);
 } else if (command === 'usage') {
@@ -3294,7 +3353,8 @@ if (command === 'guide') {
       || raw.includes('--help')
       || raw.includes('-h')
       || raw[0] === 'help'
-      || raw[0] === 'quickstart';
+      || raw[0] === 'quickstart'
+      || raw[0] === 'begin';
     const gate = helpOnly ? { ok: true, args: raw } : requireAccountBound(raw);
     if (!gate.ok) process.exit(refuseAccountGlobal());
     const subcommand = gate.args[0];
@@ -3799,8 +3859,17 @@ async function agentAtris() {
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
     console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
+    console.log('       atris agent [pull|push|snapshot|publish|unpublish] and atris agent spawn <parent> --name <name> --budget <credits>');
+    console.log('       atris agent signin <agent> [--key-file <path>] [--json]');
+    console.log('       atris agent always-on <agent> [--every 30m] [--watch "..."] [--cap <credits a day>] | always-on status <agent> | always-on off <agent>');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
+    console.log('  Run `atris agent pull <agent> --dir <folder>` to copy an agent\'s home here; any engine started there becomes it.');
+    console.log('  Run `atris agent push` inside that folder to send changes back, `atris agent snapshot` to save a version.');
+    console.log('  Run `atris agent publish [<agent>] --as <name>` to publish a model, or `atris agent unpublish [<agent>]` to remove it.');
+    console.log('  Run `atris agent spawn <parent> --name <name> --budget <credits>` to make a child agent; its key goes to ~/.atris/agents.');
+    console.log('  Run `atris agent signin <agent> [--key-file <path>]` to sign in with the agent\'s own key; prints only a token.');
+    console.log('  Run `atris agent always-on <agent>` so it checks in on a timer; `always-on status <agent>` shows the bill, `always-on off <agent>` stops it.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');

@@ -31,7 +31,7 @@ delete process.env.ATRIS_RSI_STATE;
 const DASH = String.fromCharCode(0x2014);
 const WIDGET = ['// helpers', '', '', '', '', '', '', '', 'function widget() {', '  return 1;', '}', 'module.exports = { widget };', ''].join('\n');
 const MOVED_MAP = '# map\n\n| task | path |\n|---|---|\n| widget | `lib/widget.js:2` `widget` |\n';
-const GOOD_MAP = '# map\n\n| task | path |\n|---|---|\n| widget | `lib/widget.js:9` `widget` |\n';
+const GOOD_MAP = '# map\n\n| task | path |\n|---|---|\n| widget | `lib/widget.js` `widget` |\n';
 
 function git(cwd, args) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -104,7 +104,7 @@ test('with no mission, a moved map ref is found, verified, committed, pushed and
   assert.deepEqual(remoteBranches(r.remote), [out.branch]);
   assert.equal(git(r.remote, ['rev-parse', out.branch]), out.pushed_sha);
   const shipped = git(r.remote, ['show', `${out.pushed_sha}:atris/MAP.md`]);
-  assert.match(shipped, /`lib\/widget\.js:9` `widget`/);
+  assert.match(shipped, /`lib\/widget\.js` `widget`/);
   assert.match(git(r.remote, ['log', '-1', '--format=%B', out.pushed_sha]), /Co-authored-by: Atris/);
   assert.deepEqual(localBranches(r.root), []);
   assert.equal(git(r.root, ['worktree', 'list', '--porcelain']).split('\n').filter((l) => l.startsWith('worktree ')).length, 1);

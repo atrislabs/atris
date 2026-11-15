@@ -126,13 +126,12 @@ test('parseDispatchArgs keeps --engine values out of the task id list', () => {
   assert.equal(parsed.yolo, true);
   assert.equal(parsed.json, true);
 
-  const equalsForm = parseDispatchArgs(['CLI-3', '--engine=codex', '--prompt-file=/tmp/p.md', '--base=master', '--mystery-flag']);
+  const equalsForm = parseDispatchArgs(['CLI-3', '--engine=codex', '--prompt-file=/tmp/p.md', '--base=master']);
   assert.deepEqual(equalsForm.taskIds, ['CLI-3']);
   assert.equal(equalsForm.engine, 'codex');
   assert.equal(equalsForm.promptFile, '/tmp/p.md');
   assert.equal(equalsForm.base, 'master');
-  // Unknown -- flags are skipped, never treated as task ids.
-  assert.ok(!equalsForm.taskIds.includes('--mystery-flag'));
+  assert.match(parseDispatchArgs(['CLI-3', '--mystery-flag']).error, /unknown option/);
 });
 
 test('parseEngineLoginArgs: seat normalization and --business implies device flow', () => {

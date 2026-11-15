@@ -57,6 +57,18 @@ function closest(name, channels) {
   return channels.find((c) => c.toLowerCase().startsWith(n.slice(0, 3))) || null;
 }
 
+function readLocalFeed(log, flags, now) {
+  let root = process.cwd();
+  try { root = require('../lib/workspace-root').workspaceRoot(process.cwd()); } catch {}
+  const events = require('../lib/feed-team').readEvents(root, { limit: flags.limit == null ? 20 : Number(flags.limit) || 20 });
+  if (flags.json) { log(JSON.stringify({ channel: 'feed', local: true, posts: events })); return 0; }
+  if (!events.length) { log('nothing in this project\'s feed yet'); return 0; }
+  for (const event of events) {
+    log(postLine({ member_name: event.member, created_at: event.at, content: `${event.type}: ${event.text || ''}` }, now));
+  }
+  return 0;
+}
+
 async function channelCommand(args = [], deps = {}) {
   let secret = '';
   const hide = (line) => (secret ? String(line).split(secret).join('[hidden]') : String(line));
@@ -80,8 +92,14 @@ async function channelCommand(args = [], deps = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) { err('--limit takes a whole number from 1 to 50'); return 1; }
 
   const business = resolveChannelBusiness(flags, deps);
+  // The feed channel of a project with no hosted board (no business here, or
+  // no sign-in) is read from the project's own feed events, the stream
+  // `atris feed emit` writes, so the same events read here offline.
+  const localFeed = name === 'feed' && !text && !verb;
+  if (business.error && localFeed) return readLocalFeed(log, flags, now);
   if (business.error) { err(business.error); return 1; }
   const token = await loginToken(deps);
+  if (!token && localFeed) return readLocalFeed(log, flags, now);
   if (!token) { err(NOT_LOGGED_IN); return 1; }
   secret = token;
 
