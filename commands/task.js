@@ -10,7 +10,7 @@ const { execSync } = require('node:child_process');
 const path = require('path');
 const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
-const { buildNextWorkContext, reconcileTaskRows } = require('../lib/next-work-context');
+const { buildNextWorkContext, reconcileTaskRows, projectGoalAge } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
 const {
   compactErrorPayload,
@@ -36,7 +36,7 @@ const {
   protectedLaneOf,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify, nonFalsifyingIssue } = require('../lib/accept-verify-gate');
-const { checkedCodeSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
+const { checkedCodeSha, mainLineSha, runVerifyAtJobCode } = require('../lib/job-code-verify');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
@@ -458,9 +458,9 @@ function readGoalSources(root = process.cwd()) {
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const goals = extractGoalLines(fs.readFileSync(file, 'utf8'));
-    if (goals.length) return { path: file, goals };
+    if (goals.length) return { path: file, goals, updated_at: fs.statSync(file).mtime.toISOString() };
   }
-  return { path: null, goals: [] };
+  return { path: null, goals: [], updated_at: null };
 }
 
 function reviewSummary(task, payload = {}) {
@@ -976,16 +976,19 @@ function pickTaskGoal(task, goals) {
   return bestScore > 0 ? best : null;
 }
 
-function taskBaseObjective(task, goals) {
+// A task's objective is only what the task or its parent recorded. A project
+// goal line that shares a few words is a board grouping, never this task's
+// purpose, so it is not offered here.
+function taskBaseObjective(task) {
   const metadata = task && task.metadata || {};
   return task.objective
     || metadata.task_goal
     || metadata.goal_objective
     || metadata.objective
-    || pickTaskGoal(task, goals);
+    || null;
 }
 
-function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+function taskObjective(task, parent, { parentLinkType = null, baseObjectives = new Map() } = {}) {
   const metadata = task && task.metadata || {};
   const explicit = task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective;
   if (explicit) return explicit;
@@ -994,13 +997,13 @@ function taskObjective(task, parent, goals, { parentLinkType = null, baseObjecti
     if (parentLinkType === 'goal_id') return parent.title;
     return baseObjectives.get(parent.id) || parent.title;
   }
-  return pickTaskGoal(task, goals);
+  return null;
 }
 
 function buildTaskStreams(tasks, goals) {
   const buckets = new Map();
   for (const task of tasks) {
-    const objective = task.objective || 'Unmapped work';
+    const objective = task.objective || pickTaskGoal(task, goals) || 'Unmapped work';
     if (!buckets.has(objective)) {
       buckets.set(objective, {
         objective,
@@ -1146,7 +1149,7 @@ function enrichTaskProjection(projection) {
   }
   const baseObjectives = new Map();
   for (const task of projection.tasks || []) {
-    const objective = taskBaseObjective(task, goalSource.goals);
+    const objective = taskBaseObjective(task);
     if (objective) baseObjectives.set(task.id, objective);
   }
   const children = new Map();
@@ -1168,7 +1171,7 @@ function enrichTaskProjection(projection) {
       const review = withReviewReceiptPath(taskReviewSummary(task), root);
       const enriched = {
         ...task,
-        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
+        objective: taskObjective(task, parent, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
@@ -1192,6 +1195,8 @@ function enrichTaskProjection(projection) {
     goals: {
       source_path: goalSource.path,
       items: goalSource.goals,
+      updated_at: goalSource.updated_at,
+      ...(goalSource.path ? projectGoalAge(goalSource.updated_at) : { old: null, about: null }),
     },
     streams: buildTaskStreams(enrichedTasks, goalSource.goals),
     tasks: enrichedTasks,
@@ -9625,8 +9630,15 @@ function certifyVerifyCandidate(task) {
   }
   for (const raw of [...recorded, ...ordered]) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
-    // inspected: ..."); try the full clause, then the first sentence of it.
-    for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
+    // inspected: ..."); try the full clause, then the first sentence of it,
+    // then the part before ", exit 0": six atrisos-web jobs wrote
+    // "Verifier result at that commit: <command>, exit 0" and no second
+    // actor ever found their check. Only a comma, "exit" and then a number
+    // is cut (", exit 0", ", exit code 0"), so a list of test files is never
+    // shortened into a smaller check, even when a file name starts with exit.
+    const firstSentence = raw.split(/\.(?:\s|$)/)[0];
+    const exitLine = /,\s*exit(?:ed)?(?:\s+(?:code|status))?(?:\s+|\s*[:=]\s*)\d+(?![\w-]|\.\w)/i;
+    for (const candidate of [raw, firstSentence, firstSentence.split(exitLine)[0]].map((c) => String(c || '').trim())) {
       if (candidate && !nonFalsifyingIssue(candidate) && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
@@ -9666,7 +9678,7 @@ function currentHeadSha(workspaceRoot) {
 // on 2026-07-29), so the two lanes that legitimately execute verifies,
 // certify-verified and the autoland landing re-check, persist the outcome
 // here for the read path to consult.
-function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot }) {
+function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, workspaceRoot, mainSha = null }) {
   if (!taskDb.getTask(db, taskId)) return;
   const verifyCache = {
     command: verify,
@@ -9678,6 +9690,9 @@ function stampVerifyCacheMetadata(taskDb, db, taskId, { verify, result, actor, w
     // else the folder the job lives in. Read before the write lock is taken.
     code_sha: (result && result.code_sha) || currentHeadSha(workspaceRoot),
     code_source: (result && result.code_source) || 'checkout',
+    // The main line's tip when the check ran. A failure is only trusted again
+    // while both this and the job's code are unchanged.
+    main_sha: mainSha || null,
   };
   // A check is not a touch. Bumping updated_at here put every failed job at
   // the front of the next pass, so the same six failing jobs won every hour.
@@ -9693,11 +9708,20 @@ function lastCheckedMs(task) {
 }
 
 // The check already failed on exactly this code: running it again proves
-// nothing until the code changes.
-function failedOnSameCode(task, verify, codeSha) {
+// nothing until something changes. "This code" is the job's code and the main
+// line's tip together, and a failure older than a day is tried again anyway.
+// The job's code alone never changes once it is handed in, so a check that
+// failed once on a loaded machine (CLI-1473, 2026-11-12) was skipped every
+// hour after, while the same check passed on the same commit.
+const FAILED_CHECK_TRUSTED_MS = 24 * 60 * 60 * 1000;
+
+function failedOnSameCode(task, verify, codeSha, mainSha, now = Date.now()) {
   const cache = task?.metadata?.verify_cache;
-  return Boolean(cache && typeof cache === 'object' && cache.ok === false && cache.reason === 'verify_failed'
-    && cache.command === verify && codeSha && cache.code_sha === codeSha);
+  if (!cache || typeof cache !== 'object' || cache.ok !== false || cache.reason !== 'verify_failed') return false;
+  if (cache.command !== verify || !codeSha || cache.code_sha !== codeSha) return false;
+  if (!mainSha || cache.main_sha !== mainSha) return false;
+  const ranAt = Date.parse(String(cache.ran_at || ''));
+  return Number.isFinite(ranAt) && now - ranAt < FAILED_CHECK_TRUSTED_MS;
 }
 
 // `atris task ready --verify "<cmd>"` already runs the command live and
@@ -9740,8 +9764,9 @@ function reverifyBeforeLanding(taskDb, db, task, { actor = 'autoland-verifier', 
       revise_reason: revised.reason || null,
     };
   }
+  const mainSha = mainLineSha(task, process.cwd());
   const result = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root });
+  stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result, actor, workspaceRoot: task.workspace_root, mainSha });
   if (result.ok) return { ok: true, verify, result };
   const note = landingVerifyFailureNote(verify, result);
   const revised = taskDb.reviseTask(db, {
@@ -9849,7 +9874,8 @@ function cmdCertifyVerified(args, options = {}) {
       results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
       continue;
     }
-    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()))) {
+    const mainSha = mainLineSha(task, process.cwd());
+    if (failedOnSameCode(task, verify, checkedCodeSha(task, process.cwd()), mainSha)) {
       results.push({ ref, action: 'skipped', reason: 'failed_on_this_code', verify });
       continue;
     }
@@ -9859,7 +9885,7 @@ function cmdCertifyVerified(args, options = {}) {
       continue;
     }
     const run = runVerifyAtJobCode(verify, task, { root: process.cwd(), cache: verifyCache });
-    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root });
+    stampVerifyCacheMetadata(taskDb, db, task.id, { verify, result: run, actor, workspaceRoot: task.workspace_root, mainSha });
     if (!run.ok) {
       results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
       continue;
