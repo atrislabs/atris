@@ -109,6 +109,7 @@ Snapshots never enter the final output buffer; piped output ignores drafts.
 unique name fragment, or full `provider:model`. `--model <name>` does the same from the command line.
 When the receipt names a different model than the one asked for, the chat prints a fell-back line.
 `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
+A claude launch from `buildRunnerCommand()` in `lib/runner-command.js` (bin named `claude`, no template) starts slim with `CLAUDE_SLIM_ARGS` (`--strict-mcp-config --setting-sources project,local`); `ATRIS_RUNNER_KEEP_MCP=1` keeps the full launch. Where the spend guard hook is installed, `slimLaunchSpendStop()` runs its decision first and a stop throws its message instead of building the line. The process reader (`lib/engine-processes.js`) knows `--setting-sources` as a value flag.
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
 
