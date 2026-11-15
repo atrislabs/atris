@@ -880,31 +880,51 @@ test('claude asks start light with json out unless full context is asked for; ot
   assert.equal(codex.spendCheck, undefined);
 });
 
-test('a light claude start asks the spend guard first and never launches when it says stop', async () => {
-  const home = tempRoot();
-  try {
+test('a light claude start asks the spend guard first only where its hook is installed', async () => {
+  const { installGuard } = require('../lib/claude-spend-guard');
+  // Scratch homes only: the hook, the account file and the keys all come
+  // from here, never from this machine.
+  const bare = tempRoot();
+  const guarded = tempRoot();
+  const envFor = (home, extra = {}) => ({ PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude'), ...extra });
+  const ask = async (home, model, extra) => {
     let spawned = false;
-    const stopped = await runAskProcess({
-      ...fakeReplyInvocation({ stdout: 'should not run' }),
-      spendCheck: { model: 'claude-opus-5-5' },
+    const result = await runAskProcess({
+      ...fakeReplyInvocation({ stdout: `${model} answer` }),
+      spendCheck: { model },
     }, {
       timeoutMs: ASK_REPLY_TIMEOUT_MS,
-      env: { PATH: process.env.PATH, HOME: home, ANTHROPIC_API_KEY: 'sk-test' },
+      env: envFor(home, extra),
       spawnProcess: (...args) => { spawned = true; return spawn(...args); },
     });
-    assert.equal(spawned, false);
-    assert.equal(stopped.ok, false);
-    assert.equal(stopped.reason, 'spend_stopped');
-    assert.match(stopped.stderr, /claude spend guard: this unattended Claude run carries a pay-per-use key/);
+    return { result, spawned };
+  };
+  try {
+    assert.equal(installGuard({ env: envFor(guarded) }).installed, true);
 
-    const free = await runAskProcess({
-      ...fakeReplyInvocation({ stdout: 'haiku answer' }),
-      spendCheck: { model: 'claude-haiku-5-5' },
-    }, { timeoutMs: ASK_REPLY_TIMEOUT_MS, env: { PATH: process.env.PATH, HOME: home } });
-    assert.equal(free.ok, true);
-    assert.equal(free.stdout.trim(), 'haiku answer');
+    const stopped = await ask(guarded, 'claude-haiku-5-5', { ANTHROPIC_API_KEY: 'sk-test' });
+    assert.equal(stopped.spawned, false, 'hook installed plus a pay-per-use key: no launch');
+    assert.equal(stopped.result.ok, false);
+    assert.equal(stopped.result.reason, 'spend_stopped');
+    assert.match(stopped.result.stderr, /claude spend guard: this unattended Claude run carries a pay-per-use key/);
+
+    const paid = await ask(guarded, 'claude-opus-5-5');
+    assert.equal(paid.spawned, false, 'hook installed: a paid model with no yes stops the same way the hook would');
+    assert.match(paid.result.stderr, /claude-opus-5-5 is a paid Claude model/);
+
+    const free = await ask(guarded, 'claude-haiku-5-5');
+    assert.equal(free.spawned, true);
+    assert.equal(free.result.ok, true);
+    assert.equal(free.result.stdout.trim(), 'claude-haiku-5-5 answer');
+
+    for (const extra of [{}, { ANTHROPIC_API_KEY: 'sk-test' }]) {
+      const plain = await ask(bare, 'claude-opus-5-5', extra);
+      assert.equal(plain.spawned, true, 'no hook installed: the ask launches as it always did');
+      assert.equal(plain.result.ok, true);
+    }
   } finally {
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+    fs.rmSync(guarded, { recursive: true, force: true });
   }
 });
 
