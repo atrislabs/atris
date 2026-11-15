@@ -207,7 +207,7 @@ test('the per run cap holds: waits stop once the run has waited its limit, and l
 test('the owner\'s green_landing_wait_minutes sets the run\'s limit; 0 gives up at once as before', () => {
   assert.equal(machineWaitSetting(null), 15);
   assert.equal(machineWaitSetting({}), 15);
-  assert.equal(machineWaitSetting({ green_landing_wait_minutes: 40 }), 40);
+  assert.equal(machineWaitSetting({ green_landing_wait_minutes: 25 }), 25);
   assert.equal(machineWaitSetting({ green_landing_wait_minutes: 0 }), 0);
   assert.equal(machineWaitSetting({ green_landing_wait_minutes: -3 }), 15);
   assert.equal(machineWaitSetting({ green_landing_wait_minutes: 'soon' }), 15);
@@ -218,9 +218,9 @@ test('the owner\'s green_landing_wait_minutes sets the run\'s limit; 0 gives up 
     assert.equal(m.sleeps.length, 0);
     assert.equal(off.verdicts[0].detail, 'the machine is busy (load 50.0 on 8 cores); no local check started; tries again next run');
     const short = run(root, m, { waitMinutes: 4 });
-    // Four minutes a run keeps three for master's own check, so one is left.
-    assert.equal(m.slept(), 1 * MINUTE);
-    assert.match(short.verdicts[0].detail, /waited 1 minute, no local check started/);
+    // Four minutes a run keeps half for master's own check, so two are left.
+    assert.equal(m.slept(), 2 * MINUTE);
+    assert.match(short.verdicts[0].detail, /waited 2 minutes, no local check started/);
   } finally {
     cleanup(root, m.dir);
   }
@@ -411,5 +411,62 @@ test('atris land --auto reads green_landing_wait_minutes: 0 gives up at once on 
     assert.equal(result.machine_wait.limit_ms, 0);
   } finally {
     cleanup(root, state);
+  }
+});
+
+// Review of the wait change on 2026-11-15, three holes. One: a limit of 1, 2
+// or 3 minutes was all kept back for master's own check, so a branch waited
+// for nothing and the row said the minutes were used up.
+test('a wait limit of 1 to 3 minutes still lets a branch check wait, keeping half for master', () => {
+  for (const minutes of [1, 2, 3]) {
+    const root = localRepo(['feat/one']);
+    const m = fakeMachine({ load: 34.3, onSleep: (mm) => { if (mm.sleeps.length === 1) mm.load = 4; } });
+    try {
+      const result = run(root, m, { waitMinutes: minutes });
+      assert.deepEqual(result.landed, ['feat/one'], `${minutes} minutes: ${JSON.stringify(result.verdicts)}`);
+      assert.equal(result.verdicts[0].waited_ms, Math.min(30 * 1000, (minutes * MINUTE) / 2));
+      assert.doesNotMatch(String(result.verdicts[0].detail || ''), /used up/);
+    } finally {
+      cleanup(root, m.dir);
+    }
+  }
+});
+
+// Two: the limit had no ceiling, so a huge value let one run wait far past
+// the next hourly run.
+test('the wait limit is at most 30 minutes, however large the setting', () => {
+  assert.equal(machineWaitSetting({ green_landing_wait_minutes: 40 }), 30);
+  assert.equal(machineWaitSetting({ green_landing_wait_minutes: '100000' }), 30);
+  const names = ['feat/one', 'feat/two', 'feat/three', 'feat/four', 'feat/five'];
+  const root = localRepo(names);
+  const m = fakeMachine({ load: 50 });
+  try {
+    // A caller that skips the setting is held to the same ceiling.
+    const result = run(root, m, { localSuites: 5, waitMinutes: 100000 });
+    assert.equal(result.machine_wait.limit_ms, 30 * MINUTE);
+    assert.equal(m.slept(), 27 * MINUTE, 'thirty minutes less the three kept for master');
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+// Three: a wall clock that stepped back during a wait read as no time
+// waited, so the run's cap never filled and the run waited past it.
+test('a clock that steps back during a wait still counts the pauses, so the run cap holds', () => {
+  const names = ['feat/one', 'feat/two', 'feat/three', 'feat/four'];
+  const root = localRepo(names);
+  const m = fakeMachine({ load: 50 });
+  let back = Date.now();
+  try {
+    const result = run(root, m, {
+      localSuites: 4,
+      machine: m.options({ clock: () => { back -= 5 * MINUTE; return back; } }),
+    });
+    assert.equal(m.slept(), 12 * MINUTE, JSON.stringify(m.sleeps));
+    assert.equal(result.machine_wait.waited_ms, 12 * MINUTE);
+    const first = result.verdicts.find((v) => v.branch === result.candidates[0]);
+    assert.equal(first.waited_ms, 10 * MINUTE);
+  } finally {
+    cleanup(root, m.dir);
   }
 });
