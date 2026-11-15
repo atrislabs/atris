@@ -167,9 +167,12 @@ test('the cron line stays when the LaunchAgent cannot be loaded, so there is sti
   const table = `14 * * * * tick # ${MARKER}\n`;
   const fake = fakeScheduler({ home, table, bootstrapFails: true });
   const out = autoland.installSchedule(root, fake.deps);
-  assert.equal(out.ok, false);
-  assert.match(out.error, /Bootstrap failed/);
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, 'cron');
+  assert.equal(out.kept_cron_line, true);
+  assert.match(out.launchd_error, /Bootstrap failed/);
   assert.equal(fake.state.table, table);
+  assert.equal(fs.existsSync(plistFile(home)), false);
 });
 
 test('off removes the LaunchAgent and any live cron line', (t) => {
@@ -193,7 +196,7 @@ test('Linux still installs and removes the cron line and never writes a LaunchAg
   const tableFile = path.join(base, 'crontab.txt');
   fs.writeFileSync(path.join(bin, 'crontab'), `#!/bin/sh\nif [ "$1" = "-l" ]; then cat '${tableFile}' 2>/dev/null; exit 0; fi\ncat > '${tableFile}'\n`, { mode: 0o755 });
   process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
-  const deps = { platform: 'linux', homeDir: home, uid: 501, spawn: () => { throw new Error('the Linux path uses the crontab tool, not the injected runner'); } };
+  const deps = { platform: 'linux', homeDir: home, uid: 501 };
   const out = autoland.installSchedule(root, deps);
   assert.deepEqual(out, { ok: true, kind: 'cron' });
   assert.match(fs.readFileSync(tableFile, 'utf8'), new RegExp(`^14 \\* \\* \\* \\* .*autoland tick.*# ${MARKER}\\n$`));
@@ -308,10 +311,202 @@ test('a tick with no GitHub sign-in says so once with the fix and keeps each bra
   };
   const line = summaryLine(result);
   assert.equal(line.match(/no GitHub sign-in/g).length, 1);
-  assert.match(line, /^this run had no GitHub sign-in and could not read pull requests; to fix it on a Mac run atris autoland on again/);
+  assert.match(line, /^this run had no GitHub sign-in and could not read pull requests; to fix it run gh auth login if you are signed out, and on a Mac run atris autoland on again/);
   assert.match(line, /gh auth login/);
   assert.match(line, /could not tell feat\/a, feat\/b \(its pull request could not be read \(HTTP 401/);
 
   const other = summaryLine({ ...result, verdicts: result.verdicts.map((v) => ({ ...v, detail: 'its pull request could not be read (timeout); could not tell' })) });
   assert.doesNotMatch(other, /sign-in/);
+});
+
+// --- review round one ---
+
+test('a fake runner with the real home is refused even without the test runner marker', () => {
+  // A child with no NODE_TEST_CONTEXT, no --test flag and no test file name,
+  // like `node file.test.js` reaching the code by another route. Every write
+  // under the real home is intercepted, so a failing run writes nothing.
+  const { spawnSync } = require('node:child_process');
+  const lib = path.join(__dirname, '..', 'lib', 'autoland.js');
+  const script = `
+    const fs = require('fs'); const os = require('os'); const path = require('path');
+    const real = path.join(os.userInfo().homedir, 'Library');
+    const hits = [];
+    for (const name of ['mkdirSync', 'writeFileSync', 'unlinkSync']) {
+      const orig = fs[name];
+      fs[name] = function (p, ...rest) {
+        if (String(p).startsWith(real)) { hits.push(name); throw new Error('intercepted ' + name); }
+        return orig.call(this, p, ...rest);
+      };
+    }
+    const autoland = require(${JSON.stringify(lib)});
+    const calls = [];
+    const spawn = (cmd, args) => { calls.push(cmd); return { status: 0, stdout: '', stderr: '' }; };
+    const deps = { platform: 'darwin', homeDir: os.userInfo().homedir, spawn, uid: 501 };
+    let on, off;
+    try { on = autoland.installSchedule('/tmp/no-such-project-x', deps); } catch (e) { on = { ok: 'threw', error: e.message }; }
+    try { off = autoland.uninstallSchedule('/tmp/no-such-project-x', deps); } catch (e) { off = { ok: 'threw', error: e.message }; }
+    process.stdout.write(JSON.stringify({ on, off, hits, calls }));
+  `;
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = spawnSync(process.execPath, ['-e', script], { env, encoding: 'utf8', timeout: 20000 });
+  assert.equal(run.status, 0, run.stderr);
+  const got = JSON.parse(run.stdout);
+  assert.deepEqual(got.hits, [], 'nothing under the real home is written');
+  assert.deepEqual(got.calls, [], 'the fake runner is never asked');
+  assert.equal(got.on.ok, false);
+  assert.match(got.on.error, /refused/);
+  assert.equal(got.off.ok, false);
+});
+
+test('the Linux path uses an injected runner for the crontab', (t) => {
+  const { home, root } = fixture(t);
+  const fake = fakeScheduler({ home, platform: 'linux' });
+  process.env.PATH = '/nonexistent-bin';
+  const out = autoland.installSchedule(root, fake.deps);
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, 'cron');
+  assert.match(fake.state.table, new RegExp(`# ${MARKER}\\n$`));
+  assert.equal(autoland.uninstallSchedule(root, fake.deps).ok, true);
+  assert.equal(fake.state.table, '');
+  assert.ok(fake.calls.every((c) => c[0] === 'crontab'));
+});
+
+test('off then on leaves no inferred default behind, so status says who flipped it', (t) => {
+  const { home, root } = fixture(t);
+  fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({ tasks: [] }));
+  const fake = fakeScheduler({ home });
+  const lines = quiet(t);
+  turnOff(root, { scheduler: fake.deps });
+  turnOn(root, ['--as', 'owner'], { scheduler: fake.deps });
+  const saved = JSON.parse(fs.readFileSync(autoland.policyPath(root), 'utf8'));
+  assert.equal('default' in saved, false);
+  assert.equal('disabled_at' in saved, false);
+  lines.length = 0;
+  const { showStatus } = require('../commands/autoland');
+  showStatus(root, [], { scheduler: fake.deps, home });
+  const policy = lines.find((l) => l.startsWith('  policy: '));
+  assert.match(policy, /policy: on \(flipped by owner on /);
+});
+
+test('two projects with the same folder name each get their own login job', (t) => {
+  const { base, home } = fixture(t);
+  const first = path.join(base, 'work', 'api');
+  const second = path.join(base, 'personal', 'api');
+  fs.mkdirSync(first, { recursive: true });
+  fs.mkdirSync(second, { recursive: true });
+  const fake = fakeScheduler({ home });
+  const one = autoland.installSchedule(first, fake.deps);
+  assert.equal(one.ok, true, one.error);
+  const firstText = fs.readFileSync(one.plist_path, 'utf8');
+  const lines = quiet(t);
+  turnOn(second, [], { scheduler: fake.deps });
+  const two = autoland.schedulerState(second, fake.deps);
+  assert.equal(two.installed, true);
+  assert.notEqual(two.label, one.label);
+  assert.equal(fs.readFileSync(one.plist_path, 'utf8'), firstText, 'the first project keeps its job');
+  const secondFile = path.join(home, 'Library', 'LaunchAgents', `${two.label}.plist`);
+  assert.ok(fs.readFileSync(secondFile, 'utf8').includes(second));
+  assert.ok(lines.some((l) => /another project already uses the job name/.test(l)));
+  assert.equal(lines.some((l) => /kept the hourly job already set up/.test(l)), false);
+  turnOff(second, { scheduler: fake.deps });
+  assert.equal(fs.existsSync(one.plist_path), true, 'off in the second never deletes the first');
+  assert.equal(fs.existsSync(secondFile), false);
+  assert.equal(fake.state.loaded.has(one.label), true);
+});
+
+test('on repairs a job whose program is gone and keeps its timing', (t) => {
+  const { home, root } = fixture(t);
+  const fake = fakeScheduler({ home });
+  assert.equal(autoland.installSchedule(root, fake.deps).ok, true);
+  const file = plistFile(home);
+  const gone = '/nonexistent/Cellar/node/24.2.0/bin/node';
+  const stale = fs.readFileSync(file, 'utf8')
+    .split(process.execPath).join(gone)
+    .replace('<integer>14</integer>', '<integer>44</integer>');
+  fs.writeFileSync(file, stale);
+  const before = autoland.schedulerState(root, fake.deps);
+  assert.equal(before.stale_program, gone);
+  assert.match(autoland.heartbeatStatusText(root, before), /program that is gone - run atris autoland on to repair it/);
+  fake.calls.length = 0;
+  const out = autoland.installSchedule(root, fake.deps);
+  assert.equal(out.ok, true, out.error);
+  assert.equal(out.repaired, gone);
+  const fixed = fs.readFileSync(file, 'utf8');
+  assert.ok(fixed.includes(process.execPath));
+  assert.equal(fixed.includes(gone), false);
+  assert.match(fixed, /<integer>44<\/integer>/, 'the hand-set minute stays');
+  assert.ok(fake.calls.some((c) => c[1] === 'bootout'));
+  assert.ok(fake.calls.some((c) => c[1] === 'bootstrap'));
+  assert.equal(autoland.schedulerState(root, fake.deps).stale_program, undefined);
+});
+
+test('the sign-in note only reads pull request rows, not a branch whose own test says 401', () => {
+  const result = {
+    candidates: ['feat/a'],
+    landed: [],
+    red: ['feat/a'],
+    verdicts: [
+      { branch: 'feat/a', action: 'red', reason: 'local_check_failed', detail: 'the local check could not run on this branch (exit 1): AssertionError: login returned HTTP 401. it does run on master, so the branch broke it' },
+      { branch: 'feat/b', action: 'red', reason: 'local_check_failed', detail: 'Error: user is not logged in' },
+    ],
+  };
+  assert.doesNotMatch(summaryLine(result), /sign-in/);
+});
+
+test('on falls back to the cron line when the job file cannot be written, and nothing throws', (t) => {
+  const { home, root } = fixture(t);
+  const dir = path.join(home, 'Library', 'LaunchAgents');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.chmodSync(dir, 0o500);
+  const fake = fakeScheduler({ home });
+  const lines = quiet(t);
+  try {
+    assert.doesNotThrow(() => turnOn(root, [], { scheduler: fake.deps }));
+  } finally {
+    fs.chmodSync(dir, 0o700);
+  }
+  assert.match(fake.state.table, new RegExp(`# ${MARKER}\\n$`), 'there is still one schedule');
+  assert.ok(lines.some((l) => /could not set up the job inside your Mac login/.test(l)));
+  assert.equal(autoland.schedulerState(root, fake.deps).kind, 'cron');
+});
+
+test('off says the job file is still there when it cannot be deleted, and nothing throws', (t) => {
+  const { home, root } = fixture(t);
+  const fake = fakeScheduler({ home, table: `14 * * * * tick # ${MARKER}\n` });
+  assert.equal(autoland.installSchedule(root, fake.deps).ok, true);
+  const dir = path.dirname(plistFile(home));
+  fs.chmodSync(dir, 0o500);
+  let out;
+  try {
+    assert.doesNotThrow(() => { out = autoland.uninstallSchedule(root, fake.deps); });
+  } finally {
+    fs.chmodSync(dir, 0o700);
+  }
+  assert.equal(out.ok, false);
+  assert.match(out.error, /could not delete/);
+  assert.match(out.error, /loads again at next login/);
+});
+
+test('a job that fails to load is removed and the cron line is set up, so there is one schedule', (t) => {
+  const { home, root } = fixture(t);
+  const fake = fakeScheduler({ home, bootstrapFails: true });
+  const out = autoland.installSchedule(root, fake.deps);
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, 'cron');
+  assert.match(out.launchd_error, /Bootstrap failed/);
+  assert.equal(fs.existsSync(plistFile(home)), false, 'no leftover job file to load at next login');
+  assert.match(fake.state.table, new RegExp(`^14 \\* \\* \\* \\* .*# ${MARKER}\\n$`));
+});
+
+test('off reports a failure when launchctl still has the job loaded after bootout', (t) => {
+  const { home, root } = fixture(t);
+  const fake = fakeScheduler({ home });
+  assert.equal(autoland.installSchedule(root, fake.deps).ok, true);
+  const spawn = fake.deps.spawn;
+  const stuck = { ...fake.deps, spawn: (cmd, args, opts) => (cmd === 'launchctl' && args[0] === 'bootout' ? { status: 5, stdout: '', stderr: 'Boot-out failed: 5: Input/output error' } : spawn(cmd, args, opts)) };
+  const out = autoland.uninstallSchedule(root, stuck);
+  assert.equal(out.ok, false);
+  assert.match(out.error, /still loaded/);
 });

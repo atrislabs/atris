@@ -635,15 +635,23 @@ function savedPolicy(root) {
 }
 
 function heartbeatLines(installed) {
+  if (installed.fallback) {
+    const cron = installed.ok
+      ? (installed.kept_cron_line ? 'kept the cron line already there' : 'set up the cron line instead')
+      : 'could not set up the cron line either; run atris autoland tick yourself';
+    return [`  heartbeat: could not set up the job inside your Mac login (${installed.launchd_error || 'no answer'}); ${cron}. cron cannot use the GitHub sign-in, so run atris autoland on again once that is fixed.`];
+  }
   if (installed.kind === 'cron') {
     return [`  heartbeat: ${installed.ok ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`];
   }
   if (!installed.ok) {
     return [`  heartbeat: could not set up the hourly job on this Mac (${installed.error || 'no answer'}); run atris autoland tick yourself`];
   }
-  const lines = [installed.kept_existing
-    ? '  heartbeat: kept the hourly job already set up on this Mac exactly as it is, since its timing and command may be tuned by hand.'
-    : '  heartbeat: installed as an hourly job inside your Mac login, so scheduled runs can use your GitHub sign-in.'];
+  const lines = [];
+  if (installed.repaired) lines.push(`  heartbeat: the hourly job ran a program that is gone (${installed.repaired}); rewrote it with the current one and kept its timing.`);
+  else if (installed.kept_existing) lines.push('  heartbeat: kept the hourly job already set up on this Mac exactly as it is, since its timing and command may be tuned by hand.');
+  else lines.push('  heartbeat: installed as an hourly job inside your Mac login, so scheduled runs can use your GitHub sign-in.');
+  if (installed.shared_name) lines.push(`  another project already uses the job name ${installed.shared_name}, so this one got its own: ${installed.label}.`);
   if (installed.removed_cron_lines) lines.push('  removed the old cron line for this project, so the pass runs once an hour, not twice.');
   if (installed.cron_error) lines.push(`  could not check the crontab for an old line (${installed.cron_error}); look with crontab -l.`);
   return lines;
@@ -658,7 +666,9 @@ function turnOn(root, args, deps = {}) {
   // Every key this command does not set stays as the owner left it: the
   // green landing pause switch, the verify command, the hold labels, the
   // janitor and the rest.
-  const previous = savedPolicy(root);
+  // `default` is what a missing file reads as and `disabled_at` belongs to
+  // off; neither survives turning it on.
+  const { default: _inferred, disabled_at: _disabledAt, ...previous } = savedPolicy(root);
   const policy = autoland.writePolicy(root, {
     ...previous,
     enabled: true,
@@ -697,7 +707,7 @@ function turnOn(root, args, deps = {}) {
 }
 
 function turnOff(root, deps = {}) {
-  const policy = autoland.readPolicy(root) || {};
+  const { default: _inferred, ...policy } = savedPolicy(root);
   const disabledPolicy = autoland.writePolicy(root, {
     ...policy,
     enabled: false,
@@ -712,7 +722,7 @@ function turnOff(root, deps = {}) {
   console.log('');
   console.log('autoland is off. everything waits for your accept again.');
   if (removed.kind === 'cron') console.log(`  heartbeat ${removed.ok ? 'removed' : 'removal failed; check crontab -l'}.`);
-  else console.log(`  heartbeat ${removed.ok ? 'removed from this Mac' : `removal failed (${removed.error || 'no answer'}); check crontab -l`}.`);
+  else console.log(`  heartbeat ${removed.ok ? 'removed from this Mac' : `removal failed: ${removed.error || 'no answer'}`}.`);
   console.log('');
   return 0;
 }
