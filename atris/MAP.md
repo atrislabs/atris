@@ -6,11 +6,12 @@ API and auth in `utils/`, tests in `test/`. Workspace truth lives in `atris/`:
 tasks in the task DB rendered to `atris/TODO.md`, protocol in `atris/atris.md`,
 members in `atris/team/`, feature specs in `atris/features/`.
 
-File:line refs and rg search shortcuts live in one note per area under
+Code refs and rg search shortcuts live in one note per area under
 `atris/refs/map/`, indexed by `atris/refs/MAP-NOTES.md`. Open the index when this
-table names the file but you need the exact line, then open only the area note
-that matches. `atris doc-health` checks the refs in every one of these files;
-`atris doc-health --fix-refs` moves drifted ones.
+table names the file but you need the exact function, then open only the area
+note that matches. A ref names the file and the function, with no line number,
+so moving code never rewrites the map. `atris doc-health` checks the refs in
+every one of these files; `atris doc-health --fix-refs` pins old line refs.
 
 ## Routing
 

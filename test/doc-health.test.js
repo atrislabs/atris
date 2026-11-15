@@ -489,21 +489,24 @@ test('map refs classify ok, moved, missing, missing file, ambiguous, and ranges,
   assert.match(text.stdout, /--fix-refs/);
 });
 
-test('fix-refs rewrites only moved refs, keeps range width, lists the rest, and is idempotent', t => {
+test('fix-refs pins every named line ref to its name, lists the rest, and is idempotent', t => {
   const { root, map } = refsWorkspace(t);
   const first = run(root, ['--fix-refs']);
   assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /map refs: moved 3/);
-  assert.match(first.stdout, /MAP line 6: lib\/sample\.js:15 -> lib\/sample\.js:10 \(beta\)/);
+  assert.match(first.stdout, /map refs: moved 4/);
+  assert.match(first.stdout, /MAP line 5: lib\/sample\.js:3 -> lib\/sample\.js \(alpha\)/);
+  assert.match(first.stdout, /MAP line 6: lib\/sample\.js:15 -> lib\/sample\.js \(beta\)/);
   assert.match(first.stdout, /left for a human: 3/);
   assert.match(first.stdout, /MAP line 7: lib\/sample\.js:2 \(nowhere\) nowhere is not in the file/);
   assert.match(first.stdout, /MAP line 8: lib\/gone\.js:4 \(alpha\) file is gone/);
   assert.match(first.stdout, /MAP line 10: lib\/sample\.js:2 \(dup\) found on lines 24, 26/);
   const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  // Refs with a name lose their line number; the unnamed prose ref keeps its line.
   const expected = map
-    .replace('`lib/sample.js:15` `beta`', '`lib/sample.js:10` `beta`')
-    .replace('`alpha` (`lib/sample.js:14-16`)', '`alpha` (`lib/sample.js:3-5`)')
-    .replace('`gamma` (`lib/sample.js:14-16`)', '`gamma` (`lib/sample.js:20-22`)');
+    .replace('`lib/sample.js:3` `alpha`', '`lib/sample.js` `alpha`')
+    .replace('`lib/sample.js:15` `beta`', '`lib/sample.js` `beta`')
+    .replace('`alpha` (`lib/sample.js:14-16`)', '`alpha` (`lib/sample.js`)')
+    .replace('`gamma` (`lib/sample.js:14-16`)', '`gamma` (`lib/sample.js`)');
   assert.equal(fixed, expected);
   const after = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
   assert.equal(after.moved, 0);
@@ -514,7 +517,7 @@ test('fix-refs rewrites only moved refs, keeps range width, lists the rest, and 
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
 
-test('a range ref whose end runs past the file is not right, and fix-refs clamps its end', t => {
+test('a range ref whose end runs past the file is not right, and fix-refs pins it to its name', t => {
   const root = workspace(t);
   write(root, 'atris/atris.md', '');
   const code = Array.from({ length: 10 }, () => '');
@@ -531,9 +534,9 @@ test('a range ref whose end runs past the file is not right, and fix-refs clamps
   assert.equal(refs.ok, 0);
   const first = run(root, ['--fix-refs']);
   assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /MAP line 5: lib\/short\.js:8-20 -> lib\/short\.js:8-10 \(tail\)/);
+  assert.match(first.stdout, /MAP line 5: lib\/short\.js:8-20 -> lib\/short\.js \(tail\)/);
   const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
-  assert.match(fixed, /`lib\/short\.js:8-10` `tail`/);
+  assert.match(fixed, /`lib\/short\.js` `tail` runs past the end/);
   assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
@@ -584,9 +587,9 @@ test('line refs in the notes file are checked and fixed while boot load counts o
 
   const fix = run(root, ['--fix-refs']);
   assert.equal(fix.status, 0, fix.stderr);
-  assert.match(fix.stdout, /atris\/refs\/MAP-NOTES\.md line 4: lib\/sample\.js:15 -> lib\/sample\.js:10 \(beta\)/);
+  assert.match(fix.stdout, /atris\/refs\/MAP-NOTES\.md line 4: lib\/sample\.js:15 -> lib\/sample\.js \(beta\)/);
   assert.match(fix.stdout, /atris\/refs\/MAP-NOTES\.md line 5: lib\/sample\.js:2 \(nowhere\) nowhere is not in the file/);
   assert.equal(fs.readFileSync(path.join(root, 'atris/refs/MAP-NOTES.md'), 'utf8'),
-    notes.replace('`lib/sample.js:15` `beta`', '`lib/sample.js:10` `beta`'));
+    notes.replace('`lib/sample.js:3` `alpha`', '`lib/sample.js` `alpha`').replace('`lib/sample.js:15` `beta`', '`lib/sample.js` `beta`'));
   assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
 });

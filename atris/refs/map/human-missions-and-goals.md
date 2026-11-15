@@ -1,6 +1,6 @@
 # Human missions and goals
 
-Human-facing missions, goals, the overnight runner and the Codex goal bridge. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+Human-facing missions, goals, the overnight runner and the Codex goal bridge. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Search shortcuts: Core CLI logic
 
