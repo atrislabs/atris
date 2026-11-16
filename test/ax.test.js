@@ -542,6 +542,13 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   assert.match(ax.formatUsage(), /--self-test/);
 });
 
+test('ax usage documents both --chat and chat subcommand', () => {
+  const usage = ax.formatUsage();
+  assert.match(usage, /--chat/);
+  assert.match(usage, /chat \[<message>\]/);
+  assert.match(usage, /ax chat/);
+});
+
 test('ax chat renders claude-style blocks and filters one shared slash command table', () => {
   const writes = [];
   const out = { isTTY: false, write: (chunk) => writes.push(chunk) };
