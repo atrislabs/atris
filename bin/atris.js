@@ -2271,7 +2271,10 @@ if (command === 'guide') {
   }
 } else if (command === 'avail') {
   {
-    const gate = requireAccountBound(process.argv.slice(3));
+    const availArgs = process.argv.slice(3);
+    const gate = requireAccountBound(availArgs, {
+      read: require('../commands/avail').isReadOnlyAvail(availArgs),
+    });
     if (!gate.ok) process.exit(refuseAccountGlobal());
     Promise.resolve().then(() => require('../commands/avail').availCommand(gate.args))
       .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))

@@ -41,7 +41,7 @@ async function run(argv) {
 test('availCommand --help prints usage and returns 2 without touching the network', async () => {
   const res = await run(['--help']);
   assert.strictEqual(res.code, 2);
-  assert.match(res.stdout, /Usage: atris avail \[show \| set \| slots\]/);
+  assert.match(res.stdout, /Usage: atris avail \[show \| set \| slots \| hold \| holds \| unhold\]/);
   assert.strictEqual(res.stderr, '');
 });
 
@@ -104,7 +104,7 @@ test('availCommand set with an out-of-range --slot-minutes returns 1 before any 
 test('availCommand with an unknown subcommand returns 1 and lists the valid ones', async () => {
   const res = await run(['frobnicate']);
   assert.strictEqual(res.code, 1);
-  assert.match(res.stderr, /atris avail does not know "frobnicate"\. Use show, set, or slots\./);
+  assert.match(res.stderr, /atris avail does not know "frobnicate"\. Use show, set, slots, hold, holds, or unhold\./);
   assert.match(res.stdout, /Usage: atris avail/);
 });
 

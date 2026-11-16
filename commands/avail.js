@@ -3,9 +3,17 @@
 /**
  * Booking availability: read/update the windows that power /book/{username}.
  *
- *   atris avail                         # show current settings
+ *   atris avail                         # show current settings and upcoming blocks
  *   atris avail set --wake 2:30pm --sleep 9pm --where Ibiza --days all --apply
+ *   atris avail set --off --apply       # no weekly hours; only blocks are bookable
  *   atris avail slots [--days 7]
+ *   atris avail hold thu 2pm 5pm [--and mon 1pm 4pm] [--title T] [--weekly] [--apply]
+ *   atris avail holds [--days N] [--json]
+ *   atris avail unhold <id> [--apply]
+ *
+ * A block (hold) is a busy "Open for calls" event on your main Google
+ * Calendar. Guests can book any open slot inside it, even outside weekly
+ * hours. An event you make yourself titled exactly "Open for calls" counts too.
  */
 
 const { ensureValidCredentials } = require('../utils/auth');
@@ -143,10 +151,12 @@ function parseSetArgs(argv) {
     json: false,
     slotMinutes: null,
     windowDays: null,
+    off: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--apply') opts.apply = true;
+    else if (a === '--off') opts.off = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--wake') opts.wake = argv[++i];
     else if (a === '--sleep' || a === '--bed') opts.sleep = argv[++i];
@@ -157,6 +167,12 @@ function parseSetArgs(argv) {
     else if (a === '--window-days') opts.windowDays = requireWholeNumber(a, argv[++i], 1, 365);
     else if (a === '--help' || a === '-h') return { help: true };
     else throw new Error(`atris avail set does not take "${a}". Run: atris avail --help`);
+  }
+  if (opts.off) {
+    if (opts.wake != null || opts.sleep != null) {
+      throw new Error('--off turns weekly hours off, so it does not take --wake or --sleep');
+    }
+    return opts;
   }
   if (opts.wake == null || opts.sleep == null) {
     throw new Error('--wake and --sleep are required (e.g. --wake 2:30pm --sleep 9pm)');
@@ -170,6 +186,17 @@ function buildAvailableHours(dayIndexes, wakeDec, sleepDec) {
   const window = [[wakeDec, sleepDec]];
   for (const d of dayIndexes) hours[String(d)] = window.map(([a, b]) => [a, b]);
   return hours;
+}
+
+// Every day present and empty. An empty object {} is NOT off: the server
+// reads it as "use the 9 to 5 default", so off is always sent as seven lists.
+function weeklyHoursOff(availableHours) {
+  if (!availableHours || typeof availableHours !== 'object') return false;
+  for (let d = 0; d <= 6; d += 1) {
+    const ranges = availableHours[String(d)] ?? availableHours[d];
+    if (!Array.isArray(ranges) || ranges.length) return false;
+  }
+  return true;
 }
 
 function summarizeHours(availableHours) {
@@ -217,8 +244,19 @@ async function showAvail({ json = false } = {}) {
   console.log(`  timezone: ${data.timezone}`);
   console.log(`  slot: ${data.slot_duration_minutes} min · window: ${data.booking_window_days} days`);
   console.log(formatBookingLink(username, appBase));
-  console.log('\n  weekly windows (stored timezone):');
-  console.log(summarizeHours(data.available_hours || {}));
+  if (weeklyHoursOff(data.available_hours)) {
+    console.log('\n  Weekly hours: off. Only your blocks are bookable.');
+  } else {
+    console.log('\n  weekly windows (stored timezone):');
+    console.log(summarizeHours(data.available_hours || {}));
+  }
+  const holds = await apiRequestJson('/profile/booking-holds', { method: 'GET', token });
+  console.log('\n  Upcoming blocks:');
+  if (!holds.ok) {
+    console.log(`    could not read your blocks (${holds.error || holds.status})`);
+  } else {
+    console.log(formatHoldList(holds.data?.holds || [], data.timezone, '    '));
+  }
   console.log('\n  Google Calendar busy times are subtracted automatically.');
   return 0;
 }
@@ -235,6 +273,7 @@ async function setAvail(argv) {
     printHelp();
     return 0;
   }
+  if (opts.off) return setAvailOff(opts);
 
   const wakeDec = parseTimeToDecimal(opts.wake);
   const sleepDec = parseTimeToDecimal(opts.sleep);
@@ -299,6 +338,371 @@ async function setAvail(argv) {
   }
 
   console.log('\n✓ Updated. Live on /book/{username} after the next slots fetch.');
+  return 0;
+}
+
+function buildOffPayload(opts) {
+  const payload = { available_hours: buildAvailableHours([], 0, 0) };
+  // Keep the stored timezone unless one is asked for: blocks are read in it.
+  if (opts.tz || opts.where) payload.timezone = resolveTimezone(opts);
+  if (opts.slotMinutes) payload.slot_duration_minutes = opts.slotMinutes;
+  if (opts.windowDays) payload.booking_window_days = opts.windowDays;
+  return payload;
+}
+
+async function setAvailOff(opts) {
+  let payload;
+  try {
+    payload = buildOffPayload(opts);
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+  if (opts.json && !opts.apply) {
+    console.log(JSON.stringify({ preview: true, payload }, null, 2));
+    return 0;
+  }
+  console.log('Weekly hours: off. Only your blocks will be bookable.');
+  if (!opts.apply) {
+    console.log('Dry run, add --apply to save it.');
+    return 0;
+  }
+  const token = await getToken();
+  const result = await apiRequestJson('/profile/booking-settings', { method: 'PUT', token, body: payload });
+  if (!result.ok) {
+    console.error(`Update failed: ${result.error || result.status}`);
+    return 1;
+  }
+  if (opts.json) {
+    console.log(JSON.stringify({ ok: true, settings: result.data }, null, 2));
+    return 0;
+  }
+  console.log('Saved. Add a block with: atris avail hold thu 2pm 5pm --apply');
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Blocks (holds)
+// ---------------------------------------------------------------------------
+
+const WEEKDAY_SHORT = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
+/** Wall-clock parts of an instant in a timezone. */
+function zonedParts(date, timeZone) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    weekday: 'short',
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(date)) parts[p.type] = p.value;
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+    weekday: WEEKDAY_SHORT[parts.weekday],
+  };
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function ymd(parts) {
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function addDays(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+}
+
+function weekdayOf(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // Mon = 0
+}
+
+/** ISO string with the zone's offset for a wall-clock time on a date. */
+function zonedIso(dateStr, decimalHour, timeZone) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const hour = Math.floor(decimalHour);
+  const minute = Math.round((decimalHour - hour) * 60);
+  const wantedAsUtc = Date.UTC(y, m - 1, d, hour, minute);
+  let guess = wantedAsUtc;
+  for (let i = 0; i < 3; i += 1) {
+    const p = zonedParts(new Date(guess), timeZone);
+    const seenAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+    guess += wantedAsUtc - seenAsUtc;
+  }
+  const p = zonedParts(new Date(guess), timeZone);
+  if (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) !== wantedAsUtc) {
+    throw new Error(`${formatDecimalHour(decimalHour)} on ${dateStr} does not exist in ${timeZone} (clock change)`);
+  }
+  const offsetMin = Math.round((wantedAsUtc - guess) / 60000);
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  return `${dateStr}T${pad2(hour)}:${pad2(minute)}:00${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+}
+
+/**
+ * today | tomorrow | mon..sun (or full names) | YYYY-MM-DD → YYYY-MM-DD in the zone.
+ * A weekday means the next one coming; today counts while `startHour` is still ahead.
+ */
+function resolveHoldDate(when, timeZone, now = new Date(), startHour = null) {
+  const raw = String(when || '').trim().toLowerCase();
+  if (!raw) throw new Error('say which day: today, tomorrow, thu, or 2026-11-20');
+  const here = zonedParts(now, timeZone);
+  const today = ymd(here);
+  if (raw === 'today') return today;
+  if (raw === 'tomorrow' || raw === 'tmrw') return addDays(today, 1);
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const check = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+    if (check.getUTCMonth() !== Number(iso[2]) - 1 || check.getUTCDate() !== Number(iso[3])) {
+      throw new Error(`not a real date: ${when}`);
+    }
+    return raw;
+  }
+  const idx = /^[a-z]+$/.test(raw) && raw.length >= 3 ? DAY_INDEX[raw.slice(0, 3)] : undefined;
+  const fullNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  if (idx == null || !(raw.length === 3 || fullNames[idx].startsWith(raw))) {
+    throw new Error(`unknown day "${when}"; use today, tomorrow, thu, or 2026-11-20`);
+  }
+  let ahead = (idx - here.weekday + 7) % 7;
+  if (ahead === 0 && startHour != null && startHour <= here.hour + here.minute / 60) ahead = 7;
+  return addDays(today, ahead);
+}
+
+function parseHoldArgs(argv) {
+  const opts = { blocks: [], title: null, weekly: false, apply: false, json: false, tz: null };
+  const positional = [];
+  let current = positional;
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === '--apply') opts.apply = true;
+    else if (a === '--json') opts.json = true;
+    else if (a === '--weekly') opts.weekly = true;
+    else if (a === '--title') {
+      opts.title = argv[++i];
+      if (!opts.title || !opts.title.trim()) throw new Error('--title needs some words');
+    } else if (a === '--tz') opts.tz = argv[++i];
+    else if (a === '--and') {
+      current = [];
+      opts.blocks.push(current);
+    } else if (a === '--help' || a === '-h') return { help: true };
+    else if (a.startsWith('--')) throw new Error(`atris avail hold does not take "${a}". Run: atris avail --help`);
+    else current.push(a);
+  }
+  const all = [positional, ...opts.blocks];
+  for (const block of all) {
+    if (block.length !== 3) {
+      throw new Error('each block needs a day, a start and an end, like: thu 2pm 5pm');
+    }
+  }
+  opts.blocks = all.map(([when, start, end]) => ({ when, start, end }));
+  return opts;
+}
+
+/** Turn parsed blocks into the exact bodies sent to POST /profile/booking-holds. */
+function buildHoldBodies(opts, timeZone, now = new Date()) {
+  return opts.blocks.map(({ when, start, end }) => {
+    const startDec = parseTimeToDecimal(start);
+    const endDec = parseTimeToDecimal(end);
+    if (!(endDec > startDec)) throw new Error(`the end (${end}) must be after the start (${start}) on the same day`);
+    const date = resolveHoldDate(when, timeZone, now, startDec);
+    const body = { start: zonedIso(date, startDec, timeZone), end: zonedIso(date, endDec, timeZone) };
+    if (opts.title) body.title = opts.title.trim();
+    if (opts.weekly) body.repeat = 'weekly';
+    return body;
+  });
+}
+
+function formatClock(date, timeZone) {
+  const p = zonedParts(date, timeZone);
+  return formatDecimalHour(p.hour + p.minute / 60);
+}
+
+function formatDay(date, timeZone) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone, weekday: 'short', month: 'short', day: 'numeric',
+  }).format(date);
+}
+
+function describeBlock(hold, timeZone) {
+  const start = new Date(hold.start);
+  const end = new Date(hold.end);
+  const title = hold.title || 'Open for calls';
+  const repeats = hold.repeats || hold.repeat === 'weekly' ? ', every week' : '';
+  return `${formatDay(start, timeZone)}, ${formatClock(start, timeZone)} to ${formatClock(end, timeZone)}${repeats} (${title})`;
+}
+
+function formatHoldList(holds, timeZone, indent = '  ') {
+  if (!holds.length) return `${indent}none. Add one: atris avail hold thu 2pm 5pm --apply`;
+  return holds.map((h) => `${indent}${describeBlock(h, timeZone)}\n${indent}  id: ${h.id}`).join('\n');
+}
+
+async function fetchBookingTimezone(token) {
+  const result = await apiRequestJson('/profile/booking-settings', { method: 'GET', token });
+  if (!result.ok) throw new Error(`could not read your booking timezone (${result.error || result.status})`);
+  return result.data?.timezone || 'America/Los_Angeles';
+}
+
+const defaultHoldDeps = {
+  getToken: () => getToken(),
+  timezone: (token) => fetchBookingTimezone(token),
+  now: () => new Date(),
+  request: (path, options) => apiRequestJson(path, options),
+};
+
+async function holdAvail(argv, deps = defaultHoldDeps) {
+  let opts;
+  try {
+    opts = parseHoldArgs(argv);
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+  if (opts.help) {
+    printHelp();
+    return 0;
+  }
+  let token = null;
+  let timeZone = opts.tz;
+  let bodies;
+  try {
+    if (!timeZone) {
+      token = await deps.getToken();
+      timeZone = await deps.timezone(token);
+    }
+    bodies = buildHoldBodies(opts, timeZone, deps.now());
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+
+  if (opts.json && !opts.apply) {
+    console.log(JSON.stringify({ preview: true, timezone: timeZone, holds: bodies }, null, 2));
+    return 0;
+  }
+  if (!opts.apply) {
+    console.log(`Would block ${bodies.length === 1 ? 'this time' : 'these times'} on your Google Calendar (${timeZone}):`);
+    for (const body of bodies) console.log(`  ${describeBlock(body, timeZone)}`);
+    console.log('Guests can book inside it. Dry run, add --apply to create it.');
+    return 0;
+  }
+
+  token = token || await deps.getToken();
+  const made = [];
+  for (const body of bodies) {
+    const result = await deps.request('/profile/booking-holds', { method: 'POST', token, body });
+    if (!result.ok) {
+      console.error(`Could not block ${describeBlock(body, timeZone)}: ${result.error || result.status}`);
+      if (made.length) console.error(`${made.length} block(s) were already made. See them: atris avail holds`);
+      return 1;
+    }
+    made.push(result.data || {});
+  }
+  if (opts.json) {
+    console.log(JSON.stringify({ ok: true, holds: made }, null, 2));
+    return 0;
+  }
+  for (const hold of made) {
+    console.log(`Blocked ${describeBlock(hold, timeZone)}.`);
+    console.log(`  id: ${hold.id}`);
+  }
+  console.log('It is on your Google Calendar now. Guests can book inside it.');
+  return 0;
+}
+
+async function holdsAvail(argv, deps = defaultHoldDeps) {
+  const opts = { days: null, json: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === '--json') opts.json = true;
+    else if (a === '--days') {
+      const raw = argv[++i];
+      opts.days = parseWholeNumber(raw, 1, 90);
+      if (opts.days === null) {
+        console.error(`--days needs a whole number from 1 to 90, got: ${raw === undefined ? 'nothing' : raw}`);
+        return 1;
+      }
+    } else if (a === '--help' || a === '-h') {
+      printHelp();
+      return 0;
+    } else {
+      console.error(`atris avail holds does not take "${a}". Run: atris avail --help`);
+      return 1;
+    }
+  }
+  const token = await deps.getToken();
+  const path = opts.days ? `/profile/booking-holds?days=${opts.days}` : '/profile/booking-holds';
+  const result = await deps.request(path, { method: 'GET', token });
+  if (!result.ok) {
+    console.error(`Could not read your blocks: ${result.error || result.status}`);
+    return 1;
+  }
+  const holds = result.data?.holds || [];
+  if (opts.json) {
+    console.log(JSON.stringify(result.data, null, 2));
+    return 0;
+  }
+  let timeZone;
+  try {
+    timeZone = await deps.timezone(token);
+  } catch {
+    timeZone = 'America/Los_Angeles';
+  }
+  console.log(`Your blocks (${timeZone}):`);
+  console.log(formatHoldList(holds, timeZone));
+  if (holds.length) console.log('Remove one: atris avail unhold <id> --apply');
+  return 0;
+}
+
+async function unholdAvail(argv, deps = defaultHoldDeps) {
+  let id = null;
+  let apply = false;
+  for (const a of argv) {
+    if (a === '--apply') apply = true;
+    else if (a === '--help' || a === '-h') {
+      printHelp();
+      return 0;
+    } else if (a.startsWith('--')) {
+      console.error(`atris avail unhold does not take "${a}". Run: atris avail --help`);
+      return 1;
+    } else if (id) {
+      console.error('give one block id at a time');
+      return 1;
+    } else id = a;
+  }
+  if (!id) {
+    console.error('say which block: atris avail unhold <id>. See ids with: atris avail holds');
+    return 1;
+  }
+  const token = await deps.getToken();
+  if (!apply) {
+    const listed = await deps.request('/profile/booking-holds', { method: 'GET', token });
+    const holds = listed.ok ? listed.data?.holds || [] : [];
+    const one = holds.find((h) => h.id === id);
+    const series = holds.filter((h) => h.series_id === id);
+    let timeZone = 'America/Los_Angeles';
+    try { timeZone = await deps.timezone(token); } catch { /* keep default */ }
+    if (one) console.log(`Would remove ${describeBlock(one, timeZone)}.`);
+    else if (series.length) console.log(`Would remove the whole weekly block, starting ${describeBlock(series[0], timeZone)}.`);
+    else console.log(`Would remove the block with id ${id}.`);
+    console.log('Only blocks can be removed this way. Dry run, add --apply to remove it.');
+    return 0;
+  }
+  const result = await deps.request(`/profile/booking-holds/${encodeURIComponent(id)}`, { method: 'DELETE', token });
+  if (!result.ok) {
+    console.error(`Could not remove it: ${result.error || result.status}`);
+    return 1;
+  }
+  console.log('Removed. That time is no longer open for calls.');
   return 0;
 }
 
@@ -378,16 +782,29 @@ async function slotsAvail(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: atris avail [show | set | slots] [options]
+  console.log(`Usage: atris avail [show | set | slots | hold | holds | unhold] [options]
 
-Show or update the weekly windows behind your public booking page.
+Show or update the times guests can book on your public booking page.
 Busy Google Calendar events are subtracted when guests pick a slot.
 
 Commands:
   atris avail                 Same as show
   atris avail show [--json]
   atris avail set --wake TIME --sleep TIME [options]
+  atris avail set --off [--apply]   Weekly hours off; only your blocks are bookable
   atris avail slots [--days N] [--user USERNAME] [--json]
+  atris avail hold DAY START END [--and DAY START END] [--title T] [--weekly] [--apply]
+  atris avail holds [--days N] [--json]
+  atris avail unhold ID [--apply]
+
+Blocks:
+  A block puts a busy "Open for calls" event on your Google Calendar now.
+  Guests can book any open slot inside it, even outside your weekly hours.
+  An event you make yourself titled exactly "Open for calls" counts too.
+  DAY is today, tomorrow, a weekday (thu = the next one), or YYYY-MM-DD.
+  Times are in your booking timezone. Dry run until you add --apply.
+  --weekly repeats the block every week. unhold on a weekly block's id
+  removes the whole series; on one day's id, just that day.
 
 Set options:
   --wake TIME       Awake/start (2:30pm, 14:30, 9am)
@@ -405,6 +822,9 @@ Examples:
   atris avail set --where Ibiza --wake 2:30pm --sleep 9pm --days all
   atris avail set --wake 9am --sleep 5pm --days mon-fri --tz America/Los_Angeles --apply
   atris avail slots --days 7
+  atris avail hold thu 2pm 5pm --apply
+  atris avail hold mon 1pm 4pm --and wed 10am 12pm --weekly --apply
+  atris avail set --off --apply
 `);
 }
 
@@ -419,13 +839,37 @@ async function availCommand(argv = []) {
   const sub = argv[0].toLowerCase();
   if (sub === 'set' || sub === 'update') return setAvail(argv.slice(1));
   if (sub === 'slots') return slotsAvail(argv.slice(1));
-  console.error(`atris avail does not know "${sub}". Use show, set, or slots.`);
+  if (sub === 'hold' || sub === 'block') return holdAvail(argv.slice(1));
+  if (sub === 'holds' || sub === 'blocks') return holdsAvail(argv.slice(1));
+  if (sub === 'unhold' || sub === 'unblock') return unholdAvail(argv.slice(1));
+  console.error(`atris avail does not know "${sub}". Use show, set, slots, hold, holds, or unhold.`);
   printHelp();
   return 1;
 }
 
+// Verbs that only read. The CLI's account guard lets these run inside a
+// project folder without --account; every other verb keeps the full guard.
+const READ_VERBS = new Set(['show', 'get', 'slots', 'holds', 'blocks']);
+
+function isReadOnlyAvail(argv = []) {
+  const first = argv.find((a) => a !== '--account');
+  if (!first || first.startsWith('-')) return true;
+  return READ_VERBS.has(first.toLowerCase());
+}
+
 module.exports = {
   availCommand,
+  isReadOnlyAvail,
+  holdAvail,
+  holdsAvail,
+  unholdAvail,
+  parseHoldArgs,
+  buildHoldBodies,
+  buildOffPayload,
+  resolveHoldDate,
+  zonedIso,
+  describeBlock,
+  weeklyHoursOff,
   formatBookingLink,
   parseTimeToDecimal,
   parseDaysArg,
