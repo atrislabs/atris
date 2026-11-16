@@ -1,5 +1,6 @@
 'use strict';
 
+require('./helpers/temp-home');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -93,7 +94,7 @@ function touchBranch(copy) {
 }
 
 // A build copy under <ws>/.agent-worktrees/<repo>/<name>.
-function addCopy(root, name, { commit = false, hoursOld = 3, start = 'origin/master', at } = {}) {
+function addCopy(root, name, { commit = false, hoursOld = 30, start = 'origin/master', at } = {}) {
   const copy = at || path.join(path.dirname(root), '.agent-worktrees', path.basename(root), name);
   fs.mkdirSync(path.dirname(copy), { recursive: true });
   git(root, ['worktree', 'add', '-q', '-b', `codex/${name}`, copy, start]);
@@ -128,42 +129,48 @@ function start(app, task, options) {
   return createAgentWorktree({ root: app, agent: 'codex', task, env: {}, deps: false, putAwayHome: PUT_AWAY, ...options });
 }
 
-test('a low disk makes start put away idle copies in every repo, then refuse below the floor', (t) => {
+test('a low disk makes start put away this repo\'s copies idle for a day, then refuse below the floor', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app');
   const other = makeRepo(ws, 'other');
-  const finished = addCopy(other, 'finished');
-  const unmerged = addCopy(other, 'unmerged', { commit: true });
+  const finished = addCopy(app, 'finished');
+  const unmerged = addCopy(app, 'unmerged', { commit: true });
   const unmergedHead = git(unmerged, ['rev-parse', 'HEAD']);
-  const working = addCopy(other, 'working', { commit: true });
+  const working = addCopy(app, 'working', { commit: true });
   touchBranch(working);
+  const otherIdle = addCopy(other, 'other-idle', { commit: true });
 
   assert.throws(() => start(app, 'tight disk', { spaceGuard: true, freeSpace: () => 4e9, activeCwds: [] }), (error) => {
     assert.equal(error.code, 'ATRIS_LOW_DISK');
     assert.match(error.message, /only 4\.0 GB free on this disk, and a new build copy needs at least 10\.0 GB/);
-    assert.match(error.message, /Put away and removed 2 idle build copies first/);
+    // The finished copy goes in the reap of done copies that runs first; the
+    // low-disk pass then puts away the idle unmerged one.
+    assert.match(error.message, /Put away and removed 1 idle build copy of this repo first/);
     return true;
   });
-  assert.equal(fs.existsSync(finished), false, 'the idle merged copy in the other repo was removed');
+  assert.equal(fs.existsSync(finished), false, 'the idle merged copy was removed');
   assert.equal(fs.existsSync(unmerged), false, 'an idle unmerged copy goes too, since its commits stay');
-  assert.equal(git(other, ['rev-parse', 'codex/unmerged']), unmergedHead, 'its branch still holds the work');
-  assert.equal(fs.existsSync(working), true, 'a copy used in the last hour stays');
-  assert.equal(fs.existsSync(path.join(ws, '.agent-worktrees', 'app')), false, 'no copy was cut');
-  assert.equal(git(app, ['branch', '--list', 'codex/*']), '', 'no branch was cut');
+  assert.equal(git(app, ['rev-parse', 'codex/unmerged']), unmergedHead, 'its branch still holds the work');
+  assert.equal(fs.existsSync(working), true, 'a copy used today stays');
+  assert.equal(fs.existsSync(otherIdle), true, 'another repo is never touched');
+  assert.deepEqual(fs.readdirSync(path.join(ws, '.agent-worktrees', 'app')), ['working'], 'no copy was cut');
+  assert.deepEqual(git(app, ['branch', '--list', 'codex/*']).split('\n').map((line) => line.replace(/^[*+ ]+/, '')).sort(), ['codex/finished', 'codex/unmerged', 'codex/working'], 'no branch was cut');
 });
 
 test('start below the reap line but above the floor reaps and then proceeds', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app');
   const other = makeRepo(ws, 'other');
-  const finished = addCopy(other, 'finished');
-  const justDone = addCopy(other, 'just-done');
+  const finished = addCopy(app, 'finished', { commit: true });
+  const justDone = addCopy(app, 'just-done');
   touchBranch(justDone);
+  const otherIdle = addCopy(other, 'other-idle');
   const created = start(app, 'some room', { spaceGuard: true, freeSpace: () => 20e9, activeCwds: [] });
   assert.equal(created.space.removed.length, 1);
   assert.equal(created.space.free, 20e9);
   assert.equal(fs.existsSync(finished), false);
-  assert.equal(fs.existsSync(justDone), true, 'a copy with work in the last hour stays');
+  assert.equal(fs.existsSync(justDone), true, 'a copy with work today stays');
+  assert.equal(fs.existsSync(otherIdle), true, 'another repo is never touched');
   assert.equal(fs.existsSync(created.path), true);
 });
 
@@ -242,7 +249,7 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   assert.equal(fs.existsSync(holding), true);
 });
 
-test('the sweep puts away idle copies in every repo, merged or not, and keeps busy and recent ones', (t) => {
+test('the sweep puts away idle copies atris made in every repo, merged or not, and keeps busy, recent and hand-made ones', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const other = makeRepo(ws, 'other');
@@ -266,18 +273,21 @@ test('the sweep puts away idle copies in every repo, merged or not, and keeps bu
 
   const dry = sweepWorkspace({ workspace: ws, activeCwds: [busy], freeSpace: () => 5e9, idleMs, current: ws });
   const appDry = dry.repos.find((repo) => repo.name === 'app');
-  assert.deepEqual(appDry.removed.map((item) => item.name).sort(), ['changed', 'idle-unmerged', 'merged', 'outside-copy']);
+  assert.deepEqual(appDry.removed.map((item) => item.name).sort(), ['changed', 'idle-unmerged', 'merged']);
   for (const copy of [merged, idleUnmerged, changed, outside]) assert.equal(fs.existsSync(copy), true, 'a dry run removes nothing');
 
   const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [busy], idleMs, current: ws });
-  for (const gone of [merged, idleUnmerged, changed, outside, localCopy]) assert.equal(fs.existsSync(gone), false, gone);
-  for (const keptCopy of [busy, recent]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
+  for (const gone of [merged, idleUnmerged, changed, localCopy]) assert.equal(fs.existsSync(gone), false, gone);
+  for (const keptCopy of [busy, recent, outside]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
   const reasons = (name) => applied.repos.find((repo) => repo.name === name).kept.map((item) => item.reason).sort();
   assert.deepEqual(reasons('app'), []);
   assert.deepEqual(reasons('other'), ['process', 'recent']);
   assert.equal(applied.repos.find((repo) => repo.name === 'local').removed.length, 1, 'a repo without origin is swept too');
   const changedRecord = applied.repos.find((repo) => repo.name === 'app').removed.find((item) => item.name === 'changed').record;
-  assert.equal(git(app, ['show', `${changedRecord.ref}:notes.txt`]), 'not committed');
+  // An untracked file goes into the private tar, never into the ref.
+  assert.notEqual(spawnSync('git', ['cat-file', '-e', `${changedRecord.ref}:notes.txt`], { cwd: app }).status, 0);
+  const inTar = spawnSync('tar', ['-tf', changedRecord.tar], { encoding: 'utf8' }).stdout.split('\n');
+  assert.ok(inTar.includes('notes.txt'));
   assert.equal(typeof applied.before, 'number');
 });
 
@@ -321,7 +331,8 @@ test('the sweep timer runs the atris on PATH every hour from launchd', (t) => {
 });
 
 test('a shipped copy is handed to a detached waiter only when it is a real agent copy', () => {
-  const base = path.join(os.homedir(), 'atris-never-made');
+  // Paths only; nothing is made. Not under the temp HOME, which is a temp folder.
+  const base = path.join(path.parse(process.cwd()).root, 'atris-never-made');
   const primary = path.join(base, 'app');
   const copy = path.join(base, '.agent-worktrees', 'app', 'c1');
   assert.deepEqual(shippedCopyRemovalPlan({ root: copy, primary, env: {}, atrisBin: '/opt/atris/bin/atris.js' }), { copy });

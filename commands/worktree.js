@@ -164,9 +164,9 @@ function startWorktree(args) {
     console.log(`space: ${space.formatGb(created.space.free)} free; skipped the workspace sweep, the last one ${minutes} min ago found nothing to remove (atris worktree doctor shows what holds the space)`);
   } else if (created.space && created.space.removed.length) {
     const count = created.space.removed.length;
-    console.log(`space: disk was low, put away and removed ${count} idle build ${count === 1 ? 'copy' : 'copies'} across the workspace; ${space.formatGb(created.space.free)} free now`);
+    console.log(`space: disk was low, put away and removed ${count} idle build ${count === 1 ? 'copy' : 'copies'} of this repo; ${space.formatGb(created.space.free)} free now`);
   } else if (created.space && created.space.free !== null && created.space.free < created.space.reapBelow) {
-    console.log(`space: ${space.formatGb(created.space.free)} free; every build copy is in use, so none could be put away`);
+    console.log(`space: space is tight, ${space.formatGb(created.space.free)} free, and ${created.space.busy ? 'a sweep is running on this repo' : 'no copy of this repo has sat unused for a day'}, so none was put away; starting anyway`);
   }
   if (created.deps && created.deps.status === 'cloned') {
     const how = created.deps.method === 'hardlink' ? 'hardlinked' : 'cloned';
@@ -661,11 +661,13 @@ function sweep(args) {
   const workspace = path.resolve(explicit || defaultSweepWorkspace());
   if (hasFlag(args, '--install') || hasFlag(args, '--uninstall')) return sweepSchedule(args, workspace);
   const idleRaw = readFlag(args, '--idle-hours');
-  const idleHours = idleRaw === undefined || idleRaw === null || idleRaw === '' ? putaway.idleMsFromEnv() / 3600000 : Number(idleRaw);
-  if (!Number.isFinite(idleHours) || idleHours < 0) {
+  const asked = idleRaw === undefined || idleRaw === null || idleRaw === '' ? putaway.idleMsFromEnv() / 3600000 : Number(idleRaw);
+  if (!Number.isFinite(asked) || asked < 0) {
     console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>]');
     return 2;
   }
+  // Never under an hour: a copy someone is using must not vanish.
+  const idleHours = Math.max(1, asked);
   const apply = hasFlag(args, '--apply');
   const job = hasFlag(args, '--job');
   // Run inside a repo, its own copies are swept wherever they live.
@@ -684,23 +686,24 @@ function sweep(args) {
   if (!report.process_scan) console.log('note: could not list running programs, so only the time rule protects copies');
   let removed = 0;
   for (const repo of report.repos) {
-    if (repo.error) {
-      console.log(`${repo.name}: skipped (${repo.error})`);
+    if (repo.error || repo.skipped) {
+      console.log(`${repo.name}: skipped (${repo.error || repo.skipped})`);
       continue;
     }
-    if (!repo.seen && !repo.orphans.length && !repo.emptied.length) continue;
+    if (!repo.seen && !repo.orphans.length && !repo.emptied.length && !(repo.pruned || []).length) continue;
     removed += repo.removed.length;
     console.log(`${repo.name}: ${apply ? 'removed' : 'would remove'} ${plural(repo.removed.length, 'copy', 'copies')}, kept ${repo.kept.length}`);
     for (const item of repo.removed) {
-      const saved = item.record && (item.record.ref || item.record.tar)
+      const saved = item.record && (item.record.tar || item.record.tracked_changes || item.record.staged_tar)
         ? `, work put away as ${item.record.name}` : '';
       console.log(`  ${apply ? 'removed' : 'remove'}: ${item.name} (${item.reason === 'merged' ? 'branch merged' : 'idle'}, ${putaway.formatKib(item.kib)}${saved})`);
     }
     for (const item of repo.kept) console.log(`  kept: ${item.name} (${keptText(item)})`);
     for (const dir of repo.emptied) console.log(`  ${apply ? 'deleted' : 'delete'} empty folder: ${dir}`);
     for (const dir of repo.orphans) console.log(`  unlisted: ${dir} (git does not know it as a copy; check it by hand)`);
+    if ((repo.pruned || []).length) console.log(`  dropped ${plural(repo.pruned.length, 'old record', 'old records')} that held only merged commits`);
   }
-  if ((report.pruned || []).length) console.log(`put-away: dropped ${plural(report.pruned.length, 'old record', 'old records')} past 30 days`);
+  console.log(`put-away: ${putaway.recordsLine(report.records)}; atris worktree put-away list shows them`);
   if (apply) {
     console.log(`free: ${space.formatGb(report.before)} before, ${space.formatGb(report.after)} after`);
   } else if (removed) {
@@ -723,8 +726,9 @@ function restore(args) {
   }
   const record = result.record;
   console.log(`restored: ${result.path}${record.branch ? ` on ${record.branch}` : ''}`);
-  if (record.commit) console.log(`work: ${plural(record.work_files, 'changed file is', 'changed files are')} back as uncommitted changes`);
-  if (record.tar) console.log(`files: ${plural(record.saved_files, 'ignored file is', 'ignored files are')} back`);
+  if (record.tracked_changes) console.log(`work: ${plural(record.tracked_files, 'changed file is', 'changed files are')} back as uncommitted changes`);
+  if (record.tar) console.log(`files: ${plural(record.tar_files, 'untracked or ignored file is', 'untracked or ignored files are')} back`);
+  if ((record.staged_new || []).length || record.staged_commit) console.log('staged: what was staged is staged again');
   for (const note of result.notes) console.log(`note: ${note}`);
   console.log(`next: cd ${result.path}`);
   return 0;
@@ -734,11 +738,25 @@ function putAwayCommand(args) {
   const sub = args[0] || 'list';
   if (sub === 'prune') {
     const result = putaway.prunePutAway();
-    console.log(`put-away: dropped ${plural(result.pruned.length, 'record', 'records')}, kept ${result.kept.length}`);
+    console.log(`put-away: dropped ${plural(result.pruned.length, 'record', 'records')} that held only merged commits, kept ${result.kept.length}`);
+    return 0;
+  }
+  if (sub === 'drop') {
+    const name = args[1];
+    if (!name) {
+      console.error('Usage: atris worktree put-away drop <name> [--repo <repo>]');
+      return 2;
+    }
+    const result = putaway.dropRecord({ name, repo: readFlag(args, '--repo') || '' });
+    if (!result.ok) {
+      console.error(`refusing: ${result.error}`);
+      return 1;
+    }
+    console.log(`put-away: dropped ${name}; its saved work is gone for good`);
     return 0;
   }
   if (sub !== 'list') {
-    console.error('Usage: atris worktree put-away [list|prune] [--json]');
+    console.error('Usage: atris worktree put-away [list|prune|drop <name>] [--json]');
     return 2;
   }
   const records = putaway.readRecords();
@@ -752,7 +770,7 @@ function putAwayCommand(args) {
   }
   console.log(`put-away: ${plural(records.length, 'copy', 'copies')} in ${putaway.putAwayHome()}`);
   for (const record of records) {
-    const what = [record.commit ? plural(record.work_files, 'changed file', 'changed files') : '', record.tar ? plural(record.saved_files, 'ignored file', 'ignored files') : '']
+    const what = [record.tracked_changes ? plural(record.tracked_files, 'changed file', 'changed files') : '', record.tar ? plural(record.tar_files, 'untracked file', 'untracked files') : '']
       .filter(Boolean).join(', ') || 'nothing to bring back but the branch';
     console.log(`  ${record.name}  ${record.repo_name}  ${record.branch || 'detached'}  ${String(record.at).slice(0, 16).replace('T', ' ')}  ${what}  (${record.reason})`);
   }
@@ -824,17 +842,17 @@ function guide() {
   console.log('   atris worktree restore <name>             bring back a copy the sweep put away');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
-  console.log('A copy nobody uses for a day is put away and removed by the sweep. Nothing is lost: commits stay on the branch, uncommitted work is saved as a commit on refs/atris/put-away/<name>, and ignored files that cannot be rebuilt go into ~/.atris/put-away/<repo>/<name>/ignored.tar. atris worktree restore <name> brings the copy back.');
-  console.log('In use means locked, a program running inside it, or a file changed in the last 24 hours (ATRIS_WORKTREE_IDLE_HOURS). A copy whose branch was merged goes right away unless a program is in it.');
-  console.log('Start keeps at most 12 copies per repo and 10 GB of copies per workspace (ATRIS_WORKTREE_MAX_PER_REPO, ATRIS_WORKTREE_MAX_GB): over that it puts away copies idle for an hour, oldest first, and starts anyway if the rest are in use.');
+  console.log('Only copies atris made are swept: under .agent-worktrees, or carrying its start marker. A hand-made `git worktree add` copy is never touched. A copy nobody uses for a day is put away and removed: commits stay on the branch and are pinned by refs/atris/put-away/<name>, changes to tracked files go into that ref, and every untracked or ignored file goes into a private tar in ~/.atris/put-away, never into git. Only ignored node_modules/ and .next/ and the exact files atris writes are dropped. atris worktree restore <name> brings the copy back, staged state included.');
+  console.log('In use means locked, a merge or rebase in progress, a program standing in it or holding a file open in it, or a file changed in the last 24 hours (ATRIS_WORKTREE_IDLE_HOURS, never under 1). The check runs again right before each delete. A copy whose branch was merged and that holds nothing but commits goes right away.');
+  console.log('Start keeps at most 12 copies per repo and 10 GB of copies per repo (ATRIS_WORKTREE_MAX_PER_REPO, ATRIS_WORKTREE_MAX_GB): over that it puts away this repo\'s copies idle for a day, oldest first, and starts anyway with one line saying space is tight.');
   console.log('Start reaps completed checkouts first. Cleanup preserves branches, source changes, and files git ignores, skips live work, and prunes only verified webpack caches.');
   console.log('Start clones node_modules from the main copy or a matching install when package-lock.json matches (an APFS clone or reflink, never a link); skip npm ci when it prints "deps: cloned". --no-deps skips it.');
-  console.log('Below 25 GB free, start puts away copies idle for an hour in every repo; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
+  console.log('Below 25 GB free, start puts away this repo\'s copies idle for a day; below 10 GB it refuses (ATRIS_WORKTREE_REAP_BELOW_GB, ATRIS_WORKTREE_MIN_FREE_GB).');
   console.log('A shipped copy is removed as soon as its work is merged or on origin and nothing else runs in it, with any leftovers put away; if something does, it goes once it has been quiet for 10 minutes (--keep-copy or ATRIS_WORKTREE_KEEP_AFTER_SHIP=1 keeps it).');
   console.log('A shipped copy that has to stay loses its build output (.next, test caches, Python bytecode, node_modules/.cache) unless another program runs in it.');
   console.log('Below 25 GB free, a start skips the workspace sweep for 30 minutes after one that found nothing (ATRIS_WORKTREE_SWEEP_COOLDOWN_MIN=0 always sweeps).');
   console.log('The timer runs the atris on PATH every hour and writes one line per run to ~/.atris/worktree-sweep/worktree-sweep.log. Removals are logged in .atris/state/worktree_removals.jsonl of the main copy.');
-  console.log('Use `atris worktree put-away list` to see what is put away. Records older than 30 days go once their branch is merged or they hold no saved commit.');
+  console.log('Use `atris worktree put-away list` to see what is put away. Only a record holding nothing but merged commits is dropped after 30 days; anything else stays until you run atris worktree put-away drop <name>.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   console.log('Use `atris worktree doctor` to see what every copy really costs and what a prune would free.');
   return 0;
@@ -865,7 +883,7 @@ function help() {
   console.log('    a copy nobody used for a day is put away and removed; nothing is lost. Dry run unless --apply');
   console.log('  atris worktree sweep --install [--every 1] | --uninstall  run the sweep every hour with the atris on PATH');
   console.log('  atris worktree restore <name> [--repo <repo>]  bring a put-away copy back at its old path, work uncommitted as before');
-  console.log('  atris worktree put-away [list|prune] [--json]  what the sweep put away, and dropping old records');
+  console.log('  atris worktree put-away [list|prune|drop <name>] [--json]  what the sweep put away; prune drops records holding only merged commits, drop deletes one by name');
 }
 
 function worktreeCommand(args = []) {

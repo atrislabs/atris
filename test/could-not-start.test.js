@@ -63,6 +63,7 @@
 // The disk check before any claim asks about the folder the build will really use, which for a sealed
 // review-only flight is the temp folder.
 
+require('./helpers/temp-home');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -320,7 +321,8 @@ test('lowDiskRefusal asks worktree start\'s own question, with the same floor: t
 
 test('the dispatch flight stops before it claims anything when the disk is under the floor: one plain line, the reaping worktree start does, and nothing written to any job', async (t) => {
   const ctx = sandbox(t, { other: true });
-  const finished = addCopy(ctx.other, 'finished', { idleHours: 3 });
+  const finished = addCopy(ctx.app, 'finished', { idleHours: 30 });
+  const otherIdle = addCopy(ctx.other, 'other-idle', { idleHours: 30 });
   const job = addJob(ctx);
   const stale = addJob(ctx, { claimedBy: 'fleet-gemini' });
   lapse(ctx.db, stale.id);
@@ -336,12 +338,14 @@ test('the dispatch flight stops before it claims anything when the disk is under
   assert.equal(tasks.getTask(ctx.db, job.id).status, 'open');
   assert.equal(tasks.getTask(ctx.db, stale.id).status, 'claimed');
 
-  // The reaping is worktree start's: the finished copy in the other checkout is gone.
+  // The reaping is worktree start's: this repo's idle copy is gone, and
+  // another repo's copy is never touched.
   assert.equal(fs.existsSync(finished), false);
+  assert.equal(fs.existsSync(otherIdle), true);
   const lines = logs.filter((line) => line.trim());
   assert.equal(lines.length, 1, logs.join('\n'));
   assert.match(lines[0], LOW_DISK_LINE);
-  assert.match(lines[0], /Put away and removed 1 idle build copy first/);
+  assert.match(lines[0], /Put away and removed 1 idle build copy of this repo first/);
 
   assert.equal(flight.refusal.reason, 'low_disk');
   assert.match(flight.refusal.detail, LOW_DISK_LINE);
@@ -358,7 +362,8 @@ test('the dispatch flight stops before it claims anything when the disk is under
 
 test('the fleet flight stops before it claims anything when the disk is under the floor, the same way', async (t) => {
   const ctx = sandbox(t, { other: true });
-  const finished = addCopy(ctx.other, 'finished', { idleHours: 3 });
+  const finished = addCopy(ctx.app, 'finished', { idleHours: 30 });
+  const otherIdle = addCopy(ctx.other, 'other-idle', { idleHours: 30 });
   const job = addJob(ctx);
   const stale = addJob(ctx, { claimedBy: 'fleet-gemini' });
   lapse(ctx.db, stale.id);
@@ -372,11 +377,12 @@ test('the fleet flight stops before it claims anything when the disk is under th
   assert.equal(eventTotal(ctx.db), before, 'nothing was written to any job');
   assert.equal(tasks.getTask(ctx.db, job.id).status, 'open');
   assert.equal(fs.existsSync(finished), false, 'the reaping worktree start does ran first');
+  assert.equal(fs.existsSync(otherIdle), true, 'another repo is never touched');
 
   const said = logs.filter((line) => /GB/.test(line));
   assert.equal(said.length, 1, logs.join('\n'));
   assert.match(said[0], LOW_DISK_LINE);
-  assert.match(said[0], /Put away and removed 1 idle build copy first/);
+  assert.match(said[0], /Put away and removed 1 idle build copy of this repo first/);
 
   assert.equal(flight.refusal.reason, 'low_disk');
   assert.equal(flight.refusal.free_bytes, 4e9);

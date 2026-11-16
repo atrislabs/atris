@@ -6,6 +6,7 @@
 // work: every case below removes a copy and then restores it byte for byte,
 // or keeps it with the reason.
 
+require('./helpers/temp-home');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -104,7 +105,7 @@ function makeDirty(copy) {
   fs.writeFileSync(path.join(copy, 'node_modules', 'left-pad', 'index.js'), 'module.exports = 0;\n');
   // atris's own start sidecar is plumbing, not work.
   fs.mkdirSync(path.join(copy, '.atris'), { recursive: true });
-  fs.writeFileSync(path.join(copy, '.atris', 'agent-worktree.json'), '{}\n');
+  fs.writeFileSync(path.join(copy, '.atris', 'agent-worktree.json'), `${JSON.stringify({ owner: 'codex', branch: 'codex/x', created_at: new Date().toISOString() })}\n`);
 }
 
 const SHIP_ARGS = ['worktree', 'ship', '--message', 'Ship the change', '--no-pr', '--no-map-refresh'];
@@ -182,10 +183,10 @@ test('sweep puts away an idle dirty copy without pushing anything, and restore b
   assert.equal(fs.existsSync(copy), false, 'the copy folder is gone');
   const saved = repo.removed[0].record;
   assert.equal(git(ws.app, ['show', `${saved.ref}:app.js`]), 'module.exports = 2;');
-  assert.equal(git(ws.app, ['show', `${saved.ref}:notes.md`]), 'half-finished idea');
   const tree = git(ws.app, ['ls-tree', '-r', '--name-only', saved.ref]);
-  assert.doesNotMatch(tree, /node_modules|\.atris/, 'installs and atris plumbing are not saved');
-  assert.equal(saved.tar, null);
+  assert.doesNotMatch(tree, /notes\.md|node_modules|\.atris/, 'untracked files never enter the ref');
+  const inTar = spawnSync('tar', ['-tf', saved.tar], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+  assert.deepEqual(inTar, ['notes.md'], 'the untracked file is in the private tar; the install and the start marker are dropped');
   assert.equal(git(ws.app, ['rev-parse', 'refs/heads/codex/abandoned']), git(ws.app, ['rev-parse', 'master']), 'the copy branch never moves');
   assert.equal(git(ws.app, ['--git-dir', ws.remote, 'for-each-ref', '--format=%(refname) %(objectname)']), remoteRefs, 'nothing was pushed');
   const record = removals(ws.app).find((row) => row.path === copy);
@@ -267,10 +268,9 @@ test('the delayed remover waits for a pushed copy to be free, then removes it', 
   assert.equal(fs.existsSync(copy), false);
 });
 
-// Accepted limit, as the brief for this rule set it: an ignored build/,
-// dist/ or coverage/ folder is rebuildable and dropped. Other ignored user
-// files are saved.
-test('sweep saves ignored user files under uploads/ and drops an ignored build/ folder', (t) => {
+// Only ignored node_modules/ and .next/ are dropped; a hand-made file in an
+// ignored build/ folder is saved like any other.
+test('sweep saves ignored user files under uploads/ and in an ignored build/ folder', (t) => {
   const ws = workspace(t);
   const copy = addCopy(ws, 'user-files');
   makeDirty(copy);
@@ -284,9 +284,10 @@ test('sweep saves ignored user files under uploads/ and drops an ignored build/ 
   assert.equal(fs.existsSync(copy), false);
   const tar = repo.removed[0].record.tar;
   const listed = spawnSync('tar', ['-tf', tar], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
-  assert.deepEqual(listed, ['uploads/photo.png']);
+  assert.deepEqual(listed.sort(), ['build/bundle.js', 'notes.md', 'uploads/photo.png']);
   restore('user-files');
   assert.equal(fs.readFileSync(path.join(copy, 'uploads', 'photo.png'), 'utf8'), 'png');
+  assert.equal(fs.readFileSync(path.join(copy, 'build', 'bundle.js'), 'utf8'), 'built');
 });
 
 test('sweep keeps both a staged version and a different version on disk', (t) => {
@@ -304,9 +305,9 @@ test('sweep keeps both a staged version and a different version on disk', (t) =>
   assert.equal(git(ws.app, ['show', `${saved.ref}:app.js`]), 'module.exports = "on disk";');
   assert.equal(git(ws.app, ['show', `${saved.ref}^:app.js`]), 'module.exports = "staged";');
   assert.equal(git(ws.app, ['rev-parse', `${saved.ref}~2`]), git(ws.app, ['rev-parse', 'master']));
-  const back = restore('staged');
+  restore('staged');
   assert.equal(fs.readFileSync(path.join(copy, 'app.js'), 'utf8'), 'module.exports = "on disk";\n');
-  assert.ok(back.notes.some((note) => /staged version/.test(note)), 'the staged version is named');
+  assert.equal(git(copy, ['show', ':app.js']), 'module.exports = "staged";', 'the staged version is staged again');
 });
 
 test('sweep saves an untracked nested git repository whole, its own commits included', (t) => {
@@ -368,7 +369,8 @@ test('a copy whose index lists more than a megabyte of paths is still read, not 
   // check is covered above, so this one reports no running programs.
   const repo = repoReport(sweepWorkspace({ workspace: ws.root, apply: true, activeCwds: [] }));
   assert.equal(repo.removed.length, 1, JSON.stringify(repo.kept));
-  assert.equal(git(ws.app, ['show', `${repo.removed[0].record.ref}:notes.md`]), 'half-finished idea');
+  const inTar = spawnSync('tar', ['-tf', repo.removed[0].record.tar], { encoding: 'utf8' }).stdout.split('\n');
+  assert.ok(inTar.includes('notes.md'));
 });
 
 test('the sweep command puts away a stale dirty copy, and the timer applies the same rule hourly', (t) => {
