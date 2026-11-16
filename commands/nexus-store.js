@@ -26,10 +26,10 @@ const TODAY_LIMIT = 5; // the morning list stays short; the store sends more for
 const CITY_LIMIT = 50;
 const CITY_ALL_LIMIT = 500;
 const GROUP = 'People you met'; // what the file's add puts on a new person
-const COUNT_STAGES = ['found', 'reached_out', 'replied', 'met', 'paying', 'partner'];
 const CLOSENESS_WORDS = { 1: 1, 2: 2, direct: 1, intro: 2, 'one-intro': 2 };
 const CLOSENESS_LABEL = { 1: 'direct', 2: 'one intro' };
-const GROUP_NEEDS_STORE = 'Filtering by list needs the newer people store, which is not out yet. Try without --group.';
+const TOO_OLD_LINE = 'The people store does not know this command yet. Try again after its next update.';
+const TOP_GROUPS = 5;
 
 class StoreDown extends Error {}
 class StoreLocked extends Error {}
@@ -40,7 +40,7 @@ const enc = encodeURIComponent;
 function storeClient(request, token) {
   let wrote = false;
   const call = async (method, pathname, body, options = {}) => {
-    const { read, missing, ...rest } = options;
+    const { read, ...rest } = options;
     if (method !== 'GET' && !read) wrote = true;
     const result = await request(pathname, {
       token,
@@ -51,8 +51,7 @@ function storeClient(request, token) {
     });
     if (result.ok) return result.data && typeof result.data === 'object' ? result.data : {};
     const status = result.status;
-    // A route this backend does not have yet. The caller asks another way.
-    if (missing && missing.includes(status)) return null;
+    if (status === 405) throw new StoreError(TOO_OLD_LINE);
     if (status === 402) throw new StoreLocked(LOCKED_LINE);
     if (status === 401) throw new StoreError(`Sign in to see your people. ${NOT_LOGGED_IN}`);
     if (status === 0 || status === 404 || status >= 500) {
@@ -68,11 +67,8 @@ function storeClient(request, token) {
     patch: (pathname, body) => call('PATCH', pathname, body),
     put: (pathname, body) => call('PUT', pathname, body),
     // Search words travel in a POST body, never in the web address, so they stay out of
-    // access logs. It reads only, so a failure still falls back to the saved list. null
-    // means this backend has no search route yet (404, or 405 from the card route).
-    search: (body) => call('POST', '/nexus/people/search', body, { read: true, retries: 0, missing: [404, 405] }),
-    // null means no counts route yet: 404, or 422 when the card route reads "counts" as an id.
-    counts: () => call('GET', '/nexus/people/counts', undefined, { missing: [404, 405, 422] }),
+    // access logs. It reads only, so a failure still falls back to the saved list.
+    search: (body) => call('POST', '/nexus/people/search', body, { read: true, retries: 0 }),
   };
 }
 
@@ -174,23 +170,14 @@ async function runStore(ctx) {
     }
   };
 
-  // One page of the owner's cards. The search route first; while this backend does not have
-  // it yet, the older listing, which still carries the words in the address.
-  let noSearch = false;
-  const searchPeople = async ({ q = '', group, stage, closeness, limit, offset = 0 }) => {
-    if (!noSearch) {
-      const body = { limit, offset };
-      if (q) body.q = q;
-      if (group) body.group = group;
-      if (stage) body.stage = stage;
-      if (closeness) body.closeness = closeness;
-      const found = await client.search(body);
-      if (found) return found;
-      noSearch = true;
-    }
-    if (group) throw new StoreError(GROUP_NEEDS_STORE);
-    const query = [q ? `q=${enc(q)}` : '', stage ? `stage=${stage}` : '', closeness ? `closeness=${closeness}` : '', `limit=${limit}`, offset ? `offset=${offset}` : ''];
-    return client.get(`/nexus/people?${query.filter(Boolean).join('&')}`);
+  // One page of the owner's cards, words and filters in the body.
+  const searchPeople = ({ q = '', group, stage, closeness, limit, offset = 0 }) => {
+    const body = { limit, offset };
+    if (q) body.q = q;
+    if (group) body.group = group;
+    if (stage) body.stage = stage;
+    if (closeness) body.closeness = closeness;
+    return client.search(body);
   };
 
   const tableRows = (people) => people.map((card) => {
@@ -355,42 +342,25 @@ async function runStore(ctx) {
   }
 
   if (sub === 'count') {
-    let data = await client.counts();
-    if (!data) {
-      // No counts route yet: one-card pages give the same totals, one call each.
-      const totalOf = (query) => client.get(`/nexus/people?${query}limit=1`).then((page) => Number(page.total) || 0);
-      const [total, ...rest] = await Promise.all([
-        totalOf(''),
-        ...COUNT_STAGES.map((stage) => totalOf(`stage=${stage}&`)),
-        ...[1, 2].map((close) => totalOf(`closeness=${close}&`)),
-      ]);
-      data = {
-        total,
-        by_stage: Object.fromEntries(COUNT_STAGES.map((stage, i) => [stage, rest[i]])),
-        by_closeness: { 1: rest[COUNT_STAGES.length], 2: rest[COUNT_STAGES.length + 1] },
-      };
-    }
+    // { total, stages: [{ stage, count }], groups: [{ name, count }] }
+    const data = await client.get('/nexus/people/counts');
     const total = Number(data.total) || 0;
     const hint = total === 0 ? await emptyHint() : '';
     if (json) out(data);
     else {
       log(total ? `${S.plural(total, 'person', 'people')} on your list.` : 'No one is on your list yet.');
       if (total) {
-        const parts = (tally, label) => tallyPairs(tally).filter(([, n]) => n > 0).map(([key, n]) => `${n} ${label(key)}`);
-        const stages = parts(data.by_stage, (key) => S.stageLabel(key).toLowerCase());
-        const closes = parts(data.by_closeness, (key) => CLOSENESS_LABEL[key] || key);
-        const groups = parts(data.by_group, (key) => key);
-        // Cards with no stage or closeness set fall out of those counts; say how many.
-        const unset = (tally) => {
-          const pairs = tallyPairs(tally);
-          const gap = total - pairs.reduce((sum, [, n]) => sum + n, 0);
-          return pairs.length && gap > 0 ? [`${gap} not set`] : [];
-        };
-        stages.push(...unset(data.by_stage));
-        closes.push(...unset(data.by_closeness));
+        const stagePairs = tallyPairs(data.stages);
+        const stages = stagePairs.filter(([, n]) => n > 0).map(([key, n]) => `${n} ${S.stageLabel(key).toLowerCase()}`);
+        // Cards with no stage set fall out of the stage counts; say how many.
+        const gap = total - stagePairs.reduce((sum, [, n]) => sum + n, 0);
+        if (stagePairs.length && gap > 0) stages.push(`${gap} not set`);
         if (stages.length) log(`By stage: ${stages.join(', ')}.`);
-        if (closes.length) log(`By closeness: ${closes.join(', ')}.`);
-        if (groups.length) log(`By list: ${groups.join(', ')}.`);
+        const groups = tallyPairs(data.groups).filter(([, n]) => n > 0);
+        if (groups.length) {
+          const more = groups.length - TOP_GROUPS;
+          log(`Biggest lists: ${groups.slice(0, TOP_GROUPS).map(([name, n]) => `${name} ${n}`).join(', ')}${more > 0 ? `, and ${S.plural(more, 'more list', 'more lists')}` : ''}.`);
+        }
       }
     }
     if (hint) err(hint);

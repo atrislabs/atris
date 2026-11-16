@@ -21,7 +21,7 @@ const USAGE = [
   '  atris nexus "<name>"                one person\'s card',
   '  atris nexus list                    everyone, 50 at a time (--offset 50 for the next page)',
   '  atris nexus search "<words>"        matching people, best first (find works too; --all for every match)',
-  '  atris nexus count                   how many people, by stage, closeness and list',
+  '  atris nexus count                   how many people, by stage, and your biggest lists',
   '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
