@@ -200,6 +200,66 @@ test('unmerged, unchecked, or untied work stays in review', () => {
   }
 });
 
+// Review of PR 1949: a WEB-65 job whose paths include app/dashboard must not
+// pick up WEB-651's merged commit that touches app/dashboard/Other.tsx.
+test('a commit naming another job is never tied by shared files, even one whose ref starts with this one', () => {
+  const fx = project();
+  try {
+    const id = reviewJob(fx, { title: 'Dashboard header spacing', metadata: { verify: 'node scripts/verify-vitest.mjs app/dashboard' } });
+    const ref = refFor(fx, id);
+    const longerRef = `${ref}1`; // REP-1 and REP-11, the WEB-65 and WEB-651 shape
+    const other = squashOnMaster(fx, { file: 'app/dashboard/Other.tsx', subject: `Other dashboard change (${longerRef}) (#992)` });
+    fx.db.prepare('UPDATE tasks SET metadata = json_set(metadata, \'$.latest_agent_proof\', ?) WHERE id = ?')
+      .run(`Merged as commit ${other.slice(0, 9)}. Changed files: app/dashboard/Other.tsx`, id);
+
+    const out = closeCheckedMergedJobs({ root: fx.repo, tasks: reviewRows(fx), base: 'master' });
+    assert.deepEqual(out.done, [], JSON.stringify(out));
+    assert.deepEqual(out.skipped.map((r) => [r.id, r.reason]), [[id, 'commit_not_tied_to_job']]);
+    assert.equal(taskDb.getTask(fx.db, id).status, 'review');
+  } finally {
+    cleanup(fx);
+  }
+});
+
+test('job refs match on word edges only', () => {
+  const { mentionsRef, refsIn } = require('../lib/checked-merged-done');
+  assert.equal(mentionsRef('Faster click (WEB-651) (#992)', 'WEB-65'), false);
+  assert.equal(mentionsRef('Faster click (WEB-65) (#992)', 'WEB-65'), true);
+  assert.equal(mentionsRef('XWEB-65 fix', 'WEB-65'), false);
+  assert.equal(mentionsRef('WEB-65: first line', 'WEB-65'), true);
+  assert.deepEqual(refsIn('Lands with WEB-651 and WEB-660 (#1002)'), ['WEB-651', 'WEB-660']);
+  assert.deepEqual(refsIn('A plain change (#979)'), []);
+});
+
+// Review of PR 1949: one surviving commit used to be enough, so a job whose
+// real change was reverted, plus a later follow-up naming it, was marked done.
+test('work with a reverted commit stays in review and goes on the morning list as partly undone', () => {
+  const fx = project();
+  try {
+    const id = reviewJob(fx, { title: 'Member rail loads faster' });
+    const ref = refFor(fx, id);
+    const real = squashOnMaster(fx, { file: 'app/dashboard/Rail.tsx', subject: `Member rail loads faster (${ref}) (#1010)` });
+    git(['revert', '--no-edit', real], fx.repo);
+    const followUp = squashOnMaster(fx, { file: 'app/dashboard/RailCopy.tsx', subject: `Rail copy follow-up (${ref}) (#1012)` });
+    fx.db.prepare('UPDATE tasks SET metadata = json_set(metadata, \'$.latest_agent_proof\', ?) WHERE id = ?')
+      .run(`Merged as commit ${real.slice(0, 9)}, then follow-up commit ${followUp.slice(0, 9)}.`, id);
+
+    const out = closeCheckedMergedJobs({ root: fx.repo, tasks: reviewRows(fx), base: 'master' });
+    assert.deepEqual(out.done, [], JSON.stringify(out));
+    assert.equal(taskDb.getTask(fx.db, id).status, 'review');
+    const listed = out.protected.find((r) => r.id === id);
+    assert.ok(listed, JSON.stringify(out));
+    assert.equal(listed.why, 'part of this work was undone');
+    assert.equal(listed.undone, true);
+
+    const lines = checkedProtectedLines(out.protected);
+    assert.ok(lines.some((l) => l.includes(ref) && l.includes('part of this work was undone')), lines.join('\n'));
+    assert.ok(!lines.some((l) => l.startsWith('yes to all merged:')), 'undone work is never in the one tap');
+  } finally {
+    cleanup(fx);
+  }
+});
+
 test('the hourly tick marks quiet checked merged work done, and agents still cannot accept by hand', () => {
   const fx = project();
   try {

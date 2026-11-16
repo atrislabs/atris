@@ -846,7 +846,7 @@ function runTickPreview(root, { json, receipt, timer }) {
   const wouldDone = checked.would_done || [];
   console.log(`autoland tick (dry run): would mark ${wouldDone.length} checked merged job${wouldDone.length === 1 ? '' : 's'} done`);
   for (const row of wouldDone) console.log(`  done ${row.ref}: checked twice and on ${checked.base}; undo: ${row.undo}`);
-  for (const row of checked.protected || []) console.log(`  yours ${row.ref}: checked twice, ${row.merged ? 'merged' : 'not merged yet'}, waits because ${row.why}`);
+  for (const row of checked.protected || []) console.log(`  yours ${row.ref}: checked twice, ${row.undone ? 'waits because' : `${row.merged ? 'merged' : 'not merged yet'}, waits because`} ${row.why}`);
   if (receipt.checked_merged_error) console.log(`  could not check checked merged work: ${receipt.checked_merged_error}`);
   const reroute = receipt.check_reroute || {};
   for (const row of reroute.rerouted || []) console.log(`  rewrite ${row.ref}'s check: ${row.from} -> ${row.to}`);
@@ -1137,7 +1137,7 @@ function runCheckReroute(root, receipt, { dryRun = false } = {}) {
 }
 
 function checkedProtectedRows(rows = []) {
-  return (rows || []).map((r) => ({ ref: r.ref, title: r.title, lane: r.lane, why: r.why, merged: r.merged === true }));
+  return (rows || []).map((r) => ({ ref: r.ref, title: r.title, lane: r.lane, why: r.why, merged: r.merged === true, ...(r.undone ? { undone: true } : {}) }));
 }
 
 function checkedMergedNote(receipt) {
