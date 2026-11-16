@@ -17,7 +17,7 @@ const store = require('./nexus-store');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
-  '  atris nexus                         today\'s moves (at most five) and counts',
+  '  atris nexus                         today\'s moves, the five most urgent (--all for the rest) and counts',
   '  atris nexus "<name>"                one person\'s card',
   '  atris nexus list                    everyone, 50 at a time (--offset 50 for the next page)',
   '  atris nexus search "<words>"        matching people, best first (find works too; --all for every match)',

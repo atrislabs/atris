@@ -22,6 +22,7 @@ const BRING_OVER_LINE = 'Your people store is empty, but your saved list has peo
 const FIND_LIMIT = 25;
 const FIND_ALL_LIMIT = 200; // the most one page of the store gives
 const LIST_LIMIT = 50;
+const TODAY_LIMIT = 5; // the morning list stays short; the store sends more for the web page
 const CITY_LIMIT = 50;
 const CITY_ALL_LIMIT = 500;
 const GROUP = 'People you met'; // what the file's add puts on a new person
@@ -379,6 +380,14 @@ async function runStore(ctx) {
         const stages = parts(data.by_stage, (key) => S.stageLabel(key).toLowerCase());
         const closes = parts(data.by_closeness, (key) => CLOSENESS_LABEL[key] || key);
         const groups = parts(data.by_group, (key) => key);
+        // Cards with no stage or closeness set fall out of those counts; say how many.
+        const unset = (tally) => {
+          const pairs = tallyPairs(tally);
+          const gap = total - pairs.reduce((sum, [, n]) => sum + n, 0);
+          return pairs.length && gap > 0 ? [`${gap} not set`] : [];
+        };
+        stages.push(...unset(data.by_stage));
+        closes.push(...unset(data.by_closeness));
         if (stages.length) log(`By stage: ${stages.join(', ')}.`);
         if (closes.length) log(`By closeness: ${closes.join(', ')}.`);
         if (groups.length) log(`By list: ${groups.join(', ')}.`);
@@ -503,10 +512,11 @@ async function runStore(ctx) {
   if (json) out(data);
   else {
     log('Today');
-    if (people.length) for (const p of people) log(`  ${p.name || 'Someone'}: ${S.reasonLine(p.reason, p.days)}`);
+    const shown = flags.all ? people : people.slice(0, TODAY_LIMIT);
+    if (shown.length) for (const p of shown) log(`  ${p.name || 'Someone'}: ${S.reasonLine(p.reason, p.days)}`);
     else log('  Nothing is waiting on you today.');
     const total = Number(data.total) || people.length;
-    if (total > people.length) log(`  Showing ${people.length} of ${total}.`);
+    if (total > shown.length) log(`  Showing ${shown.length} of ${total}.${shown.length < people.length ? ' Add --all for the rest.' : ''}`);
   }
   if (hint) err(hint);
   return 0;

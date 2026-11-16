@@ -163,7 +163,28 @@ test('today asks the store with the time zone and prints each reason with its da
   assert.match(out, /Cy Placeholder: Follow-up is due today\./);
   assert.match(out, /Di Four: Sent 5 days ago, no follow-up yet\./);
   assert.match(out, /Ed Five: Met 4 days ago, nothing since\./);
-  assert.match(out, /Flo Six: 45 days since you talked\. Check in\./);
+  assert.doesNotMatch(out, /Flo Six/, 'the morning list stops at five');
+  assert.match(out, /Showing 5 of 6\. Add --all for the rest\.$/);
+
+  const all = await run(['--all'], backend({ data }));
+  assert.match(all.out, /Flo Six: 45 days since you talked\. Check in\./);
+  assert.match(all.out, /Flo Six[^\n]*$/, 'nothing left to show, so no footer');
+
+  const json = await run(['--json'], backend({ data }));
+  assert.equal(JSON.parse(json.out).people.length, 6, 'agents get the store\'s whole answer');
+});
+
+test('wall flags people at Paying with no money recorded, and count says how many have no closeness', async () => {
+  const data = seed();
+  data.wall = { today: '2026-11-14', people: 12, stages: { found: 3, reached_out: 0, replied: 0, met: 0, paying: 9, partner: 0 }, sent: 0, replied: 0, follow_ups_due_today: 0, follow_ups_overdue: 0, no_follow_up_yet: 0, paid_cents: 0, unchecked_paid_cents: 0, by_place: [], by_group: [], goal: null };
+  const wall = await run(['wall'], backend({ data }));
+  assert.match(wall.out, /9 people are at Paying, but no money is recorded\. Record it: atris nexus paid "<name>" <amount> --checked/);
+  data.wall.paid_cents = 5000;
+  assert.doesNotMatch((await run(['wall'], backend({ data }))).out, /no money is recorded/);
+
+  data.counts = { total: 10, by_stage: { found: 10 }, by_closeness: { 1: 3, 2: 2 } };
+  const count = await run(['count'], backend({ data }));
+  assert.equal(count.out, '10 people on your list.\nBy stage: 10 found.\nBy closeness: 3 direct, 2 one intro, 5 not set.');
 });
 
 test('--json prints the store\'s answer unchanged on every read', async () => {
