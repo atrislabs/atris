@@ -49,9 +49,8 @@ function fileList(extra = []) {
 }
 
 // A stand-in for the store and for the saved-list file. `down` makes every /nexus call fail with that status.
-// `search: false` is a backend without the search route yet (405, as the card route answers);
-// `counts: false` is one without the counts route (422, the card route reading "counts" as an id).
-function backend({ data = seed(), file = JSON.stringify(fileList()), down = null, fail = {}, search = true, counts = true } = {}) {
+// `search: false` is an older backend without the search route (405, as the card route answers).
+function backend({ data = seed(), file = JSON.stringify(fileList()), down = null, fail = {}, search = true } = {}) {
   const state = { calls: [], writes: [], file, data };
   const answer = (status, body) => ({ ok: status >= 200 && status < 300, status, data: body, error: body && body.detail });
   const request = async (pathname, options = {}) => {
@@ -85,10 +84,7 @@ function backend({ data = seed(), file = JSON.stringify(fileList()), down = null
     };
     if (key === 'GET /nexus/people') return filter(Object.fromEntries(url.searchParams));
     if (key === 'POST /nexus/people/search') return search ? filter(options.body) : answer(405, { detail: 'Method Not Allowed' });
-    if (key === 'GET /nexus/people/counts') {
-      if (!counts) return answer(422, { detail: [{ msg: 'Input should be a valid UUID' }] });
-      return answer(200, d.counts);
-    }
+    if (key === 'GET /nexus/people/counts') return answer(200, d.counts);
     if ((m = /^GET \/nexus\/people\/([^/]+)$/.exec(key))) {
       const card = d.people.find((c) => c.id === m[1]);
       return card ? answer(200, { card, ties: d.ties[m[1]] || [], touches: d.touches[m[1]] || [] }) : answer(404, { detail: 'Not found' });
@@ -163,7 +159,28 @@ test('today asks the store with the time zone and prints each reason with its da
   assert.match(out, /Cy Placeholder: Follow-up is due today\./);
   assert.match(out, /Di Four: Sent 5 days ago, no follow-up yet\./);
   assert.match(out, /Ed Five: Met 4 days ago, nothing since\./);
-  assert.match(out, /Flo Six: 45 days since you talked\. Check in\./);
+  assert.doesNotMatch(out, /Flo Six/, 'the morning list stops at five');
+  assert.match(out, /Showing 5 of 6\. Add --all for the rest\.$/);
+
+  const all = await run(['--all'], backend({ data }));
+  assert.match(all.out, /Flo Six: 45 days since you talked\. Check in\./);
+  assert.match(all.out, /Flo Six[^\n]*$/, 'nothing left to show, so no footer');
+
+  const json = await run(['--json'], backend({ data }));
+  assert.equal(JSON.parse(json.out).people.length, 6, 'agents get the store\'s whole answer');
+});
+
+test('wall flags people at Paying with no money recorded', async () => {
+  const data = seed();
+  data.wall = { today: '2026-11-14', people: 12, stages: { found: 3, reached_out: 0, replied: 0, met: 0, paying: 9, partner: 0 }, sent: 0, replied: 0, follow_ups_due_today: 0, follow_ups_overdue: 0, no_follow_up_yet: 0, paid_cents: 0, unchecked_paid_cents: 0, by_place: [], by_group: [], goal: null };
+  const wall = await run(['wall'], backend({ data }));
+  assert.match(wall.out, /9 people are at Paying, but no money is recorded\. Record it: atris nexus paid "<name>" <amount> --checked/);
+  data.wall.paid_cents = 5000;
+  assert.doesNotMatch((await run(['wall'], backend({ data }))).out, /no money is recorded/);
+
+  data.counts = { total: 10, groups: [], stages: [{ stage: 'found', count: 10 }] };
+  const count = await run(['count'], backend({ data }));
+  assert.equal(count.out, '10 people on your list.\nBy stage: 10 found.', 'nothing unset, no gap line');
 });
 
 test('--json prints the store\'s answer unchanged on every read', async () => {
@@ -393,6 +410,8 @@ test('city lists the people in that city, yours marked', async () => {
   assert.match(lines[2], /^ {2}Pat Public\s+Public Co$/);
 
   assert.match((await run(['city', 'austin, texas'], backend({ data }))).out, /^Austin, Texas/);
+  data.places[0].my_count = 7;
+  assert.match((await run(['city', 'Austin'], backend({ data }))).out, /^Austin, Texas: 2 people, 7 yours/, 'yours counts the whole city, not one page');
   const missing = await run(['city', 'Nowhere'], backend({ data }));
   assert.equal(missing.code, 1);
   assert.match(missing.err, /No city called "Nowhere"/);
@@ -482,56 +501,34 @@ test('search puts the words and filters in the body, never the address, and page
   assert.match(bare.err, /needs words to look for\. To see everyone: atris nexus list/);
 });
 
-test('a backend without the search route yet: search and lookups ask the old way once; --group says it cannot', async () => {
-  const server = backend({ data: crowd(), search: false });
-  const { code, out } = await run(['search', 'person 1', '--stage', 'found'], server);
-  assert.equal(code, 0);
-  assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', 'GET /nexus/people']);
-  assert.deepEqual(server.state.calls[1].query, { q: 'person 1', stage: 'found', limit: '25' });
-  assert.match(out, /people match "person 1" \(found\)/);
-
-  const note = backend({ search: false });
-  const done = await run(['note', 'Rae Sample', 'hi'], note);
-  assert.equal(done.code, 0);
-  assert.deepEqual(storeCalls(note), ['POST /nexus/people/search', 'GET /nexus/people', 'POST /nexus/touches', `PATCH /nexus/people/${RAE}/mine`]);
-  assert.deepEqual(fileCalls(note), [], 'a missing route is not a store that is down');
-
-  const grouped = await run(['list', '--group', 'Investors'], backend({ data: crowd(), search: false }));
-  assert.equal(grouped.code, 1);
-  assert.match(grouped.err, /Filtering by list needs the newer people store/);
-  assert.equal(grouped.server.state.writes.length, 0);
+test('an older backend without the search route stops plainly, and words never go in the address', async () => {
+  for (const args of [['search', 'person 1'], ['note', 'Rae Sample', 'hi'], ['list', '--group', 'Investors']]) {
+    const server = backend({ data: crowd(), search: false });
+    const res = await run(args, server);
+    assert.equal(res.code, 1, args.join(' '));
+    assert.match(res.err, /The people store does not know this command yet/);
+    assert.deepEqual(storeCalls(server), ['POST /nexus/people/search'], 'no second try with the words in the address');
+    assert.equal(server.state.writes.length, 0);
+    assert.deepEqual(fileCalls(server), [], 'an older store is not a store that is down');
+  }
 });
 
-test('count shows the store\'s counts by stage, closeness and list', async () => {
-  const data = { ...seed(), counts: { total: 60, by_stage: { found: 40, reached_out: 0, replied: 20, met: 0, paying: 0, partner: 0 }, by_closeness: { 1: 30, 2: 30 }, by_group: [{ name: 'People you met', count: 50 }, { name: 'Investors', count: 10 }] } };
+test('count shows the store\'s counts by stage and its biggest lists', async () => {
+  const groups = ['People you met', 'Investors', 'LinkedIn', 'Labs', 'Film', 'Music', 'Coaches'].map((name, i) => ({ name, count: 30 - i }));
+  const data = { ...seed(), counts: { total: 60, groups, stages: [{ stage: 'found', count: 40 }, { stage: 'reached_out', count: 0 }, { stage: 'replied', count: 15 }, { stage: 'paying', count: 0 }] } };
   const server = backend({ data });
   const { code, out } = await run(['count'], server);
   assert.equal(code, 0);
   assert.deepEqual(storeCalls(server), ['GET /nexus/people/counts']);
   assert.equal(out, [
     '60 people on your list.',
-    'By stage: 40 found, 20 replied.',
-    'By closeness: 30 direct, 30 one intro.',
-    'By list: 50 People you met, 10 Investors.',
+    'By stage: 40 found, 15 replied, 5 not set.',
+    'Biggest lists: People you met 30, Investors 29, LinkedIn 28, Labs 27, Film 26, and 2 more lists.',
   ].join('\n'));
   const json = await run(['count', '--json'], backend({ data }));
-  assert.deepEqual(JSON.parse(json.out), data.counts);
+  assert.deepEqual(JSON.parse(json.out), data.counts, 'agents get the store\'s own answer');
 });
 
-test('a backend without the counts route yet: count adds up one-card pages instead', async () => {
-  const server = backend({ data: crowd(), counts: false });
-  const { code, out } = await run(['count', '--json'], server);
-  assert.equal(code, 0);
-  assert.equal(storeCalls(server).length, 10, 'the counts route, then total, six stages and two closenesses');
-  assert.ok(server.state.calls.slice(1).every((c) => c.query.limit === '1' && !c.query.q));
-  assert.deepEqual(JSON.parse(out), {
-    total: 60,
-    by_stage: { found: 40, reached_out: 0, replied: 20, met: 0, paying: 0, partner: 0 },
-    by_closeness: { 1: 30, 2: 30 },
-  });
-  const text = await run(['count'], backend({ data: crowd(), counts: false }));
-  assert.equal(text.out, '60 people on your list.\nBy stage: 40 found, 20 replied.\nBy closeness: 30 direct, 30 one intro.');
-});
 
 test('list, search and count fall back to the saved list; filters need the store', async () => {
   const list = await run(['list'], backend({ down: 0 }));
@@ -554,9 +551,46 @@ test('list, search and count fall back to the saved list; filters need the store
   assert.equal(filtered.server.state.writes.length, 0);
 });
 
+test('no Nexus command ever puts a search word or name in a web address', async () => {
+  // A name nobody has, so every lookup runs to the end, and one that matches, so writes go through.
+  const words = ['Zyxw Secretname', 'Rae Sample'];
+  for (const word of words) {
+    for (const args of [
+      [word], ['find', word], ['search', word, '--group', 'Investors', '--stage', 'met'], ['list', '--group', word],
+      ['note', word, 'hello'], ['stage', word, 'met'], ['due', word, 'tomorrow'], ['paid', word, '50'], ['add', word],
+      ['city', word],
+    ]) {
+      const server = backend({ data: crowd() });
+      server.state.data.people.push(mineCard(RAE, 'Rae Sample'));
+      await run(args, server);
+      for (const call of server.state.calls.filter((c) => c.path.startsWith('/nexus/'))) {
+        const address = `${call.path}?${new URLSearchParams(call.query)}`.toLowerCase();
+        for (const part of word.toLowerCase().split(' ')) {
+          assert.ok(!address.includes(part), `${args.join(' ')} sent "${part}" in ${call.method} ${address}`);
+        }
+      }
+    }
+  }
+});
+
+test('a paused store (503) stops with one plain line and never writes to the saved list', async () => {
+  for (const args of [['note', 'Cy Placeholder', 'hello'], ['add', 'New Person'], ['stage', 'Cy Placeholder', 'met'], []]) {
+    const server = backend({ down: 503 });
+    const res = await run(args, server);
+    assert.equal(res.code, 1, args.join(' '));
+    assert.match(res.err, /The people store is paused for a few minutes\. Nothing was saved\./);
+    assert.equal(server.state.writes.length, 0, 'the saved list is never written while the store is paused');
+  }
+  const written = backend({ fail: { 'POST /nexus/touches': 503 } });
+  const res = await run(['note', 'Rae Sample', 'hello'], written);
+  assert.equal(res.code, 1);
+  assert.match(res.err, /paused/);
+  assert.equal(written.state.writes.length, 0);
+});
+
 // ---- when the store does not answer ----
 
-for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) {
+for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) { // 503 is a pause, tested below
   test(`${label}: reads fall back to the saved list with one plain line on stderr`, async () => {
     const server = backend({ down });
     const { code, out, err } = await run([], server);
@@ -578,7 +612,7 @@ for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server 
     assert.equal(code, 0);
     assert.match(out, /Noted on Cy Placeholder: hello/);
     assert.equal(server.state.writes.length, 1);
-    assert.deepEqual(storeCalls(server), down === 404 ? ['POST /nexus/people/search', 'GET /nexus/people'] : ['POST /nexus/people/search'], 'only the lookup reached the store');
+    assert.deepEqual(storeCalls(server), ['POST /nexus/people/search'], 'only the lookup reached the store');
   });
 }
 
