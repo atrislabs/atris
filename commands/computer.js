@@ -2826,6 +2826,5 @@ module.exports = {
   computerPr,
   computerCodeOpsTeam,
   codeOpsTeamCommand,
-  saveMemberLesson,
   streamBusinessChatResult,
 };
