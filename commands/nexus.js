@@ -14,6 +14,9 @@ const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
+const columns = require('./nexus-columns');
+const mail = require('./nexus-mail');
+const local = require('./nexus-local');
 const network = require('./nexus-network');
 
 const USAGE = [
@@ -26,13 +29,28 @@ const USAGE = [
   '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --list "<saved list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
-  '  atris nexus add "<name>" [--title --company --city --email --note]',
+  '  atris nexus add "<name>" [--title --company --city --email --linkedin --x --website --note]',
+  '    a new card is Found with no closeness or list; say more with --stage met, --closeness direct, --group "<list>"',
   '  atris nexus due "<name>" <date> ["next move"]   set the follow-up (YYYY-MM-DD, today, tomorrow, clear)',
   '  atris nexus paid "<name>" <amount> [--checked]  record a payment. Only checked money counts.',
   '  atris nexus wall                    the war room numbers: sent, replied, follow-ups, paid money, groups, cities',
   '  atris nexus goal [amount] [date]    show or set the money goal',
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  atris nexus set "<name>" <column> <value> [--source <link>]   your own column on a card (a helper must give --source)',
+  '  atris nexus unset "<name>" <column>   take a column off a card',
+  '  atris nexus undo "<name>" <column>    put back the value before the last change',
+  '  atris nexus columns                 every column you have, how many people have it and the top values',
+  '  atris nexus table --with <a,b,c> [--where <column>=<value>] [--csv]   everyone with the columns you pick, for sheets and graphs',
+  '                                      a helper never changes or removes a value you set yourself',
+  '  atris nexus mail "<name>"           their mail across every Gmail inbox you connected, newest first, each naming its inbox',
+  '  atris nexus reply "<name>" --from <inbox> --message <id> --body "<text>" [--dry-run] [--yes]',
+  '                                      reply in that thread from the inbox that got it; shows the reply and asks first',
+  '  atris nexus pull                    copy your own people to this computer (~/.atris/nexus), for use offline',
+  '  atris nexus local search "<words>"  search that copy, no connection needed',
+  '  atris nexus local show "<name or id>"   one card from that copy',
+  '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
+  '  atris nexus push-notes              send the notes written offline, then clear them',
   '  atris nexus groups [--kind <kind>]  the groups in your network: saved lists, lists, companies, cities, schools, clusters',
   '                                      kinds: company, city, list, school, saved, cluster',
   '  atris nexus group <kind> "<label>"  one group: how many, who is most connected, your way in, who is talking, what they share, then the people',
@@ -53,15 +71,16 @@ const USAGE = [
 // Commands the saved list cannot answer: the store or nothing.
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
-const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...network.SUBS]);
+const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city', 'mail', 'reply']);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...columns.SUBS, ...mail.SUBS, ...network.SUBS]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
 // The store is the home for every change. A change it cannot take is not written anywhere
 // else, so the saved list and the store never drift apart. Reading the saved list is fine.
 const WRITES = new Set(['note', 'stage', 'add']);
 const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'list', 'limit', 'offset', 'kind', 'ids']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'linkedin', 'x', 'website', 'stage', 'closeness', 'group', 'list', 'limit', 'offset', 'kind', 'ids', 'source', 'with', 'where', 'from', 'thread', 'message', 'body', 'ref']);
+const FILTERED = new Set(['list', 'find', 'search']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const LIST_NEEDS_STORE = 'The people store did not answer, and --list needs it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
@@ -76,8 +95,9 @@ function parseArgs(args) {
     if (!arg.startsWith('--')) { words.push(arg); continue; }
     const eq = arg.indexOf('=');
     const key = arg.slice(2, eq < 0 ? undefined : eq);
-    if (key === 'from') {
-      // --from <kind> "<label>": two values, so the label never lands among the plain words.
+    if (key === 'from' && words[0] === 'save') {
+      // save --from <kind> "<label>": two values, so the label never lands among the plain words.
+      // Every other command (reply --from <inbox>) takes one value, below.
       const take = () => (i + 1 < args.length && !String(args[i + 1]).startsWith('--') ? String(args[++i]) : '');
       flags.from = eq >= 0 ? arg.slice(eq + 1) : take();
       flags.fromLabel = take();
@@ -138,7 +158,7 @@ function stageText(row) {
 }
 
 function brief(row) {
-  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label, move: row.tableMove };
+  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label === 'Found' ? '' : row.loop.label, move: row.tableMove };
 }
 
 function card(people, row, now) {
@@ -176,7 +196,8 @@ function cardLines(c) {
   const facts = [c.title, c.company, c.city].filter(Boolean).join(' · ');
   if (facts) lines.push(facts);
   if (c.closeness) lines.push(`Closeness: ${c.closeness}`);
-  lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
+  // Found is where every card starts, so it says nothing; a stage shows once something happened.
+  if (c.stage !== 'Found' || c.off) lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
   lines.push(`Next: ${c.move}.`);
   if (c.path) lines.push(`Way in: ${c.path.join(' → ')}`);
   if (!c.email) lines.push('No email yet');
@@ -228,6 +249,20 @@ async function nexusCommand(args = [], deps = {}) {
     return 2;
   };
 
+  // The local copy: pull and push-notes sign in; local reads only files on this computer.
+  if (local.SUBS.has(words[0])) {
+    return local.run({
+      sub: words[0], words, flags, json, log, err, fail, usage: (message) => {
+        if (json) log(JSON.stringify({ ok: false, error: message }));
+        else err(message);
+        return 2;
+      },
+      now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
+      getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
+      findPerson, view: { card, cardLines, tableLines },
+    });
+  }
+
   // The network commands say what is wrong in one plain line, not the whole help.
   const bad = (message) => {
     if (json) log(JSON.stringify({ ok: false, error: message }));
@@ -276,6 +311,14 @@ async function nexusCommand(args = [], deps = {}) {
     }
   }
 
+  // Your own columns live only in the store: no saved-list fallback.
+  const oneLineUsage = (message) => {
+    if (json) log(JSON.stringify({ ok: false, error: message }));
+    else err(message);
+    return 2;
+  };
+  const columnsCtx = () => ({ sub, words, flags, json, log, fail, usage: oneLineUsage, now, env: deps.env, request: deps.apiRequestJson || apiRequestJson, token: tokenValue, pick });
+
   // One name that may match several people: list them and stop.
   const pick = (people, query) => {
     const found = findPerson(people, query);
@@ -306,6 +349,10 @@ async function nexusCommand(args = [], deps = {}) {
     return { ...made, next, waits: next.mine === 'mac' };
   };
   const waitLine = 'Your computer picks this up on its next sync.';
+
+  if (columns.SUBS.has(sub)) return columns.run(columnsCtx());
+  // Mail lives only in the store and the inboxes you connected: no saved-list fallback.
+  if (mail.SUBS.has(sub)) return mail.run({ ...columnsCtx(), rawArgs: args, confirm: deps.confirm });
 
   // The store first. It falls back to the saved list only when it did not answer and
   // nothing was written to it; a 402 or any other answer stops here.
@@ -344,13 +391,13 @@ async function nexusCommand(args = [], deps = {}) {
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
     if (WRITES.has(sub)) return fail(NOT_SAVED);
     if (prep.args.list) return fail(LIST_NEEDS_STORE);
-    if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
+    if (FILTERED.has(sub) && (prep.args.stage || prep.args.closeness || prep.args.group)) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
     return fail(STORE_NEEDED);
   } else if (prep.args.list) {
     return fail(LIST_NEEDS_STORE);
-  } else if (prep.args.stage || prep.args.closeness || prep.args.group) {
+  } else if (FILTERED.has(sub) && (prep.args.stage || prep.args.closeness || prep.args.group)) {
     return fail(FILTERS_NEED_STORE);
   }
 

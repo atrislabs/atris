@@ -1,8 +1,36 @@
 # atris
 
-**The operating system for agent teams: shared memory, workspaces, and tools that run entire operations across code, research, and business.**
+**atris**: you say what you want in plain words. atris builds it, checks it, and shows you proof.
 
-You say what you want in plain words. Atris plans it, builds it, checks it, and compounds what your agents learn across every session.
+Under the hood it is an operating system for AI work. It turns any repo into a workspace an agent can actually operate: shared context it reads before it acts, a `plan -> do -> review` loop, durable tasks and daily logs, and verification that ends work on a real check instead of a promise.
+
+Every owner gets persistent computers to run it:
+
+```text
+Owner = User | Business
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation loop
+```
+
+A computer can be personal or shared by a business. It can run a job like code, research, CRM, reporting, event ops, support, or business ops.
+
+## Memory for coding agents
+
+Atris gives Claude Code, Codex, Cursor and any other agent a memory that lasts across sessions. The memory is plain files in your repo: `atris/MAP.md` (where everything lives, with file and line numbers), `atris/wiki/` (what the team learned, as pages linked with `[[page-name]]`), `atris/logs/` (what was done and checked each day), and `atris task` (open work, who claimed it, and the proof). Every agent reads the same files before it acts, so several agents and people share one memory, reviewed in git like code.
+
+Mem0, Zep and Letta remember the users of a chat app. Atris remembers the project. Patterns and setup: [docs/agent-memory.md](docs/agent-memory.md). Comparison: https://atris.ai/blog/memory-for-coding-agents
+
+## Check what ChatGPT can read about your business
+
+`atris aeo scan` checks whether ChatGPT, Claude, Perplexity and other answer engines can read your site. No login needed.
+
+```bash
+npx -y atris aeo scan yoursite.com --vs competitor.com
+```
+
+You get a score out of 100, each gap with its fix, a side-by-side score against a competitor, and a draft `llms.txt` you can publish. To see what ChatGPT actually says when buyers ask about your business, run the free check at https://atris.ai/aeo/check. Guide to both checks and the tools that run them: [docs/answer-engine-checks.md](docs/answer-engine-checks.md).
+
+## Quick Start
 
 ```bash
 npm install -g atris
@@ -10,103 +38,639 @@ cd your-project
 atris init && atris
 ```
 
-> **Are you an agent?** Run `atris`, then read [`FOR_AGENTS.md`](FOR_AGENTS.md) and `atris/atris.md`.
+## For Coding Agents
+
+**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, 60-second start, spread-it instructions.
+
+If you're an agent, run:
+
+```bash
+atris
+```
+
+Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
 ---
 
-## 1. Shared Memory in Your Repo
+## What Atris Gives You
 
-Atris gives Claude Code, Codex, Cursor, and any other agent a shared memory that lasts across sessions. Everything lives in plain files inside your repo, reviewed in git like code:
+- An AI workspace on top of any repo
+- Persistent AI computers for scoped jobs
+- A local computer card that makes each workspace inspectable
+- A strict `plan -> do -> review` loop
+- Daily logs, task tracking, feature packs, and project memory
+- Skills, team members, integrations, and cloud sync when you need them
+- A plain answer to "what did my AI actually do?": run `atris recap`, or `atris recap --share` for a receipt-backed summary you can paste anywhere
+
+## Critical Files
+
+| File | Purpose |
+|------|---------|
+| `atris/atris.md` | Main instructions for agents working in this repo |
+| `atris/MAP.md` | Navigation index with file:line refs |
+| `atris/TODO.md` | Human-readable task view |
+| `atris/logs/YYYY/YYYY-MM-DD.md` | Daily log, inbox, notes, completions |
+| `atris/features/` | Feature packs with `idea.md`, `build.md`, `validate.md` |
+| `atris/skills/` | Reusable skills for agents |
+| `atris/team/` | Team member specs and local context |
+| `atris/wiki/` | Repo memory, briefs, concepts, and wiki health |
 
 ```text
 atris/
-├── atris.md     # Operating protocol every agent reads first
-├── MAP.md       # Exact file and function index so agents never search blind
-├── TODO.md      # Live task board rendered from local state
-├── wiki/        # Shared knowledge pages linked with [[page-name]]
-├── team/        # Specialist member contracts (navigator, executor, validator)
-├── skills/      # Reusable workflows and integrations (25+ built in)
-└── logs/        # Daily journal of completed work and verification receipts
+├── atris.md
+├── MAP.md
+├── TODO.md
+├── logs/
+├── features/
+├── skills/
+├── team/
+└── wiki/
 ```
 
-Mem0, Zep, and Letta remember the users of a chat app. Atris remembers the project and the operation. ([Full comparison](https://atris.ai/blog/memory-for-coding-agents) | [Setup guide](docs/agent-memory.md))
-
----
-
-## 2. Run One Job or Wake the Whole Team
-
-Start with a status pulse or hand over a single goal:
+## Install
 
 ```bash
-atris                                      # See current state and the exact next step
-atris doctor                               # Check installed engines and workspace health
-atris run "fix the flaky login test"       # Plan, build, and verify one bounded job
-atris autopilot                            # Keep picking and shipping the next task until stopped
+npm install -g atris
+atris --version
 ```
 
-Or put specialist team members to work in isolated copies of the repo:
+Requires Node.js 18+.
+`atris task` uses built-in SQLite and requires Node.js 22+.
+
+If you want Atris cloud workspaces, businesses, or integrations, run `atris setup` after install.
+
+## How To Run Atris
 
 ```bash
-atris member run "tighten onboarding copy" # Pick the best specialist and start work
-atris member wake 3                        # Keep 3 members pulling verified tasks in parallel
-atris member board --watch                 # Watch every active member in one live screen
-atris member sleep --all                   # Park the team when you are done
+cd your-project
+atris init
+atris
 ```
 
----
+`atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
 
-## 3. Multi-Engine Roster & Cross-Checks
+If you're still shaping the idea, use `atris brainstorm`. If you want Atris to finish one job and prove it worked, use `atris run "<objective>"`. If you want Atris to keep picking the next mission or member until you say stop, use `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 
-An engine is the worker behind a job (`claude`, `codex`, `cursor`, `devin`, `grok`, or `ax`). No engine ever grades its own homework: the builder runs its test command, and a separate engine reviews the diff.
+Core loop: `plan` -> `do` -> `review`
 
-Edit `atris/ROSTER.md` or use the CLI to assign who builds and who reviews:
+Integrates with any agent.
+
+### Publish a static site
+
+Upload any built static site to an Atris-hosted subdomain. See
+[docs/site-publish.md](docs/site-publish.md) for flags, limits, profiles, and
+troubleshooting.
 
 ```bash
-atris engine roster                                 # See who leads search, build, and review
-atris engine assign build claude --model "opus 5.5" # Set your lead builder
-atris mission run --fleet --slots 3                 # Staff up to 3 idle engines in parallel worktrees
-atris rating                                        # See 25-99 performance ratings from real landed work
+atris site publish dist --slug my-site --spa
+atris site publish . --slug my-next-app --profile app --build   # Next.js static export
 ```
 
-Turn on self-landing once so work that passes its test and cross-engine review merges automatically (while sensitive paths like billing or deploys still wait for a human):
+### Bring people together with the Host
+
+The Host is a team member that gets to know everyone in a room (a company, a club, your own network) through one fun question at a time, keeps a card for each person, and introduces two people only when both say yes. Then it offers to find a time and checks that it happened. It never reads anyone's messages and keeps no scores.
+
+```bash
+atris member install host
+atris host setup --room personal     # your own network: it asks you, and drafts messages for you to send
+atris host import people.jsonl       # bulk add people and who already knows whom
+atris host room                      # the host's weekly read
+```
+
+### Design screens with Designer-1
+
+Designer-1 is a team member that builds web screens from a fixed set of 19 parts (button, field, select, dialog, tabs, row list and the rest). It reuses a part before writing one, keeps one spacing scale, writes very few words, and checks its work by keyboard, by control name, and at phone and desktop widths before it reports. A project's own taste files in `atris/taste/` win over its defaults.
+
+```bash
+atris member install designer-1
+atris member install designer-1 --update   # pick up the latest skill; your edits to its other files stay
+```
+
+### Put members to work
+
+Members are helpers that work in their own copy of the repo. Three words cover it.
+
+Run hands over one job. Atris picks the right member and starts it.
+
+```bash
+atris member run "fix one failing test"
+```
+
+Wake keeps members working, each one pulling the next task that fits. Give a number, or name the members you want.
+
+```bash
+atris member wake 5
+atris member wake navigator executor
+```
+
+Wake only picks jobs that have a test to pass, so members know when they are done. Add one like this:
+
+```bash
+atris task new "fix the flaky login test" --verify "node --test test/login.test.js"
+```
+
+Each job gets the time limit set for building in your roster, plus a few minutes for review. To see or change it:
+
+```bash
+atris engine roster
+```
+
+Naming just one member runs one step of work. Add `--keep` to keep that one member working.
+
+```bash
+atris member wake executor --keep
+```
+
+Sleep stops the members that are awake.
+
+```bash
+atris member sleep --all
+```
+
+To watch them, open the board, or follow one member's steps as they happen.
+
+```bash
+atris member board --watch
+tail -f ~/.atris/progress/executor.log
+```
+
+When a member finishes, ask for its result: what it changed, its receipt, and one number. Each member's copy of the repo stays until its work lands, then tidy puts it away.
+
+```bash
+atris member result executor
+atris member tidy --dry-run
+```
+
+The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does.
+
+### How member work gets checked and lands
+
+Every member job ends with its own check, a command that must pass. Then a second engine reviews the change, and it is never the engine that did the work.
+
+Work lands on its own only after you switch self-landing on, once. From then on Atris pushes the branch, opens a pull request, and turns on GitHub auto-merge, so GitHub merges it when the branch is up to date and CI passes.
 
 ```bash
 atris autoland on
 ```
 
----
+Anything else keeps the work on its branch, with one plain line saying why. That covers a failed check or review, unsaved changes, a clash with the main branch, and work that touches a protected area like payments, deploys, or credentials.
 
-## 4. Receipts, Recaps, and Quality Gates
+A job that fails three times in a row stops and waits for a person.
 
-Always know what your agents actually did, and keep the repo clean:
+## Chat With Atris 2
 
-```bash
-atris recap                  # Plain-language summary of what got done today
-atris recap --share          # Paste-ready receipt summary for Slack, PRs, or customers
-atris radar                  # Live terminal HUD of active agents, tasks, and worktrees
-atris slop detect --staged   # Zero-LLM check for AI prose clichés and dead exports
-atris doc-health             # Score workspace memory freshness and map coverage (0-100)
-atris scorecard              # Benchmark which model solves your repo's real past commits
-```
-
----
-
-## 5. Run a Business, Lab, or Operation
-
-Atris works beyond code repos. Spin up a shared workspace for a company, research lab, or operations team:
+`ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
 
 ```bash
-atris business init "Acme Ops" --owner-email you@acme.com
-atris business onboard https://acme.com "b2b operations" ./notes.md
+cd your-project
+ax chat ax --fast
+ax --fast "hello"
+ax --pro "help me plan this task"
+ax --max "reason through this hard decision"
+ax --doctor
 ```
 
-This creates a persistent workspace with starter roles, shared channels, an initial task queue, and daily recaps.
+Use Fast for quick chat and low-latency Atris loops. Use Pro for deeper tool loops. Use Max for the hardest jobs; it runs the highest-reasoning model and takes longer per turn. Advanced local workspace mode is opt-in with `--local` plus `AX_BACKEND_URL`.
+
+## Play AgentXP
+
+AgentXP is the proof-backed game loop for getting better with agents. Start it
+inside any project folder:
+
+```bash
+npm exec --yes --package atris@latest -- atris play
+```
+
+The first run creates a local starter mission if one does not exist. The loop is:
+
+```text
+start -> proof -> accept -> login -> sync
+```
+
+The player path:
+
+```bash
+atris play
+atris task claim <mission-ref> --as game-manager
+atris task ready <mission-ref> --as game-manager --proof "<artifact path + verifier result>"
+atris task accept <mission-ref> --as justin --proof "<human review>"
+atris xp card --local
+atris login
+atris xp sync --local
+```
+
+The manager path:
+
+```bash
+atris gm --player justin
+```
+
+No proof, no AgentXP. `atris task done --proof` records review/RL context, but
+only human `atris task accept` mints Career XP for the local card or hosted
+leaderboard.
+
+## Agents That Sign In On Their Own
+
+`atris login` signs a person in. An agent can sign itself in with an agent
+client, so no one has to hand it a login token.
+
+The owner makes the client once. The secret is shown one time, or written to a
+private file with `--secret-file`:
+
+```bash
+atris agent-client create --name nightly-bot --scopes mcp:workspace:read,x-search --secret-file ./bot.secret
+atris agent-client list
+atris agent-client rotate <client_id>
+atris agent-client revoke <client_id>
+```
+
+The agent signs in with the id and the secret file. Its short token renews on
+its own; the secret and token are never printed:
+
+```bash
+atris login --client-id atc_... --client-secret-file ./bot.secret
+```
+
+Or set `ATRIS_CLIENT_ID` plus `ATRIS_CLIENT_SECRET_FILE` (or
+`ATRIS_CLIENT_SECRET`) and run `atris login` once. It reads them, no flags
+needed, and opens no browser. After that every command renews the token on
+its own. `ATRIS_TOKEN`, when set, still wins.
+
+## Business Owners
+
+If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.
+
+```bash
+atris business init "Example Co" --owner-email operator@example.com
+cd ~/arena/atris-business/example-co
+atris business onboard --website https://example.com --contact "Example Owner" --note "sample customer workspace"
+atris align --fix
+```
+
+That creates the shared owner, creates its first/default computer, writes `.atris/business.json`, initializes `.atris/state/` for events and run history, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter roles, a default recap template, and an initial task queue in `atris/TODO.md`.
+
+If you do not have a neat source pack yet, `atris business onboard` is the easiest intake step: give it a website, a named human, a few notes, or run it in a folder with loose files. Atris turns that into raw intake, a starter brief, a first workflow, a safe next action, and a short operator brief.
+
+Use the owner's language when you talk about it:
+
+```text
+Your business runs on Atris.
+Your lab runs on Atris.
+Your collective runs on Atris.
+```
+
+You can also use bare input:
+
+```bash
+atris business onboard https://example.com "founder-led b2b ops" ./notes.md
+```
+
+If you already have a folder full of source material, run it from there with `atris business init "Example Co" --here`.
+
+When the first recap is done, record it into the RL state logs:
+
+```bash
+atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed --metric "operator speed"
+```
+
+## Core Commands
+
+| Command | Purpose |
+|---------|---------|
+| `atris` | Load context and start |
+| `atris init` | Scaffold an Atris workspace |
+| `atris brainstorm` | Explore before planning |
+| `atris plan` | Create the plan/spec |
+| `atris do` | Execute work |
+| `atris review` | Validate work and capture learnings |
+| `atris run` | One bounded mission pursuit: start or resume, tick, complete (`--legacy` for the old plan/do/review chain) |
+| `atris run logs` | Browse glass run logs (phase reasoning persisted to disk) |
+| `atris run prune-logs` | Prune old run logs, keeping only the most recent N |
+| `atris run search` | Search phase reasoning across all run logs by keyword |
+| `atris run stats` | Show run log stats: phase counts, avg durations |
+| `atris run export` | Export all run logs as a JSON bundle |
+| `atris run diff` | Compare two run logs side by side |
+| `atris autopilot` | Keep the workspace moving: mission/member legs until `atris autopilot stop` (`--legacy` for the old approval loop) |
+| `atris pulse` | Install or run the durable overnight heartbeat |
+| `atris log "note"` | Add an inbox item to today's journal (`log --repl` for the editor; `wish` for headless intake) |
+| `atris now` | Show the current operating truth |
+| `atris radar` | Show live agents joined with tasks, missions, and worktrees |
+| `atris ctop` | Show process-first live agent CPU and memory |
+| `atris status` | Show active work and completions |
+| `atris task` | Durable local task state and the agent work loop |
+| `atris mission` | Durable goal, owner, verifier, tick receipts, and loop state |
+| `atris play` | Enter the AgentXP player loop for one proof-backed mission |
+| `atris gm` | Enter AgentXP General Manager mode for player missions and review queues |
+| `atris xp` | Show the local AgentXP card and sync eligible proof to the hosted leaderboard |
+| `atris codex-goal` | Inspect native Codex task goals and keep completed tasks closed |
+| `atris learn` | Manage structured learnings |
+| `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
+| `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
+| `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
+| `atris receipt` | Save evidence from an agent run |
+| `atris channel` | The team's shared channels across computers: `atris channel <name>` reads, `atris channel <name> "message"` posts, `claim` and `done` take a task (`--business <slug>`, `--as <member>`) |
+| `atris pay` | Pay another Atris account in credits (100 credits = $1); `history`, `show`, `accept`, `cancel` |
+| `atris trust` | See an account's trust and the friends you share; `vouch` or `unvouch` for someone |
+| `atris experiments` | Run small experiments and compare results |
+| `atris computer card` | Show or write the local owner/computer card |
+| `atris computer pr <owner/repo> "<task>"` | A cloud computer does the task on a new branch and opens a pull request. It never merges. |
+| `atris release` | Draft or publish a version bump, tag, GitHub release, and launch post |
+| `atris slop` | Deterministic slop detector: frontend/prose tells, plus `slop dead --exports` for dead code |
+| `atris clean` | Housekeeping: heal MAP refs, archive journals, report stale pages and dead code |
+
+### Doctor
+
+`atris doctor [--json]` checks Node, task support, authentication, and workspace readiness.
+
+### Document health
+
+`atris doc-health [--json] [--questions <path>]` scores document size, map coverage, lookup hops, and feature/member freshness from 0 to 100, and lists similar feature names. Tokens are estimated as characters divided by four. Boot load earns all 20 points at or below 80,000 characters, falls linearly to zero at 200,000, and stays at zero above that. Questions default to `atris/doc-health/questions.jsonl`, one `{"q":"where is the CLI router","expect":"bin/atris.js"}` per line. Custom paths are relative to the workspace root. Missing questions skip lookup scoring and contribute zero of its 30 points. Member age uses the newest log file's modification time.
+
+## Built-In Systems
+
+- `atris learn` stores structured project memory in `atris/learnings.jsonl`
+- `atris wiki` keeps repo memory in `atris/wiki/` by default, with `--cloud` when you want the remote workspace path
+- `atris ingest` now stages local source packs under `atris/context/_ingest/`, writes a manifest receipt, and refreshes `atris/wiki/STATUS.md` plus `log.md`
+- `atris wiki --private` stores local-only sensitive notes under `.atris/presidio/`
+- `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
+- `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
+- `atris member` keeps team-member identity and learning local-first: `MEMBER.md` is the role contract, `goals.json` is the machine-readable goal/experiment state, `goals.md` is the human readout, and `logs/YYYY-MM-DD.md` records what happened. Use `atris member goal`, `tick`, `status`, `block`, and `review <name> <experiment-id> --accept --proof "..." --value 1..5` to test whether a member is making useful progress or needs the operator/orchestrator.
+- `atris codex-goal` is the read-only bridge for native Codex `/goal`: `status` inspects the live goal database, while the legacy `reset` command now refuses every mutation. Active tasks continue in place; completed tasks retain their final goal, and new work or recurring monitors use a new dedicated Codex task.
+- `atris task` keeps durable local task state and append-only events for agents; `atris/TODO.md` is just a regenerated readable board. Run the loop with `atris task new`, `delegate "..." --to <owner>`, `next`, `say`, and `ready <id> --proof "..."`; human approval is `atris task accept <id>` (moves to Done, awards Career XP) or `revise <id> --note "..."`. Final task transitions also append the general daily log and, when a real `atris/team/<member>/MEMBER.md` matches the task owner, that member's daily log. Add `--json` for headless agents, `atris task serve` for the local board, and `atris task show <ref>` / `events --all` for the full ledger. The board prints a private link with a fresh token on each run and listens only on 127.0.0.1. Open that full link in the browser; API clients send its token in `x-atris-token` and use `application/json` for changes. Browser changes must come from the board's own origin. Commands accept semantic refs (`OBL-18`), full IDs, or any unique prefix. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo the live claim layer.
+- `atris mission` is the durable autonomy layer: start with an owner, verifier, runner, and stop condition; record bounded work with `mission tick`; close with `mission complete` only after proof. Runners include `manual`, `claude`, `atris2`, and `codex_goal`.
+- `atris pulse` is the OS-cron heartbeat for overnight self-improvement. Use `atris pulse status`, `tick`, `run`, `install --cadence "<cron>" --days 7 --verify "npm test" --model claude-opus-5-5`, and `uninstall`.
+- `atris experiments` runs small test packs in `atris/experiments/`
+- `atris pull` and `atris push` sync cloud workspaces and journals
+- `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
+
+## Agent page (beta)
+
+Agent page is one small browser file, in beta. An AI agent reads the controls on a page by their names, and presses them, without screenshots. It works on the page a person already has when that page is built from normal form controls and ARIA roles. It has no dependencies. The limits are listed below.
+
+The marks are a guardrail for well-behaved agents, not security. A page must still enforce its real rules on its server. Do not put real secrets in a page and rely on a mark to hide them: any software running in that page can read them.
+
+Load it with a plain script tag, or `require` it in Node and bundlers:
+
+```html
+<script src="node_modules/atris/lib/agent-page.js"></script>
+```
+
+```js
+const agent = AgentPage.createAgent({
+  allow: (request) => window.confirm(`Let the agent ${request.action} "${request.label}"?`),
+  timeout: 5 * 60 * 1000,
+});
+agent.snapshot();
+await agent.act({ steps: [{ label: 'Project name', action: 'set', args: { value: 'Atlas' } }] });
+await agent.query({ text: 'Role', kind: 'select' });
+```
+
+Three calls do the work.
+
+`snapshot()` lists the controls. Each one has a ref, a kind, a label, its value or checked or open state, and the actions it accepts right now. The list is capped at 100. A disabled or read-only control says so and accepts no actions.
+
+`act({ steps })` runs steps in order and stops at the first failure. Each step names a control by `ref` (from a snapshot) or by `label`, and gives an `action`: `click`, `set`, `check`, or `uncheck`. Each result shows the changes, the current value, and any error.
+
+After a change, the file finds the control again in the live page (the same element, or else the one visible control with the same kind and name) and reads its value there. A typed value, a tick, or a choice that did not stick reads as a failure, and so does a press on something that should open or close but did not. A plain press on a button or link says ok once it is delivered; the changes list shows what the page did with it. A disabled choice is refused.
+
+A select or listbox that holds more than one choice shows every chosen value as a list. To change it, send `set` the full list of choices to keep, for example `args: { value: ['Email', 'Chat'] }`. A single value is refused when it would clear other choices, so nothing is cleared unless the agent names the whole list. Hidden choices in such a list are left as they are.
+
+`query({ text, within, kind })` finds controls and lists the choices of a select or listbox. The list is capped at 50. With `text`, only the matching choices are listed, so a choice past the cap can still be found.
+
+Dropdowns whose list shows only while open work too: a select-only combobox (a button with `role="combobox"`), an editable combobox (a text box with `role="combobox"` that names its list), and a menu button (`aria-haspopup="menu"`). Snapshot shows the value the control shows and a `popup` of `listbox` or `menu`. `set` picks one choice by its label or value: `args: { value: 'codex' }`. A press on a menu item names it: `{ label: 'Actions', action: 'click', args: { item: 'Rename' } }`. Query lists the choices when its `text` names the control.
+
+To read or pick, the file may open a closed list, then it closes it again and puts focus back where it was. Opening counts as a change, so it goes through the same check as any other step: a confirm mark on the control, its labels, its form, or a choice in the page that the step would pick or clear needs the person before anything opens. With an `allow` callback, the person is asked before a list opens, even just to read it. Once the list is open, the choices the step touches are checked again. A mark that appears only while the list is open closes it, and the person is asked before it opens again; without an `allow` callback the step fails.
+
+The list is found only through the control's `aria-controls` or `aria-owns`, so a list rendered elsewhere (a portal, the top layer, a popover) is read, and a list that merely sits nearby is not. A pick says ok only when the control shows the new choice after the list has closed. If the page keeps its old value, the step fails with "the page did not keep the new choice." A menu press says ok once the item is pressed and the menu is closed.
+
+Opening a list is a press on its trigger. A trigger that would send a form (a button with no type inside a form, or a submit button) brings that form and its fields into the check, like any submit press. Query never opens such a trigger, or one inside a link; it says those choices are unread. Only one list is opened at a time on a page, so a second agent is told to try again.
+
+A choice is matched by its label first. When the agent's words are one choice's label and another choice's value, the label is used and the step's `note` says so. A pick says ok only if the asked choice is now the chosen one, by the option being marked selected or else by its label on the control, never by a value.
+
+When the chosen choice is secret, the control's value reads `[redacted]` everywhere, including changes and later snapshots. When it is hidden, the value is empty. For a list made only while open, the file knows this once it has seen the list open.
+
+A list that holds more than one choice and opens in a popup is not changed yet. An editable combobox that names its list takes only one of its choices; free text cannot be typed into it.
+
+Three marks on the page set the rules, with the `allow` callback.
+
+The `allow` callback decides, and it may return a promise. If you pass one, it runs before every change the agent makes, so the person sees each click, change, or tick first. It gets the control's label, the action and its args, whether the step is marked for confirmation, and the page's own confirm sentences in `reasons`. If the callback throws, the step fails with a fixed sentence; the error's own message is never passed to the agent.
+
+Before asking, the file lists the elements the step involves and the confirm marks around them. It lists them again after the answer and refuses the step if anything differs: a mark added, removed or reworded, or the control moved under a different mark. It reads the marks again before each part of the change too (after focus, between events, and before each choice it clicks), and stops with the rest undone if a new mark appears.
+
+One approval at a time per page. While a step waits for the person, every other agent on the page is refused, so one agent cannot press another's confirm button. A host's own confirm dialog should still carry `data-agent-hidden`, so no agent can see it at all.
+
+`data-agent-confirm` marks a control that needs a person. A step involves the control, its labels (wrapping and `for`), the form it belongs to (also through the `form` attribute), every field of that form when the press submits or resets it, each choice the step picks, and each choice or radio the step clears, hidden ones included, with their labels. A mark on any of these, or around them, counts. Without an `allow` callback, that step fails and tells the agent to ask the person.
+
+`data-agent-hidden` leaves a region out entirely. On a single choice, it leaves out that choice. A choice hidden by the `hidden` attribute or by css is left out the same way. This holds for choices that exist only while a list is open: they are checked once it opens, and a hidden one is never listed or picked. A mark on a control also covers the list it opens.
+
+`data-agent-secret` hides the value and all state of the marked control and everything inside it: value, checked, selected, open, and its choices all read `[redacted]`, and its actions do not change with its state. Its name stays visible, and comes only from a label element, `aria-label`, or `aria-labelledby`; placeholder, title, alt and the control's own text are never used. To hide the name too, use `data-agent-hidden`. Other text inside a secret mark is not read. A secret control's list is covered too, wherever it is rendered: its choices are never listed, even while a person has it open. The agent can still type into a secret field or pick a secret choice it already knows. Password, card, and one-time-code fields count as secret without a mark.
+
+A mark covers the element and everything inside it. Labels, values, changes and error sentences are built when the result is returned, with the marks as they are then: a value that became secret reads `[redacted]` on both sides of a change, and a control that is gone or hidden is reported by its ref only.
+
+A page can tell when the agent is acting. While an act step runs, `document.documentElement` has `data-agent-acting="true"`. Every event the agent fires carries `event.agentAct = { ref, action }`.
+
+What it cannot do:
+
+It reads the main page only. Controls inside iframes and shadow roots are not listed, so the agent cannot reach them. Snapshot and query add an entry of kind `unread` that counts what was skipped, so the agent knows. A custom element may hold a closed shadow root, so each one is counted as possibly unread.
+
+These limits are accepted. A closed shadow root on an ordinary element, or one made before this file loads, cannot be detected at all. Frames from other sites cannot be read. The file trusts the page it runs in: page scripts can always change anything, including the marks.
+
+A page whose own scripts add, remove or move marks, or swap controls, in the middle of an event is handled only as far as the checks above go: marks read again before each part of a change, and the control found again after it. Beyond that it is out of scope.
+
+Editable text regions (`contenteditable`) are not typed into. Plain ones are counted as unread. One with a textbox role is listed with its text and no actions.
+
+The tests here drive real Chrome. The controlled-input test imitates React with a hand-built value tracker. The dropdown tests use hand-built dropdowns. An automated check against real React is not done yet; one run by hand against a set of real React parts (a select, a combobox, and menus) passed.
+
+To see what the file saves an agent, run `node scripts/agent-page-measure.js`. It loads the settings fixture in headless Chrome and does one fixed task three ways: through this file, through the accessibility tree, and through the raw page. It prints how many calls each way takes and how many characters come back to the agent, and checks that all three end in the same page state. The plan is fixed, so it measures reading and steps, not a real model's time or cost, and no screenshots are involved. Pass a URL and `--task forms` to run the same kind of task on a React page, or `--json` for numbers a script can read.
+
+For agents that speak tools, `agentTools` lists three tools (`page_snapshot`, `page_act`, `page_query`) with JSON schemas. `registerTools(agent, { allow })` registers them on `document.modelContext` when the page offers it, and does nothing otherwise.
+
+The mark names and the snapshot, act, and query shape come from Vercel's UI SDK agent bridge. The code here is our own.
+
+## Engines
+
+An engine is the intelligence that builds a mission. Every installed headless coding CLI is a swappable worker behind one contract: a bounded prompt goes in, verified proof comes out, and engines never self-certify their own work. The house default is `atris-fast` (`ax`); `claude`, `codex`, `cursor`, `devin`, `grok`, and others join when their CLIs are installed.
+
+### Who does each job
+
+`ROSTER.md` says which tool and model does each job. Edit it any time; every project, team member, and new chat follows it.
+
+```markdown
+## build
+- claude code, model: opus 5.5
+
+## review
+- codex, model: gpt-6-astra, effort: medium, max: 20 min, prep: search
+- claude code, model: opus 5.5
+```
+
+The first ready worker leads and the rest are backups. `~/.atris/ROSTER.md` covers every project on the machine; `atris/ROSTER.md` overrides it for one project. A worker that stalls sits out 30 minutes and the next one takes over.
+
+The roster warns when a worker runs an old model and a newer one in the same family is on this machine, and prints the command that moves it. It also warns when a pinned model has no proof in 30 days. A landed run is proof; so is `verified 2026-09-30` on the line after a quick smoke test.
+
+```bash
+atris engine roster                                   # who does what, with each worker's recent record
+atris engine assign build claude --model "opus 5.5"   # change a job's lead
+atris engine roster --available                       # tools and models on this machine
+atris team                                            # who really worked in the last 7 days, then quiet and idle
+atris team --record                                   # also save one row per member per day for the learning loop
+```
+
+Show every installed engine and the current default:
+
+```bash
+atris engine
+```
+
+Flip the default for this workspace (persists to `.atris/engine.json`):
+
+```bash
+atris engine cursor
+atris engine reset   # back to the house default (atris-fast)
+```
+
+Ride a different engine for one run only, without changing the default. `--engine <name>` works on `mission run`, `autopilot`, and `run`. Per-run flags and `ATRIS_RUNNER_PROFILE` always beat the saved file.
+
+```bash
+atris mission run "fix the flaky login test" --engine codex
+```
+
+### Fleet Flight
+
+`atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks: one mission per task, one worktree per engine. Builds run in parallel; arrivals land serially with rebase-before-ship, so a rebase conflict pauses that landing (never auto-resolved) and keeps its worktree instead of orphaning work. Each flight writes a receipt to `atris/runs/fleet-<stamp>.json`.
+
+```bash
+atris mission run --fleet --slots 3          # staff up to 3 engines
+atris mission run --fleet --dry-run          # preview the staffing only
+```
+
+Each job goes to the builder its real results favor. The fleet counts what each engine landed and missed since Nov 1, on jobs like this one and on the rest (the same plays `atris rating` shows), gives every engine a fair chance, and prints the pick under the job with the numbers behind it. A landing counts only when its commit is on origin's default branch (the branch `origin/HEAD` names, never a guess), is no older than the claim it lands (five minutes of clock skew allowed), and no other claim recorded the same commit first: a commit counts once, for the first claim that recorded it, and not again for a later claim on the same job (reopened and claimed again, by the same engine or another) or for another job. That is judged on every landing record in the task store, in every workspace that shares it and every later review pass. A landing pays the engine that finished the job: when a stalled or dead engine's job is finished by another, the engine that finished it is credited, and a landing whose hand-in names several engines without saying which finished counts for none. The folder is judged in one order. With no git, no origin, or `origin/HEAD` not set (`git remote set-head origin --auto` sets it), no landing can be checked, so jobs are dealt in turn and the flight says why in one line. With an engine's landing on record, the flight fetches origin's default branch once before it picks (so a merge from a minute ago counts); if that fetch fails, jobs are dealt in turn with one line, and if it works the landings are checked. With only misses on record, they steer on their own, with no fetch. Everything git does before a pick shares one five-second budget and never prompts: its input is closed, `GIT_TERMINAL_PROMPT` is 0, and ssh runs in batch mode unless you set your own ssh command, which is left as it is and mentioned in one line. A play counts toward the kind of job it was when the engine took it: the claim, whether made by the fleet or by `task do`, saves the job's title and tags, so tagging or renaming a finished job later changes nothing, and a claim made before that was saved counts at half weight. New engines get tried; engines that keep missing get fewer jobs. An engine that is out of credit, cooling, or one the Claude spend guard would stop (a paid model nobody approved, or a pay-per-use key) is never picked, and the flight says which. The guard's own hook (`atris spend guard install`) stays the real guard on every unattended Claude run; this check only avoids picking an engine the hook would refuse, so where it is unsure it leaves Claude out. The fleet's own launch is judged by the `--model` the fleet itself passes, read through the `ANTHROPIC_DEFAULT_*_MODEL` remaps in the environment the worker will really get (a sealed one-lap worker gets none); with no `--model`, by `ANTHROPIC_MODEL` in that same environment, else the paid default. No Claude settings file is read, from any home. A custom launch template (`ATRIS_RUNNER_COMMAND_TEMPLATE`) is never read for its model, because a model in it can be a flag, a word of the prompt, another command's, or one the shell works out only when it runs. It counts as a model nobody can tell, which counts as paid, so Claude is left out with one line saying so, unless `ATRIS_CLAUDE_SPEND_OK` approves `default`; `--engine claude` still uses it. Your own choices come first and are never picked for, with results or without: `--engine <name>` sends every job to one engine, a job that names its engine gets it, and a job assigned to a member goes to that member's own engine, the same one `atris member` uses. A choice the flight cannot give is never given to someone else: a job that names an engine this flight does not have, or whose member's engine it does not have, is left out of the flight, with one line naming the job and why. It is taken out before the flight is staffed, so it takes no slot and holds no file against another job. The pick goes on who a job is assigned to and the engine it names, as the task list showed them; the claim asks the store for both again, inside its own transaction, and a job that now says something else is not claimed for the old choice. It is left for the next flight with one line, and the task list is drawn again so that flight reads the job as it is now. An engine list you name is never filtered, on the first pick or on a retry. If an engine dies mid-job, the next one is picked the same way; if it stalls and the roster lists a backup order, the roster's order stands. `--pick turns` (or `ATRIS_PICK=turns`) deals engines in turn, as before.
+
+## Verifiable Feedback Loop
+
+Under the hood, Atris can keep score on real repo work.
+
+- Tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
+- Plan, do, and review now carry the same Confidence Gate: find every plausible loophole, patch it with source/proof/verifier/owner/rollback, or name it as residual risk before advancing.
+- `atris autopilot` can run that check after review and record the result in the journal.
+- Future task picks can use recent results, so Atris learns from repo-local history without claiming model retraining.
+
+## Which AI Can Do Your Work
+
+`atris scorecard` measures which AI can do your team's work, on your own repo.
+
+```bash
+atris scorecard                            # find past changes whose own tests can grade an AI (no AI runs)
+atris scorecard run                        # try each one with Haiku on your Claude plan
+atris scorecard run --models haiku,opus    # compare models; past Haiku needs ATRIS_CLAUDE_SPEND_OK=<model>
+```
+
+- A past change becomes a task when its tests fail before it and pass after it. The ask is what your team wrote for that change.
+- The ask also names what the change's tests call that the change added or changed: a new file, a function with its arguments, an export, found with no AI. A good ticket names these; a commit message rarely does, and no model can guess a name nobody wrote down.
+- Each try starts from the change's parent in a throwaway copy with no remote. The change's own tests stay hidden until they grade the try.
+- Every try runs on your Claude plan login. Pay-per-use keys are removed, a try stops the moment Claude Code reports any other billing source, and nothing starts with extra usage on unless you pass `--allow-extra-usage`.
+- The scorecard shows how many changes each model did, how long it took, what the same runs would cost on pay-per-use, and which changes no model could do from what was written.
+- Tests that need their own command or settings go in `.atris/scorecard.json`.
+
+## The Atris Rating
+
+`atris rating` gives every AI teammate one number, 25 to 99, for how much real work it finishes.
+
+```bash
+atris rating               # every engine the combine rated, and your members here
+atris rating opus          # one engine's card
+atris rating <member>      # one member's rating here, next to its engine's
+```
+
+- 99 means 99 of every 100 finished. Each halving of misses is worth about 6 points, so the top is the hardest climb: 3 in a row rates 76, and it takes about 60 in a row to rate 99.
+- Engines are rated in the combine: Loop Bench tasks from the atris repos, each graded by the tests that shipped with it. No engine is a 99 yet.
+- Each engine's card also rates its Python tasks, its JavaScript tasks, the tasks the Atris prompt was never tuned on, and how rarely a try broke another test, with its median time and pay-per-use price per finished task.
+- Members are rated on the same scale from the jobs they landed in your workspace over the last 30 days. Landed means accepted or merged; drops and abandons count against them. `atris gm` shows the same numbers.
+- When a person merges a builder's pull request, the builder is usually credited within the hour, by an `atris brief`, `atris rating`, `atris gm` or flight that reaches GitHub; `atris task sweep --held` does it right away. `ATRIS_HELD_SWEEP=off` stops the automatic check.
+- The session boot shows the build engine's rating, for example `build opus 5.5 (86 ovr)`. The combine grades building only, so review and search engines show none.
+
+## Benchmark Harness
+
+Atris ships one public head-to-head benchmark harness for comparing a pinned
+single-model baseline against a coordinated stack run on the same task brief.
+
+Quickstart:
+
+```bash
+node bin/atris.js experiments validate endstate-baseline
+node bin/atris.js experiments validate endstate-stack
+node bin/atris.js experiments run endstate-baseline --dry-run
+node bin/atris.js experiments run endstate-stack --dry-run
+node bin/atris.js experiments compare endstate
+```
+
+One-command rehearsal:
+
+```bash
+node bin/atris.js experiments replay endstate
+```
+
+What to inspect:
+
+- receipts land in `atris/experiments/endstate-baseline/artifacts/` and
+  `atris/experiments/endstate-stack/artifacts/`
+- scores append to each pack's `results.tsv`
+- `atris experiments compare endstate` prints the latest side-by-side comparison
+- `atris experiments replay endstate` runs the full public dry-run rehearsal
+- the benchmark contract lives at `atris/features/endstate/contract.md`
+- the verification log lives at `atris/features/endstate/validate.md`
+
+The stack wins Level 1 only if it beats the baseline on total score and does
+not lose the reviewed completion category.
+
+## Skills
+
+Atris ships a real skill catalog in `atris/skills/`, not just one workflow file.
+
+Examples:
+- `atris`, `autopilot`, `autoresearch`, `wiki`, `loop`
+- `backend`, `design`, `copy-editor`, `meta`, `writing`
+- `github`, `email-agent`, `calendar`, `drive`, `slack`, `notion`, `slides`, `x-search`, `youtube`, `ramp`
+- `apps`, `create-app`, `create-member`, `memory`, `magic-inbox`, `improve`, `skill-improver`, `flow`
+
+```bash
+atris skill list
+atris skill audit [name]
+atris skill fix [name]
+atris skill create <name>
+atris skill link [--all]
+```
+
+For Codex, copy any skill folder into `~/.codex/skills/`.
+
+## Before a New Version
+
+Run the release-facing checks before bumping:
+
+```bash
+node bin/atris.js --help
+node bin/atris.js pulse --help
+node bin/atris.js release --help
+node --test
+```
+
+Then dry-run the release:
+
+```bash
+atris release --dry-run
+```
+
+`atris release` drafts or publishes from local git history. `--dry-run` prints the planned bump without committing, tagging, or pushing.
+
+## Update
+
+```bash
+atris upgrade     # Install latest from npm
+atris update      # Sync local workspace files to new version
+```
+
+Packaged npm installs check for new versions during normal commands and start a background update automatically. Git checkout installs stay manual so linked development copies are not overwritten unexpectedly.
 
 ---
 
-## Requirements & Updates
-
-- Requires **Node.js 22+** (uses built-in SQLite for local task state and zero external npm dependencies).
-- Keep your CLI and workspace current with `atris upgrade && atris update`.
-
-**License:** MIT | **Repo:** [github.com/atrislabs/atris](https://github.com/atrislabs/atris)
+**License:** MIT | **Repo:** [github.com/atrislabs/atris](https://github.com/atrislabs/atris.git)

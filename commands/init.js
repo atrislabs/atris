@@ -1174,6 +1174,7 @@ Read atris/MAP.md. Begin iteration 1.`;
     }
     console.log('\natris is set up in this folder.');
     console.log('no commands to learn. tell your agent what you want in plain words.');
+    console.log('star the repo if it saves you time: https://github.com/atrislabs/atris');
   } else {
     console.error('✗ Error: atris.md not found in package');
     process.exit(1);

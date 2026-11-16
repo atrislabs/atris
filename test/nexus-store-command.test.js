@@ -237,7 +237,7 @@ test('find uses the q filter, 25 at a time, and 200 with --all', async () => {
   assert.equal(code, 0);
   assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query, c.body]), [['POST', '/nexus/people/search', {}, { q: 'example', limit: 25, offset: 0 }]]);
   assert.match(out, /1 person matches "example"\./);
-  assert.match(out, /Bo Example\s+Example Inc\s+One intro\s+Found/);
+  assert.match(out, /Bo Example\s+Example Inc\s+One intro$/m, 'Found is where every card starts, so it is left blank');
   await run(['find', 'example', '--all'], server);
   assert.equal(server.state.calls[1].body.limit, 200);
 });
@@ -271,17 +271,28 @@ test('stage patches the stage; found, reached, met and the old file words all ma
   assert.deepEqual(bad.state.calls, []);
 });
 
-test('add posts a person the way the file adds one, and refuses a name already on the list', async () => {
+test('add claims only what it is told: Found, no closeness, no list, unless the flags say so', async () => {
   const server = backend();
-  const { code, out } = await run(['add', 'Di Four', '--title', 'Coach', '--company=Four LLC', '--city', 'London, UK', '--email', 'di@example.com', '--note', 'Met online'], server);
+  const { code, out } = await run(['add', 'Di Four', '--title', 'Coach', '--company=Four LLC', '--city', 'London, UK', '--email', 'di@example.com', '--linkedin', 'https://www.linkedin.com/in/di-four', '--note', 'LinkedIn connection'], server);
   assert.equal(code, 0);
   assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', 'POST /nexus/people']);
   assert.deepEqual(server.state.calls[1].body, {
-    name: 'Di Four', stage: 'met', closeness: 1, group_name: 'People you met', source: 'manual',
-    title: 'Coach', company: 'Four LLC', location: 'London, UK', email: 'di@example.com', note: 'Met online',
+    name: 'Di Four', stage: 'found', source: 'manual',
+    title: 'Coach', company: 'Four LLC', location: 'London, UK', email: 'di@example.com', linkedin: 'https://www.linkedin.com/in/di-four', note: 'LinkedIn connection',
   });
   assert.equal(server.state.calls[1].options.retries, 0);
-  assert.match(out, /Added Di Four \(Coach · Four LLC · London, UK\), as someone you met\./);
+  assert.match(out, /Added Di Four \(Coach · Four LLC · London, UK\)\.$/m);
+
+  const met = backend();
+  const told = await run(['add', 'Ed Five', '--stage', 'met', '--closeness', 'direct', '--group', 'People you met'], met);
+  assert.equal(told.code, 0);
+  assert.deepEqual(met.state.calls[1].body, { name: 'Ed Five', stage: 'met', source: 'manual', closeness: 1, group_name: 'People you met' });
+  assert.match(told.out, /Added Ed Five: Met, direct, on People you met\./);
+
+  const bad = backend();
+  const refusedStage = await run(['add', 'Fay Six', '--stage', 'friend'], bad);
+  assert.equal(refusedStage.code, 2);
+  assert.deepEqual(bad.state.calls, [], 'a bad stage is refused before any call');
 
   const twin = backend();
   const refused = await run(['add', 'rae sample'], twin);
