@@ -1,0 +1,114 @@
+{
+  "source": "commands/task.js",
+  "outDir": "commands/task",
+  "teamDir": "atris/team",
+  "date": "2026-11-16",
+  "keep": ["runTaskCommand", "run"],
+  "unplaced": "stay",
+  "core": { "summary": "Small helpers that several task features use: finding a task by its id, quoting, plain public words." },
+  "features": [
+    {
+      "name": "core",
+      "names": ["resolveTaskRef", "requireTaskId", "workspaceRefRows", "guardExplicitActor", "collectFlagValues", "taskCommandQuote", "cleanPublicText", "publicWords", "localDay"]
+    },
+    {
+      "name": "review-evidence",
+      "owner": "validator",
+      "summary": "What a reviewer reads about a task: the review summary, the proof and evidence commands, the review chat handoff, and follow-up tasks a review asks for.",
+      "spans": [["reviewNextTaskTitle", "handoffIsProofBoundaryBlocked"], ["reviewSummary", "reviewSummaryWithVerificationChat"], ["reviewLandingForDisplay", "printReviewLanding"], ["latestTaskEvent", "taskReviewChatNote"]]
+    },
+    {
+      "name": "projection",
+      "summary": "The task projection file and what it carries: goals matched to tasks, task streams, approvals, missions and wishes, and the payload sent to the cloud.",
+      "names": ["writeDefaultProjection", "readLocalBusinessBinding", "extractGoalLines", "readGoalSources", "taskAssignee", "readProjectionFile"],
+      "spans": [["scoreGoalMatch", "taskDescriptionForCloud"], ["cloudPayloadForTask", "syncPlanForProjection"]]
+    },
+    {
+      "name": "board",
+      "summary": "The everyday board commands: add, list, status, day, home, keep, delegate, claim, release, and moving a task between plan, doing and backlog.",
+      "names": ["cmdPlan", "cmdDo", "cmdBacklog", "cmdClearPlan"],
+      "spans": [["compactTaskForStatus", "taskStatusSummary"], ["humanEventType", "cmdStatus"], ["renderTaskDesk", "cmdRelease"]]
+    },
+    {
+      "name": "next",
+      "owner": "task-planner",
+      "summary": "Choosing what to work on: the queue and its scopes, the current task, next, endgame seed tasks and continue-work.",
+      "names": ["suggestNextClaimableTask"],
+      "spans": [["taskQueueColumnKey", "taskQueueReviewStateActions"], ["formatTaskQueueScope", "cmdQueue"], ["liveTaskWithTitle", "cmdContinueWork"]]
+    },
+    {
+      "name": "capabilities",
+      "owner": "validator",
+      "summary": "The task API's capability contract and the self-check that proves the review lane behaves as the contract says.",
+      "names": ["cmdCapabilities", "cmdCapabilitiesCheck"],
+      "spans": [["taskQueueCapabilities", "taskCapabilitiesCheckReport"]]
+    },
+    {
+      "name": "review-lane",
+      "owner": "validator",
+      "summary": "The review lane: drain, act, loop and run, which work through tasks waiting for review.",
+      "spans": [["taskReviewLaneDrainTask", "cmdReviewLaneRun"]]
+    },
+    {
+      "name": "reviews",
+      "owner": "validator",
+      "summary": "The reviews queue people read, review chat on a task, and sending a task back with revise.",
+      "names": ["cmdRevise", "cmdReviewChat"],
+      "spans": [["arrayFromPathValue", "cmdReviews"], ["taskReviewChatError", "appendTaskReviewChat"]]
+    },
+    {
+      "name": "audit",
+      "owner": "validator",
+      "summary": "Task audits and the review command: rerun a task's checks and record what they show.",
+      "spans": [["taskAuditTimestamp", "cmdReview"]]
+    },
+    {
+      "name": "card",
+      "summary": "Reading and changing one task: note, retitle, tag, chat, inspect, show, the task page and its next action.",
+      "spans": [["cmdNote", "cmdTag"], ["cmdChat", "stageErrorDetail"], ["cmdInspect", "taskDetail"], ["taskPageGoal", "taskPageContract"]]
+    },
+    {
+      "name": "plans",
+      "owner": "navigator",
+      "summary": "A task's public plan: choosing the owner from the team, the plan card, plan preview and the plan trace.",
+      "names": ["cmdPlanPreview", "buildAutomaticPlanTrace"],
+      "spans": [["parseMemberFrontmatter", "taskPurpose"]]
+    },
+    {
+      "name": "results",
+      "owner": "launcher",
+      "summary": "A task's public result: the result card, the accept receipt, agent XP, scorecards and the result log.",
+      "names": ["buildAutomaticResultTrace", "cmdResult"],
+      "spans": [["buildPublicResult", "resultTraceNote"]]
+    },
+    {
+      "name": "steps",
+      "owner": "executor",
+      "summary": "Working a task step by step: step options, running a step, the current step, and step.",
+      "spans": [["taskStepError", "cmdStep"]]
+    },
+    {
+      "name": "closing",
+      "owner": "launcher",
+      "summary": "Closing and cleaning up tasks: done, finish, archive, reopen, clear-done, pruning test junk, reaping blockers and relabeling archived tasks.",
+      "spans": [["cmdDone", "appendRelabelArchivedJournalReceipt"]]
+    },
+    {
+      "name": "landing",
+      "owner": "orb",
+      "summary": "Landing a task: ready with proof, receipts, accept and accept-group, certify-verified, auto-accept and the sweep.",
+      "names": ["stampAcceptGroupMetadata", "cmdAcceptGroup"],
+      "spans": [["readyWorkRoot", "cmdSweep"]]
+    },
+    {
+      "name": "todo-sync",
+      "summary": "Moving tasks between the task store and files: import, export, events, lineage, setup, where, render to TODO.md and sync.",
+      "spans": [["importTodoFile", "cmdSync"]]
+    },
+    {
+      "name": "api",
+      "summary": "The local task API server behind atris task serve: its routes, reads and writes.",
+      "spans": [["taskApiQueueOptions", "cmdServe"]]
+    }
+  ]
+}
