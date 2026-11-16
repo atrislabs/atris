@@ -3,10 +3,12 @@
 // The pull request check: the quick list in test/fast-tests.txt plus every
 // test file the pull request adds or edits. The merge queue still runs the
 // whole set through scripts/ci-test-shard.js before anything reaches master.
+// An optional group such as 2/3 splits the picked files by recorded run time,
+// so a few machines share the work.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { discover } = require('./ci-test-shard');
+const { discover, assign } = require('./ci-test-shard');
 
 function changedFiles(root, base) {
   // Without rename pairing a moved file reads as deleted plus added, and
@@ -32,8 +34,11 @@ function pick(root, base) {
 }
 
 function main(args, root = path.resolve(__dirname, '..')) {
-  if (args.length !== 1 || !args[0]) {
-    console.error('name the revision to compare with, such as HEAD^1.');
+  const group = /^(\d+)\/(\d+)$/.exec(args[1] || '1/1');
+  const index = Number(group?.[1]);
+  const count = Number(group?.[2]);
+  if (args.length < 1 || args.length > 2 || !args[0] || !group || index < 1 || index > count || count > 64) {
+    console.error('name the revision to compare with and, if you like, a group: HEAD^1 2/3.');
     return 1;
   }
   let picked;
@@ -55,12 +60,16 @@ function main(args, root = path.resolve(__dirname, '..')) {
   }
   console.log(`quick list: ${picked.quick.length} files. changed by this pull request: ${picked.changed.length}.`);
   for (const file of picked.changed) console.log(`  ${file}`);
+  const files = assign(picked.files, count)[index - 1].files;
+  console.log(`group ${index}/${count} runs ${files.length} of ${picked.files.length} files.`);
+  // Fewer files than groups leaves a group empty; the others ran them all.
+  if (!files.length) return 0;
   // Same environment as npm run test:fast: no shard split, so a big file
   // runs whole instead of only its first part.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   delete env.ATRIS_TEST_SPLIT;
-  const run = spawnSync(process.execPath, ['--test', ...picked.files], {
+  const run = spawnSync(process.execPath, ['--test', ...files], {
     cwd: root,
     stdio: 'inherit',
     env,

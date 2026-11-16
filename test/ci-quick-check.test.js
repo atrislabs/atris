@@ -68,23 +68,35 @@ test('a pull request with no test changes runs only the quick list, without dupl
   assert.deepEqual(pick(root, 'HEAD^1').files, ['test/quick.test.js']);
 });
 
-test('runs exactly the picked files and fails closed on a bad base or a stale quick list', (t) => {
-  const { root, base } = fixture(t);
+function runCheck(root, ...args) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   const run = spawnSync(process.execPath, ['-e',
-    'process.exitCode = require(process.argv[1]).main([process.argv[2]], process.argv[3])',
-    path.join(__dirname, '../scripts/ci-quick-check.js'), base, root],
+    'process.exitCode = require(process.argv[1]).main(JSON.parse(process.argv[2]), process.argv[3])',
+    path.join(__dirname, '../scripts/ci-quick-check.js'), JSON.stringify(args), root],
   { encoding: 'utf8', timeout: 30000, env });
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const ran = run.stdout.split('\n').flatMap((line) => {
+  return run.stdout.split('\n').flatMap((line) => {
     const match = /^(?:# )?ran (.*)$/.exec(line);
     return match ? [match[1]] : [];
-  }).sort();
-  assert.deepEqual(ran, ['added', 'edited', 'moved', 'quick', 'with space']);
+  });
+}
+
+test('runs exactly the picked files and fails closed on a bad base or a stale quick list', (t) => {
+  const { root, base } = fixture(t);
+  assert.deepEqual(runCheck(root, base).sort(), ['added', 'edited', 'moved', 'quick', 'with space']);
 
   assert.equal(main(['no-such-revision'], root), 1);
   assert.equal(main([], root), 1);
+  for (const group of ['0/2', '3/2', '1/0', 'half']) assert.equal(main([base, group], root), 1);
+  assert.equal(main([base, '1/2', 'extra'], root), 1);
   write(root, 'test/fast-tests.txt', 'test/quick.test.js\ntest/deleted.test.js\n');
   assert.equal(main([base], root), 1);
+});
+
+test('groups share the picked files: each runs once, and a spare group runs none', (t) => {
+  const { root, base } = fixture(t);
+  const ran = [1, 2, 3].flatMap((i) => runCheck(root, base, `${i}/3`));
+  assert.deepEqual(ran.sort(), ['added', 'edited', 'moved', 'quick', 'with space']);
+  assert.deepEqual(runCheck(root, base, '8/8'), []);
 });

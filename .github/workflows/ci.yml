@@ -44,11 +44,17 @@ jobs:
         run: node scripts/ci-test-shard.js ${{ matrix.shard }}/8
 
   # The per change check on a pull request: the quick list plus every test
-  # file the pull request adds or edits. The merge queue runs the full set.
+  # file the pull request adds or edits, split three ways by recorded run
+  # time. The merge queue runs the full set.
   quick:
+    name: quick (${{ matrix.group }}/3)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -68,7 +74,7 @@ jobs:
             echo 'expected the pull request merge commit; nothing to compare with.'
             exit 1
           }
-          node scripts/ci-quick-check.js 'HEAD^1'
+          node scripts/ci-quick-check.js 'HEAD^1' ${{ matrix.group }}/3
 
   decks:
     runs-on: ubuntu-latest
