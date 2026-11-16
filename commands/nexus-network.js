@@ -359,4 +359,4 @@ async function run(ctx) {
   return fail('That command is not known.');
 }
 
-module.exports = { SUBS, prepare, run, findList, networkClient, readStdin, NEEDS_NEWER, DUPLICATE };
+module.exports = { SUBS, prepare, run, findList, networkClient, readStdin };
