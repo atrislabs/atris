@@ -93,7 +93,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Assigned member jobs
 
-- `commands/task.js:6365` stores the named assignee. `lib/member-task-pick.js:69` reads it, `lib/member-task-pick.js:87` excludes other members, `lib/member-task-pick.js:94` lets explicit assignments override inferred job type, and `lib/member-task-pick.js:105` sorts assigned work first, oldest within each group.
+- `commands/task/card/card.js:140` stores the named assignee. `lib/member-task-pick.js:69` reads it, `lib/member-task-pick.js:87` excludes other members, `lib/member-task-pick.js:94` lets explicit assignments override inferred job type, and `lib/member-task-pick.js:105` sorts assigned work first, oldest within each group.
 - `test/task-owner-pick.test.js:63` delegates through the real CLI, previews both members, and observes the intended member's real SQLite claim over IPC before stopping the process ahead of paid work. Verify: `node --test test/task-owner-pick.test.js`.
 
 ## Shared member maintenance

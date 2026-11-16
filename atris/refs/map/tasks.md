@@ -2,7 +2,7 @@
 
 Agent next steps: `lib/agent-next.js:17` recognizes the caller, `lib/agent-next.js:57` reuses member ownership/hold rules, and `lib/agent-next.js:117` assembles the read-only handoff. `commands/next.js`, `commands/now.js` and `commands/task.js` expose the same recommendation, while `lib/member-context.js:42` includes it in worker prompts without replacing a bound task. Regressions: `test/agent-next.test.js`, `test/agent-next-cli.test.js` and `test/agent-next-prompt.test.js`. Contract: `atris/features/next-work-context/build.md`.
 
-Current next-work evidence: `lib/next-work-context.js:117` assembles bounded goals, existing paths, candidate hints, prior outcomes and knowledge gaps; `lib/next-work-context.js:40` reconciles known database status with offline rows. `lib/first-minute.js:180` reads current tasks and recent outcomes without creating a database. `lib/member-context.js:42` preloads the same facts into autonomous prompts through `commands/mission.js:8151`; `commands/task.js:5879` exposes them in `task next --json`. Contract and proof: `atris/features/next-work-context/build.md`; regression: `test/next-work-context.test.js`.
+Current next-work evidence: `lib/next-work-context.js:117` assembles bounded goals, existing paths, candidate hints, prior outcomes and knowledge gaps; `lib/next-work-context.js:40` reconciles known database status with offline rows. `lib/first-minute.js:180` reads current tasks and recent outcomes without creating a database. `lib/member-context.js:42` preloads the same facts into autonomous prompts through `commands/mission.js:8151`; `commands/task/next/next.js:773` exposes them in `task next --json`. Contract and proof: `atris/features/next-work-context/build.md`; regression: `test/next-work-context.test.js`.
 
 Task references use the complete workspace history before the reader clips its visible rows. This keeps `now`, `next`, and exact bound jobs aligned with `task show`; real CLI and out-of-window regressions live in `test/first-minute--load-local-tasks.test.js:72` and `test/first-minute--load-local-tasks.test.js:106`.
 
@@ -26,19 +26,19 @@ rg "scanState|autoCloseResolvedTaskReviewFlags|lessonFlagsState|failedTaskBatchS
 rg "MAX_OPEN_FLAGS|parkedFlags|commandPark|commandParked|commandReopen|migrateOpenSlots|makeRoomForOpenFlag" commands/close.js test/close-park.test.js  # Closure slots: ten active loops, append-only parked history, replacement and reopen gates, and oldest-first upgrade migration
 rg "probeState|runProbe|commandCheck|PROBE_HOLD_GAP_MS|probe_holding" commands/close.js test/close-probe.test.js  # Live-probe incidents: `close add --probe` refuses unless the command fails right now, `close check` re-runs open probes (failing probe = recorded theory still live; 2 failed re-checks = stop and tell the human), and `close done` on a probed flag is gated until the probe passes twice at least an hour apart
 rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|memberSlug|memberLogRoot|todayLogName" lib/daily-log.js lib/task-db.js commands/task.js test/task-autolog.test.js # Two-level daily logs: member logs (atris/team/<member>/logs/<date>.md) keep detailed workstream entries (claims, notes, results, completions); the master journal (atris/logs/<YYYY>/<date>.md) is curated: terminal task events always land there, notes only when they lead with decision/decided/milestone/handoff/shipped/launched/landed/blocked. TASK_*_TRACE notes are deduped (already logged by task result/ready). memberLogRoot sends a work folder's member log to the main checkout (logs are gitignored and die with the folder); scripts/pre-commit refuses staged atris/team/*/logs/. Regression: test/task-autolog.test.js, test/member-log-main-folder.test.js
-- task accept help: `commands/task.js:12210` prints one usage line for `--help`/`-h`/`help`/`-?` and does not list or accept. Regression: `test/task-subcommand-help.test.js`.
-- task claim help: `commands/task.js:12216` prints one usage line (`atris task claim <id> --as <member>`) for `--help`/`-h`/`help`/`-?` and does not list or claim. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
-- task ready help: `commands/task.js:12222` prints one usage line (`atris task ready <id> --proof "..." --result "<sentence>"`) for `--help`/`-h`/`help`/`-?` and does not list or ready. Regression: `test/task-subcommand-help.test.js`.
-- task step help: `commands/task.js:12228` prints one usage line (`atris task step <id> [--json]`) for `--help`/`-h`/`help`/`-?` and does not list or step. Regression: `test/task-subcommand-help.test.js`.
-- task next help: `commands/task.js:12234` prints one usage line (`atris task next [--tag <tag>] [--create-next]`) for `--help`/`-h`/`help`/`-?` and does not list, claim, or print the desk. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
-- task show help: `commands/task.js:12240` prints one usage line (`atris task show <id> [--json]`) for `--help`/`-h`/`help`/`-?` and does not show a task, dump the desk, or reprint the encyclopedia. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
+- task accept help: `commands/task.js:585` prints one usage line for `--help`/`-h`/`help`/`-?` and does not list or accept. Regression: `test/task-subcommand-help.test.js`.
+- task claim help: `commands/task.js:591` prints one usage line (`atris task claim <id> --as <member>`) for `--help`/`-h`/`help`/`-?` and does not list or claim. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
+- task ready help: `commands/task.js:597` prints one usage line (`atris task ready <id> --proof "..." --result "<sentence>"`) for `--help`/`-h`/`help`/`-?` and does not list or ready. Regression: `test/task-subcommand-help.test.js`.
+- task step help: `commands/task.js:603` prints one usage line (`atris task step <id> [--json]`) for `--help`/`-h`/`help`/`-?` and does not list or step. Regression: `test/task-subcommand-help.test.js`.
+- task next help: `commands/task.js:609` prints one usage line (`atris task next [--tag <tag>] [--create-next]`) for `--help`/`-h`/`help`/`-?` and does not list, claim, or print the desk. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
+- task show help: `commands/task.js:615` prints one usage line (`atris task show <id> [--json]`) for `--help`/`-h`/`help`/`-?` and does not show a task, dump the desk, or reprint the encyclopedia. `atris task --help` stays the encyclopedia. Regression: `test/task-subcommand-help.test.js`.
 ```
 
 ## Feature: Autoland (`atris autoland`)
 
 - **Meaningful certification:** `commands/task.js` (`certifyVerifyCandidate`) reuses `lib/accept-verify-gate.js` (`nonFalsifyingIssue`) to refuse solo whitespace proof and retain chains containing a real check. Regression: `test/task-review-autoaccept.test.js:262`.
 
-- **Meaningful automatic approval:** `lib/auto-accept-certified.js:1222` and `commands/task.js:10704` refuse stored solo whitespace commands with `non_falsifying_verify`; `commands/task.js:10778` diagnoses legacy proof-only commands after meaningful candidates are exhausted. Regressions: `test/auto-accept-certified.test.js:75`, `test/task-sweep-auto-accept.test.js:344`.
+- **Meaningful automatic approval:** `lib/auto-accept-certified.js:1222` and `commands/task/audit/audit.js:84` refuse stored solo whitespace commands with `non_falsifying_verify`; `commands/task/audit/audit.js:158` diagnoses legacy proof-only commands after meaningful candidates are exhausted. Regressions: `test/auto-accept-certified.test.js:75`, `test/task-sweep-auto-accept.test.js:344`.
 
 - **Agent sweep refusal:** `commands/task.js` (`cmdSweep`) applies `agentProofOnlyMode` before any database write, including when an unsupported dry-run flag is supplied. Regression: `test/agent-proof-only.test.js:104` checks agent markers, unchanged events, and the explicit human override.
 
@@ -49,7 +49,7 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
 - **Entry point:** command routing in `bin/atris.js:1911`
-- **Handler:** `commands/task.js:12287` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:5438`; full desk is `cmdHome` at `commands/task.js:5457`
+- **Handler:** `commands/task.js:579` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task/board/board.js:772`; full desk is `cmdHome` at `commands/task/board/board.js:791`
 - **Store:** `lib/task-db.js` (`addTask`), `lib/task-db.js` (`listTasks`), `lib/task-db.js` (`claimTask`), `lib/task-db.js` (`doneTask`)
 - **TODO shim:** `lib/todo.js` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
@@ -89,7 +89,7 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 - `atris task reap-mission-blockers` closes open blocker rows for complete or stopped missions; repeated blocker failures reopen the latest closed row, and new tasks with missing or diff-only verifiers carry degraded verification metadata. Regression: `test/self-drive.test.js`, `test/task-hygiene.test.js`
 - `atris/TODO.md` remains the readable rendered board; SQLite is the compact local/sync layer and wins if the markdown view is clobbered
 - In cloud business workspaces, backend Supabase `tasks` is the source of truth and Swarlo is the live claim/report layer
-- The task board HTTP API dispatches exact and task-specific paths through `TASK_API_ROUTES`, then task mutations through `TASK_API_POST_OPERATIONS`; `createTaskApiServer()` is the real-server test seam (`commands/task.js:12002`, `test/task-api.test.js`). The request gate at `commands/task.js:11972` requires a loopback Host and the per-run token for reads and mutations; writes take `x-atris-token`, same-origin browser requests, and bounded JSON (`lib/task-core.js:1280`). The board prints a private link and binds 127.0.0.1 (`commands/task.js:12017`).
+- The task board HTTP API dispatches exact and task-specific paths through `TASK_API_ROUTES`, then task mutations through `TASK_API_POST_OPERATIONS`; `createTaskApiServer()` is the real-server test seam (`commands/task/api/api.js:664`, `test/task-api.test.js`). The request gate at `commands/task/api/api.js:418` requires a loopback Host and the per-run token for reads and mutations; writes take `x-atris-token`, same-origin browser requests, and bounded JSON (`lib/task-core.js:1280`). The board prints a private link and binds 127.0.0.1 (`commands/task/api/api.js:463`).
 - **Runtime note:** `node:sqlite` requires Node.js 22+; older Node versions keep using the markdown TODO flow
 - **Value:** Gives multi-agent work atomic local claims without hiding task state in chat or competing with the cloud task record.
 
@@ -108,7 +108,7 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 ## Returned and interrupted jobs
 
 - `lib/member-task-pick.js:82` includes a member's own claims only when the caller opts in after checking it has no live run. `lib/member-task-pick.js:98` releases the selected claim and uses the normal atomic claim gate again.
-- `lib/task-db.js:627` manages claim leases; `lib/task-db.js:657` expires guarded claims, with stale unleased fleet claims available on request; `commands/task.js:10806` exposes the sweep. `test/task-lease.test.js` checks expiry and lease renewal.
+- `lib/task-db.js:627` manages claim leases; `lib/task-db.js:657` expires guarded claims, with stale unleased fleet claims available on request; `commands/task/audit/audit.js:186` exposes the sweep. `test/task-lease.test.js` checks expiry and lease renewal.
 - `commands/member.js:567` treats an active mission with a known dead process as idle, while live and missing process records hold. `commands/member.js:10649` checks both mission and driver liveness before recovering. `commands/member.js:10842` previews recoverable claims for the supervisor, which already excludes busy members.
 - `test/task-reopen.test.js:163` runs actual task revision, member preview, and member claim confirmation against an isolated SQLite database. `test/task-reopen.test.js:186` reproduces a closed process with its running mission row still present. Live, unknown, other-member, protected, human-held, missing-check, and changed-claim cases stay held.
 
