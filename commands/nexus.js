@@ -15,6 +15,7 @@ const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
 const columns = require('./nexus-columns');
+const review = require('./nexus-review');
 const mail = require('./nexus-mail');
 const local = require('./nexus-local');
 
@@ -31,6 +32,8 @@ const USAGE = [
   '  atris nexus add "<name>" [--title --company --city --email --linkedin --x --website --note]',
   '    a new card is Found with no closeness or list; say more with --stage met, --closeness direct, --group "<list>"',
   '  atris nexus due "<name>" <date> ["next move"]   set the follow-up (YYYY-MM-DD, today, tomorrow, clear)',
+  '  atris nexus review [--stage <stage>] [--list "<name>"] [--search "<words>"] [--due] [--restart]',
+  '                                      your people one card at a time: n next, p back, s stage, t note, d follow-up day (fri, +3, a date), o everything, q quit; it remembers where you stopped. With --json or off a terminal it prints the matching people and leaves',
   '  atris nexus paid "<name>" <amount> [--checked]  record a payment. Only checked money counts.',
   '  atris nexus wall                    the war room numbers: sent, replied, follow-ups, paid money, groups, cities',
   '  atris nexus goal [amount] [date]    show or set the money goal',
@@ -227,6 +230,9 @@ async function nexusCommand(args = [], deps = {}) {
     else err(`${message}\n${USAGE}`);
     return 2;
   };
+
+  // The one-by-one walk: its own file, signed in and through the store like the commands above.
+  if (words[0] === 'review') return review.run({ rawArgs: args, json, log, fail, usage, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, view: { card, cardLines, tableLines } });
 
   // The local copy: pull and push-notes sign in; local reads only files on this computer.
   if (local.SUBS.has(words[0])) {
