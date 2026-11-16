@@ -868,7 +868,6 @@ module.exports = {
   buildOffPayload,
   resolveHoldDate,
   zonedIso,
-  describeBlock,
   weeklyHoursOff,
   formatBookingLink,
   parseTimeToDecimal,
