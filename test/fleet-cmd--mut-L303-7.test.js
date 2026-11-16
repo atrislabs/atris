@@ -63,7 +63,7 @@ test('watch prints posts arriving after the previously seen post', async () => {
     };
     global.clearInterval = () => {};
     const { fleet } = require('../commands/fleet');
-    await fleet(['watch', '--global']);
+    await fleet(['tail', '--global']);
     assert.equal(output.some(line => line.includes('arriving-update')), true);
   } finally {
     for (const listener of process.listeners('SIGINT')) {

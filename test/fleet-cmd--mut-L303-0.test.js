@@ -48,7 +48,7 @@ test('watch displays a post newer than the last seen post', async () => {
       return request;
     };
     const { fleet } = require('../commands/fleet');
-    const watching = fleet(['watch', '--global']);
+    const watching = fleet(['tail', '--global']);
     watching.catch(() => {});
     await new Promise(resolve => setImmediate(resolve));
     board = [latest, previous];
