@@ -12,7 +12,7 @@ const path = require('path');
 const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
 test('README has an Engines section', () => {
-  assert.match(README, /^## Engines$/m, 'expected a "## Engines" heading');
+  assert.match(README, /^## (?:\d+\. )?(?:Engines|Multi-Engine Roster\b.*)$/m, 'expected an engines heading');
 });
 
 test('README documents the engine roster commands', () => {

@@ -64,9 +64,13 @@ Edit `atris/ROSTER.md` or use the CLI to assign who builds and who reviews:
 ```bash
 atris engine roster                                 # See who leads search, build, and review
 atris engine assign build claude --model "opus 5.5" # Set your lead builder
+atris engine cursor                                 # Make cursor the default engine
 atris mission run --fleet --slots 3                 # Staff up to 3 idle engines in parallel worktrees
+atris mission run --fleet --dry-run                 # Preview the staffing only
 atris rating                                        # See 25-99 performance ratings from real landed work
 ```
+
+Add `--engine <name>` to `mission run`, `autopilot` or `run` to use a different engine for one run without changing the default.
 
 Turn on self-landing once so work that passes its test and cross-engine review merges automatically (while sensitive paths like billing or deploys still wait for a human):
 
