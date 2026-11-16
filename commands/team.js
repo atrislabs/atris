@@ -1051,6 +1051,9 @@ function teamParkCommand(parked, rest, deps = {}) {
 }
 
 function teamCommand(args = [], deps = {}) {
+  if (args.some((a) => a === '--business' || a.startsWith('--business='))) {
+    return require('./computer').codeOpsTeamCommand(args);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     (deps.write || process.stdout.write.bind(process.stdout))(`${helpText()}\n`);
     return 0;
