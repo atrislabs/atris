@@ -48,7 +48,7 @@ test('fresh init boot offers the say row while keeping seeded backlog work', () 
 
     const boot = runCli(['atris.md'], { cwd: dir });
     assert.equal(boot.status, 0, `stdout:\n${boot.stdout}\nstderr:\n${boot.stderr}`);
-    assert.match(boot.stdout, /^  say\b.*what should i do next/m);
+    assert.match(boot.stdout.replace(/\s+/g, ' '), /To get going, tell your agent what you want in your own words, like "what should i do next"/);
     assert.match(boot.stdout, /^  next\b/m);
   } finally {
     cleanupTempDir(dir);

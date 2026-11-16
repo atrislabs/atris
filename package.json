@@ -1,7 +1,7 @@
 {
   "name": "atris",
-  "version": "3.83.8",
-  "description": "you say what you want in plain words. atris builds it, checks it, and shows you proof. project memory your coding agents share across sessions.",
+  "version": "3.85.1",
+  "description": "The operating system for agent teams: shared memory, workspaces, and tools that run entire operations across code, research, and business.",
   "mcpName": "io.github.atrislabs/atris",
   "main": "bin/atris.js",
   "bin": {

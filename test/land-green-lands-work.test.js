@@ -363,6 +363,7 @@ test('five green branches land in one run when five local suites are allowed, on
 test('the scratch copy sits outside the temp folder, so a check that refuses temp paths passes', () => {
   const root = makeRepo();
   const otherTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-tmpdir-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-work-home-'));
   try {
     // Like test/auth-test-write-guard.test.js: fails when the checkout sits
     // inside the temp folder the tests see.
@@ -375,17 +376,23 @@ test('the scratch copy sits outside the temp folder, so a check that refuses tem
     branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
     const script = `const r = require(${JSON.stringify(LIB)}).landStaleGreenBranches(${JSON.stringify(root)}, { push: false, openFlags: false, verifyCommand: 'node guard.js' });
       console.log(JSON.stringify(r.verdicts.map((v) => ({ action: v.action, reason: v.reason || null, failing: (v.verify && v.verify.failing) || [] }))));`;
-    // The schedule's temp folder is not the folder the repo lives in.
+    // The schedule's temp folder is not the folder the repo lives in, nor
+    // the home folder the scratch copy goes under.
     const child = spawnSync(process.execPath, ['-e', script], {
       encoding: 'utf8',
-      env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TMPDIR: otherTmp, NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT || '' },
+      env: { PATH: '/usr/bin:/bin', HOME: home, TMPDIR: otherTmp, NODE_TEST_CONTEXT: process.env.NODE_TEST_CONTEXT || '' },
     });
     assert.equal(child.status, 0, child.stderr);
     assert.deepEqual(JSON.parse(child.stdout.trim().split('\n').pop()), [{ action: 'landed', reason: null, failing: [] }]);
-    assert.deepEqual(fs.readdirSync(path.join(root, '.git', 'atris-land-green-scratch')), [], 'the scratch copy is gone');
+    const scratchHome = path.join(home, '.atris', 'land-green-scratch');
+    const folders = fs.readdirSync(scratchHome);
+    assert.equal(folders.length, 1, 'one folder for this repo');
+    assert.deepEqual(fs.readdirSync(path.join(scratchHome, folders[0])), [], 'the scratch copy is gone');
+    assert.equal(fs.existsSync(path.join(root, '.git', 'atris-land-green-scratch')), false, 'nothing in the git folder');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(otherTmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
 

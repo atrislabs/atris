@@ -14,12 +14,18 @@ const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
+const columns = require('./nexus-columns');
+const mail = require('./nexus-mail');
+const local = require('./nexus-local');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
-  '  atris nexus                         today\'s moves (at most five) and counts',
+  '  atris nexus                         today\'s moves, the five most urgent (--all for the rest) and counts',
   '  atris nexus "<name>"                one person\'s card',
-  '  atris nexus find "<words>"          matching people, best first (--all for every match)',
+  '  atris nexus list                    everyone, 50 at a time (--offset 50 for the next page)',
+  '  atris nexus search "<words>"        matching people, best first (find works too; --all for every match)',
+  '  atris nexus count                   how many people, by stage, and your biggest lists',
+  '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
   '  atris nexus add "<name>" [--title --company --city --email --note]',
@@ -29,20 +35,38 @@ const USAGE = [
   '  atris nexus goal [amount] [date]    show or set the money goal',
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  atris nexus set "<name>" <column> <value> [--source <link>]   your own column on a card (a helper must give --source)',
+  '  atris nexus unset "<name>" <column>   take a column off a card',
+  '  atris nexus undo "<name>" <column>    put back the value before the last change',
+  '  atris nexus columns                 every column you have, how many people have it and the top values',
+  '  atris nexus table --with <a,b,c> [--where <column>=<value>] [--csv]   everyone with the columns you pick, for sheets and graphs',
+  '                                      a helper never changes or removes a value you set yourself',
+  '  atris nexus mail "<name>"           their mail across every Gmail inbox you connected, newest first, each naming its inbox',
+  '  atris nexus reply "<name>" --from <inbox> --message <id> --body "<text>" [--dry-run] [--yes]',
+  '                                      reply in that thread from the inbox that got it; shows the reply and asks first',
+  '  atris nexus pull                    copy your own people to this computer (~/.atris/nexus), for use offline',
+  '  atris nexus local search "<words>"  search that copy, no connection needed',
+  '  atris nexus local show "<name or id>"   one card from that copy',
+  '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
+  '  atris nexus push-notes              send the notes written offline, then clear them',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
-  'The store is tried first. If it does not answer, the saved list is used (wall, goal, due, paid, city and bring-over need the store).',
+  'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
 
 // Commands the saved list cannot answer: the store or nothing.
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
-const TAKES_WORD = new Set(['find', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['find', 'note', 'stage', 'add', ...STORE_ONLY]);
+const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city', 'mail', 'reply']);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...columns.SUBS, ...mail.SUBS]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note']);
+// The store is the home for every change. A change it cannot take is not written anywhere
+// else, so the saved list and the store never drift apart. Reading the saved list is fine.
+const WRITES = new Set(['note', 'stage', 'add']);
+const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset', 'source', 'with', 'where', 'from', 'thread', 'message', 'body', 'ref']);
+const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
-const FIND_LIMIT = 25;
 const NAME_LIMIT = 10;
 
 function parseArgs(args) {
@@ -201,9 +225,24 @@ async function nexusCommand(args = [], deps = {}) {
     return 2;
   };
 
+  // The local copy: pull and push-notes sign in; local reads only files on this computer.
+  if (local.SUBS.has(words[0])) {
+    return local.run({
+      sub: words[0], words, flags, json, log, err, fail, usage: (message) => {
+        if (json) log(JSON.stringify({ ok: false, error: message }));
+        else err(message);
+        return 2;
+      },
+      now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
+      getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
+      findPerson, view: { card, cardLines, tableLines },
+    });
+  }
+
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
   if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
-    return usage(`atris nexus ${sub} needs ${sub === 'city' ? 'a city' : `a name${sub === 'find' ? ' or words to look for' : ''}`}`);
+    if (sub === 'search' || sub === 'find') return usage(`atris nexus ${sub} needs words to look for. To see everyone: atris nexus list`);
+    return usage(`atris nexus ${sub} needs ${sub === 'city' ? 'a city' : 'a name'}`);
   }
   if (sub === 'note' && !words.slice(2).join(' ').trim()) return usage('atris nexus note needs a name and the note text');
   if (sub === 'stage' && !words[2]) return usage('atris nexus stage needs a name and a stage');
@@ -221,6 +260,14 @@ async function nexusCommand(args = [], deps = {}) {
   } catch (error) {
     return fail(error && error.message);
   }
+
+  // Your own columns live only in the store: no saved-list fallback.
+  const oneLineUsage = (message) => {
+    if (json) log(JSON.stringify({ ok: false, error: message }));
+    else err(message);
+    return 2;
+  };
+  const columnsCtx = () => ({ sub, words, flags, json, log, fail, usage: oneLineUsage, now, env: deps.env, request: deps.apiRequestJson || apiRequestJson, token: tokenValue, pick });
 
   // One name that may match several people: list them and stop.
   const pick = (people, query) => {
@@ -253,6 +300,10 @@ async function nexusCommand(args = [], deps = {}) {
   };
   const waitLine = 'Your computer picks this up on its next sync.';
 
+  if (columns.SUBS.has(sub)) return columns.run(columnsCtx());
+  // Mail lives only in the store and the inboxes you connected: no saved-list fallback.
+  if (mail.SUBS.has(sub)) return mail.run({ ...columnsCtx(), rawArgs: args, confirm: deps.confirm });
+
   // The store first. It falls back to the saved list only when it did not answer and
   // nothing was written to it; a 402 or any other answer stops here.
   if (deps.useStore !== false) {
@@ -281,9 +332,13 @@ async function nexusCommand(args = [], deps = {}) {
       if (!(error instanceof store.StoreDown)) return fail(error && error.message);
     }
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
+    if (WRITES.has(sub)) return fail(NOT_SAVED);
+    if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
     return fail(STORE_NEEDED);
+  } else if (prep.args.stage || prep.args.closeness || prep.args.group) {
+    return fail(FILTERS_NEED_STORE);
   }
 
   try {
@@ -342,17 +397,32 @@ async function nexusCommand(args = [], deps = {}) {
     const { list } = await client.read();
     const people = model.buildPeople(list, now);
 
-    if (sub === 'find') {
+    // A page of the saved list, the same --limit and --offset the store takes.
+    const page = (hits) => {
+      const { limit, offset } = prep.args;
+      const shown = hits.slice(offset, offset + limit);
+      const foot = () => {
+        if (!shown.length || (offset === 0 && hits.length <= shown.length)) return;
+        if (offset === 0 && !flags.limit && !flags.all) {
+          log(`Showing ${shown.length} of ${hits.length}. Add --all for every match.`);
+          return;
+        }
+        log(`Showing ${offset + 1} to ${offset + shown.length} of ${hits.length}.`);
+        if (offset + shown.length < hits.length) log(`Add --offset ${offset + shown.length} for the next page.`);
+      };
+      return { rows: shown.map(brief), limit, offset, foot };
+    };
+
+    if (sub === 'find' || sub === 'search') {
       const query = words.slice(1).join(' ');
       const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
       const hits = people.rows.filter((row) => {
         const hay = [row.name, row.title, row.company, row.city, row.status].join(' ').toLowerCase();
         return terms.every((term) => hay.includes(term));
       });
-      const shown = flags.all ? hits : hits.slice(0, FIND_LIMIT);
-      const rows = shown.map(brief);
+      const shown = page(hits);
       if (json) {
-        log(JSON.stringify({ ok: true, query, total: hits.length, people: rows }));
+        log(JSON.stringify({ ok: true, query, total: hits.length, limit: shown.limit, offset: shown.offset, people: shown.rows }));
         return 0;
       }
       if (!hits.length) {
@@ -360,8 +430,33 @@ async function nexusCommand(args = [], deps = {}) {
         return 0;
       }
       log(`${plural(hits.length, 'person matches', 'people match')} "${query}".`);
-      for (const line of tableLines(rows)) log(line);
-      if (hits.length > shown.length) log(`Showing ${shown.length} of ${hits.length}. Add --all for every match.`);
+      for (const line of tableLines(shown.rows)) log(line);
+      shown.foot();
+      return 0;
+    }
+
+    if (sub === 'list') {
+      const everyone = people.rows.filter((row) => !row.hidden);
+      const shown = page(everyone);
+      if (json) {
+        log(JSON.stringify({ ok: true, total: everyone.length, limit: shown.limit, offset: shown.offset, people: shown.rows }));
+        return 0;
+      }
+      if (!everyone.length) {
+        log('No one is on your list yet.');
+        return 0;
+      }
+      log(`${plural(everyone.length, 'person', 'people')} on your list.`);
+      for (const line of tableLines(shown.rows)) log(line);
+      shown.foot();
+      return 0;
+    }
+
+    if (sub === 'count') {
+      const counts = model.viewCounts(people.rows);
+      const tally = { people: counts.all, talking: counts.talk, warm: counts.warm, paying: counts.pay };
+      if (json) log(JSON.stringify({ ok: true, counts: tally }));
+      else log(`${plural(tally.people, 'person', 'people')}, ${tally.talking} talking, ${tally.warm} warm, ${tally.paying} paying.`);
       return 0;
     }
 

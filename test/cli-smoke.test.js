@@ -152,7 +152,7 @@ test('atris.md boot visualization does not create an empty daily journal', () =>
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /atris v\d+\.\d+\.\d+/);
-    assert.match(res.stdout, /say\s+"what should i do next" or "keep going while i'm away"\s+\(say it to your agent in your own words\)/);
+    assert.match(res.stdout.replace(/\s+/g, ' '), /tell your agent what you want in your own words, like "what should i do next" or "keep going while i'm away"\./);
     assert.match(res.stdout, /next\s+atris/);
     assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
   } finally {
@@ -176,7 +176,7 @@ test('atris.md boot visualization does not create a task DB just to count tasks'
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /soon\s+markdown fallback task/);
+    assert.match(res.stdout.replace(/\s+/g, ' '), /The next job on the list is "markdown fallback task"\./);
     assert.equal(fs.existsSync(dbPath), false);
   } finally {
     cleanupTempDir(dir);
@@ -210,7 +210,7 @@ test('atris.md boot visualization prefers task DB counts over stale TODO rows', 
 
     const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /now\s+Authoritative claimed task/);
+    assert.match(res.stdout, /Working now: an agent is on "Authoritative claimed task"/);
     assert.doesNotMatch(res.stdout, /stale markdown task/);
   } finally {
     taskDb.close();
@@ -371,6 +371,22 @@ test('ax help stays local and does not start an agent turn', () => {
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
+});
+
+test('ax chat starts interactive chat session without errors', () => {
+  const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), 'chat'], {
+    cwd: repoRoot,
+    input: 'exit\n',
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      AX_AUTO_LOG: '0',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    },
+  });
+
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Atris 2 Pro chat/);
 });
 
 test('ax fast chat intercepts atris mission run before backend or model work', () => {

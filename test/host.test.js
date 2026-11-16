@@ -83,6 +83,8 @@ test('host flag parser maps every supported option and rejects invalid flags', (
   assert.throws(() => parse(['--id']), /invalid --id value/);
   assert.throws(() => parse(['--name', '--json']), /invalid --name value/);
   assert.deepEqual(parse(['deliver', '--dry-run']).options, { dryRun: true });
+  assert.equal(parse(['--help']).options.help, true);
+  assert.equal(parse(['-h']).options.help, true);
 });
 
 test('host CLI help and JSON output smoke', (t) => {
@@ -92,6 +94,18 @@ test('host CLI help and JSON output smoke', (t) => {
   assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--slack-business', 'biz-1', '--json')), { slack_business_id: 'biz-1' });
   assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'group', '--json')), { room: 'group' });
   assert.deepEqual(JSON.parse(run(root, 'host', 'deliver', '--dry-run', '--json')), { sent: 0, skipped: 0, failed: 0, would_send: [] });
+});
+
+test('host subcommand help cleanly prints usage and exits 0 for --help and -h', (t) => {
+  const root = workspace(t);
+  assert.match(run(root, 'host', 'setup', '--help'), /usage: atris host setup/);
+  assert.match(run(root, 'host', 'setup', '-h'), /usage: atris host setup/);
+  assert.match(run(root, 'host', 'import', '--help'), /usage: atris host import <file>/);
+  assert.match(run(root, 'host', 'room', '--help'), /usage: atris host room/);
+  assert.match(run(root, 'host', 'room', '-h'), /usage: atris host room/);
+  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--help', '--json')), {
+    usage: 'usage: atris host setup [--room group|personal] [--slack-business <id>]',
+  });
 });
 
 test('deliver sends queued Slack messages oldest first and records each timestamp', async (t) => {

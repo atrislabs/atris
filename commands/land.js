@@ -1076,7 +1076,7 @@ function landCommand(args = []) {
 
   if (args.includes('--auto')) {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY, localCheckSetting, holdLabelSetting } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
       const limitRaw = Number(readFollowingFlag(args, '--limit', ''));
       const verifyFlag = readFollowingFlag(args, '--verify', '');
       // The owner's switch lives in the main checkout. Run from a work copy,
@@ -1096,6 +1096,8 @@ function landCommand(args = []) {
         localCheck: localCheckSetting(policy, { explicitVerify: Boolean(verifyFlag) }),
         localSuites: suitesRaw > 0 ? suitesRaw : undefined,
         holdLabels: holdLabelSetting(policy),
+        waitMinutes: machineWaitSetting(policy),
+        scratchDir: scratchDirSetting(policy),
         machine: true,
       });
       if (json) console.log(JSON.stringify(result, null, 2));

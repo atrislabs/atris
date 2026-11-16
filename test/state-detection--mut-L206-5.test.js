@@ -31,7 +31,13 @@ test('a zero title sample still counts active database tasks without returning t
       activeTitles: [],
       backlogTitles: [],
       certifiedTitles: [],
-      source: 'db'
+      source: 'db',
+      activeItems: [],
+      reviewItems: [],
+      certifiedItems: [],
+      backlogHeld: 0,
+      backlogHeldItems: [],
+      reviewOldestMs: null
     });
   } finally {
     taskDb.close();
