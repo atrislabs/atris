@@ -127,7 +127,19 @@ function addCopy(root, name, { idleHours = 0 } = {}) {
   if (idleHours) {
     const stamp = new Date(Date.now() - idleHours * 60 * 60 * 1000);
     const gitDir = path.resolve(copy, git(copy, ['rev-parse', '--git-dir']));
-    for (const mark of [copy, path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')]) {
+    // Every file the idle check reads, plus the copy's HEAD in git.
+    const marks = [path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === '.git') continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        marks.push(full);
+      }
+    };
+    walk(copy);
+    marks.push(copy);
+    for (const mark of marks) {
       if (fs.existsSync(mark)) fs.utimesSync(mark, stamp, stamp);
     }
   }
@@ -136,6 +148,16 @@ function addCopy(root, name, { idleHours = 0 } = {}) {
 
 // app is where the flight runs. other is a second checkout that can hold a finished copy. The task
 // store is the sandbox's own, found by env the way the flight finds it.
+// Put-away records go to a temp folder, never the real home folder.
+const PUT_AWAY = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'could-not-start-put-away-')));
+const PRIOR_PUT_AWAY = process.env.ATRIS_PUT_AWAY_DIR;
+process.env.ATRIS_PUT_AWAY_DIR = PUT_AWAY;
+test.after(() => {
+  if (PRIOR_PUT_AWAY === undefined) delete process.env.ATRIS_PUT_AWAY_DIR;
+  else process.env.ATRIS_PUT_AWAY_DIR = PRIOR_PUT_AWAY;
+  fs.rmSync(PUT_AWAY, { recursive: true, force: true });
+});
+
 function sandbox(t, { other = false } = {}) {
   const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'could-not-start-')));
   const saved = process.env.ATRIS_TASKS_DB;
@@ -319,7 +341,7 @@ test('the dispatch flight stops before it claims anything when the disk is under
   const lines = logs.filter((line) => line.trim());
   assert.equal(lines.length, 1, logs.join('\n'));
   assert.match(lines[0], LOW_DISK_LINE);
-  assert.match(lines[0], /Removed 1 finished build copy first/);
+  assert.match(lines[0], /Put away and removed 1 idle build copy first/);
 
   assert.equal(flight.refusal.reason, 'low_disk');
   assert.match(flight.refusal.detail, LOW_DISK_LINE);
@@ -354,7 +376,7 @@ test('the fleet flight stops before it claims anything when the disk is under th
   const said = logs.filter((line) => /GB/.test(line));
   assert.equal(said.length, 1, logs.join('\n'));
   assert.match(said[0], LOW_DISK_LINE);
-  assert.match(said[0], /Removed 1 finished build copy first/);
+  assert.match(said[0], /Put away and removed 1 idle build copy first/);
 
   assert.equal(flight.refusal.reason, 'low_disk');
   assert.equal(flight.refusal.free_bytes, 4e9);

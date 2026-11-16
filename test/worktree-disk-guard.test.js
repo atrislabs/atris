@@ -22,6 +22,16 @@ function git(cwd, args) {
   return String(result.stdout || '').trim();
 }
 
+// Put-away records go to a temp folder, never the real home folder.
+const PUT_AWAY = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-disk-guard-put-away-')));
+const PRIOR_PUT_AWAY = process.env.ATRIS_PUT_AWAY_DIR;
+process.env.ATRIS_PUT_AWAY_DIR = PUT_AWAY;
+test.after(() => {
+  if (PRIOR_PUT_AWAY === undefined) delete process.env.ATRIS_PUT_AWAY_DIR;
+  else process.env.ATRIS_PUT_AWAY_DIR = PRIOR_PUT_AWAY;
+  fs.rmSync(PUT_AWAY, { recursive: true, force: true });
+});
+
 function workspace(t) {
   const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-disk-guard-')));
   t.after(() => fs.rmSync(ws, { recursive: true, force: true }));
@@ -56,9 +66,21 @@ function backdate(target, hours) {
   fs.utimesSync(target, stamp, stamp);
 }
 
+// Every file and folder the idle check reads, plus the copy's HEAD in git.
 function backdateCopy(copy, hours) {
   const gitDir = path.resolve(copy, git(copy, ['rev-parse', '--git-dir']));
-  for (const mark of [copy, path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')]) {
+  const marks = [path.join(gitDir, 'HEAD'), path.join(gitDir, 'logs', 'HEAD')];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      marks.push(full);
+    }
+  };
+  walk(copy);
+  marks.push(copy);
+  for (const mark of marks) {
     if (fs.existsSync(mark)) backdate(mark, hours);
   }
 }
@@ -103,24 +125,29 @@ function copyClone(src, dst) {
 }
 
 function start(app, task, options) {
-  return createAgentWorktree({ root: app, agent: 'codex', task, env: {}, deps: false, ...options });
+  return createAgentWorktree({ root: app, agent: 'codex', task, env: {}, deps: false, putAwayHome: PUT_AWAY, ...options });
 }
 
-test('a low disk makes start reap finished copies in every repo, then refuse below the floor', (t) => {
+test('a low disk makes start put away idle copies in every repo, then refuse below the floor', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app');
   const other = makeRepo(ws, 'other');
   const finished = addCopy(other, 'finished');
   const unmerged = addCopy(other, 'unmerged', { commit: true });
+  const unmergedHead = git(unmerged, ['rev-parse', 'HEAD']);
+  const working = addCopy(other, 'working', { commit: true });
+  touchBranch(working);
 
-  assert.throws(() => start(app, 'tight disk', { spaceGuard: true, freeSpace: () => 4e9 }), (error) => {
+  assert.throws(() => start(app, 'tight disk', { spaceGuard: true, freeSpace: () => 4e9, activeCwds: [] }), (error) => {
     assert.equal(error.code, 'ATRIS_LOW_DISK');
     assert.match(error.message, /only 4\.0 GB free on this disk, and a new build copy needs at least 10\.0 GB/);
-    assert.match(error.message, /Removed 1 finished build copy first/);
+    assert.match(error.message, /Put away and removed 2 idle build copies first/);
     return true;
   });
-  assert.equal(fs.existsSync(finished), false, 'the merged copy in the other repo was removed');
-  assert.equal(fs.existsSync(unmerged), true, 'unmerged work stays');
+  assert.equal(fs.existsSync(finished), false, 'the idle merged copy in the other repo was removed');
+  assert.equal(fs.existsSync(unmerged), false, 'an idle unmerged copy goes too, since its commits stay');
+  assert.equal(git(other, ['rev-parse', 'codex/unmerged']), unmergedHead, 'its branch still holds the work');
+  assert.equal(fs.existsSync(working), true, 'a copy used in the last hour stays');
   assert.equal(fs.existsSync(path.join(ws, '.agent-worktrees', 'app')), false, 'no copy was cut');
   assert.equal(git(app, ['branch', '--list', 'codex/*']), '', 'no branch was cut');
 });
@@ -132,11 +159,11 @@ test('start below the reap line but above the floor reaps and then proceeds', (t
   const finished = addCopy(other, 'finished');
   const justDone = addCopy(other, 'just-done');
   touchBranch(justDone);
-  const created = start(app, 'some room', { spaceGuard: true, freeSpace: () => 20e9 });
+  const created = start(app, 'some room', { spaceGuard: true, freeSpace: () => 20e9, activeCwds: [] });
   assert.equal(created.space.removed.length, 1);
   assert.equal(created.space.free, 20e9);
   assert.equal(fs.existsSync(finished), false);
-  assert.equal(fs.existsSync(justDone), true, 'a copy with work in the last ten minutes stays');
+  assert.equal(fs.existsSync(justDone), true, 'a copy with work in the last hour stays');
   assert.equal(fs.existsSync(created.path), true);
 });
 
@@ -215,7 +242,7 @@ test('cleanup can be scoped to given copies and paced by recent work', (t) => {
   assert.equal(fs.existsSync(holding), true);
 });
 
-test('the sweep removes merged idle copies in every repo, clears webpack caches in copies it keeps, and keeps the rest', (t) => {
+test('the sweep puts away idle copies in every repo, merged or not, and keeps busy and recent ones', (t) => {
   const ws = workspace(t);
   const app = makeRepo(ws, 'app', { files: { 'package.json': '{}\n' } });
   const other = makeRepo(ws, 'other');
@@ -229,36 +256,32 @@ test('the sweep removes merged idle copies in every repo, clears webpack caches 
   backdateCopy(idleUnmerged, 3);
   const changed = addCopy(app, 'changed');
   fs.writeFileSync(path.join(changed, 'notes.txt'), 'not committed\n');
+  backdate(path.join(changed, 'notes.txt'), 3);
   backdateCopy(changed, 3);
   const busy = addCopy(other, 'busy');
   const recent = addCopy(other, 'recent', { hoursOld: 1.5 });
   const outside = addCopy(app, 'outside', { at: path.join(ws, 'outside-copy') });
   const localCopy = addCopy(local, 'local-copy', { start: 'master' });
+  const idleMs = 2 * 60 * 60 * 1000;
 
-  const dry = sweepWorkspace({ workspace: ws, activeCwds: [busy], freeSpace: () => 5e9 });
+  const dry = sweepWorkspace({ workspace: ws, activeCwds: [busy], freeSpace: () => 5e9, idleMs, current: ws });
   const appDry = dry.repos.find((repo) => repo.name === 'app');
-  assert.deepEqual(appDry.candidates.map((item) => item.path), [merged]);
-  assert.deepEqual(appDry.cacheCandidates.map((item) => [item.path, item.reason]), [
-    [path.join(idleUnmerged, '.next'), 'manual_review_required'],
-    [packs, 'generated_webpack_cache'],
-  ]);
-  assert.equal(fs.existsSync(merged), true, 'a dry run removes nothing');
+  assert.deepEqual(appDry.removed.map((item) => item.name).sort(), ['changed', 'idle-unmerged', 'merged', 'outside-copy']);
+  for (const copy of [merged, idleUnmerged, changed, outside]) assert.equal(fs.existsSync(copy), true, 'a dry run removes nothing');
 
-  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [busy] });
-  assert.equal(fs.existsSync(merged), false);
-  assert.equal(fs.existsSync(idleUnmerged), true);
-  assert.equal(fs.existsSync(packs), false, 'webpack packs in an idle kept copy are cleared');
-  assert.equal(fs.existsSync(path.join(idleUnmerged, '.next')), true, 'the rest of the build output waits for review');
-  for (const keptCopy of [changed, busy, recent, outside, localCopy]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [busy], idleMs, current: ws });
+  for (const gone of [merged, idleUnmerged, changed, outside, localCopy]) assert.equal(fs.existsSync(gone), false, gone);
+  for (const keptCopy of [busy, recent]) assert.equal(fs.existsSync(keptCopy), true, keptCopy);
   const reasons = (name) => applied.repos.find((repo) => repo.name === name).kept.map((item) => item.reason).sort();
-  // Build output no longer pins the unmerged copy; it waits as unmerged work until it has sat idle long enough to save.
-  assert.deepEqual(reasons('app'), ['dirty', 'unmerged']);
-  assert.deepEqual(reasons('other'), ['active_process', 'recent_activity']);
-  assert.match(applied.repos.find((repo) => repo.name === 'local').skipped, /no origin/);
+  assert.deepEqual(reasons('app'), []);
+  assert.deepEqual(reasons('other'), ['process', 'recent']);
+  assert.equal(applied.repos.find((repo) => repo.name === 'local').removed.length, 1, 'a repo without origin is swept too');
+  const changedRecord = applied.repos.find((repo) => repo.name === 'app').removed.find((item) => item.name === 'changed').record;
+  assert.equal(git(app, ['show', `${changedRecord.ref}:notes.txt`]), 'not committed');
   assert.equal(typeof applied.before, 'number');
 });
 
-test('one sweep shares its twenty-copy limit across repositories', (t) => {
+test('one sweep has no per-run cap: every idle copy in every repo goes', (t) => {
   const ws = workspace(t);
   const first = makeRepo(ws, 'app');
   const second = makeRepo(ws, 'other');
@@ -266,12 +289,8 @@ test('one sweep shares its twenty-copy limit across repositories', (t) => {
     addCopy(first, `app-${i}`);
     addCopy(second, `other-${i}`);
   }
-  const preview = sweepWorkspace({ workspace: ws, activeCwds: [] });
-  assert.equal(preview.repos.flatMap((repo) => repo.candidates || []).length, 20);
-  assert.equal(preview.repos.flatMap((repo) => repo.kept || []).filter((item) => item.reason === 'size_unknown_or_cleanup_limit').length, 2);
-  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [] });
-  assert.equal(applied.repos.flatMap((repo) => repo.removed || []).length, 20);
-  assert.equal(applied.repos.flatMap((repo) => repo.kept || []).filter((item) => item.reason === 'size_unknown_or_cleanup_limit').length, 2);
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [], idleMs: 60 * 60 * 1000, current: ws });
+  assert.equal(applied.repos.flatMap((repo) => repo.removed || []).length, 22);
 });
 
 test('an applied sweep leaves shared installs and old partial entries intact', (t) => {
@@ -284,33 +303,20 @@ test('an applied sweep leaves shared installs and old partial entries intact', (
     fs.writeFileSync(path.join(dir, name, 'local-notes.txt'), name);
     backdate(path.join(dir, name), 3);
   }
-  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [] });
+  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [], idleMs: 60 * 60 * 1000, current: ws });
   assert.equal(applied.repos.find((repo) => repo.name === 'app').removed.length, 1);
   for (const name of ['old1', 'old2', 'old3', 'old4', '.partial-old']) {
     assert.equal(fs.readFileSync(path.join(dir, name, 'local-notes.txt'), 'utf8'), name);
   }
 });
 
-test('a sweep honors the cleanup already done while starting a copy', (t) => {
-  const ws = workspace(t);
-  const first = makeRepo(ws, 'app');
-  const second = makeRepo(ws, 'other');
-  const one = addCopy(first, 'one');
-  const two = addCopy(second, 'two');
-  const budget = { count: 19, kib: 0 };
-  const applied = sweepWorkspace({ workspace: ws, apply: true, activeCwds: [], cleanupBudget: budget });
-  assert.equal(applied.repos.flatMap((repo) => repo.removed || []).length, 1);
-  assert.equal([one, two].filter((copy) => fs.existsSync(copy)).length, 1);
-  assert.equal(budget.count, 20);
-});
-
-test('the sweep timer runs the sweep every few hours from launchd', (t) => {
+test('the sweep timer runs the atris on PATH every hour from launchd', (t) => {
   const home = workspace(t);
-  const plan = sweepSchedulePlan({ workspace: '/w/arena', everyHours: 3, homeDir: home, platform: 'darwin', atrisBin: '/opt/atris/bin/atris.js' });
+  const plan = sweepSchedulePlan({ workspace: '/w/arena', homeDir: home, platform: 'darwin' });
   assert.equal(plan.kind, 'launchd');
   assert.match(plan.label, /^ai\.atris\.worktree-sweep\./);
-  assert.equal(plan.every_seconds, 10800);
-  assert.match(plan.contents, /<string>worktree<\/string><string>sweep<\/string><string>--apply<\/string><string>--workspace<\/string><string>\/w\/arena<\/string>/);
+  assert.equal(plan.every_seconds, 3600);
+  assert.match(plan.contents, /<string>\/usr\/bin\/env<\/string><string>atris<\/string><string>worktree<\/string><string>sweep<\/string><string>--apply<\/string><string>--job<\/string><string>--workspace<\/string><string>\/w\/arena<\/string>/);
   assert.equal(plan.log_path, path.join(home, '.atris', 'worktree-sweep', 'worktree-sweep.log'));
 });
 
