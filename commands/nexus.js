@@ -18,6 +18,8 @@ const columns = require('./nexus-columns');
 const review = require('./nexus-review');
 const mail = require('./nexus-mail');
 const local = require('./nexus-local');
+const capture = require('./nexus-capture');
+const importer = require('./nexus-import');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -53,6 +55,8 @@ const USAGE = [
   '  atris nexus local show "<name or id>"   one card from that copy',
   '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
   '  atris nexus push-notes              send the notes written offline, then clear them',
+  ...capture.HELP,
+  ...importer.HELP,
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -245,6 +249,15 @@ async function nexusCommand(args = [], deps = {}) {
       now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
       getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
       findPerson, view: { card, cardLines, tableLines },
+    });
+  }
+
+  // capture and import read their own flags from the raw words, so pasted text never mixes with a flag value.
+  const intake = [capture, importer].find((m) => m.SUBS.has(words[0]));
+  if (intake) {
+    return intake.run({
+      rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken,
+      notLoggedIn: NOT_LOGGED_IN, view: { card, cardLines }, stdin: deps.stdin, ask: deps.ask, isTTY: deps.isTTY,
     });
   }
 
