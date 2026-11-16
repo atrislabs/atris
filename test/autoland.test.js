@@ -1328,7 +1328,10 @@ test('auto-accept-certified json includes unsafe verify blockers with a reason',
     const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--as', 'builder'], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
-    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    // This reads the blocker the review list shows, so the tick's reroute
+    // (which sends such a job back to its builder in the same pass, see
+    // test/check-shape-reroute.test.js) is switched off here.
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false, check_reroute: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
