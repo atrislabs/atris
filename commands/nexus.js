@@ -16,6 +16,7 @@ const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
 const columns = require('./nexus-columns');
 const mail = require('./nexus-mail');
+const local = require('./nexus-local');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -43,6 +44,11 @@ const USAGE = [
   '  atris nexus mail "<name>"           their mail across every Gmail inbox you connected, newest first, each naming its inbox',
   '  atris nexus reply "<name>" --from <inbox> --message <id> --body "<text>" [--dry-run] [--yes]',
   '                                      reply in that thread from the inbox that got it; shows the reply and asks first',
+  '  atris nexus pull                    copy your own people to this computer (~/.atris/nexus), for use offline',
+  '  atris nexus local search "<words>"  search that copy, no connection needed',
+  '  atris nexus local show "<name or id>"   one card from that copy',
+  '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
+  '  atris nexus push-notes              send the notes written offline, then clear them',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -218,6 +224,20 @@ async function nexusCommand(args = [], deps = {}) {
     else err(`${message}\n${USAGE}`);
     return 2;
   };
+
+  // The local copy: pull and push-notes sign in; local reads only files on this computer.
+  if (local.SUBS.has(words[0])) {
+    return local.run({
+      sub: words[0], words, flags, json, log, err, fail, usage: (message) => {
+        if (json) log(JSON.stringify({ ok: false, error: message }));
+        else err(message);
+        return 2;
+      },
+      now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
+      getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
+      findPerson, view: { card, cardLines, tableLines },
+    });
+  }
 
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
   if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
