@@ -6,6 +6,8 @@
  *   atris avail                         # show current settings and upcoming blocks
  *   atris avail set --wake 2:30pm --sleep 9pm --where Ibiza --days all --apply
  *   atris avail set --off --apply       # no weekly hours; only blocks are bookable
+ *   atris avail set --notice 4h --buffer 10m --max-per-day 6 --apply
+ *   atris avail types | type add intro 15 "Quick intro" | type remove intro [--apply]
  *   atris avail slots [--days 7]
  *   atris avail hold thu 2pm 5pm [--and mon 1pm 4pm] [--title T] [--weekly] [--apply]
  *   atris avail holds [--days N] [--json]
@@ -140,6 +142,69 @@ function requireWholeNumber(flag, raw, min, max) {
   return n;
 }
 
+// Booking rules (server limits mirror backend validation).
+const NOTICE_MAX_MINUTES = 10080;
+const BUFFER_MAX_MINUTES = 120;
+const MAX_PER_DAY_LIMIT = 50;
+const MEETING_TYPE_MINUTES = [15, 20, 30, 45, 60, 90];
+const MEETING_TYPES_MAX = 5;
+const MEETING_SLUG_RE = /^[a-z0-9-]{1,24}$/;
+
+/** "4h", "240m", "1h30m", "90" (minutes) → whole minutes within [0, max]. */
+function parseMinutesArg(flag, raw, max) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  const m = s.match(/^(?:(\d+)h)?(?:(\d+)m(?:in)?)?$/);
+  let minutes = null;
+  if (/^\d+$/.test(s)) minutes = parseInt(s, 10);
+  else if (s && m && (m[1] || m[2])) minutes = (parseInt(m[1] || '0', 10) * 60) + parseInt(m[2] || '0', 10);
+  if (minutes === null || minutes > max) {
+    throw new Error(`${flag} needs a length like 4h, 90m or 1h30m, up to ${max} minutes, got: ${raw === undefined ? 'nothing' : raw}`);
+  }
+  return minutes;
+}
+
+/** "none" | "off" → null (no cap); otherwise 1..50. */
+function parseMaxPerDay(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'none' || s === 'off' || s === 'no') return null;
+  const n = parseWholeNumber(s, 1, MAX_PER_DAY_LIMIT);
+  if (n === null) {
+    throw new Error(`--max-per-day needs a number from 1 to ${MAX_PER_DAY_LIMIT}, or none, got: ${raw === undefined ? 'nothing' : raw}`);
+  }
+  return n;
+}
+
+function formatMinutes(minutes) {
+  if (!minutes) return '0 min';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** The rule keys a set command will send. Empty when no rule flag was given. */
+function buildRulesPayload(opts) {
+  const rules = {};
+  if (opts.notice !== undefined) rules.min_notice_minutes = opts.notice;
+  if (opts.buffer !== undefined) rules.buffer_minutes = opts.buffer;
+  if (opts.maxPerDay !== undefined) rules.max_per_day = opts.maxPerDay;
+  return rules;
+}
+
+function describeRules(data) {
+  const cap = data.max_per_day == null ? 'no cap' : `${data.max_per_day} a day`;
+  const lines = [];
+  if (data.min_notice_minutes !== undefined) lines.push(`  notice: ${formatMinutes(data.min_notice_minutes)} before a call`);
+  if (data.buffer_minutes !== undefined) lines.push(`  buffer: ${formatMinutes(data.buffer_minutes)} around other meetings`);
+  if (data.max_per_day !== undefined) lines.push(`  booked calls: ${cap}`);
+  return lines.join('\n');
+}
+
+function formatMeetingTypes(types, indent = '  ') {
+  if (!types || !types.length) return `${indent}none`;
+  return types.map((t) => `${indent}${t.slug}: ${t.title} (${t.minutes} min)`).join('\n');
+}
+
 function parseSetArgs(argv) {
   const opts = {
     wake: null,
@@ -152,6 +217,9 @@ function parseSetArgs(argv) {
     slotMinutes: null,
     windowDays: null,
     off: false,
+    notice: undefined,
+    buffer: undefined,
+    maxPerDay: undefined,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -165,9 +233,16 @@ function parseSetArgs(argv) {
     else if (a === '--days') opts.days = argv[++i];
     else if (a === '--slot-minutes') opts.slotMinutes = requireWholeNumber(a, argv[++i], 5, 480);
     else if (a === '--window-days') opts.windowDays = requireWholeNumber(a, argv[++i], 1, 365);
+    else if (a === '--notice') opts.notice = parseMinutesArg(a, argv[++i], NOTICE_MAX_MINUTES);
+    else if (a === '--buffer') opts.buffer = parseMinutesArg(a, argv[++i], BUFFER_MAX_MINUTES);
+    else if (a === '--max-per-day') opts.maxPerDay = parseMaxPerDay(argv[++i]);
     else if (a === '--help' || a === '-h') return { help: true };
     else throw new Error(`atris avail set does not take "${a}". Run: atris avail --help`);
   }
+  const hasRules = Object.keys(buildRulesPayload(opts)).length > 0;
+  // Rules alone change only the rules; weekly hours stay as they are.
+  opts.rulesOnly = !opts.off && hasRules && opts.wake == null && opts.sleep == null;
+  if (opts.rulesOnly) return opts;
   if (opts.off) {
     if (opts.wake != null || opts.sleep != null) {
       throw new Error('--off turns weekly hours off, so it does not take --wake or --sleep');
@@ -243,7 +318,13 @@ async function showAvail({ json = false } = {}) {
   console.log('📅 Booking availability\n');
   console.log(`  timezone: ${data.timezone}`);
   console.log(`  slot: ${data.slot_duration_minutes} min · window: ${data.booking_window_days} days`);
+  const rulesLine = describeRules(data);
+  if (rulesLine) console.log(rulesLine);
   console.log(formatBookingLink(username, appBase));
+  if (Array.isArray(data.meeting_types)) {
+    console.log('\n  Meeting types (guests pick one):');
+    console.log(formatMeetingTypes(data.meeting_types, '    '));
+  }
   if (weeklyHoursOff(data.available_hours)) {
     console.log('\n  Weekly hours: off. Only your blocks are bookable.');
   } else {
@@ -274,6 +355,7 @@ async function setAvail(argv) {
     return 0;
   }
   if (opts.off) return setAvailOff(opts);
+  if (opts.rulesOnly) return setRules(opts);
 
   const wakeDec = parseTimeToDecimal(opts.wake);
   const sleepDec = parseTimeToDecimal(opts.sleep);
@@ -304,6 +386,7 @@ async function setAvail(argv) {
   };
   if (opts.slotMinutes) payload.slot_duration_minutes = opts.slotMinutes;
   if (opts.windowDays) payload.booking_window_days = opts.windowDays;
+  Object.assign(payload, buildRulesPayload(opts));
 
   if (opts.json && !opts.apply) {
     console.log(JSON.stringify({ preview: true, payload }, null, 2));
@@ -313,6 +396,8 @@ async function setAvail(argv) {
   console.log('📅 Availability preview\n');
   console.log(`  timezone: ${timezone}`);
   console.log(`  awake: ${formatDecimalHour(wakeDec)} → ${formatDecimalHour(sleepDec)} (${opts.days})`);
+  const rulesLine = describeRules(payload);
+  if (rulesLine) console.log(rulesLine);
   console.log('\n  weekly windows:');
   console.log(summarizeHours(payload.available_hours));
 
@@ -341,12 +426,41 @@ async function setAvail(argv) {
   return 0;
 }
 
+async function setRules(opts, deps = defaultHoldDeps) {
+  const payload = buildRulesPayload(opts);
+  if (opts.slotMinutes) payload.slot_duration_minutes = opts.slotMinutes;
+  if (opts.windowDays) payload.booking_window_days = opts.windowDays;
+  if (opts.json && !opts.apply) {
+    console.log(JSON.stringify({ preview: true, payload }, null, 2));
+    return 0;
+  }
+  console.log('Booking rules:');
+  console.log(describeRules(payload));
+  if (!opts.apply) {
+    console.log('Dry run, add --apply to save it.');
+    return 0;
+  }
+  const token = await deps.getToken();
+  const result = await deps.request('/profile/booking-settings', { method: 'PUT', token, body: payload });
+  if (!result.ok) {
+    console.error(`Update failed: ${result.error || result.status}`);
+    return 1;
+  }
+  if (opts.json) {
+    console.log(JSON.stringify({ ok: true, settings: result.data }, null, 2));
+    return 0;
+  }
+  console.log('Saved. Guests see it on your booking page within a minute.');
+  return 0;
+}
+
 function buildOffPayload(opts) {
   const payload = { available_hours: buildAvailableHours([], 0, 0) };
   // Keep the stored timezone unless one is asked for: blocks are read in it.
   if (opts.tz || opts.where) payload.timezone = resolveTimezone(opts);
   if (opts.slotMinutes) payload.slot_duration_minutes = opts.slotMinutes;
   if (opts.windowDays) payload.booking_window_days = opts.windowDays;
+  Object.assign(payload, buildRulesPayload(opts));
   return payload;
 }
 
@@ -706,12 +820,128 @@ async function unholdAvail(argv, deps = defaultHoldDeps) {
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Meeting types (lengths guests can pick)
+// ---------------------------------------------------------------------------
+
+async function fetchSettings(deps, token) {
+  const result = await deps.request('/profile/booking-settings', { method: 'GET', token });
+  if (!result.ok) throw new Error(`could not read your booking settings (${result.error || result.status})`);
+  return result.data || {};
+}
+
+async function typesAvail(argv, deps = defaultHoldDeps) {
+  const json = argv.includes('--json');
+  for (const a of argv) {
+    if (a !== '--json') {
+      console.error(`atris avail types does not take "${a}". Run: atris avail --help`);
+      return 1;
+    }
+  }
+  const token = await deps.getToken();
+  let settings;
+  try {
+    settings = await fetchSettings(deps, token);
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+  const types = settings.meeting_types || [];
+  if (json) {
+    console.log(JSON.stringify({ meeting_types: types }, null, 2));
+    return 0;
+  }
+  console.log('Meeting types (the first is the default):');
+  console.log(formatMeetingTypes(types));
+  console.log('Add one: atris avail type add intro 15 "Quick intro" --apply');
+  return 0;
+}
+
+/** The new list after an add or remove. Throws in plain words when the change is not allowed. */
+function changeMeetingTypes(types, action, args) {
+  const current = (types || []).map((t) => ({ slug: t.slug, title: t.title, minutes: t.minutes }));
+  if (action === 'add') {
+    const [slug, rawMinutes, ...titleParts] = args;
+    const title = titleParts.join(' ').trim();
+    if (!slug || rawMinutes === undefined || !title) {
+      throw new Error('say a slug, minutes and a title: atris avail type add intro 15 "Quick intro"');
+    }
+    if (!MEETING_SLUG_RE.test(slug)) throw new Error('the slug must be 1 to 24 lowercase letters, numbers or dashes');
+    const minutes = Number(rawMinutes);
+    if (!MEETING_TYPE_MINUTES.includes(minutes)) {
+      throw new Error(`minutes must be one of ${MEETING_TYPE_MINUTES.join(', ')}`);
+    }
+    if (title.length > 80) throw new Error('the title can be at most 80 characters');
+    if (current.some((t) => t.slug === slug)) throw new Error(`you already have a meeting type called ${slug}`);
+    if (current.length >= MEETING_TYPES_MAX) throw new Error(`you can offer at most ${MEETING_TYPES_MAX} meeting types; remove one first`);
+    return [...current, { slug, title, minutes }];
+  }
+  if (action === 'remove' || action === 'rm') {
+    const [slug] = args;
+    if (!slug || args.length !== 1) throw new Error('say which one: atris avail type remove <slug>');
+    if (!current.some((t) => t.slug === slug)) {
+      throw new Error(`there is no meeting type called ${slug}. See them: atris avail types`);
+    }
+    if (current.length === 1) throw new Error('that is your only meeting type; add another before removing it');
+    return current.filter((t) => t.slug !== slug);
+  }
+  throw new Error('use: atris avail type add <slug> <minutes> "<title>" or atris avail type remove <slug>');
+}
+
+async function typeAvail(argv, deps = defaultHoldDeps) {
+  const apply = argv.includes('--apply');
+  const json = argv.includes('--json');
+  const rest = argv.filter((a) => a !== '--apply' && a !== '--json');
+  if (rest.some((a) => a === '--help' || a === '-h')) {
+    printHelp();
+    return 0;
+  }
+  const unknown = rest.find((a) => a.startsWith('--'));
+  if (unknown) {
+    console.error(`atris avail type does not take "${unknown}". Run: atris avail --help`);
+    return 1;
+  }
+  const [action, ...args] = rest;
+  const token = await deps.getToken();
+  let next;
+  try {
+    const settings = await fetchSettings(deps, token);
+    next = changeMeetingTypes(settings.meeting_types, String(action || '').toLowerCase(), args);
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+  const payload = { meeting_types: next };
+  if (json && !apply) {
+    console.log(JSON.stringify({ preview: true, payload }, null, 2));
+    return 0;
+  }
+  if (!apply) {
+    console.log('Meeting types would be:');
+    console.log(formatMeetingTypes(next));
+    console.log('Dry run, add --apply to save it.');
+    return 0;
+  }
+  const result = await deps.request('/profile/booking-settings', { method: 'PUT', token, body: payload });
+  if (!result.ok) {
+    console.error(`Update failed: ${result.error || result.status}`);
+    return 1;
+  }
+  if (json) {
+    console.log(JSON.stringify({ ok: true, meeting_types: result.data?.meeting_types || next }, null, 2));
+    return 0;
+  }
+  console.log('Saved. Meeting types:');
+  console.log(formatMeetingTypes(result.data?.meeting_types || next));
+  return 0;
+}
+
 function parseSlotsDays(raw) {
   return parseWholeNumber(raw, 1, 365);
 }
 
 async function slotsAvail(argv) {
-  const opts = { days: 7, username: null, json: false };
+  const opts = { days: 7, username: null, json: false, type: null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
@@ -725,6 +955,7 @@ async function slotsAvail(argv) {
       opts.days = days;
     }
     else if (a === '--user' || a === '--username') opts.username = argv[++i];
+    else if (a === '--type') opts.type = argv[++i];
     else if (a === '--help' || a === '-h') {
       printHelp();
       return 0;
@@ -745,7 +976,8 @@ async function slotsAvail(argv) {
     username = identity.data.username;
   }
 
-  const url = `${backendBaseUrl()}/book/${encodeURIComponent(username)}/slots?days=${opts.days}`;
+  const typeParam = opts.type ? `&type=${encodeURIComponent(opts.type)}` : '';
+  const url = `${backendBaseUrl()}/book/${encodeURIComponent(username)}/slots?days=${opts.days}${typeParam}`;
   const result = await httpRequest(url, { method: 'GET', timeoutMs: 30000 });
   let data = null;
   try {
@@ -766,7 +998,8 @@ async function slotsAvail(argv) {
 
   const byDay = data.slots_by_day || {};
   const keys = Object.keys(byDay).sort();
-  console.log(`📅 Open slots for /book/${username} (${data.timezone || 'local'})\n`);
+  const meeting = data.meeting_type ? ` · ${data.meeting_type.title}, ${data.meeting_type.minutes} min` : '';
+  console.log(`📅 Open slots for /book/${username} (${data.timezone || 'local'})${meeting}\n`);
   if (!keys.length) {
     console.log('  No open slots in range.');
     return 0;
@@ -782,7 +1015,7 @@ async function slotsAvail(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: atris avail [show | set | slots | hold | holds | unhold] [options]
+  console.log(`Usage: atris avail [show | set | slots | hold | holds | unhold | types | type] [options]
 
 Show or update the times guests can book on your public booking page.
 Busy Google Calendar events are subtracted when guests pick a slot.
@@ -792,10 +1025,14 @@ Commands:
   atris avail show [--json]
   atris avail set --wake TIME --sleep TIME [options]
   atris avail set --off [--apply]   Weekly hours off; only your blocks are bookable
-  atris avail slots [--days N] [--user USERNAME] [--json]
+  atris avail set [--notice 4h] [--buffer 10m] [--max-per-day N|none] [--apply]
+  atris avail slots [--days N] [--user USERNAME] [--type SLUG] [--json]
   atris avail hold DAY START END [--and DAY START END] [--title T] [--weekly] [--apply]
   atris avail holds [--days N] [--json]
   atris avail unhold ID [--apply]
+  atris avail types [--json]
+  atris avail type add SLUG MINUTES "TITLE" [--apply]
+  atris avail type remove SLUG [--apply]
 
 Blocks:
   A block puts a busy "Open for calls" event on your Google Calendar now.
@@ -814,11 +1051,25 @@ Set options:
   --days DAYS       all | weekdays | mon-fri | mon,wed,fri (default: all)
   --slot-minutes N  15, 30, 45, or 60
   --window-days N   How far ahead to offer slots (1-90)
+  --notice LEN      No call starts sooner than this from now (4h, 240m; default 4h)
+  --buffer LEN      Free time kept before and after other meetings (10m; max 120m)
+  --max-per-day N   Most booked calls in one day (1-50), or none for no cap
   --apply           Push preview to your profile (default: dry run)
   --json            Machine-readable output
 
+Rules only: --notice, --buffer and --max-per-day can be set without
+--wake/--sleep, and then weekly hours stay as they are.
+
+Meeting types:
+  The lengths guests can pick, up to 5. MINUTES is 15, 20, 30, 45, 60 or 90.
+  SLUG is lowercase letters, numbers or dashes; it goes in the link as ?type=SLUG.
+  The first type is the default. You always keep at least one.
+
 Examples:
   atris avail
+  atris avail set --notice 4h --buffer 10m --max-per-day 6 --apply
+  atris avail type add intro 15 "Quick intro" --apply
+  atris avail type add investor 30 "Investor call" --apply
   atris avail set --where Ibiza --wake 2:30pm --sleep 9pm --days all
   atris avail set --wake 9am --sleep 5pm --days mon-fri --tz America/Los_Angeles --apply
   atris avail slots --days 7
@@ -842,14 +1093,16 @@ async function availCommand(argv = []) {
   if (sub === 'hold' || sub === 'block') return holdAvail(argv.slice(1));
   if (sub === 'holds' || sub === 'blocks') return holdsAvail(argv.slice(1));
   if (sub === 'unhold' || sub === 'unblock') return unholdAvail(argv.slice(1));
-  console.error(`atris avail does not know "${sub}". Use show, set, slots, hold, holds, or unhold.`);
+  if (sub === 'types') return typesAvail(argv.slice(1));
+  if (sub === 'type') return typeAvail(argv.slice(1));
+  console.error(`atris avail does not know "${sub}". Use show, set, slots, hold, holds, unhold, types, or type.`);
   printHelp();
   return 1;
 }
 
 // Verbs that only read. The CLI's account guard lets these run inside a
 // project folder without --account; every other verb keeps the full guard.
-const READ_VERBS = new Set(['show', 'get', 'slots', 'holds', 'blocks']);
+const READ_VERBS = new Set(['show', 'get', 'slots', 'holds', 'blocks', 'types']);
 
 function isReadOnlyAvail(argv = []) {
   const first = argv.find((a) => a !== '--account');
@@ -863,6 +1116,14 @@ module.exports = {
   holdAvail,
   holdsAvail,
   unholdAvail,
+  typesAvail,
+  typeAvail,
+  setRules,
+  changeMeetingTypes,
+  parseMinutesArg,
+  parseMaxPerDay,
+  buildRulesPayload,
+  describeRules,
   parseHoldArgs,
   buildHoldBodies,
   buildOffPayload,
