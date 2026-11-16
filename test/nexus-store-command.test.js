@@ -573,9 +573,24 @@ test('no Nexus command ever puts a search word or name in a web address', async 
   }
 });
 
+test('a paused store (503) stops with one plain line and never writes to the saved list', async () => {
+  for (const args of [['note', 'Cy Placeholder', 'hello'], ['add', 'New Person'], ['stage', 'Cy Placeholder', 'met'], []]) {
+    const server = backend({ down: 503 });
+    const res = await run(args, server);
+    assert.equal(res.code, 1, args.join(' '));
+    assert.match(res.err, /The people store is paused for a few minutes\. Nothing was saved\./);
+    assert.equal(server.state.writes.length, 0, 'the saved list is never written while the store is paused');
+  }
+  const written = backend({ fail: { 'POST /nexus/touches': 503 } });
+  const res = await run(['note', 'Rae Sample', 'hello'], written);
+  assert.equal(res.code, 1);
+  assert.match(res.err, /paused/);
+  assert.equal(written.state.writes.length, 0);
+});
+
 // ---- when the store does not answer ----
 
-for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) {
+for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) { // 503 is a pause, tested below
   test(`${label}: reads fall back to the saved list with one plain line on stderr`, async () => {
     const server = backend({ down });
     const { code, out, err } = await run([], server);

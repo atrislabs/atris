@@ -30,6 +30,7 @@ const CLOSENESS_WORDS = { 1: 1, 2: 2, direct: 1, intro: 2, 'one-intro': 2 };
 const CLOSENESS_LABEL = { 1: 'direct', 2: 'one intro' };
 const TOO_OLD_LINE = 'The people store does not know this command yet. Try again after its next update.';
 const TOP_GROUPS = 5;
+const PAUSED_LINE = 'The people store is paused for a few minutes. Nothing was saved. Try again shortly.';
 
 class StoreDown extends Error {}
 class StoreLocked extends Error {}
@@ -54,6 +55,9 @@ function storeClient(request, token) {
     if (status === 405) throw new StoreError(TOO_OLD_LINE);
     if (status === 402) throw new StoreLocked(LOCKED_LINE);
     if (status === 401) throw new StoreError(`Sign in to see your people. ${NOT_LOGGED_IN}`);
+    // 503 is a store that is there but paused (a move, a freeze). Writing to the saved list
+    // then would leave the two apart, so it stops, even before anything was sent.
+    if (status === 503) throw new StoreError(PAUSED_LINE);
     if (status === 0 || status === 404 || status >= 500) {
       if (!wrote) throw new StoreDown('The people store did not answer.');
       throw new StoreError('That did not save. Try again in a moment.');
