@@ -410,6 +410,8 @@ test('city lists the people in that city, yours marked', async () => {
   assert.match(lines[2], /^ {2}Pat Public\s+Public Co$/);
 
   assert.match((await run(['city', 'austin, texas'], backend({ data }))).out, /^Austin, Texas/);
+  data.places[0].my_count = 7;
+  assert.match((await run(['city', 'Austin'], backend({ data }))).out, /^Austin, Texas: 2 people, 7 yours/, 'yours counts the whole city, not one page');
   const missing = await run(['city', 'Nowhere'], backend({ data }));
   assert.equal(missing.code, 1);
   assert.match(missing.err, /No city called "Nowhere"/);

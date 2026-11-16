@@ -276,7 +276,8 @@ async function runStore(ctx) {
     const data = await client.get(`/nexus/places/${enc(place.id)}/people?limit=${flags.all ? CITY_ALL_LIMIT : CITY_LIMIT}`);
     if (json) { out(data); return 0; }
     const people = cardsOf(data);
-    const yours = people.filter((card) => card.mine).length;
+    // The place knows how many are the owner's; the page only holds the first few.
+    const yours = place.my_count == null ? people.filter((card) => card.mine).length : Number(place.my_count) || 0;
     log(`${S.placeName(place)}: ${S.plural(data.total || 0, 'person', 'people')}${yours ? `, ${yours} yours` : ''}`);
     const rows = people.map((card) => {
       const p = card.private || {};
