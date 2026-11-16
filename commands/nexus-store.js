@@ -149,6 +149,11 @@ function prepare(sub, words, flags, now) {
   return { args: {} };
 }
 
+// Found is where every card starts, so tables leave it blank; a stage shows once something happened.
+function shownStage(stage) {
+  return !stage || stage === 'found' ? '' : S.stageLabel(stage);
+}
+
 // A count by key, as { key: n } or as [{ name, count }], in the order given.
 function tallyPairs(tally) {
   if (Array.isArray(tally)) {
@@ -192,7 +197,7 @@ async function runStore(ctx) {
 
   const tableRows = (people) => people.map((card) => {
     const p = card.private || {};
-    return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: S.stageLabel(p.stage), move: String(p.next_move || '') };
+    return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: shownStage(p.stage), move: String(p.next_move || '') };
   });
   // Where this page sits in the whole answer, and how to get the next one.
   const pageFoot = (total, shown, offset) => {
@@ -294,7 +299,7 @@ async function runStore(ctx) {
       return {
         name: String(card.name || 'Unnamed'),
         company: String(card.company_name || ''),
-        stage: card.mine ? S.stageLabel(p.stage) : '',
+        stage: card.mine ? shownStage(p.stage) : '',
         mark: card.mine ? 'yours' : '',
       };
     });
@@ -398,7 +403,10 @@ async function runStore(ctx) {
     const card = done.card || {};
     const facts = [card.title, card.company_name, card.location_raw].filter(Boolean).join(' · ');
     if (done.created === false) log(`${card.name || name} was already in your store, so their details were updated.`);
-    else log(`Added ${card.name || name}${facts ? ` (${facts})` : ''}: ${[S.stageLabel(stage), closeness ? CLOSENESS_LABEL[closeness] : '', group ? `on ${group}` : ''].filter(Boolean).join(', ')}.`);
+    else {
+      const said = [shownStage(stage), closeness ? CLOSENESS_LABEL[closeness] : '', group ? `on ${group}` : ''].filter(Boolean).join(', ');
+      log(`Added ${card.name || name}${facts ? ` (${facts})` : ''}${said ? `: ${said}` : ''}.`);
+    }
     if (done.conflict) err('Another card already holds one of these keys. Not merged.');
     return 0;
   }

@@ -120,7 +120,7 @@ function stageText(row) {
 }
 
 function brief(row) {
-  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label, move: row.tableMove };
+  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label === 'Found' ? '' : row.loop.label, move: row.tableMove };
 }
 
 function card(people, row, now) {
@@ -158,7 +158,8 @@ function cardLines(c) {
   const facts = [c.title, c.company, c.city].filter(Boolean).join(' · ');
   if (facts) lines.push(facts);
   if (c.closeness) lines.push(`Closeness: ${c.closeness}`);
-  lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
+  // Found is where every card starts, so it says nothing; a stage shows once something happened.
+  if (c.stage !== 'Found' || c.off) lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
   lines.push(`Next: ${c.move}.`);
   if (c.path) lines.push(`Way in: ${c.path.join(' → ')}`);
   if (!c.email) lines.push('No email yet');

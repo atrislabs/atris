@@ -237,7 +237,7 @@ test('find uses the q filter, 25 at a time, and 200 with --all', async () => {
   assert.equal(code, 0);
   assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query, c.body]), [['POST', '/nexus/people/search', {}, { q: 'example', limit: 25, offset: 0 }]]);
   assert.match(out, /1 person matches "example"\./);
-  assert.match(out, /Bo Example\s+Example Inc\s+One intro\s+Found/);
+  assert.match(out, /Bo Example\s+Example Inc\s+One intro$/m, 'Found is where every card starts, so it is left blank');
   await run(['find', 'example', '--all'], server);
   assert.equal(server.state.calls[1].body.limit, 200);
 });
@@ -281,7 +281,7 @@ test('add claims only what it is told: Found, no closeness, no list, unless the 
     title: 'Coach', company: 'Four LLC', location: 'London, UK', email: 'di@example.com', linkedin: 'https://www.linkedin.com/in/di-four', note: 'LinkedIn connection',
   });
   assert.equal(server.state.calls[1].options.retries, 0);
-  assert.match(out, /Added Di Four \(Coach · Four LLC · London, UK\): Found\./);
+  assert.match(out, /Added Di Four \(Coach · Four LLC · London, UK\)\.$/m);
 
   const met = backend();
   const told = await run(['add', 'Ed Five', '--stage', 'met', '--closeness', 'direct', '--group', 'People you met'], met);
