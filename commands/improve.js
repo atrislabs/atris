@@ -1400,6 +1400,13 @@ function collectRevisionSignals(root, options = {}) {
     if (via && via !== c && isAgentBranchName(mergedBranchOf(via.subject))) c.isAgent = true;
   }
 
+  // The start-up screen reuses this one history read for "what changed in
+  // the last day" instead of spawning a second git log. It runs after the
+  // agent branch rule so those commits count as agent work there too.
+  // Accepted limit: a change written more than `days` before its branch
+  // merged is outside this read, so it does not count toward the last day.
+  if (typeof options.onCommits === 'function') options.onCommits(commits, arrival);
+
   const landings = commits.filter((c) => c.isAgent);
   // A merge that carries agent work onto the mainline is a landing action,
   // not a human correction; counting merges as revisions made the first live

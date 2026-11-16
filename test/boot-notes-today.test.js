@@ -41,5 +41,5 @@ test('boot counts notes in the local day journal when UTC is already on another 
     timeout: 60000,
   });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /logs\s+2 notes today/);
+  assert.match(res.stdout, /Today's work diary has 2 entries\./);
 });
