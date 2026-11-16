@@ -25,7 +25,6 @@ const LIST_LIMIT = 50;
 const TODAY_LIMIT = 5; // the morning list stays short; the store sends more for the web page
 const CITY_LIMIT = 50;
 const CITY_ALL_LIMIT = 500;
-const GROUP = 'People you met'; // what the file's add puts on a new person
 const CLOSENESS_WORDS = { 1: 1, 2: 2, direct: 1, intro: 2, 'one-intro': 2 };
 const CLOSENESS_LABEL = { 1: 'direct', 2: 'one intro' };
 const TOO_OLD_LINE = 'The people store does not know this command yet. Try again after its next update.';
@@ -106,12 +105,23 @@ function prepareFilters(sub, flags) {
     args.group = String(flags.group).trim();
     if (!args.group) return { error: '--group needs the name of a list' };
   }
+  if (flags.list !== undefined) {
+    args.list = typeof flags.list === 'string' ? flags.list.trim() : '';
+    if (!args.list) return { error: '--list needs the name of a saved list' };
+  }
   return { args };
 }
 
 /** What a sub-command needs from its words, checked before any call. { error } or { args }. */
 function prepare(sub, words, flags, now) {
   if (sub === 'list' || sub === 'find' || sub === 'search') return prepareFilters(sub, flags);
+  if (sub === 'add') {
+    // Only what the person says: a new card is Found, with no closeness and no list, unless told.
+    const checked = prepareFilters(sub, flags);
+    if (checked.error) return checked;
+    const { stage, closeness, group } = checked.args;
+    return { args: { stage: stage || 'found', closeness, group } };
+  }
   if (sub === 'due') {
     const day = S.parseDay(words[2], now);
     if (!words[2]) return { error: 'atris nexus due needs a name and a date' };
@@ -141,6 +151,11 @@ function prepare(sub, words, flags, now) {
     return { args: given };
   }
   return { args: {} };
+}
+
+// Found is where every card starts, so tables leave it blank; a stage shows once something happened.
+function shownStage(stage) {
+  return !stage || stage === 'found' ? '' : S.stageLabel(stage);
 }
 
 // A count by key, as { key: n } or as [{ name, count }], in the order given.
@@ -175,10 +190,11 @@ async function runStore(ctx) {
   };
 
   // One page of the owner's cards, words and filters in the body.
-  const searchPeople = ({ q = '', group, stage, closeness, limit, offset = 0 }) => {
+  const searchPeople = ({ q = '', group, listId, stage, closeness, limit, offset = 0 }) => {
     const body = { limit, offset };
     if (q) body.q = q;
     if (group) body.group = group;
+    if (listId) body.list_id = listId;
     if (stage) body.stage = stage;
     if (closeness) body.closeness = closeness;
     return client.search(body);
@@ -186,7 +202,7 @@ async function runStore(ctx) {
 
   const tableRows = (people) => people.map((card) => {
     const p = card.private || {};
-    return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: S.stageLabel(p.stage), move: String(p.next_move || '') };
+    return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: shownStage(p.stage), move: String(p.next_move || '') };
   });
   // Where this page sits in the whole answer, and how to get the next one.
   const pageFoot = (total, shown, offset) => {
@@ -194,10 +210,11 @@ async function runStore(ctx) {
     log(`Showing ${offset + 1} to ${offset + shown} of ${total}.`);
     if (offset + shown < total) log(`Add --offset ${offset + shown} for the next page.`);
   };
-  const filterWords = ({ stage, closeness, group }) => [
+  const filterWords = ({ stage, closeness, group, list }) => [
     stage ? S.stageLabel(stage).toLowerCase() : '',
     closeness ? CLOSENESS_LABEL[closeness] : '',
     group ? `in "${group}"` : '',
+    list ? `in saved list "${list}"` : '',
   ].filter(Boolean).join(', ');
 
   // The person a name points at, among the store's own cards. Stops with a message when
@@ -288,7 +305,7 @@ async function runStore(ctx) {
       return {
         name: String(card.name || 'Unnamed'),
         company: String(card.company_name || ''),
-        stage: card.mine ? S.stageLabel(p.stage) : '',
+        stage: card.mine ? shownStage(p.stage) : '',
         mark: card.mine ? 'yours' : '',
       };
     });
@@ -303,7 +320,7 @@ async function runStore(ctx) {
   if (sub === 'list') {
     const args = ctx.prep.args;
     const { limit, offset } = args;
-    const filtered = !!(args.stage || args.closeness || args.group);
+    const filtered = !!(args.stage || args.closeness || args.group || args.listId);
     const data = filtered
       ? await searchPeople({ ...args })
       : await client.get(`/nexus/people?limit=${limit}${offset ? `&offset=${offset}` : ''}`);
@@ -379,8 +396,11 @@ async function runStore(ctx) {
     const twins = await searchPeople({ q: name, limit: FIND_ALL_LIMIT });
     const twin = cardsOf(twins).find((card) => String(card.name || '').trim().toLowerCase() === name.toLowerCase());
     if (twin) return fail(`${twin.name} is already on your list.`);
-    const body = { name, stage: 'met', closeness: 1, group_name: GROUP, source: 'manual' };
-    for (const [flag, key] of [['title', 'title'], ['company', 'company'], ['city', 'location'], ['email', 'email'], ['note', 'note']]) {
+    const { stage, closeness, group } = ctx.prep.args;
+    const body = { name, stage, source: 'manual' };
+    if (closeness) body.closeness = closeness;
+    if (group) body.group_name = group;
+    for (const [flag, key] of [['title', 'title'], ['company', 'company'], ['city', 'location'], ['email', 'email'], ['note', 'note'], ['linkedin', 'linkedin'], ['x', 'x'], ['website', 'website']]) {
       const value = typeof flags[flag] === 'string' ? flags[flag].trim() : '';
       if (value) body[key] = value;
     }
@@ -389,7 +409,10 @@ async function runStore(ctx) {
     const card = done.card || {};
     const facts = [card.title, card.company_name, card.location_raw].filter(Boolean).join(' · ');
     if (done.created === false) log(`${card.name || name} was already in your store, so their details were updated.`);
-    else log(`Added ${card.name || name}${facts ? ` (${facts})` : ''}, as someone you met.`);
+    else {
+      const said = [shownStage(stage), closeness ? CLOSENESS_LABEL[closeness] : '', group ? `on ${group}` : ''].filter(Boolean).join(', ');
+      log(`Added ${card.name || name}${facts ? ` (${facts})` : ''}${said ? `: ${said}` : ''}.`);
+    }
     if (done.conflict) err('Another card already holds one of these keys. Not merged.');
     return 0;
   }
@@ -497,4 +520,4 @@ async function runStore(ctx) {
   return 0;
 }
 
-module.exports = { runStore, storeClient, prepare, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE };
+module.exports = { runStore, storeClient, prepare, whole, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE, PAUSED_LINE };

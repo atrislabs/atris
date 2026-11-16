@@ -70,7 +70,7 @@ test('one person by exact name, any case, with path, recent rows, ties and links
   assert.equal(lines[0], 'Dylan Patel');
   assert.equal(lines[1], 'Founder · SemiAnalysis · San Francisco');
   assert.match(out, /Closeness: One intro/);
-  assert.match(out, /Stage: Found/);
+  assert.doesNotMatch(out, /Stage:/, 'Found is where every card starts, so the card leaves it out');
   assert.match(out, /Next: Ask Jacob Effron for an intro\./);
   assert.match(out, /Way in: You → Jacob Effron → Dylan Patel/);
   assert.match(out, /No email yet/);
@@ -150,7 +150,7 @@ test('find searches title, company, city and status, best first, blanking generi
 
   const founders = await run(['find', 'founder']);
   assert.match(founders.out, /1 person matches "founder"/);
-  assert.match(founders.out, /Dylan Patel\s+SemiAnalysis\s+One intro\s+Found\s+Ask Jacob Effron for an intro/);
+  assert.match(founders.out, /Dylan Patel\s+SemiAnalysis\s+One intro\s+Ask Jacob Effron for an intro/);
 });
 
 test('find shows 25 unless --all', async () => {
