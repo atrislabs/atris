@@ -14,6 +14,7 @@ const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
+const columns = require('./nexus-columns');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -32,6 +33,12 @@ const USAGE = [
   '  atris nexus goal [amount] [date]    show or set the money goal',
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  atris nexus set "<name>" <column> <value> [--source <link>]   your own column on a card (a helper must give --source)',
+  '  atris nexus unset "<name>" <column>   take a column off a card',
+  '  atris nexus undo "<name>" <column>    put back the value before the last change',
+  '  atris nexus columns                 every column you have, how many people have it and the top values',
+  '  atris nexus table --with <a,b,c> [--where <column>=<value>] [--csv]   everyone with the columns you pick, for sheets and graphs',
+  '                                      a helper never changes or removes a value you set yourself',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -40,14 +47,14 @@ const USAGE = [
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
 const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY]);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...columns.SUBS]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
 // The store is the home for every change. A change it cannot take is not written anywhere
 // else, so the saved list and the store never drift apart. Reading the saved list is fine.
 const WRITES = new Set(['note', 'stage', 'add']);
 const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset', 'source', 'with', 'where']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
 const NAME_LIMIT = 10;
@@ -230,6 +237,14 @@ async function nexusCommand(args = [], deps = {}) {
     return fail(error && error.message);
   }
 
+  // Your own columns live only in the store: no saved-list fallback.
+  const oneLineUsage = (message) => {
+    if (json) log(JSON.stringify({ ok: false, error: message }));
+    else err(message);
+    return 2;
+  };
+  const columnsCtx = () => ({ sub, words, flags, json, log, fail, usage: oneLineUsage, now, env: deps.env, request: deps.apiRequestJson || apiRequestJson, token: tokenValue, pick });
+
   // One name that may match several people: list them and stop.
   const pick = (people, query) => {
     const found = findPerson(people, query);
@@ -260,6 +275,8 @@ async function nexusCommand(args = [], deps = {}) {
     return { ...made, next, waits: next.mine === 'mac' };
   };
   const waitLine = 'Your computer picks this up on its next sync.';
+
+  if (columns.SUBS.has(sub)) return columns.run(columnsCtx());
 
   // The store first. It falls back to the saved list only when it did not answer and
   // nothing was written to it; a 402 or any other answer stops here.
