@@ -549,6 +549,28 @@ test('list, search and count fall back to the saved list; filters need the store
   assert.equal(filtered.server.state.writes.length, 0);
 });
 
+test('no Nexus command ever puts a search word or name in a web address', async () => {
+  // A name nobody has, so every lookup runs to the end, and one that matches, so writes go through.
+  const words = ['Zyxw Secretname', 'Rae Sample'];
+  for (const word of words) {
+    for (const args of [
+      [word], ['find', word], ['search', word, '--group', 'Investors', '--stage', 'met'], ['list', '--group', word],
+      ['note', word, 'hello'], ['stage', word, 'met'], ['due', word, 'tomorrow'], ['paid', word, '50'], ['add', word],
+      ['city', word],
+    ]) {
+      const server = backend({ data: crowd() });
+      server.state.data.people.push(mineCard(RAE, 'Rae Sample'));
+      await run(args, server);
+      for (const call of server.state.calls.filter((c) => c.path.startsWith('/nexus/'))) {
+        const address = `${call.path}?${new URLSearchParams(call.query)}`.toLowerCase();
+        for (const part of word.toLowerCase().split(' ')) {
+          assert.ok(!address.includes(part), `${args.join(' ')} sent "${part}" in ${call.method} ${address}`);
+        }
+      }
+    }
+  }
+});
+
 // ---- when the store does not answer ----
 
 for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) {
