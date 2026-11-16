@@ -14,6 +14,9 @@ const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
+const columns = require('./nexus-columns');
+const mail = require('./nexus-mail');
+const local = require('./nexus-local');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -33,6 +36,20 @@ const USAGE = [
   '  atris nexus goal [amount] [date]    show or set the money goal',
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  atris nexus set "<name>" <column> <value> [--source <link>]   your own column on a card (a helper must give --source)',
+  '  atris nexus unset "<name>" <column>   take a column off a card',
+  '  atris nexus undo "<name>" <column>    put back the value before the last change',
+  '  atris nexus columns                 every column you have, how many people have it and the top values',
+  '  atris nexus table --with <a,b,c> [--where <column>=<value>] [--csv]   everyone with the columns you pick, for sheets and graphs',
+  '                                      a helper never changes or removes a value you set yourself',
+  '  atris nexus mail "<name>"           their mail across every Gmail inbox you connected, newest first, each naming its inbox',
+  '  atris nexus reply "<name>" --from <inbox> --message <id> --body "<text>" [--dry-run] [--yes]',
+  '                                      reply in that thread from the inbox that got it; shows the reply and asks first',
+  '  atris nexus pull                    copy your own people to this computer (~/.atris/nexus), for use offline',
+  '  atris nexus local search "<words>"  search that copy, no connection needed',
+  '  atris nexus local show "<name or id>"   one card from that copy',
+  '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
+  '  atris nexus push-notes              send the notes written offline, then clear them',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -40,15 +57,15 @@ const USAGE = [
 // Commands the saved list cannot answer: the store or nothing.
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
-const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY]);
+const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city', 'mail', 'reply']);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...columns.SUBS, ...mail.SUBS]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
 // The store is the home for every change. A change it cannot take is not written anywhere
 // else, so the saved list and the store never drift apart. Reading the saved list is fine.
 const WRITES = new Set(['note', 'stage', 'add']);
 const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'linkedin', 'x', 'website', 'stage', 'closeness', 'group', 'limit', 'offset']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'linkedin', 'x', 'website', 'stage', 'closeness', 'group', 'limit', 'offset', 'source', 'with', 'where', 'from', 'thread', 'message', 'body', 'ref']);
 const FILTERED = new Set(['list', 'find', 'search']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
@@ -211,6 +228,20 @@ async function nexusCommand(args = [], deps = {}) {
     return 2;
   };
 
+  // The local copy: pull and push-notes sign in; local reads only files on this computer.
+  if (local.SUBS.has(words[0])) {
+    return local.run({
+      sub: words[0], words, flags, json, log, err, fail, usage: (message) => {
+        if (json) log(JSON.stringify({ ok: false, error: message }));
+        else err(message);
+        return 2;
+      },
+      now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
+      getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
+      findPerson, view: { card, cardLines, tableLines },
+    });
+  }
+
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
   if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
     if (sub === 'search' || sub === 'find') return usage(`atris nexus ${sub} needs words to look for. To see everyone: atris nexus list`);
@@ -232,6 +263,14 @@ async function nexusCommand(args = [], deps = {}) {
   } catch (error) {
     return fail(error && error.message);
   }
+
+  // Your own columns live only in the store: no saved-list fallback.
+  const oneLineUsage = (message) => {
+    if (json) log(JSON.stringify({ ok: false, error: message }));
+    else err(message);
+    return 2;
+  };
+  const columnsCtx = () => ({ sub, words, flags, json, log, fail, usage: oneLineUsage, now, env: deps.env, request: deps.apiRequestJson || apiRequestJson, token: tokenValue, pick });
 
   // One name that may match several people: list them and stop.
   const pick = (people, query) => {
@@ -263,6 +302,10 @@ async function nexusCommand(args = [], deps = {}) {
     return { ...made, next, waits: next.mine === 'mac' };
   };
   const waitLine = 'Your computer picks this up on its next sync.';
+
+  if (columns.SUBS.has(sub)) return columns.run(columnsCtx());
+  // Mail lives only in the store and the inboxes you connected: no saved-list fallback.
+  if (mail.SUBS.has(sub)) return mail.run({ ...columnsCtx(), rawArgs: args, confirm: deps.confirm });
 
   // The store first. It falls back to the saved list only when it did not answer and
   // nothing was written to it; a 402 or any other answer stops here.

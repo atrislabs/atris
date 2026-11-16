@@ -130,6 +130,7 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 
 **Search:** `rg "recapAtris|buildAgentToday|renderAgentToday|renderRecapMinute|speakKeepWorkingMinute|isKeepWorkingMinute|isClaimMinute|plainCheck|isCertifiedReview|isRealTestRunnerProof|classifyVerifier" commands/recap.js lib/first-minute.js lib/verifier-quality.js lib/agent-today.js commands/task.js test/recap.test.js test/first-minute.test.js test/dogfood-p0-safety.test.js test/dogfood-p1.test.js`
 rg "fleetWorkspaceStatus|fleet --global" commands/fleet.js test/dogfood-p1.test.js # Fleet defaults to workspace; --global hits Swarlo
+rg "fleetMemberLifecycle|fleetUp|fleetDown|fleetLaunchedView|parseFleetMemberArgs" commands/fleet.js lib/swarlo-members.js test/fleet-up.test.js # fleet up/down/launched: per-member Swarlo identities under ~/.swarlo/identities, channel ready/down notes, launched tracking, exit 0/1/2 by ready count
 rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--global" commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/dogfood-p1.test.js # Engine roster workspace vs --global; empty-folder engine/engines/--json talk first-talk and do not mint engines.json; a bound room still lists
 
 ## Feature: Visualize Artifacts (`atris visualize`)

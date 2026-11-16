@@ -514,4 +514,4 @@ async function runStore(ctx) {
   return 0;
 }
 
-module.exports = { runStore, prepare, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE };
+module.exports = { runStore, storeClient, prepare, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE };

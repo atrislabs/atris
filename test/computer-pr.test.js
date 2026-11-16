@@ -745,3 +745,47 @@ test('business model reaches the run, explicit model wins, and OpenAI thinker us
   }
   assert.equal(prLib.defaultThinkerModel('openai'), 'gpt-6.1-sol');
 });
+
+// ---- --as: the member's files ride inside the builder's message ----------
+
+test('computerPr --as loads the member brief into builder rounds only', async () => {
+  const h = harness({ rounds: [STUCK, PROPOSAL, PR_OK()] });
+  const { code } = await runPr(h, ['--as', 'scout'], OPENAI, { model: 'gpt-6.1-terra' });
+  assert.equal(code, 0);
+  const [first, think, second] = bodies(h.calls);
+  for (const builder of [first, second]) {
+    assert.ok(builder.message.startsWith('You are working as the team member "scout".'), 'brief opens the message');
+    assert.ok(builder.message.includes('===== MEMBER FILES START ====='));
+    assert.ok(builder.message.includes('===== MEMBER FILES END ====='));
+    assert.ok(builder.message.includes('===== JOB ====='));
+    assert.ok(builder.message.includes('GitHub task:'), 'the PR prompt still follows the brief');
+  }
+  assert.ok(!think.message.includes('You are working as the team member'), 'the thinker stays unchanged');
+  assert.ok(!think.message.includes('===== JOB ====='));
+  assert.ok(h.calls.out.some((l) => /^Working as scout \(\d+ files loaded\)\.$/.test(l)));
+});
+
+test('computerPr takes --as from the cloud options the shared parser already took', async () => {
+  // runComputer strips --as into cloudOptions.member before parsePrArgs runs,
+  // so the command must honor it there too.
+  const h = harness({ rounds: [PR_OK()] });
+  const { code } = await runPr(h, [], OPENAI, { member: 'scout' });
+  assert.equal(code, 0);
+  assert.ok(bodies(h.calls)[0].message.startsWith('You are working as the team member "scout".'));
+});
+
+test('computerPr without --as sends the prompt byte for byte', async () => {
+  const h = harness({ rounds: [PR_OK()] });
+  const { code } = await runPr(h, []);
+  assert.equal(code, 0);
+  const expected = prLib.buildPullRequestPrompt({ owner: 'atrislabs', name: 'demo', task: 'Fix the total', base: null, branch: BRANCH, title: 'Fix the total' });
+  assert.equal(bodies(h.calls)[0].message, expected);
+});
+
+test('computerPr --as with no such member fails before any request', async () => {
+  const h = harness({ rounds: [PR_OK()] });
+  const { code } = await runPr(h, ['--as', 'ghost-member-xyz']);
+  assert.equal(code, 1);
+  assert.equal(h.calls.requests.length, 0);
+  assert.ok(h.calls.err.join('\n').includes('No team member named "ghost-member-xyz"'));
+});

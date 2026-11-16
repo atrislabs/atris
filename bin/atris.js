@@ -636,7 +636,7 @@ function showHelpAll() {
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
-  console.log('  nexus      - Your people from the shared store: today, card, list, search, count, note, stage, add, due, paid, wall, goal, city, bring-over (--json for agents)');
+  console.log('  nexus      - Your people from the shared store: today, card, list, search, count, note, stage, add, due, paid, wall, goal, city, bring-over, mail, reply, pull, local, push-notes (--json for agents)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
@@ -2271,7 +2271,10 @@ if (command === 'guide') {
   }
 } else if (command === 'avail') {
   {
-    const gate = requireAccountBound(process.argv.slice(3));
+    const availArgs = process.argv.slice(3);
+    const gate = requireAccountBound(availArgs, {
+      read: require('../commands/avail').isReadOnlyAvail(availArgs),
+    });
     if (!gate.ok) process.exit(refuseAccountGlobal());
     Promise.resolve().then(() => require('../commands/avail').availCommand(gate.args))
       .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))

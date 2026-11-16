@@ -373,6 +373,22 @@ test('ax help stays local and does not start an agent turn', () => {
   assert.doesNotMatch(res.stdout, /Worked for/);
 });
 
+test('ax chat starts interactive chat session without errors', () => {
+  const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), 'chat'], {
+    cwd: repoRoot,
+    input: 'exit\n',
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      AX_AUTO_LOG: '0',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    },
+  });
+
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Atris 2 Pro chat/);
+});
+
 test('ax fast chat intercepts atris mission run before backend or model work', () => {
   const dir = makeTempDir();
   const home = makeTempDir();

@@ -128,6 +128,7 @@ const {
   computerCloudLogin,
   computerAudit,
 } = require('../lib/computer-core');
+const { buildMemberBrief, withMemberBrief } = require('../lib/member-brief');
 
 function getToken() {
   const creds = loadCredentials();
@@ -1126,7 +1127,7 @@ function printComputerPrHelp(log = console.log) {
   log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
   log('  --think          ask the thinker first, for bugs you already know are hard');
   log('  --no-think       never ask the thinker');
-  log('  --as <member>    assign the desktop feed card to a team member');
+  log('  --as <member>    work as a team member: loads its files and assigns the desktop feed card');
   log('  --no-feed        do not create a desktop feed card');
   log('');
   log('Example:');
@@ -1208,8 +1209,18 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   }
   const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
 
-  const member = parsed.member || 'executor';
+  // --as loads the member's own files into the builder's message; the feed
+  // card still gets the same name.
+  const asMember = parsed.member || options.member || null;
   const root = process.cwd();
+  let briefText = null;
+  if (asMember) {
+    const brief = buildMemberBrief(root, asMember);
+    if (!brief.ok) return fail(brief.error);
+    briefText = brief.text;
+    log(`Working as ${brief.member} (${brief.files.length} files loaded).`);
+  }
+  const member = asMember || 'executor';
   if (!parsed.noFeed && fs.existsSync(path.join(root, 'atris', 'team', member))) {
     try {
       const { Worker } = require('node:worker_threads');
@@ -1325,10 +1336,11 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   };
 
   const runBuilder = async (usedBranch, sessionId, proposal) => {
+    const built = proposal
+      ? prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal })
+      : prompt;
     const round = await runRound({
-      prompt: proposal
-        ? prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal })
-        : prompt,
+      prompt: briefText ? withMemberBrief(briefText, built) : built,
       model: options.model,
       sessionId,
       builder: true,
@@ -1593,6 +1605,25 @@ async function computerChat(token, ctx, initialOptions = {}) {
     console.error('Cloud computer mode requires a bound business workspace.');
     console.error('run this inside a bound business workspace, or use `atris computer --local` for local mode.');
     return;
+  }
+
+  // --as runs the one-shot message as a team member; there is no interactive
+  // member mode, so the flag only works next to --message.
+  const memberName = String(initialOptions.member || '').trim();
+  if (memberName) {
+    if (initialOptions.message == null) {
+      console.error('--as works with --message "<job>".');
+      process.exitCode = 1;
+      return;
+    }
+    const brief = buildMemberBrief(process.cwd(), memberName);
+    if (!brief.ok) {
+      console.error(brief.error);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Working as ${brief.member} (${brief.files.length} files loaded).`);
+    initialOptions = { ...initialOptions, message: withMemberBrief(brief.text, String(initialOptions.message)) };
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
@@ -2282,7 +2313,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   if ((sub === 'exec' || sub === 'chat') && argv.slice(argv.indexOf(sub) + 1).some(arg => arg === '--help' || arg === '-h')) {
     console.log(sub === 'exec'
       ? 'Usage: atris computer exec "<prompt>" [--business <slug>] [--workspace <id>] [--no-wait]'
-      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>]');
+      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>] [--as <member>]');
     return;
   }
 
