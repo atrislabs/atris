@@ -21,9 +21,14 @@ const LOCKED_LINE = 'Nexus needs a paid plan. Get it at https://nexus.atris.ai';
 const BRING_OVER_LINE = 'Your people store is empty, but your saved list has people. Run: atris nexus bring-over';
 const FIND_LIMIT = 25;
 const FIND_ALL_LIMIT = 200; // the most one page of the store gives
+const LIST_LIMIT = 50;
 const CITY_LIMIT = 50;
 const CITY_ALL_LIMIT = 500;
 const GROUP = 'People you met'; // what the file's add puts on a new person
+const COUNT_STAGES = ['found', 'reached_out', 'replied', 'met', 'paying', 'partner'];
+const CLOSENESS_WORDS = { 1: 1, 2: 2, direct: 1, intro: 2, 'one-intro': 2 };
+const CLOSENESS_LABEL = { 1: 'direct', 2: 'one intro' };
+const GROUP_NEEDS_STORE = 'Filtering by list needs the newer people store, which is not out yet. Try without --group.';
 
 class StoreDown extends Error {}
 class StoreLocked extends Error {}
@@ -34,16 +39,19 @@ const enc = encodeURIComponent;
 function storeClient(request, token) {
   let wrote = false;
   const call = async (method, pathname, body, options = {}) => {
-    if (method !== 'GET') wrote = true;
+    const { read, missing, ...rest } = options;
+    if (method !== 'GET' && !read) wrote = true;
     const result = await request(pathname, {
       token,
       method,
       timeoutMs: WAIT_MS,
       ...(body === undefined ? {} : { body }),
-      ...options,
+      ...rest,
     });
     if (result.ok) return result.data && typeof result.data === 'object' ? result.data : {};
     const status = result.status;
+    // A route this backend does not have yet. The caller asks another way.
+    if (missing && missing.includes(status)) return null;
     if (status === 402) throw new StoreLocked(LOCKED_LINE);
     if (status === 401) throw new StoreError(`Sign in to see your people. ${NOT_LOGGED_IN}`);
     if (status === 0 || status === 404 || status >= 500) {
@@ -58,11 +66,51 @@ function storeClient(request, token) {
     post: (pathname, body, options = { retries: 0 }) => call('POST', pathname, body, options),
     patch: (pathname, body) => call('PATCH', pathname, body),
     put: (pathname, body) => call('PUT', pathname, body),
+    // Search words travel in a POST body, never in the web address, so they stay out of
+    // access logs. It reads only, so a failure still falls back to the saved list. null
+    // means this backend has no search route yet (404, or 405 from the card route).
+    search: (body) => call('POST', '/nexus/people/search', body, { read: true, retries: 0, missing: [404, 405] }),
+    // null means no counts route yet: 404, or 422 when the card route reads "counts" as an id.
+    counts: () => call('GET', '/nexus/people/counts', undefined, { missing: [404, 405, 422] }),
   };
+}
+
+function whole(value, least, most) {
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  return n >= least && n <= most ? n : null;
+}
+
+/** --limit, --offset and the filters for list, find and search, checked before any call. */
+function prepareFilters(sub, flags) {
+  const args = { limit: flags.all ? FIND_ALL_LIMIT : (sub === 'list' ? LIST_LIMIT : FIND_LIMIT), offset: 0 };
+  if (flags.limit !== undefined) {
+    args.limit = whole(flags.limit, 1, FIND_ALL_LIMIT);
+    if (args.limit === null) return { error: `--limit takes a whole number from 1 to ${FIND_ALL_LIMIT}` };
+  }
+  if (flags.offset !== undefined) {
+    args.offset = whole(flags.offset, 0, Number.MAX_SAFE_INTEGER);
+    if (args.offset === null) return { error: '--offset takes a whole number, 0 or more' };
+  }
+  if (flags.stage !== undefined) {
+    args.stage = S.stageFromWord(flags.stage);
+    if (!args.stage) return { error: `"${flags.stage}" is not a stage. Use found, reached, replied, met, paying or partner.` };
+  }
+  if (flags.closeness !== undefined) {
+    args.closeness = CLOSENESS_WORDS[String(flags.closeness).trim().toLowerCase()];
+    if (!args.closeness) return { error: `"${flags.closeness}" is not a closeness. Use direct (1) or intro (2).` };
+  }
+  if (flags.group !== undefined) {
+    args.group = String(flags.group).trim();
+    if (!args.group) return { error: '--group needs the name of a list' };
+  }
+  return { args };
 }
 
 /** What a sub-command needs from its words, checked before any call. { error } or { args }. */
 function prepare(sub, words, flags, now) {
+  if (sub === 'list' || sub === 'find' || sub === 'search') return prepareFilters(sub, flags);
   if (sub === 'due') {
     const day = S.parseDay(words[2], now);
     if (!words[2]) return { error: 'atris nexus due needs a name and a date' };
@@ -94,6 +142,18 @@ function prepare(sub, words, flags, now) {
   return { args: {} };
 }
 
+// A count by key, as { key: n } or as [{ name, count }], in the order given.
+function tallyPairs(tally) {
+  if (Array.isArray(tally)) {
+    return tally
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => [String(item.name ?? item.group ?? item.stage ?? item.key ?? ''), Number(item.count ?? item.total) || 0])
+      .filter(([key]) => key);
+  }
+  if (tally && typeof tally === 'object') return Object.entries(tally).map(([key, n]) => [key, Number(n) || 0]);
+  return [];
+}
+
 async function runStore(ctx) {
   const { sub, words, flags, json, log, err, fail, usage, now } = ctx;
   const client = storeClient(ctx.request, ctx.token);
@@ -113,10 +173,45 @@ async function runStore(ctx) {
     }
   };
 
+  // One page of the owner's cards. The search route first; while this backend does not have
+  // it yet, the older listing, which still carries the words in the address.
+  let noSearch = false;
+  const searchPeople = async ({ q = '', group, stage, closeness, limit, offset = 0 }) => {
+    if (!noSearch) {
+      const body = { limit, offset };
+      if (q) body.q = q;
+      if (group) body.group = group;
+      if (stage) body.stage = stage;
+      if (closeness) body.closeness = closeness;
+      const found = await client.search(body);
+      if (found) return found;
+      noSearch = true;
+    }
+    if (group) throw new StoreError(GROUP_NEEDS_STORE);
+    const query = [q ? `q=${enc(q)}` : '', stage ? `stage=${stage}` : '', closeness ? `closeness=${closeness}` : '', `limit=${limit}`, offset ? `offset=${offset}` : ''];
+    return client.get(`/nexus/people?${query.filter(Boolean).join('&')}`);
+  };
+
+  const tableRows = (people) => people.map((card) => {
+    const p = card.private || {};
+    return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: S.stageLabel(p.stage), move: String(p.next_move || '') };
+  });
+  // Where this page sits in the whole answer, and how to get the next one.
+  const pageFoot = (total, shown, offset) => {
+    if (!shown || (offset === 0 && total <= shown)) return;
+    log(`Showing ${offset + 1} to ${offset + shown} of ${total}.`);
+    if (offset + shown < total) log(`Add --offset ${offset + shown} for the next page.`);
+  };
+  const filterWords = ({ stage, closeness, group }) => [
+    stage ? S.stageLabel(stage).toLowerCase() : '',
+    closeness ? CLOSENESS_LABEL[closeness] : '',
+    group ? `in "${group}"` : '',
+  ].filter(Boolean).join(', ');
+
   // The person a name points at, among the store's own cards. Stops with a message when
   // there are none or several.
   const pick = async (name) => {
-    const data = await client.get(`/nexus/people?q=${enc(name)}&limit=${FIND_ALL_LIMIT}`);
+    const data = await searchPeople({ q: name, limit: FIND_ALL_LIMIT });
     const cards = cardsOf(data);
     const hint = cards.length ? '' : await emptyHint();
     const found = ctx.pick({ rows: cards.map((card) => ({ name: String(card.name || ''), card })) }, name);
@@ -212,22 +307,82 @@ async function runStore(ctx) {
     return 0;
   }
 
-  if (sub === 'find') {
+  if (sub === 'list') {
+    const args = ctx.prep.args;
+    const { limit, offset } = args;
+    const filtered = !!(args.stage || args.closeness || args.group);
+    const data = filtered
+      ? await searchPeople({ ...args })
+      : await client.get(`/nexus/people?limit=${limit}${offset ? `&offset=${offset}` : ''}`);
+    const people = cardsOf(data);
+    const total = Number(data.total) || 0;
+    const hint = total === 0 && !filtered ? await emptyHint() : '';
+    if (json) out(data);
+    else {
+      const which = filterWords(args);
+      if (!total) log(filtered ? `No one on your list (${which}).` : 'No one is on your list yet.');
+      else {
+        log(`${S.plural(total, 'person', 'people')} on your list${which ? ` (${which})` : ''}.`);
+        if (people.length) for (const line of ctx.view.tableLines(tableRows(people))) log(line);
+        else log(`No one past ${offset}. Try a smaller --offset.`);
+        pageFoot(total, people.length, offset);
+      }
+    }
+    if (hint) err(hint);
+    return 0;
+  }
+
+  if (sub === 'find' || sub === 'search') {
     const query = words.slice(1).join(' ');
-    const data = await client.get(`/nexus/people?q=${enc(query)}&limit=${flags.all ? FIND_ALL_LIMIT : FIND_LIMIT}`);
+    const args = ctx.prep.args;
+    const data = await searchPeople({ q: query, ...args });
     const people = cardsOf(data);
     const total = Number(data.total) || people.length;
     const hint = total === 0 ? await emptyHint() : '';
+    const which = filterWords(args);
     if (json) out(data);
-    else if (!total) log(`No one on your list matches "${query}".`);
+    else if (!total) log(`No one on your list matches "${query}"${which ? ` (${which})` : ''}.`);
     else {
-      log(`${S.plural(total, 'person matches', 'people match')} "${query}".`);
-      const rows = people.map((card) => {
-        const p = card.private || {};
-        return { name: String(card.name || ''), company: String(card.company_name || ''), close: model.closeness(p.closeness), stage: S.stageLabel(p.stage), move: String(p.next_move || '') };
-      });
-      for (const line of ctx.view.tableLines(rows)) log(line);
-      if (total > people.length) log(`Showing ${people.length} of ${total}.${flags.all ? '' : ' Add --all for every match.'}`);
+      log(`${S.plural(total, 'person matches', 'people match')} "${query}"${which ? ` (${which})` : ''}.`);
+      if (people.length) for (const line of ctx.view.tableLines(tableRows(people))) log(line);
+      else log(`No one past ${args.offset}. Try a smaller --offset.`);
+      if (args.offset === 0 && total > people.length) log(`Showing ${people.length} of ${total}.${flags.all ? '' : ' Add --all for every match.'}`);
+      else pageFoot(total, people.length, args.offset);
+    }
+    if (hint) err(hint);
+    return 0;
+  }
+
+  if (sub === 'count') {
+    let data = await client.counts();
+    if (!data) {
+      // No counts route yet: one-card pages give the same totals, one call each.
+      const totalOf = (query) => client.get(`/nexus/people?${query}limit=1`).then((page) => Number(page.total) || 0);
+      const [total, ...rest] = await Promise.all([
+        totalOf(''),
+        ...COUNT_STAGES.map((stage) => totalOf(`stage=${stage}&`)),
+        ...[1, 2].map((close) => totalOf(`closeness=${close}&`)),
+      ]);
+      data = {
+        total,
+        by_stage: Object.fromEntries(COUNT_STAGES.map((stage, i) => [stage, rest[i]])),
+        by_closeness: { 1: rest[COUNT_STAGES.length], 2: rest[COUNT_STAGES.length + 1] },
+      };
+    }
+    const total = Number(data.total) || 0;
+    const hint = total === 0 ? await emptyHint() : '';
+    if (json) out(data);
+    else {
+      log(total ? `${S.plural(total, 'person', 'people')} on your list.` : 'No one is on your list yet.');
+      if (total) {
+        const parts = (tally, label) => tallyPairs(tally).filter(([, n]) => n > 0).map(([key, n]) => `${n} ${label(key)}`);
+        const stages = parts(data.by_stage, (key) => S.stageLabel(key).toLowerCase());
+        const closes = parts(data.by_closeness, (key) => CLOSENESS_LABEL[key] || key);
+        const groups = parts(data.by_group, (key) => key);
+        if (stages.length) log(`By stage: ${stages.join(', ')}.`);
+        if (closes.length) log(`By closeness: ${closes.join(', ')}.`);
+        if (groups.length) log(`By list: ${groups.join(', ')}.`);
+      }
     }
     if (hint) err(hint);
     return 0;
@@ -237,7 +392,7 @@ async function runStore(ctx) {
     const name = words.slice(1).join(' ').trim();
     // The store never matches on a name alone, so the same person typed twice would be two
     // cards. The saved list refuses that, and so does this.
-    const twins = await client.get(`/nexus/people?q=${enc(name)}&limit=${FIND_ALL_LIMIT}`);
+    const twins = await searchPeople({ q: name, limit: FIND_ALL_LIMIT });
     const twin = cardsOf(twins).find((card) => String(card.name || '').trim().toLowerCase() === name.toLowerCase());
     if (twin) return fail(`${twin.name} is already on your list.`);
     const body = { name, stage: 'met', closeness: 1, group_name: GROUP, source: 'manual' };

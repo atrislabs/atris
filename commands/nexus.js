@@ -19,7 +19,10 @@ const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
   '  atris nexus                         today\'s moves (at most five) and counts',
   '  atris nexus "<name>"                one person\'s card',
-  '  atris nexus find "<words>"          matching people, best first (--all for every match)',
+  '  atris nexus list                    everyone, 50 at a time (--offset 50 for the next page)',
+  '  atris nexus search "<words>"        matching people, best first (find works too; --all for every match)',
+  '  atris nexus count                   how many people, by stage, closeness and list',
+  '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
   '  atris nexus add "<name>" [--title --company --city --email --note]',
@@ -30,19 +33,19 @@ const USAGE = [
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
-  'The store is tried first. If it does not answer, the saved list is used (wall, goal, due, paid, city and bring-over need the store).',
+  'The store is tried first. If it does not answer, the saved list is used (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
 
 // Commands the saved list cannot answer: the store or nothing.
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
-const TAKES_WORD = new Set(['find', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['find', 'note', 'stage', 'add', ...STORE_ONLY]);
+const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city']);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset']);
+const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
-const FIND_LIMIT = 25;
 const NAME_LIMIT = 10;
 
 function parseArgs(args) {
@@ -203,7 +206,8 @@ async function nexusCommand(args = [], deps = {}) {
 
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
   if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
-    return usage(`atris nexus ${sub} needs ${sub === 'city' ? 'a city' : `a name${sub === 'find' ? ' or words to look for' : ''}`}`);
+    if (sub === 'search' || sub === 'find') return usage(`atris nexus ${sub} needs words to look for. To see everyone: atris nexus list`);
+    return usage(`atris nexus ${sub} needs ${sub === 'city' ? 'a city' : 'a name'}`);
   }
   if (sub === 'note' && !words.slice(2).join(' ').trim()) return usage('atris nexus note needs a name and the note text');
   if (sub === 'stage' && !words[2]) return usage('atris nexus stage needs a name and a stage');
@@ -281,9 +285,12 @@ async function nexusCommand(args = [], deps = {}) {
       if (!(error instanceof store.StoreDown)) return fail(error && error.message);
     }
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
+    if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
     return fail(STORE_NEEDED);
+  } else if (prep.args.stage || prep.args.closeness || prep.args.group) {
+    return fail(FILTERS_NEED_STORE);
   }
 
   try {
@@ -342,17 +349,32 @@ async function nexusCommand(args = [], deps = {}) {
     const { list } = await client.read();
     const people = model.buildPeople(list, now);
 
-    if (sub === 'find') {
+    // A page of the saved list, the same --limit and --offset the store takes.
+    const page = (hits) => {
+      const { limit, offset } = prep.args;
+      const shown = hits.slice(offset, offset + limit);
+      const foot = () => {
+        if (!shown.length || (offset === 0 && hits.length <= shown.length)) return;
+        if (offset === 0 && !flags.limit && !flags.all) {
+          log(`Showing ${shown.length} of ${hits.length}. Add --all for every match.`);
+          return;
+        }
+        log(`Showing ${offset + 1} to ${offset + shown.length} of ${hits.length}.`);
+        if (offset + shown.length < hits.length) log(`Add --offset ${offset + shown.length} for the next page.`);
+      };
+      return { rows: shown.map(brief), limit, offset, foot };
+    };
+
+    if (sub === 'find' || sub === 'search') {
       const query = words.slice(1).join(' ');
       const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
       const hits = people.rows.filter((row) => {
         const hay = [row.name, row.title, row.company, row.city, row.status].join(' ').toLowerCase();
         return terms.every((term) => hay.includes(term));
       });
-      const shown = flags.all ? hits : hits.slice(0, FIND_LIMIT);
-      const rows = shown.map(brief);
+      const shown = page(hits);
       if (json) {
-        log(JSON.stringify({ ok: true, query, total: hits.length, people: rows }));
+        log(JSON.stringify({ ok: true, query, total: hits.length, limit: shown.limit, offset: shown.offset, people: shown.rows }));
         return 0;
       }
       if (!hits.length) {
@@ -360,8 +382,33 @@ async function nexusCommand(args = [], deps = {}) {
         return 0;
       }
       log(`${plural(hits.length, 'person matches', 'people match')} "${query}".`);
-      for (const line of tableLines(rows)) log(line);
-      if (hits.length > shown.length) log(`Showing ${shown.length} of ${hits.length}. Add --all for every match.`);
+      for (const line of tableLines(shown.rows)) log(line);
+      shown.foot();
+      return 0;
+    }
+
+    if (sub === 'list') {
+      const everyone = people.rows.filter((row) => !row.hidden);
+      const shown = page(everyone);
+      if (json) {
+        log(JSON.stringify({ ok: true, total: everyone.length, limit: shown.limit, offset: shown.offset, people: shown.rows }));
+        return 0;
+      }
+      if (!everyone.length) {
+        log('No one is on your list yet.');
+        return 0;
+      }
+      log(`${plural(everyone.length, 'person', 'people')} on your list.`);
+      for (const line of tableLines(shown.rows)) log(line);
+      shown.foot();
+      return 0;
+    }
+
+    if (sub === 'count') {
+      const counts = model.viewCounts(people.rows);
+      const tally = { people: counts.all, talking: counts.talk, warm: counts.warm, paying: counts.pay };
+      if (json) log(JSON.stringify({ ok: true, counts: tally }));
+      else log(`${plural(tally.people, 'person', 'people')}, ${tally.talking} talking, ${tally.warm} warm, ${tally.paying} paying.`);
       return 0;
     }
 

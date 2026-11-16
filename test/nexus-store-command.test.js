@@ -49,7 +49,9 @@ function fileList(extra = []) {
 }
 
 // A stand-in for the store and for the saved-list file. `down` makes every /nexus call fail with that status.
-function backend({ data = seed(), file = JSON.stringify(fileList()), down = null, fail = {} } = {}) {
+// `search: false` is a backend without the search route yet (405, as the card route answers);
+// `counts: false` is one without the counts route (422, the card route reading "counts" as an id).
+function backend({ data = seed(), file = JSON.stringify(fileList()), down = null, fail = {}, search = true, counts = true } = {}) {
   const state = { calls: [], writes: [], file, data };
   const answer = (status, body) => ({ ok: status >= 200 && status < 300, status, data: body, error: body && body.detail });
   const request = async (pathname, options = {}) => {
@@ -72,11 +74,20 @@ function backend({ data = seed(), file = JSON.stringify(fileList()), down = null
     if (fail[key]) return answer(fail[key], { detail: 'failed' });
     const d = state.data;
     let m;
-    if (key === 'GET /nexus/people') {
-      const words = (url.searchParams.get('q') || '').toLowerCase().split(/\s+/).filter(Boolean);
-      const hits = d.people.filter((c) => words.every((w) => `${c.name} ${c.company_name || ''}`.toLowerCase().includes(w)));
-      const limit = Number(url.searchParams.get('limit') || 50);
-      return answer(200, { total: hits.length, limit, offset: 0, people: hits.slice(0, limit) });
+    // The store's own filters: words in name or company, stage, closeness and list.
+    const filter = ({ q, stage, closeness, group, limit = 50, offset = 0 }) => {
+      const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+      const hits = d.people.filter((c) => words.every((w) => `${c.name} ${c.company_name || ''}`.toLowerCase().includes(w))
+        && (!stage || c.private.stage === stage)
+        && (!closeness || c.private.closeness === Number(closeness))
+        && (!group || c.private.group_name === group));
+      return answer(200, { total: hits.length, limit: Number(limit), offset: Number(offset), people: hits.slice(Number(offset), Number(offset) + Number(limit)) });
+    };
+    if (key === 'GET /nexus/people') return filter(Object.fromEntries(url.searchParams));
+    if (key === 'POST /nexus/people/search') return search ? filter(options.body) : answer(405, { detail: 'Method Not Allowed' });
+    if (key === 'GET /nexus/people/counts') {
+      if (!counts) return answer(422, { detail: [{ msg: 'Input should be a valid UUID' }] });
+      return answer(200, d.counts);
     }
     if ((m = /^GET \/nexus\/people\/([^/]+)$/.exec(key))) {
       const card = d.people.find((c) => c.id === m[1]);
@@ -178,8 +189,9 @@ test('a name shows the card with its ties and recent activity', async () => {
   const server = backend();
   const { code, out } = await run(['rae sample'], server);
   assert.equal(code, 0);
-  assert.deepEqual(storeCalls(server), ['GET /nexus/people', `GET /nexus/people/${RAE}`]);
-  assert.equal(server.state.calls[0].query.q, 'rae sample');
+  assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', `GET /nexus/people/${RAE}`]);
+  assert.equal(server.state.calls[0].body.q, 'rae sample');
+  assert.deepEqual(server.state.calls[0].query, {}, 'the name never rides in the address');
   const lines = out.split('\n');
   assert.equal(lines[0], 'Rae Sample');
   assert.equal(lines[1], 'Founder · Sample Co · Austin, TX');
@@ -206,18 +218,18 @@ test('find uses the q filter, 25 at a time, and 200 with --all', async () => {
   const server = backend();
   const { code, out } = await run(['find', 'example'], server);
   assert.equal(code, 0);
-  assert.deepEqual(server.state.calls.map((c) => [c.path, c.query]), [['/nexus/people', { q: 'example', limit: '25' }]]);
+  assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query, c.body]), [['POST', '/nexus/people/search', {}, { q: 'example', limit: 25, offset: 0 }]]);
   assert.match(out, /1 person matches "example"\./);
   assert.match(out, /Bo Example\s+Example Inc\s+One intro\s+Found/);
   await run(['find', 'example', '--all'], server);
-  assert.equal(server.state.calls[1].query.limit, '200');
+  assert.equal(server.state.calls[1].body.limit, 200);
 });
 
 test('note adds a touch of kind note, then updates the note keeping what was there', async () => {
   const server = backend();
   const { code, out } = await run(['note', 'Rae Sample', 'Met', 'at', 'the', 'summit'], server);
   assert.equal(code, 0);
-  assert.deepEqual(storeCalls(server), ['GET /nexus/people', 'POST /nexus/touches', `PATCH /nexus/people/${RAE}/mine`]);
+  assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', 'POST /nexus/touches', `PATCH /nexus/people/${RAE}/mine`]);
   assert.deepEqual(server.state.calls[1].body, { person_id: RAE, kind: 'note', body: 'Met at the summit' });
   assert.deepEqual(server.state.calls[2].body, { note: 'Likes email | Met at the summit' });
   assert.equal(server.state.calls[1].options.retries, 0, 'a send that adds is never repeated');
@@ -246,7 +258,7 @@ test('add posts a person the way the file adds one, and refuses a name already o
   const server = backend();
   const { code, out } = await run(['add', 'Di Four', '--title', 'Coach', '--company=Four LLC', '--city', 'London, UK', '--email', 'di@example.com', '--note', 'Met online'], server);
   assert.equal(code, 0);
-  assert.deepEqual(storeCalls(server), ['GET /nexus/people', 'POST /nexus/people']);
+  assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', 'POST /nexus/people']);
   assert.deepEqual(server.state.calls[1].body, {
     name: 'Di Four', stage: 'met', closeness: 1, group_name: 'People you met', source: 'manual',
     title: 'Coach', company: 'Four LLC', location: 'London, UK', email: 'di@example.com', note: 'Met online',
@@ -258,7 +270,7 @@ test('add posts a person the way the file adds one, and refuses a name already o
   const refused = await run(['add', 'rae sample'], twin);
   assert.equal(refused.code, 1);
   assert.match(refused.err, /Rae Sample is already on your list\./);
-  assert.deepEqual(storeCalls(twin), ['GET /nexus/people']);
+  assert.deepEqual(storeCalls(twin), ['POST /nexus/people/search']);
 });
 
 test('due sets the follow-up date and the next move; bad dates are refused before any call', async () => {
@@ -391,6 +403,157 @@ test('city lists the people in that city, yours marked', async () => {
   assert.match(several.err, /2 places match "Austin"/);
 });
 
+// ---- list, search and count ----
+
+// Sixty made-up people: every third one replied, every other one an intro away, the first ten in "Investors".
+function crowd() {
+  const people = [];
+  for (let i = 0; i < 60; i++) {
+    const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    people.push(mineCard(id, `Person ${String(i).padStart(2, '0')}`, {}, { stage: i % 3 === 0 ? 'replied' : 'found', closeness: i % 2 ? 2 : 1, group_name: i < 10 ? 'Investors' : 'People you met' }));
+  }
+  return { ...seed(), people };
+}
+
+test('list asks for a plain page, 50 at a time, and says how to get the next one', async () => {
+  const server = backend({ data: crowd() });
+  const { code, out } = await run(['list'], server);
+  assert.equal(code, 0);
+  assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query]), [['GET', '/nexus/people', { limit: '50' }]]);
+  const lines = out.split('\n');
+  assert.equal(lines[0], '60 people on your list.');
+  assert.match(lines[1], /^Person 00\s+Direct\s+Replied$/);
+  assert.equal(lines.length, 53);
+  assert.equal(lines[51], 'Showing 1 to 50 of 60.');
+  assert.equal(lines[52], 'Add --offset 50 for the next page.');
+
+  const next = await run(['list', '--offset', '50'], backend({ data: crowd() }));
+  assert.deepEqual(next.server.state.calls[0].query, { limit: '50', offset: '50' });
+  assert.match(next.out, /Person 59/);
+  assert.match(next.out, /Showing 51 to 60 of 60\.$/);
+
+  const past = await run(['list', '--offset=500'], backend({ data: crowd() }));
+  assert.match(past.out, /No one past 500\. Try a smaller --offset\./);
+
+  const json = await run(['list', '--limit', '2', '--json'], backend({ data: crowd() }));
+  const answer = JSON.parse(json.out);
+  assert.deepEqual([answer.total, answer.limit, answer.offset, answer.people.length], [60, 2, 0, 2], 'the store\'s own answer');
+});
+
+test('list with a filter sends it in a search body, and every filter is checked before any call', async () => {
+  const server = backend({ data: crowd() });
+  const { code, out } = await run(['list', '--stage', 'replied', '--closeness', 'direct', '--group', 'Investors', '--limit', '3'], server);
+  assert.equal(code, 0);
+  assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query, c.body]), [['POST', '/nexus/people/search', {}, { limit: 3, offset: 0, group: 'Investors', stage: 'replied', closeness: 1 }]]);
+  assert.match(out, /^2 people on your list \(replied, direct, in "Investors"\)\./);
+
+  for (const [args, said] of [
+    [['--limit', '0'], /--limit takes a whole number from 1 to 200/],
+    [['--limit', '201'], /--limit takes a whole number from 1 to 200/],
+    [['--limit', 'ten'], /--limit takes a whole number/],
+    [['--offset', '-1'], /--offset takes a whole number, 0 or more/],
+    [['--offset', '1.5'], /--offset takes a whole number/],
+    [['--stage', 'cold'], /"cold" is not a stage/],
+    [['--closeness', '3'], /"3" is not a closeness/],
+    [['--group', ' '], /--group needs the name of a list/],
+  ]) {
+    const bad = backend();
+    const res = await run(['list', ...args], bad);
+    assert.equal(res.code, 2, args.join(' '));
+    assert.match(res.err, said, args.join(' '));
+    assert.deepEqual(bad.state.calls, [], 'refused before any call');
+  }
+});
+
+test('search puts the words and filters in the body, never the address, and pages like list', async () => {
+  const server = backend({ data: crowd() });
+  const { code, out } = await run(['search', 'person', '--closeness', 'intro', '--offset', '5', '--limit', '5'], server);
+  assert.equal(code, 0);
+  assert.deepEqual(server.state.calls.map((c) => [c.method, c.path, c.query, c.body]), [['POST', '/nexus/people/search', {}, { limit: 5, offset: 5, q: 'person', closeness: 2 }]]);
+  assert.match(out, /^30 people match "person" \(one intro\)\./);
+  assert.match(out, /Person 11/);
+  assert.match(out, /Showing 6 to 10 of 30\.\nAdd --offset 10 for the next page\.$/);
+
+  const none = await run(['search', 'nobody', '--stage', 'paying'], backend({ data: crowd() }));
+  assert.equal(none.out, 'No one on your list matches "nobody" (paying).');
+
+  const bare = await run(['search'], backend());
+  assert.equal(bare.code, 2);
+  assert.match(bare.err, /needs words to look for\. To see everyone: atris nexus list/);
+});
+
+test('a backend without the search route yet: search and lookups ask the old way once; --group says it cannot', async () => {
+  const server = backend({ data: crowd(), search: false });
+  const { code, out } = await run(['search', 'person 1', '--stage', 'found'], server);
+  assert.equal(code, 0);
+  assert.deepEqual(storeCalls(server), ['POST /nexus/people/search', 'GET /nexus/people']);
+  assert.deepEqual(server.state.calls[1].query, { q: 'person 1', stage: 'found', limit: '25' });
+  assert.match(out, /people match "person 1" \(found\)/);
+
+  const note = backend({ search: false });
+  const done = await run(['note', 'Rae Sample', 'hi'], note);
+  assert.equal(done.code, 0);
+  assert.deepEqual(storeCalls(note), ['POST /nexus/people/search', 'GET /nexus/people', 'POST /nexus/touches', `PATCH /nexus/people/${RAE}/mine`]);
+  assert.deepEqual(fileCalls(note), [], 'a missing route is not a store that is down');
+
+  const grouped = await run(['list', '--group', 'Investors'], backend({ data: crowd(), search: false }));
+  assert.equal(grouped.code, 1);
+  assert.match(grouped.err, /Filtering by list needs the newer people store/);
+  assert.equal(grouped.server.state.writes.length, 0);
+});
+
+test('count shows the store\'s counts by stage, closeness and list', async () => {
+  const data = { ...seed(), counts: { total: 60, by_stage: { found: 40, reached_out: 0, replied: 20, met: 0, paying: 0, partner: 0 }, by_closeness: { 1: 30, 2: 30 }, by_group: [{ name: 'People you met', count: 50 }, { name: 'Investors', count: 10 }] } };
+  const server = backend({ data });
+  const { code, out } = await run(['count'], server);
+  assert.equal(code, 0);
+  assert.deepEqual(storeCalls(server), ['GET /nexus/people/counts']);
+  assert.equal(out, [
+    '60 people on your list.',
+    'By stage: 40 found, 20 replied.',
+    'By closeness: 30 direct, 30 one intro.',
+    'By list: 50 People you met, 10 Investors.',
+  ].join('\n'));
+  const json = await run(['count', '--json'], backend({ data }));
+  assert.deepEqual(JSON.parse(json.out), data.counts);
+});
+
+test('a backend without the counts route yet: count adds up one-card pages instead', async () => {
+  const server = backend({ data: crowd(), counts: false });
+  const { code, out } = await run(['count', '--json'], server);
+  assert.equal(code, 0);
+  assert.equal(storeCalls(server).length, 10, 'the counts route, then total, six stages and two closenesses');
+  assert.ok(server.state.calls.slice(1).every((c) => c.query.limit === '1' && !c.query.q));
+  assert.deepEqual(JSON.parse(out), {
+    total: 60,
+    by_stage: { found: 40, reached_out: 0, replied: 20, met: 0, paying: 0, partner: 0 },
+    by_closeness: { 1: 30, 2: 30 },
+  });
+  const text = await run(['count'], backend({ data: crowd(), counts: false }));
+  assert.equal(text.out, '60 people on your list.\nBy stage: 40 found, 20 replied.\nBy closeness: 30 direct, 30 one intro.');
+});
+
+test('list, search and count fall back to the saved list; filters need the store', async () => {
+  const list = await run(['list'], backend({ down: 0 }));
+  assert.equal(list.code, 0);
+  assert.equal(list.err, 'Using your saved list. The people store did not answer.');
+  assert.match(list.out, /^1 person on your list\.\nCy Placeholder/);
+
+  const search = await run(['search', 'figma', '--json'], backend({ down: 500 }));
+  assert.equal(search.code, 0);
+  const found = JSON.parse(search.out);
+  assert.deepEqual([found.total, found.limit, found.offset, found.people[0].name], [1, 25, 0, 'Cy Placeholder']);
+
+  const count = await run(['count'], backend({ down: 502 }));
+  assert.equal(count.code, 0);
+  assert.match(count.out, /^1 person, /);
+
+  const filtered = await run(['list', '--stage', 'met'], backend({ down: 0 }));
+  assert.equal(filtered.code, 1);
+  assert.match(filtered.err, /--stage, --closeness and --group need it/);
+  assert.equal(filtered.server.state.writes.length, 0);
+});
+
 // ---- when the store does not answer ----
 
 for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server error', 500], ['a bad gateway', 502]]) {
@@ -415,7 +578,7 @@ for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server 
     assert.equal(code, 0);
     assert.match(out, /Noted on Cy Placeholder: hello/);
     assert.equal(server.state.writes.length, 1);
-    assert.deepEqual(storeCalls(server), ['GET /nexus/people'], 'only the lookup reached the store');
+    assert.deepEqual(storeCalls(server), down === 404 ? ['POST /nexus/people/search', 'GET /nexus/people'] : ['POST /nexus/people/search'], 'only the lookup reached the store');
   });
 }
 
