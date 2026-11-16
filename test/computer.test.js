@@ -79,6 +79,7 @@ test('computer options default to wait-and-run with nothing selected', () => {
       workspaceId: null,
       waitForResult: true,
       message: null,
+      member: null,
       force: false,
     });
   });
