@@ -14,6 +14,7 @@ const { NOT_LOGGED_IN, tokenFrom, oneLine } = require('../lib/developer-api');
 const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
+const network = require('./nexus-network');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -22,7 +23,7 @@ const USAGE = [
   '  atris nexus list                    everyone, 50 at a time (--offset 50 for the next page)',
   '  atris nexus search "<words>"        matching people, best first (find works too; --all for every match)',
   '  atris nexus count                   how many people, by stage, and your biggest lists',
-  '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --limit <1-200>, --offset <n>',
+  '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --list "<saved list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
   '  atris nexus add "<name>" [--title --company --city --email --note]',
@@ -32,23 +33,37 @@ const USAGE = [
   '  atris nexus goal [amount] [date]    show or set the money goal',
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
+  '  atris nexus groups [--kind <kind>]  the groups in your network: saved lists, lists, companies, cities, schools, clusters',
+  '                                      kinds: company, city, list, school, saved, cluster',
+  '  atris nexus group <kind> "<label>"  one group: how many, who is most connected, your way in, who is talking, what they share, then the people',
+  '                                      (--limit <1-200>, or --all for everyone)',
+  '  atris nexus network                 the shape of your network: people, links, clusters, most connected, bridges',
+  '  atris nexus lists                   your saved lists, with counts',
+  '  atris nexus save "<list name>" --from <kind> "<label>"    save a group as a new list',
+  '  atris nexus save "<list name>" --ids <id>,<id>            save these people (or send ids on standard input, one per line)',
+  '                                      add --as-helper when a helper made the list',
+  '  atris nexus lists add "<list name>" <id>...      add people to a saved list',
+  '  atris nexus lists remove "<list name>" <id>...   take people off a saved list (they stay on your list)',
+  '  atris nexus lists rename "<old name>" "<new name>"',
+  '  atris nexus lists delete "<list name>" --yes     removes the list and never the people',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
-  'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
+  'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over, groups, group, network, lists, save and the filters need the store).',
 ].join('\n');
 
 // Commands the saved list cannot answer: the store or nothing.
 const STORE_ONLY = new Set(['wall', 'goal', 'due', 'paid', 'city', 'bring-over']);
 // Commands that need a word after them.
 const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'paid', 'city']);
-const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY]);
+const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY, ...network.SUBS]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
 // The store is the home for every change. A change it cannot take is not written anywhere
 // else, so the saved list and the store never drift apart. Reading the saved list is fine.
 const WRITES = new Set(['note', 'stage', 'add']);
 const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'list', 'limit', 'offset', 'kind', 'ids']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
+const LIST_NEEDS_STORE = 'The people store did not answer, and --list needs it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
 const NAME_LIMIT = 10;
 
@@ -61,7 +76,12 @@ function parseArgs(args) {
     if (!arg.startsWith('--')) { words.push(arg); continue; }
     const eq = arg.indexOf('=');
     const key = arg.slice(2, eq < 0 ? undefined : eq);
-    if (VALUE_FLAGS.has(key)) {
+    if (key === 'from') {
+      // --from <kind> "<label>": two values, so the label never lands among the plain words.
+      const take = () => (i + 1 < args.length && !String(args[i + 1]).startsWith('--') ? String(args[++i]) : '');
+      flags.from = eq >= 0 ? arg.slice(eq + 1) : take();
+      flags.fromLabel = take();
+    } else if (VALUE_FLAGS.has(key)) {
       if (eq >= 0) flags[key] = arg.slice(eq + 1);
       else if (i + 1 < args.length) flags[key] = String(args[++i]);
       else flags[key] = '';
@@ -208,6 +228,13 @@ async function nexusCommand(args = [], deps = {}) {
     return 2;
   };
 
+  // The network commands say what is wrong in one plain line, not the whole help.
+  const bad = (message) => {
+    if (json) log(JSON.stringify({ ok: false, error: message }));
+    else err(message);
+    return 2;
+  };
+
   // `atris nexus find` with nothing after it: say how, do not look up a person called "find".
   if (TAKES_WORD.has(sub) && !String(words[1] || '').trim()) {
     if (sub === 'search' || sub === 'find') return usage(`atris nexus ${sub} needs words to look for. To see everyone: atris nexus list`);
@@ -216,8 +243,9 @@ async function nexusCommand(args = [], deps = {}) {
   if (sub === 'note' && !words.slice(2).join(' ').trim()) return usage('atris nexus note needs a name and the note text');
   if (sub === 'stage' && !words[2]) return usage('atris nexus stage needs a name and a stage');
   if (sub === 'stage' && !S.stageFromWord(words[2])) return usage(`"${words[2]}" is not a stage. Use found, reached, replied, met, paying or partner.`);
-  const prep = store.prepare(sub, words, flags, now);
-  if (prep.error) return usage(prep.error);
+  const isNetwork = network.SUBS.has(sub);
+  const prep = isNetwork ? network.prepare(sub, words, flags) : store.prepare(sub, words, flags, now);
+  if (prep.error) return isNetwork ? bad(prep.error) : usage(prep.error);
 
   let client;
   let tokenValue;
@@ -228,6 +256,24 @@ async function nexusCommand(args = [], deps = {}) {
     client = (deps.client || peopleClient)(deps.apiRequestJson || apiRequestJson, token);
   } catch (error) {
     return fail(error && error.message);
+  }
+
+  // The network commands (groups, group, network, lists, save) have no saved-list fallback:
+  // when the store does not answer they stop with one plain line.
+  if (isNetwork) {
+    if (deps.useStore === false) return fail(STORE_NEEDED);
+    try {
+      return await network.run({
+        sub, words, flags, json, log, err, fail, bad, now, prep,
+        request: deps.apiRequestJson || apiRequestJson,
+        token: tokenValue,
+        newRef: deps.newRef,
+        readStdin: deps.readStdin,
+      });
+    } catch (error) {
+      if (error instanceof store.StoreLocked) return fail(error.message, { status: 402 });
+      return fail(error && error.message);
+    }
   }
 
   // One name that may match several people: list them and stop.
@@ -282,6 +328,13 @@ async function nexusCommand(args = [], deps = {}) {
       view: { card, cardLines, tableLines },
     };
     try {
+      // --list names a saved list; the store wants its id. The name is read against the
+      // store's own lists here and never leaves in a web address.
+      if (prep.args.list) {
+        const found = await network.findList(ctx, network.networkClient(ctx.request, ctx.token), prep.args.list);
+        if (found.stop !== undefined) return found.stop;
+        prep.args.listId = found.row.id;
+      }
       return await store.runStore(ctx);
     } catch (error) {
       if (error instanceof store.StoreLocked) return fail(error.message, { status: 402 });
@@ -290,10 +343,13 @@ async function nexusCommand(args = [], deps = {}) {
     }
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
     if (WRITES.has(sub)) return fail(NOT_SAVED);
+    if (prep.args.list) return fail(LIST_NEEDS_STORE);
     if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
     return fail(STORE_NEEDED);
+  } else if (prep.args.list) {
+    return fail(LIST_NEEDS_STORE);
   } else if (prep.args.stage || prep.args.closeness || prep.args.group) {
     return fail(FILTERS_NEED_STORE);
   }

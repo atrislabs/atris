@@ -106,6 +106,10 @@ function prepareFilters(sub, flags) {
     args.group = String(flags.group).trim();
     if (!args.group) return { error: '--group needs the name of a list' };
   }
+  if (flags.list !== undefined) {
+    args.list = typeof flags.list === 'string' ? flags.list.trim() : '';
+    if (!args.list) return { error: '--list needs the name of a saved list' };
+  }
   return { args };
 }
 
@@ -175,10 +179,11 @@ async function runStore(ctx) {
   };
 
   // One page of the owner's cards, words and filters in the body.
-  const searchPeople = ({ q = '', group, stage, closeness, limit, offset = 0 }) => {
+  const searchPeople = ({ q = '', group, listId, stage, closeness, limit, offset = 0 }) => {
     const body = { limit, offset };
     if (q) body.q = q;
     if (group) body.group = group;
+    if (listId) body.list_id = listId;
     if (stage) body.stage = stage;
     if (closeness) body.closeness = closeness;
     return client.search(body);
@@ -194,10 +199,11 @@ async function runStore(ctx) {
     log(`Showing ${offset + 1} to ${offset + shown} of ${total}.`);
     if (offset + shown < total) log(`Add --offset ${offset + shown} for the next page.`);
   };
-  const filterWords = ({ stage, closeness, group }) => [
+  const filterWords = ({ stage, closeness, group, list }) => [
     stage ? S.stageLabel(stage).toLowerCase() : '',
     closeness ? CLOSENESS_LABEL[closeness] : '',
     group ? `in "${group}"` : '',
+    list ? `in saved list "${list}"` : '',
   ].filter(Boolean).join(', ');
 
   // The person a name points at, among the store's own cards. Stops with a message when
@@ -303,7 +309,7 @@ async function runStore(ctx) {
   if (sub === 'list') {
     const args = ctx.prep.args;
     const { limit, offset } = args;
-    const filtered = !!(args.stage || args.closeness || args.group);
+    const filtered = !!(args.stage || args.closeness || args.group || args.listId);
     const data = filtered
       ? await searchPeople({ ...args })
       : await client.get(`/nexus/people?limit=${limit}${offset ? `&offset=${offset}` : ''}`);
@@ -497,4 +503,4 @@ async function runStore(ctx) {
   return 0;
 }
 
-module.exports = { runStore, prepare, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE };
+module.exports = { runStore, prepare, whole, StoreDown, StoreLocked, StoreError, LOCKED_LINE, BRING_OVER_LINE, PAUSED_LINE };
