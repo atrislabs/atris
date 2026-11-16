@@ -1,5 +1,6 @@
 'use strict';
 
+require('./helpers/temp-home');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -299,21 +300,33 @@ test('cleanup never removes an old merged worktree with a live process cwd', () 
   }
 });
 
-test('starting a worktree reaps completed checkout debt before creating another copy', () => {
+test('starting a worktree reaps completed checkout debt before creating another copy, and never a hand-made copy', () => {
   const root = initRepo();
-  const oldWorktree = `${root}-old`;
+  const oldWorktree = path.join(path.dirname(root), '.agent-worktrees', path.basename(root), 'old');
+  const handMade = `${root}-old`;
   let created;
   try {
+    fs.mkdirSync(path.dirname(oldWorktree), { recursive: true });
     git(root, ['worktree', 'add', '-q', '-b', 'old-worktree', oldWorktree, 'HEAD']);
-    backdate(oldWorktree, 2);
+    git(root, ['worktree', 'add', '-q', '-b', 'hand-made', handMade, 'HEAD']);
+    // Idle for more than the day a copy is kept after its last change: the
+    // folder and its HEAD in git.
+    for (const copy of [oldWorktree, handMade]) {
+      backdate(copy, 30);
+      const gitDir = git(copy, ['rev-parse', '--absolute-git-dir']);
+      for (const mark of ['HEAD', path.join('logs', 'HEAD')]) backdate(path.join(gitDir, mark), 30);
+    }
 
     created = createAgentWorktree({ root, agent: 'tester', task: 'new worktree' });
     assert.equal(created.reapedBeforeStart.length, 1);
     assert.equal(fs.existsSync(oldWorktree), false);
+    assert.equal(fs.existsSync(handMade), true);
     assert.equal(fs.existsSync(created.path), true);
   } finally {
     if (created) spawnSync('git', ['worktree', 'remove', '--force', created.path], { cwd: root });
     spawnSync('git', ['worktree', 'remove', '--force', oldWorktree], { cwd: root });
+    spawnSync('git', ['worktree', 'remove', '--force', handMade], { cwd: root });
+    fs.rmSync(path.dirname(oldWorktree), { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

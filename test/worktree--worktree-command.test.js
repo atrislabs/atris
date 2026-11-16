@@ -1,3 +1,4 @@
+require('./helpers/temp-home');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -60,7 +61,7 @@ test('worktreeCommand help prints the usage block and returns 0', () => {
   for (const arg of ['help', '--help', '-h']) {
     const result = captureOutput(() => worktreeCommand([arg]));
     assert.strictEqual(result.code, 0, arg);
-    assert.match(result.out, /^Usage: atris worktree <guide\|start\|ship\|status\|doctor\|guard\|prune\|cleanup\|sweep>$/m);
+    assert.match(result.out, /^Usage: atris worktree <guide\|start\|ship\|status\|doctor\|guard\|prune\|cleanup\|sweep\|restore\|put-away>$/m);
     assert.match(result.out, /atris worktree guard \[--allow-primary\] \[--allow-dirty\]/);
   }
 });
@@ -68,7 +69,7 @@ test('worktreeCommand help prints the usage block and returns 0', () => {
 test('worktreeCommand with an unknown subcommand prints usage and returns 2', () => {
   const result = captureOutput(() => worktreeCommand(['bogus']));
   assert.strictEqual(result.code, 2);
-  assert.match(result.out, /^Usage: atris worktree <guide\|start\|ship\|status\|doctor\|guard\|prune\|cleanup\|sweep>$/m);
+  assert.match(result.out, /^Usage: atris worktree <guide\|start\|ship\|status\|doctor\|guard\|prune\|cleanup\|sweep\|restore\|put-away>$/m);
 });
 
 test('worktreeCommand guide and recipe print the agent recipe and return 0', () => {
