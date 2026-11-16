@@ -606,14 +606,17 @@ for (const [label, down] of [['unreachable', 0], ['not found', 404], ['a server 
     assert.equal(card.err, 'Using your saved list. The people store did not answer.');
   });
 
-  test(`${label}: a write goes to the saved list, once, and nothing is sent to the store`, async () => {
-    const server = backend({ down });
-    const { code, out } = await run(['note', 'Cy Placeholder', 'hello'], server);
-    assert.equal(code, 0);
-    assert.match(out, /Noted on Cy Placeholder: hello/);
-    assert.equal(server.state.writes.length, 1);
-    assert.deepEqual(storeCalls(server), ['POST /nexus/people/search'], 'only the lookup reached the store');
+  test(`${label}: a change stops with one plain line and is saved nowhere`, async () => {
+    for (const args of [['note', 'Cy Placeholder', 'hello'], ['stage', 'Cy Placeholder', 'met'], ['add', 'New Person']]) {
+      const server = backend({ down });
+      const { code, err } = await run(args, server);
+      assert.equal(code, 1, args.join(' '));
+      assert.equal(err, 'The people store did not answer, so nothing was saved. Try again in a moment.');
+      assert.equal(server.state.writes.length, 0, 'the saved list is never written');
+      assert.deepEqual(fileCalls(server), [], 'the saved list is not even read');
+    }
   });
+
 }
 
 test('a store that already took a write is not followed by a second write to the saved list', async () => {

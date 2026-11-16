@@ -33,7 +33,7 @@ const USAGE = [
   '  atris nexus city "<city>"           the people in a city, yours marked',
   '  atris nexus bring-over              send your saved list to the store (never changes the list)',
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
-  'The store is tried first. If it does not answer, the saved list is used (wall, goal, due, paid, city, bring-over and the filters need the store).',
+  'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
 
 // Commands the saved list cannot answer: the store or nothing.
@@ -43,6 +43,10 @@ const TAKES_WORD = new Set(['find', 'search', 'note', 'stage', 'add', 'due', 'pa
 const SUBS = new Set(['list', 'find', 'search', 'count', 'note', 'stage', 'add', ...STORE_ONLY]);
 const FALLBACK_LINE = 'Using your saved list. The people store did not answer.';
 const STORE_NEEDED = 'The people store did not answer, and this command needs it. Try again in a moment.';
+// The store is the home for every change. A change it cannot take is not written anywhere
+// else, so the saved list and the store never drift apart. Reading the saved list is fine.
+const WRITES = new Set(['note', 'stage', 'add']);
+const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
 const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
@@ -285,6 +289,7 @@ async function nexusCommand(args = [], deps = {}) {
       if (!(error instanceof store.StoreDown)) return fail(error && error.message);
     }
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
+    if (WRITES.has(sub)) return fail(NOT_SAVED);
     if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
