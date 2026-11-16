@@ -1122,8 +1122,6 @@ module.exports = {
   changeMeetingTypes,
   parseMinutesArg,
   parseMaxPerDay,
-  buildRulesPayload,
-  describeRules,
   parseHoldArgs,
   buildHoldBodies,
   buildOffPayload,
